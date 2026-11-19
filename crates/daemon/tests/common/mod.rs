@@ -15,7 +15,11 @@ pub struct Daemon {
     pub agents: String,
 }
 
-pub async fn start(backend: Arc<dyn SandboxBackend>, sandbox_url: Option<String>, agent_bind: &str) -> Daemon {
+pub async fn start(
+    backend: Arc<dyn SandboxBackend>,
+    sandbox_url: Option<String>,
+    agent_bind: &str,
+) -> Daemon {
     let agents_listener = tokio::net::TcpListener::bind(agent_bind).await.unwrap();
     let agents_addr = agents_listener.local_addr().unwrap();
     let ui_listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
@@ -59,7 +63,10 @@ pub async fn http(addr: &str, method: &str, path: &str, body: Option<Value>) -> 
     let text = String::from_utf8_lossy(&buf).into_owned();
     let status = text.split_whitespace().nth(1).unwrap().parse().unwrap();
     let (_, raw) = text.split_once("\r\n\r\n").unwrap_or_default();
-    let raw = if text.to_ascii_lowercase().contains("transfer-encoding: chunked") {
+    let raw = if text
+        .to_ascii_lowercase()
+        .contains("transfer-encoding: chunked")
+    {
         dechunk(raw)
     } else {
         raw.to_owned()
@@ -91,7 +98,10 @@ where
         if let Some(v) = f().await {
             return v;
         }
-        assert!(tokio::time::Instant::now() < deadline, "timed out waiting for {what}");
+        assert!(
+            tokio::time::Instant::now() < deadline,
+            "timed out waiting for {what}"
+        );
         tokio::time::sleep(Duration::from_millis(100)).await;
     }
 }

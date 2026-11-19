@@ -36,7 +36,11 @@ async fn client(url: &str, token: &str) -> RunningService<RoleClient, ()> {
     ().serve(transport).await.expect("mcp handshake")
 }
 
-async fn call(c: &RunningService<RoleClient, ()>, tool: &'static str, args: Value) -> Result<Value, String> {
+async fn call(
+    c: &RunningService<RoleClient, ()>,
+    tool: &'static str,
+    args: Value,
+) -> Result<Value, String> {
     let params = CallToolRequestParams::new(tool).with_arguments(args.as_object().unwrap().clone());
     match c.call_tool(params).await {
         Ok(r) if r.is_error != Some(true) => Ok(r.structured_content.unwrap_or(Value::Null)),
@@ -73,7 +77,14 @@ async fn tools_act_as_the_authenticated_agent() {
     names.sort();
     assert_eq!(
         names,
-        ["forget", "list_agents", "read_mailbox", "recall", "remember", "send_message"]
+        [
+            "forget",
+            "list_agents",
+            "read_mailbox",
+            "recall",
+            "remember",
+            "send_message"
+        ]
     );
 
     let list = call(&alice, "list_agents", json!({})).await.unwrap();
@@ -86,17 +97,33 @@ async fn tools_act_as_the_authenticated_agent() {
         .collect();
     assert_eq!(me, ["alice"]);
 
-    let sent = call(&alice, "send_message", json!({"to": "@bob", "body": "hi bob"}))
-        .await
-        .unwrap();
+    let sent = call(
+        &alice,
+        "send_message",
+        json!({"to": "@bob", "body": "hi bob"}),
+    )
+    .await
+    .unwrap();
     assert_eq!(sent["queued_for"], "bob");
     let msg_id = sent["message_id"].as_i64().unwrap();
     assert_eq!(*recorder.0.lock().unwrap(), [(ids[1], msg_id)]);
 
     // validation errors surface as tool errors, not panics
-    assert!(call(&alice, "send_message", json!({"to": "alice", "body": "me"})).await.is_err());
-    assert!(call(&alice, "send_message", json!({"to": "nobody", "body": "x"})).await.is_err());
-    assert!(call(&alice, "send_message", json!({"to": "bob", "body": "   "})).await.is_err());
+    assert!(
+        call(&alice, "send_message", json!({"to": "alice", "body": "me"}))
+            .await
+            .is_err()
+    );
+    assert!(
+        call(&alice, "send_message", json!({"to": "nobody", "body": "x"}))
+            .await
+            .is_err()
+    );
+    assert!(
+        call(&alice, "send_message", json!({"to": "bob", "body": "   "}))
+            .await
+            .is_err()
+    );
 
     // bob sees alice's message with a resolved sender name
     let bob = client(&url, "tok-b").await;
@@ -107,13 +134,21 @@ async fn tools_act_as_the_authenticated_agent() {
     assert_eq!(queued[0].status, MailStatus::Pending);
 
     // memory is private per agent
-    call(&alice, "remember", json!({"key": "k", "content": "alice secret about rust"}))
+    call(
+        &alice,
+        "remember",
+        json!({"key": "k", "content": "alice secret about rust"}),
+    )
+    .await
+    .unwrap();
+    let hits = call(&alice, "recall", json!({"query": "rust"}))
         .await
         .unwrap();
-    let hits = call(&alice, "recall", json!({"query": "rust"})).await.unwrap();
     assert_eq!(hits["memories"].as_array().unwrap().len(), 1);
-    let none = call(&bob, "recall", json!({"query": "rust"})).await.unwrap();
-    assert!(none["memories"].as_array().unwrap().is_empty());
+    let none = call(&bob, "recall", json!({"query": "rust"}))
+        .await
+        .unwrap();
+    assert_eq!(none["memories"], json!([]));
     let gone = call(&alice, "forget", json!({"key": "k"})).await.unwrap();
     assert_eq!(gone["ok"], true);
 
@@ -141,7 +176,9 @@ async fn reqwest_free_post(url: &str, token: Option<&str>) -> u16 {
     let rest = url.strip_prefix("http://").unwrap();
     let (host, path) = rest.split_once('/').unwrap();
     let mut s = tokio::net::TcpStream::connect(host).await.unwrap();
-    let auth = token.map(|t| format!("Authorization: Bearer {t}\r\n")).unwrap_or_default();
+    let auth = token
+        .map(|t| format!("Authorization: Bearer {t}\r\n"))
+        .unwrap_or_default();
     let body = "{}";
     let req = format!(
         "POST /{path} HTTP/1.1\r\nHost: {host}\r\nContent-Type: application/json\r\n{auth}Content-Length: {}\r\nConnection: close\r\n\r\n{body}",

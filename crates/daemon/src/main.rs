@@ -64,10 +64,18 @@ struct Cli {
     #[arg(long, env = "FERROBOT_MODEL")]
     model: Option<String>,
     /// Runner image for the Docker backend.
-    #[arg(long, env = "FERROBOT_RUNNER_IMAGE", default_value = "ferrobot-runner:dev")]
+    #[arg(
+        long,
+        env = "FERROBOT_RUNNER_IMAGE",
+        default_value = "ferrobot-runner:dev"
+    )]
     runner_image: String,
     /// Runner entry point for the local backend.
-    #[arg(long, env = "FERROBOT_RUNNER_ENTRY", default_value = "runner/dist/index.js")]
+    #[arg(
+        long,
+        env = "FERROBOT_RUNNER_ENTRY",
+        default_value = "runner/dist/index.js"
+    )]
     runner_entry: PathBuf,
     /// Seconds before a turn is interrupted and its message retried.
     #[arg(long, env = "FERROBOT_TURN_TIMEOUT", default_value_t = 600)]
@@ -78,7 +86,8 @@ struct Cli {
 async fn main() -> Result<()> {
     tracing_subscriber::fmt()
         .with_env_filter(
-            EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("info,ferrobot=debug")),
+            EnvFilter::try_from_default_env()
+                .unwrap_or_else(|_| EnvFilter::new("info,ferrobot=debug")),
         )
         .init();
     let cli = Cli::parse();
@@ -121,7 +130,9 @@ async fn main() -> Result<()> {
         }
     };
 
-    let anthropic_api_key = std::env::var("ANTHROPIC_API_KEY").ok().filter(|k| !k.is_empty());
+    let anthropic_api_key = std::env::var("ANTHROPIC_API_KEY")
+        .ok()
+        .filter(|k| !k.is_empty());
     if matches!(cli.driver, Driver::Claude) && anthropic_api_key.is_none() {
         bail!("--driver claude needs ANTHROPIC_API_KEY in the daemon environment");
     }
@@ -168,7 +179,8 @@ async fn shutdown() {
     };
     #[cfg(unix)]
     let term = async {
-        if let Ok(mut s) = tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate()) {
+        if let Ok(mut s) = tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate())
+        {
             s.recv().await;
         }
     };

@@ -3,8 +3,8 @@
 use std::time::Duration;
 
 use axum::Router;
-use axum::extract::ws::{Message, WebSocket, WebSocketUpgrade};
 use axum::extract::State;
+use axum::extract::ws::{Message, WebSocket, WebSocketUpgrade};
 use axum::http::{HeaderMap, StatusCode, header};
 use axum::response::{IntoResponse, Response};
 use axum::routing::get;
@@ -23,7 +23,11 @@ pub fn router() -> Router<AppState> {
     Router::new().route("/runner/ws", get(upgrade))
 }
 
-async fn upgrade(State(state): State<AppState>, headers: HeaderMap, ws: WebSocketUpgrade) -> Response {
+async fn upgrade(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    ws: WebSocketUpgrade,
+) -> Response {
     let token = headers
         .get(header::AUTHORIZATION)
         .and_then(|v| v.to_str().ok())
@@ -72,10 +76,10 @@ async fn run_connection(state: AppState, agent: Agent, socket: WebSocket) {
             return;
         }
     };
-    if let Some(sid) = session_id.clone() {
-        if agent.session_id.as_deref() != Some(&sid) {
-            let _ = state.store.set_agent_session(agent.id, sid).await;
-        }
+    if let Some(sid) = session_id.clone()
+        && agent.session_id.as_deref() != Some(&sid)
+    {
+        let _ = state.store.set_agent_session(agent.id, sid).await;
     }
     let welcome = DaemonFrame::Welcome {
         protocol_version: PROTOCOL_VERSION,
@@ -96,7 +100,12 @@ async fn run_connection(state: AppState, agent: Agent, socket: WebSocket) {
     }
     tracing::info!(agent = %agent.name, %driver, "runner connected");
     state
-        .record(agent.id, None, "runner_connected", json!({ "driver": driver }))
+        .record(
+            agent.id,
+            None,
+            "runner_connected",
+            json!({ "driver": driver }),
+        )
         .await;
     state.publish_agent(agent.id).await;
 
@@ -109,7 +118,13 @@ async fn run_connection(state: AppState, agent: Agent, socket: WebSocket) {
         let _ = sink.close().await;
     });
     let (done_tx, done_rx) = mpsc::channel::<Done>(8);
-    let dispatcher = tokio::spawn(dispatch_loop(state.clone(), agent.id, conn_id, out_tx, done_rx));
+    let dispatcher = tokio::spawn(dispatch_loop(
+        state.clone(),
+        agent.id,
+        conn_id,
+        out_tx,
+        done_rx,
+    ));
 
     // 3. Read frames until the socket closes.
     while let Some(msg) = stream.next().await {
@@ -118,37 +133,7 @@ async fn run_connection(state: AppState, agent: Agent, socket: WebSocket) {
             Ok(Message::Close(_)) | Err(_) => break,
             Ok(_) => continue,
         };
-        match serde_json::from_str::<RunnerFrame>(&text) {
-            Ok(RunnerFrame::Event { turn_id, event }) => {
-                let payload = serde_json::to_value(&event).unwrap_or_default();
-                let kind = payload["kind"].as_str().unwrap_or("event").to_owned();
-                state.record(agent.id, Some(turn_id), &kind, payload).await;
-            }
-            Ok(RunnerFrame::TurnDone {
-                turn_id,
-                outcome,
-                session_id,
-                result,
-                error,
-            }) => {
-                if let Some(sid) = session_id {
-                    let _ = state.store.set_agent_session(agent.id, sid).await;
-                }
-                state
-                    .record(
-                        agent.id,
-                        Some(turn_id.clone()),
-                        "turn_done",
-                        json!({ "outcome": outcome, "result": result, "error": error }),
-                    )
-                    .await;
-                let _ = done_tx.send(Done { turn_id, outcome, error }).await;
-            }
-            Ok(RunnerFrame::Hello { .. }) => {
-                tracing::warn!(agent = %agent.name, "duplicate hello ignored");
-            }
-            Err(e) => tracing::warn!(agent = %agent.name, error = %e, "unparseable runner frame"),
-        }
+        handle_frame(&state, &agent, &done_tx, &text).await;
     }
 
     // 4. Cleanup: anything in flight goes back to the queue.
@@ -159,8 +144,51 @@ async fn run_connection(state: AppState, agent: Agent, socket: WebSocket) {
         tracing::error!(error = %e, "requeue on disconnect failed");
     }
     tracing::info!(agent = %agent.name, "runner disconnected");
-    state.record(agent.id, None, "runner_disconnected", json!({})).await;
+    state
+        .record(agent.id, None, "runner_disconnected", json!({}))
+        .await;
     state.publish_agent(agent.id).await;
+}
+
+/// Handles one frame from the runner after the handshake.
+async fn handle_frame(state: &AppState, agent: &Agent, done_tx: &mpsc::Sender<Done>, text: &str) {
+    match serde_json::from_str::<RunnerFrame>(text) {
+        Ok(RunnerFrame::Event { turn_id, event }) => {
+            let payload = serde_json::to_value(&event).unwrap_or_default();
+            let kind = payload["kind"].as_str().unwrap_or("event").to_owned();
+            state.record(agent.id, Some(turn_id), &kind, payload).await;
+        }
+        Ok(RunnerFrame::TurnDone {
+            turn_id,
+            outcome,
+            session_id,
+            result,
+            error,
+        }) => {
+            if let Some(sid) = session_id {
+                let _ = state.store.set_agent_session(agent.id, sid).await;
+            }
+            state
+                .record(
+                    agent.id,
+                    Some(turn_id.clone()),
+                    "turn_done",
+                    json!({ "outcome": outcome, "result": result, "error": error }),
+                )
+                .await;
+            let _ = done_tx
+                .send(Done {
+                    turn_id,
+                    outcome,
+                    error,
+                })
+                .await;
+        }
+        Ok(RunnerFrame::Hello { .. }) => {
+            tracing::warn!(agent = %agent.name, "duplicate hello ignored");
+        }
+        Err(e) => tracing::warn!(agent = %agent.name, error = %e, "unparseable runner frame"),
+    }
 }
 
 async fn send<S>(sink: &mut S, frame: &DaemonFrame) -> Result<(), ()>
@@ -229,7 +257,9 @@ async fn run_turn(
             json!({ "message_id": msg.id, "from": from, "body": msg.body, "attempt": msg.attempts }),
         )
         .await;
-    state.hub.set_current_turn(agent, conn_id, Some(turn_id.clone()));
+    state
+        .hub
+        .set_current_turn(agent, conn_id, Some(turn_id.clone()));
     let frame = DaemonFrame::Turn {
         turn_id: turn_id.clone(),
         message_id: msg.id,
@@ -244,8 +274,8 @@ async fn run_turn(
     let deadline = tokio::time::Instant::now() + state.settings.turn_timeout;
     let result = loop {
         match tokio::time::timeout_at(deadline, done_rx.recv()).await {
-            Ok(Some(done)) if done.turn_id == turn_id => break Some(done),
-            Ok(Some(stale)) => tracing::debug!(turn = %stale.turn_id, "ignoring stale turn_done"),
+            Ok(Some(report)) if report.turn_id == turn_id => break Some(report),
+            Ok(Some(old)) => tracing::debug!(turn = %old.turn_id, "ignoring stale turn_done"),
             Ok(None) => return false,
             Err(_) => break None,
         }
@@ -257,7 +287,7 @@ async fn run_turn(
         Some(Done {
             outcome: TurnOutcome::Completed | TurnOutcome::Interrupted,
             ..
-        }) => state.store.complete_message(msg.id).await.map(|()| ()),
+        }) => state.store.complete_message(msg.id).await,
         Some(Done { error, .. }) => state
             .store
             .fail_message(msg.id, error.unwrap_or_else(|| "turn failed".into()))

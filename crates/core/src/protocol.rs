@@ -66,10 +66,21 @@ pub enum RunnerFrame {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum TurnEvent {
-    AssistantText { text: String },
-    ToolUse { name: String, input: serde_json::Value },
-    ToolDenied { name: String, reason: String },
-    Log { level: String, message: String },
+    AssistantText {
+        text: String,
+    },
+    ToolUse {
+        name: String,
+        input: serde_json::Value,
+    },
+    ToolDenied {
+        name: String,
+        reason: String,
+    },
+    Log {
+        level: String,
+        message: String,
+    },
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]

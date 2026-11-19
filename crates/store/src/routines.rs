@@ -100,11 +100,19 @@ mod tests {
             })
             .await
             .unwrap();
-        store.create_routine(a.id, "digest".into(), 3600, "summarize".into()).await.unwrap();
+        store
+            .create_routine(a.id, "digest".into(), 3600, "summarize".into())
+            .await
+            .unwrap();
         let list = store.list_routines(a.id).await.unwrap();
         assert_eq!(list.len(), 1);
         assert!(list[0].enabled);
         // CHECK constraint: at least one minute
-        assert!(store.create_routine(a.id, "spam".into(), 5, "x".into()).await.is_err());
+        assert!(
+            store
+                .create_routine(a.id, "spam".into(), 5, "x".into())
+                .await
+                .is_err()
+        );
     }
 }

@@ -179,7 +179,17 @@ mod tests {
     #[test]
     fn rejects_invalid_names() {
         let too_long = "a".repeat(33);
-        for bad in ["", "Alice", "1abc", "-a", "a-", "a_b", "a b", "ä", too_long.as_str()] {
+        for bad in [
+            "",
+            "Alice",
+            "1abc",
+            "-a",
+            "a-",
+            "a_b",
+            "a b",
+            "ä",
+            too_long.as_str(),
+        ] {
             assert!(AgentName::parse(bad).is_err(), "{bad:?}");
         }
     }

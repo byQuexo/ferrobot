@@ -32,7 +32,9 @@ impl Hub {
     fn lock(&self) -> MutexGuard<'_, Inner> {
         // A poisoned lock only means another task panicked mid-update of a
         // plain map; the data is still consistent enough to keep serving.
-        self.inner.lock().unwrap_or_else(std::sync::PoisonError::into_inner)
+        self.inner
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
     }
 
     /// The wake-up signal for an agent's dispatch loop.
@@ -68,7 +70,12 @@ impl Hub {
     }
 
     pub fn set_current_turn(&self, agent: AgentId, conn_id: u64, turn: Option<String>) {
-        if let Some(c) = self.lock().conns.get_mut(&agent).filter(|c| c.id == conn_id) {
+        if let Some(c) = self
+            .lock()
+            .conns
+            .get_mut(&agent)
+            .filter(|c| c.id == conn_id)
+        {
             c.current_turn = turn;
         }
     }

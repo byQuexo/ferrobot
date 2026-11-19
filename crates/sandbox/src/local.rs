@@ -62,13 +62,22 @@ impl LocalProcessBackend {
             });
         }
         // Handle ids are agent names; refuse anything that could escape `root`.
-        if handle.id.is_empty() || !handle.id.chars().all(|c| c.is_ascii_alphanumeric() || c == '-') {
+        if handle.id.is_empty()
+            || !handle
+                .id
+                .chars()
+                .all(|c| c.is_ascii_alphanumeric() || c == '-')
+        {
             return Err(SandboxError::NotFound(handle.id.clone()));
         }
         Ok(self.config.root.join(&handle.id))
     }
 
-    fn host_path(&self, handle: &SandboxHandle, path: &SandboxPath) -> Result<PathBuf, SandboxError> {
+    fn host_path(
+        &self,
+        handle: &SandboxHandle,
+        path: &SandboxPath,
+    ) -> Result<PathBuf, SandboxError> {
         Ok(self.dir(handle)?.join(path.relative()))
     }
 
@@ -128,7 +137,11 @@ impl SandboxBackend for LocalProcessBackend {
         Ok(handle)
     }
 
-    async fn exec(&self, sandbox: &SandboxHandle, req: &ExecRequest) -> Result<ExecOutput, SandboxError> {
+    async fn exec(
+        &self,
+        sandbox: &SandboxHandle,
+        req: &ExecRequest,
+    ) -> Result<ExecOutput, SandboxError> {
         let dir = self.dir(sandbox)?;
         let Some((program, args)) = req.cmd.split_first() else {
             return Err(SandboxError::Other("empty command".into()));
@@ -155,7 +168,11 @@ impl SandboxBackend for LocalProcessBackend {
         })
     }
 
-    async fn read_file(&self, sandbox: &SandboxHandle, path: &SandboxPath) -> Result<Vec<u8>, SandboxError> {
+    async fn read_file(
+        &self,
+        sandbox: &SandboxHandle,
+        path: &SandboxPath,
+    ) -> Result<Vec<u8>, SandboxError> {
         let p = self.host_path(sandbox, path)?;
         tokio::fs::read(&p).await.map_err(|e| match e.kind() {
             std::io::ErrorKind::NotFound => SandboxError::NotFound(path.to_string()),
@@ -163,13 +180,22 @@ impl SandboxBackend for LocalProcessBackend {
         })
     }
 
-    async fn write_file(&self, sandbox: &SandboxHandle, path: &SandboxPath, contents: &[u8]) -> Result<(), SandboxError> {
+    async fn write_file(
+        &self,
+        sandbox: &SandboxHandle,
+        path: &SandboxPath,
+        contents: &[u8],
+    ) -> Result<(), SandboxError> {
         let p = self.host_path(sandbox, path)?;
         tokio::fs::write(&p, contents).await?;
         Ok(())
     }
 
-    async fn snapshot(&self, sandbox: &SandboxHandle, label: &str) -> Result<SnapshotRef, SandboxError> {
+    async fn snapshot(
+        &self,
+        sandbox: &SandboxHandle,
+        label: &str,
+    ) -> Result<SnapshotRef, SandboxError> {
         let dir = self.dir(sandbox)?;
         let id = format!(
             "{}-{}-{}",
@@ -279,11 +305,20 @@ mod tests {
         b.write_file(&h, &path, b"hello").await.unwrap();
         assert_eq!(b.read_file(&h, &path).await.unwrap(), b"hello");
 
-        let out = b.exec(&h, &ExecRequest::new(["cat", "note.txt"])).await.unwrap();
+        let out = b
+            .exec(&h, &ExecRequest::new(["cat", "note.txt"]))
+            .await
+            .unwrap();
         assert_eq!((out.exit_code, out.stdout.as_str()), (0, "hello"));
 
         let snap = b.snapshot(&h, "before change").await.unwrap();
-        assert!(tmp.path().join(".snapshots").join(&snap.id).join("home/note.txt").exists());
+        assert!(
+            tmp.path()
+                .join(".snapshots")
+                .join(&snap.id)
+                .join("home/note.txt")
+                .exists()
+        );
 
         b.stop(&h).await.unwrap();
         assert_eq!(b.state(&h).await.unwrap(), SandboxState::Stopped);

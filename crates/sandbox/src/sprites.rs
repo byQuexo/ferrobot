@@ -55,7 +55,7 @@ impl Default for SpritesConfig {
 }
 
 /// Thin REST client skeleton. Request/response types will be generated or
-/// hand-written from the published OpenAPI spec in phase 3.
+/// hand-written from the published `OpenAPI` spec in phase 3.
 #[derive(Debug, Clone)]
 pub struct SpritesBackend {
     http: reqwest::Client,
@@ -97,22 +97,39 @@ impl SandboxBackend for SpritesBackend {
         Err(Self::todo("create"))
     }
 
-    async fn exec(&self, _sandbox: &SandboxHandle, _req: &ExecRequest) -> Result<ExecOutput, SandboxError> {
+    async fn exec(
+        &self,
+        _sandbox: &SandboxHandle,
+        _req: &ExecRequest,
+    ) -> Result<ExecOutput, SandboxError> {
         // POST /v1/sprites/{name}/exec (non-TTY HTTP variant).
         Err(Self::todo("exec"))
     }
 
-    async fn read_file(&self, _sandbox: &SandboxHandle, _path: &SandboxPath) -> Result<Vec<u8>, SandboxError> {
+    async fn read_file(
+        &self,
+        _sandbox: &SandboxHandle,
+        _path: &SandboxPath,
+    ) -> Result<Vec<u8>, SandboxError> {
         // GET /v1/sprites/{name}/fs/read
         Err(Self::todo("read_file"))
     }
 
-    async fn write_file(&self, _sandbox: &SandboxHandle, _path: &SandboxPath, _contents: &[u8]) -> Result<(), SandboxError> {
+    async fn write_file(
+        &self,
+        _sandbox: &SandboxHandle,
+        _path: &SandboxPath,
+        _contents: &[u8],
+    ) -> Result<(), SandboxError> {
         // PUT /v1/sprites/{name}/fs/write
         Err(Self::todo("write_file"))
     }
 
-    async fn snapshot(&self, _sandbox: &SandboxHandle, _label: &str) -> Result<SnapshotRef, SandboxError> {
+    async fn snapshot(
+        &self,
+        _sandbox: &SandboxHandle,
+        _label: &str,
+    ) -> Result<SnapshotRef, SandboxError> {
         // POST /v1/sprites/{name}/checkpoint (streams NDJSON progress)
         Err(Self::todo("snapshot"))
     }
@@ -127,7 +144,11 @@ impl SandboxBackend for SpritesBackend {
         Err(Self::todo("stop"))
     }
 
-    async fn destroy(&self, _sandbox: &SandboxHandle, _purge_disk: bool) -> Result<(), SandboxError> {
+    async fn destroy(
+        &self,
+        _sandbox: &SandboxHandle,
+        _purge_disk: bool,
+    ) -> Result<(), SandboxError> {
         // DELETE /v1/sprites/{name}
         Err(Self::todo("destroy"))
     }
@@ -150,8 +171,17 @@ mod tests {
             id: "x".into(),
         };
         let err = b.wake(&h).await.unwrap_err();
-        assert!(matches!(err, SandboxError::NotImplemented { operation: "wake", .. }));
-        assert!(err.to_string().contains("sprites backend does not implement wake"));
+        assert!(matches!(
+            err,
+            SandboxError::NotImplemented {
+                operation: "wake",
+                ..
+            }
+        ));
+        assert!(
+            err.to_string()
+                .contains("sprites backend does not implement wake")
+        );
     }
 
     #[test]

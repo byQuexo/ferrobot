@@ -53,7 +53,12 @@ impl Store {
     }
 
     /// Events of `agent` with id greater than `after` (oldest first).
-    pub async fn events_after(&self, agent: AgentId, after: i64, limit: u32) -> Result<Vec<StoredEvent>, StoreError> {
+    pub async fn events_after(
+        &self,
+        agent: AgentId,
+        after: i64,
+        limit: u32,
+    ) -> Result<Vec<StoredEvent>, StoreError> {
         self.with(move |c| {
             let mut stmt = c.prepare(
                 "SELECT id, turn_id, kind, payload, created_at FROM events
@@ -97,7 +102,12 @@ mod tests {
             .await
             .unwrap();
         let e1 = store
-            .append_event(a.id, Some("t".into()), "assistant_text".into(), serde_json::json!({"text": "hi"}))
+            .append_event(
+                a.id,
+                Some("t".into()),
+                "assistant_text".into(),
+                serde_json::json!({"text": "hi"}),
+            )
             .await
             .unwrap();
         store

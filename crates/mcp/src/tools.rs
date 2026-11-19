@@ -136,7 +136,10 @@ impl FerrobotTools {
     }
 
     #[tool(description = "List all agents on this ferrobot host with their status and role.")]
-    async fn list_agents(&self, Extension(parts): Extension<http::request::Parts>) -> ToolResult<AgentList> {
+    async fn list_agents(
+        &self,
+        Extension(parts): Extension<http::request::Parts>,
+    ) -> ToolResult<AgentList> {
         let me = caller(&parts)?.0.id;
         let agents = self.state.store.list_agents().await.map_err(store_err)?;
         Ok(Json(AgentList {
@@ -152,8 +155,10 @@ impl FerrobotTools {
         }))
     }
 
-    #[tool(description = "Send an asynchronous message to another agent's mailbox. \
-        The recipient handles it in its own turn; replies arrive later as new messages.")]
+    #[tool(
+        description = "Send an asynchronous message to another agent's mailbox. \
+        The recipient handles it in its own turn; replies arrive later as new messages."
+    )]
     async fn send_message(
         &self,
         Extension(parts): Extension<http::request::Parts>,
@@ -173,13 +178,26 @@ impl FerrobotTools {
         let name = AgentName::parse(args.to.trim().trim_start_matches('@'))
             .map_err(|e| ErrorData::invalid_params(e.to_string(), None))?;
         if name == me.name {
-            return Err(ErrorData::invalid_params("cannot send a message to yourself", None));
+            return Err(ErrorData::invalid_params(
+                "cannot send a message to yourself",
+                None,
+            ));
         }
-        let recipient = self.state.store.get_agent_by_name(name).await.map_err(store_err)?;
+        let recipient = self
+            .state
+            .store
+            .get_agent_by_name(name)
+            .await
+            .map_err(store_err)?;
         let msg = self
             .state
             .store
-            .enqueue_message(Sender::Agent(me.id), recipient.id, body.to_owned(), args.reply_to)
+            .enqueue_message(
+                Sender::Agent(me.id),
+                recipient.id,
+                body.to_owned(),
+                args.reply_to,
+            )
             .await
             .map_err(store_err)?;
         self.state.notifier.message_enqueued(recipient.id, msg.id);
@@ -287,6 +305,8 @@ impl FerrobotTools {
     }
 }
 
+// The rmcp macro generates `async` trait methods without awaits.
+#[allow(clippy::unused_async_trait_impl)]
 #[tool_handler(
     name = "ferrobot",
     instructions = "Mailbox and memory tools for ferrobot agents. Messages are asynchronous."

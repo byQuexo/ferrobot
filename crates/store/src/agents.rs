@@ -17,8 +17,7 @@ pub fn hash_token(token: &str) -> String {
     hex::encode(Sha256::digest(token.as_bytes()))
 }
 
-const COLUMNS: &str =
-    "id, name, instructions, status, backend, sandbox_id, session_id, created_at";
+const COLUMNS: &str = "id, name, instructions, status, backend, sandbox_id, session_id, created_at";
 
 fn from_row(row: &Row<'_>) -> Result<Agent, StoreError> {
     let id: String = row.get(0)?;
@@ -37,7 +36,7 @@ fn from_row(row: &Row<'_>) -> Result<Agent, StoreError> {
     })
 }
 
-fn not_found(key: impl ToString) -> StoreError {
+fn not_found(key: &impl std::fmt::Display) -> StoreError {
     StoreError::NotFound {
         entity: "agent",
         key: key.to_string(),
@@ -106,7 +105,7 @@ impl Store {
                 |row| Ok(from_row(row)),
             )
             .optional()?
-            .ok_or_else(|| not_found(id))?
+            .ok_or_else(|| not_found(&id))?
         })
         .await
     }
@@ -166,7 +165,11 @@ impl Store {
         .await
     }
 
-    pub async fn set_agent_status(&self, id: AgentId, status: AgentStatus) -> Result<(), StoreError> {
+    pub async fn set_agent_status(
+        &self,
+        id: AgentId,
+        status: AgentStatus,
+    ) -> Result<(), StoreError> {
         self.update_agent(id, move |c, id| {
             c.execute(
                 "UPDATE agents SET status = ?2 WHERE id = ?1",
@@ -176,7 +179,11 @@ impl Store {
         .await
     }
 
-    pub async fn set_agent_session(&self, id: AgentId, session_id: String) -> Result<(), StoreError> {
+    pub async fn set_agent_session(
+        &self,
+        id: AgentId,
+        session_id: String,
+    ) -> Result<(), StoreError> {
         self.update_agent(id, move |c, id| {
             c.execute(
                 "UPDATE agents SET session_id = ?2 WHERE id = ?1",
@@ -187,8 +194,10 @@ impl Store {
     }
 
     pub async fn delete_agent(&self, id: AgentId) -> Result<(), StoreError> {
-        self.update_agent(id, |c, id| c.execute("DELETE FROM agents WHERE id = ?1", [id]))
-            .await
+        self.update_agent(id, |c, id| {
+            c.execute("DELETE FROM agents WHERE id = ?1", [id])
+        })
+        .await
     }
 
     async fn update_agent<F>(&self, id: AgentId, f: F) -> Result<(), StoreError>
@@ -196,7 +205,7 @@ impl Store {
         F: FnOnce(&rusqlite::Connection, String) -> rusqlite::Result<usize> + Send + 'static,
     {
         self.with(move |c| match f(c, id.to_string())? {
-            0 => Err(not_found(id)),
+            0 => Err(not_found(&id)),
             _ => Ok(()),
         })
         .await
@@ -250,7 +259,10 @@ mod tests {
         let store = Store::open_in_memory().unwrap();
         let a = store.create_agent(new("alice")).await.unwrap();
         store.set_agent_token(a.id, "secret-1").await.unwrap();
-        assert_eq!(store.agent_by_token("secret-1").await.unwrap().unwrap().id, a.id);
+        assert_eq!(
+            store.agent_by_token("secret-1").await.unwrap().unwrap().id,
+            a.id
+        );
         store.set_agent_token(a.id, "secret-2").await.unwrap();
         assert!(store.agent_by_token("secret-1").await.unwrap().is_none());
         assert!(store.agent_by_token("secret-2").await.unwrap().is_some());
@@ -260,7 +272,10 @@ mod tests {
     async fn status_and_session_updates() {
         let store = Store::open_in_memory().unwrap();
         let a = store.create_agent(new("alice")).await.unwrap();
-        store.set_agent_status(a.id, AgentStatus::Running).await.unwrap();
+        store
+            .set_agent_status(a.id, AgentStatus::Running)
+            .await
+            .unwrap();
         store.set_agent_session(a.id, "s-1".into()).await.unwrap();
         store
             .set_agent_sandbox(a.id, "docker".into(), "c1".into())

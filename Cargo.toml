@@ -34,9 +34,7 @@ tar = "0.4"
 thiserror = "2"
 time = { version = "0.3", features = ["serde", "formatting", "parsing"] }
 tokio = { version = "1", features = ["macros", "rt-multi-thread", "sync", "time", "net", "signal", "process", "fs", "io-util"] }
-tokio-stream = "0.1"
 tokio-tungstenite = "0.30"
-tower = "0.5"
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter", "fmt"] }
 uuid = { version = "1", features = ["v4", "serde"] }

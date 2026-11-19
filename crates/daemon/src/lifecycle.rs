@@ -31,7 +31,10 @@ pub async fn provision(state: &AppState, agent: &Agent) -> Result<SandboxHandle,
 
     let s = &state.settings;
     let mut env = BTreeMap::from([
-        ("FERROBOT_DAEMON_URL".to_owned(), s.sandbox_daemon_url.clone()),
+        (
+            "FERROBOT_DAEMON_URL".to_owned(),
+            s.sandbox_daemon_url.clone(),
+        ),
         ("FERROBOT_AGENT_TOKEN".to_owned(), token),
         ("FERROBOT_AGENT_NAME".to_owned(), agent.name.to_string()),
         ("FERROBOT_DRIVER".to_owned(), s.driver.clone()),
@@ -56,13 +59,19 @@ pub async fn provision(state: &AppState, agent: &Agent) -> Result<SandboxHandle,
                 .store
                 .set_agent_sandbox(agent.id, handle.backend.clone(), handle.id.clone())
                 .await?;
-            state.store.set_agent_status(agent.id, AgentStatus::Running).await?;
+            state
+                .store
+                .set_agent_status(agent.id, AgentStatus::Running)
+                .await?;
             state.publish_agent(agent.id).await;
             Ok(handle)
         }
         Err(e) => {
             tracing::error!(agent = %agent.name, error = %e, "sandbox provisioning failed");
-            state.store.set_agent_status(agent.id, AgentStatus::Failed).await?;
+            state
+                .store
+                .set_agent_status(agent.id, AgentStatus::Failed)
+                .await?;
             state.publish_agent(agent.id).await;
             Err(e.into())
         }
@@ -78,7 +87,10 @@ pub async fn wake(state: &AppState, id: AgentId) -> Result<(), ApiError> {
     };
     match state.backend.wake(&handle).await {
         Ok(()) => {
-            state.store.set_agent_status(id, AgentStatus::Running).await?;
+            state
+                .store
+                .set_agent_status(id, AgentStatus::Running)
+                .await?;
             state.publish_agent(id).await;
             Ok(())
         }
@@ -96,7 +108,10 @@ pub async fn stop(state: &AppState, id: AgentId) -> Result<(), ApiError> {
     if let Some(handle) = handle_of(&agent) {
         state.backend.stop(&handle).await?;
     }
-    state.store.set_agent_status(id, AgentStatus::Stopped).await?;
+    state
+        .store
+        .set_agent_status(id, AgentStatus::Stopped)
+        .await?;
     state.publish_agent(id).await;
     Ok(())
 }
@@ -114,7 +129,8 @@ pub async fn delete(state: &AppState, id: AgentId, purge_disk: bool) -> Result<(
 }
 
 pub fn sandbox_handle(agent: &Agent) -> Result<SandboxHandle, ApiError> {
-    handle_of(agent).ok_or_else(|| ApiError::Conflict(format!("agent {} has no sandbox", agent.name)))
+    handle_of(agent)
+        .ok_or_else(|| ApiError::Conflict(format!("agent {} has no sandbox", agent.name)))
 }
 
 /// Brings sandboxes of `running` agents back after a daemon restart.
@@ -126,15 +142,16 @@ pub async fn reconcile(state: &AppState) {
             return;
         }
     };
-    for agent in agents.into_iter().filter(|a| a.status == AgentStatus::Running) {
+    for agent in agents
+        .into_iter()
+        .filter(|a| a.status == AgentStatus::Running)
+    {
         let needs_wake = match handle_of(&agent) {
             None => true,
             Some(h) => !matches!(state.backend.state(&h).await, Ok(SandboxState::Running)),
         };
-        if needs_wake {
-            if let Err(e) = wake(state, agent.id).await {
-                tracing::warn!(agent = %agent.name, error = %e, "reconcile: wake failed");
-            }
+        if needs_wake && let Err(e) = wake(state, agent.id).await {
+            tracing::warn!(agent = %agent.name, error = %e, "reconcile: wake failed");
         }
     }
 }

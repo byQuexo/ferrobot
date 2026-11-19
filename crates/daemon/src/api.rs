@@ -24,7 +24,10 @@ pub fn router() -> Router<AppState> {
         .route("/v1/health", get(health))
         .route("/v1/agents", get(list_agents).post(create_agent))
         .route("/v1/agents/{id}", get(get_agent).delete(delete_agent))
-        .route("/v1/agents/{id}/messages", get(list_messages).post(post_message))
+        .route(
+            "/v1/agents/{id}/messages",
+            get(list_messages).post(post_message),
+        )
         .route("/v1/agents/{id}/events", get(list_events))
         .route("/v1/agents/{id}/interrupt", post(interrupt))
         .route("/v1/agents/{id}/stop", post(stop))
@@ -124,7 +127,10 @@ async fn delete_agent(
     Ok(StatusCode::NO_CONTENT)
 }
 
-async fn destroy_sandbox(State(state): State<AppState>, Path(id): Path<String>) -> Result<StatusCode, ApiError> {
+async fn destroy_sandbox(
+    State(state): State<AppState>,
+    Path(id): Path<String>,
+) -> Result<StatusCode, ApiError> {
     let agent = state.store.get_agent(parse_id(&id)?).await?;
     let handle = lifecycle::sandbox_handle(&agent)?;
     state.backend.destroy(&handle, false).await?;
@@ -161,7 +167,10 @@ async fn post_message(
     Ok((StatusCode::ACCEPTED, Json(msg)))
 }
 
-async fn list_messages(State(state): State<AppState>, Path(id): Path<String>) -> ApiResult<Vec<MailMessage>> {
+async fn list_messages(
+    State(state): State<AppState>,
+    Path(id): Path<String>,
+) -> ApiResult<Vec<MailMessage>> {
     Ok(Json(state.store.conversation(parse_id(&id)?, 200).await?))
 }
 
@@ -176,7 +185,12 @@ async fn list_events(
     Path(id): Path<String>,
     Query(q): Query<EventsQuery>,
 ) -> ApiResult<Vec<StoredEvent>> {
-    Ok(Json(state.store.events_after(parse_id(&id)?, q.after, 500).await?))
+    Ok(Json(
+        state
+            .store
+            .events_after(parse_id(&id)?, q.after, 500)
+            .await?,
+    ))
 }
 
 #[derive(Debug, Serialize)]
@@ -184,7 +198,10 @@ struct Interrupted {
     turn_id: Option<String>,
 }
 
-async fn interrupt(State(state): State<AppState>, Path(id): Path<String>) -> ApiResult<Interrupted> {
+async fn interrupt(
+    State(state): State<AppState>,
+    Path(id): Path<String>,
+) -> ApiResult<Interrupted> {
     let id = parse_id(&id)?;
     state.store.get_agent(id).await?;
     Ok(Json(Interrupted {
@@ -192,12 +209,18 @@ async fn interrupt(State(state): State<AppState>, Path(id): Path<String>) -> Api
     }))
 }
 
-async fn stop(State(state): State<AppState>, Path(id): Path<String>) -> Result<StatusCode, ApiError> {
+async fn stop(
+    State(state): State<AppState>,
+    Path(id): Path<String>,
+) -> Result<StatusCode, ApiError> {
     lifecycle::stop(&state, parse_id(&id)?).await?;
     Ok(StatusCode::NO_CONTENT)
 }
 
-async fn wake(State(state): State<AppState>, Path(id): Path<String>) -> Result<StatusCode, ApiError> {
+async fn wake(
+    State(state): State<AppState>,
+    Path(id): Path<String>,
+) -> Result<StatusCode, ApiError> {
     lifecycle::wake(&state, parse_id(&id)?).await?;
     Ok(StatusCode::NO_CONTENT)
 }

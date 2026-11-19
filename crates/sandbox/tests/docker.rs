@@ -7,14 +7,16 @@
 use std::collections::BTreeMap;
 
 use ferrobot_sandbox::{
-    DockerBackend, DockerConfig, ExecRequest, SandboxBackend, SandboxPath, SandboxSpec, SandboxState,
+    DockerBackend, DockerConfig, ExecRequest, SandboxBackend, SandboxPath, SandboxSpec,
+    SandboxState,
 };
 
 #[tokio::test]
 async fn container_lifecycle() {
     let backend = DockerBackend::connect(DockerConfig {
         // Any long-running image works for the lifecycle test.
-        image: std::env::var("FERROBOT_TEST_IMAGE").unwrap_or_else(|_| "ferrobot-runner:dev".into()),
+        image: std::env::var("FERROBOT_TEST_IMAGE")
+            .unwrap_or_else(|_| "ferrobot-runner:dev".into()),
         name_prefix: "ferrobot-test-".into(),
         ..DockerConfig::default()
     })
@@ -38,11 +40,20 @@ async fn container_lifecycle() {
     assert_eq!(backend.state(&h).await.unwrap(), SandboxState::Running);
 
     let path = SandboxPath::parse("/home/node/hello.txt").unwrap();
-    backend.write_file(&h, &path, b"hi from host").await.expect("write");
-    assert_eq!(backend.read_file(&h, &path).await.expect("read"), b"hi from host");
+    backend
+        .write_file(&h, &path, b"hi from host")
+        .await
+        .expect("write");
+    assert_eq!(
+        backend.read_file(&h, &path).await.expect("read"),
+        b"hi from host"
+    );
 
     let out = backend
-        .exec(&h, &ExecRequest::new(["sh", "-c", "id -u && cat /home/node/hello.txt"]))
+        .exec(
+            &h,
+            &ExecRequest::new(["sh", "-c", "id -u && cat /home/node/hello.txt"]),
+        )
         .await
         .expect("exec");
     assert_eq!(out.exit_code, 0, "{out:?}");

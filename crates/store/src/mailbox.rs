@@ -63,7 +63,10 @@ impl Store {
     }
 
     /// Atomically claims the oldest pending message for `agent`, marking it in flight.
-    pub async fn claim_next_message(&self, agent: AgentId) -> Result<Option<MailMessage>, StoreError> {
+    pub async fn claim_next_message(
+        &self,
+        agent: AgentId,
+    ) -> Result<Option<MailMessage>, StoreError> {
         self.with(move |c| {
             let tx = c.transaction()?;
             let claimed = tx
@@ -145,7 +148,11 @@ impl Store {
     }
 
     /// All messages sent to or by `agent` (newest last), for the UI.
-    pub async fn conversation(&self, agent: AgentId, limit: u32) -> Result<Vec<MailMessage>, StoreError> {
+    pub async fn conversation(
+        &self,
+        agent: AgentId,
+        limit: u32,
+    ) -> Result<Vec<MailMessage>, StoreError> {
         self.with(move |c| {
             let id = agent.to_string();
             let mut stmt = c.prepare(&format!(
@@ -199,7 +206,10 @@ mod tests {
             .unwrap();
 
         let c1 = store.claim_next_message(bob).await.unwrap().unwrap();
-        assert_eq!((c1.body.as_str(), c1.status, c1.attempts), ("one", MailStatus::InFlight, 1));
+        assert_eq!(
+            (c1.body.as_str(), c1.status, c1.attempts),
+            ("one", MailStatus::InFlight, 1)
+        );
         let c2 = store.claim_next_message(bob).await.unwrap().unwrap();
         assert_eq!(c2.body, "two");
         assert_eq!(c2.reply_to, Some(m1.id));
@@ -215,7 +225,10 @@ mod tests {
     #[tokio::test]
     async fn requeue_after_disconnect() {
         let (store, _alice, bob) = setup().await;
-        store.enqueue_message(Sender::User, bob, "hi".into(), None).await.unwrap();
+        store
+            .enqueue_message(Sender::User, bob, "hi".into(), None)
+            .await
+            .unwrap();
         store.claim_next_message(bob).await.unwrap().unwrap();
         assert_eq!(store.requeue_in_flight(bob).await.unwrap(), 1);
         let again = store.claim_next_message(bob).await.unwrap().unwrap();
@@ -225,7 +238,10 @@ mod tests {
     #[tokio::test]
     async fn fails_after_max_attempts() {
         let (store, _alice, bob) = setup().await;
-        let m = store.enqueue_message(Sender::User, bob, "x".into(), None).await.unwrap();
+        let m = store
+            .enqueue_message(Sender::User, bob, "x".into(), None)
+            .await
+            .unwrap();
         for attempt in 1..=MAX_DELIVERY_ATTEMPTS {
             let claimed = store.claim_next_message(bob).await.unwrap().unwrap();
             assert_eq!(claimed.id, m.id);
@@ -253,9 +269,18 @@ mod tests {
     #[tokio::test]
     async fn conversation_includes_sent_and_received() {
         let (store, alice, bob) = setup().await;
-        store.enqueue_message(Sender::User, alice, "to alice".into(), None).await.unwrap();
-        store.enqueue_message(Sender::Agent(alice), bob, "to bob".into(), None).await.unwrap();
-        store.enqueue_message(Sender::User, bob, "unrelated".into(), None).await.unwrap();
+        store
+            .enqueue_message(Sender::User, alice, "to alice".into(), None)
+            .await
+            .unwrap();
+        store
+            .enqueue_message(Sender::Agent(alice), bob, "to bob".into(), None)
+            .await
+            .unwrap();
+        store
+            .enqueue_message(Sender::User, bob, "unrelated".into(), None)
+            .await
+            .unwrap();
         let conv = store.conversation(alice, 10).await.unwrap();
         let bodies: Vec<_> = conv.iter().map(|m| m.body.as_str()).collect();
         assert_eq!(bodies, ["to alice", "to bob"]);

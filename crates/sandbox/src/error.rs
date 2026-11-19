@@ -12,7 +12,10 @@ pub enum SandboxError {
     #[error("invalid sandbox path {path:?}: {reason}")]
     InvalidPath { path: String, reason: &'static str },
     #[error("handle belongs to backend {actual:?}, expected {expected:?}")]
-    WrongBackend { expected: &'static str, actual: String },
+    WrongBackend {
+        expected: &'static str,
+        actual: String,
+    },
     #[error("docker: {0}")]
     Docker(#[from] bollard::errors::Error),
     #[error("http: {0}")]

@@ -38,7 +38,12 @@ fn fts_query(input: &str) -> Option<String> {
 
 impl Store {
     /// Creates or replaces the memory under `key`.
-    pub async fn remember(&self, agent: AgentId, key: String, content: String) -> Result<(), StoreError> {
+    pub async fn remember(
+        &self,
+        agent: AgentId,
+        key: String,
+        content: String,
+    ) -> Result<(), StoreError> {
         self.with(move |c| {
             let ts = fmt_ts(now());
             c.execute(
@@ -66,7 +71,12 @@ impl Store {
 
     /// Full-text search over the agent's memories, best match first.
     /// An empty query returns the most recently updated entries.
-    pub async fn recall(&self, agent: AgentId, query: String, limit: u32) -> Result<Vec<MemoryEntry>, StoreError> {
+    pub async fn recall(
+        &self,
+        agent: AgentId,
+        query: String,
+        limit: u32,
+    ) -> Result<Vec<MemoryEntry>, StoreError> {
         self.with(move |c| {
             let id = agent.to_string();
             let mut out = Vec::new();
@@ -117,7 +127,10 @@ mod tests {
 
     #[test]
     fn fts_query_quotes_terms() {
-        assert_eq!(fts_query("deploy* OR\"x"), Some("\"deploy\"* OR \"OR\"* OR \"x\"*".into()));
+        assert_eq!(
+            fts_query("deploy* OR\"x"),
+            Some("\"deploy\"* OR \"OR\"* OR \"x\"*".into())
+        );
         assert_eq!(fts_query("  ...  "), None);
     }
 
@@ -126,22 +139,34 @@ mod tests {
         let store = Store::open_in_memory().unwrap();
         let a = agent(&store, "alice").await;
         let b = agent(&store, "bob").await;
-        store.remember(a, "deploy".into(), "Deploys run on Fridays".into()).await.unwrap();
-        store.remember(a, "lunch".into(), "Pizza on Mondays".into()).await.unwrap();
-        store.remember(b, "deploy".into(), "bob's secret".into()).await.unwrap();
+        store
+            .remember(a, "deploy".into(), "Deploys run on Fridays".into())
+            .await
+            .unwrap();
+        store
+            .remember(a, "lunch".into(), "Pizza on Mondays".into())
+            .await
+            .unwrap();
+        store
+            .remember(b, "deploy".into(), "bob's secret".into())
+            .await
+            .unwrap();
 
         let hits = store.recall(a, "friday deploys".into(), 5).await.unwrap();
         assert_eq!(hits.len(), 1);
         assert_eq!(hits[0].key, "deploy");
 
         // upsert updates the FTS index too
-        store.remember(a, "deploy".into(), "Deploys run on Tuesdays".into()).await.unwrap();
-        assert!(store.recall(a, "friday".into(), 5).await.unwrap().is_empty());
+        store
+            .remember(a, "deploy".into(), "Deploys run on Tuesdays".into())
+            .await
+            .unwrap();
+        assert_eq!(store.recall(a, "friday".into(), 5).await.unwrap(), []);
         assert_eq!(store.recall(a, "tuesday".into(), 5).await.unwrap().len(), 1);
 
         assert_eq!(store.recall(a, String::new(), 10).await.unwrap().len(), 2);
         assert!(store.forget(a, "lunch".into()).await.unwrap());
         assert!(!store.forget(a, "lunch".into()).await.unwrap());
-        assert!(store.recall(a, "pizza".into(), 5).await.unwrap().is_empty());
+        assert_eq!(store.recall(a, "pizza".into(), 5).await.unwrap(), []);
     }
 }

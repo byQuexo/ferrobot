@@ -3,7 +3,7 @@ use std::time::Duration;
 
 use ferrobot_core::{Agent, MailMessage};
 use ferrobot_sandbox::SandboxBackend;
-use ferrobot_store::{StoredEvent, Store};
+use ferrobot_store::{Store, StoredEvent};
 use serde::Serialize;
 use tokio::sync::broadcast;
 

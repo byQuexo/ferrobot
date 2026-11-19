@@ -8,9 +8,9 @@ use bollard::Docker;
 use bollard::exec::{StartExecOptions, StartExecResults};
 use bollard::models::{ContainerCreateBody, ExecConfig, HostConfig};
 use bollard::query_parameters::{
-    CommitContainerOptionsBuilder, CreateContainerOptionsBuilder, DownloadFromContainerOptionsBuilder,
-    InspectContainerOptions, RemoveContainerOptionsBuilder, RemoveVolumeOptions,
-    StopContainerOptionsBuilder, UploadToContainerOptionsBuilder,
+    CommitContainerOptionsBuilder, CreateContainerOptionsBuilder,
+    DownloadFromContainerOptionsBuilder, InspectContainerOptions, RemoveContainerOptionsBuilder,
+    RemoveVolumeOptions, StopContainerOptionsBuilder, UploadToContainerOptionsBuilder,
 };
 use bytes::Bytes;
 use futures_util::{StreamExt, TryStreamExt};
@@ -113,9 +113,9 @@ impl DockerBackend {
 
 fn not_found_or(err: bollard::errors::Error, id: &str) -> SandboxError {
     match err {
-        bollard::errors::Error::DockerResponseServerError { status_code: 404, .. } => {
-            SandboxError::NotFound(id.to_owned())
-        }
+        bollard::errors::Error::DockerResponseServerError {
+            status_code: 404, ..
+        } => SandboxError::NotFound(id.to_owned()),
         other => other.into(),
     }
 }
@@ -188,7 +188,9 @@ impl SandboxBackend for DockerBackend {
         let id = match self.docker.create_container(Some(options), body).await {
             Ok(created) => created.id,
             // Adopt an existing container with the same name (idempotent create).
-            Err(bollard::errors::Error::DockerResponseServerError { status_code: 409, .. }) => {
+            Err(bollard::errors::Error::DockerResponseServerError {
+                status_code: 409, ..
+            }) => {
                 tracing::info!(container = %name, "adopting existing container");
                 self.docker
                     .inspect_container(&name, None::<InspectContainerOptions>)
@@ -205,7 +207,11 @@ impl SandboxBackend for DockerBackend {
         })
     }
 
-    async fn exec(&self, sandbox: &SandboxHandle, req: &ExecRequest) -> Result<ExecOutput, SandboxError> {
+    async fn exec(
+        &self,
+        sandbox: &SandboxHandle,
+        req: &ExecRequest,
+    ) -> Result<ExecOutput, SandboxError> {
         let id = Self::check(sandbox)?;
         let exec = self
             .docker
@@ -261,7 +267,11 @@ impl SandboxBackend for DockerBackend {
         })
     }
 
-    async fn read_file(&self, sandbox: &SandboxHandle, path: &SandboxPath) -> Result<Vec<u8>, SandboxError> {
+    async fn read_file(
+        &self,
+        sandbox: &SandboxHandle,
+        path: &SandboxPath,
+    ) -> Result<Vec<u8>, SandboxError> {
         let id = Self::check(sandbox)?;
         let options = DownloadFromContainerOptionsBuilder::default()
             .path(path.as_str())
@@ -275,7 +285,12 @@ impl SandboxBackend for DockerBackend {
         first_file_from_tar(&chunks.concat(), path.as_str())
     }
 
-    async fn write_file(&self, sandbox: &SandboxHandle, path: &SandboxPath, contents: &[u8]) -> Result<(), SandboxError> {
+    async fn write_file(
+        &self,
+        sandbox: &SandboxHandle,
+        path: &SandboxPath,
+        contents: &[u8],
+    ) -> Result<(), SandboxError> {
         let id = Self::check(sandbox)?;
         let archive = single_file_tar(path.file_name(), contents)?;
         let options = UploadToContainerOptionsBuilder::default()
@@ -288,13 +303,21 @@ impl SandboxBackend for DockerBackend {
         Ok(())
     }
 
-    async fn snapshot(&self, sandbox: &SandboxHandle, label: &str) -> Result<SnapshotRef, SandboxError> {
+    async fn snapshot(
+        &self,
+        sandbox: &SandboxHandle,
+        label: &str,
+    ) -> Result<SnapshotRef, SandboxError> {
         let id = Self::check(sandbox)?;
         let tag = format!(
             "{}-{}",
             label
                 .chars()
-                .map(|c| if c.is_ascii_alphanumeric() || c == '-' { c } else { '-' })
+                .map(|c| if c.is_ascii_alphanumeric() || c == '-' {
+                    c
+                } else {
+                    '-'
+                })
                 .collect::<String>(),
             time::OffsetDateTime::now_utc().unix_timestamp()
         );
@@ -323,7 +346,10 @@ impl SandboxBackend for DockerBackend {
         let options = StopContainerOptionsBuilder::default().t(10).build();
         match self.docker.stop_container(id, Some(options)).await {
             // 304: already stopped
-            Ok(()) | Err(bollard::errors::Error::DockerResponseServerError { status_code: 304, .. }) => Ok(()),
+            Ok(())
+            | Err(bollard::errors::Error::DockerResponseServerError {
+                status_code: 304, ..
+            }) => Ok(()),
             Err(e) => Err(not_found_or(e, id)),
         }
     }
@@ -343,7 +369,10 @@ impl SandboxBackend for DockerBackend {
         };
         let options = RemoveContainerOptionsBuilder::default().force(true).build();
         match self.docker.remove_container(id, Some(options)).await {
-            Ok(()) | Err(bollard::errors::Error::DockerResponseServerError { status_code: 404, .. }) => {}
+            Ok(())
+            | Err(bollard::errors::Error::DockerResponseServerError {
+                status_code: 404, ..
+            }) => {}
             Err(e) => return Err(e.into()),
         }
         if let Some(volume) = volume {
@@ -366,9 +395,9 @@ impl SandboxBackend for DockerBackend {
             } else {
                 SandboxState::Stopped
             }),
-            Err(bollard::errors::Error::DockerResponseServerError { status_code: 404, .. }) => {
-                Ok(SandboxState::Missing)
-            }
+            Err(bollard::errors::Error::DockerResponseServerError {
+                status_code: 404, ..
+            }) => Ok(SandboxState::Missing),
             Err(e) => Err(e.into()),
         }
     }
@@ -381,7 +410,10 @@ mod tests {
     #[test]
     fn tar_roundtrip() {
         let archive = single_file_tar("hello.txt", b"hi there").unwrap();
-        assert_eq!(first_file_from_tar(&archive, "/x/hello.txt").unwrap(), b"hi there");
+        assert_eq!(
+            first_file_from_tar(&archive, "/x/hello.txt").unwrap(),
+            b"hi there"
+        );
     }
 
     #[test]

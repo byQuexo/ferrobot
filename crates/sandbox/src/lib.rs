@@ -111,15 +111,32 @@ pub trait SandboxBackend: Send + Sync + std::fmt::Debug {
     async fn create(&self, spec: &SandboxSpec) -> Result<SandboxHandle, SandboxError>;
 
     /// Runs a command to completion and captures its output.
-    async fn exec(&self, sandbox: &SandboxHandle, req: &ExecRequest) -> Result<ExecOutput, SandboxError>;
+    async fn exec(
+        &self,
+        sandbox: &SandboxHandle,
+        req: &ExecRequest,
+    ) -> Result<ExecOutput, SandboxError>;
 
-    async fn read_file(&self, sandbox: &SandboxHandle, path: &SandboxPath) -> Result<Vec<u8>, SandboxError>;
+    async fn read_file(
+        &self,
+        sandbox: &SandboxHandle,
+        path: &SandboxPath,
+    ) -> Result<Vec<u8>, SandboxError>;
 
     /// Writes a file; the parent directory must exist.
-    async fn write_file(&self, sandbox: &SandboxHandle, path: &SandboxPath, contents: &[u8]) -> Result<(), SandboxError>;
+    async fn write_file(
+        &self,
+        sandbox: &SandboxHandle,
+        path: &SandboxPath,
+        contents: &[u8],
+    ) -> Result<(), SandboxError>;
 
     /// Persists the current disk state under a new snapshot id.
-    async fn snapshot(&self, sandbox: &SandboxHandle, label: &str) -> Result<SnapshotRef, SandboxError>;
+    async fn snapshot(
+        &self,
+        sandbox: &SandboxHandle,
+        label: &str,
+    ) -> Result<SnapshotRef, SandboxError>;
 
     /// Starts a stopped/sleeping sandbox.
     async fn wake(&self, sandbox: &SandboxHandle) -> Result<(), SandboxError>;
@@ -136,6 +153,10 @@ pub trait SandboxBackend: Send + Sync + std::fmt::Debug {
 /// Truncates captured bytes to [`MAX_EXEC_OUTPUT`] and decodes lossily.
 pub(crate) fn capture(bytes: &[u8]) -> (String, bool) {
     let truncated = bytes.len() > MAX_EXEC_OUTPUT;
-    let slice = if truncated { &bytes[..MAX_EXEC_OUTPUT] } else { bytes };
+    let slice = if truncated {
+        &bytes[..MAX_EXEC_OUTPUT]
+    } else {
+        bytes
+    };
     (String::from_utf8_lossy(slice).into_owned(), truncated)
 }
