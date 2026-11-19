@@ -13,7 +13,7 @@ pub use agent::{Agent, AgentId, AgentName, AgentStatus};
 pub use error::CoreError;
 pub use mail::{MailMessage, MailStatus, Sender};
 
-/// Human-readable project name. Renaming the project starts here (see `scripts/rename.sh`).
+/// Human-readable project name (also set in the workspace `Cargo.toml` and README).
 pub const PROJECT_NAME: &str = "ferrobot";
 
 /// Version of the daemon <-> runner protocol. Bumped on breaking changes.
