@@ -20,6 +20,8 @@ pub enum SandboxError {
     Docker(#[from] bollard::errors::Error),
     #[error("http: {0}")]
     Http(#[from] reqwest::Error),
+    #[error("object store: {0}")]
+    Storage(#[from] object_store::Error),
     #[error("io: {0}")]
     Io(#[from] std::io::Error),
     #[error("{0}")]

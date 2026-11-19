@@ -22,6 +22,7 @@ async-trait.workspace = true
 bollard.workspace = true
 bytes.workspace = true
 futures-util.workspace = true
+object_store.workspace = true
 reqwest.workspace = true
 serde.workspace = true
 serde_json.workspace = true
@@ -32,6 +33,7 @@ tokio.workspace = true
 tracing.workspace = true
 
 [dev-dependencies]
+object_store = { workspace = true, features = ["fs"] }
 tempfile.workspace = true
 
 [lints]

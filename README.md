@@ -57,7 +57,8 @@ with `scripts/seed-demo.sh`.
 - **Model proxy:** with the Claude driver, sandboxes never see your
   `ANTHROPIC_API_KEY`; they call the daemon, which adds the key.
 - **Persistence:** agents, conversations, memory, routines, snapshots and
-  sleep state live in SQLite and survive daemon restarts.
+  sleep state live in SQLite and survive daemon restarts. Snapshot archives
+  go to the data dir, or to S3/R2 with `--storage-url s3://bucket/prefix`.
 - **Desktop app:** a thin Tauri v2 window over the `/v1` API with a sidebar,
   streaming chat, info panel and light/dark themes.
 

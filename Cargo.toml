@@ -48,6 +48,8 @@ croner = "4"
 chrono = { version = "0.4", default-features = false, features = ["clock", "std"] }
 chrono-tz = "0.10"
 iana-time-zone = "0.1"
+object_store = { version = "0.14.2", default-features = false }
+url = "2"
 utoipa = { version = "6", features = ["macros", "time", "uuid", "preserve_order"] }
 
 [workspace.lints.rust]

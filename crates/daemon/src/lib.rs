@@ -20,6 +20,7 @@ pub mod runner_ws;
 pub mod scheduler;
 pub mod spec;
 pub mod state;
+pub mod storage;
 pub mod supervisor;
 pub mod views;
 

@@ -8,7 +8,7 @@ use std::time::Duration;
 use anyhow::{Context, Result, bail};
 use clap::{Parser, ValueEnum};
 use ferrobot_daemon::{
-    AppState, Settings, agent_router, lifecycle, scheduler, supervisor, ui_router,
+    AppState, Settings, agent_router, lifecycle, scheduler, storage, supervisor, ui_router,
 };
 use ferrobot_sandbox::{
     DockerBackend, DockerConfig, LocalProcessBackend, LocalProcessConfig, SandboxBackend,
@@ -72,6 +72,11 @@ struct Cli {
         default_value = "ferrobot-runner:dev"
     )]
     runner_image: String,
+    /// Object storage for snapshot archives: `s3://bucket/prefix` (credentials
+    /// and endpoint from `AWS_*`, e.g. Cloudflare R2 via `AWS_ENDPOINT`) or
+    /// `file:///dir`. Default: the data directory.
+    #[arg(long, env = "FERROBOT_STORAGE_URL")]
+    storage_url: Option<String>,
     /// Runner entry point for the local backend.
     #[arg(
         long,
@@ -226,7 +231,10 @@ async fn make_backend(cli: &Cli) -> Result<Arc<dyn SandboxBackend>> {
         Backend::Docker => {
             let docker = DockerBackend::connect(DockerConfig {
                 image: cli.runner_image.clone(),
-                snapshot_dir: Some(cli.data_dir.join("snapshots")),
+                snapshot_store: Some(
+                    storage::open(cli.storage_url.as_deref(), &cli.data_dir)
+                        .context("--storage-url")?,
+                ),
                 ..DockerConfig::default()
             })?;
             docker

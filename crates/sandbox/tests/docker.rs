@@ -5,6 +5,7 @@
 #![cfg(feature = "docker-tests")]
 
 use std::collections::BTreeMap;
+use std::sync::Arc;
 
 use ferrobot_sandbox::{
     DockerBackend, DockerConfig, ExecRequest, SandboxBackend, SandboxPath, SandboxSpec,
@@ -19,7 +20,9 @@ async fn container_lifecycle() {
         image: std::env::var("FERROBOT_TEST_IMAGE")
             .unwrap_or_else(|_| "ferrobot-runner:dev".into()),
         name_prefix: "ferrobot-test-".into(),
-        snapshot_dir: Some(snapshots.path().to_owned()),
+        snapshot_store: Some(Arc::new(
+            object_store::local::LocalFileSystem::new_with_prefix(snapshots.path()).unwrap(),
+        )),
         ..DockerConfig::default()
     })
     .expect("docker client");
@@ -110,5 +113,10 @@ async fn container_lifecycle() {
         .delete_snapshot(&snap.id)
         .await
         .expect("delete snapshot");
-    assert_eq!(std::fs::read_dir(snapshots.path()).unwrap().count(), 0);
+    assert_eq!(
+        std::fs::read_dir(snapshots.path().join("snapshots"))
+            .unwrap()
+            .count(),
+        0
+    );
 }

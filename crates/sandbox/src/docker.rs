@@ -2,7 +2,7 @@
 
 use std::collections::HashMap;
 use std::io::Read;
-use std::path::PathBuf;
+use std::sync::Arc;
 
 use async_trait::async_trait;
 use bollard::Docker;
@@ -16,6 +16,8 @@ use bollard::query_parameters::{
 };
 use bytes::Bytes;
 use futures_util::{StreamExt, TryStreamExt};
+use object_store::path::Path as ObjectPath;
+use object_store::{ObjectStore, ObjectStoreExt};
 
 use crate::{
     ExecOutput, ExecRequest, SandboxBackend, SandboxError, SandboxHandle, SandboxPath, SandboxSpec,
@@ -39,8 +41,9 @@ pub struct DockerConfig {
     /// Repository for snapshot images created by `snapshot`.
     pub snapshot_repo: String,
     /// Where `snapshot` stores archives of the home volume (which `docker
-    /// commit` does not capture). `None`: snapshots cover the root filesystem only.
-    pub snapshot_dir: Option<PathBuf>,
+    /// commit` does not capture), as `snapshots/<tag>.tar`. `None`: snapshots
+    /// cover the root filesystem only.
+    pub snapshot_store: Option<Arc<dyn ObjectStore>>,
 }
 
 impl Default for DockerConfig {
@@ -52,7 +55,7 @@ impl Default for DockerConfig {
             memory_bytes: 2 * 1024 * 1024 * 1024,
             pids_limit: 512,
             snapshot_repo: "ferrobot-snapshot".into(),
-            snapshot_dir: None,
+            snapshot_store: None,
         }
     }
 }
@@ -103,8 +106,8 @@ impl DockerBackend {
         }
     }
 
-    /// Archive file for a snapshot image reference (`repo:tag`).
-    fn archive_path(&self, snapshot: &str) -> Option<PathBuf> {
+    /// Store and key of the home archive for a snapshot image reference (`repo:tag`).
+    fn archive(&self, snapshot: &str) -> Option<(&dyn ObjectStore, ObjectPath)> {
         let tag = snapshot.rsplit_once(':').map_or(snapshot, |(_, tag)| tag);
         let safe = tag
             .chars()
@@ -112,12 +115,8 @@ impl DockerBackend {
         if !safe || tag.starts_with('.') {
             return None;
         }
-        Some(
-            self.config
-                .snapshot_dir
-                .as_ref()?
-                .join(format!("{tag}.tar")),
-        )
+        let store = self.config.snapshot_store.as_deref()?;
+        Some((store, ObjectPath::from(format!("snapshots/{tag}.tar"))))
     }
 
     fn check_snapshot<'a>(&self, snapshot: &'a str) -> Result<&'a str, SandboxError> {
@@ -363,8 +362,8 @@ impl SandboxBackend for DockerBackend {
             time::OffsetDateTime::now_utc().unix_timestamp()
         );
         let image = format!("{}:{tag}", self.config.snapshot_repo);
-        let archive = self.archive_path(&image);
-        if let Some(path) = &archive {
+        let archive = self.archive(&image);
+        if let Some((store, key)) = &archive {
             let options = DownloadFromContainerOptionsBuilder::default()
                 .path(&self.config.home_dir)
                 .build();
@@ -374,10 +373,9 @@ impl SandboxBackend for DockerBackend {
                 .try_collect()
                 .await
                 .map_err(|e| not_found_or(e, id))?;
-            if let Some(dir) = path.parent() {
-                tokio::fs::create_dir_all(dir).await?;
-            }
-            tokio::fs::write(path, chunks.concat()).await?;
+            // shortcut: the whole home archive is buffered and sent as one PUT (S3 caps
+            // that at 5 GiB); switch to `put_multipart` once homes get that large.
+            store.put(key, chunks.concat().into()).await?;
         }
         let options = CommitContainerOptionsBuilder::default()
             .container(id)
@@ -412,9 +410,13 @@ impl SandboxBackend for DockerBackend {
             .inspect_image(image)
             .await
             .map_err(|e| not_found_or(e, image))?;
-        let archive = match self.archive_path(image) {
-            Some(path) if tokio::fs::try_exists(&path).await? => Some(tokio::fs::read(path).await?),
-            _ => None,
+        let archive = match self.archive(image) {
+            Some((store, key)) => match store.get(&key).await {
+                Ok(found) => Some(found.bytes().await?),
+                Err(object_store::Error::NotFound { .. }) => None,
+                Err(e) => return Err(e.into()),
+            },
+            None => None,
         };
         // With a home archive the volume is recreated from it; without one the
         // current home volume is kept.
@@ -430,7 +432,7 @@ impl SandboxBackend for DockerBackend {
                 .copy_uidgid("true")
                 .build();
             self.docker
-                .upload_to_container(&id, Some(options), bollard::body_full(archive.into()))
+                .upload_to_container(&id, Some(options), bollard::body_full(archive))
                 .await?;
         }
         self.ensure_started(&id).await?;
@@ -450,10 +452,10 @@ impl SandboxBackend for DockerBackend {
             }) => {}
             Err(e) => return Err(e.into()),
         }
-        if let Some(path) = self.archive_path(image) {
-            match tokio::fs::remove_file(path).await {
-                Err(e) if e.kind() != std::io::ErrorKind::NotFound => return Err(e.into()),
-                _ => {}
+        if let Some((store, key)) = self.archive(image) {
+            match store.delete(&key).await {
+                Ok(()) | Err(object_store::Error::NotFound { .. }) => {}
+                Err(e) => return Err(e.into()),
             }
         }
         Ok(())
