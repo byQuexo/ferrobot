@@ -5,7 +5,7 @@ import { basename, join } from "node:path";
 import { describe, it } from "node:test";
 
 import { ConfigError, loadConfig } from "../src/config.ts";
-import { OpenAIDriver, type ChatMessage } from "../src/drivers/openai.ts";
+import { OpenAIDriver, plainSchema, type ChatMessage } from "../src/drivers/openai.ts";
 import { TurnAbortedError, type TurnContext } from "../src/drivers/types.ts";
 import type { FerrobotMcp } from "../src/mcp-client.ts";
 import type { TurnEvent } from "../src/protocol.ts";
@@ -364,5 +364,23 @@ describe("openai config", () => {
     assert.ok(config.driver === "openai");
     assert.equal(config.model, "gpt-5");
     assert.equal(config.openaiBaseUrl.href, "http://host.docker.internal:7879/model");
+  });
+});
+
+describe("plainSchema", () => {
+  it("inlines $defs references and drops meta keywords", () => {
+    const schema = {
+      $schema: "https://json-schema.org/draft/2020-12/schema",
+      type: "object",
+      properties: { card: { $ref: "#/$defs/Card" }, tags: { type: "array", items: { $ref: "#/$defs/Tag" } } },
+      $defs: { Card: { type: "object", properties: { tag: { $ref: "#/$defs/Tag" } } }, Tag: { type: "string" } },
+    };
+    assert.deepEqual(plainSchema(schema), {
+      type: "object",
+      properties: {
+        card: { type: "object", properties: { tag: { type: "string" } } },
+        tags: { type: "array", items: { type: "string" } },
+      },
+    });
   });
 });

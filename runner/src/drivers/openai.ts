@@ -92,6 +92,29 @@ const BUILTIN_TOOLS = [
 
 const TOOLS_LINE = "On your own computer you can use the bash, read_file and write_file tools.";
 
+/**
+ * Inlines `$ref`s to `$defs` and drops `$schema`: several OpenAI-compatible
+ * upstreams (Gemini among them) reject JSON Schema meta keywords.
+ */
+export function plainSchema(schema: object): Record<string, unknown> {
+  const root = schema as { $defs?: Record<string, unknown> };
+  const defs = root.$defs ?? {};
+  const walk = (node: unknown, depth: number): unknown => {
+    if (Array.isArray(node)) return node.map((n) => walk(n, depth));
+    if (typeof node !== "object" || node === null) return node;
+    const ref = (node as { $ref?: unknown }).$ref;
+    if (typeof ref === "string" && ref.startsWith("#/$defs/") && depth < 16) {
+      return walk(defs[ref.slice("#/$defs/".length)] ?? {}, depth + 1);
+    }
+    const out: Record<string, unknown> = {};
+    for (const [k, v] of Object.entries(node)) {
+      if (k !== "$schema" && k !== "$defs") out[k] = walk(v, depth);
+    }
+    return out;
+  };
+  return walk(schema, 0) as Record<string, unknown>;
+}
+
 export class OpenAIDriver implements ModelDriver {
   readonly name = "openai";
   readonly #opts: OpenAIDriverOptions;
@@ -127,7 +150,7 @@ export class OpenAIDriver implements ModelDriver {
       ...BUILTIN_TOOLS,
       ...mcpTools.map((t) => ({
         type: "function" as const,
-        function: { name: `${MCP_PREFIX}${t.name}`, description: t.description ?? "", parameters: t.inputSchema },
+        function: { name: `${MCP_PREFIX}${t.name}`, description: t.description ?? "", parameters: plainSchema(t.inputSchema) },
       })),
     ];
     const messages: ChatMessage[] = [...history, { role: "user", content: turnPrompt(ctx) }];
