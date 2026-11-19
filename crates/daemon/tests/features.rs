@@ -1071,3 +1071,157 @@ async fn character_avatar_is_part_of_the_profile() {
     let fresh = create(&d, json!({"name": "bob"})).await;
     assert_eq!(fresh["character"], Value::Null);
 }
+
+fn agent_request(name: &str) -> ferrobot_mcp::AgentRequest {
+    ferrobot_mcp::AgentRequest {
+        name: name.into(),
+        description: "Writes release notes".into(),
+        instructions: String::new(),
+        character: None,
+    }
+}
+
+/// Id of the newest pending approval card in the agent's chat.
+async fn approval_card(d: &Daemon, agent: &str, after: i64) -> i64 {
+    eventually("approval card", Duration::from_secs(5), || async {
+        events(d, agent).await.iter().rev().find_map(|e| {
+            let id = e["id"].as_i64()?;
+            (e["kind"] == "question" && id > after && e["payload"]["approval"].is_object())
+                .then_some(id)
+        })
+    })
+    .await
+}
+
+async fn decide(d: &Daemon, agent: &str, qid: i64, value: &str) -> (u16, Value) {
+    http(
+        &d.ui,
+        "POST",
+        &format!("/v1/agents/{agent}/questions/{qid}/answer"),
+        Some(json!({"answers": [{"question_id": "q1", "values": [value]}]})),
+    )
+    .await
+}
+
+#[tokio::test]
+async fn agents_create_agents_only_with_approval() {
+    use ferrobot_mcp::AgentRequestOutcome;
+    let backend = Arc::new(StatefulBackend::default());
+    let d = start_with(backend, None, "127.0.0.1:0", |s| {
+        s.approval_timeout = Duration::from_secs(2);
+    })
+    .await;
+    let ada = create(&d, json!({"name": "ada"})).await;
+    assert!(ada["created_by"].is_null(), "operator-created: {ada}");
+    let ada = ada["id"].as_str().unwrap().to_owned();
+    let ada_id: AgentId = ada.parse().unwrap();
+
+    // Approve: the agent exists and remembers who created it.
+    let st = d.state.clone();
+    let req = tokio::spawn(async move { st.request_agent(ada_id, agent_request("scout")).await });
+    let q1 = approval_card(&d, &ada, 0).await;
+    let card = events(&d, &ada)
+        .await
+        .into_iter()
+        .find(|e| e["id"] == q1)
+        .unwrap();
+    assert_eq!(card["payload"]["approval"]["name"], "scout");
+    assert_eq!(
+        card["payload"]["card"]["questions"][0]["choices"][0]["value"],
+        "approve"
+    );
+    let (status, body) = decide(&d, &ada, q1, "approve").await;
+    assert_eq!(status, 202, "{body}");
+    assert!(
+        body["message_id"].is_null(),
+        "approvals do not message the agent"
+    );
+    let AgentRequestOutcome::Created { id, name } = req.await.unwrap().unwrap() else {
+        panic!("expected created");
+    };
+    assert_eq!(name, "scout");
+    let (status, scout) = http(&d.ui, "GET", &format!("/v1/agents/{id}"), None).await;
+    assert_eq!(status, 200);
+    assert_eq!(scout["created_by"], ada.as_str());
+    assert_eq!(scout["description"], "Writes release notes");
+    let (_, msgs) = http(&d.ui, "GET", &format!("/v1/agents/{ada}/messages"), None).await;
+    assert_eq!(msgs.as_array().unwrap().len(), 0, "{msgs}");
+
+    // Decline: nothing is created.
+    let st = d.state.clone();
+    let req = tokio::spawn(async move { st.request_agent(ada_id, agent_request("echo")).await });
+    let q2 = approval_card(&d, &ada, q1).await;
+    let (status, _) = decide(&d, &ada, q2, "decline").await;
+    assert_eq!(status, 202);
+    assert!(matches!(
+        req.await.unwrap().unwrap(),
+        AgentRequestOutcome::Declined { .. }
+    ));
+
+    // No answer in time: declined, and the card is locked.
+    let outcome = d
+        .state
+        .request_agent(ada_id, agent_request("echo"))
+        .await
+        .unwrap();
+    let AgentRequestOutcome::Declined { reason } = outcome else {
+        panic!("expected declined");
+    };
+    assert!(reason.contains("in time"), "{reason}");
+    let q3 = approval_card(&d, &ada, q2).await;
+    let (status, _) = decide(&d, &ada, q3, "approve").await;
+    assert_eq!(status, 409, "already answered (declined on timeout)");
+
+    let (_, all) = http(&d.ui, "GET", "/v1/agents", None).await;
+    let names: Vec<_> = all
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|a| a["name"].clone())
+        .collect();
+    assert_eq!(names, vec![json!("ada"), json!("scout")]);
+
+    // Invalid or taken names fail before the operator is asked.
+    let err = d
+        .state
+        .request_agent(ada_id, agent_request("scout"))
+        .await
+        .unwrap_err();
+    assert!(err.contains("taken"), "{err}");
+    let err = d
+        .state
+        .request_agent(ada_id, agent_request("Bad Name"))
+        .await
+        .unwrap_err();
+    assert!(err.contains("name"), "{err}");
+}
+
+#[tokio::test]
+async fn agent_limit_applies_to_api_and_agents() {
+    let backend = Arc::new(StatefulBackend::default());
+    let d = start_with(backend, None, "127.0.0.1:0", |s| s.max_agents = 2).await;
+    let ada = create(&d, json!({"name": "ada"})).await["id"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    create(&d, json!({"name": "bob"})).await;
+    let (status, body) = http(&d.ui, "POST", "/v1/agents", Some(json!({"name": "cy"}))).await;
+    assert_eq!(status, 409, "{body}");
+    assert!(
+        body["message"].as_str().unwrap().contains("limit"),
+        "{body}"
+    );
+    let err = d
+        .state
+        .request_agent(ada.parse().unwrap(), agent_request("cy"))
+        .await
+        .unwrap_err();
+    assert!(err.contains("at most 2 agents"), "{err}");
+    assert!(
+        !events(&d, &ada)
+            .await
+            .iter()
+            .any(|e| e["kind"] == "question"),
+        "no approval card when the limit is reached"
+    );
+}

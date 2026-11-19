@@ -122,6 +122,7 @@ fn ui_events_validate_against_schema() {
             eyes: CharacterEyes::Wide,
             hue: 150,
         }),
+        created_by: Some(AgentId::new()),
         status: AgentStatus::Running,
         backend: Some("docker".into()),
         sandbox_id: Some("ferrobot-alice".into()),

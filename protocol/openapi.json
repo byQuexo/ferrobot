@@ -98,7 +98,7 @@
             }
           },
           "409": {
-            "description": "Name already taken",
+            "description": "Name already taken, or the agent limit (`FERROBOT_MAX_AGENTS`) is reached",
             "content": {
               "application/json": {
                 "schema": {
@@ -1015,7 +1015,7 @@
         "tags": [
           "chat"
         ],
-        "summary": "Answers a question card the agent showed with `ask_user`. The answers are\nsent to the agent as one user message and the card is locked (a\n`question_answered` event is recorded and pushed).",
+        "summary": "Answers a question card the agent showed with `ask_user`. The answers are\nsent to the agent as one user message and the card is locked (a\n`question_answered` event is recorded and pushed). On an approval card\n(`approval` set, e.g. from `create_agent`) the decision goes to the\nwaiting tool call instead; `409` if that request already timed out.",
         "operationId": "answer_question",
         "parameters": [
           {
@@ -2244,6 +2244,17 @@
               }
             ]
           },
+          "created_by": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/AgentId",
+                "description": "Agent that created this one (with operator approval); `null` means\nthe operator created it."
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "status": {
             "$ref": "#/components/schemas/AgentStatus"
           },
@@ -2347,6 +2358,36 @@
             "description": "One answer per question of the card."
           }
         }
+      },
+      "Approval": {
+        "oneOf": [
+          {
+            "type": "object",
+            "description": "An agent wants to create another agent (`create_agent` tool).",
+            "required": [
+              "name",
+              "description",
+              "kind"
+            ],
+            "properties": {
+              "name": {
+                "type": "string",
+                "description": "Requested name of the new agent."
+              },
+              "description": {
+                "type": "string",
+                "description": "Requested one-line description (role)."
+              },
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "create_agent"
+                ]
+              }
+            }
+          }
+        ],
+        "description": "What an approval card asks the operator to allow. The daemon raises\nthese itself; the decision goes to the waiting tool call, not to the\nagent's mailbox."
       },
       "AvatarCharacter": {
         "type": "object",
@@ -2818,8 +2859,7 @@
         "description": "Payload of a `question_answered` event. A card is answered at most once.",
         "required": [
           "question",
-          "answers",
-          "message_id"
+          "answers"
         ],
         "properties": {
           "question": {
@@ -2834,9 +2874,12 @@
             }
           },
           "message_id": {
-            "type": "integer",
+            "type": [
+              "integer",
+              "null"
+            ],
             "format": "int64",
-            "description": "The user message that carried the answer to the agent."
+            "description": "The user message that carried the answer to the agent; `null` for\napproval cards (the decision goes to the waiting tool call)."
           }
         }
       },
@@ -2879,6 +2922,17 @@
           },
           "card": {
             "$ref": "#/components/schemas/QuestionCard"
+          },
+          "approval": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/Approval",
+                "description": "Set on approval cards raised by the daemon (e.g. for `create_agent`)."
+              },
+              {
+                "type": "null"
+              }
+            ]
           }
         }
       },

@@ -88,6 +88,27 @@ pub struct QuestionAnswer {
     pub custom: Option<String>,
 }
 
+/// What an approval card asks the operator to allow. The daemon raises
+/// these itself; the decision goes to the waiting tool call, not to the
+/// agent's mailbox.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(utoipa::ToSchema))]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum Approval {
+    /// An agent wants to create another agent (`create_agent` tool).
+    CreateAgent {
+        /// Requested name of the new agent.
+        name: String,
+        /// Requested one-line description (role).
+        description: String,
+    },
+}
+
+/// Choice value that approves an approval card; anything else declines.
+pub const APPROVE: &str = "approve";
+/// Choice value that declines an approval card.
+pub const DECLINE: &str = "decline";
+
 /// Payload of a `question` event: the card as shown in the chat.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(utoipa::ToSchema))]
@@ -95,6 +116,45 @@ pub struct QuestionEvent {
     /// Card format version (currently 1).
     pub version: u32,
     pub card: QuestionCard,
+    /// Set on approval cards raised by the daemon (e.g. for `create_agent`).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub approval: Option<Approval>,
+}
+
+impl QuestionEvent {
+    /// A one-question Approve/Decline card.
+    pub fn approval(title: String, prompt: String, approval: Approval) -> Self {
+        Self {
+            version: QUESTION_CARD_VERSION,
+            card: QuestionCard {
+                title: Some(title),
+                questions: vec![Question {
+                    id: "q1".into(),
+                    prompt,
+                    kind: QuestionKind::Single,
+                    choices: vec![
+                        Choice {
+                            label: "Approve".into(),
+                            value: APPROVE.into(),
+                        },
+                        Choice {
+                            label: "Decline".into(),
+                            value: DECLINE.into(),
+                        },
+                    ],
+                    allow_custom: false,
+                }],
+            },
+            approval: Some(approval),
+        }
+    }
+}
+
+/// Whether the answers to an approval card approve it.
+pub fn approves(answers: &[QuestionAnswer]) -> bool {
+    answers
+        .first()
+        .is_some_and(|a| a.values.iter().any(|v| v == APPROVE))
 }
 
 /// Payload of a `question_answered` event. A card is answered at most once.
@@ -104,8 +164,9 @@ pub struct QuestionAnswered {
     /// Id of the `question` event.
     pub question: i64,
     pub answers: Vec<QuestionAnswer>,
-    /// The user message that carried the answer to the agent.
-    pub message_id: i64,
+    /// The user message that carried the answer to the agent; `null` for
+    /// approval cards (the decision goes to the waiting tool call).
+    pub message_id: Option<i64>,
 }
 
 fn check_text(what: &str, s: &str, max: usize) -> Result<(), String> {

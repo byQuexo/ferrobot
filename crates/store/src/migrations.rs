@@ -143,6 +143,10 @@ const MIGRATIONS: &[&str] = &[
     r"
     ALTER TABLE agents ADD COLUMN character TEXT;
     ",
+    // v6: who created the agent: 'operator' or the creating agent's id
+    r"
+    ALTER TABLE agents ADD COLUMN created_by TEXT NOT NULL DEFAULT 'operator';
+    ",
 ];
 
 pub(crate) fn run(conn: &mut Connection) -> Result<(), StoreError> {
@@ -192,6 +196,13 @@ mod tests {
             .query_row("SELECT sandbox_name FROM agents", [], |r| r.get(0))
             .unwrap();
         assert_eq!(sandbox, "alice");
+        let created_by: String = conn
+            .query_row("SELECT created_by FROM agents", [], |r| r.get(0))
+            .unwrap();
+        assert_eq!(
+            created_by, "operator",
+            "existing agents count as operator-created"
+        );
         let version: i64 = conn
             .query_row("PRAGMA user_version", [], |r| r.get(0))
             .unwrap();

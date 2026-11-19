@@ -13,6 +13,8 @@ pub struct NewAgent {
     pub name: AgentName,
     pub description: String,
     pub instructions: String,
+    /// Creating agent; `None`: the operator.
+    pub created_by: Option<AgentId>,
 }
 
 /// Partial profile update; `None` leaves a field unchanged.
@@ -39,7 +41,7 @@ pub fn hash_token(token: &str) -> String {
 }
 
 const COLUMNS: &str = "id, name, instructions, status, backend, sandbox_id, session_id, created_at, \
-                       description, avatar_rev, COALESCE(sandbox_name, name), character";
+                       description, avatar_rev, COALESCE(sandbox_name, name), character, created_by";
 
 fn from_row(row: &Row<'_>) -> Result<Agent, StoreError> {
     let id: String = row.get(0)?;
@@ -47,7 +49,12 @@ fn from_row(row: &Row<'_>) -> Result<Agent, StoreError> {
     let status: String = row.get(3)?;
     let created: String = row.get(7)?;
     let character: Option<String> = row.get(11)?;
+    let created_by: String = row.get(12)?;
     Ok(Agent {
+        created_by: match created_by.as_str() {
+            OPERATOR => None,
+            id => Some(id.parse()?),
+        },
         character: character
             .map(|c| serde_json::from_str(&c))
             .transpose()
@@ -65,6 +72,9 @@ fn from_row(row: &Row<'_>) -> Result<Agent, StoreError> {
         created_at: parse_ts(&created)?,
     })
 }
+
+/// `created_by` value of agents the operator created.
+const OPERATOR: &str = "operator";
 
 fn not_found(key: &impl std::fmt::Display) -> StoreError {
     StoreError::NotFound {
@@ -84,6 +94,7 @@ impl Store {
             instructions: new.instructions,
             avatar_rev: 0,
             character: None,
+            created_by: new.created_by,
             status: AgentStatus::Created,
             backend: None,
             sandbox_id: None,
@@ -104,8 +115,8 @@ impl Store {
             }
             c.execute(
                 "INSERT INTO agents (id, name, description, instructions, status, created_at,
-                                     sandbox_name)
-                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
+                                     sandbox_name, created_by)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
                 params![
                     row.id.to_string(),
                     row.name.as_str(),
@@ -114,6 +125,8 @@ impl Store {
                     row.status.as_str(),
                     fmt_ts(row.created_at),
                     row.sandbox_name,
+                    row.created_by
+                        .map_or_else(|| OPERATOR.to_owned(), |id| id.to_string()),
                 ],
             )
             .map_err(|e| {
@@ -371,6 +384,7 @@ mod tests {
 
     fn new(name: &str) -> NewAgent {
         NewAgent {
+            created_by: None,
             name: AgentName::parse(name).unwrap(),
             description: String::new(),
             instructions: "test".into(),

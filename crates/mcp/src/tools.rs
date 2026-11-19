@@ -1,5 +1,5 @@
 use ferrobot_core::question::{QUESTION_CARD_VERSION, QuestionCard, QuestionEvent};
-use ferrobot_core::{AgentId, AgentName, Sender, mention};
+use ferrobot_core::{AgentId, AgentName, AvatarCharacter, Sender, mention};
 use ferrobot_store::StoreError;
 use rmcp::handler::server::tool::Extension;
 use rmcp::handler::server::wrapper::{Json, Parameters};
@@ -7,7 +7,9 @@ use rmcp::{ErrorData, ServerHandler, tool, tool_handler, tool_router};
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
-use crate::{Caller, MAX_MEMORY_KEY_BYTES, MAX_MESSAGE_BYTES, McpState};
+use crate::{
+    AgentRequest, AgentRequestOutcome, Caller, MAX_MEMORY_KEY_BYTES, MAX_MESSAGE_BYTES, McpState,
+};
 
 type ToolResult<T> = Result<Json<T>, ErrorData>;
 
@@ -83,6 +85,30 @@ pub struct SendMessageResult {
     pub queued_for: String,
     /// Recipient's id.
     pub agent_id: String,
+}
+
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct CreateAgentArgs {
+    /// Name of the new agent: 1-32 chars, `a-z0-9-`, starts with a letter.
+    pub name: String,
+    /// One line describing its role, shown to the operator and in agent lists.
+    pub description: String,
+    /// System instructions for the new agent's model. Optional.
+    #[serde(default)]
+    pub instructions: String,
+    /// Optional character avatar look; omitted: derived from the new id.
+    pub character: Option<AvatarCharacter>,
+}
+
+#[derive(Debug, Serialize, JsonSchema)]
+pub struct CreateAgentResult {
+    /// `created` or `declined`.
+    pub status: String,
+    /// Id of the new agent (when created); use it in `send_message.to`.
+    pub agent_id: Option<String>,
+    pub name: String,
+    /// What happened, in words.
+    pub note: String,
 }
 
 #[derive(Debug, Deserialize, JsonSchema)]
@@ -265,6 +291,7 @@ impl FerrobotTools {
         let payload = serde_json::to_value(QuestionEvent {
             version: QUESTION_CARD_VERSION,
             card,
+            approval: None,
         })
         .map_err(|e| ErrorData::internal_error(e.to_string(), None))?;
         let event = self
@@ -278,6 +305,43 @@ impl FerrobotTools {
             question_id: event.id,
             note: "Shown to the user. Their answers arrive later as a new message; finish your turn now."
                 .into(),
+        }))
+    }
+
+    #[tool(
+        description = "Create a new agent. The operator first sees an approval card with its name and role; this call waits for their decision. Returns `created` with the new agent's id, or `declined` (operator said no or did not answer in time). Fails if the name is invalid or taken, or the agent limit is reached."
+    )]
+    async fn create_agent(
+        &self,
+        Extension(parts): Extension<http::request::Parts>,
+        Parameters(args): Parameters<CreateAgentArgs>,
+    ) -> ToolResult<CreateAgentResult> {
+        let me = caller(&parts)?.0.id;
+        let request = AgentRequest {
+            name: args.name.trim().to_owned(),
+            description: args.description,
+            instructions: args.instructions,
+            character: args.character,
+        };
+        let outcome = self
+            .state
+            .notifier
+            .request_agent(me, request.clone())
+            .await
+            .map_err(|e| ErrorData::invalid_params(e, None))?;
+        Ok(Json(match outcome {
+            AgentRequestOutcome::Created { id, name } => CreateAgentResult {
+                status: "created".into(),
+                agent_id: Some(id.to_string()),
+                note: format!("Created \"{name}\". It is starting; message it with send_message."),
+                name,
+            },
+            AgentRequestOutcome::Declined { reason } => CreateAgentResult {
+                status: "declined".into(),
+                agent_id: None,
+                name: request.name,
+                note: format!("Not created: {reason}"),
+            },
         }))
     }
 
@@ -396,6 +460,6 @@ impl FerrobotTools {
 #[allow(clippy::unused_async_trait_impl)]
 #[tool_handler(
     name = "ferrobot",
-    instructions = "Mailbox, memory and question-card tools for ferrobot agents. Messages and answers are asynchronous."
+    instructions = "Mailbox, memory, question-card and agent-creation tools for ferrobot agents. Messages and answers are asynchronous."
 )]
 impl ServerHandler for FerrobotTools {}

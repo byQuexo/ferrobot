@@ -119,6 +119,7 @@ mod tests {
     async fn agent(store: &Store, name: &str) -> AgentId {
         store
             .create_agent(NewAgent {
+                created_by: None,
                 name: AgentName::parse(name).unwrap(),
                 description: String::new(),
                 instructions: String::new(),

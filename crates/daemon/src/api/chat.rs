@@ -159,7 +159,9 @@ pub(crate) struct AnswerQuestion {
 
 /// Answers a question card the agent showed with `ask_user`. The answers are
 /// sent to the agent as one user message and the card is locked (a
-/// `question_answered` event is recorded and pushed).
+/// `question_answered` event is recorded and pushed). On an approval card
+/// (`approval` set, e.g. from `create_agent`) the decision goes to the
+/// waiting tool call instead; `409` if that request already timed out.
 #[utoipa::path(post, path = "/v1/agents/{id}/questions/{qid}/answer", tag = "chat",
     params(("id" = String, Path, description = "Agent id (UUID)"),
         ("qid" = i64, Path, description = "Id of the `question` event")),
@@ -192,6 +194,24 @@ pub(crate) async fn answer_question(
             "question {qid} is already answered"
         )));
     }
+    if question.approval.is_some() {
+        // Approval card: the decision goes to the waiting tool call.
+        let answered = QuestionAnswered {
+            question: qid,
+            answers: req.answers,
+            message_id: None,
+        };
+        let waiting = crate::agents::decide(&state, qid, &answered.answers);
+        let payload =
+            serde_json::to_value(&answered).map_err(|e| ApiError::Internal(e.to_string()))?;
+        state.record(id, None, "question_answered", payload).await;
+        if !waiting {
+            return Err(ApiError::Conflict(format!(
+                "approval request {qid} is no longer pending"
+            )));
+        }
+        return Ok((StatusCode::ACCEPTED, Json(answered)));
+    }
     let body = question.card.answer_text(&req.answers);
     let msg = state
         .store
@@ -200,7 +220,7 @@ pub(crate) async fn answer_question(
     let answered = QuestionAnswered {
         question: qid,
         answers: req.answers,
-        message_id: msg.id,
+        message_id: Some(msg.id),
     };
     let payload = serde_json::to_value(&answered).map_err(|e| ApiError::Internal(e.to_string()))?;
     state.record(id, None, "question_answered", payload).await;

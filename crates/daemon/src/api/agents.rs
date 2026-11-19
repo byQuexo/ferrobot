@@ -7,11 +7,12 @@ use axum::http::{HeaderMap, StatusCode, header};
 use axum::response::{IntoResponse, Response};
 use ferrobot_core::protocol::DaemonFrame;
 use ferrobot_core::{AgentName, AvatarCharacter};
-use ferrobot_store::{AgentPatch, Avatar, NewAgent};
+use ferrobot_store::{AgentPatch, Avatar};
 use serde::Deserialize;
 use utoipa::{IntoParams, ToSchema};
 
 use super::{ApiResult, check_len, parse_id};
+use crate::agents::{self, AgentSpec, check_character, check_description};
 use crate::error::{ApiError, ErrorBody};
 use crate::views::{self, AgentView};
 use crate::{AppState, lifecycle};
@@ -19,8 +20,6 @@ use crate::{AppState, lifecycle};
 /// Largest accepted avatar image.
 const MAX_AVATAR_BYTES: usize = 512 * 1024;
 const AVATAR_TYPES: &[&str] = &["image/png", "image/jpeg", "image/webp", "image/gif"];
-/// Upper bound for the one-line description.
-const MAX_DESCRIPTION_BYTES: usize = 280;
 
 /// Lists all agents.
 #[utoipa::path(get, path = "/v1/agents", tag = "agents",
@@ -46,15 +45,6 @@ pub(crate) struct CreateAgent {
     character: Option<AvatarCharacter>,
 }
 
-fn check_character(c: Option<&AvatarCharacter>) -> Result<(), ApiError> {
-    match c {
-        Some(c) if !c.is_valid() => {
-            Err(ApiError::BadRequest("character hue must be 0..=359".into()))
-        }
-        _ => Ok(()),
-    }
-}
-
 /// Distinguishes an omitted field (`None`) from an explicit `null` (`Some(None)`).
 #[allow(
     clippy::option_option,
@@ -68,53 +58,28 @@ where
     Option::<T>::deserialize(d).map(Some)
 }
 
-fn check_description(d: &str) -> Result<(), ApiError> {
-    if d.len() > MAX_DESCRIPTION_BYTES {
-        return Err(ApiError::BadRequest(format!(
-            "description exceeds {MAX_DESCRIPTION_BYTES} bytes"
-        )));
-    }
-    Ok(())
-}
-
 /// Registers an agent and provisions its sandbox.
 #[utoipa::path(post, path = "/v1/agents", tag = "agents", request_body = CreateAgent,
     responses(
         (status = 201, body = AgentView),
         (status = 400, description = "Invalid name or texts", body = ErrorBody),
-        (status = 409, description = "Name already taken", body = ErrorBody),
+        (status = 409, description = "Name already taken, or the agent limit (`FERROBOT_MAX_AGENTS`) is reached", body = ErrorBody),
         (status = 502, description = "Sandbox backend error", body = ErrorBody)))]
 pub(crate) async fn create_agent(
     State(state): State<AppState>,
     Json(req): Json<CreateAgent>,
 ) -> Result<(StatusCode, Json<AgentView>), ApiError> {
-    let name = AgentName::parse(req.name.trim())?;
-    let description = req.description.trim().to_owned();
-    check_description(&description)?;
-    check_len("instructions", &req.instructions)?;
-    check_character(req.character.as_ref())?;
-    let mut agent = state
-        .store
-        .create_agent(NewAgent {
-            name,
-            description,
+    let agent = agents::create(
+        &state,
+        AgentSpec {
+            name: req.name,
+            description: req.description,
             instructions: req.instructions,
-        })
-        .await?;
-    if req.character.is_some() {
-        state
-            .store
-            .update_agent_profile(
-                agent.id,
-                AgentPatch {
-                    character: Some(req.character),
-                    ..AgentPatch::default()
-                },
-            )
-            .await?;
-        agent.character = req.character;
-    }
-    lifecycle::provision(&state, &agent).await?;
+            character: req.character,
+        },
+        None,
+    )
+    .await?;
     Ok((
         StatusCode::CREATED,
         Json(views::agent_view(&state, agent.id).await?),

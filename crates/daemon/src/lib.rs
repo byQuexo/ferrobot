@@ -9,6 +9,7 @@
 //!   model proxy: it swaps the agent token for the real API key, which never
 //!   enters a sandbox.
 
+pub mod agents;
 pub mod api;
 pub mod auth;
 pub mod error;

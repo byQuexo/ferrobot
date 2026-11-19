@@ -155,6 +155,7 @@ mod tests {
         let store = Store::open_in_memory().unwrap();
         let a = store
             .create_agent(NewAgent {
+                created_by: None,
                 name: AgentName::parse("alice").unwrap(),
                 description: String::new(),
                 instructions: String::new(),

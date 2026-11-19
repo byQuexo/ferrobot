@@ -352,6 +352,7 @@ mod tests {
         for n in ["alice", "bob"] {
             let a = store
                 .create_agent(NewAgent {
+                    created_by: None,
                     name: AgentName::parse(n).unwrap(),
                     description: String::new(),
                     instructions: String::new(),

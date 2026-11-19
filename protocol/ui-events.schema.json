@@ -30,6 +30,17 @@
           "format": "date-time",
           "type": "string"
         },
+        "created_by": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/AgentId",
+              "description": "Agent that created this one (with operator approval); `null` means\nthe operator created it."
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
         "description": {
           "description": "One-line description shown in agent lists.",
           "type": "string"

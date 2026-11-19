@@ -93,6 +93,19 @@ a **`question_answered` event** (`QuestionAnswered`: `question`, `answers`,
 `message_id`), which locks the card. UIs show the answers on the card and may
 hide that message from the chat.
 
+**Approval cards.** When an agent calls **`create_agent`** (`name`,
+`description`, optional `instructions` and `character`), the daemon checks the
+name and the agent limit (`FERROBOT_MAX_AGENTS`, default 10; also enforced on
+`POST /v1/agents`, `409`), then records a `question` event whose
+`QuestionEvent.approval` is set (`{"kind": "create_agent", name,
+description}`) and whose single question offers the choices `approve` and
+`decline`. The tool call waits for the answer. The answer endpoint hands the
+decision to that call instead of messaging the agent (`message_id` is
+`null`); approve creates the agent with `created_by` set to the requester and
+the tool returns `{"status": "created", "agent_id": ...}`, decline returns
+`{"status": "declined"}`. Without an answer within `FERROBOT_APPROVAL_TIMEOUT`
+(default 300 s) the card is locked as declined; answering it later gives `409`.
+
 **Relation to A2UI.** We checked Google's open
 [A2UI](https://github.com/a2ui-project/a2ui) (Apache-2.0) as a base: the
 current spec is **v1.0** ([spec](https://a2ui.org/specification/v1.0-a2ui/),

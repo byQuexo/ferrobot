@@ -37,6 +37,11 @@ with `scripts/seed-demo.sh`.
 - **Question cards:** agents can ask the operator structured questions
   (single or multiple choice, free text, several per card) with the MCP tool
   `ask_user`; the answers go back as a message.
+- **Agents create agents** with the MCP tool `create_agent`, but only after
+  the operator approves an Approve/Decline card in the chat (no answer within
+  `FERROBOT_APPROVAL_TIMEOUT`, default 300 s, counts as declined). The profile
+  shows who created an agent (`created_by`). A host keeps at most
+  `FERROBOT_MAX_AGENTS` agents (default 10), for the API and agents alike.
 - **Memory** per agent with full-text search, usable by the agent (MCP
   `remember` / `recall` / `forget`), over the API and in the desktop app.
 - **Routines:** cron schedules with time zones that send the agent a prompt,
@@ -269,7 +274,8 @@ turn timeout, runner image, ...).
   agent snapshots with presence and unread count, turn events, text deltas,
   messages, memory and routine changes.
 - Agents' MCP tools: `list_agents`, `send_message`, `read_mailbox`, `remember`,
-  `recall`, `forget`, `ask_user` (question cards; answered with
+  `recall`, `forget`, `create_agent` (approval card, then created),
+  `ask_user` (question cards; answered with
   `POST /v1/agents/{id}/questions/{qid}/answer`, schema in
   `protocol/question-card.v1.schema.json`).
 - Daemon ↔ runner frames: `protocol/runner-protocol.schema.json`.

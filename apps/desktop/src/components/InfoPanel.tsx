@@ -67,8 +67,9 @@ export function InfoPanel(props: {
 export type { Tab as InfoTab };
 
 function Profile(props: { agent: Agent; onEdit: () => void; onDeleted: () => void }): JSX.Element {
-  const { client, run } = useApp();
+  const { client, run, agents } = useApp();
   const a = props.agent;
+  const creator = a.created_by ? agents.get(a.created_by) : undefined;
   const [confirm, setConfirm] = useState(false);
   return (
     <div class="profile">
@@ -80,6 +81,19 @@ function Profile(props: { agent: Agent; onEdit: () => void; onDeleted: () => voi
         <span class={`status-chip p-${a.presence}`}>{presenceLabel(a.presence)}</span>
         <span>Created</span>
         <span>{dateTime(a.created_at)}</span>
+        {a.created_by && (
+          <>
+            <span>Created by</span>
+            {creator ? (
+              <span class="created-by">
+                <Avatar agent={creator} size={18} />
+                <b>{creator.name}</b>
+              </span>
+            ) : (
+              <span class="muted">a deleted agent</span>
+            )}
+          </>
+        )}
       </div>
       <section class="card">
         <h3>Instructions</h3>

@@ -19,6 +19,25 @@ impl MailboxNotifier for Recorder {
     fn message_enqueued(&self, message: &MailMessage) {
         self.0.lock().unwrap().push((message.recipient, message.id));
     }
+
+    fn request_agent(
+        &self,
+        _requester: AgentId,
+        request: ferrobot_mcp::AgentRequest,
+    ) -> ferrobot_mcp::BoxFuture<Result<ferrobot_mcp::AgentRequestOutcome, String>> {
+        Box::pin(async move {
+            match request.name.as_str() {
+                "taken" => Err("agent name taken is taken".into()),
+                "nope" => Ok(ferrobot_mcp::AgentRequestOutcome::Declined {
+                    reason: "the operator declined".into(),
+                }),
+                _ => Ok(ferrobot_mcp::AgentRequestOutcome::Created {
+                    id: AgentId::new(),
+                    name: request.name,
+                }),
+            }
+        })
+    }
 }
 
 async fn serve(state: McpState) -> String {
@@ -57,6 +76,7 @@ async fn tools_act_as_the_authenticated_agent() {
     for (name, token) in [("alice", "tok-a"), ("bob", "tok-b")] {
         let a = store
             .create_agent(NewAgent {
+                created_by: None,
                 name: AgentName::parse(name).unwrap(),
                 description: String::new(),
                 instructions: format!("{name} role"),
@@ -81,6 +101,7 @@ async fn tools_act_as_the_authenticated_agent() {
         names,
         [
             "ask_user",
+            "create_agent",
             "forget",
             "list_agents",
             "read_mailbox",
@@ -229,6 +250,34 @@ async fn tools_act_as_the_authenticated_agent() {
     let bad =
         json!({"questions": [{"prompt": "?", "kind": "single", "choices": [{"label": "only"}]}]});
     assert!(call(&alice, "ask_user", bad).await.is_err());
+
+    let made = call(
+        &alice,
+        "create_agent",
+        json!({"name": "scout", "description": "Scouts"}),
+    )
+    .await
+    .unwrap();
+    assert_eq!(made["status"], "created");
+    assert!(made["agent_id"].is_string());
+    let no = call(
+        &alice,
+        "create_agent",
+        json!({"name": "nope", "description": "x"}),
+    )
+    .await
+    .unwrap();
+    assert_eq!(no["status"], "declined");
+    assert!(no["agent_id"].is_null());
+    assert!(
+        call(
+            &alice,
+            "create_agent",
+            json!({"name": "taken", "description": "x"})
+        )
+        .await
+        .is_err()
+    );
 
     alice.cancel().await.unwrap();
     bob.cancel().await.unwrap();

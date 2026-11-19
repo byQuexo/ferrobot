@@ -158,6 +158,7 @@ impl FromStr for AgentStatus {
 /// Body shape of the generated character avatar.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(utoipa::ToSchema))]
+#[cfg_attr(feature = "mcp", derive(schemars::JsonSchema))]
 #[serde(rename_all = "snake_case")]
 pub enum CharacterBody {
     Blob,
@@ -169,6 +170,7 @@ pub enum CharacterBody {
 /// Eye style of the generated character avatar.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(utoipa::ToSchema))]
+#[cfg_attr(feature = "mcp", derive(schemars::JsonSchema))]
 #[serde(rename_all = "snake_case")]
 pub enum CharacterEyes {
     Dots,
@@ -182,6 +184,7 @@ pub enum CharacterEyes {
 /// avatar image takes precedence over both.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(utoipa::ToSchema))]
+#[cfg_attr(feature = "mcp", derive(schemars::JsonSchema))]
 pub struct AvatarCharacter {
     pub body: CharacterBody,
     pub eyes: CharacterEyes,
@@ -215,6 +218,9 @@ pub struct Agent {
     pub avatar_rev: i64,
     /// Chosen character avatar look; `null` means derived from the id.
     pub character: Option<AvatarCharacter>,
+    /// Agent that created this one (with operator approval); `null` means
+    /// the operator created it.
+    pub created_by: Option<AgentId>,
     pub status: AgentStatus,
     /// Backend kind that owns the sandbox, e.g. `docker`.
     pub backend: Option<String>,

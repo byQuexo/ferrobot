@@ -8,9 +8,11 @@
 mod auth;
 mod tools;
 
+use std::future::Future;
+use std::pin::Pin;
 use std::sync::Arc;
 
-use ferrobot_core::{AgentId, MailMessage};
+use ferrobot_core::{AgentId, AvatarCharacter, MailMessage};
 use ferrobot_store::{Store, StoredEvent};
 
 pub use auth::{Caller, router};
@@ -25,6 +27,27 @@ pub const MAX_MESSAGE_BYTES: usize = 32 * 1024;
 /// Upper bound for a memory key (bytes).
 pub const MAX_MEMORY_KEY_BYTES: usize = 128;
 
+/// A boxed future, as returned by [`MailboxNotifier::request_agent`].
+pub type BoxFuture<T> = Pin<Box<dyn Future<Output = T> + Send>>;
+
+/// An agent's request to create another agent (`create_agent` tool).
+#[derive(Debug, Clone)]
+pub struct AgentRequest {
+    pub name: String,
+    pub description: String,
+    pub instructions: String,
+    pub character: Option<AvatarCharacter>,
+}
+
+/// How a [`AgentRequest`] ended.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum AgentRequestOutcome {
+    /// The operator approved; the agent exists and is starting.
+    Created { id: AgentId, name: String },
+    /// The operator declined, or did not answer in time.
+    Declined { reason: String },
+}
+
 /// Hooks the daemon uses to react to tool calls.
 pub trait MailboxNotifier: Send + Sync + 'static {
     /// A tool enqueued a message, so the daemon can dispatch it (and wake
@@ -37,6 +60,17 @@ pub trait MailboxNotifier: Send + Sync + 'static {
     /// A tool recorded a chat event (e.g. a question card) for the UI.
     fn event_recorded(&self, event: &StoredEvent) {
         let _ = event;
+    }
+    /// Asks the operator to approve a new agent and creates it if they do.
+    /// Resolves once the operator answered or the request timed out. `Err`
+    /// carries a message for the agent (invalid name, limit reached, ...).
+    fn request_agent(
+        &self,
+        requester: AgentId,
+        request: AgentRequest,
+    ) -> BoxFuture<Result<AgentRequestOutcome, String>> {
+        let _ = (requester, request);
+        Box::pin(async { Err("creating agents is not supported here".to_owned()) })
     }
 }
 

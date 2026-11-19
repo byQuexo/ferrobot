@@ -1,5 +1,35 @@
 {
   "$defs": {
+    "Approval": {
+      "description": "What an approval card asks the operator to allow. The daemon raises\nthese itself; the decision goes to the waiting tool call, not to the\nagent's mailbox.",
+      "oneOf": [
+        {
+          "description": "An agent wants to create another agent (`create_agent` tool).",
+          "properties": {
+            "description": {
+              "description": "Requested one-line description (role).",
+              "type": "string"
+            },
+            "kind": {
+              "enum": [
+                "create_agent"
+              ],
+              "type": "string"
+            },
+            "name": {
+              "description": "Requested name of the new agent.",
+              "type": "string"
+            }
+          },
+          "required": [
+            "name",
+            "description",
+            "kind"
+          ],
+          "type": "object"
+        }
+      ]
+    },
     "Choice": {
       "description": "One selectable option.",
       "properties": {
@@ -85,9 +115,12 @@
           "type": "array"
         },
         "message_id": {
-          "description": "The user message that carried the answer to the agent.",
+          "description": "The user message that carried the answer to the agent; `null` for\napproval cards (the decision goes to the waiting tool call).",
           "format": "int64",
-          "type": "integer"
+          "type": [
+            "integer",
+            "null"
+          ]
         },
         "question": {
           "description": "Id of the `question` event.",
@@ -97,8 +130,7 @@
       },
       "required": [
         "question",
-        "answers",
-        "message_id"
+        "answers"
       ],
       "type": "object"
     },
@@ -128,6 +160,17 @@
     "QuestionEvent": {
       "description": "Payload of a `question` event: the card as shown in the chat.",
       "properties": {
+        "approval": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/Approval",
+              "description": "Set on approval cards raised by the daemon (e.g. for `create_agent`)."
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
         "card": {
           "$ref": "#/$defs/QuestionCard"
         },

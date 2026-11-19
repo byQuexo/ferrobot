@@ -100,6 +100,14 @@ struct Cli {
     /// stored in `<data dir>/api-token` (mode 0600).
     #[arg(long, env = "FERROBOT_API_TOKEN", hide_env_values = true)]
     api_token: Option<String>,
+    /// Most agents this host keeps; applies to the API and to agents
+    /// creating agents.
+    #[arg(long, env = "FERROBOT_MAX_AGENTS", default_value_t = ferrobot_daemon::agents::DEFAULT_MAX_AGENTS)]
+    max_agents: usize,
+    /// Seconds an agent's `create_agent` request waits for the operator's
+    /// approval before it counts as declined.
+    #[arg(long, env = "FERROBOT_APPROVAL_TIMEOUT", default_value_t = 300)]
+    approval_timeout: u64,
 }
 
 #[tokio::main]
@@ -153,6 +161,8 @@ async fn main() -> Result<()> {
     }
     settings.default_timezone = default_timezone;
     settings.api_token = Some(api_token);
+    settings.max_agents = cli.max_agents;
+    settings.approval_timeout = Duration::from_secs(cli.approval_timeout);
     let state = AppState::new(store, backend, settings);
 
     let ui = tokio::net::TcpListener::bind(cli.listen)

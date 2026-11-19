@@ -185,7 +185,9 @@ export interface paths {
         /**
          * Answers a question card the agent showed with `ask_user`. The answers are
          *     sent to the agent as one user message and the card is locked (a
-         *     `question_answered` event is recorded and pushed).
+         *     `question_answered` event is recorded and pushed). On an approval card
+         *     (`approval` set, e.g. from `create_agent`) the decision goes to the
+         *     waiting tool call instead; `409` if that request already timed out.
          */
         post: operations["answer_question"];
         delete?: never;
@@ -490,6 +492,7 @@ export interface components {
              */
             avatar_rev: number;
             character?: components["schemas"]["AvatarCharacter"] | null;
+            created_by?: components["schemas"]["AgentId"] | null;
             status: components["schemas"]["AgentStatus"];
             /** @description Backend kind that owns the sandbox, e.g. `docker`. */
             backend?: string | null;
@@ -535,6 +538,19 @@ export interface components {
         AnswerQuestion: {
             /** @description One answer per question of the card. */
             answers: components["schemas"]["QuestionAnswer"][];
+        };
+        /**
+         * @description What an approval card asks the operator to allow. The daemon raises
+         *     these itself; the decision goes to the waiting tool call, not to the
+         *     agent's mailbox.
+         */
+        Approval: {
+            /** @description Requested name of the new agent. */
+            name: string;
+            /** @description Requested one-line description (role). */
+            description: string;
+            /** @enum {string} */
+            kind: "create_agent";
         };
         /**
          * @description A chosen look for the agent's animated character avatar. Clients derive
@@ -746,9 +762,10 @@ export interface components {
             answers: components["schemas"]["QuestionAnswer"][];
             /**
              * Format: int64
-             * @description The user message that carried the answer to the agent.
+             * @description The user message that carried the answer to the agent; `null` for
+             *     approval cards (the decision goes to the waiting tool call).
              */
-            message_id: number;
+            message_id?: number | null;
         };
         /** @description A card with one or more questions, answered together. */
         QuestionCard: {
@@ -765,6 +782,7 @@ export interface components {
              */
             version: number;
             card: components["schemas"]["QuestionCard"];
+            approval?: components["schemas"]["Approval"] | null;
         };
         /**
          * @description How a question is answered.
@@ -1014,7 +1032,7 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorBody"];
                 };
             };
-            /** @description Name already taken */
+            /** @description Name already taken, or the agent limit (`FERROBOT_MAX_AGENTS`) is reached */
             409: {
                 headers: {
                     [name: string]: unknown;

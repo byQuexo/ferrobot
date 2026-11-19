@@ -1,11 +1,12 @@
-use std::sync::Arc;
+use std::collections::HashMap;
+use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 use std::time::Duration;
 
 use ferrobot_core::{AgentId, MailMessage};
 use ferrobot_sandbox::SandboxBackend;
 use ferrobot_store::{Store, StoredEvent};
 use serde::Serialize;
-use tokio::sync::{Notify, broadcast};
+use tokio::sync::{Notify, broadcast, oneshot};
 
 use crate::hub::Hub;
 use crate::views::AgentView;
@@ -35,6 +36,11 @@ pub struct Settings {
     /// Bearer token required on the UI API (except health). `None` turns
     /// auth off; `ferrobotd` always sets one.
     pub api_token: Option<String>,
+    /// Most agents this host keeps (`FERROBOT_MAX_AGENTS`), for the API and
+    /// the `create_agent` tool alike.
+    pub max_agents: usize,
+    /// How long a `create_agent` approval card waits for the operator.
+    pub approval_timeout: Duration,
 }
 
 impl Settings {
@@ -51,6 +57,8 @@ impl Settings {
             supervisor_interval: Duration::from_secs(15),
             default_timezone: "UTC".into(),
             api_token: None,
+            max_agents: crate::agents::DEFAULT_MAX_AGENTS,
+            approval_timeout: crate::agents::DEFAULT_APPROVAL_TIMEOUT,
         }
     }
 }
@@ -94,6 +102,10 @@ pub struct AppState {
     pub http: reqwest::Client,
     /// Serializes question-card answers so a card is answered at most once.
     pub answers: Arc<tokio::sync::Mutex<()>>,
+    /// Serializes agent creation so the agent limit holds.
+    pub creating: Arc<tokio::sync::Mutex<()>>,
+    /// Approval cards waiting for the operator, by `question` event id.
+    pub approvals: Arc<Mutex<HashMap<i64, oneshot::Sender<bool>>>>,
 }
 
 impl AppState {
@@ -108,7 +120,15 @@ impl AppState {
             scheduler: Arc::new(Notify::new()),
             http: reqwest::Client::new(),
             answers: Arc::default(),
+            creating: Arc::default(),
+            approvals: Arc::default(),
         }
+    }
+
+    pub(crate) fn approvals_lock(&self) -> MutexGuard<'_, HashMap<i64, oneshot::Sender<bool>>> {
+        self.approvals
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
     }
 
     /// Broadcasts to UI clients; having no subscribers is fine.
@@ -213,5 +233,18 @@ impl ferrobot_mcp::MailboxNotifier for AppState {
         self.publish(UiEvent::Event {
             event: event.clone(),
         });
+    }
+
+    fn request_agent(
+        &self,
+        requester: AgentId,
+        request: ferrobot_mcp::AgentRequest,
+    ) -> ferrobot_mcp::BoxFuture<Result<ferrobot_mcp::AgentRequestOutcome, String>> {
+        let state = self.clone();
+        Box::pin(async move {
+            crate::agents::request(&state, requester, request.into())
+                .await
+                .map_err(|e| e.to_string())
+        })
     }
 }
