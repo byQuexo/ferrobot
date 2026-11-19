@@ -1,0 +1,1199 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "ferrobot daemon API",
+    "description": "Operator API of `ferrobotd` (version 1, all paths under `/v1`). Served on the loopback UI listener (default `127.0.0.1:7878`) without authentication. Live updates: `GET /v1/ws` streams `UiEvent` frames, see `ui-events.schema.json`. The separate agent listener (runner WebSocket and MCP, bearer-token auth) is not part of this document; its frames are described in `runner-protocol.schema.json`.",
+    "contact": {
+      "name": "Tim Gühnemann"
+    },
+    "license": {
+      "name": "MIT OR Apache-2.0",
+      "identifier": "MIT OR Apache-2.0"
+    },
+    "version": "0.1.0"
+  },
+  "servers": [
+    {
+      "url": "http://127.0.0.1:7878",
+      "description": "Default local daemon"
+    }
+  ],
+  "paths": {
+    "/v1/agents": {
+      "get": {
+        "tags": [
+          "agents"
+        ],
+        "summary": "Lists all agents.",
+        "operationId": "list_agents",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/AgentView"
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "agents"
+        ],
+        "summary": "Registers an agent and provisions its sandbox.",
+        "operationId": "create_agent",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateAgent"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AgentView"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid name or instructions",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Name already taken",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "Sandbox backend error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/agents/{id}": {
+      "get": {
+        "tags": [
+          "agents"
+        ],
+        "summary": "Fetches one agent.",
+        "operationId": "get_agent",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "Agent id (UUID)",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AgentView"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Unknown agent",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "agents"
+        ],
+        "summary": "Deletes an agent and its sandbox.",
+        "operationId": "delete_agent",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "Agent id (UUID)",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "purge",
+            "in": "query",
+            "description": "Also delete the agent's persistent disk.",
+            "required": false,
+            "schema": {
+              "type": "boolean"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Deleted"
+          },
+          "404": {
+            "description": "Unknown agent",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "Sandbox backend error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/agents/{id}/events": {
+      "get": {
+        "tags": [
+          "events"
+        ],
+        "summary": "Turn events (text, tool use, denials, logs, turn results), up to 500 per call.",
+        "operationId": "list_events",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "Agent id (UUID)",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "after",
+            "in": "query",
+            "description": "Return events with an id greater than this (default 0).",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/StoredEvent"
+                  }
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Unknown agent",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/agents/{id}/exec": {
+      "post": {
+        "tags": [
+          "sandbox"
+        ],
+        "summary": "Runs a command in the agent's computer (operator only, loopback API).",
+        "operationId": "exec",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "Agent id (UUID)",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ExecReq"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ExecOutput"
+                }
+              }
+            }
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Unknown agent",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "Sandbox backend error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/agents/{id}/interrupt": {
+      "post": {
+        "tags": [
+          "agents"
+        ],
+        "summary": "Aborts the agent's running turn, if any. Interrupted messages are not retried.",
+        "operationId": "interrupt",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "Agent id (UUID)",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Interrupted"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Unknown agent",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/agents/{id}/messages": {
+      "get": {
+        "tags": [
+          "mailbox"
+        ],
+        "summary": "The agent's conversation: messages to and from it, oldest first (last 200).",
+        "operationId": "list_messages",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "Agent id (UUID)",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/MailMessage"
+                  }
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Unknown agent",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "mailbox"
+        ],
+        "summary": "Sends a message from the operator (`user`) to an agent's mailbox.",
+        "operationId": "post_message",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "Agent id (UUID)",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PostMessage"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "202": {
+            "description": "Queued for delivery",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MailMessage"
+                }
+              }
+            }
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Unknown agent",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/agents/{id}/sandbox": {
+      "delete": {
+        "tags": [
+          "sandbox"
+        ],
+        "summary": "Removes the sandbox but keeps the agent and its disk; `wake` recreates it.",
+        "operationId": "destroy_sandbox",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "Agent id (UUID)",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Sandbox removed"
+          },
+          "404": {
+            "description": "Unknown agent",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "Sandbox backend error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/agents/{id}/snapshot": {
+      "post": {
+        "tags": [
+          "sandbox"
+        ],
+        "summary": "Snapshots the sandbox (backend-specific scope, see `SnapshotRef.scope`).",
+        "operationId": "snapshot",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "Agent id (UUID)",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SnapshotReq"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SnapshotRef"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Unknown agent",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "501": {
+            "description": "Backend cannot snapshot",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "Sandbox backend error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/agents/{id}/stop": {
+      "post": {
+        "tags": [
+          "sandbox"
+        ],
+        "summary": "Stops the agent's sandbox (disk is kept).",
+        "operationId": "stop",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "Agent id (UUID)",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Stopped"
+          },
+          "404": {
+            "description": "Unknown agent",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "Sandbox backend error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/agents/{id}/wake": {
+      "post": {
+        "tags": [
+          "sandbox"
+        ],
+        "summary": "Starts (or re-creates) the agent's sandbox.",
+        "operationId": "wake",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "Agent id (UUID)",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Running"
+          },
+          "404": {
+            "description": "Unknown agent",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "Sandbox backend error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/health": {
+      "get": {
+        "tags": [
+          "system"
+        ],
+        "summary": "Daemon identity and configuration summary.",
+        "operationId": "health",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Health"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/ws": {
+      "get": {
+        "tags": [
+          "events"
+        ],
+        "summary": "WebSocket stream of `UiEvent` JSON text frames (schema:\n`protocol/ui-events.schema.json`). Client-to-server frames are ignored.",
+        "operationId": "ui_ws",
+        "responses": {
+          "101": {
+            "description": "Switching protocols; then one `UiEvent` per text frame"
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "Agent": {
+        "type": "object",
+        "description": "A registered agent. Secrets (the runner token) are never part of this type.",
+        "required": [
+          "id",
+          "name",
+          "instructions",
+          "status",
+          "created_at"
+        ],
+        "properties": {
+          "id": {
+            "$ref": "#/components/schemas/AgentId"
+          },
+          "name": {
+            "$ref": "#/components/schemas/AgentName"
+          },
+          "instructions": {
+            "type": "string",
+            "description": "Operator-provided role description handed to the model."
+          },
+          "status": {
+            "$ref": "#/components/schemas/AgentStatus"
+          },
+          "backend": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Backend kind that owns the sandbox, e.g. `docker`."
+          },
+          "sandbox_id": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Backend-specific sandbox identifier (container id, sprite name, ...)."
+          },
+          "session_id": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Last model session id reported by the runner, used for resume."
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      },
+      "AgentId": {
+        "type": "string",
+        "format": "uuid",
+        "description": "Stable, opaque identifier of an agent."
+      },
+      "AgentName": {
+        "type": "string",
+        "description": "Human-facing, unique agent handle such as `alice` or `build-bot`.\n\nRules: 1-32 chars, lowercase ASCII letters, digits and `-`,\nmust start with a letter and must not end with `-`.\nNames double as container and volume name suffixes, so they stay DNS-safe.",
+        "example": "alice",
+        "pattern": "^[a-z]([a-z0-9-]{0,30}[a-z0-9])?$"
+      },
+      "AgentStatus": {
+        "type": "string",
+        "description": "Lifecycle state of an agent's sandbox as tracked by the daemon.",
+        "enum": [
+          "created",
+          "running",
+          "stopped",
+          "failed"
+        ]
+      },
+      "AgentView": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/Agent"
+          },
+          {
+            "type": "object",
+            "required": [
+              "connected"
+            ],
+            "properties": {
+              "connected": {
+                "type": "boolean",
+                "description": "Whether the agent's runner is connected right now."
+              }
+            }
+          }
+        ],
+        "description": "An agent plus live connection state."
+      },
+      "CreateAgent": {
+        "type": "object",
+        "required": [
+          "name"
+        ],
+        "properties": {
+          "name": {
+            "type": "string",
+            "description": "1-32 chars, `a-z0-9-`, starts with a letter.",
+            "example": "alice"
+          },
+          "instructions": {
+            "type": "string",
+            "description": "Extra system instructions for this agent."
+          }
+        }
+      },
+      "ErrorBody": {
+        "type": "object",
+        "description": "JSON body of every non-2xx UI API response.",
+        "required": [
+          "error",
+          "message"
+        ],
+        "properties": {
+          "error": {
+            "type": "string",
+            "description": "Stable machine-readable code: `bad_request`, `not_found`, `conflict`,\n`not_implemented`, `sandbox_error` or `internal`."
+          },
+          "message": {
+            "type": "string",
+            "description": "Human-readable description."
+          }
+        }
+      },
+      "ExecOutput": {
+        "type": "object",
+        "required": [
+          "exit_code",
+          "stdout",
+          "stderr",
+          "truncated"
+        ],
+        "properties": {
+          "exit_code": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "stdout": {
+            "type": "string"
+          },
+          "stderr": {
+            "type": "string"
+          },
+          "truncated": {
+            "type": "boolean",
+            "description": "True if output was cut at [`MAX_EXEC_OUTPUT`]."
+          }
+        }
+      },
+      "ExecReq": {
+        "type": "object",
+        "required": [
+          "cmd"
+        ],
+        "properties": {
+          "cmd": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "argv; must not be empty.",
+            "example": [
+              "sh",
+              "-c",
+              "ls"
+            ]
+          },
+          "workdir": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        }
+      },
+      "Health": {
+        "type": "object",
+        "required": [
+          "name",
+          "version",
+          "backend",
+          "driver"
+        ],
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "version": {
+            "type": "string"
+          },
+          "backend": {
+            "type": "string"
+          },
+          "driver": {
+            "type": "string"
+          }
+        }
+      },
+      "Interrupted": {
+        "type": "object",
+        "properties": {
+          "turn_id": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "The interrupted turn, or null if the agent was idle."
+          }
+        }
+      },
+      "MailMessage": {
+        "type": "object",
+        "description": "One message in an agent's mailbox.",
+        "required": [
+          "id",
+          "sender",
+          "recipient",
+          "body",
+          "status",
+          "attempts",
+          "created_at"
+        ],
+        "properties": {
+          "id": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "sender": {
+            "$ref": "#/components/schemas/Sender"
+          },
+          "recipient": {
+            "$ref": "#/components/schemas/AgentId"
+          },
+          "body": {
+            "type": "string"
+          },
+          "reply_to": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64"
+          },
+          "status": {
+            "$ref": "#/components/schemas/MailStatus"
+          },
+          "attempts": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      },
+      "MailStatus": {
+        "type": "string",
+        "description": "Delivery state of a mailbox message.\n\n`Pending -> InFlight -> Delivered`, or back to `Pending` when a runner\ndisconnects mid-turn, or `Failed` after too many attempts.",
+        "enum": [
+          "pending",
+          "in_flight",
+          "delivered",
+          "failed"
+        ]
+      },
+      "PostMessage": {
+        "type": "object",
+        "required": [
+          "body"
+        ],
+        "properties": {
+          "body": {
+            "type": "string",
+            "description": "1..32768 bytes after trimming."
+          }
+        }
+      },
+      "Sender": {
+        "oneOf": [
+          {
+            "type": "object",
+            "description": "The human operator, via the UI or HTTP API.",
+            "required": [
+              "kind"
+            ],
+            "properties": {
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "user"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "description": "Another agent, via the `send_message` MCP tool.",
+            "required": [
+              "id",
+              "kind"
+            ],
+            "properties": {
+              "id": {
+                "$ref": "#/components/schemas/AgentId",
+                "description": "Another agent, via the `send_message` MCP tool."
+              },
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "agent"
+                ]
+              }
+            }
+          }
+        ],
+        "description": "Who sent a mailbox message."
+      },
+      "SnapshotRef": {
+        "type": "object",
+        "required": [
+          "id",
+          "scope"
+        ],
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "scope": {
+            "type": "string",
+            "description": "What the snapshot covers, e.g. \"container rootfs (home volume excluded)\"."
+          }
+        }
+      },
+      "SnapshotReq": {
+        "type": "object",
+        "properties": {
+          "label": {
+            "type": "string",
+            "description": "Free-form label (default `manual`)."
+          }
+        }
+      },
+      "StoredEvent": {
+        "type": "object",
+        "required": [
+          "id",
+          "agent_id",
+          "kind",
+          "payload",
+          "created_at"
+        ],
+        "properties": {
+          "id": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "agent_id": {
+            "$ref": "#/components/schemas/AgentId"
+          },
+          "turn_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "kind": {
+            "type": "string"
+          },
+          "payload": {
+            "type": "object",
+            "description": "The event body; for runner events this is a `TurnEvent`."
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      },
+      "UiEvent": {
+        "oneOf": [
+          {
+            "type": "object",
+            "description": "A turn event was recorded (same shape as `GET /v1/agents/{id}/events`).",
+            "required": [
+              "event",
+              "type"
+            ],
+            "properties": {
+              "event": {
+                "$ref": "#/components/schemas/StoredEvent"
+              },
+              "type": {
+                "type": "string",
+                "enum": [
+                  "event"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "description": "An agent was created or changed status / connection.",
+            "required": [
+              "agent",
+              "connected",
+              "type"
+            ],
+            "properties": {
+              "agent": {
+                "$ref": "#/components/schemas/Agent"
+              },
+              "connected": {
+                "type": "boolean"
+              },
+              "type": {
+                "type": "string",
+                "enum": [
+                  "agent"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "description": "An agent was deleted.",
+            "required": [
+              "agent_id",
+              "type"
+            ],
+            "properties": {
+              "agent_id": {
+                "$ref": "#/components/schemas/AgentId"
+              },
+              "type": {
+                "type": "string",
+                "enum": [
+                  "agent_deleted"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "description": "A mailbox message was queued or changed status.",
+            "required": [
+              "message",
+              "type"
+            ],
+            "properties": {
+              "message": {
+                "$ref": "#/components/schemas/MailMessage"
+              },
+              "type": {
+                "type": "string",
+                "enum": [
+                  "message"
+                ]
+              }
+            }
+          }
+        ],
+        "description": "Pushed to every UI WebSocket client."
+      }
+    }
+  },
+  "tags": [
+    {
+      "name": "system",
+      "description": "Daemon status"
+    },
+    {
+      "name": "agents",
+      "description": "Agent registry and turn control"
+    },
+    {
+      "name": "mailbox",
+      "description": "Asynchronous messages between the operator and agents"
+    },
+    {
+      "name": "events",
+      "description": "Turn events, polled or streamed"
+    },
+    {
+      "name": "sandbox",
+      "description": "Each agent's own computer"
+    }
+  ]
+}

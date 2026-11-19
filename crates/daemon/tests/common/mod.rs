@@ -71,7 +71,52 @@ pub async fn http(addr: &str, method: &str, path: &str, body: Option<Value>) -> 
     } else {
         raw.to_owned()
     };
-    (status, serde_json::from_str(&raw).unwrap_or(Value::Null))
+    let value = serde_json::from_str(&raw).unwrap_or(Value::Null);
+    if path.starts_with("/v1/") {
+        assert_conforms(method, path, status, &value);
+    }
+    (status, value)
+}
+
+/// Checks a UI API response against the generated `OpenAPI` document: the status
+/// must be documented for the route, and a JSON body must match its schema.
+pub fn assert_conforms(method: &str, path: &str, status: u16, body: &Value) {
+    let spec = serde_json::to_value(ferrobot_daemon::spec::openapi()).unwrap();
+    let path = path.split('?').next().unwrap();
+    let segments: Vec<&str> = path.split('/').collect();
+    let (_, item) = spec["paths"]
+        .as_object()
+        .unwrap()
+        .iter()
+        .find(|(template, _)| {
+            let t: Vec<&str> = template.split('/').collect();
+            t.len() == segments.len()
+                && t.iter()
+                    .zip(&segments)
+                    .all(|(a, b)| a == b || a.starts_with('{'))
+        })
+        .unwrap_or_else(|| panic!("{path} is not in the OpenAPI document"));
+    let op = &item[method.to_ascii_lowercase()];
+    assert!(op.is_object(), "{method} {path} is not documented");
+    let response = &op["responses"][status.to_string()];
+    assert!(
+        response.is_object(),
+        "{method} {path} returned undocumented status {status}: {body}"
+    );
+    let Some(schema) = response["content"]["application/json"].get("schema") else {
+        return;
+    };
+    let root = serde_json::json!({
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "allOf": [schema],
+        "components": spec["components"],
+    });
+    let validator = jsonschema::validator_for(&root).unwrap();
+    let errors: Vec<String> = validator.iter_errors(body).map(|e| e.to_string()).collect();
+    assert!(
+        errors.is_empty(),
+        "{method} {path} ({status}) does not match OpenAPI: {errors:?}\nbody: {body}"
+    );
 }
 
 fn dechunk(mut raw: &str) -> String {

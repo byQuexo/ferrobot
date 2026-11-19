@@ -10,10 +10,14 @@ repository.workspace = true
 publish = false
 
 [features]
+# Derives `utoipa::ToSchema` for API documentation. Off by default so the
+# crate stays plain (e.g. for a future UniFFI binding).
+schema = ["dep:utoipa"]
 # Enables tests that need a running Docker/Podman daemon and the runner image.
 docker-tests = []
 
 [dependencies]
+utoipa = { workspace = true, optional = true }
 async-trait.workspace = true
 bollard.workspace = true
 bytes.workspace = true

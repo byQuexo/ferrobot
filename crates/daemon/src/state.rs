@@ -25,12 +25,16 @@ pub struct Settings {
 }
 
 /// Pushed to every UI WebSocket client.
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, utoipa::ToSchema)]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum UiEvent {
+    /// A turn event was recorded (same shape as `GET /v1/agents/{id}/events`).
     Event { event: StoredEvent },
+    /// An agent was created or changed status / connection.
     Agent { agent: Agent, connected: bool },
+    /// An agent was deleted.
     AgentDeleted { agent_id: ferrobot_core::AgentId },
+    /// A mailbox message was queued or changed status.
     Message { message: MailMessage },
 }
 

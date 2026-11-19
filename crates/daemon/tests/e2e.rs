@@ -6,6 +6,9 @@
 //! Docker (needs the `ferrobot-runner:dev` image, see README):
 //!   cargo test -p ferrobot-daemon --features docker-tests --test e2e -- --ignored
 
+// Scenario tests read best as one linear story.
+#![allow(clippy::too_many_lines)]
+
 mod common;
 
 use std::sync::Arc;

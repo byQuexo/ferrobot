@@ -3,8 +3,18 @@ use axum::http::StatusCode;
 use axum::response::{IntoResponse, Response};
 use ferrobot_sandbox::SandboxError;
 use ferrobot_store::StoreError;
-use serde_json::json;
+use serde::Serialize;
 use thiserror::Error;
+
+/// JSON body of every non-2xx UI API response.
+#[derive(Debug, Serialize, utoipa::ToSchema)]
+pub struct ErrorBody {
+    /// Stable machine-readable code: `bad_request`, `not_found`, `conflict`,
+    /// `not_implemented`, `sandbox_error` or `internal`.
+    pub error: String,
+    /// Human-readable description.
+    pub message: String,
+}
 
 /// Errors returned by the UI API, rendered as `{"error": code, "message": ...}`.
 #[derive(Debug, Error)]
@@ -54,10 +64,10 @@ impl IntoResponse for ApiError {
                 (StatusCode::INTERNAL_SERVER_ERROR, "internal")
             }
         };
-        (
-            status,
-            Json(json!({ "error": code, "message": self.to_string() })),
-        )
-            .into_response()
+        let body = ErrorBody {
+            error: code.to_owned(),
+            message: self.to_string(),
+        };
+        (status, Json(body)).into_response()
     }
 }

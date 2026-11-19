@@ -11,8 +11,9 @@ use ferrobot_sandbox::{ExecOutput, ExecRequest, SnapshotRef};
 use ferrobot_store::{NewAgent, StoredEvent};
 use serde::{Deserialize, Serialize};
 use tokio::sync::broadcast::error::RecvError;
+use utoipa::{IntoParams, ToSchema};
 
-use crate::error::ApiError;
+use crate::error::{ApiError, ErrorBody};
 use crate::{AppState, UiEvent, lifecycle};
 
 type ApiResult<T> = Result<Json<T>, ApiError>;
@@ -44,15 +45,18 @@ fn parse_id(raw: &str) -> Result<AgentId, ApiError> {
         .map_err(|_| ApiError::NotFound(format!("agent {raw} not found")))
 }
 
-#[derive(Debug, Serialize)]
-struct Health {
+#[derive(Debug, Serialize, ToSchema)]
+pub(crate) struct Health {
     name: &'static str,
     version: &'static str,
     backend: &'static str,
     driver: String,
 }
 
-async fn health(State(state): State<AppState>) -> Json<Health> {
+/// Daemon identity and configuration summary.
+#[utoipa::path(get, path = "/v1/health", tag = "system",
+    responses((status = 200, body = Health)))]
+pub(crate) async fn health(State(state): State<AppState>) -> Json<Health> {
     Json(Health {
         name: ferrobot_core::PROJECT_NAME,
         version: env!("CARGO_PKG_VERSION"),
@@ -61,10 +65,12 @@ async fn health(State(state): State<AppState>) -> Json<Health> {
     })
 }
 
-#[derive(Debug, Serialize)]
-struct AgentView {
+/// An agent plus live connection state.
+#[derive(Debug, Serialize, ToSchema)]
+pub(crate) struct AgentView {
     #[serde(flatten)]
     agent: Agent,
+    /// Whether the agent's runner is connected right now.
     connected: bool,
 }
 
@@ -75,19 +81,32 @@ fn view(state: &AppState, agent: Agent) -> AgentView {
     }
 }
 
-async fn list_agents(State(state): State<AppState>) -> ApiResult<Vec<AgentView>> {
+/// Lists all agents.
+#[utoipa::path(get, path = "/v1/agents", tag = "agents",
+    responses((status = 200, body = Vec<AgentView>)))]
+pub(crate) async fn list_agents(State(state): State<AppState>) -> ApiResult<Vec<AgentView>> {
     let agents = state.store.list_agents().await?;
     Ok(Json(agents.into_iter().map(|a| view(&state, a)).collect()))
 }
 
-#[derive(Debug, Deserialize)]
-struct CreateAgent {
+#[derive(Debug, Deserialize, ToSchema)]
+pub(crate) struct CreateAgent {
+    /// 1-32 chars, `a-z0-9-`, starts with a letter.
+    #[schema(example = "alice")]
     name: String,
+    /// Extra system instructions for this agent.
     #[serde(default)]
     instructions: String,
 }
 
-async fn create_agent(
+/// Registers an agent and provisions its sandbox.
+#[utoipa::path(post, path = "/v1/agents", tag = "agents", request_body = CreateAgent,
+    responses(
+        (status = 201, body = AgentView),
+        (status = 400, description = "Invalid name or instructions", body = ErrorBody),
+        (status = 409, description = "Name already taken", body = ErrorBody),
+        (status = 502, description = "Sandbox backend error", body = ErrorBody)))]
+pub(crate) async fn create_agent(
     State(state): State<AppState>,
     Json(req): Json<CreateAgent>,
 ) -> Result<(StatusCode, Json<AgentView>), ApiError> {
@@ -107,18 +126,29 @@ async fn create_agent(
     Ok((StatusCode::CREATED, Json(view(&state, agent))))
 }
 
-async fn get_agent(State(state): State<AppState>, Path(id): Path<String>) -> ApiResult<AgentView> {
+/// Fetches one agent.
+#[utoipa::path(get, path = "/v1/agents/{id}", tag = "agents", params(("id" = String, Path, description = "Agent id (UUID)")),
+    responses((status = 200, body = AgentView), (status = 404, description = "Unknown agent", body = ErrorBody)))]
+pub(crate) async fn get_agent(
+    State(state): State<AppState>,
+    Path(id): Path<String>,
+) -> ApiResult<AgentView> {
     let agent = state.store.get_agent(parse_id(&id)?).await?;
     Ok(Json(view(&state, agent)))
 }
 
-#[derive(Debug, Deserialize)]
-struct DeleteQuery {
+#[derive(Debug, Deserialize, IntoParams)]
+#[into_params(parameter_in = Query)]
+pub(crate) struct DeleteQuery {
+    /// Also delete the agent's persistent disk.
     #[serde(default)]
     purge: bool,
 }
 
-async fn delete_agent(
+/// Deletes an agent and its sandbox.
+#[utoipa::path(delete, path = "/v1/agents/{id}", tag = "agents", params(("id" = String, Path, description = "Agent id (UUID)"), DeleteQuery),
+    responses((status = 204, description = "Deleted"), (status = 404, description = "Unknown agent", body = ErrorBody), (status = 502, description = "Sandbox backend error", body = ErrorBody)))]
+pub(crate) async fn delete_agent(
     State(state): State<AppState>,
     Path(id): Path<String>,
     Query(q): Query<DeleteQuery>,
@@ -127,7 +157,10 @@ async fn delete_agent(
     Ok(StatusCode::NO_CONTENT)
 }
 
-async fn destroy_sandbox(
+/// Removes the sandbox but keeps the agent and its disk; `wake` recreates it.
+#[utoipa::path(delete, path = "/v1/agents/{id}/sandbox", tag = "sandbox", params(("id" = String, Path, description = "Agent id (UUID)")),
+    responses((status = 204, description = "Sandbox removed"), (status = 404, description = "Unknown agent", body = ErrorBody), (status = 502, description = "Sandbox backend error", body = ErrorBody)))]
+pub(crate) async fn destroy_sandbox(
     State(state): State<AppState>,
     Path(id): Path<String>,
 ) -> Result<StatusCode, ApiError> {
@@ -141,12 +174,19 @@ async fn destroy_sandbox(
     Ok(StatusCode::NO_CONTENT)
 }
 
-#[derive(Debug, Deserialize)]
-struct PostMessage {
+#[derive(Debug, Deserialize, ToSchema)]
+pub(crate) struct PostMessage {
+    /// 1..32768 bytes after trimming.
     body: String,
 }
 
-async fn post_message(
+/// Sends a message from the operator (`user`) to an agent's mailbox.
+#[utoipa::path(post, path = "/v1/agents/{id}/messages", tag = "mailbox", params(("id" = String, Path, description = "Agent id (UUID)")),
+    request_body = PostMessage,
+    responses(
+        (status = 202, description = "Queued for delivery", body = MailMessage),
+        (status = 400, body = ErrorBody), (status = 404, description = "Unknown agent", body = ErrorBody)))]
+pub(crate) async fn post_message(
     State(state): State<AppState>,
     Path(id): Path<String>,
     Json(req): Json<PostMessage>,
@@ -167,20 +207,28 @@ async fn post_message(
     Ok((StatusCode::ACCEPTED, Json(msg)))
 }
 
-async fn list_messages(
+/// The agent's conversation: messages to and from it, oldest first (last 200).
+#[utoipa::path(get, path = "/v1/agents/{id}/messages", tag = "mailbox", params(("id" = String, Path, description = "Agent id (UUID)")),
+    responses((status = 200, body = Vec<MailMessage>), (status = 404, description = "Unknown agent", body = ErrorBody)))]
+pub(crate) async fn list_messages(
     State(state): State<AppState>,
     Path(id): Path<String>,
 ) -> ApiResult<Vec<MailMessage>> {
     Ok(Json(state.store.conversation(parse_id(&id)?, 200).await?))
 }
 
-#[derive(Debug, Deserialize)]
-struct EventsQuery {
+#[derive(Debug, Deserialize, IntoParams)]
+#[into_params(parameter_in = Query)]
+pub(crate) struct EventsQuery {
+    /// Return events with an id greater than this (default 0).
     #[serde(default)]
     after: i64,
 }
 
-async fn list_events(
+/// Turn events (text, tool use, denials, logs, turn results), up to 500 per call.
+#[utoipa::path(get, path = "/v1/agents/{id}/events", tag = "events", params(("id" = String, Path, description = "Agent id (UUID)"), EventsQuery),
+    responses((status = 200, body = Vec<StoredEvent>), (status = 404, description = "Unknown agent", body = ErrorBody)))]
+pub(crate) async fn list_events(
     State(state): State<AppState>,
     Path(id): Path<String>,
     Query(q): Query<EventsQuery>,
@@ -193,12 +241,16 @@ async fn list_events(
     ))
 }
 
-#[derive(Debug, Serialize)]
-struct Interrupted {
+#[derive(Debug, Serialize, ToSchema)]
+pub(crate) struct Interrupted {
+    /// The interrupted turn, or null if the agent was idle.
     turn_id: Option<String>,
 }
 
-async fn interrupt(
+/// Aborts the agent's running turn, if any. Interrupted messages are not retried.
+#[utoipa::path(post, path = "/v1/agents/{id}/interrupt", tag = "agents", params(("id" = String, Path, description = "Agent id (UUID)")),
+    responses((status = 200, body = Interrupted), (status = 404, description = "Unknown agent", body = ErrorBody)))]
+pub(crate) async fn interrupt(
     State(state): State<AppState>,
     Path(id): Path<String>,
 ) -> ApiResult<Interrupted> {
@@ -209,7 +261,10 @@ async fn interrupt(
     }))
 }
 
-async fn stop(
+/// Stops the agent's sandbox (disk is kept).
+#[utoipa::path(post, path = "/v1/agents/{id}/stop", tag = "sandbox", params(("id" = String, Path, description = "Agent id (UUID)")),
+    responses((status = 204, description = "Stopped"), (status = 404, description = "Unknown agent", body = ErrorBody), (status = 502, description = "Sandbox backend error", body = ErrorBody)))]
+pub(crate) async fn stop(
     State(state): State<AppState>,
     Path(id): Path<String>,
 ) -> Result<StatusCode, ApiError> {
@@ -217,7 +272,10 @@ async fn stop(
     Ok(StatusCode::NO_CONTENT)
 }
 
-async fn wake(
+/// Starts (or re-creates) the agent's sandbox.
+#[utoipa::path(post, path = "/v1/agents/{id}/wake", tag = "sandbox", params(("id" = String, Path, description = "Agent id (UUID)")),
+    responses((status = 204, description = "Running"), (status = 404, description = "Unknown agent", body = ErrorBody), (status = 502, description = "Sandbox backend error", body = ErrorBody)))]
+pub(crate) async fn wake(
     State(state): State<AppState>,
     Path(id): Path<String>,
 ) -> Result<StatusCode, ApiError> {
@@ -225,8 +283,9 @@ async fn wake(
     Ok(StatusCode::NO_CONTENT)
 }
 
-#[derive(Debug, Deserialize)]
-struct SnapshotReq {
+#[derive(Debug, Deserialize, ToSchema)]
+pub(crate) struct SnapshotReq {
+    /// Free-form label (default `manual`).
     #[serde(default = "default_label")]
     label: String,
 }
@@ -235,7 +294,12 @@ fn default_label() -> String {
     "manual".into()
 }
 
-async fn snapshot(
+/// Snapshots the sandbox (backend-specific scope, see `SnapshotRef.scope`).
+#[utoipa::path(post, path = "/v1/agents/{id}/snapshot", tag = "sandbox", params(("id" = String, Path, description = "Agent id (UUID)")),
+    request_body = SnapshotReq,
+    responses((status = 200, body = SnapshotRef), (status = 404, description = "Unknown agent", body = ErrorBody),
+        (status = 501, description = "Backend cannot snapshot", body = ErrorBody), (status = 502, description = "Sandbox backend error", body = ErrorBody)))]
+pub(crate) async fn snapshot(
     State(state): State<AppState>,
     Path(id): Path<String>,
     Json(req): Json<SnapshotReq>,
@@ -245,14 +309,19 @@ async fn snapshot(
     Ok(Json(state.backend.snapshot(&handle, &req.label).await?))
 }
 
-#[derive(Debug, Deserialize)]
-struct ExecReq {
+#[derive(Debug, Deserialize, ToSchema)]
+pub(crate) struct ExecReq {
+    /// argv; must not be empty.
+    #[schema(example = json!(["sh", "-c", "ls"]))]
     cmd: Vec<String>,
     workdir: Option<String>,
 }
 
 /// Runs a command in the agent's computer (operator only, loopback API).
-async fn exec(
+#[utoipa::path(post, path = "/v1/agents/{id}/exec", tag = "sandbox", params(("id" = String, Path, description = "Agent id (UUID)")),
+    request_body = ExecReq,
+    responses((status = 200, body = ExecOutput), (status = 400, body = ErrorBody), (status = 404, description = "Unknown agent", body = ErrorBody), (status = 502, description = "Sandbox backend error", body = ErrorBody)))]
+pub(crate) async fn exec(
     State(state): State<AppState>,
     Path(id): Path<String>,
     Json(req): Json<ExecReq>,
@@ -270,7 +339,11 @@ async fn exec(
     Ok(Json(state.backend.exec(&handle, &request).await?))
 }
 
-async fn ui_ws(State(state): State<AppState>, ws: WebSocketUpgrade) -> Response {
+/// WebSocket stream of `UiEvent` JSON text frames (schema:
+/// `protocol/ui-events.schema.json`). Client-to-server frames are ignored.
+#[utoipa::path(get, path = "/v1/ws", tag = "events",
+    responses((status = 101, description = "Switching protocols; then one `UiEvent` per text frame")))]
+pub(crate) async fn ui_ws(State(state): State<AppState>, ws: WebSocketUpgrade) -> Response {
     ws.on_upgrade(move |socket| forward_ui_events(state, socket))
 }
 

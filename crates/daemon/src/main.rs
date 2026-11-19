@@ -26,7 +26,7 @@ enum Backend {
 enum Driver {
     /// Deterministic fake model, no API key needed.
     Mock,
-    /// Claude via the Claude Agent SDK (needs ANTHROPIC_API_KEY).
+    /// Claude via the Claude Agent SDK (needs `ANTHROPIC_API_KEY`).
     Claude,
 }
 

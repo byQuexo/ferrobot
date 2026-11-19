@@ -1,6 +1,9 @@
 //! Daemon <-> runner protocol tests with a fake sandbox backend and a fake
 //! runner speaking the WebSocket protocol directly. No Node, no Docker.
 
+// Scenario tests read best as one linear story.
+#![allow(clippy::too_many_lines)]
+
 mod common;
 
 use std::collections::{BTreeMap, HashMap};
@@ -101,7 +104,7 @@ async fn connect_runner(agents: &str, token: &str) -> Ws {
         .await
         .unwrap();
     match next_frame(&mut ws).await {
-        DaemonFrame::Welcome { agent_name, .. } => assert!(!agent_name.as_str().is_empty()),
+        DaemonFrame::Welcome { agent_name, .. } => assert_ne!(agent_name.as_str(), ""),
         other => panic!("expected welcome, got {other:?}"),
     }
     ws
@@ -319,4 +322,23 @@ async fn interrupt_reaches_runner() {
     assert_eq!(status, 204);
     let (status, _) = http(&d.ui, "GET", &format!("/v1/agents/{bob_id}"), None).await;
     assert_eq!(status, 404);
+}
+
+#[test]
+fn openapi_conformance_check_rejects_wrong_shapes() {
+    use common::assert_conforms;
+    let bad_body = std::panic::catch_unwind(|| {
+        assert_conforms("GET", "/v1/agents", 200, &json!([{"id": 1}]));
+    });
+    assert!(bad_body.is_err(), "malformed AgentView must be rejected");
+    let bad_status = std::panic::catch_unwind(|| {
+        assert_conforms("GET", "/v1/health", 418, &json!({}));
+    });
+    assert!(bad_status.is_err(), "undocumented status must be rejected");
+    assert_conforms(
+        "GET",
+        "/v1/agents/abc",
+        404,
+        &json!({"error": "not_found", "message": "agent abc not found"}),
+    );
 }

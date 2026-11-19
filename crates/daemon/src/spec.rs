@@ -1,0 +1,150 @@
+//! Machine-readable API contracts, generated from the Rust types.
+//!
+//! The committed copies live in the top-level `protocol/` folder and are kept
+//! in sync by `tests/specs.rs` (regenerate with `FERROBOT_UPDATE_SPECS=1`).
+//! Any client (the Tauri UI, a future native app, scripts) should be able to
+//! use the daemon from these files alone.
+
+use ferrobot_core::protocol::{DaemonFrame, RunnerFrame};
+use serde_json::{Map, Value, json};
+use utoipa::OpenApi;
+use utoipa::openapi::OpenApi as Spec;
+
+use crate::UiEvent;
+use crate::api;
+
+/// File name of the `OpenAPI` document under `protocol/`.
+pub const OPENAPI_FILE: &str = "openapi.json";
+/// File name of the UI WebSocket event schema under `protocol/`.
+pub const UI_EVENTS_FILE: &str = "ui-events.schema.json";
+/// File name of the runner wire protocol schema under `protocol/`.
+pub const RUNNER_PROTOCOL_FILE: &str = "runner-protocol.schema.json";
+
+#[derive(OpenApi)]
+#[openapi(
+    info(
+        title = "ferrobot daemon API",
+        description = "Operator API of `ferrobotd` (version 1, all paths under `/v1`). \
+            Served on the loopback UI listener (default `127.0.0.1:7878`) without \
+            authentication. Live updates: `GET /v1/ws` streams `UiEvent` frames, \
+            see `ui-events.schema.json`. The separate agent listener (runner \
+            WebSocket and MCP, bearer-token auth) is not part of this document; \
+            its frames are described in `runner-protocol.schema.json`.",
+        license(name = "MIT OR Apache-2.0", identifier = "MIT OR Apache-2.0"),
+    ),
+    servers((url = "http://127.0.0.1:7878", description = "Default local daemon")),
+    paths(
+        api::health,
+        api::list_agents,
+        api::create_agent,
+        api::get_agent,
+        api::delete_agent,
+        api::destroy_sandbox,
+        api::list_messages,
+        api::post_message,
+        api::list_events,
+        api::interrupt,
+        api::stop,
+        api::wake,
+        api::snapshot,
+        api::exec,
+        api::ui_ws,
+    ),
+    components(schemas(UiEvent)),
+    tags(
+        (name = "system", description = "Daemon status"),
+        (name = "agents", description = "Agent registry and turn control"),
+        (name = "mailbox", description = "Asynchronous messages between the operator and agents"),
+        (name = "events", description = "Turn events, polled or streamed"),
+        (name = "sandbox", description = "Each agent's own computer"),
+    )
+)]
+struct ApiDoc;
+
+#[derive(OpenApi)]
+#[openapi(components(schemas(UiEvent)))]
+struct UiEventsDoc;
+
+#[derive(OpenApi)]
+#[openapi(components(schemas(DaemonFrame, RunnerFrame)))]
+struct RunnerDoc;
+
+/// The `OpenAPI` 3.1 document for the UI API.
+pub fn openapi() -> Spec {
+    ApiDoc::openapi()
+}
+
+/// JSON Schema (2020-12) for frames on `GET /v1/ws`.
+pub fn ui_events_schema() -> Value {
+    json_schema(
+        &UiEventsDoc::openapi(),
+        UI_EVENTS_FILE,
+        "ferrobot UI event",
+        "One JSON text frame pushed by the daemon on `GET /v1/ws`.",
+        &json!({ "$ref": "#/$defs/UiEvent" }),
+    )
+}
+
+/// JSON Schema (2020-12) for the daemon <-> runner WebSocket frames.
+pub fn runner_protocol_schema() -> Value {
+    json_schema(
+        &RunnerDoc::openapi(),
+        RUNNER_PROTOCOL_FILE,
+        "ferrobot runner protocol frame",
+        "A frame on the runner WebSocket (`/runner/ws`, agent listener): \
+         `DaemonFrame` from daemon to runner, `RunnerFrame` from runner to daemon.",
+        &json!({ "oneOf": [
+            { "$ref": "#/$defs/DaemonFrame" },
+            { "$ref": "#/$defs/RunnerFrame" }
+        ] }),
+    )
+}
+
+/// Turns the component schemas of `doc` into a standalone JSON Schema with `$defs`.
+fn json_schema(doc: &Spec, id: &str, title: &str, description: &str, root: &Value) -> Value {
+    let components = doc
+        .components
+        .as_ref()
+        .map(|c| serde_json::to_value(&c.schemas).unwrap_or_default())
+        .unwrap_or_default();
+    let mut out = Map::new();
+    out.insert(
+        "$schema".into(),
+        "https://json-schema.org/draft/2020-12/schema".into(),
+    );
+    out.insert("$id".into(), id.into());
+    out.insert("title".into(), title.into());
+    out.insert("description".into(), description.into());
+    if let Value::Object(root) = root {
+        out.extend(root.clone());
+    }
+    out.insert("$defs".into(), rewrite_refs(components));
+    Value::Object(out)
+}
+
+fn rewrite_refs(value: Value) -> Value {
+    match value {
+        Value::String(s) => Value::String(s.replace("#/components/schemas/", "#/$defs/")),
+        Value::Array(items) => Value::Array(items.into_iter().map(rewrite_refs).collect()),
+        Value::Object(map) => {
+            Value::Object(map.into_iter().map(|(k, v)| (k, rewrite_refs(v))).collect())
+        }
+        other => other,
+    }
+}
+
+/// Pretty JSON with a trailing newline, as committed under `protocol/`.
+pub fn to_pretty(value: &impl serde::Serialize) -> String {
+    let mut s = serde_json::to_string_pretty(value).unwrap_or_default();
+    s.push('\n');
+    s
+}
+
+/// All generated files as `(file name, contents)`.
+pub fn generated_files() -> Vec<(&'static str, String)> {
+    vec![
+        (OPENAPI_FILE, to_pretty(&openapi())),
+        (UI_EVENTS_FILE, to_pretty(&ui_events_schema())),
+        (RUNNER_PROTOCOL_FILE, to_pretty(&runner_protocol_schema())),
+    ]
+}

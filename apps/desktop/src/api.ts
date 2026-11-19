@@ -1,29 +1,20 @@
-// Typed client for the ferrobotd UI API.
+// Typed client for the ferrobotd UI API (v1).
+
+import type { components } from "./generated/api-types.js";
 
 export const DEFAULT_DAEMON = "http://127.0.0.1:7878";
 
-export interface Agent {
-  id: string;
-  name: string;
-  instructions: string;
-  status: "created" | "running" | "stopped" | "failed";
-  connected: boolean;
-}
-
-export interface StoredEvent {
-  id: number;
-  agent_id: string;
-  turn_id: string | null;
-  kind: string;
-  payload: Record<string, unknown>;
-  created_at: string;
-}
-
-export type UiEvent =
-  | { type: "event"; event: StoredEvent }
-  | { type: "agent"; agent: Agent; connected: boolean }
-  | { type: "agent_deleted"; agent_id: string }
-  | { type: "message"; message: unknown };
+// Wire types are generated from protocol/openapi.json (`npm run gen:api`),
+// which in turn is generated from the daemon's Rust types. Do not hand-edit.
+type Schemas = components["schemas"];
+export type Agent = Schemas["AgentView"];
+export type StoredEvent = Schemas["StoredEvent"];
+export type MailMessage = Schemas["MailMessage"];
+export type UiEvent = Schemas["UiEvent"];
+export type Health = Schemas["Health"];
+export type Interrupted = Schemas["Interrupted"];
+type CreateAgent = Schemas["CreateAgent"];
+type PostMessage = Schemas["PostMessage"];
 
 export class ApiError extends Error {
   override name = "ApiError";
@@ -56,7 +47,7 @@ export class DaemonClient {
     return (res.status === 204 ? undefined : await res.json()) as T;
   }
 
-  health(): Promise<{ name: string; version: string; backend: string; driver: string }> {
+  health(): Promise<Health> {
     return this.#request("GET", "/v1/health");
   }
 
@@ -65,15 +56,17 @@ export class DaemonClient {
   }
 
   createAgent(name: string, instructions: string): Promise<Agent> {
-    return this.#request("POST", "/v1/agents", { name, instructions });
+    const req: CreateAgent = { name, instructions };
+    return this.#request("POST", "/v1/agents", req);
   }
 
   events(agentId: string, after = 0): Promise<StoredEvent[]> {
     return this.#request("GET", `/v1/agents/${agentId}/events?after=${String(after)}`);
   }
 
-  send(agentId: string, body: string): Promise<unknown> {
-    return this.#request("POST", `/v1/agents/${agentId}/messages`, { body });
+  send(agentId: string, body: string): Promise<MailMessage> {
+    const req: PostMessage = { body };
+    return this.#request("POST", `/v1/agents/${agentId}/messages`, req);
   }
 
   action(agentId: string, action: "interrupt" | "stop" | "wake"): Promise<unknown> {

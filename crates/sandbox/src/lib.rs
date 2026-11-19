@@ -82,6 +82,7 @@ impl ExecRequest {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[cfg_attr(feature = "schema", derive(utoipa::ToSchema))]
 pub struct ExecOutput {
     pub exit_code: i64,
     pub stdout: String,
@@ -91,6 +92,7 @@ pub struct ExecOutput {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[cfg_attr(feature = "schema", derive(utoipa::ToSchema))]
 pub struct SnapshotRef {
     pub id: String,
     /// What the snapshot covers, e.g. "container rootfs (home volume excluded)".

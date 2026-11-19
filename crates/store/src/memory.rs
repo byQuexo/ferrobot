@@ -9,10 +9,12 @@ use crate::util::{fmt_ts, now, parse_ts};
 use crate::{Store, StoreError};
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[cfg_attr(feature = "schema", derive(utoipa::ToSchema))]
 pub struct MemoryEntry {
     pub key: String,
     pub content: String,
     #[serde(with = "time::serde::rfc3339")]
+    #[cfg_attr(feature = "schema", schema(value_type = String, format = DateTime))]
     pub updated_at: OffsetDateTime,
 }
 

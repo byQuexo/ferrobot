@@ -12,6 +12,7 @@ use crate::{AgentId, AgentName, Sender};
 
 /// Frames sent from the daemon to a runner.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(utoipa::ToSchema))]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum DaemonFrame {
     /// First frame after a successful `hello`.
@@ -38,6 +39,7 @@ pub enum DaemonFrame {
 
 /// Frames sent from a runner to the daemon.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(utoipa::ToSchema))]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum RunnerFrame {
     /// First frame on every connection.
@@ -64,6 +66,7 @@ pub enum RunnerFrame {
 
 /// Observable steps of a turn, persisted and streamed to the UI.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(utoipa::ToSchema))]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum TurnEvent {
     AssistantText {
@@ -71,6 +74,7 @@ pub enum TurnEvent {
     },
     ToolUse {
         name: String,
+        #[cfg_attr(feature = "schema", schema(value_type = Object))]
         input: serde_json::Value,
     },
     ToolDenied {
@@ -84,6 +88,7 @@ pub enum TurnEvent {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(utoipa::ToSchema))]
 #[serde(rename_all = "snake_case")]
 pub enum TurnOutcome {
     Completed,

@@ -12,6 +12,7 @@ pub mod error;
 pub mod hub;
 pub mod lifecycle;
 pub mod runner_ws;
+pub mod spec;
 pub mod state;
 
 use axum::Router;

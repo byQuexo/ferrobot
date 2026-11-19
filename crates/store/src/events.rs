@@ -9,13 +9,17 @@ use crate::util::{fmt_ts, now, parse_ts};
 use crate::{Store, StoreError};
 
 #[derive(Debug, Clone, PartialEq, Serialize)]
+#[cfg_attr(feature = "schema", derive(utoipa::ToSchema))]
 pub struct StoredEvent {
     pub id: i64,
     pub agent_id: AgentId,
     pub turn_id: Option<String>,
     pub kind: String,
+    /// The event body; for runner events this is a `TurnEvent`.
+    #[cfg_attr(feature = "schema", schema(value_type = Object))]
     pub payload: serde_json::Value,
     #[serde(with = "time::serde::rfc3339")]
+    #[cfg_attr(feature = "schema", schema(value_type = String, format = DateTime))]
     pub created_at: OffsetDateTime,
 }
 

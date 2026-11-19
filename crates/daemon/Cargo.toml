@@ -17,14 +17,15 @@ path = "src/main.rs"
 docker-tests = []
 
 [dependencies]
+utoipa.workspace = true
 anyhow.workspace = true
 async-trait.workspace = true
 axum.workspace = true
 clap.workspace = true
-ferrobot-core.workspace = true
+ferrobot-core = { workspace = true, features = ["schema"] }
 ferrobot-mcp.workspace = true
-ferrobot-sandbox.workspace = true
-ferrobot-store.workspace = true
+ferrobot-sandbox = { workspace = true, features = ["schema"] }
+ferrobot-store = { workspace = true, features = ["schema"] }
 futures-util.workspace = true
 serde.workspace = true
 serde_json.workspace = true
@@ -36,6 +37,8 @@ tracing-subscriber.workspace = true
 uuid.workspace = true
 
 [dev-dependencies]
+time.workspace = true
+jsonschema = { version = "0.61", default-features = false }
 tempfile.workspace = true
 tokio-tungstenite.workspace = true
 

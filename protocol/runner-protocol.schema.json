@@ -1,0 +1,372 @@
+{
+  "$defs": {
+    "AgentId": {
+      "description": "Stable, opaque identifier of an agent.",
+      "format": "uuid",
+      "type": "string"
+    },
+    "AgentName": {
+      "description": "Human-facing, unique agent handle such as `alice` or `build-bot`.\n\nRules: 1-32 chars, lowercase ASCII letters, digits and `-`,\nmust start with a letter and must not end with `-`.\nNames double as container and volume name suffixes, so they stay DNS-safe.",
+      "example": "alice",
+      "pattern": "^[a-z]([a-z0-9-]{0,30}[a-z0-9])?$",
+      "type": "string"
+    },
+    "DaemonFrame": {
+      "description": "Frames sent from the daemon to a runner.",
+      "oneOf": [
+        {
+          "description": "First frame after a successful `hello`.",
+          "properties": {
+            "agent_id": {
+              "$ref": "#/$defs/AgentId"
+            },
+            "agent_name": {
+              "$ref": "#/$defs/AgentName"
+            },
+            "instructions": {
+              "type": "string"
+            },
+            "protocol_version": {
+              "format": "int32",
+              "minimum": 0,
+              "type": "integer"
+            },
+            "resume_session_id": {
+              "description": "Session to resume, if the daemon knows one.",
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "type": {
+              "enum": [
+                "welcome"
+              ],
+              "type": "string"
+            }
+          },
+          "required": [
+            "protocol_version",
+            "agent_id",
+            "agent_name",
+            "instructions",
+            "type"
+          ],
+          "type": "object"
+        },
+        {
+          "description": "Run one turn for a mailbox message.",
+          "properties": {
+            "body": {
+              "type": "string"
+            },
+            "message_id": {
+              "format": "int64",
+              "type": "integer"
+            },
+            "sender": {
+              "$ref": "#/$defs/Sender"
+            },
+            "sender_name": {
+              "description": "Display name of the sender (`user` or the agent name).",
+              "type": "string"
+            },
+            "turn_id": {
+              "type": "string"
+            },
+            "type": {
+              "enum": [
+                "turn"
+              ],
+              "type": "string"
+            }
+          },
+          "required": [
+            "turn_id",
+            "message_id",
+            "sender",
+            "sender_name",
+            "body",
+            "type"
+          ],
+          "type": "object"
+        },
+        {
+          "description": "Abort the running turn, if it matches.",
+          "properties": {
+            "turn_id": {
+              "type": "string"
+            },
+            "type": {
+              "enum": [
+                "interrupt"
+              ],
+              "type": "string"
+            }
+          },
+          "required": [
+            "turn_id",
+            "type"
+          ],
+          "type": "object"
+        }
+      ]
+    },
+    "RunnerFrame": {
+      "description": "Frames sent from a runner to the daemon.",
+      "oneOf": [
+        {
+          "description": "First frame on every connection.",
+          "properties": {
+            "driver": {
+              "description": "`claude` or `mock`.",
+              "type": "string"
+            },
+            "protocol_version": {
+              "format": "int32",
+              "minimum": 0,
+              "type": "integer"
+            },
+            "runner_version": {
+              "type": "string"
+            },
+            "session_id": {
+              "description": "Session id persisted on the sandbox disk, if any.",
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "type": {
+              "enum": [
+                "hello"
+              ],
+              "type": "string"
+            }
+          },
+          "required": [
+            "protocol_version",
+            "runner_version",
+            "driver",
+            "type"
+          ],
+          "type": "object"
+        },
+        {
+          "description": "Progress inside a turn.",
+          "properties": {
+            "event": {
+              "$ref": "#/$defs/TurnEvent"
+            },
+            "turn_id": {
+              "type": "string"
+            },
+            "type": {
+              "enum": [
+                "event"
+              ],
+              "type": "string"
+            }
+          },
+          "required": [
+            "turn_id",
+            "event",
+            "type"
+          ],
+          "type": "object"
+        },
+        {
+          "description": "Turn finished (successfully or not). Exactly one per `Turn`.",
+          "properties": {
+            "error": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "outcome": {
+              "$ref": "#/$defs/TurnOutcome"
+            },
+            "result": {
+              "description": "Final assistant text, if any.",
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "session_id": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "turn_id": {
+              "type": "string"
+            },
+            "type": {
+              "enum": [
+                "turn_done"
+              ],
+              "type": "string"
+            }
+          },
+          "required": [
+            "turn_id",
+            "outcome",
+            "type"
+          ],
+          "type": "object"
+        }
+      ]
+    },
+    "Sender": {
+      "description": "Who sent a mailbox message.",
+      "oneOf": [
+        {
+          "description": "The human operator, via the UI or HTTP API.",
+          "properties": {
+            "kind": {
+              "enum": [
+                "user"
+              ],
+              "type": "string"
+            }
+          },
+          "required": [
+            "kind"
+          ],
+          "type": "object"
+        },
+        {
+          "description": "Another agent, via the `send_message` MCP tool.",
+          "properties": {
+            "id": {
+              "$ref": "#/$defs/AgentId",
+              "description": "Another agent, via the `send_message` MCP tool."
+            },
+            "kind": {
+              "enum": [
+                "agent"
+              ],
+              "type": "string"
+            }
+          },
+          "required": [
+            "id",
+            "kind"
+          ],
+          "type": "object"
+        }
+      ]
+    },
+    "TurnEvent": {
+      "description": "Observable steps of a turn, persisted and streamed to the UI.",
+      "oneOf": [
+        {
+          "properties": {
+            "kind": {
+              "enum": [
+                "assistant_text"
+              ],
+              "type": "string"
+            },
+            "text": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "text",
+            "kind"
+          ],
+          "type": "object"
+        },
+        {
+          "properties": {
+            "input": {
+              "type": "object"
+            },
+            "kind": {
+              "enum": [
+                "tool_use"
+              ],
+              "type": "string"
+            },
+            "name": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "name",
+            "input",
+            "kind"
+          ],
+          "type": "object"
+        },
+        {
+          "properties": {
+            "kind": {
+              "enum": [
+                "tool_denied"
+              ],
+              "type": "string"
+            },
+            "name": {
+              "type": "string"
+            },
+            "reason": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "name",
+            "reason",
+            "kind"
+          ],
+          "type": "object"
+        },
+        {
+          "properties": {
+            "kind": {
+              "enum": [
+                "log"
+              ],
+              "type": "string"
+            },
+            "level": {
+              "type": "string"
+            },
+            "message": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "level",
+            "message",
+            "kind"
+          ],
+          "type": "object"
+        }
+      ]
+    },
+    "TurnOutcome": {
+      "enum": [
+        "completed",
+        "interrupted",
+        "failed"
+      ],
+      "type": "string"
+    }
+  },
+  "$id": "runner-protocol.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "description": "A frame on the runner WebSocket (`/runner/ws`, agent listener): `DaemonFrame` from daemon to runner, `RunnerFrame` from runner to daemon.",
+  "oneOf": [
+    {
+      "$ref": "#/$defs/DaemonFrame"
+    },
+    {
+      "$ref": "#/$defs/RunnerFrame"
+    }
+  ],
+  "title": "ferrobot runner protocol frame"
+}

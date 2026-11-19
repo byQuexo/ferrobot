@@ -8,6 +8,7 @@ use crate::{AgentId, CoreError};
 
 /// Who sent a mailbox message.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(utoipa::ToSchema))]
 #[serde(tag = "kind", content = "id", rename_all = "snake_case")]
 pub enum Sender {
     /// The human operator, via the UI or HTTP API.
@@ -44,6 +45,7 @@ impl FromStr for Sender {
 /// `Pending -> InFlight -> Delivered`, or back to `Pending` when a runner
 /// disconnects mid-turn, or `Failed` after too many attempts.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(utoipa::ToSchema))]
 #[serde(rename_all = "snake_case")]
 pub enum MailStatus {
     Pending,
@@ -82,6 +84,7 @@ impl FromStr for MailStatus {
 
 /// One message in an agent's mailbox.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(utoipa::ToSchema))]
 pub struct MailMessage {
     pub id: i64,
     pub sender: Sender,
@@ -91,6 +94,7 @@ pub struct MailMessage {
     pub status: MailStatus,
     pub attempts: u32,
     #[serde(with = "time::serde::rfc3339")]
+    #[cfg_attr(feature = "schema", schema(value_type = String, format = DateTime))]
     pub created_at: OffsetDateTime,
 }
 

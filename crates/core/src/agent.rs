@@ -9,6 +9,8 @@ use crate::CoreError;
 
 /// Stable, opaque identifier of an agent.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(utoipa::ToSchema))]
+#[cfg_attr(feature = "schema", schema(value_type = String, format = Uuid))]
 #[serde(transparent)]
 pub struct AgentId(Uuid);
 
@@ -50,6 +52,11 @@ impl FromStr for AgentId {
 /// must start with a letter and must not end with `-`.
 /// Names double as container and volume name suffixes, so they stay DNS-safe.
 #[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(utoipa::ToSchema))]
+#[cfg_attr(
+    feature = "schema",
+    schema(value_type = String, pattern = "^[a-z]([a-z0-9-]{0,30}[a-z0-9])?$", example = "alice")
+)]
 #[serde(try_from = "String", into = "String")]
 pub struct AgentName(String);
 
@@ -107,6 +114,7 @@ impl fmt::Display for AgentName {
 
 /// Lifecycle state of an agent's sandbox as tracked by the daemon.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(utoipa::ToSchema))]
 #[serde(rename_all = "snake_case")]
 pub enum AgentStatus {
     /// Registered, sandbox not created yet.
@@ -149,6 +157,7 @@ impl FromStr for AgentStatus {
 
 /// A registered agent. Secrets (the runner token) are never part of this type.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(utoipa::ToSchema))]
 pub struct Agent {
     pub id: AgentId,
     pub name: AgentName,
@@ -162,6 +171,7 @@ pub struct Agent {
     /// Last model session id reported by the runner, used for resume.
     pub session_id: Option<String>,
     #[serde(with = "time::serde::rfc3339")]
+    #[cfg_attr(feature = "schema", schema(value_type = String, format = DateTime))]
     pub created_at: OffsetDateTime,
 }
 

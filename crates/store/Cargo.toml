@@ -9,7 +9,13 @@ authors.workspace = true
 repository.workspace = true
 publish = false
 
+[features]
+# Derives `utoipa::ToSchema` for API documentation. Off by default so the
+# crate stays plain (e.g. for a future UniFFI binding).
+schema = ["dep:utoipa", "ferrobot-core/schema"]
+
 [dependencies]
+utoipa = { workspace = true, optional = true }
 ferrobot-core.workspace = true
 hex.workspace = true
 rusqlite.workspace = true
