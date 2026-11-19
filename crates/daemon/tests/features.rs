@@ -986,3 +986,66 @@ async fn mentions_priorities_and_conversations() {
     let (status, _) = http(&d.ui, "GET", "/v1/conversations/x/y", None).await;
     assert_eq!(status, 404);
 }
+
+#[tokio::test]
+async fn question_cards_are_answered_once() {
+    let backend = Arc::new(StatefulBackend::default());
+    let d = start(backend.clone(), None, "127.0.0.1:0").await;
+    let ada = create(&d, json!({"name": "ada"})).await["id"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    let ada_id: AgentId = ada.parse().unwrap();
+    let card = json!({"version": 1, "card": {"title": "Release", "questions": [
+        {"id": "day", "prompt": "Which day?", "kind": "single", "allow_custom": true,
+         "choices": [{"label": "Thursday", "value": "thu"}, {"label": "Friday", "value": "fri"}]},
+        {"id": "where", "prompt": "Where?", "kind": "multi",
+         "choices": [{"label": "Email", "value": "email"}, {"label": "Chat", "value": "chat"}]}
+    ]}});
+    let q = d
+        .state
+        .store
+        .append_event(ada_id, None, "question".into(), card)
+        .await
+        .unwrap();
+    let path = format!("/v1/agents/{ada}/questions/{}/answer", q.id);
+    let (status, _) = http(
+        &d.ui,
+        "POST",
+        &path,
+        Some(json!({"answers": [
+            {"question_id": "day", "values": ["thu", "fri"]},
+            {"question_id": "where", "values": ["email"]}
+        ]})),
+    )
+    .await;
+    assert_eq!(status, 400, "two picks on a single-choice question");
+    let answers = json!({"answers": [
+        {"question_id": "day", "custom": "Monday"},
+        {"question_id": "where", "values": ["email", "chat"]}
+    ]});
+    let (status, body) = http(&d.ui, "POST", &path, Some(answers.clone())).await;
+    assert_eq!(status, 202, "{body}");
+    let (status, _) = http(&d.ui, "POST", &path, Some(answers)).await;
+    assert_eq!(status, 409);
+    let other = format!("/v1/agents/{ada}/questions/999/answer");
+    let (status, _) = http(&d.ui, "POST", &other, Some(json!({"answers": []}))).await;
+    assert_eq!(status, 404);
+
+    let (_, msgs) = http(&d.ui, "GET", &format!("/v1/agents/{ada}/messages"), None).await;
+    let m = &msgs.as_array().unwrap()[0];
+    assert_eq!(m["id"], body["message_id"]);
+    assert_eq!(m["sender"]["kind"], "user");
+    assert_eq!(
+        m["body"],
+        "Answers to \"Release\":\n- Which day? Monday\n- Where? Email, Chat"
+    );
+    let (_, evs) = http(&d.ui, "GET", &format!("/v1/agents/{ada}/events"), None).await;
+    let kinds: Vec<_> = evs
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|e| e["kind"].clone())
+        .collect();
+    assert!(kinds.contains(&json!("question_answered")), "{kinds:?}");
+}

@@ -24,6 +24,9 @@ export type UpdateAgent = Schemas["UpdateAgent"];
 export type CreateRoutine = Schemas["CreateRoutine"];
 export type UpdateRoutine = Schemas["UpdateRoutine"];
 export type Conversation = Schemas["Conversation"];
+export type QuestionCard = Schemas["QuestionCard"];
+export type QuestionAnswer = Schemas["QuestionAnswer"];
+export type QuestionAnswered = Schemas["QuestionAnswered"];
 
 export class ApiError extends Error {
   override name = "ApiError";
@@ -101,6 +104,8 @@ export class DaemonClient {
     this.#request("POST", `/v1/agents/${id}/messages`, { body });
   markRead = (id: string): Promise<void> => this.#request("POST", `/v1/agents/${id}/read`);
   interrupt = (id: string): Promise<unknown> => this.#request("POST", `/v1/agents/${id}/interrupt`);
+  answerQuestion = (id: string, question: number, answers: QuestionAnswer[]): Promise<QuestionAnswered> =>
+    this.#request("POST", `/v1/agents/${id}/questions/${String(question)}/answer`, { answers });
 
   // memory
   memory = (id: string, q = ""): Promise<MemoryEntry[]> =>

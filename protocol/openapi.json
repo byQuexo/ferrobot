@@ -1010,6 +1010,98 @@
         }
       }
     },
+    "/v1/agents/{id}/questions/{qid}/answer": {
+      "post": {
+        "tags": [
+          "chat"
+        ],
+        "summary": "Answers a question card the agent showed with `ask_user`. The answers are\nsent to the agent as one user message and the card is locked (a\n`question_answered` event is recorded and pushed).",
+        "operationId": "answer_question",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "Agent id (UUID)",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "qid",
+            "in": "path",
+            "description": "Id of the `question` event",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AnswerQuestion"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "202": {
+            "description": "Answer queued for the agent",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/QuestionAnswered"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Answers do not fit the card",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or wrong API token",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Unknown agent or question",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Already answered",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/v1/agents/{id}/read": {
       "post": {
         "tags": [
@@ -2230,6 +2322,38 @@
         ],
         "description": "An agent plus live state."
       },
+      "AnswerQuestion": {
+        "type": "object",
+        "required": [
+          "answers"
+        ],
+        "properties": {
+          "answers": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/QuestionAnswer"
+            },
+            "description": "One answer per question of the card."
+          }
+        }
+      },
+      "Choice": {
+        "type": "object",
+        "description": "One selectable option.",
+        "required": [
+          "label"
+        ],
+        "properties": {
+          "label": {
+            "type": "string",
+            "description": "Shown to the user."
+          },
+          "value": {
+            "type": "string",
+            "description": "Stable value reported in the answer; defaults to the label."
+          }
+        }
+      },
       "Conversation": {
         "type": "object",
         "description": "Messages two agents exchanged.",
@@ -2564,6 +2688,142 @@
             "type": "string"
           }
         }
+      },
+      "Question": {
+        "type": "object",
+        "description": "One question on a card.",
+        "required": [
+          "prompt",
+          "kind"
+        ],
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "Unique within the card; defaults to `q1`, `q2`, ..."
+          },
+          "prompt": {
+            "type": "string",
+            "description": "The question text."
+          },
+          "kind": {
+            "$ref": "#/components/schemas/QuestionKind"
+          },
+          "choices": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Choice"
+            },
+            "description": "Options for `single` and `multi` (2..12). Empty for `text`."
+          },
+          "allow_custom": {
+            "type": "boolean",
+            "description": "`single`/`multi`: also offer a free-text \"other\" answer."
+          }
+        }
+      },
+      "QuestionAnswer": {
+        "type": "object",
+        "description": "The answer to one question.",
+        "required": [
+          "question_id"
+        ],
+        "properties": {
+          "question_id": {
+            "type": "string"
+          },
+          "values": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Selected choice values (`single`: at most one)."
+          },
+          "custom": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Free text (`text` questions, or \"other\" when `allow_custom`)."
+          }
+        }
+      },
+      "QuestionAnswered": {
+        "type": "object",
+        "description": "Payload of a `question_answered` event. A card is answered at most once.",
+        "required": [
+          "question",
+          "answers",
+          "message_id"
+        ],
+        "properties": {
+          "question": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Id of the `question` event."
+          },
+          "answers": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/QuestionAnswer"
+            }
+          },
+          "message_id": {
+            "type": "integer",
+            "format": "int64",
+            "description": "The user message that carried the answer to the agent."
+          }
+        }
+      },
+      "QuestionCard": {
+        "type": "object",
+        "description": "A card with one or more questions, answered together.",
+        "required": [
+          "questions"
+        ],
+        "properties": {
+          "title": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Optional heading."
+          },
+          "questions": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Question"
+            },
+            "description": "1..8 questions, shown in order."
+          }
+        }
+      },
+      "QuestionEvent": {
+        "type": "object",
+        "description": "Payload of a `question` event: the card as shown in the chat.",
+        "required": [
+          "version",
+          "card"
+        ],
+        "properties": {
+          "version": {
+            "type": "integer",
+            "format": "int32",
+            "description": "Card format version (currently 1).",
+            "minimum": 0
+          },
+          "card": {
+            "$ref": "#/components/schemas/QuestionCard"
+          }
+        }
+      },
+      "QuestionKind": {
+        "type": "string",
+        "description": "How a question is answered.",
+        "enum": [
+          "single",
+          "multi",
+          "text"
+        ]
       },
       "Routine": {
         "type": "object",

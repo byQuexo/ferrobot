@@ -9,6 +9,7 @@ Machine-readable contracts for everything that talks to `ferrobotd`. They are
 | [`openapi.json`](openapi.json) | OpenAPI 3.1: the operator HTTP API under `/v1` (UI listener, default `127.0.0.1:7878`). |
 | [`ui-events.schema.json`](ui-events.schema.json) | JSON Schema 2020-12: one text frame on `GET /v1/ws` (`UiEvent`). |
 | [`runner-protocol.schema.json`](runner-protocol.schema.json) | JSON Schema 2020-12: daemon ↔ runner frames on `/runner/ws` (agent listener). |
+| [`question-card.v1.schema.json`](question-card.v1.schema.json) | JSON Schema 2020-12: question cards (version 1), the payloads of `question` and `question_answered` events. |
 | [`fixtures/`](fixtures) | Example frames, parsed by both the Rust and the TypeScript test suites. |
 
 ## How they stay in sync
@@ -72,6 +73,46 @@ rename or instructions edit; they apply from the next turn). Turn events (field 
 `tool_result` referencing that id. A turn's `sender` is `user`,
 `agent:<id>` or `routine:<id>` (the `sender_name` of a routine turn is
 `routine:<name>`).
+
+## Question cards (agent → UI)
+
+Agents show their operator structured questions with the MCP tool
+**`ask_user`** (input: `QuestionCard`). A card holds 1–8 questions, shown one
+after another and answered together. Each question is `single` (pick one),
+`multi` (pick any) or `text` (free text); `single`/`multi` take 2–12
+`choices` (`{label, value}`) and may set `allow_custom` for an extra free-text
+answer. The tool does not block: it records a **`question` event**
+(`QuestionEvent`, `version: 1`) in the agent's chat (pushed as `UiEvent`
+`event`) and returns its id. The operator answers with
+`POST /v1/agents/{id}/questions/{qid}/answer` (`{"answers": [QuestionAnswer]}`;
+`400` if the answers do not fit the card, `409` if already answered). The
+daemon then queues the answers to the agent as one `user` message and records
+a **`question_answered` event** (`QuestionAnswered`: `question`, `answers`,
+`message_id`), which locks the card. UIs show the answers on the card and may
+hide that message from the chat.
+
+**Relation to A2UI.** We checked Google's open
+[A2UI](https://github.com/a2ui-project/a2ui) (Apache-2.0) as a base: the
+current spec is **v1.0** ([spec](https://a2ui.org/specification/v1.0-a2ui/),
+[repo copy](https://github.com/a2ui-project/a2ui/blob/main/specification/v1_0/docs/a2ui_protocol.md),
+"Current", last updated 2026-06-08; basic catalog
+`https://a2ui.org/specification/v1_0/catalogs/basic/catalog.json`). It is a
+general streaming surface protocol (component adjacency lists, a bound data
+model, client functions, validation rules) whose wire format changed with
+every release (v0.8 → v0.9 → v0.9.1 → v1.0 within a year). For "ask the
+operator a few questions" that is far more than a model should have to
+author in one tool call or a renderer has to implement, so the card uses this
+small own schema instead, designed to map 1:1 onto A2UI v1.0 later:
+
+| ferrobot | A2UI v1.0 (basic catalog) |
+| --- | --- |
+| `QuestionCard` | `createSurface` with a `Card` → `Column` root; `title` → `Text` |
+| `single` question | `ChoicePicker`, `variant: "mutuallyExclusive"`, `options: [{label, value}]` |
+| `multi` question | `ChoicePicker`, `variant: "multipleSelection"` |
+| `text` question / `allow_custom` | `TextField` (`variant: "shortText"`) |
+| send button | `Button` (`variant: "primary"`) with an `action` event |
+| `QuestionAnswer` (`values`, `custom`) | the action `context` (selected values, text) |
+| `question_answered` | the renderer → agent `action` message |
 
 ## Versioning
 

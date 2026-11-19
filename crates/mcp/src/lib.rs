@@ -11,7 +11,7 @@ mod tools;
 use std::sync::Arc;
 
 use ferrobot_core::{AgentId, MailMessage};
-use ferrobot_store::Store;
+use ferrobot_store::{Store, StoredEvent};
 
 pub use auth::{Caller, router};
 pub use tools::FerrobotTools;
@@ -33,6 +33,10 @@ pub trait MailboxNotifier: Send + Sync + 'static {
     /// A tool changed the agent's memory.
     fn memory_changed(&self, agent: AgentId) {
         let _ = agent;
+    }
+    /// A tool recorded a chat event (e.g. a question card) for the UI.
+    fn event_recorded(&self, event: &StoredEvent) {
+        let _ = event;
     }
 }
 

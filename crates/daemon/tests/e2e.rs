@@ -207,6 +207,35 @@ async fn two_agents_talk(d: Daemon) {
     })
     .await;
 
+    // question card: the mock asks via ask_user, the operator answers, the
+    // agent gets the answers as a user message
+    http(
+        &d.ui,
+        "POST",
+        &format!("/v1/agents/{alice}/messages"),
+        Some(json!({"body": "ask Ship it?: yes | no; Notes"})),
+    )
+    .await;
+    let q = wait_event(&d, &alice, |e| e["kind"] == "question").await;
+    let (status, body) = http(
+        &d.ui,
+        "POST",
+        &format!("/v1/agents/{alice}/questions/{}/answer", q["id"]),
+        Some(json!({"answers": [
+            {"question_id": "q1", "values": ["yes"]},
+            {"question_id": "q2", "custom": "after lunch"}
+        ]})),
+    )
+    .await;
+    assert_eq!(status, 202, "{body}");
+    wait_event(&d, &alice, |e| {
+        e["kind"] == "turn_done"
+            && e["payload"]["result"]
+                .as_str()
+                .is_some_and(|r| r.contains("Ship it? yes") && r.contains("Notes after lunch"))
+    })
+    .await;
+
     for id in [&alice, &bob] {
         let (status, _) = http(&d.ui, "DELETE", &format!("/v1/agents/{id}"), None).await;
         assert_eq!(status, 204);

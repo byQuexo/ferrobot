@@ -9,6 +9,7 @@ pub mod error;
 pub mod mail;
 pub mod mention;
 pub mod protocol;
+pub mod question;
 
 pub use agent::{Agent, AgentId, AgentName, AgentStatus};
 pub use error::CoreError;

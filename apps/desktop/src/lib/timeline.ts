@@ -1,6 +1,6 @@
 // Turns the daemon's messages and turn events into chat items. Pure, so the
 // merge rules are unit-tested without a browser.
-import type { MailMessage, StoredEvent } from "../api.ts";
+import type { MailMessage, QuestionAnswered, QuestionCard, StoredEvent } from "../api.ts";
 
 export type TimelineItem =
   | { type: "user"; key: string; at: string; text: string; status: MailMessage["status"] }
@@ -18,6 +18,7 @@ export type TimelineItem =
       isError: boolean;
       denied: string | null;
     }
+  | { type: "question"; key: string; at: string; id: number; card: QuestionCard; answered: QuestionAnswered | null }
   | { type: "error"; key: string; at: string; text: string }
   | { type: "system"; key: string; at: string; text: string };
 
@@ -59,8 +60,19 @@ export function buildTimeline(
     items.push({ item, order: order++ });
   };
 
+  // Answers to question cards are shown on the card, not as a second bubble.
+  const answers = new Map<number, QuestionAnswered>();
+  for (const e of events) {
+    if (e.kind === "question_answered") {
+      const a = e.payload as unknown as QuestionAnswered;
+      answers.set(a.question, a);
+    }
+  }
+  const answerMessages = new Set([...answers.values()].map((a) => a.message_id));
+
   for (const m of messages) {
     const key = `m${String(m.id)}`;
+    if (answerMessages.has(m.id)) continue;
     if (m.recipient === agentId) {
       if (m.sender.kind === "user") {
         push({ type: "user", key, at: m.created_at, text: m.body, status: m.status });
@@ -99,6 +111,11 @@ export function buildTimeline(
         if (e.turn_id) finished.add(e.turn_id);
         push({ type: "assistant", key, at: e.created_at, text: str(p["text"]), streaming: false });
         break;
+      case "question": {
+        const card = (p["card"] ?? null) as QuestionCard | null;
+        if (card) push({ type: "question", key, at: e.created_at, id: e.id, card, answered: answers.get(e.id) ?? null });
+        break;
+      }
       case "tool_use": {
         const item = {
           type: "tool" as const,
@@ -160,7 +177,9 @@ export function buildTimeline(
     const t = Date.parse(a.item.at) - Date.parse(b.item.at);
     return t !== 0 ? t : a.order - b.order;
   });
-  return items.map((x) => x.item);
+  // A successful ask_user call is shown as its card instead of a tool card.
+  const isCardCall = (i: TimelineItem): boolean => i.type === "tool" && /(^|__)ask_user$/.test(i.name) && !i.isError;
+  return items.map((x) => x.item).filter((i) => !isCardCall(i));
 }
 
 export type A2aItem = Extract<TimelineItem, { type: "incoming" | "outgoing" }>;

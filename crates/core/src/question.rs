@@ -1,0 +1,310 @@
+//! Question cards: structured questions an agent shows the operator in its
+//! chat (the `ask_user` MCP tool). The operator's answer goes back to the
+//! agent as an ordinary user message.
+//!
+//! The shape is ferrobot's own, kept small on purpose, and maps 1:1 onto a
+//! subset of A2UI v1.0 (`ChoicePicker`, `TextField`, `Button`); see
+//! `protocol/README.md`.
+
+use std::fmt::Write as _;
+
+use serde::{Deserialize, Serialize};
+
+/// Version of the question card format (`QuestionEvent.version`).
+pub const QUESTION_CARD_VERSION: u32 = 1;
+/// Upper bounds that keep a card readable.
+pub const MAX_QUESTIONS: usize = 8;
+pub const MAX_CHOICES: usize = 12;
+const MAX_TEXT: usize = 500;
+const MAX_ID: usize = 64;
+
+/// How a question is answered.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(utoipa::ToSchema))]
+#[cfg_attr(feature = "mcp", derive(schemars::JsonSchema))]
+#[serde(rename_all = "snake_case")]
+pub enum QuestionKind {
+    /// Pick exactly one choice (A2UI `ChoicePicker`, `mutuallyExclusive`).
+    Single,
+    /// Pick any number of choices (A2UI `ChoicePicker`, `multipleSelection`).
+    Multi,
+    /// Free text only (A2UI `TextField`).
+    Text,
+}
+
+/// One selectable option.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(utoipa::ToSchema))]
+#[cfg_attr(feature = "mcp", derive(schemars::JsonSchema))]
+pub struct Choice {
+    /// Shown to the user.
+    pub label: String,
+    /// Stable value reported in the answer; defaults to the label.
+    #[serde(default)]
+    pub value: String,
+}
+
+/// One question on a card.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(utoipa::ToSchema))]
+#[cfg_attr(feature = "mcp", derive(schemars::JsonSchema))]
+pub struct Question {
+    /// Unique within the card; defaults to `q1`, `q2`, ...
+    #[serde(default)]
+    pub id: String,
+    /// The question text.
+    pub prompt: String,
+    pub kind: QuestionKind,
+    /// Options for `single` and `multi` (2..12). Empty for `text`.
+    #[serde(default)]
+    pub choices: Vec<Choice>,
+    /// `single`/`multi`: also offer a free-text "other" answer.
+    #[serde(default)]
+    pub allow_custom: bool,
+}
+
+/// A card with one or more questions, answered together.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(utoipa::ToSchema))]
+#[cfg_attr(feature = "mcp", derive(schemars::JsonSchema))]
+pub struct QuestionCard {
+    /// Optional heading.
+    #[serde(default)]
+    pub title: Option<String>,
+    /// 1..8 questions, shown in order.
+    pub questions: Vec<Question>,
+}
+
+/// The answer to one question.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(utoipa::ToSchema))]
+pub struct QuestionAnswer {
+    pub question_id: String,
+    /// Selected choice values (`single`: at most one).
+    #[serde(default)]
+    pub values: Vec<String>,
+    /// Free text (`text` questions, or "other" when `allow_custom`).
+    #[serde(default)]
+    pub custom: Option<String>,
+}
+
+/// Payload of a `question` event: the card as shown in the chat.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(utoipa::ToSchema))]
+pub struct QuestionEvent {
+    /// Card format version (currently 1).
+    pub version: u32,
+    pub card: QuestionCard,
+}
+
+/// Payload of a `question_answered` event. A card is answered at most once.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(utoipa::ToSchema))]
+pub struct QuestionAnswered {
+    /// Id of the `question` event.
+    pub question: i64,
+    pub answers: Vec<QuestionAnswer>,
+    /// The user message that carried the answer to the agent.
+    pub message_id: i64,
+}
+
+fn check_text(what: &str, s: &str, max: usize) -> Result<(), String> {
+    if s.trim().is_empty() {
+        return Err(format!("{what} must not be empty"));
+    }
+    if s.len() > max {
+        return Err(format!("{what} exceeds {max} bytes"));
+    }
+    Ok(())
+}
+
+impl QuestionCard {
+    /// Checks limits and fills defaults (question ids, choice values).
+    pub fn normalize(&mut self) -> Result<(), String> {
+        if let Some(t) = &self.title {
+            if t.trim().is_empty() {
+                self.title = None;
+            } else {
+                check_text("title", t, MAX_TEXT)?;
+            }
+        }
+        if self.questions.is_empty() || self.questions.len() > MAX_QUESTIONS {
+            return Err(format!("a card needs 1..{MAX_QUESTIONS} questions"));
+        }
+        let mut ids = Vec::new();
+        for (i, q) in self.questions.iter_mut().enumerate() {
+            if q.id.trim().is_empty() {
+                q.id = format!("q{}", i + 1);
+            }
+            check_text("question id", &q.id, MAX_ID)?;
+            if ids.contains(&q.id) {
+                return Err(format!("duplicate question id {:?}", q.id));
+            }
+            ids.push(q.id.clone());
+            check_text("prompt", &q.prompt, MAX_TEXT)?;
+            match q.kind {
+                QuestionKind::Text => {
+                    if !q.choices.is_empty() {
+                        return Err(format!("{}: text questions take no choices", q.id));
+                    }
+                }
+                QuestionKind::Single | QuestionKind::Multi => {
+                    if q.choices.len() < 2 || q.choices.len() > MAX_CHOICES {
+                        return Err(format!("{}: needs 2..{MAX_CHOICES} choices", q.id));
+                    }
+                    let mut values: Vec<&str> = Vec::new();
+                    for c in &mut q.choices {
+                        check_text("choice label", &c.label, MAX_TEXT)?;
+                        if c.value.trim().is_empty() {
+                            c.value.clone_from(&c.label);
+                        }
+                    }
+                    for c in &q.choices {
+                        if values.contains(&c.value.as_str()) {
+                            return Err(format!("{}: duplicate choice {:?}", q.id, c.value));
+                        }
+                        values.push(&c.value);
+                    }
+                }
+            }
+        }
+        Ok(())
+    }
+
+    /// Validates a complete set of answers (one per question, in any order).
+    pub fn check_answers(&self, answers: &[QuestionAnswer]) -> Result<(), String> {
+        if answers.len() != self.questions.len() {
+            return Err("answer every question exactly once".into());
+        }
+        for q in &self.questions {
+            let mut mine = answers.iter().filter(|a| a.question_id == q.id);
+            let (Some(a), None) = (mine.next(), mine.next()) else {
+                return Err(format!("answer {:?} exactly once", q.id));
+            };
+            let custom = a.custom.as_deref().map(str::trim).filter(|c| !c.is_empty());
+            if let Some(c) = custom {
+                check_text("answer", c, MAX_ANSWER)?;
+            }
+            for v in &a.values {
+                if !q.choices.iter().any(|c| &c.value == v) {
+                    return Err(format!("{}: unknown choice {v:?}", q.id));
+                }
+            }
+            let picked = a.values.len();
+            match q.kind {
+                QuestionKind::Text if picked > 0 || custom.is_none() => {
+                    return Err(format!("{}: needs a text answer", q.id));
+                }
+                QuestionKind::Single if picked + usize::from(custom.is_some()) != 1 => {
+                    return Err(format!("{}: pick exactly one answer", q.id));
+                }
+                QuestionKind::Multi if picked == 0 && custom.is_none() => {
+                    return Err(format!("{}: pick at least one answer", q.id));
+                }
+                _ => {}
+            }
+            if custom.is_some() && q.kind != QuestionKind::Text && !q.allow_custom {
+                return Err(format!("{}: free text is not allowed", q.id));
+            }
+        }
+        Ok(())
+    }
+
+    /// The answer as the message text the agent receives.
+    pub fn answer_text(&self, answers: &[QuestionAnswer]) -> String {
+        let mut out = match &self.title {
+            Some(t) => format!("Answers to \"{t}\":"),
+            None => "Answers to your questions:".to_owned(),
+        };
+        for q in &self.questions {
+            let Some(a) = answers.iter().find(|a| a.question_id == q.id) else {
+                continue;
+            };
+            let mut parts: Vec<String> = a
+                .values
+                .iter()
+                .map(|v| {
+                    q.choices
+                        .iter()
+                        .find(|c| &c.value == v)
+                        .map_or_else(|| v.clone(), |c| c.label.clone())
+                })
+                .collect();
+            if let Some(c) = a.custom.as_deref().map(str::trim).filter(|c| !c.is_empty()) {
+                parts.push(c.to_owned());
+            }
+            let _ = write!(out, "\n- {} {}", q.prompt.trim(), parts.join(", "));
+        }
+        out
+    }
+}
+
+/// Upper bound for one free-text answer (bytes).
+pub const MAX_ANSWER: usize = 4000;
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn card() -> QuestionCard {
+        serde_json::from_value(serde_json::json!({
+            "title": "Release",
+            "questions": [
+                {"prompt": "Which day?", "kind": "single",
+                 "choices": [{"label": "Thursday"}, {"label": "Friday"}], "allow_custom": true},
+                {"prompt": "Channels?", "kind": "multi",
+                 "choices": [{"label": "Email", "value": "email"}, {"label": "Chat", "value": "chat"}]},
+                {"prompt": "Anything else?", "kind": "text"}
+            ]
+        }))
+        .unwrap()
+    }
+
+    fn ans(id: &str, values: &[&str], custom: Option<&str>) -> QuestionAnswer {
+        QuestionAnswer {
+            question_id: id.into(),
+            values: values.iter().map(|v| (*v).to_owned()).collect(),
+            custom: custom.map(Into::into),
+        }
+    }
+
+    #[test]
+    fn normalizes_and_formats() {
+        let mut c = card();
+        c.normalize().unwrap();
+        assert_eq!(c.questions[2].id, "q3");
+        assert_eq!(c.questions[0].choices[1].value, "Friday");
+        let answers = [
+            ans("q1", &[], Some("Monday")),
+            ans("q2", &["email", "chat"], None),
+            ans("q3", &[], Some("keep it short")),
+        ];
+        c.check_answers(&answers).unwrap();
+        assert_eq!(
+            c.answer_text(&answers),
+            "Answers to \"Release\":\n- Which day? Monday\n- Channels? Email, Chat\n- Anything else? keep it short"
+        );
+    }
+
+    #[test]
+    fn rejects_bad_cards_and_answers() {
+        let mut c = card();
+        c.questions[1].choices.truncate(1);
+        assert!(c.normalize().is_err());
+        let mut c = card();
+        c.normalize().unwrap();
+        let two = [
+            ans("q1", &["Thursday", "Friday"], None),
+            ans("q2", &["email"], None),
+            ans("q3", &[], Some("x")),
+        ];
+        assert!(c.check_answers(&two).is_err());
+        let custom = [
+            ans("q1", &["Thursday"], None),
+            ans("q2", &[], Some("fax")),
+            ans("q3", &[], Some("x")),
+        ];
+        assert!(c.check_answers(&custom).is_err());
+        assert!(c.check_answers(&[ans("q1", &["Thursday"], None)]).is_err());
+    }
+}

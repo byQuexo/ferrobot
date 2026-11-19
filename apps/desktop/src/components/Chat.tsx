@@ -20,6 +20,7 @@ import { useApp } from "../context.ts";
 import { clockTime, presenceLabel, toolLabel } from "../lib/format.ts";
 import { buildTimeline, groupExchanges, type DisplayItem, type Exchange, type TimelineItem } from "../lib/timeline.ts";
 import { Avatar } from "./Avatar.tsx";
+import { QuestionCardView } from "./QuestionCard.tsx";
 import { RichText } from "./RichText.tsx";
 import { Button, IconButton } from "./ui.tsx";
 
@@ -300,6 +301,8 @@ function Item(props: { item: DisplayItem; agent: Agent }): JSX.Element {
       );
     case "tool":
       return <ToolCard item={item} />;
+    case "question":
+      return <QuestionCardView agent={agent} id={item.id} card={item.card} answered={item.answered} />;
     case "error":
       return (
         <div class="row row-center">

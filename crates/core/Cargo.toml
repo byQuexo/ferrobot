@@ -13,9 +13,11 @@ publish = false
 # Derives `utoipa::ToSchema` for API documentation. Off by default so the
 # crate stays plain (e.g. for a future UniFFI binding).
 schema = ["dep:utoipa"]
+mcp = ["dep:schemars"]
 
 [dependencies]
 utoipa = { workspace = true, optional = true }
+schemars = { workspace = true, optional = true }
 serde.workspace = true
 serde_json.workspace = true
 thiserror.workspace = true

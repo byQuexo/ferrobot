@@ -33,6 +33,9 @@ with `scripts/seed-demo.sh`.
   restarted, and snapshots (root filesystem + home) can be taken and restored.
 - **Agents talk to each other** through an asynchronous mailbox with retries,
   using MCP tools inside the sandbox (`send_message`, `list_agents`, ...).
+- **Question cards:** agents can ask the operator structured questions
+  (single or multiple choice, free text, several per card) with the MCP tool
+  `ask_user`; the answers go back as a message.
 - **Memory** per agent with full-text search, usable by the agent (MCP
   `remember` / `recall` / `forget`), over the API and in the desktop app.
 - **Routines:** cron schedules with time zones that send the agent a prompt,
@@ -262,7 +265,9 @@ turn timeout, runner image, ...).
   agent snapshots with presence and unread count, turn events, text deltas,
   messages, memory and routine changes.
 - Agents' MCP tools: `list_agents`, `send_message`, `read_mailbox`, `remember`,
-  `recall`, `forget`.
+  `recall`, `forget`, `ask_user` (question cards; answered with
+  `POST /v1/agents/{id}/questions/{qid}/answer`, schema in
+  `protocol/question-card.v1.schema.json`).
 - Daemon ↔ runner frames: `protocol/runner-protocol.schema.json`.
 
 ## Testing

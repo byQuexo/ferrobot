@@ -11,7 +11,7 @@ publish = false
 
 [dependencies]
 axum.workspace = true
-ferrobot-core.workspace = true
+ferrobot-core = { workspace = true, features = ["mcp"] }
 ferrobot-store.workspace = true
 http.workspace = true
 rmcp.workspace = true

@@ -92,6 +92,8 @@ pub struct AppState {
     pub scheduler: Arc<Notify>,
     /// HTTP client for the model proxy.
     pub http: reqwest::Client,
+    /// Serializes question-card answers so a card is answered at most once.
+    pub answers: Arc<tokio::sync::Mutex<()>>,
 }
 
 impl AppState {
@@ -105,6 +107,7 @@ impl AppState {
             settings: Arc::new(settings),
             scheduler: Arc::new(Notify::new()),
             http: reqwest::Client::new(),
+            answers: Arc::default(),
         }
     }
 
@@ -204,5 +207,11 @@ impl ferrobot_mcp::MailboxNotifier for AppState {
 
     fn memory_changed(&self, agent: AgentId) {
         self.publish(UiEvent::MemoryChanged { agent_id: agent });
+    }
+
+    fn event_recorded(&self, event: &StoredEvent) {
+        self.publish(UiEvent::Event {
+            event: event.clone(),
+        });
     }
 }

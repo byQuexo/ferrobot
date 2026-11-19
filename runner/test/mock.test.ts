@@ -30,6 +30,17 @@ describe("mock driver grammar", () => {
     assert.deepEqual(planMockAction("daily digest", "routine", "routine:digest"), { kind: "echo" });
   });
 
+  it("parses question cards", () => {
+    assert.deepEqual(planMockAction("ask Which day?: Thu | Fri | ...; Where+: email | chat; Notes", "user", "user"), {
+      kind: "ask",
+      questions: [
+        { prompt: "Which day?", kind: "single", choices: [{ label: "Thu" }, { label: "Fri" }], allow_custom: true },
+        { prompt: "Where", kind: "multi", choices: [{ label: "email" }, { label: "chat" }], allow_custom: false },
+        { prompt: "Notes", kind: "text", choices: [], allow_custom: false },
+      ],
+    });
+  });
+
   it("splits streaming pieces losslessly", () => {
     assert.deepEqual(streamPieces("a  b\nc"), ["a  ", "b\n", "c"]);
     assert.deepEqual(streamPieces(""), []);

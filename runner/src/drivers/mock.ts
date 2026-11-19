@@ -4,6 +4,10 @@
 //   @<agent> <text>         send <text> to <agent> via send_message
 //   remember <key>: <text>  store a memory
 //   recall <query>          search memories
+//   ask <q>; <q>; ...       show a question card via ask_user. Each <q> is
+//                           "Prompt: a | b" (single choice), "Prompt+: a | b"
+//                           (multiple choice) or "Prompt" (free text); a
+//                           trailing "| ..." choice allows a custom answer
 //   anything else           echo; if it came from another agent (and is not
 //                           already a reply), answer it with "re: <text>"
 import type { FerrobotMcp } from "../mcp-client.ts";
@@ -14,8 +18,29 @@ export type MockAction =
   | { kind: "send"; to: string; body: string }
   | { kind: "remember"; key: string; content: string }
   | { kind: "recall"; query: string }
+  | { kind: "ask"; questions: MockQuestion[] }
   | { kind: "reply"; to: string; body: string }
   | { kind: "echo" };
+
+export interface MockQuestion {
+  prompt: string;
+  kind: "single" | "multi" | "text";
+  choices: { label: string }[];
+  allow_custom: boolean;
+}
+
+function parseQuestion(text: string): MockQuestion {
+  const m = /^([^:]+?)(\+)?:\s*(.+)$/.exec(text.trim());
+  if (!m?.[1] || !m[3]) return { prompt: text.trim(), kind: "text", choices: [], allow_custom: false };
+  const labels = m[3].split("|").map((s) => s.trim()).filter(Boolean);
+  const custom = labels.at(-1) === "...";
+  return {
+    prompt: m[1].trim(),
+    kind: m[2] ? "multi" : "single",
+    choices: (custom ? labels.slice(0, -1) : labels).map((label) => ({ label })),
+    allow_custom: custom,
+  };
+}
 
 /** Pure parser so the mock's behaviour is unit-testable. */
 export function planMockAction(
@@ -30,6 +55,8 @@ export function planMockAction(
   if (remember?.[1] && remember[2]) {
     return { kind: "remember", key: remember[1].trim(), content: remember[2].trim() };
   }
+  const ask = /^ask\s+([\s\S]+)$/i.exec(text);
+  if (ask?.[1]) return { kind: "ask", questions: ask[1].split(";").filter((q) => q.trim()).map(parseQuestion) };
   const recall = /^recall\s+([\s\S]+)$/i.exec(text);
   if (recall?.[1]) return { kind: "recall", query: recall[1].trim() };
   if (senderKind === "agent" && !/^re:/i.test(text)) {
@@ -91,6 +118,10 @@ export class MockDriver implements ModelDriver {
         result = `Recall "${action.query}": ${JSON.stringify(found)}`;
         break;
       }
+      case "ask":
+        await tool("ask_user", { questions: action.questions });
+        result = "I put a few questions in front of you above.";
+        break;
       case "echo":
         result = `[mock ${ctx.agentName}] got "${turn.body}" from ${turn.sender_name}`;
         break;

@@ -6,6 +6,7 @@
 //! use the daemon from these files alone.
 
 use ferrobot_core::protocol::{DaemonFrame, RunnerFrame};
+use ferrobot_core::question::{QuestionAnswered, QuestionEvent};
 use serde_json::{Map, Value, json};
 use utoipa::OpenApi;
 use utoipa::openapi::OpenApi as Spec;
@@ -19,6 +20,8 @@ pub const OPENAPI_FILE: &str = "openapi.json";
 pub const UI_EVENTS_FILE: &str = "ui-events.schema.json";
 /// File name of the runner wire protocol schema under `protocol/`.
 pub const RUNNER_PROTOCOL_FILE: &str = "runner-protocol.schema.json";
+/// File name of the question card schema (version 1) under `protocol/`.
+pub const QUESTION_CARD_FILE: &str = "question-card.v1.schema.json";
 
 #[derive(OpenApi)]
 #[openapi(
@@ -56,6 +59,7 @@ pub const RUNNER_PROTOCOL_FILE: &str = "runner-protocol.schema.json";
         api::chat::list_conversations,
         api::chat::conversation_thread,
         api::chat::interrupt,
+        api::chat::answer_question,
         api::memory::list_memory,
         api::memory::put_memory,
         api::memory::delete_memory,
@@ -76,7 +80,7 @@ pub const RUNNER_PROTOCOL_FILE: &str = "runner-protocol.schema.json";
         api::sandbox::delete_snapshot,
         api::ws::ui_ws,
     ),
-    components(schemas(UiEvent)),
+    components(schemas(UiEvent, QuestionEvent, QuestionAnswered)),
     tags(
         (name = "system", description = "Daemon status"),
         (name = "agents", description = "Agent registry and profiles"),
@@ -156,6 +160,26 @@ struct UiEventsDoc;
 #[openapi(components(schemas(DaemonFrame, RunnerFrame)))]
 struct RunnerDoc;
 
+#[derive(OpenApi)]
+#[openapi(components(schemas(QuestionEvent, QuestionAnswered)))]
+struct QuestionDoc;
+
+/// JSON Schema (2020-12) for question cards: the `ask_user` MCP tool input
+/// (`QuestionCard`) and the payloads of `question` / `question_answered` events.
+pub fn question_card_schema() -> Value {
+    json_schema(
+        &QuestionDoc::openapi(),
+        QUESTION_CARD_FILE,
+        "ferrobot question card (version 1)",
+        "Payload of a `question` event (`QuestionEvent`, the card an agent showed with the \
+         `ask_user` MCP tool) or of a `question_answered` event (`QuestionAnswered`).",
+        &json!({ "oneOf": [
+            { "$ref": "#/$defs/QuestionEvent" },
+            { "$ref": "#/$defs/QuestionAnswered" }
+        ] }),
+    )
+}
+
 /// The `OpenAPI` 3.1 document for the UI API.
 pub fn openapi() -> Spec {
     ApiDoc::openapi()
@@ -233,5 +257,6 @@ pub fn generated_files() -> Vec<(&'static str, String)> {
         (OPENAPI_FILE, to_pretty(&openapi())),
         (UI_EVENTS_FILE, to_pretty(&ui_events_schema())),
         (RUNNER_PROTOCOL_FILE, to_pretty(&runner_protocol_schema())),
+        (QUESTION_CARD_FILE, to_pretty(&question_card_schema())),
     ]
 }

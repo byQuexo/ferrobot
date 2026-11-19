@@ -486,3 +486,35 @@ textarea { resize: vertical; min-height: 40px; line-height: 1.5; }
 .exchange-hint .chev { transition: transform 0.15s var(--ease); }
 .exchange.open .exchange-hint .chev { transform: rotate(90deg); }
 .exchange-open { padding: 5px; }
+
+/* Question cards (ask_user) */
+.qcard {
+  flex: 1; max-width: 520px; display: flex; flex-direction: column; gap: 10px; padding: 14px 16px;
+  border: 1px solid var(--border); border-radius: var(--radius); background: var(--surface); box-shadow: var(--shadow);
+}
+.qcard-head { display: flex; align-items: center; gap: 8px; font-size: 12.5px; color: var(--muted); }
+.qcard-title { font-weight: 600; color: var(--text-2); }
+.qcard-step { font-variant-numeric: tabular-nums; }
+.qcard-done { display: inline-flex; align-items: center; gap: 4px; color: var(--ok); font-weight: 600; }
+.qcard-prompt { display: flex; align-items: flex-start; gap: 7px; margin: 2px 0 0; font-size: 14.5px; font-weight: 600; }
+.qcard-prompt svg { flex: none; margin-top: 3px; color: var(--accent); }
+.qcard-choices { display: flex; flex-direction: column; gap: 6px; }
+.choice {
+  display: flex; align-items: center; gap: 10px; width: 100%; padding: 8px 12px; text-align: left;
+  border: 1px solid var(--border); border-radius: 10px; background: var(--surface); color: var(--text);
+  font: inherit; transition: border-color 0.12s, background 0.12s;
+}
+.choice:hover { border-color: var(--border-strong); background: var(--surface-2); }
+.choice.on { border-color: var(--accent); background: var(--accent-soft); }
+.choice-mark {
+  display: grid; place-items: center; width: 16px; height: 16px; flex: none; border-radius: 50%;
+  border: 1.5px solid var(--border-strong); color: var(--accent-text);
+}
+.choice.multi .choice-mark { border-radius: 5px; }
+.choice.on .choice-mark { background: var(--accent); border-color: var(--accent); }
+.qcard-custom { font-size: 13.5px; }
+.qcard-foot { display: flex; align-items: center; gap: 6px; margin-top: 2px; }
+.qcard.locked { gap: 8px; background: var(--surface-2); box-shadow: none; }
+.qcard-summary { display: flex; flex-direction: column; gap: 6px; margin: 0; font-size: 13px; }
+.qcard-summary dt { color: var(--muted); }
+.qcard-summary dd { margin: 0; font-weight: 600; }

@@ -150,3 +150,26 @@ describe("groupExchanges", () => {
     assert.equal(x.tools.length, 1);
   });
 });
+
+describe("question cards", () => {
+  it("shows the card instead of the ask_user call and hides the answer message", () => {
+    const card = { title: null, questions: [{ id: "q1", prompt: "Ship?", kind: "single", allow_custom: false,
+      choices: [{ label: "Yes", value: "yes" }, { label: "No", value: "no" }] }] };
+    const items = buildTimeline(
+      ME,
+      [msg(5, { kind: "user" }, ME, "Answers to your questions:\n- Ship? Yes", "2026-01-01T10:00:09Z")],
+      [
+        ev(1, "tool_use", { id: "c1", name: "mcp__ferrobot__ask_user", input: card }, "2026-01-01T10:00:00Z"),
+        ev(2, "question", { version: 1, card }, "2026-01-01T10:00:01Z"),
+        ev(3, "tool_result", { id: "c1", output: "{}", is_error: false }, "2026-01-01T10:00:02Z"),
+        ev(4, "question_answered", { question: 2, message_id: 5, answers: [{ question_id: "q1", values: ["yes"] }] },
+          "2026-01-01T10:00:09Z"),
+      ],
+      new Map(),
+      names,
+    );
+    assert.deepEqual(items.map((i) => i.type), ["question"]);
+    const q = items[0];
+    assert.ok(q?.type === "question" && q.answered?.message_id === 5);
+  });
+});

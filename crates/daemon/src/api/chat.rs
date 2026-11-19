@@ -3,6 +3,7 @@
 use axum::Json;
 use axum::extract::{Path, Query, State};
 use axum::http::StatusCode;
+use ferrobot_core::question::{QuestionAnswer, QuestionAnswered, QuestionEvent};
 use ferrobot_core::{MailMessage, Sender};
 use ferrobot_store::StoredEvent;
 use serde::{Deserialize, Serialize};
@@ -148,6 +149,64 @@ pub(crate) async fn mark_read(
     state.store.mark_read(id).await?;
     state.publish_agent(id).await;
     Ok(StatusCode::NO_CONTENT)
+}
+
+#[derive(Debug, Deserialize, ToSchema)]
+pub(crate) struct AnswerQuestion {
+    /// One answer per question of the card.
+    answers: Vec<QuestionAnswer>,
+}
+
+/// Answers a question card the agent showed with `ask_user`. The answers are
+/// sent to the agent as one user message and the card is locked (a
+/// `question_answered` event is recorded and pushed).
+#[utoipa::path(post, path = "/v1/agents/{id}/questions/{qid}/answer", tag = "chat",
+    params(("id" = String, Path, description = "Agent id (UUID)"),
+        ("qid" = i64, Path, description = "Id of the `question` event")),
+    request_body = AnswerQuestion,
+    responses(
+        (status = 202, description = "Answer queued for the agent", body = QuestionAnswered),
+        (status = 400, description = "Answers do not fit the card", body = ErrorBody),
+        (status = 404, description = "Unknown agent or question", body = ErrorBody),
+        (status = 409, description = "Already answered", body = ErrorBody)))]
+pub(crate) async fn answer_question(
+    State(state): State<AppState>,
+    Path((id, qid)): Path<(String, i64)>,
+    Json(req): Json<AnswerQuestion>,
+) -> Result<(StatusCode, Json<QuestionAnswered>), ApiError> {
+    let id = parse_id(&id)?;
+    state.store.get_agent(id).await?;
+    let event = state.store.get_event(id, qid).await?;
+    if event.kind != "question" {
+        return Err(ApiError::NotFound(format!("question {qid} not found")));
+    }
+    let question: QuestionEvent = serde_json::from_value(event.payload)
+        .map_err(|e| ApiError::Internal(format!("stored question {qid}: {e}")))?;
+    question
+        .card
+        .check_answers(&req.answers)
+        .map_err(ApiError::BadRequest)?;
+    let _guard = state.answers.lock().await;
+    if state.store.question_answered(id, qid).await? {
+        return Err(ApiError::Conflict(format!(
+            "question {qid} is already answered"
+        )));
+    }
+    let body = question.card.answer_text(&req.answers);
+    let msg = state
+        .store
+        .enqueue_message(Sender::User, id, body, None)
+        .await?;
+    let answered = QuestionAnswered {
+        question: qid,
+        answers: req.answers,
+        message_id: msg.id,
+    };
+    let payload = serde_json::to_value(&answered).map_err(|e| ApiError::Internal(e.to_string()))?;
+    state.record(id, None, "question_answered", payload).await;
+    state.message_arrived(id);
+    state.publish(UiEvent::Message { message: msg });
+    Ok((StatusCode::ACCEPTED, Json(answered)))
 }
 
 #[derive(Debug, Serialize, ToSchema)]

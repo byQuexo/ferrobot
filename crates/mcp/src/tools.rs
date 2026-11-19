@@ -1,3 +1,4 @@
+use ferrobot_core::question::{QUESTION_CARD_VERSION, QuestionCard, QuestionEvent};
 use ferrobot_core::{AgentId, AgentName, Sender, mention};
 use ferrobot_store::StoreError;
 use rmcp::handler::server::tool::Extension;
@@ -138,6 +139,13 @@ pub struct Memories {
 }
 
 #[derive(Debug, Serialize, JsonSchema)]
+pub struct AskUserResult {
+    /// Id of the card in your chat.
+    pub question_id: i64,
+    pub note: String,
+}
+
+#[derive(Debug, Serialize, JsonSchema)]
 pub struct Ack {
     pub ok: bool,
 }
@@ -238,6 +246,38 @@ impl FerrobotTools {
             message_id: msg.id,
             queued_for: recipient.name.to_string(),
             agent_id: recipient.id.to_string(),
+        }))
+    }
+
+    #[tool(
+        description = "Show your operator a question card in your chat: one or more questions, \
+        each single choice, multiple choice or free text (choices can allow a custom answer). \
+        Does not wait: the answers arrive later as one user message, so finish your turn after asking."
+    )]
+    async fn ask_user(
+        &self,
+        Extension(parts): Extension<http::request::Parts>,
+        Parameters(mut card): Parameters<QuestionCard>,
+    ) -> ToolResult<AskUserResult> {
+        let me = caller(&parts)?.0.id;
+        card.normalize()
+            .map_err(|e| ErrorData::invalid_params(e, None))?;
+        let payload = serde_json::to_value(QuestionEvent {
+            version: QUESTION_CARD_VERSION,
+            card,
+        })
+        .map_err(|e| ErrorData::internal_error(e.to_string(), None))?;
+        let event = self
+            .state
+            .store
+            .append_event(me, None, "question".into(), payload)
+            .await
+            .map_err(store_err)?;
+        self.state.notifier.event_recorded(&event);
+        Ok(Json(AskUserResult {
+            question_id: event.id,
+            note: "Shown to the user. Their answers arrive later as a new message; finish your turn now."
+                .into(),
         }))
     }
 
@@ -356,6 +396,6 @@ impl FerrobotTools {
 #[allow(clippy::unused_async_trait_impl)]
 #[tool_handler(
     name = "ferrobot",
-    instructions = "Mailbox and memory tools for ferrobot agents. Messages are asynchronous."
+    instructions = "Mailbox, memory and question-card tools for ferrobot agents. Messages and answers are asynchronous."
 )]
 impl ServerHandler for FerrobotTools {}

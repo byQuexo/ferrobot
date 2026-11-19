@@ -1,0 +1,169 @@
+{
+  "$defs": {
+    "Choice": {
+      "description": "One selectable option.",
+      "properties": {
+        "label": {
+          "description": "Shown to the user.",
+          "type": "string"
+        },
+        "value": {
+          "description": "Stable value reported in the answer; defaults to the label.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "label"
+      ],
+      "type": "object"
+    },
+    "Question": {
+      "description": "One question on a card.",
+      "properties": {
+        "allow_custom": {
+          "description": "`single`/`multi`: also offer a free-text \"other\" answer.",
+          "type": "boolean"
+        },
+        "choices": {
+          "description": "Options for `single` and `multi` (2..12). Empty for `text`.",
+          "items": {
+            "$ref": "#/$defs/Choice"
+          },
+          "type": "array"
+        },
+        "id": {
+          "description": "Unique within the card; defaults to `q1`, `q2`, ...",
+          "type": "string"
+        },
+        "kind": {
+          "$ref": "#/$defs/QuestionKind"
+        },
+        "prompt": {
+          "description": "The question text.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "prompt",
+        "kind"
+      ],
+      "type": "object"
+    },
+    "QuestionAnswer": {
+      "description": "The answer to one question.",
+      "properties": {
+        "custom": {
+          "description": "Free text (`text` questions, or \"other\" when `allow_custom`).",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "question_id": {
+          "type": "string"
+        },
+        "values": {
+          "description": "Selected choice values (`single`: at most one).",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "question_id"
+      ],
+      "type": "object"
+    },
+    "QuestionAnswered": {
+      "description": "Payload of a `question_answered` event. A card is answered at most once.",
+      "properties": {
+        "answers": {
+          "items": {
+            "$ref": "#/$defs/QuestionAnswer"
+          },
+          "type": "array"
+        },
+        "message_id": {
+          "description": "The user message that carried the answer to the agent.",
+          "format": "int64",
+          "type": "integer"
+        },
+        "question": {
+          "description": "Id of the `question` event.",
+          "format": "int64",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "question",
+        "answers",
+        "message_id"
+      ],
+      "type": "object"
+    },
+    "QuestionCard": {
+      "description": "A card with one or more questions, answered together.",
+      "properties": {
+        "questions": {
+          "description": "1..8 questions, shown in order.",
+          "items": {
+            "$ref": "#/$defs/Question"
+          },
+          "type": "array"
+        },
+        "title": {
+          "description": "Optional heading.",
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "questions"
+      ],
+      "type": "object"
+    },
+    "QuestionEvent": {
+      "description": "Payload of a `question` event: the card as shown in the chat.",
+      "properties": {
+        "card": {
+          "$ref": "#/$defs/QuestionCard"
+        },
+        "version": {
+          "description": "Card format version (currently 1).",
+          "format": "int32",
+          "minimum": 0,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "version",
+        "card"
+      ],
+      "type": "object"
+    },
+    "QuestionKind": {
+      "description": "How a question is answered.",
+      "enum": [
+        "single",
+        "multi",
+        "text"
+      ],
+      "type": "string"
+    }
+  },
+  "$id": "question-card.v1.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "description": "Payload of a `question` event (`QuestionEvent`, the card an agent showed with the `ask_user` MCP tool) or of a `question_answered` event (`QuestionAnswered`).",
+  "oneOf": [
+    {
+      "$ref": "#/$defs/QuestionEvent"
+    },
+    {
+      "$ref": "#/$defs/QuestionAnswered"
+    }
+  ],
+  "title": "ferrobot question card (version 1)"
+}

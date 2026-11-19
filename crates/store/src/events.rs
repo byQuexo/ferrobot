@@ -56,6 +56,61 @@ impl Store {
         .await
     }
 
+    /// One event of `agent`.
+    pub async fn get_event(&self, agent: AgentId, id: i64) -> Result<StoredEvent, StoreError> {
+        self.with(move |c| {
+            let row = c.query_row(
+                "SELECT turn_id, kind, payload, created_at FROM events
+                 WHERE agent_id = ?1 AND id = ?2",
+                params![agent.to_string(), id],
+                |r| {
+                    Ok((
+                        r.get::<_, Option<String>>(0)?,
+                        r.get::<_, String>(1)?,
+                        r.get::<_, String>(2)?,
+                        r.get::<_, String>(3)?,
+                    ))
+                },
+            );
+            let (turn_id, kind, payload, created) = match row {
+                Ok(row) => row,
+                Err(rusqlite::Error::QueryReturnedNoRows) => {
+                    return Err(StoreError::NotFound {
+                        entity: "event",
+                        key: id.to_string(),
+                    });
+                }
+                Err(e) => return Err(e.into()),
+            };
+            Ok(StoredEvent {
+                id,
+                agent_id: agent,
+                turn_id,
+                kind,
+                payload: serde_json::from_str(&payload).map_err(StoreError::corrupt)?,
+                created_at: parse_ts(&created)?,
+            })
+        })
+        .await
+    }
+
+    /// Whether a `question_answered` event exists for question event `question`.
+    pub async fn question_answered(
+        &self,
+        agent: AgentId,
+        question: i64,
+    ) -> Result<bool, StoreError> {
+        self.with(move |c| {
+            Ok(c.query_row(
+                "SELECT EXISTS (SELECT 1 FROM events WHERE agent_id = ?1
+                 AND kind = 'question_answered' AND json_extract(payload, '$.question') = ?2)",
+                params![agent.to_string(), question],
+                |r| r.get(0),
+            )?)
+        })
+        .await
+    }
+
     /// Events of `agent` with id greater than `after` (oldest first).
     pub async fn events_after(
         &self,

@@ -173,6 +173,27 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/agents/{id}/questions/{qid}/answer": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Answers a question card the agent showed with `ask_user`. The answers are
+         *     sent to the agent as one user message and the card is locked (a
+         *     `question_answered` event is recorded and pushed).
+         */
+        post: operations["answer_question"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/agents/{id}/read": {
         parameters: {
             query?: never;
@@ -510,6 +531,17 @@ export interface components {
             /** @description Relative URL of the avatar image, if one was uploaded. */
             avatar_url?: string | null;
         };
+        AnswerQuestion: {
+            /** @description One answer per question of the card. */
+            answers: components["schemas"]["QuestionAnswer"][];
+        };
+        /** @description One selectable option. */
+        Choice: {
+            /** @description Shown to the user. */
+            label: string;
+            /** @description Stable value reported in the answer; defaults to the label. */
+            value?: string;
+        };
         /** @description Messages two agents exchanged. */
         Conversation: {
             /** @description The two agents, ordered by id. */
@@ -658,6 +690,61 @@ export interface components {
             key: string;
             content: string;
         };
+        /** @description One question on a card. */
+        Question: {
+            /** @description Unique within the card; defaults to `q1`, `q2`, ... */
+            id?: string;
+            /** @description The question text. */
+            prompt: string;
+            kind: components["schemas"]["QuestionKind"];
+            /** @description Options for `single` and `multi` (2..12). Empty for `text`. */
+            choices?: components["schemas"]["Choice"][];
+            /** @description `single`/`multi`: also offer a free-text "other" answer. */
+            allow_custom?: boolean;
+        };
+        /** @description The answer to one question. */
+        QuestionAnswer: {
+            question_id: string;
+            /** @description Selected choice values (`single`: at most one). */
+            values?: string[];
+            /** @description Free text (`text` questions, or "other" when `allow_custom`). */
+            custom?: string | null;
+        };
+        /** @description Payload of a `question_answered` event. A card is answered at most once. */
+        QuestionAnswered: {
+            /**
+             * Format: int64
+             * @description Id of the `question` event.
+             */
+            question: number;
+            answers: components["schemas"]["QuestionAnswer"][];
+            /**
+             * Format: int64
+             * @description The user message that carried the answer to the agent.
+             */
+            message_id: number;
+        };
+        /** @description A card with one or more questions, answered together. */
+        QuestionCard: {
+            /** @description Optional heading. */
+            title?: string | null;
+            /** @description 1..8 questions, shown in order. */
+            questions: components["schemas"]["Question"][];
+        };
+        /** @description Payload of a `question` event: the card as shown in the chat. */
+        QuestionEvent: {
+            /**
+             * Format: int32
+             * @description Card format version (currently 1).
+             */
+            version: number;
+            card: components["schemas"]["QuestionCard"];
+        };
+        /**
+         * @description How a question is answered.
+         * @enum {string}
+         */
+        QuestionKind: "single" | "multi" | "text";
         Routine: {
             /** Format: int64 */
             id: number;
@@ -1584,6 +1671,71 @@ export interface operations {
             };
             /** @description Unknown agent */
             404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+        };
+    };
+    answer_question: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Agent id (UUID) */
+                id: string;
+                /** @description Id of the `question` event */
+                qid: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AnswerQuestion"];
+            };
+        };
+        responses: {
+            /** @description Answer queued for the agent */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["QuestionAnswered"];
+                };
+            };
+            /** @description Answers do not fit the card */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Missing or wrong API token */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Unknown agent or question */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Already answered */
+            409: {
                 headers: {
                     [name: string]: unknown;
                 };

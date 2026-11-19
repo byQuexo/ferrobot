@@ -53,6 +53,7 @@ fn every_routed_path_is_documented() {
         "/v1/conversations",
         "/v1/conversations/{a}/{b}",
         "/v1/agents/{id}/interrupt",
+        "/v1/agents/{id}/questions/{qid}/answer",
         "/v1/agents/{id}/memory",
         "/v1/agents/{id}/memory/{key}",
         "/v1/agents/{id}/routines",
@@ -71,7 +72,7 @@ fn every_routed_path_is_documented() {
     }
     assert_eq!(
         documented.len(),
-        24,
+        25,
         "undocumented extra paths: {documented:?}"
     );
 }
@@ -164,4 +165,22 @@ fn ui_events_validate_against_schema() {
         assert!(errors.is_empty(), "{value}: {errors:?}");
     }
     assert!(!v.is_valid(&json!({"type": "agent_deleted", "agent_id": 5})));
+}
+
+#[test]
+fn question_card_schema_accepts_cards_and_answers() {
+    let v = validator(&spec::question_card_schema());
+    for sample in [
+        json!({"version": 1, "card": {"title": null, "questions": [
+            {"id": "q1", "prompt": "Ship?", "kind": "single", "allow_custom": false,
+             "choices": [{"label": "Yes", "value": "yes"}, {"label": "No", "value": "no"}]}]}}),
+        json!({"question": 7, "message_id": 3,
+               "answers": [{"question_id": "q1", "values": [], "custom": "later"}]}),
+    ] {
+        let errors: Vec<String> = v.iter_errors(&sample).map(|e| e.to_string()).collect();
+        assert!(errors.is_empty(), "{sample}: {errors:?}");
+    }
+    assert!(!v.is_valid(
+        &json!({"version": 1, "card": {"questions": [{"prompt": "x", "kind": "nope"}]}})
+    ));
 }

@@ -80,6 +80,7 @@ async fn tools_act_as_the_authenticated_agent() {
     assert_eq!(
         names,
         [
+            "ask_user",
             "forget",
             "list_agents",
             "read_mailbox",
@@ -208,6 +209,26 @@ async fn tools_act_as_the_authenticated_agent() {
     assert_eq!(none["memories"], json!([]));
     let gone = call(&alice, "forget", json!({"key": "k"})).await.unwrap();
     assert_eq!(gone["ok"], true);
+
+    // Question cards are validated and recorded in the caller's own chat.
+    let card = json!({"questions": [
+        {"prompt": "Ship it?", "kind": "single", "choices": [{"label": "Yes"}, {"label": "No"}]},
+        {"prompt": "Notes", "kind": "text"}
+    ]});
+    let asked = call(&alice, "ask_user", card).await.unwrap();
+    let qid = asked["question_id"].as_i64().unwrap();
+    let events = store.events_after(ids[0], 0, 10).await.unwrap();
+    let q = events.iter().find(|e| e.id == qid).unwrap();
+    assert_eq!(q.kind, "question");
+    assert_eq!(q.payload["version"], 1);
+    assert_eq!(q.payload["card"]["questions"][1]["id"], "q2");
+    assert_eq!(
+        q.payload["card"]["questions"][0]["choices"][0]["value"],
+        "Yes"
+    );
+    let bad =
+        json!({"questions": [{"prompt": "?", "kind": "single", "choices": [{"label": "only"}]}]});
+    assert!(call(&alice, "ask_user", bad).await.is_err());
 
     alice.cancel().await.unwrap();
     bob.cancel().await.unwrap();
