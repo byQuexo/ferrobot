@@ -166,10 +166,24 @@ async fn route(state: &AppState, agent: &Agent, path: &str) -> Result<Route, Fai
     })
 }
 
+/// A cached access token and when it was minted; `Debug` never shows it.
+#[derive(Default)]
+pub struct CachedToken(pub(crate) Option<(String, Instant)>);
+
+impl std::fmt::Debug for CachedToken {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(if self.0.is_some() {
+            "CachedToken(..)"
+        } else {
+            "CachedToken(None)"
+        })
+    }
+}
+
 /// A Google access token from the daemon host's `gcloud` login, cached.
 async fn gcloud_token(state: &AppState) -> Result<String, Failure> {
     let mut cached = state.gcloud_token.lock().await;
-    if let Some((token, minted)) = cached.as_ref()
+    if let Some((token, minted)) = cached.0.as_ref()
         && minted.elapsed() < GCLOUD_TOKEN_TTL
     {
         return Ok(token.clone());
@@ -197,7 +211,7 @@ async fn gcloud_token(state: &AppState) -> Result<String, Failure> {
         tracing::warn!(status = %output.status, "gcloud token command failed");
         return Err(failed());
     }
-    *cached = Some((token.clone(), Instant::now()));
+    cached.0 = Some((token.clone(), Instant::now()));
     Ok(token)
 }
 

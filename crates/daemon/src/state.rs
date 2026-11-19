@@ -129,7 +129,7 @@ pub struct AppState {
     /// Approval cards waiting for the operator, by `question` event id.
     pub approvals: Arc<Mutex<HashMap<i64, oneshot::Sender<bool>>>>,
     /// Cached Google access token for Vertex providers and when it was minted.
-    pub gcloud_token: Arc<tokio::sync::Mutex<Option<(String, std::time::Instant)>>>,
+    pub gcloud_token: Arc<tokio::sync::Mutex<crate::proxy::CachedToken>>,
     /// `ChatGPT` sign-ins and cached tokens of Codex providers.
     pub codex: Arc<tokio::sync::Mutex<crate::codex::CodexState>>,
 }

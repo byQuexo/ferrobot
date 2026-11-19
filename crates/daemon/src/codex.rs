@@ -35,11 +35,20 @@ pub enum LoginStatus {
     },
 }
 
-#[derive(Debug, Default)]
+#[derive(Default)]
 pub struct CodexState {
     logins: HashMap<Uuid, LoginStatus>,
     /// Access token, `ChatGPT` account id, and when to stop using them.
     tokens: HashMap<Uuid, (String, String, Instant)>,
+}
+
+impl std::fmt::Debug for CodexState {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("CodexState")
+            .field("logins", &self.logins)
+            .field("cached_tokens", &self.tokens.len())
+            .finish()
+    }
 }
 
 /// A device code the operator enters at `verification_url`.
@@ -278,6 +287,23 @@ fn jwt_claims(token: &str) -> Option<Value> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn debug_never_shows_tokens() {
+        let mut state = CodexState::default();
+        let id = Uuid::nil();
+        state
+            .tokens
+            .insert(id, ("eyJsecret".into(), "acct".into(), Instant::now()));
+        state.logins.insert(id, LoginStatus::SignedIn);
+        let shown = format!("{state:?}");
+        assert!(
+            !shown.contains("eyJsecret") && shown.contains("cached_tokens: 1"),
+            "{shown}"
+        );
+        let gcloud = crate::proxy::CachedToken(Some(("ya29.secret".into(), Instant::now())));
+        assert!(!format!("{gcloud:?}").contains("ya29"));
+    }
 
     #[test]
     fn reads_account_and_expiry_claims() {
