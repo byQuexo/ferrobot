@@ -5,7 +5,10 @@
 
 use std::path::PathBuf;
 
-use ferrobot_core::{Agent, AgentId, AgentName, AgentStatus, MailMessage, MailStatus, Sender};
+use ferrobot_core::{
+    Agent, AgentId, AgentName, AgentStatus, AvatarCharacter, CharacterBody, CharacterEyes,
+    MailMessage, MailStatus, Sender,
+};
 use ferrobot_daemon::views::{AgentView, Presence};
 use ferrobot_daemon::{UiEvent, spec};
 use ferrobot_store::StoredEvent;
@@ -114,6 +117,11 @@ fn ui_events_validate_against_schema() {
         description: "Researcher".into(),
         instructions: String::new(),
         avatar_rev: 2,
+        character: Some(AvatarCharacter {
+            body: CharacterBody::Sprout,
+            eyes: CharacterEyes::Wide,
+            hue: 150,
+        }),
         status: AgentStatus::Running,
         backend: Some("docker".into()),
         sandbox_id: Some("ferrobot-alice".into()),

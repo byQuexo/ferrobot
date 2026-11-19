@@ -15,6 +15,17 @@
             "null"
           ]
         },
+        "character": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/AvatarCharacter",
+              "description": "Chosen character avatar look; `null` means derived from the id."
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
         "created_at": {
           "format": "date-time",
           "type": "string"
@@ -126,6 +137,50 @@
         }
       ],
       "description": "An agent plus live state."
+    },
+    "AvatarCharacter": {
+      "description": "A chosen look for the agent's animated character avatar. Clients derive\na deterministic look from the agent id when none is set; an uploaded\navatar image takes precedence over both.",
+      "properties": {
+        "body": {
+          "$ref": "#/$defs/CharacterBody"
+        },
+        "eyes": {
+          "$ref": "#/$defs/CharacterEyes"
+        },
+        "hue": {
+          "description": "Color hue in degrees, 0..=359.",
+          "format": "int32",
+          "maximum": 359,
+          "minimum": 0,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "body",
+        "eyes",
+        "hue"
+      ],
+      "type": "object"
+    },
+    "CharacterBody": {
+      "description": "Body shape of the generated character avatar.",
+      "enum": [
+        "blob",
+        "bean",
+        "pebble",
+        "sprout"
+      ],
+      "type": "string"
+    },
+    "CharacterEyes": {
+      "description": "Eye style of the generated character avatar.",
+      "enum": [
+        "dots",
+        "ovals",
+        "wide",
+        "visor"
+      ],
+      "type": "string"
     },
     "MailMessage": {
       "description": "One message in an agent's mailbox.",

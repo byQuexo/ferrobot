@@ -10,6 +10,7 @@ export const DEFAULT_DAEMON = "http://127.0.0.1:7878";
 type Schemas = components["schemas"];
 export type Agent = Schemas["AgentView"];
 export type Presence = Schemas["Presence"];
+export type AvatarCharacter = Schemas["AvatarCharacter"];
 export type StoredEvent = Schemas["StoredEvent"];
 export type MailMessage = Schemas["MailMessage"];
 export type UiEvent = Schemas["UiEvent"];

@@ -53,7 +53,7 @@ export interface paths {
         /** Uploads (replaces) the avatar. Body: the raw image. */
         put: operations["put_avatar"];
         post?: never;
-        /** Removes the avatar (clients fall back to initials). */
+        /** Removes the avatar (clients fall back to the character avatar). */
         delete: operations["delete_avatar"];
         options?: never;
         head?: never;
@@ -489,6 +489,7 @@ export interface components {
              * @description Changes whenever the avatar changes; positive while an avatar exists.
              */
             avatar_rev: number;
+            character?: components["schemas"]["AvatarCharacter"] | null;
             status: components["schemas"]["AgentStatus"];
             /** @description Backend kind that owns the sandbox, e.g. `docker`. */
             backend?: string | null;
@@ -535,6 +536,30 @@ export interface components {
             /** @description One answer per question of the card. */
             answers: components["schemas"]["QuestionAnswer"][];
         };
+        /**
+         * @description A chosen look for the agent's animated character avatar. Clients derive
+         *     a deterministic look from the agent id when none is set; an uploaded
+         *     avatar image takes precedence over both.
+         */
+        AvatarCharacter: {
+            body: components["schemas"]["CharacterBody"];
+            eyes: components["schemas"]["CharacterEyes"];
+            /**
+             * Format: int32
+             * @description Color hue in degrees, 0..=359.
+             */
+            hue: number;
+        };
+        /**
+         * @description Body shape of the generated character avatar.
+         * @enum {string}
+         */
+        CharacterBody: "blob" | "bean" | "pebble" | "sprout";
+        /**
+         * @description Eye style of the generated character avatar.
+         * @enum {string}
+         */
+        CharacterEyes: "dots" | "ovals" | "wide" | "visor";
         /** @description One selectable option. */
         Choice: {
             /** @description Shown to the user. */
@@ -566,6 +591,7 @@ export interface components {
             description?: string;
             /** @description System instructions (role) for the agent's model. */
             instructions?: string;
+            character?: components["schemas"]["AvatarCharacter"] | null;
         };
         CreateRoutine: {
             /**
@@ -902,6 +928,7 @@ export interface components {
             description?: string | null;
             /** @description New system instructions; a connected runner applies them from its next turn. */
             instructions?: string | null;
+            character?: components["schemas"]["AvatarCharacter"] | null;
         };
         /** @description Partial update; omitted fields stay unchanged. */
         UpdateRoutine: {

@@ -155,6 +155,48 @@ impl FromStr for AgentStatus {
     }
 }
 
+/// Body shape of the generated character avatar.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(utoipa::ToSchema))]
+#[serde(rename_all = "snake_case")]
+pub enum CharacterBody {
+    Blob,
+    Bean,
+    Pebble,
+    Sprout,
+}
+
+/// Eye style of the generated character avatar.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(utoipa::ToSchema))]
+#[serde(rename_all = "snake_case")]
+pub enum CharacterEyes {
+    Dots,
+    Ovals,
+    Wide,
+    Visor,
+}
+
+/// A chosen look for the agent's animated character avatar. Clients derive
+/// a deterministic look from the agent id when none is set; an uploaded
+/// avatar image takes precedence over both.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(utoipa::ToSchema))]
+pub struct AvatarCharacter {
+    pub body: CharacterBody,
+    pub eyes: CharacterEyes,
+    /// Color hue in degrees, 0..=359.
+    #[cfg_attr(feature = "schema", schema(minimum = 0, maximum = 359))]
+    pub hue: u16,
+}
+
+impl AvatarCharacter {
+    /// Whether the hue is in range.
+    pub fn is_valid(&self) -> bool {
+        self.hue <= 359
+    }
+}
+
 /// A registered agent. Secrets (the runner token) are never part of this type.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(utoipa::ToSchema))]
@@ -171,6 +213,8 @@ pub struct Agent {
     pub instructions: String,
     /// Changes whenever the avatar changes; positive while an avatar exists.
     pub avatar_rev: i64,
+    /// Chosen character avatar look; `null` means derived from the id.
+    pub character: Option<AvatarCharacter>,
     pub status: AgentStatus,
     /// Backend kind that owns the sandbox, e.g. `docker`.
     pub backend: Option<String>,

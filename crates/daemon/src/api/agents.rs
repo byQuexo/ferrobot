@@ -5,8 +5,8 @@ use axum::body::Bytes;
 use axum::extract::{Path, Query, State};
 use axum::http::{HeaderMap, StatusCode, header};
 use axum::response::{IntoResponse, Response};
-use ferrobot_core::AgentName;
 use ferrobot_core::protocol::DaemonFrame;
+use ferrobot_core::{AgentName, AvatarCharacter};
 use ferrobot_store::{AgentPatch, Avatar, NewAgent};
 use serde::Deserialize;
 use utoipa::{IntoParams, ToSchema};
@@ -41,6 +41,31 @@ pub(crate) struct CreateAgent {
     /// System instructions (role) for the agent's model.
     #[serde(default)]
     instructions: String,
+    /// Character avatar look; omitted or `null`: derived from the id.
+    #[serde(default)]
+    character: Option<AvatarCharacter>,
+}
+
+fn check_character(c: Option<&AvatarCharacter>) -> Result<(), ApiError> {
+    match c {
+        Some(c) if !c.is_valid() => {
+            Err(ApiError::BadRequest("character hue must be 0..=359".into()))
+        }
+        _ => Ok(()),
+    }
+}
+
+/// Distinguishes an omitted field (`None`) from an explicit `null` (`Some(None)`).
+#[allow(
+    clippy::option_option,
+    reason = "omitted vs. explicit null in a PATCH body"
+)]
+fn explicit<'de, D, T>(d: D) -> Result<Option<Option<T>>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+    T: Deserialize<'de>,
+{
+    Option::<T>::deserialize(d).map(Some)
 }
 
 fn check_description(d: &str) -> Result<(), ApiError> {
@@ -67,7 +92,8 @@ pub(crate) async fn create_agent(
     let description = req.description.trim().to_owned();
     check_description(&description)?;
     check_len("instructions", &req.instructions)?;
-    let agent = state
+    check_character(req.character.as_ref())?;
+    let mut agent = state
         .store
         .create_agent(NewAgent {
             name,
@@ -75,6 +101,19 @@ pub(crate) async fn create_agent(
             instructions: req.instructions,
         })
         .await?;
+    if req.character.is_some() {
+        state
+            .store
+            .update_agent_profile(
+                agent.id,
+                AgentPatch {
+                    character: Some(req.character),
+                    ..AgentPatch::default()
+                },
+            )
+            .await?;
+        agent.character = req.character;
+    }
     lifecycle::provision(&state, &agent).await?;
     Ok((
         StatusCode::CREATED,
@@ -104,6 +143,14 @@ pub(crate) struct UpdateAgent {
     description: Option<String>,
     /// New system instructions; a connected runner applies them from its next turn.
     instructions: Option<String>,
+    /// New character avatar look; `null` goes back to the one derived from the id.
+    #[serde(default, deserialize_with = "explicit")]
+    #[schema(value_type = Option<AvatarCharacter>)]
+    #[allow(
+        clippy::option_option,
+        reason = "omitted vs. explicit null in a PATCH body"
+    )]
+    character: Option<Option<AvatarCharacter>>,
 }
 
 /// Edits an agent's profile.
@@ -128,6 +175,7 @@ pub(crate) async fn update_agent(
     if let Some(i) = &req.instructions {
         check_len("instructions", i)?;
     }
+    check_character(req.character.flatten().as_ref())?;
     let reconfigure = name.is_some() || req.instructions.is_some();
     state
         .store
@@ -137,6 +185,7 @@ pub(crate) async fn update_agent(
                 name,
                 description,
                 instructions: req.instructions,
+                character: req.character,
             },
         )
         .await?;
@@ -262,7 +311,7 @@ pub(crate) async fn put_avatar(
     Ok(Json(views::agent_view(&state, id).await?))
 }
 
-/// Removes the avatar (clients fall back to initials).
+/// Removes the avatar (clients fall back to the character avatar).
 #[utoipa::path(delete, path = "/v1/agents/{id}/avatar", tag = "agents",
     params(("id" = String, Path, description = "Agent id (UUID)")),
     responses((status = 200, body = AgentView),

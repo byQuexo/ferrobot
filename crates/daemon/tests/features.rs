@@ -1049,3 +1049,25 @@ async fn question_cards_are_answered_once() {
         .collect();
     assert!(kinds.contains(&json!("question_answered")), "{kinds:?}");
 }
+
+#[tokio::test]
+async fn character_avatar_is_part_of_the_profile() {
+    let d = start(Arc::new(StatefulBackend::default()), None, "127.0.0.1:0").await;
+    let look = json!({"body": "bean", "eyes": "visor", "hue": 212});
+    let a = create(&d, json!({"name": "ada", "character": look})).await;
+    assert_eq!(a["character"], look);
+    let path = format!("/v1/agents/{}", a["id"].as_str().unwrap());
+    let (status, b) = http(&d.ui, "PATCH", &path, Some(json!({"description": "x"}))).await;
+    assert_eq!((status, &b["character"]), (200, &look), "omitted keeps it");
+    let bad = json!({"character": {"body": "bean", "eyes": "dots", "hue": 400}});
+    let (status, _) = http(&d.ui, "PATCH", &path, Some(bad)).await;
+    assert_eq!(status, 400);
+    let (status, b) = http(&d.ui, "PATCH", &path, Some(json!({"character": null}))).await;
+    assert_eq!(
+        (status, &b["character"]),
+        (200, &Value::Null),
+        "null resets"
+    );
+    let fresh = create(&d, json!({"name": "bob"})).await;
+    assert_eq!(fresh["character"], Value::Null);
+}

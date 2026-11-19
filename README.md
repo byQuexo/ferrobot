@@ -42,6 +42,9 @@ with `scripts/seed-demo.sh`.
   with enable/disable, run now and a run history.
 - **Profiles:** name (renamable; agents are addressed by a stable id),
   description, avatar and instructions (appended to the system prompt).
+  Every agent gets an animated character avatar (SVG + CSS: blinks, reacts
+  to idle / starting / working / sleeping), derived from its id and
+  customizable (body, eyes, color, re-roll); an uploaded image wins.
 - **Live streaming:** assistant text deltas, tool calls with their results,
   presence (working / awake / starting / sleeping / error) and unread counts
   over one WebSocket.

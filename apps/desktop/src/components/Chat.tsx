@@ -171,7 +171,7 @@ export function Chat(props: {
         ))}
         {working && !items.some((i) => i.type === "assistant" && i.streaming) && (
           <div class="row row-agent">
-            <Avatar agent={agent} size={28} />
+            <Avatar agent={agent} size={28} mood="working" />
             <div class="typing" aria-label={`${agent.name} is working`}>
               <span />
               <span />

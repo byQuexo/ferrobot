@@ -2,7 +2,8 @@ import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 
 import { DaemonClient, type MailMessage, type StoredEvent } from "../src/api.ts";
-import { avatarHue, hash, initials } from "../src/lib/avatar.ts";
+import { hash } from "../src/lib/avatar.ts";
+import { characterOf, deriveCharacter, moodOf, rerollCharacter } from "../src/lib/character.ts";
 import { relativeTime, toolLabel } from "../src/lib/format.ts";
 import { buildTimeline } from "../src/lib/timeline.ts";
 
@@ -20,15 +21,25 @@ function ev(id: number, kind: string, payload: Record<string, unknown>, at: stri
 const names = { agents: new Map([[ME, "ada"], [BOB, "bob"]]), routines: new Map([[4, "digest"]]) };
 
 describe("avatar", () => {
-  it("derives initials", () => {
-    assert.equal(initials("code-reviewer"), "CR");
-    assert.equal(initials("ada"), "AD");
-    assert.equal(initials("x"), "X");
-  });
-  it("is deterministic", () => {
+  it("derives a stable character look from the id", () => {
     assert.equal(hash("ada"), hash("ada"));
     assert.notEqual(hash("ada"), hash("bob"));
-    assert.equal(avatarHue("ada"), avatarHue("ada"));
+    assert.deepEqual(deriveCharacter(ME), deriveCharacter(ME));
+    const looks = new Set(Array.from({ length: 40 }, (_, i) => JSON.stringify(deriveCharacter(`agent-${String(i)}`))));
+    assert.ok(looks.size > 20, "looks should vary");
+  });
+  it("prefers the stored look and re-rolls to a different one", () => {
+    const stored = { body: "bean", eyes: "visor", hue: 200 } as const;
+    assert.deepEqual(characterOf({ id: ME, name: "ada", character: stored }), stored);
+    assert.deepEqual(characterOf({ id: ME, name: "ada", character: null }), deriveCharacter(ME));
+    assert.notDeepEqual(rerollCharacter(stored), stored);
+  });
+  it("maps presence to a mood", () => {
+    assert.equal(moodOf("working"), "working");
+    assert.equal(moodOf("starting"), "thinking");
+    assert.equal(moodOf("sleeping"), "sleeping");
+    assert.equal(moodOf("awake"), "idle");
+    assert.equal(moodOf(undefined), "idle");
   });
 });
 

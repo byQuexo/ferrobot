@@ -139,6 +139,10 @@ const MIGRATIONS: &[&str] = &[
     r"
     ALTER TABLE messages ADD COLUMN priority INTEGER NOT NULL DEFAULT 0;
     ",
+    // v5: chosen character avatar look (JSON), NULL = derived from the id
+    r"
+    ALTER TABLE agents ADD COLUMN character TEXT;
+    ",
 ];
 
 pub(crate) fn run(conn: &mut Connection) -> Result<(), StoreError> {

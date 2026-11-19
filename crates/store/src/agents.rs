@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 
-use ferrobot_core::{Agent, AgentId, AgentName, AgentStatus};
+use ferrobot_core::{Agent, AgentId, AgentName, AgentStatus, AvatarCharacter};
 use rusqlite::{OptionalExtension, Row, params};
 use sha2::{Digest, Sha256};
 
@@ -22,6 +22,8 @@ pub struct AgentPatch {
     pub name: Option<AgentName>,
     pub description: Option<String>,
     pub instructions: Option<String>,
+    /// `Some(None)` clears the chosen character look.
+    pub character: Option<Option<AvatarCharacter>>,
 }
 
 /// An avatar image as stored.
@@ -37,14 +39,19 @@ pub fn hash_token(token: &str) -> String {
 }
 
 const COLUMNS: &str = "id, name, instructions, status, backend, sandbox_id, session_id, created_at, \
-                       description, avatar_rev, COALESCE(sandbox_name, name)";
+                       description, avatar_rev, COALESCE(sandbox_name, name), character";
 
 fn from_row(row: &Row<'_>) -> Result<Agent, StoreError> {
     let id: String = row.get(0)?;
     let name: String = row.get(1)?;
     let status: String = row.get(3)?;
     let created: String = row.get(7)?;
+    let character: Option<String> = row.get(11)?;
     Ok(Agent {
+        character: character
+            .map(|c| serde_json::from_str(&c))
+            .transpose()
+            .map_err(StoreError::corrupt)?,
         id: id.parse()?,
         name: AgentName::parse(name)?,
         sandbox_name: row.get(10)?,
@@ -76,6 +83,7 @@ impl Store {
             description: new.description,
             instructions: new.instructions,
             avatar_rev: 0,
+            character: None,
             status: AgentStatus::Created,
             backend: None,
             sandbox_id: None,
@@ -247,13 +255,28 @@ impl Store {
     ) -> Result<(), StoreError> {
         let name = patch.name.map(String::from);
         let key = name.clone().unwrap_or_default();
+        let set_character = patch.character.is_some();
+        let character = patch
+            .character
+            .flatten()
+            .map(|c| serde_json::to_string(&c))
+            .transpose()
+            .map_err(StoreError::corrupt)?;
         self.update_agent(id, move |c, id| {
             c.execute(
                 "UPDATE agents SET name = COALESCE(?2, name),
                                    description = COALESCE(?3, description),
-                                   instructions = COALESCE(?4, instructions)
+                                   instructions = COALESCE(?4, instructions),
+                                   character = CASE WHEN ?5 THEN ?6 ELSE character END
                  WHERE id = ?1",
-                params![id, name, patch.description, patch.instructions],
+                params![
+                    id,
+                    name,
+                    patch.description,
+                    patch.instructions,
+                    set_character,
+                    character
+                ],
             )
         })
         .await

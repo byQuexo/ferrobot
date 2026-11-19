@@ -1,10 +1,12 @@
 import type { JSX } from "preact";
 import { useEffect, useRef, useState } from "preact/hooks";
-import { ImageUp, X } from "lucide-preact";
+import { Dices, ImageUp, RotateCcw, X } from "lucide-preact";
 
 import type { Agent } from "../api.ts";
 import { useApp } from "../context.ts";
+import { BODIES, EYES, HUES, characterOf, deriveCharacter, rerollCharacter, type Character } from "../lib/character.ts";
 import { toAvatarPng } from "../lib/image.ts";
+import { CharacterFace } from "./Character.tsx";
 import { Avatar } from "./Avatar.tsx";
 import { Button, Dialog } from "./ui.tsx";
 
@@ -22,11 +24,19 @@ export function AgentDialog(props: { agent?: Agent; onClose: () => void; onSaved
   const [preview, setPreview] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const file = useRef<HTMLInputElement>(null);
+  // New agents get a random starting look (saved with the agent); existing
+  // ones start from their stored or id-derived look.
+  const [seed] = useState(() => crypto.randomUUID());
+  const [look, setLook] = useState<Character>(() => (editing ? characterOf(editing) : deriveCharacter(seed)));
+  const same = (a: Character, b: Character): boolean => a.body === b.body && a.eyes === b.eyes && a.hue === b.hue;
+  const lookChanged = !editing || !same(look, characterOf(editing));
 
   useEffect(() => () => { if (preview) URL.revokeObjectURL(preview); }, [preview]);
 
   const nameOk = NAME.test(name);
-  const shown = avatar === null ? { name: name || "?", avatar_url: null } : { name: name || "?", avatar_url: editing?.avatar_url ?? null };
+  const imageUrl = avatar === null ? null : editing?.avatar_url ?? null;
+  const shown = { name: name || "?", avatar_url: imageUrl, character: look };
+  const hasImage = Boolean(preview ?? imageUrl);
 
   const pick = async (f: File | undefined): Promise<void> => {
     if (!f) return;
@@ -48,8 +58,9 @@ export function AgentDialog(props: { agent?: Agent; onClose: () => void; onSaved
             ...(name !== editing.name ? { name } : {}),
             description,
             instructions,
+            ...(lookChanged ? { character: same(look, deriveCharacter(editing.id)) ? null : look } : {}),
           })
-        : await client.createAgent({ name, description, instructions });
+        : await client.createAgent({ name, description, instructions, character: look });
       if (avatar instanceof Blob) agent = await client.setAvatar(agent.id, avatar);
       else if (avatar === null && editing?.avatar_url) agent = await client.removeAvatar(agent.id);
       props.onSaved(agent);
@@ -81,24 +92,81 @@ export function AgentDialog(props: { agent?: Agent; onClose: () => void; onSaved
         }}
       >
         <div class="avatar-picker">
-          <Avatar agent={shown} size={72} preview={avatar === null ? null : preview} />
-          <div class="avatar-actions">
-            <Button small onClick={() => file.current?.click()}>
-              <ImageUp size={14} /> {editing?.avatar_url || preview ? "Replace image" : "Upload image"}
-            </Button>
-            {(preview || (editing?.avatar_url && avatar !== null)) && (
-              <Button
-                small
-                variant="ghost"
-                onClick={() => {
-                  setAvatar(null);
-                  setPreview(null);
-                }}
-              >
-                <X size={14} /> Use initials
-              </Button>
+          <Avatar agent={shown} size={84} preview={avatar === null ? null : preview} />
+          <div class="char-editor">
+            {hasImage ? (
+              <span class="muted small">The uploaded image is shown instead of the character.</span>
+            ) : (
+              <>
+                <div class="char-options" role="group" aria-label="Body">
+                  {BODIES.map((body) => (
+                    <button
+                      key={body}
+                      type="button"
+                      class={`char-option${look.body === body ? " on" : ""}`}
+                      aria-pressed={look.body === body}
+                      title={`Body: ${body}`}
+                      onClick={() => { setLook({ ...look, body }); }}
+                    >
+                      <CharacterFace look={{ ...look, body }} mood="idle" blinkDelay={0} />
+                    </button>
+                  ))}
+                  <span class="char-sep" />
+                  {EYES.map((eyes) => (
+                    <button
+                      key={eyes}
+                      type="button"
+                      class={`char-option${look.eyes === eyes ? " on" : ""}`}
+                      aria-pressed={look.eyes === eyes}
+                      title={`Eyes: ${eyes}`}
+                      onClick={() => { setLook({ ...look, eyes }); }}
+                    >
+                      <CharacterFace look={{ ...look, eyes }} mood="idle" blinkDelay={0} />
+                    </button>
+                  ))}
+                </div>
+                <div class="char-swatches" role="group" aria-label="Color">
+                  {HUES.map((hue) => (
+                    <button
+                      key={hue}
+                      type="button"
+                      class={`swatch${look.hue === hue ? " on" : ""}`}
+                      style={{ "--char-hue": String(hue) }}
+                      aria-label={`Color ${String(hue)}`}
+                      aria-pressed={look.hue === hue}
+                      onClick={() => { setLook({ ...look, hue }); }}
+                    />
+                  ))}
+                </div>
+              </>
             )}
-            <span class="muted small">PNG, JPEG, WebP or GIF. Cropped to a square.</span>
+            <div class="avatar-actions">
+              {!hasImage && (
+                <Button small onClick={() => { setLook(rerollCharacter(look)); }}>
+                  <Dices size={14} /> Re-roll
+                </Button>
+              )}
+              {!hasImage && editing && !same(look, deriveCharacter(editing.id)) && (
+                <Button small variant="ghost" onClick={() => { setLook(deriveCharacter(editing.id)); }}>
+                  <RotateCcw size={14} /> Default
+                </Button>
+              )}
+              <Button small variant="ghost" onClick={() => file.current?.click()}>
+                <ImageUp size={14} /> {hasImage ? "Replace image" : "Upload image"}
+              </Button>
+              {hasImage && (
+                <Button
+                  small
+                  variant="ghost"
+                  onClick={() => {
+                    setAvatar(null);
+                    setPreview(null);
+                  }}
+                >
+                  <X size={14} /> Use character
+                </Button>
+              )}
+            </div>
           </div>
           <input
             ref={file}

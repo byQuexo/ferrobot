@@ -446,7 +446,7 @@
         "tags": [
           "agents"
         ],
-        "summary": "Removes the avatar (clients fall back to initials).",
+        "summary": "Removes the avatar (clients fall back to the character avatar).",
         "operationId": "delete_avatar",
         "parameters": [
           {
@@ -2233,6 +2233,17 @@
             "format": "int64",
             "description": "Changes whenever the avatar changes; positive while an avatar exists."
           },
+          "character": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/AvatarCharacter",
+                "description": "Chosen character avatar look; `null` means derived from the id."
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "status": {
             "$ref": "#/components/schemas/AgentStatus"
           },
@@ -2337,6 +2348,50 @@
           }
         }
       },
+      "AvatarCharacter": {
+        "type": "object",
+        "description": "A chosen look for the agent's animated character avatar. Clients derive\na deterministic look from the agent id when none is set; an uploaded\navatar image takes precedence over both.",
+        "required": [
+          "body",
+          "eyes",
+          "hue"
+        ],
+        "properties": {
+          "body": {
+            "$ref": "#/components/schemas/CharacterBody"
+          },
+          "eyes": {
+            "$ref": "#/components/schemas/CharacterEyes"
+          },
+          "hue": {
+            "type": "integer",
+            "format": "int32",
+            "description": "Color hue in degrees, 0..=359.",
+            "maximum": 359,
+            "minimum": 0
+          }
+        }
+      },
+      "CharacterBody": {
+        "type": "string",
+        "description": "Body shape of the generated character avatar.",
+        "enum": [
+          "blob",
+          "bean",
+          "pebble",
+          "sprout"
+        ]
+      },
+      "CharacterEyes": {
+        "type": "string",
+        "description": "Eye style of the generated character avatar.",
+        "enum": [
+          "dots",
+          "ovals",
+          "wide",
+          "visor"
+        ]
+      },
       "Choice": {
         "type": "object",
         "description": "One selectable option.",
@@ -2401,6 +2456,17 @@
           "instructions": {
             "type": "string",
             "description": "System instructions (role) for the agent's model."
+          },
+          "character": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/AvatarCharacter",
+                "description": "Character avatar look; omitted or `null`: derived from the id."
+              },
+              {
+                "type": "null"
+              }
+            ]
           }
         }
       },
@@ -3348,6 +3414,17 @@
               "null"
             ],
             "description": "New system instructions; a connected runner applies them from its next turn."
+          },
+          "character": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/AvatarCharacter",
+                "description": "New character avatar look; `null` goes back to the one derived from the id."
+              },
+              {
+                "type": "null"
+              }
+            ]
           }
         }
       },

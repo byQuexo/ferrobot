@@ -174,13 +174,40 @@ textarea { resize: vertical; min-height: 40px; line-height: 1.5; }
 /* ---------- avatar & presence ---------- */
 .avatar {
   position: relative; display: inline-grid; place-items: center; flex: none; border-radius: 50%;
-  background: linear-gradient(145deg,
-    hsl(var(--hue) var(--avatar-s) calc(var(--avatar-l) + 8%)),
-    hsl(calc(var(--hue) + 24) var(--avatar-s) calc(var(--avatar-l) - 6%)));
-  color: #fff; font-weight: 600; letter-spacing: 0.01em; user-select: none;
+  background: var(--surface-2); user-select: none;
 }
 .avatar img { width: 100%; height: 100%; object-fit: cover; border-radius: inherit; }
-.avatar-initials { text-shadow: 0 1px 1px rgba(0, 0, 0, 0.18); }
+
+/* Character avatars (components/Character.tsx) */
+.char { width: 100%; height: 100%; border-radius: 50%; display: block; overflow: hidden; }
+.char-bg { fill: hsl(var(--char-hue) 70% 92%); }
+.char-body { fill: hsl(var(--char-hue) 62% 58%); }
+.char-leaf { fill: hsl(calc(var(--char-hue) + 40) 55% 52%); }
+.char-stem { fill: none; stroke: hsl(var(--char-hue) 45% 42%); stroke-width: 1.8; stroke-linecap: round; }
+.char-cheek { fill: hsl(calc(var(--char-hue) - 20) 85% 78%); opacity: 0.7; }
+.char-ink { fill: hsl(var(--char-hue) 35% 14%); }
+.char-white { fill: #fff; }
+.char-shine { fill: #fff; }
+.char-glow { fill: hsl(var(--char-hue) 95% 80%); }
+.char-closed path { fill: none; stroke: hsl(var(--char-hue) 35% 14%); stroke-width: 1.7; stroke-linecap: round; }
+:root[data-theme="dark"] .char-bg { fill: hsl(var(--char-hue) 28% 24%); }
+:root[data-theme="dark"] .char-body { fill: hsl(var(--char-hue) 58% 62%); }
+
+.char-eyes, .char-look, .char-figure { transform-box: view-box; transform-origin: 24px 30px; }
+.char-eyes { animation: char-blink 5s var(--blink-delay, 0s) infinite; }
+@keyframes char-blink { 0%, 93%, 100% { transform: scaleY(1); } 95.5% { transform: scaleY(0.08); } }
+/* thinking: eyes drift up to the side, head tilts slowly */
+.m-thinking .char-look { transform: translate(1.6px, -2px); }
+.m-thinking .char-figure { animation: char-tilt 3.2s ease-in-out infinite; }
+@keyframes char-tilt { 50% { transform: rotate(-5deg); } }
+/* working: small hop, eyes scan */
+.m-working .char-figure { animation: char-hop 0.9s ease-in-out infinite; }
+.m-working .char-look { animation: char-scan 2.4s ease-in-out infinite; }
+@keyframes char-hop { 50% { transform: translateY(-1.6px); } }
+@keyframes char-scan { 0%, 100% { transform: translateX(-1.6px); } 50% { transform: translateX(1.6px); } }
+/* sleeping: eyes closed, slow breathing, muted color */
+.m-sleeping .char-figure { animation: char-breathe 4s ease-in-out infinite; filter: saturate(0.55); }
+@keyframes char-breathe { 50% { transform: scale(1.03); } }
 .presence-dot {
   position: absolute; right: -1px; bottom: -1px; width: 28%; height: 28%; min-width: 9px; min-height: 9px;
   border-radius: 50%; border: 2px solid var(--sidebar); background: var(--sleep);
@@ -429,9 +456,24 @@ textarea { resize: vertical; min-height: 40px; line-height: 1.5; }
 .dialog-head h2 { flex: 1; margin: 0; font-size: 16px; font-weight: 650; letter-spacing: -0.01em; }
 .dialog-body { padding: 10px 22px 6px; overflow-y: auto; }
 .dialog-foot { display: flex; justify-content: flex-end; gap: 8px; padding: 14px 22px 18px; }
-.avatar-picker { display: flex; align-items: center; gap: 16px; }
+.avatar-picker { display: flex; align-items: flex-start; gap: 18px; }
 .avatar-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
-.avatar-actions .small { flex-basis: 100%; }
+.char-editor { display: flex; flex-direction: column; gap: 10px; min-width: 0; }
+.char-options { display: flex; flex-wrap: wrap; align-items: center; gap: 4px; }
+.char-option {
+  width: 34px; height: 34px; padding: 2px; border-radius: 50%; border: 1.5px solid transparent;
+  background: none; display: grid; place-items: center;
+}
+.char-option:hover { border-color: var(--border-strong); }
+.char-option.on { border-color: var(--accent); }
+.char-option .char-eyes { animation: none; }
+.char-sep { width: 1px; height: 22px; margin: 0 4px; background: var(--border); }
+.char-swatches { display: flex; flex-wrap: wrap; gap: 6px; }
+.swatch {
+  width: 20px; height: 20px; border-radius: 50%; border: 2px solid var(--surface); padding: 0;
+  background: hsl(var(--char-hue) 62% 58%); box-shadow: 0 0 0 1px var(--border);
+}
+.swatch.on { box-shadow: 0 0 0 2px var(--accent); }
 @keyframes fade { from { opacity: 0; } }
 @keyframes rise { from { opacity: 0; transform: translateY(8px) scale(0.98); } }
 

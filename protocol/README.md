@@ -38,7 +38,9 @@ the token in `<data dir>/api-token` (mode 0600) unless `--api-token` sets one.
 **HTTP** (`openapi.json`, tags `system`, `agents`, `chat`, `memory`,
 `routines`, `sandbox`): health; agents with profile edits including renames (`PATCH`, `409` if
 the name is taken), deletion (`DELETE` purges disk and snapshots unless
-`?keep_data=true`), avatars
+`?keep_data=true`), the character avatar look (`character`:
+`{body, eyes, hue}`, `null` = derived from the id; `PATCH` with `null`
+resets it), avatar images
 (`PUT/GET/DELETE …/avatar`, raw PNG/JPEG/WebP/GIF body ≤ 512 KiB) and
 `POST …/read`; conversation and events; interrupt, stop, wake, exec; sandbox
 status; snapshots with restore; memory (`?q=` searches); routines

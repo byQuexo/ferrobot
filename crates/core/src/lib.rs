@@ -11,7 +11,9 @@ pub mod mention;
 pub mod protocol;
 pub mod question;
 
-pub use agent::{Agent, AgentId, AgentName, AgentStatus};
+pub use agent::{
+    Agent, AgentId, AgentName, AgentStatus, AvatarCharacter, CharacterBody, CharacterEyes,
+};
 pub use error::CoreError;
 pub use mail::{MailMessage, MailStatus, Sender};
 
