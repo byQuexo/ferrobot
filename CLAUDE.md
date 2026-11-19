@@ -181,7 +181,8 @@ daemon, `docker ps -a` must be empty of ferrobot containers.
 - No provider has been run against its real upstream (no keys used).
 - The Codex driver has only run against a fake app-server; the runner image
   has no `codex` binary yet (adding `@openai/codex` needs Tim's OK).
-- The desktop provider dialog was type-checked and built, not looked at in a window.
+- The provider dialogs were checked in a browser against a real daemon, not in
+  the Tauri window; the real OS keychain path has never run.
 - A live Claude run (`--driver claude`) has never been tested.
 
 ## Next up: Firecracker
