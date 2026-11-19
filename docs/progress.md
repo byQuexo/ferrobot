@@ -72,7 +72,14 @@ Status per roadmap phase (`docs/roadmap.md`). Decisions are in
 - OpenAI driver: history is never trimmed (`shortcut:` comment); no audit log
   lines like the Claude driver writes.
 - Runner image must be rebuilt for Docker to have the new driver.
-- The desktop dialogs were not looked at in a running window.
+- The real OS keychain was never exercised: tests, e2e and the UI check used
+  the memory or file store. An ad-hoc-signed `ferrobotd` will likely trigger
+  a macOS Keychain prompt after each rebuild.
+- Existing, not new: `Settings` derives `Debug` and would print
+  `anthropic_api_key` if someone formatted it; nothing does today. The new
+  token caches (gcloud, ChatGPT) have redacted `Debug` (`debug_never_shows_tokens`).
+- Desktop dialogs: looked at once in a browser against a real daemon (mock
+  driver); not in the Tauri window.
 
 ## Phase 3: Codex driver (`feature/codex-driver`)
 

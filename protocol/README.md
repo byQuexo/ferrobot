@@ -42,9 +42,20 @@ the name is taken), deletion (`DELETE` purges disk and snapshots unless
 `{body, eyes, hue}`, `null` = derived from the id; `PATCH` with `null`
 resets it), avatar images
 (`PUT/GET/DELETE …/avatar`, raw PNG/JPEG/WebP/GIF body ≤ 512 KiB) and
-`POST …/read`; conversation and events; interrupt, stop, wake, exec; sandbox
-status; snapshots with restore; memory (`?q=` searches); routines
+`POST …/read`; conversation and events; interrupt, stop (`?level=warm`
+pauses where the backend can, `501` otherwise; default `cold`), wake, exec;
+sandbox status; snapshots with restore; memory (`?q=` searches); routines
 (`/v1/agents/{id}/routines`, `/v1/routines/{rid}`, `…/run`, `…/runs`).
+Agent `status` is `created`, `running`, `paused` (warm sleep), `stopped` or
+`failed`; `provider_id` and `model` pick the model (`null`: the daemon's
+`ANTHROPIC_API_KEY` / the provider's default model), and changing them
+rebuilds the sandbox with its disk kept.
+
+Model providers: `GET/POST /v1/providers`, `PATCH/DELETE /v1/providers/{id}`
+(`409` while agents use it). `api_key` is write-only; responses carry
+`has_key`. `codex` providers can sign in with ChatGPT on the daemon host:
+`POST /v1/providers/{id}/chatgpt-login` returns a device code,
+`GET` on the same path reports `none`, `pending`, `signed_in` or `failed`.
 
 Agent-to-agent threads: `GET /v1/conversations` (one entry per pair, most
 recent first) and `GET /v1/conversations/{a}/{b}` (both directions, oldest
@@ -67,7 +78,8 @@ wake the recipient) or `null`.
 | `memory_changed` | The agent's memory changed; refetch. |
 | `routines_changed` | The agent's routines or their runs changed; refetch. |
 
-**Runner frames** (`/runner/ws`): runner → daemon `hello`, `event`,
+**Runner frames** (`/runner/ws`): runner → daemon `hello` (`driver` is
+`mock`, `claude`, `openai` or `codex`), `event`,
 `turn_done`; daemon → runner `welcome` (includes the instructions), `turn`,
 `interrupt`, and `configure` (current `agent_name` and `instructions` after a
 rename or instructions edit; they apply from the next turn). Turn events (field `kind`) include `assistant_delta`
