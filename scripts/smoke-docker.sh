@@ -51,7 +51,8 @@ connected() { get /v1/agents | json "all(a['connected'] for a in d)" | grep -q T
 
 start
 TOKEN=$(cat "$DATA/api-token")
-check "token file is private (0600)" "stat -c %a '$DATA/api-token' | grep -qx 600"
+# GNU stat first, then BSD/macOS stat.
+check "token file is private (0600)" "{ stat -c %a '$DATA/api-token' 2>/dev/null || stat -f %Lp '$DATA/api-token'; } | grep -qx 600"
 check "API rejects requests without the token" \
   "curl -s -o /dev/null -w '%{http_code}' $API/v1/agents | grep -qx 401"
 get /v1/health; echo
