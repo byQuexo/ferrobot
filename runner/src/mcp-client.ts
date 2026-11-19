@@ -1,6 +1,9 @@
 // Thin wrapper around the official MCP client for the daemon's tool server.
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
-import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
+import {
+  StreamableHTTPClientTransport,
+  StreamableHTTPError,
+} from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 
 export class FerrobotMcp {
   readonly #url: URL;
@@ -25,8 +28,16 @@ export class FerrobotMcp {
 
   /** Calls a tool and returns its structured result. Throws on tool errors. */
   async call(name: string, args: Record<string, unknown>): Promise<unknown> {
-    const client = await this.#connect();
-    const result = await client.callTool({ name, arguments: args });
+    let result;
+    try {
+      result = await (await this.#connect()).callTool({ name, arguments: args });
+    } catch (err) {
+      // A restarted daemon forgets MCP sessions and answers 404; the call was
+      // not executed, so open a fresh session and retry once.
+      if (!isSessionLost(err)) throw err;
+      await this.close().catch(() => undefined);
+      result = await (await this.#connect()).callTool({ name, arguments: args });
+    }
     if (result.isError === true) {
       throw new Error(`tool ${name} failed: ${JSON.stringify(result.content)}`);
     }
@@ -38,4 +49,8 @@ export class FerrobotMcp {
     this.#client = null;
     await client?.close();
   }
+}
+
+export function isSessionLost(err: unknown): boolean {
+  return err instanceof StreamableHTTPError && err.code === 404;
 }

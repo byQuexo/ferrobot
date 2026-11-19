@@ -62,6 +62,23 @@ impl Store {
         .await
     }
 
+    /// Fetches one message by id.
+    pub async fn get_message(&self, id: i64) -> Result<MailMessage, StoreError> {
+        self.with(move |c| {
+            c.query_row(
+                &format!("SELECT {COLUMNS} FROM messages WHERE id = ?1"),
+                [id],
+                |row| Ok(from_row(row)),
+            )
+            .optional()?
+            .ok_or_else(|| StoreError::NotFound {
+                entity: "message",
+                key: id.to_string(),
+            })?
+        })
+        .await
+    }
+
     /// Atomically claims the oldest pending message for `agent`, marking it in flight.
     pub async fn claim_next_message(
         &self,

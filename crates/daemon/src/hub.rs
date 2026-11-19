@@ -104,9 +104,3 @@ impl Hub {
         self.notify_handle(agent).notify_one();
     }
 }
-
-impl ferrobot_mcp::MailboxNotifier for Hub {
-    fn message_enqueued(&self, recipient: AgentId, _message_id: i64) {
-        self.wake(recipient);
-    }
-}

@@ -166,12 +166,37 @@ async fn main() -> Result<()> {
 
     lifecycle::reconcile(&state).await;
 
-    let ui_server = axum::serve(ui, ui_router(state.clone())).with_graceful_shutdown(shutdown());
-    let agent_server = axum::serve(agents, agent_router(state)).with_graceful_shutdown(shutdown());
-    tokio::try_join!(ui_server, agent_server).context("server error")?;
+    let (stop_tx, stop_rx) = tokio::sync::watch::channel(false);
+    tokio::spawn(async move {
+        shutdown().await;
+        let _ = stop_tx.send(true);
+    });
+    let stopped = |mut rx: tokio::sync::watch::Receiver<bool>| async move {
+        let _ = rx.wait_for(|stop| *stop).await;
+    };
+    let ui_server =
+        axum::serve(ui, ui_router(state.clone())).with_graceful_shutdown(stopped(stop_rx.clone()));
+    let agent_server =
+        axum::serve(agents, agent_router(state)).with_graceful_shutdown(stopped(stop_rx.clone()));
+    // WebSockets (runners, UI) never finish on their own, so graceful shutdown
+    // gets a grace period; leaving `main` then drops them and runners reconnect
+    // to the next daemon.
+    let grace = async {
+        stopped(stop_rx).await;
+        tokio::time::sleep(SHUTDOWN_GRACE).await;
+        tracing::info!("closing remaining connections");
+    };
+    tokio::select! {
+        result = async { tokio::try_join!(ui_server, agent_server) } => {
+            result.context("server error")?;
+        }
+        () = grace => {}
+    }
     tracing::info!("bye");
     Ok(())
 }
+
+const SHUTDOWN_GRACE: std::time::Duration = std::time::Duration::from_secs(3);
 
 async fn shutdown() {
     let ctrl_c = async {

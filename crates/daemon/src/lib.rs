@@ -41,7 +41,7 @@ pub fn ui_router(state: AppState) -> Router {
 pub fn agent_router(state: AppState) -> Router {
     let mcp = ferrobot_mcp::router(ferrobot_mcp::McpState {
         store: state.store.clone(),
-        notifier: std::sync::Arc::new(state.hub.clone()),
+        notifier: std::sync::Arc::new(state.clone()),
     });
     Router::new()
         .merge(runner_ws::router().with_state(state))

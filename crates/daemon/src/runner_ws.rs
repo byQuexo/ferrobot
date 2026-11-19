@@ -306,5 +306,6 @@ async fn run_turn(
     if let Err(e) = store_result {
         tracing::error!(error = %e, message = msg.id, "failed to settle message");
     }
+    state.publish_message(msg.id).await;
     true
 }

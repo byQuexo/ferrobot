@@ -90,3 +90,21 @@ impl AppState {
         }
     }
 }
+
+impl AppState {
+    /// Re-reads a message and pushes its current state to UI clients.
+    pub async fn publish_message(&self, id: i64) {
+        match self.store.get_message(id).await {
+            Ok(message) => self.publish(UiEvent::Message { message }),
+            Err(e) => tracing::warn!(error = %e, message = id, "cannot publish message"),
+        }
+    }
+}
+
+impl ferrobot_mcp::MailboxNotifier for AppState {
+    fn message_enqueued(&self, recipient: ferrobot_core::AgentId, message_id: i64) {
+        self.hub.wake(recipient);
+        let state = self.clone();
+        tokio::spawn(async move { state.publish_message(message_id).await });
+    }
+}
