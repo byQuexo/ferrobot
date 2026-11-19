@@ -29,7 +29,8 @@ with `scripts/seed-demo.sh`.
 ## Features
 
 - **One computer per agent.** Each agent gets a container with its own disk.
-  Idle agents go to sleep after `--idle-timeout` (default 15 min); a message,
+  Idle agents are paused after `--warm-after` (default 5 min, Docker) and
+  stopped after `--idle-timeout` (default 15 min); a message,
   a routine or an operator command wakes them. Crashed containers are
   restarted, and snapshots (root filesystem + home) can be taken and restored.
 - **Agents talk to each other** through an asynchronous mailbox with retries,
