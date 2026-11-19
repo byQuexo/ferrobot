@@ -1,9 +1,10 @@
 // Entry point of the in-sandbox agent runner.
 import { mkdir } from "node:fs/promises";
 
-import { ConfigError, loadConfig, mcpUrl, runnerWsUrl } from "./config.ts";
+import { ConfigError, loadConfig, mcpUrl, runnerWsUrl, type RunnerConfig } from "./config.ts";
 import { ClaudeDriver } from "./drivers/claude.ts";
 import { MockDriver } from "./drivers/mock.ts";
+import { OpenAIDriver } from "./drivers/openai.ts";
 import type { ModelDriver } from "./drivers/types.ts";
 import { DaemonLink } from "./link.ts";
 import { errorMessage, log } from "./log.ts";
@@ -20,16 +21,7 @@ async function main(): Promise<void> {
   const session = new SessionStore(config.stateDir);
   const saved = await session.load();
 
-  const driver: ModelDriver =
-    config.driver === "claude"
-      ? new ClaudeDriver({
-          mcpUrl: mcpUrl(config.daemonUrl),
-          token: config.token,
-          workspaceDir: config.workspaceDir,
-          model: config.model,
-          session,
-        })
-      : new MockDriver(new FerrobotMcp(mcpUrl(config.daemonUrl), config.token));
+  const driver = createDriver(config, session);
 
   // `link` and `runner` reference each other; the closures run after both exist.
   // eslint-disable-next-line prefer-const
@@ -61,6 +53,30 @@ async function main(): Promise<void> {
   };
   process.once("SIGTERM", () => { shutdown("SIGTERM"); });
   process.once("SIGINT", () => { shutdown("SIGINT"); });
+}
+
+function createDriver(config: RunnerConfig, session: SessionStore): ModelDriver {
+  switch (config.driver) {
+    case "claude":
+      return new ClaudeDriver({
+        mcpUrl: mcpUrl(config.daemonUrl),
+        token: config.token,
+        workspaceDir: config.workspaceDir,
+        model: config.model,
+        session,
+      });
+    case "openai":
+      return new OpenAIDriver({
+        baseUrl: config.openaiBaseUrl,
+        model: config.model,
+        token: config.token,
+        workspaceDir: config.workspaceDir,
+        stateDir: config.stateDir,
+        mcp: new FerrobotMcp(mcpUrl(config.daemonUrl), config.token),
+      });
+    case "mock":
+      return new MockDriver(new FerrobotMcp(mcpUrl(config.daemonUrl), config.token));
+  }
 }
 
 main().catch((err: unknown) => {

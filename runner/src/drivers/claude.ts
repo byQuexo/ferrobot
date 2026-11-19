@@ -102,9 +102,9 @@ export interface Mapped {
   outcome?: { ok: true; result: string } | { ok: false; error: string };
 }
 
-function clip(text: string): string {
-  return text.length > MAX_TOOL_OUTPUT
-    ? `${text.slice(0, MAX_TOOL_OUTPUT)}\n[... ${String(text.length - MAX_TOOL_OUTPUT)} more characters]`
+export function clip(text: string, max = MAX_TOOL_OUTPUT): string {
+  return text.length > max
+    ? `${text.slice(0, max)}\n[... ${String(text.length - max)} more characters]`
     : text;
 }
 
@@ -263,7 +263,7 @@ export class ClaudeDriver implements ModelDriver {
 }
 
 /** Reads the live flag (a function call, so control-flow narrowing does not stick). */
-function aborted(signal: AbortSignal): boolean {
+export function aborted(signal: AbortSignal): boolean {
   return signal.aborted;
 }
 

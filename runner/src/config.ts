@@ -1,20 +1,26 @@
 import { homedir } from "node:os";
 import { join } from "node:path";
 
-export type DriverKind = "mock" | "claude";
+export type DriverKind = "mock" | "claude" | "openai";
 
-export interface RunnerConfig {
+interface CommonConfig {
   /** Agent API base, e.g. http://host.docker.internal:7879 */
   daemonUrl: URL;
   token: string;
   agentName: string;
-  driver: DriverKind;
   model: string | undefined;
   /** Where the agent works (its "desktop"). */
   workspaceDir: string;
   /** Runner bookkeeping (session id, audit log). */
   stateDir: string;
 }
+
+export type RunnerConfig = CommonConfig &
+  (
+    | { driver: "mock" | "claude" }
+    // openaiBaseUrl: the daemon's OpenAI-compatible model proxy, e.g. http://host.docker.internal:7879/model
+    | { driver: "openai"; model: string; openaiBaseUrl: URL }
+  );
 
 export class ConfigError extends Error {
   override name = "ConfigError";
@@ -26,34 +32,47 @@ function required(env: NodeJS.ProcessEnv, key: string): string {
   return value;
 }
 
-export function loadConfig(env: NodeJS.ProcessEnv = process.env): RunnerConfig {
-  const rawUrl = required(env, "FERROBOT_DAEMON_URL");
-  let daemonUrl: URL;
+function httpUrl(env: NodeJS.ProcessEnv, key: string): URL {
+  const raw = required(env, key);
+  let url: URL;
   try {
-    daemonUrl = new URL(rawUrl);
+    url = new URL(raw);
   } catch {
-    throw new ConfigError(`FERROBOT_DAEMON_URL is not a valid URL: ${rawUrl}`);
+    throw new ConfigError(`${key} is not a valid URL: ${raw}`);
   }
-  if (daemonUrl.protocol !== "http:" && daemonUrl.protocol !== "https:") {
-    throw new ConfigError("FERROBOT_DAEMON_URL must be http(s)");
+  if (url.protocol !== "http:" && url.protocol !== "https:") {
+    throw new ConfigError(`${key} must be http(s)`);
   }
+  return url;
+}
+
+export function loadConfig(env: NodeJS.ProcessEnv = process.env): RunnerConfig {
+  const daemonUrl = httpUrl(env, "FERROBOT_DAEMON_URL");
   const driver = env["FERROBOT_DRIVER"] ?? "mock";
-  if (driver !== "mock" && driver !== "claude") {
-    throw new ConfigError(`FERROBOT_DRIVER must be "mock" or "claude", got ${driver}`);
+  if (driver !== "mock" && driver !== "claude" && driver !== "openai") {
+    throw new ConfigError(`FERROBOT_DRIVER must be "mock", "claude" or "openai", got ${driver}`);
   }
   if (driver === "claude" && !env["ANTHROPIC_API_KEY"]) {
     throw new ConfigError("FERROBOT_DRIVER=claude needs ANTHROPIC_API_KEY");
   }
   const home = env["HOME"] ?? homedir();
-  return {
+  const common: CommonConfig = {
     daemonUrl,
     token: required(env, "FERROBOT_AGENT_TOKEN"),
     agentName: env["FERROBOT_AGENT_NAME"] ?? "agent",
-    driver,
     model: env["FERROBOT_MODEL"] || undefined,
     workspaceDir: env["FERROBOT_WORKSPACE_DIR"] ?? join(home, "workspace"),
     stateDir: env["FERROBOT_STATE_DIR"] ?? join(home, ".ferrobot"),
   };
+  if (driver === "openai") {
+    return {
+      ...common,
+      driver,
+      model: required(env, "FERROBOT_MODEL"),
+      openaiBaseUrl: httpUrl(env, "FERROBOT_OPENAI_BASE_URL"),
+    };
+  }
+  return { ...common, driver };
 }
 
 /** WebSocket URL of the runner endpoint. */
