@@ -204,9 +204,12 @@ function Item(props: { item: TimelineItem; agent: Agent }): JSX.Element {
       return (
         <div class="row row-agent">
           <Avatar agent={agent} size={28} />
-          <div class={`bubble bubble-agent${item.streaming ? " streaming" : ""}`}>
+          <div class={`bubble-agent${item.streaming ? " streaming" : ""}`}>
+            <span class="agent-msg-head">
+              <strong>{agent.name}</strong>
+              {!item.streaming && <span class="meta">{clockTime(item.at)}</span>}
+            </span>
             <RichText text={item.text} />
-            {!item.streaming && <span class="meta">{clockTime(item.at)}</span>}
           </div>
         </div>
       );

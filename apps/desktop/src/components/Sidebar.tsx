@@ -94,13 +94,13 @@ function AgentRow(props: { agent: Agent; active: boolean; onSelect: (id: string)
       type="button"
       class={`agent-row${props.active ? " active" : ""}`}
       aria-current={props.active ? "page" : undefined}
+      title={`${a.name} · ${presenceLabel(a.presence)}`}
       onClick={() => { props.onSelect(a.id); }}
     >
       <Avatar agent={a} size={40} presence={a.presence} />
       <span class="agent-row-text">
         <span class="agent-row-top">
           <span class="agent-name">{a.name}</span>
-          <span class={`status-chip p-${a.presence}`}>{presenceLabel(a.presence)}</span>
         </span>
         <span class="agent-desc">{a.description || "No description"}</span>
       </span>
