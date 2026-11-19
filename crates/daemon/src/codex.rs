@@ -72,7 +72,13 @@ impl AppServer {
             .stderr(Stdio::null())
             .kill_on_drop(true)
             .spawn()
-            .map_err(|e| format!("cannot start `{bin} app-server` on the daemon host: {e}"))?;
+            .map_err(|e| match e.kind() {
+                std::io::ErrorKind::NotFound => format!(
+                    "the codex CLI ({bin}) is not installed on the daemon's computer; \
+                     install it or set --codex-bin"
+                ),
+                _ => format!("cannot start `{bin} app-server` on the daemon's computer: {e}"),
+            })?;
         let (Some(stdin), Some(stdout)) = (child.stdin.take(), child.stdout.take()) else {
             return Err("codex app-server has no stdio".into());
         };
