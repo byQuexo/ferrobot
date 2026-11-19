@@ -1,4 +1,4 @@
-use ferrobot_core::{AgentId, AgentName, Sender};
+use ferrobot_core::{AgentId, AgentName, Sender, mention};
 use ferrobot_store::StoreError;
 use rmcp::handler::server::tool::Extension;
 use rmcp::handler::server::wrapper::{Json, Parameters};
@@ -66,8 +66,13 @@ pub struct SendMessageArgs {
     pub to: String,
     /// Message text.
     pub body: String,
-    /// Optional id of the message this answers.
+    /// Optional id of the message this answers (one you received or sent);
+    /// keeps the conversation threaded.
     pub reply_to: Option<i64>,
+    /// `true`: urgent, wake the recipient now and handle this before its other
+    /// queued messages. `false`: not urgent, don't wake it; it gets this on its
+    /// next turn. Omit for normal delivery (queued, wakes the recipient).
+    pub priority: Option<bool>,
 }
 
 #[derive(Debug, Serialize, JsonSchema)]
@@ -202,18 +207,33 @@ impl FerrobotTools {
                 None,
             ));
         }
-        let msg = self
-            .state
-            .store
-            .enqueue_message(
+        if let Some(reply_to) = args.reply_to {
+            let original = store.get_message(reply_to).await.map_err(store_err)?;
+            if original.recipient != me.id && original.sender != Sender::Agent(me.id) {
+                return Err(ErrorData::invalid_params(
+                    "reply_to must be a message you received or sent",
+                    None,
+                ));
+            }
+        }
+        let agents = store.list_agents().await.map_err(store_err)?;
+        let body = mention::normalize(body, |name| {
+            agents
+                .iter()
+                .find(|a| a.name.as_str() == name)
+                .map(|a| a.id)
+        });
+        let msg = store
+            .enqueue_message_with_priority(
                 Sender::Agent(me.id),
                 recipient.id,
-                body.to_owned(),
+                body,
                 args.reply_to,
+                args.priority,
             )
             .await
             .map_err(store_err)?;
-        self.state.notifier.message_enqueued(recipient.id, msg.id);
+        self.state.notifier.message_enqueued(&msg);
         Ok(Json(SendMessageResult {
             message_id: msg.id,
             queued_for: recipient.name.to_string(),
@@ -246,7 +266,12 @@ impl FerrobotTools {
                 .map(|m| MailboxEntry {
                     id: m.id,
                     from: name_of(&m.sender),
-                    body: m.body,
+                    body: mention::render(&m.body, |id| {
+                        agents
+                            .iter()
+                            .find(|a| a.id == id)
+                            .map(|a| a.name.to_string())
+                    }),
                     reply_to: m.reply_to,
                     status: m.status.as_str().to_owned(),
                     created_at: m.created_at.to_string(),

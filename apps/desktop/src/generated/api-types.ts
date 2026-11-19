@@ -318,6 +318,43 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/conversations": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Agent-to-agent conversations (one per pair of agents), most recent first. */
+        get: operations["list_conversations"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/conversations/{a}/{b}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Read-only thread between two agents: messages in both directions, oldest
+         *     first (last 200). The order of `a` and `b` does not matter.
+         */
+        get: operations["conversation_thread"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/health": {
         parameters: {
             query?: never;
@@ -473,6 +510,19 @@ export interface components {
             /** @description Relative URL of the avatar image, if one was uploaded. */
             avatar_url?: string | null;
         };
+        /** @description Messages two agents exchanged. */
+        Conversation: {
+            /** @description The two agents, ordered by id. */
+            a: components["schemas"]["AgentId"];
+            b: components["schemas"]["AgentId"];
+            /**
+             * Format: int32
+             * @description Messages in both directions.
+             */
+            messages: number;
+            /** @description The most recent one. */
+            last: components["schemas"]["MailMessage"];
+        };
         CreateAgent: {
             /**
              * @description 1-32 chars, `a-z0-9-`, starts with a letter. Unique; can be changed later
@@ -558,9 +608,19 @@ export interface components {
             id: number;
             sender: components["schemas"]["Sender"];
             recipient: components["schemas"]["AgentId"];
+            /**
+             * @description Text; mentions of agents are stored as `<@agent-id>` tokens (see
+             *     `ferrobot_core::mention`), so render them with the current names.
+             */
             body: string;
             /** Format: int64 */
             reply_to?: number | null;
+            /**
+             * @description Set by the sending agent: `true` wakes the recipient and goes ahead
+             *     of its other queued messages; `false` waits for the recipient's next
+             *     turn without waking it; `null` (default) queues and wakes.
+             */
+            priority?: boolean | null;
             status: components["schemas"]["MailStatus"];
             /** Format: int32 */
             attempts: number;
@@ -582,7 +642,10 @@ export interface components {
             updated_at: string;
         };
         PostMessage: {
-            /** @description 1..32768 bytes after trimming. */
+            /**
+             * @description 1..32768 bytes after trimming. `@name` mentions of existing agents are
+             *     stored as `<@agent-id>` tokens.
+             */
             body: string;
         };
         /**
@@ -2101,6 +2164,76 @@ export interface operations {
             };
             /** @description Sandbox backend error */
             502: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+        };
+    };
+    list_conversations: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Conversation"][];
+                };
+            };
+            /** @description Missing or wrong API token */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+        };
+    };
+    conversation_thread: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Agent id (UUID) */
+                a: string;
+                /** @description Agent id (UUID) */
+                b: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MailMessage"][];
+                };
+            };
+            /** @description Missing or wrong API token */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Malformed agent id */
+            404: {
                 headers: {
                     [name: string]: unknown;
                 };

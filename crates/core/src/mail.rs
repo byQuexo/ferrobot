@@ -98,8 +98,14 @@ pub struct MailMessage {
     pub id: i64,
     pub sender: Sender,
     pub recipient: AgentId,
+    /// Text; mentions of agents are stored as `<@agent-id>` tokens (see
+    /// `ferrobot_core::mention`), so render them with the current names.
     pub body: String,
     pub reply_to: Option<i64>,
+    /// Set by the sending agent: `true` wakes the recipient and goes ahead
+    /// of its other queued messages; `false` waits for the recipient's next
+    /// turn without waking it; `null` (default) queues and wakes.
+    pub priority: Option<bool>,
     pub status: MailStatus,
     pub attempts: u32,
     #[serde(with = "time::serde::rfc3339")]

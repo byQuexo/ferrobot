@@ -63,6 +63,8 @@ wait_for "both runners connected" connected
 post "/v1/agents/$ALICE/messages" '{"body":"@smoke-bob hello"}' >/dev/null
 wait_for "alice -> bob delivered" "delivered $BOB hello"
 wait_for "bob's auto-reply reached alice" "delivered $ALICE 're: hello'"
+check "@mention stored by agent id" "get /v1/agents/$ALICE/messages | json \"d[0]['body']\" | grep -qF '<@$BOB> hello'"
+check "agent-to-agent thread listed" "get /v1/conversations | json \"len(d) == 1 and d[0]['messages'] == 2\" | grep -qx True"
 check "tool call paired with its result" \
   "get /v1/agents/$ALICE/events | json \"len({e['payload'].get('id') for e in d if e['kind']=='tool_use'} & {e['payload'].get('id') for e in d if e['kind']=='tool_result'})>0\" | grep -q True"
 

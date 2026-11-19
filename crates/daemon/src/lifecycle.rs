@@ -306,7 +306,7 @@ pub async fn reconcile(state: &AppState) {
             (AgentStatus::Stopped, live) => {
                 let queued = state
                     .store
-                    .has_queued_messages(agent.id)
+                    .has_waking_messages(agent.id)
                     .await
                     .unwrap_or(false);
                 let result = if queued {

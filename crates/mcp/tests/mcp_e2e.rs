@@ -2,7 +2,7 @@
 
 use std::sync::{Arc, Mutex};
 
-use ferrobot_core::{AgentId, AgentName, MailStatus};
+use ferrobot_core::{AgentId, AgentName, MailMessage, MailStatus};
 use ferrobot_mcp::{MailboxNotifier, McpState};
 use ferrobot_store::{NewAgent, Store};
 use rmcp::ServiceExt;
@@ -16,8 +16,8 @@ use serde_json::{Value, json};
 struct Recorder(Mutex<Vec<(AgentId, i64)>>);
 
 impl MailboxNotifier for Recorder {
-    fn message_enqueued(&self, recipient: AgentId, message_id: i64) {
-        self.0.lock().unwrap().push((recipient, message_id));
+    fn message_enqueued(&self, message: &MailMessage) {
+        self.0.lock().unwrap().push((message.recipient, message.id));
     }
 }
 
@@ -154,6 +154,41 @@ async fn tools_act_as_the_authenticated_agent() {
     assert_eq!(inbox["messages"][0]["body"], "hi bob");
     let queued = store.inbox(ids[1], 10).await.unwrap();
     assert_eq!(queued[0].status, MailStatus::Pending);
+
+    // bob answers in the thread, urgently; the mention is stored by id and
+    // read back with the current name
+    let reply = call(
+        &bob,
+        "send_message",
+        json!({"to": "alice", "body": "thanks @Alice", "reply_to": msg_id, "priority": true}),
+    )
+    .await
+    .unwrap();
+    let stored = store
+        .get_message(reply["message_id"].as_i64().unwrap())
+        .await
+        .unwrap();
+    assert_eq!(stored.body, format!("thanks <@{}>", ids[0]));
+    assert_eq!(
+        (stored.reply_to, stored.priority),
+        (Some(msg_id), Some(true))
+    );
+    let inbox = call(&alice, "read_mailbox", json!({})).await.unwrap();
+    assert_eq!(inbox["messages"][0]["body"], "thanks @alice");
+    // ... but cannot reply to mail it was not part of
+    let foreign = store
+        .enqueue_message(ferrobot_core::Sender::User, ids[0], "private".into(), None)
+        .await
+        .unwrap();
+    assert!(
+        call(
+            &bob,
+            "send_message",
+            json!({"to": "alice", "body": "x", "reply_to": foreign.id})
+        )
+        .await
+        .is_err()
+    );
 
     // memory is private per agent
     call(

@@ -24,6 +24,7 @@ use rusqlite::Connection;
 pub use agents::{AgentPatch, Avatar, NewAgent, hash_token};
 pub use error::StoreError;
 pub use events::StoredEvent;
+pub use mailbox::AgentPair;
 pub use memory::MemoryEntry;
 pub use routines::{NewRoutine, Routine, RoutineRun, RunTrigger};
 pub use snapshots::SnapshotRecord;

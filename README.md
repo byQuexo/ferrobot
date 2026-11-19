@@ -182,6 +182,20 @@ disk, memory and history (`sandbox_name` keeps the original name). Agents
 message each other with `send_message`, whose `to` takes an id from
 `list_agents`; the current name works too.
 
+`send_message` also takes `reply_to` (a message the agent received or sent,
+to keep a thread) and `priority`: `true` wakes a sleeping recipient and goes
+ahead of its other queued mail, `false` queues without waking (the recipient
+gets it on its next turn), omitted means queue and wake. Every pair of agents
+that exchanged mail has a read-only thread (`GET /v1/conversations`,
+`GET /v1/conversations/{a}/{b}`), listed under **Conversations** in the
+desktop sidebar.
+
+`@name` in your messages and in agents' replies (case-insensitive) is stored
+as an id token `<@agent-id>` when the agent exists, so mentions survive
+renames; the app shows them as chips with the current name and avatar
+(click to open that agent), and models see `@current-name`. Unknown names
+stay plain text.
+
 `DELETE /v1/agents/{id}` removes the agent **with its disk and snapshots**;
 add `?keep_data=true` to keep the home volume and snapshot images.
 

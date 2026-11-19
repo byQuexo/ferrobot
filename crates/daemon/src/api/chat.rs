@@ -14,7 +14,8 @@ use crate::{AppState, UiEvent};
 
 #[derive(Debug, Deserialize, ToSchema)]
 pub(crate) struct PostMessage {
-    /// 1..32768 bytes after trimming.
+    /// 1..32768 bytes after trimming. `@name` mentions of existing agents are
+    /// stored as `<@agent-id>` tokens.
     body: String,
 }
 
@@ -37,9 +38,10 @@ pub(crate) async fn post_message(
     if body.is_empty() || body.len() > MAX_TEXT_BYTES {
         return Err(ApiError::BadRequest("body must be 1..32768 bytes".into()));
     }
+    let body = state.normalize_mentions(body).await;
     let msg = state
         .store
-        .enqueue_message(Sender::User, id, body.to_owned(), None)
+        .enqueue_message(Sender::User, id, body, None)
         .await?;
     state.message_arrived(id);
     state.publish(UiEvent::Message {
@@ -84,6 +86,53 @@ pub(crate) async fn list_events(
     let id = parse_id(&id)?;
     state.store.get_agent(id).await?;
     Ok(Json(state.store.events_after(id, q.after, 500).await?))
+}
+
+/// Messages two agents exchanged.
+#[derive(Debug, Serialize, ToSchema)]
+pub(crate) struct Conversation {
+    /// The two agents, ordered by id.
+    a: ferrobot_core::AgentId,
+    b: ferrobot_core::AgentId,
+    /// Messages in both directions.
+    messages: u32,
+    /// The most recent one.
+    last: MailMessage,
+}
+
+/// Agent-to-agent conversations (one per pair of agents), most recent first.
+#[utoipa::path(get, path = "/v1/conversations", tag = "chat",
+    responses((status = 200, body = Vec<Conversation>)))]
+pub(crate) async fn list_conversations(
+    State(state): State<AppState>,
+) -> ApiResult<Vec<Conversation>> {
+    let pairs = state.store.agent_pairs().await?;
+    Ok(Json(
+        pairs
+            .into_iter()
+            .map(|p| Conversation {
+                a: p.a,
+                b: p.b,
+                messages: p.messages,
+                last: p.last,
+            })
+            .collect(),
+    ))
+}
+
+/// Read-only thread between two agents: messages in both directions, oldest
+/// first (last 200). The order of `a` and `b` does not matter.
+#[utoipa::path(get, path = "/v1/conversations/{a}/{b}", tag = "chat",
+    params(("a" = String, Path, description = "Agent id (UUID)"),
+        ("b" = String, Path, description = "Agent id (UUID)")),
+    responses((status = 200, body = Vec<MailMessage>),
+        (status = 404, description = "Malformed agent id", body = ErrorBody)))]
+pub(crate) async fn conversation_thread(
+    State(state): State<AppState>,
+    Path((a, b)): Path<(String, String)>,
+) -> ApiResult<Vec<MailMessage>> {
+    let (a, b) = (parse_id(&a)?, parse_id(&b)?);
+    Ok(Json(state.store.pair_thread(a, b, 200).await?))
 }
 
 /// Marks the agent's chat as read (resets `unread`).

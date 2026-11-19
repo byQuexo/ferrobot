@@ -50,6 +50,8 @@ pub fn router() -> Router<AppState> {
         )
         .route("/v1/agents/{id}/events", get(chat::list_events))
         .route("/v1/agents/{id}/read", post(chat::mark_read))
+        .route("/v1/conversations", get(chat::list_conversations))
+        .route("/v1/conversations/{a}/{b}", get(chat::conversation_thread))
         .route("/v1/agents/{id}/interrupt", post(chat::interrupt))
         .route(
             "/v1/agents/{id}/memory",

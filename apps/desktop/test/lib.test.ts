@@ -112,3 +112,13 @@ describe("DaemonClient", () => {
     assert.equal(new DaemonClient("http://h").url("/v1/ws"), "http://h/v1/ws");
   });
 });
+
+describe("mentions", () => {
+  it("splits id tokens and renders current names as text", async () => {
+    const { mentionsAsText, splitMentions } = await import("../src/lib/mentions.ts");
+    const text = `hi <@${BOB}>, see <@not-an-id>`;
+    assert.deepEqual(splitMentions(text), [{ text: "hi " }, { mention: BOB }, { text: ", see <@not-an-id>" }]);
+    assert.equal(mentionsAsText(text, (id) => (id === BOB ? "robert" : undefined)), "hi @robert, see <@not-an-id>");
+    assert.equal(mentionsAsText(`<@${ME}>`, () => undefined), "@unknown-agent");
+  });
+});

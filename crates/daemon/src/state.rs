@@ -140,6 +140,30 @@ impl AppState {
     }
 
     /// Re-reads a message and pushes its current state to UI clients.
+    /// Stores `@name` mentions of existing agents as `<@id>` tokens.
+    pub async fn normalize_mentions(&self, text: &str) -> String {
+        let Ok(agents) = self.store.list_agents().await else {
+            return text.to_owned();
+        };
+        ferrobot_core::mention::normalize(text, |name| {
+            agents
+                .iter()
+                .find(|a| a.name.as_str() == name)
+                .map(|a| a.id)
+        })
+    }
+
+    /// Turns `<@id>` tokens back into `@current-name` (for model input).
+    pub async fn render_mentions(&self, text: &str) -> String {
+        let agents = self.store.list_agents().await.unwrap_or_default();
+        ferrobot_core::mention::render(text, |id| {
+            agents
+                .iter()
+                .find(|a| a.id == id)
+                .map(|a| a.name.to_string())
+        })
+    }
+
     pub async fn publish_message(&self, id: i64) {
         match self.store.get_message(id).await {
             Ok(message) => self.publish(UiEvent::Message { message }),
@@ -150,8 +174,17 @@ impl AppState {
     /// Something was queued for `agent`: wake its sandbox if it sleeps and
     /// its dispatch loop.
     pub fn message_arrived(&self, agent: AgentId) {
-        self.hub.touch(agent);
+        self.message_queued(agent, true);
+    }
+
+    /// A message was queued for `agent`: a connected runner picks it up as
+    /// its next turn; with `wake`, a sleeping agent is woken for it.
+    pub fn message_queued(&self, agent: AgentId, wake: bool) {
         self.hub.wake(agent);
+        if !wake {
+            return;
+        }
+        self.hub.touch(agent);
         let state = self.clone();
         tokio::spawn(async move {
             if let Err(e) = crate::lifecycle::ensure_awake(&state, agent).await {
@@ -162,10 +195,11 @@ impl AppState {
 }
 
 impl ferrobot_mcp::MailboxNotifier for AppState {
-    fn message_enqueued(&self, recipient: AgentId, message_id: i64) {
-        self.message_arrived(recipient);
+    fn message_enqueued(&self, message: &MailMessage) {
+        self.message_queued(message.recipient, message.priority != Some(false));
         let state = self.clone();
-        tokio::spawn(async move { state.publish_message(message_id).await });
+        let id = message.id;
+        tokio::spawn(async move { state.publish_message(id).await });
     }
 
     fn memory_changed(&self, agent: AgentId) {

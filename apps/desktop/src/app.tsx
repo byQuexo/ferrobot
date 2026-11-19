@@ -5,6 +5,7 @@ import { Bot, KeyRound, Plus, WifiOff } from "lucide-preact";
 import { ApiError, DEFAULT_DAEMON, DaemonClient, type Agent, type Health, type UiEvent } from "./api.ts";
 import { AgentDialog } from "./components/AgentDialog.tsx";
 import { Chat } from "./components/Chat.tsx";
+import { ConversationView, type Pair } from "./components/Conversations.tsx";
 import { InfoPanel, type InfoTab } from "./components/InfoPanel.tsx";
 import { Sidebar } from "./components/Sidebar.tsx";
 import { Button, Empty } from "./components/ui.tsx";
@@ -40,6 +41,7 @@ export function App(): JSX.Element {
   const [health, setHealth] = useState<Health | null>(null);
   const [online, setOnline] = useState(false);
   const [selected, setSelected] = useState<string | null>(() => localStorage.getItem("ferrobot.selected"));
+  const [pair, setPair] = useState<Pair | null>(null);
   const [dialog, setDialog] = useState<"create" | "edit" | null>(null);
   const [infoOpen, setInfoOpen] = useState(() => localStorage.getItem("ferrobot.info") !== "closed");
   const [tab, setTab] = useState<InfoTab>("profile");
@@ -121,21 +123,29 @@ export function App(): JSX.Element {
     return () => { listeners.current.delete(fn); };
   }, []);
 
-  const ctx: AppContextValue = { client, health, agents, listen, toast, run };
+  const openAgent = useCallback((id: string) => {
+    setPair(null);
+    setSelected(id);
+  }, []);
+  const ctx: AppContextValue = { client, health, agents, listen, toast, run, openAgent };
   const agent = selected ? agents.get(selected) : undefined;
 
   return (
     <AppContext.Provider value={ctx}>
-      <div class={`shell${agent && infoOpen ? " with-info" : ""}`}>
+      <div class={`shell${agent && infoOpen && !pair ? " with-info" : ""}`}>
         <Sidebar
           selected={selected}
-          onSelect={setSelected}
+          onSelect={openAgent}
+          pair={pair}
+          onOpenPair={setPair}
           onCreate={() => { setDialog("create"); }}
           online={online}
           theme={theme}
           onTheme={setTheme}
         />
-        {agent ? (
+        {pair ? (
+          <ConversationView key={pair.join()} pair={pair} />
+        ) : agent ? (
           <Chat
             key={agent.id}
             agent={agent}
@@ -164,7 +174,7 @@ export function App(): JSX.Element {
             )}
           </main>
         )}
-        {agent && infoOpen && (
+        {agent && infoOpen && !pair && (
           <InfoPanel
             agent={agent}
             tab={tab}

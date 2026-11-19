@@ -135,6 +135,10 @@ const MIGRATIONS: &[&str] = &[
     UPDATE agents SET sandbox_name = name;
     CREATE UNIQUE INDEX agents_sandbox_name ON agents(sandbox_name);
     ",
+    // v4: message priority (1 urgent, 0 normal, -1 deferred: does not wake)
+    r"
+    ALTER TABLE messages ADD COLUMN priority INTEGER NOT NULL DEFAULT 0;
+    ",
 ];
 
 pub(crate) fn run(conn: &mut Connection) -> Result<(), StoreError> {

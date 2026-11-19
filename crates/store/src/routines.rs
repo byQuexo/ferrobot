@@ -279,6 +279,7 @@ impl Store {
                 routine.agent_id,
                 &routine.prompt,
                 None,
+                None,
             )?;
             let ts = fmt_ts(now());
             tx.execute(

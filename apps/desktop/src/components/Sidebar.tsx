@@ -7,11 +7,14 @@ import { useApp } from "../context.ts";
 import { presenceLabel } from "../lib/format.ts";
 import type { ThemePref } from "../lib/theme.ts";
 import { Avatar } from "./Avatar.tsx";
+import { ConversationList, type Pair } from "./Conversations.tsx";
 import { IconButton, Logo } from "./ui.tsx";
 
 export function Sidebar(props: {
   selected: string | null;
   onSelect: (id: string) => void;
+  pair: Pair | null;
+  onOpenPair: (p: Pair) => void;
   onCreate: () => void;
   online: boolean;
   theme: ThemePref;
@@ -47,9 +50,10 @@ export function Sidebar(props: {
       </label>
       <nav class="agent-list" aria-label="Agents">
         {list.map((a) => (
-          <AgentRow key={a.id} agent={a} active={a.id === props.selected} onSelect={props.onSelect} />
+          <AgentRow key={a.id} agent={a} active={!props.pair && a.id === props.selected} onSelect={props.onSelect} />
         ))}
         {list.length === 0 && agents.size > 0 && <p class="muted pad">No agent matches “{filter}”.</p>}
+        <ConversationList active={props.pair} onOpen={props.onOpenPair} />
       </nav>
       <footer class="sidebar-foot">
         <span class={`conn ${props.online ? "on" : "off"}`}>

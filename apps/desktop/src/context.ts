@@ -10,6 +10,8 @@ export interface AppContextValue {
   /** Registers a live-event listener; returns the unsubscribe function. */
   listen: (fn: (e: UiEvent) => void) => () => void;
   toast: (message: string, kind?: "error" | "info") => void;
+  /** Opens an agent's chat (e.g. from a mention). */
+  openAgent: (id: string) => void;
   /** Runs an action and reports failures as a toast. */
   run: <T>(action: () => Promise<T>) => Promise<T | undefined>;
 }

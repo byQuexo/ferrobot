@@ -165,6 +165,12 @@ async fn handle_frame(state: &AppState, agent: &Agent, done_tx: &mpsc::Sender<Do
         }
         Ok(RunnerFrame::Event { turn_id, event }) => {
             state.hub.touch(agent.id);
+            let event = match event {
+                TurnEvent::AssistantText { text } => TurnEvent::AssistantText {
+                    text: state.normalize_mentions(&text).await,
+                },
+                other => other,
+            };
             let payload = serde_json::to_value(&event).unwrap_or_default();
             let kind = payload["kind"].as_str().unwrap_or("event").to_owned();
             state.record(agent.id, Some(turn_id), &kind, payload).await;
@@ -282,7 +288,7 @@ async fn run_turn(
         message_id: msg.id,
         sender: msg.sender,
         sender_name: from,
-        body: msg.body.clone(),
+        body: state.render_mentions(&msg.body).await,
     };
     if out.send(frame).await.is_err() {
         return false; // reader cleanup requeues

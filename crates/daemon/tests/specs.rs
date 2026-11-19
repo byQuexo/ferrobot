@@ -50,6 +50,8 @@ fn every_routed_path_is_documented() {
         "/v1/agents/{id}/messages",
         "/v1/agents/{id}/events",
         "/v1/agents/{id}/read",
+        "/v1/conversations",
+        "/v1/conversations/{a}/{b}",
         "/v1/agents/{id}/interrupt",
         "/v1/agents/{id}/memory",
         "/v1/agents/{id}/memory/{key}",
@@ -69,7 +71,7 @@ fn every_routed_path_is_documented() {
     }
     assert_eq!(
         documented.len(),
-        22,
+        24,
         "undocumented extra paths: {documented:?}"
     );
 }
@@ -118,6 +120,7 @@ fn ui_events_validate_against_schema() {
         created_at: OffsetDateTime::UNIX_EPOCH,
     };
     let message = MailMessage {
+        priority: None,
         id: 1,
         sender: Sender::Agent(agent.id),
         recipient: AgentId::new(),

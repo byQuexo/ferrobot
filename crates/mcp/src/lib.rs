@@ -10,7 +10,7 @@ mod tools;
 
 use std::sync::Arc;
 
-use ferrobot_core::AgentId;
+use ferrobot_core::{AgentId, MailMessage};
 use ferrobot_store::Store;
 
 pub use auth::{Caller, router};
@@ -27,8 +27,9 @@ pub const MAX_MEMORY_KEY_BYTES: usize = 128;
 
 /// Hooks the daemon uses to react to tool calls.
 pub trait MailboxNotifier: Send + Sync + 'static {
-    /// A tool enqueued a message, so the daemon can dispatch it.
-    fn message_enqueued(&self, recipient: AgentId, message_id: i64);
+    /// A tool enqueued a message, so the daemon can dispatch it (and wake
+    /// the recipient unless `message.priority == Some(false)`).
+    fn message_enqueued(&self, message: &MailMessage);
     /// A tool changed the agent's memory.
     fn memory_changed(&self, agent: AgentId) {
         let _ = agent;

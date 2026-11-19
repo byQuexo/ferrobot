@@ -136,6 +136,7 @@
           "type": "integer"
         },
         "body": {
+          "description": "Text; mentions of agents are stored as `<@agent-id>` tokens (see\n`ferrobot_core::mention`), so render them with the current names.",
           "type": "string"
         },
         "created_at": {
@@ -145,6 +146,13 @@
         "id": {
           "format": "int64",
           "type": "integer"
+        },
+        "priority": {
+          "description": "Set by the sending agent: `true` wakes the recipient and goes ahead\nof its other queued messages; `false` waits for the recipient's next\nturn without waking it; `null` (default) queues and wakes.",
+          "type": [
+            "boolean",
+            "null"
+          ]
         },
         "recipient": {
           "$ref": "#/$defs/AgentId"

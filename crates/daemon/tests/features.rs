@@ -16,6 +16,8 @@ use axum::http::HeaderMap;
 use axum::response::IntoResponse;
 use common::{Daemon, events, eventually, http, http_raw, start, start_on, start_with};
 use ferrobot_core::protocol::{DaemonFrame, RunnerFrame};
+use ferrobot_core::{AgentId, Sender};
+use ferrobot_mcp::MailboxNotifier;
 use ferrobot_sandbox::{
     ExecOutput, ExecRequest, SandboxBackend, SandboxError, SandboxHandle, SandboxPath, SandboxSpec,
     SandboxState, SnapshotRef,
@@ -903,4 +905,84 @@ async fn state_survives_a_daemon_restart() {
         DaemonFrame::Turn { body, .. } => assert_eq!(body, "queued while down"),
         other => panic!("expected turn, got {other:?}"),
     }
+}
+
+#[tokio::test]
+async fn mentions_priorities_and_conversations() {
+    let backend = Arc::new(StatefulBackend::default());
+    let d = start(backend.clone(), None, "127.0.0.1:0").await;
+    let id_of = |v: Value| v["id"].as_str().unwrap().to_owned();
+    let ada = id_of(create(&d, json!({"name": "ada"})).await);
+    let bob = id_of(create(&d, json!({"name": "bob"})).await);
+
+    // Mentions are stored by id; unknown names stay text.
+    let (status, m) = http(
+        &d.ui,
+        "POST",
+        &format!("/v1/agents/{ada}/messages"),
+        Some(json!({"body": "ask @Bob and @nobody"})),
+    )
+    .await;
+    assert_eq!(status, 202, "{m}");
+    assert_eq!(m["body"], format!("ask <@{bob}> and @nobody"));
+    // After a rename the model sees the current name.
+    let path = format!("/v1/agents/{bob}");
+    let (status, _) = http(&d.ui, "PATCH", &path, Some(json!({"name": "robert"}))).await;
+    assert_eq!(status, 200);
+    let mut ws = connect_runner(&d.agents, &backend.token("ada")).await;
+    match next_frame(&mut ws).await {
+        DaemonFrame::Turn { body, .. } => assert_eq!(body, "ask @robert and @nobody"),
+        other => panic!("expected a turn, got {other:?}"),
+    }
+
+    // priority: false queues without waking a sleeping recipient; true wakes it.
+    let (status, _) = http(&d.ui, "POST", &format!("/v1/agents/{bob}/stop"), None).await;
+    assert_eq!(status, 204);
+    let (ada_id, bob_id): (AgentId, AgentId) = (ada.parse().unwrap(), bob.parse().unwrap());
+    let send = |body: &str, priority: Option<bool>| {
+        let state = d.state.clone();
+        let body = body.to_owned();
+        async move {
+            let m = state
+                .store
+                .enqueue_message_with_priority(Sender::Agent(ada_id), bob_id, body, None, priority)
+                .await
+                .unwrap();
+            state.message_enqueued(&m);
+        }
+    };
+    send("later", Some(false)).await;
+    tokio::time::sleep(Duration::from_millis(300)).await;
+    let (_, b) = http(&d.ui, "GET", &path, None).await;
+    assert_eq!(b["status"], "stopped", "deferred mail must not wake");
+    send("urgent", Some(true)).await;
+    eventually("urgent mail wakes", Duration::from_secs(5), || async {
+        let (_, b) = http(&d.ui, "GET", &path, None).await;
+        (b["status"] == "running").then_some(())
+    })
+    .await;
+
+    // One read-only thread per pair of agents.
+    let (status, list) = http(&d.ui, "GET", "/v1/conversations", None).await;
+    assert_eq!(status, 200);
+    assert_eq!(list.as_array().unwrap().len(), 1, "{list}");
+    assert_eq!(list[0]["messages"], 2);
+    assert_eq!(list[0]["last"]["priority"], true);
+    let (status, thread) = http(
+        &d.ui,
+        "GET",
+        &format!("/v1/conversations/{bob}/{ada}"),
+        None,
+    )
+    .await;
+    assert_eq!(status, 200);
+    let bodies: Vec<_> = thread
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|m| m["body"].clone())
+        .collect();
+    assert_eq!(bodies, [json!("later"), json!("urgent")]);
+    let (status, _) = http(&d.ui, "GET", "/v1/conversations/x/y", None).await;
+    assert_eq!(status, 404);
 }

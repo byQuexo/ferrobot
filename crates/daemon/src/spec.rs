@@ -53,6 +53,8 @@ pub const RUNNER_PROTOCOL_FILE: &str = "runner-protocol.schema.json";
         api::chat::post_message,
         api::chat::list_events,
         api::chat::mark_read,
+        api::chat::list_conversations,
+        api::chat::conversation_thread,
         api::chat::interrupt,
         api::memory::list_memory,
         api::memory::put_memory,

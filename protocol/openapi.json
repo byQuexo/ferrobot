@@ -1724,6 +1724,102 @@
         }
       }
     },
+    "/v1/conversations": {
+      "get": {
+        "tags": [
+          "chat"
+        ],
+        "summary": "Agent-to-agent conversations (one per pair of agents), most recent first.",
+        "operationId": "list_conversations",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/Conversation"
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or wrong API token",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/conversations/{a}/{b}": {
+      "get": {
+        "tags": [
+          "chat"
+        ],
+        "summary": "Read-only thread between two agents: messages in both directions, oldest\nfirst (last 200). The order of `a` and `b` does not matter.",
+        "operationId": "conversation_thread",
+        "parameters": [
+          {
+            "name": "a",
+            "in": "path",
+            "description": "Agent id (UUID)",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "b",
+            "in": "path",
+            "description": "Agent id (UUID)",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/MailMessage"
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or wrong API token",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Malformed agent id",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/v1/health": {
       "get": {
         "tags": [
@@ -2134,6 +2230,35 @@
         ],
         "description": "An agent plus live state."
       },
+      "Conversation": {
+        "type": "object",
+        "description": "Messages two agents exchanged.",
+        "required": [
+          "a",
+          "b",
+          "messages",
+          "last"
+        ],
+        "properties": {
+          "a": {
+            "$ref": "#/components/schemas/AgentId",
+            "description": "The two agents, ordered by id."
+          },
+          "b": {
+            "$ref": "#/components/schemas/AgentId"
+          },
+          "messages": {
+            "type": "integer",
+            "format": "int32",
+            "description": "Messages in both directions.",
+            "minimum": 0
+          },
+          "last": {
+            "$ref": "#/components/schemas/MailMessage",
+            "description": "The most recent one."
+          }
+        }
+      },
       "CreateAgent": {
         "type": "object",
         "required": [
@@ -2340,7 +2465,8 @@
             "$ref": "#/components/schemas/AgentId"
           },
           "body": {
-            "type": "string"
+            "type": "string",
+            "description": "Text; mentions of agents are stored as `<@agent-id>` tokens (see\n`ferrobot_core::mention`), so render them with the current names."
           },
           "reply_to": {
             "type": [
@@ -2348,6 +2474,13 @@
               "null"
             ],
             "format": "int64"
+          },
+          "priority": {
+            "type": [
+              "boolean",
+              "null"
+            ],
+            "description": "Set by the sending agent: `true` wakes the recipient and goes ahead\nof its other queued messages; `false` waits for the recipient's next\nturn without waking it; `null` (default) queues and wakes."
           },
           "status": {
             "$ref": "#/components/schemas/MailStatus"
@@ -2401,7 +2534,7 @@
         "properties": {
           "body": {
             "type": "string",
-            "description": "1..32768 bytes after trimming."
+            "description": "1..32768 bytes after trimming. `@name` mentions of existing agents are\nstored as `<@agent-id>` tokens."
           }
         }
       },

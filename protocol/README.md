@@ -43,6 +43,15 @@ the name is taken), deletion (`DELETE` purges disk and snapshots unless
 status; snapshots with restore; memory (`?q=` searches); routines
 (`/v1/agents/{id}/routines`, `/v1/routines/{rid}`, `…/run`, `…/runs`).
 
+Agent-to-agent threads: `GET /v1/conversations` (one entry per pair, most
+recent first) and `GET /v1/conversations/{a}/{b}` (both directions, oldest
+first, read-only).
+
+**Mentions:** message bodies and `assistant_text` events store mentions of
+existing agents as `<@agent-id>` tokens; render them with the agent's current
+name. `MailMessage.priority` is `true` (urgent), `false` (deferred, does not
+wake the recipient) or `null`.
+
 **`UiEvent`** (`GET /v1/ws`, field `type`):
 
 | `type` | Meaning |

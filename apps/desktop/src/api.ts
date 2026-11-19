@@ -23,6 +23,7 @@ export type CreateAgent = Schemas["CreateAgent"];
 export type UpdateAgent = Schemas["UpdateAgent"];
 export type CreateRoutine = Schemas["CreateRoutine"];
 export type UpdateRoutine = Schemas["UpdateRoutine"];
+export type Conversation = Schemas["Conversation"];
 
 export class ApiError extends Error {
   override name = "ApiError";
@@ -130,6 +131,11 @@ export class DaemonClient {
     this.#request("POST", `/v1/agents/${id}/snapshots/${String(sid)}/restore`);
   deleteSnapshot = (id: string, sid: number): Promise<void> =>
     this.#request("DELETE", `/v1/agents/${id}/snapshots/${String(sid)}`);
+
+  // agent-to-agent conversations (read-only)
+  listConversations = (): Promise<Conversation[]> => this.#request("GET", "/v1/conversations");
+  conversation = (a: string, b: string): Promise<MailMessage[]> =>
+    this.#request("GET", `/v1/conversations/${a}/${b}`);
 
   /** Live updates; reconnects with backoff. Returns a stop function. */
   subscribe(handlers: {
