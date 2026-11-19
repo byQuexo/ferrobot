@@ -123,6 +123,10 @@ struct Cli {
     /// approval before it counts as declined.
     #[arg(long, env = "FERROBOT_APPROVAL_TIMEOUT", default_value_t = 300)]
     approval_timeout: u64,
+    /// The daemon host's `codex` binary, used to sign `codex` providers in
+    /// with `ChatGPT` (the tokens stay with it, under `<data dir>/codex`).
+    #[arg(long, env = "FERROBOT_CODEX_BIN", default_value = "codex")]
+    codex_bin: String,
     /// Where provider API keys are kept.
     #[arg(long, env = "FERROBOT_SECRET_STORE", value_enum, default_value_t = SecretStoreKind::Keyring)]
     secret_store: SecretStoreKind,
@@ -184,6 +188,8 @@ async fn main() -> Result<()> {
     settings.max_agents = cli.max_agents;
     settings.approval_timeout = Duration::from_secs(cli.approval_timeout);
     settings.secrets = secret_store(&cli);
+    settings.codex_bin.clone_from(&cli.codex_bin);
+    settings.codex_home = cli.data_dir.join("codex");
     let state = AppState::new(store, backend, settings);
 
     let ui = tokio::net::TcpListener::bind(cli.listen)

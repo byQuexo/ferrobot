@@ -29,6 +29,7 @@ const MAX_REQUEST_BYTES: usize = 32 * 1024 * 1024;
 const DROP_REQUEST: &[&str] = &[
     "host",
     "authorization",
+    "chatgpt-account-id",
     "x-api-key",
     "content-length",
     "connection",
@@ -75,6 +76,8 @@ struct Route {
     upstream: String,
     auth: UpstreamAuth,
     secret: Option<String>,
+    /// `ChatGPT` account of a Codex provider signed in with `ChatGPT`.
+    chatgpt_account: Option<String>,
 }
 
 pub fn secret_key(provider: uuid::Uuid) -> String {
@@ -102,6 +105,7 @@ async fn route(state: &AppState, agent: &Agent, path: &str) -> Result<Route, Fai
             upstream: state.settings.anthropic_upstream.clone(),
             auth: UpstreamAuth::ApiKeyHeader,
             secret: Some(key),
+            chatgpt_account: None,
         });
     };
     let unavailable = |msg: String| (StatusCode::SERVICE_UNAVAILABLE, msg);
@@ -137,6 +141,17 @@ async fn route(state: &AppState, agent: &Agent, path: &str) -> Result<Route, Fai
             .await
             .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?,
     };
+    if secret.is_none() && provider.kind == ProviderKind::Codex {
+        let (token, account) = crate::codex::chatgpt_token(state, id)
+            .await
+            .map_err(unavailable)?;
+        return Ok(Route {
+            upstream: state.settings.chatgpt_upstream.clone(),
+            auth: UpstreamAuth::Bearer,
+            secret: Some(token),
+            chatgpt_account: Some(account),
+        });
+    }
     if secret.is_none() && provider.kind.needs_key() {
         return Err(unavailable(format!(
             "provider {} has no API key; set one in the providers settings",
@@ -147,6 +162,7 @@ async fn route(state: &AppState, agent: &Agent, path: &str) -> Result<Route, Fai
         upstream,
         auth,
         secret,
+        chatgpt_account: None,
     })
 }
 
@@ -231,6 +247,9 @@ async fn forward(
                 upstream.header(header::AUTHORIZATION, format!("Bearer {secret}"))
             }
         };
+    }
+    if let Some(account) = route.chatgpt_account {
+        upstream = upstream.header("chatgpt-account-id", account);
     }
     upstream = upstream.body(body);
 

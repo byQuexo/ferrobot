@@ -1,8 +1,8 @@
 import type { JSX } from "preact";
 import { useEffect, useState } from "preact/hooks";
-import { KeyRound, Trash2 } from "lucide-preact";
+import { KeyRound, LogIn, Trash2 } from "lucide-preact";
 
-import type { Provider, ProviderKind } from "../api.ts";
+import type { DeviceCode, LoginStatus, Provider, ProviderKind } from "../api.ts";
 import { useApp } from "../context.ts";
 import { Button, Dialog, IconButton } from "./ui.tsx";
 
@@ -15,6 +15,7 @@ export const KIND_LABELS: Record<ProviderKind, string> = {
   openrouter: "OpenRouter",
   ollama: "Ollama (local)",
   openai_compatible: "OpenAI-compatible",
+  codex: "OpenAI Codex",
 };
 
 const KIND_HINTS: Partial<Record<ProviderKind, string>> = {
@@ -22,7 +23,56 @@ const KIND_HINTS: Partial<Record<ProviderKind, string>> = {
   vertex: "Uses the gcloud login on the daemon’s computer; no key needed.",
   ollama: "Talks to Ollama on the daemon’s computer (127.0.0.1:11434).",
   openai_compatible: "Any server with an OpenAI-style /chat/completions endpoint.",
+  codex: "Runs OpenAI’s Codex harness. Add an API key, or leave it empty and sign in with ChatGPT.",
 };
+
+const optionalKey = (kind: ProviderKind): boolean => kind === "openai_compatible" || kind === "codex";
+
+/** Device-code sign-in with ChatGPT, done by the daemon host’s Codex. */
+function ChatgptLogin(props: { provider: Provider }): JSX.Element {
+  const { client, toast } = useApp();
+  const [code, setCode] = useState<DeviceCode | null>(null);
+  const [status, setStatus] = useState<LoginStatus | null>(null);
+  const id = props.provider.id;
+
+  useEffect(() => {
+    let live = true;
+    const poll = (): void => {
+      client.chatgptLoginStatus(id).then((s) => {
+        if (!live) return;
+        setStatus(s);
+        if (s.state === "pending") setTimeout(poll, 2000);
+      }, () => undefined);
+    };
+    poll();
+    return () => { live = false; };
+  }, [code]);
+
+  const start = async (): Promise<void> => {
+    try {
+      setCode(await client.startChatgptLogin(id));
+    } catch (err) {
+      toast(err instanceof Error ? err.message : String(err));
+    }
+  };
+
+  if (status?.state === "signed_in") return <span class="muted small provider-login">Signed in with ChatGPT</span>;
+  return (
+    <div class="provider-login">
+      {code && status?.state === "pending" ? (
+        <span class="small">
+          Open <a href={code.verification_url} target="_blank" rel="noreferrer">{code.verification_url}</a> and enter{" "}
+          <b class="mono">{code.user_code}</b>
+        </span>
+      ) : (
+        <Button small onClick={() => void start()}>
+          <LogIn size={14} /> Sign in with ChatGPT
+        </Button>
+      )}
+      {status?.state === "failed" && <span class="hint bad">{status.error}</span>}
+    </div>
+  );
+}
 
 /** Fields a kind asks for. */
 function fieldsOf(kind: ProviderKind): { key: boolean; baseUrl: boolean; region: boolean; project: boolean } {
@@ -73,7 +123,7 @@ export function ProvidersDialog(props: { onClose: () => void }): JSX.Element {
         region: opt(region, fields.region),
         project: opt(project, fields.project),
         default_model: opt(model, true),
-        api_key: opt(key, fields.key || kind === "openai_compatible"),
+        api_key: opt(key, fields.key),
       });
       setName("");
       setKey("");
@@ -110,6 +160,7 @@ export function ProvidersDialog(props: { onClose: () => void }): JSX.Element {
               >
                 <Trash2 size={15} />
               </IconButton>
+              {p.kind === "codex" && !p.has_key && <ChatgptLogin provider={p} />}
               {rekey?.id === p.id && (
                 <form
                   class="provider-rekey"
@@ -173,9 +224,9 @@ export function ProvidersDialog(props: { onClose: () => void }): JSX.Element {
           Default model
           <input value={model} placeholder="Used when an agent does not pick one" onInput={(e) => { setModel(e.currentTarget.value); }} />
         </label>
-        {(fields.key || kind === "openai_compatible") && (
+        {fields.key && (
           <label>
-            API key{kind === "openai_compatible" ? " (optional)" : ""}
+            API key{optionalKey(kind) ? " (optional)" : ""}
             <input type="password" autoComplete="off" value={key} onInput={(e) => { setKey(e.currentTarget.value); }} />
             <span class="hint">Stored in the keychain of the daemon’s computer. Agents never see it.</span>
           </label>

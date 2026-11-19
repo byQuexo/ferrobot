@@ -31,6 +31,9 @@ pub enum ApiError {
     Sandbox(#[from] SandboxError),
     #[error("internal error")]
     Internal(String),
+    /// A host tool the daemon relies on (e.g. `codex`) failed.
+    #[error("{0}")]
+    Upstream(String),
 }
 
 impl From<StoreError> for ApiError {
@@ -61,6 +64,7 @@ impl IntoResponse for ApiError {
                 (StatusCode::NOT_IMPLEMENTED, "not_implemented")
             }
             Self::Sandbox(_) => (StatusCode::BAD_GATEWAY, "sandbox_error"),
+            Self::Upstream(_) => (StatusCode::BAD_GATEWAY, "upstream_error"),
             Self::Internal(detail) => {
                 // Log the detail, never leak it to clients.
                 tracing::error!(%detail, "internal API error");

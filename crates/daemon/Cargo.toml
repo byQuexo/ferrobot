@@ -21,6 +21,7 @@ utoipa.workspace = true
 anyhow.workspace = true
 async-trait.workspace = true
 axum.workspace = true
+base64.workspace = true
 clap.workspace = true
 ferrobot-core = { workspace = true, features = ["schema"] }
 ferrobot-mcp.workspace = true

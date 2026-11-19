@@ -66,7 +66,7 @@ pub(crate) async fn check_model(
             .get_provider(id)
             .await
             .map_err(|_| ApiError::BadRequest(format!("unknown provider {id}")))?;
-        if provider.kind.driver() == "openai" && model.is_none() && provider.default_model.is_none()
+        if provider.kind.driver() != "claude" && model.is_none() && provider.default_model.is_none()
         {
             return Err(ApiError::BadRequest(format!(
                 "provider {} has no default model; pick a model",

@@ -2158,6 +2158,136 @@
         }
       }
     },
+    "/v1/providers/{id}/chatgpt-login": {
+      "get": {
+        "tags": [
+          "providers"
+        ],
+        "summary": "Whether a `codex` provider is signed in with `ChatGPT`.",
+        "operationId": "chatgpt_login_status",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "Provider id (UUID)",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LoginStatus"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or wrong API token",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Unknown provider",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Not a codex provider",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "providers"
+        ],
+        "summary": "Starts signing a `codex` provider in with `ChatGPT`, on the daemon host's\n`codex`. Open `verification_url`, enter `user_code`, then poll the status.\nThe tokens stay with the host's Codex; agents never see them.",
+        "operationId": "start_chatgpt_login",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "Provider id (UUID)",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DeviceCode"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or wrong API token",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Unknown provider",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Not a codex provider",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "codex failed on the daemon host",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/v1/routines/{rid}": {
       "delete": {
         "tags": [
@@ -2853,6 +2983,22 @@
           }
         }
       },
+      "DeviceCode": {
+        "type": "object",
+        "description": "A device code the operator enters at `verification_url`.",
+        "required": [
+          "verification_url",
+          "user_code"
+        ],
+        "properties": {
+          "verification_url": {
+            "type": "string"
+          },
+          "user_code": {
+            "type": "string"
+          }
+        }
+      },
       "ErrorBody": {
         "type": "object",
         "description": "JSON body of every non-2xx UI API response.",
@@ -2975,6 +3121,73 @@
             "description": "The interrupted turn, or null if the agent was idle."
           }
         }
+      },
+      "LoginStatus": {
+        "oneOf": [
+          {
+            "type": "object",
+            "description": "Not signed in.",
+            "required": [
+              "state"
+            ],
+            "properties": {
+              "state": {
+                "type": "string",
+                "enum": [
+                  "none"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "description": "Waiting for the operator to confirm the code in the browser.",
+            "required": [
+              "state"
+            ],
+            "properties": {
+              "state": {
+                "type": "string",
+                "enum": [
+                  "pending"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "state"
+            ],
+            "properties": {
+              "state": {
+                "type": "string",
+                "enum": [
+                  "signed_in"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "error",
+              "state"
+            ],
+            "properties": {
+              "error": {
+                "type": "string"
+              },
+              "state": {
+                "type": "string",
+                "enum": [
+                  "failed"
+                ]
+              }
+            }
+          }
+        ],
+        "description": "Sign-in progress per provider (in memory; a restart forgets pending ones)."
       },
       "MailMessage": {
         "type": "object",
@@ -3150,7 +3363,8 @@
           "vertex",
           "openrouter",
           "ollama",
-          "openai_compatible"
+          "openai_compatible",
+          "codex"
         ]
       },
       "ProviderView": {

@@ -82,6 +82,10 @@ pub fn router() -> Router<AppState> {
             "/v1/providers/{id}",
             axum::routing::patch(providers::update_provider).delete(providers::delete_provider),
         )
+        .route(
+            "/v1/providers/{id}/chatgpt-login",
+            get(providers::chatgpt_login_status).post(providers::start_chatgpt_login),
+        )
         .route("/v1/routines/{rid}/run", post(routines::run_routine))
         .route("/v1/routines/{rid}/runs", get(routines::list_runs))
         .route(

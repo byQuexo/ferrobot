@@ -82,6 +82,8 @@ pub const QUESTION_CARD_FILE: &str = "question-card.v1.schema.json";
         api::providers::create_provider,
         api::providers::update_provider,
         api::providers::delete_provider,
+        api::providers::start_chatgpt_login,
+        api::providers::chatgpt_login_status,
         api::ws::ui_ws,
     ),
     components(schemas(UiEvent, QuestionEvent, QuestionAnswered)),

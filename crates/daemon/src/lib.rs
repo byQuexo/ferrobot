@@ -12,6 +12,7 @@
 pub mod agents;
 pub mod api;
 pub mod auth;
+pub mod codex;
 pub mod error;
 pub mod hub;
 pub mod lifecycle;

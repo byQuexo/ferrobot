@@ -1,0 +1,287 @@
+//! Host-side Codex: `ChatGPT` sign-in and access tokens come from the daemon
+//! host's own `codex app-server`, so `ChatGPT` credentials never enter a
+//! sandbox. The proxy adds them to requests from the in-sandbox Codex.
+
+use std::collections::HashMap;
+use std::path::Path;
+use std::process::Stdio;
+use std::time::{Duration, Instant};
+
+use base64::Engine as _;
+use serde::Serialize;
+use serde_json::{Value, json};
+use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader, Lines};
+use tokio::process::{Child, ChildStdin, ChildStdout, Command};
+use uuid::Uuid;
+
+use crate::AppState;
+
+/// Where the `ChatGPT` Codex backend lives (the same URL Codex uses itself).
+pub const CHATGPT_CODEX_UPSTREAM: &str = "https://chatgpt.com/backend-api/codex";
+const RPC_TIMEOUT: Duration = Duration::from_secs(30);
+const LOGIN_TIMEOUT: Duration = Duration::from_secs(15 * 60);
+
+/// Sign-in progress per provider (in memory; a restart forgets pending ones).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, utoipa::ToSchema)]
+#[serde(tag = "state", rename_all = "snake_case")]
+pub enum LoginStatus {
+    /// Not signed in.
+    None,
+    /// Waiting for the operator to confirm the code in the browser.
+    Pending,
+    SignedIn,
+    Failed {
+        error: String,
+    },
+}
+
+#[derive(Debug, Default)]
+pub struct CodexState {
+    logins: HashMap<Uuid, LoginStatus>,
+    /// Access token, `ChatGPT` account id, and when to stop using them.
+    tokens: HashMap<Uuid, (String, String, Instant)>,
+}
+
+/// A device code the operator enters at `verification_url`.
+#[derive(Debug, Clone, Serialize, utoipa::ToSchema)]
+pub struct DeviceCode {
+    pub verification_url: String,
+    pub user_code: String,
+}
+
+/// A running `codex app-server`, spoken to over stdio (one JSON object per
+/// line, no `jsonrpc` field).
+struct AppServer {
+    _child: Child,
+    stdin: ChildStdin,
+    lines: Lines<BufReader<ChildStdout>>,
+    next_id: u64,
+    notifications: Vec<(String, Value)>,
+}
+
+impl AppServer {
+    async fn start(bin: &str, home: &Path) -> Result<Self, String> {
+        tokio::fs::create_dir_all(home)
+            .await
+            .map_err(|e| format!("codex home: {e}"))?;
+        let mut child = Command::new(bin)
+            .arg("app-server")
+            .env("CODEX_HOME", home)
+            .stdin(Stdio::piped())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::null())
+            .kill_on_drop(true)
+            .spawn()
+            .map_err(|e| format!("cannot start `{bin} app-server` on the daemon host: {e}"))?;
+        let (Some(stdin), Some(stdout)) = (child.stdin.take(), child.stdout.take()) else {
+            return Err("codex app-server has no stdio".into());
+        };
+        let mut server = Self {
+            _child: child,
+            stdin,
+            lines: BufReader::new(stdout).lines(),
+            next_id: 0,
+            notifications: Vec::new(),
+        };
+        let info = json!({"clientInfo": {"name": "ferrobot", "title": "ferrobot",
+                                         "version": env!("CARGO_PKG_VERSION")}});
+        server.request("initialize", info).await?;
+        server.send(&json!({"method": "initialized"})).await?;
+        Ok(server)
+    }
+
+    async fn send(&mut self, message: &Value) -> Result<(), String> {
+        let mut line = message.to_string();
+        line.push('\n');
+        self.stdin
+            .write_all(line.as_bytes())
+            .await
+            .map_err(|e| format!("codex app-server: {e}"))
+    }
+
+    async fn read(&mut self) -> Result<Value, String> {
+        match self.lines.next_line().await {
+            Ok(Some(line)) => serde_json::from_str(&line).map_err(|e| format!("codex: {e}")),
+            Ok(None) => Err("codex app-server exited".into()),
+            Err(e) => Err(format!("codex app-server: {e}")),
+        }
+    }
+
+    async fn request(&mut self, method: &str, params: Value) -> Result<Value, String> {
+        self.next_id += 1;
+        let id = self.next_id;
+        self.send(&json!({"id": id, "method": method, "params": params}))
+            .await?;
+        tokio::time::timeout(RPC_TIMEOUT, async {
+            loop {
+                let msg = self.read().await?;
+                match (msg.get("id"), msg.get("method")) {
+                    (Some(got), None) if got == id => {
+                        return match msg.get("error") {
+                            Some(e) => Err(format!("codex {method}: {e}")),
+                            None => Ok(msg.get("result").cloned().unwrap_or(Value::Null)),
+                        };
+                    }
+                    // A request from the server: we answer none of them here.
+                    (Some(other), Some(_)) => {
+                        let refuse = json!({"id": other, "error": {"code": -32601, "message": "not supported"}});
+                        self.send(&refuse).await?;
+                    }
+                    (None, Some(m)) => {
+                        let m = m.as_str().unwrap_or_default().to_owned();
+                        self.notifications
+                            .push((m, msg.get("params").cloned().unwrap_or(Value::Null)));
+                    }
+                    _ => {}
+                }
+            }
+        })
+        .await
+        .map_err(|_| format!("codex {method}: no answer in time"))?
+    }
+
+    async fn wait_for(&mut self, method: &str) -> Result<Value, String> {
+        loop {
+            if let Some(i) = self.notifications.iter().position(|(m, _)| m == method) {
+                return Ok(self.notifications.remove(i).1);
+            }
+            let msg = self.read().await?;
+            if let (None, Some(m)) = (msg.get("id"), msg.get("method")) {
+                let m = m.as_str().unwrap_or_default().to_owned();
+                self.notifications
+                    .push((m, msg.get("params").cloned().unwrap_or(Value::Null)));
+            }
+        }
+    }
+}
+
+fn home(state: &AppState, provider: Uuid) -> std::path::PathBuf {
+    state.settings.codex_home.join(provider.to_string())
+}
+
+/// Starts a `ChatGPT` device-code sign-in on the host; it completes in the background.
+pub async fn start_login(state: &AppState, provider: Uuid) -> Result<DeviceCode, String> {
+    let mut server = AppServer::start(&state.settings.codex_bin, &home(state, provider)).await?;
+    let started = server
+        .request("account/login/start", json!({"type": "chatgptDeviceCode"}))
+        .await?;
+    let field = |k: &str| started[k].as_str().map(str::to_owned);
+    let (Some(verification_url), Some(user_code)) = (field("verificationUrl"), field("userCode"))
+    else {
+        return Err(format!("unexpected login answer: {started}"));
+    };
+    state
+        .codex
+        .lock()
+        .await
+        .logins
+        .insert(provider, LoginStatus::Pending);
+    let state = state.clone();
+    tokio::spawn(async move {
+        let done = tokio::time::timeout(LOGIN_TIMEOUT, server.wait_for("account/login/completed"))
+            .await
+            .unwrap_or_else(|_| Err("not confirmed in time".into()));
+        let status = match done {
+            Ok(p) if p["success"] == true => LoginStatus::SignedIn,
+            Ok(p) => LoginStatus::Failed {
+                error: p["error"].as_str().unwrap_or("sign-in failed").to_owned(),
+            },
+            Err(error) => LoginStatus::Failed { error },
+        };
+        let mut codex = state.codex.lock().await;
+        codex.tokens.remove(&provider);
+        codex.logins.insert(provider, status);
+    });
+    Ok(DeviceCode {
+        verification_url,
+        user_code,
+    })
+}
+
+pub async fn login_status(state: &AppState, provider: Uuid) -> LoginStatus {
+    if let Some(s) = state.codex.lock().await.logins.get(&provider)
+        && *s != LoginStatus::SignedIn
+    {
+        return s.clone();
+    }
+    match auth_status(state, provider, false).await {
+        Ok(status) if status["authMethod"] == "chatgpt" => LoginStatus::SignedIn,
+        Ok(_) => LoginStatus::None,
+        Err(error) => LoginStatus::Failed { error },
+    }
+}
+
+async fn auth_status(state: &AppState, provider: Uuid, token: bool) -> Result<Value, String> {
+    let mut server = AppServer::start(&state.settings.codex_bin, &home(state, provider)).await?;
+    server
+        .request(
+            "getAuthStatus",
+            json!({"includeToken": token, "refreshToken": token}),
+        )
+        .await
+}
+
+/// A fresh `ChatGPT` access token and account id for the proxy.
+pub async fn chatgpt_token(state: &AppState, provider: Uuid) -> Result<(String, String), String> {
+    if let Some((token, account, until)) = state.codex.lock().await.tokens.get(&provider)
+        && Instant::now() < *until
+    {
+        return Ok((token.clone(), account.clone()));
+    }
+    let status = auth_status(state, provider, true).await?;
+    let token = status["authToken"]
+        .as_str()
+        .filter(|_| status["authMethod"] == "chatgpt")
+        .ok_or("this provider is not signed in with ChatGPT; sign in or set an API key")?
+        .to_owned();
+    let claims = jwt_claims(&token).ok_or("ChatGPT token is not a JWT")?;
+    let account = claims["https://api.openai.com/auth"]["chatgpt_account_id"]
+        .as_str()
+        .ok_or("ChatGPT token has no account id")?
+        .to_owned();
+    let lifetime = claims["exp"]
+        .as_u64()
+        .and_then(|exp| exp.checked_sub(unix_now()))
+        .map_or(Duration::ZERO, Duration::from_secs);
+    // Ask Codex again well before expiry; it refreshes the token itself.
+    let keep = lifetime
+        .saturating_sub(Duration::from_secs(300))
+        .min(Duration::from_secs(1800));
+    state.codex.lock().await.tokens.insert(
+        provider,
+        (token.clone(), account.clone(), Instant::now() + keep),
+    );
+    Ok((token, account))
+}
+
+fn unix_now() -> u64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map_or(0, |d| d.as_secs())
+}
+
+/// The (unverified) claims of a JWT; only used to read our own token's metadata.
+fn jwt_claims(token: &str) -> Option<Value> {
+    let payload = token.split('.').nth(1)?;
+    let bytes = base64::engine::general_purpose::URL_SAFE_NO_PAD
+        .decode(payload.trim_end_matches('='))
+        .ok()?;
+    serde_json::from_slice(&bytes).ok()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn reads_account_and_expiry_claims() {
+        let token = "eyJhbGciOiJub25lIn0.eyJleHAiOjQxMDI0NDQ4MDAsImh0dHBzOi8vYXBpLm9wZW5haS5jb20vYXV0aCI6eyJjaGF0Z3B0X2FjY291bnRfaWQiOiJhY2N0LTEyMyJ9fQ.sig";
+        let claims = jwt_claims(token).unwrap();
+        assert_eq!(claims["exp"], 4_102_444_800_u64);
+        assert_eq!(
+            claims["https://api.openai.com/auth"]["chatgpt_account_id"],
+            "acct-123"
+        );
+        assert!(jwt_claims("not-a-jwt").is_none());
+    }
+}

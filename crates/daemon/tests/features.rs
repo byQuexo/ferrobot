@@ -1259,6 +1259,8 @@ async fn echo_upstream() -> String {
             "path": request.uri().path(),
             "authorization": header("authorization"),
             "x_api_key": header("x-api-key"),
+            "accounts": request.headers().get_all("chatgpt-account-id").iter()
+                .filter_map(|v| v.to_str().ok()).collect::<Vec<_>>(),
         }))
     }
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
@@ -1435,4 +1437,131 @@ async fn providers_keep_keys_in_the_daemon() {
     )
     .await;
     assert_eq!(status, 400, "{err}");
+}
+
+/// Fake host `codex app-server`: answers by method, one JSON object per line.
+const FAKE_CODEX: &str = r#"#!/bin/sh
+JWT='eyJhbGciOiJub25lIn0.eyJleHAiOjQxMDI0NDQ4MDAsImh0dHBzOi8vYXBpLm9wZW5haS5jb20vYXV0aCI6eyJjaGF0Z3B0X2FjY291bnRfaWQiOiJhY2N0LTEyMyJ9fQ.sig'
+while IFS= read -r line; do
+  id=$(printf '%s' "$line" | sed -n 's/.*"id":\([0-9]*\).*/\1/p')
+  case "$line" in
+    *'"initialize"'*) printf '{"id":%s,"result":{}}\n' "$id" ;;
+    *'"getAuthStatus"'*) printf '{"id":%s,"result":{"authMethod":"chatgpt","authToken":"%s"}}\n' "$id" "$JWT" ;;
+    *'"account/login/start"'*)
+      printf '{"id":%s,"result":{"type":"chatgptDeviceCode","loginId":"l1","verificationUrl":"https://auth.example/device","userCode":"ABCD-1234"}}\n' "$id"
+      printf '{"method":"account/login/completed","params":{"loginId":"l1","success":true,"error":null}}\n' ;;
+  esac
+done
+"#;
+
+#[tokio::test]
+async fn codex_providers_use_a_key_or_the_hosts_chatgpt_login() {
+    let upstream = echo_upstream().await;
+    let dir = tempfile::tempdir().unwrap();
+    let bin = dir.path().join("codex");
+    std::fs::write(&bin, FAKE_CODEX).unwrap();
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        std::fs::set_permissions(&bin, std::fs::Permissions::from_mode(0o755)).unwrap();
+    }
+    let backend = Arc::new(StatefulBackend::default());
+    let (home, chatgpt) = (dir.path().join("homes"), format!("{upstream}/codex"));
+    let d = start_with(backend.clone(), None, "127.0.0.1:0", |s| {
+        s.driver = "claude".into();
+        s.codex_bin = bin.display().to_string();
+        s.codex_home = home;
+        s.chatgpt_upstream = chatgpt;
+    })
+    .await;
+
+    // With an API key: the OpenAI Responses API.
+    let (_, keyed) = http(
+        &d.ui,
+        "POST",
+        "/v1/providers",
+        Some(
+            json!({"name": "cx-key", "kind": "codex", "base_url": format!("{upstream}/v1"),
+                    "api_key": "sk-codex-key", "default_model": "gpt-5-codex"}),
+        ),
+    )
+    .await;
+    create(&d, json!({"name": "cody", "provider_id": keyed["id"]})).await;
+    let env = backend.envs.lock().unwrap()["cody"].clone();
+    assert_eq!(env["FERROBOT_DRIVER"], "codex");
+    assert!(env["FERROBOT_CODEX_BASE_URL"].ends_with("/model"));
+    assert_eq!(env["FERROBOT_MODEL"], "gpt-5-codex");
+    let bearer = format!("Bearer {}", env["FERROBOT_AGENT_TOKEN"]);
+    let (_, seen) = model_call(&d, "/model/responses", ("authorization", &bearer)).await;
+    assert_eq!(seen["path"], "/v1/responses");
+    assert_eq!(seen["authorization"], "Bearer sk-codex-key");
+
+    // Without a key: the host's ChatGPT sign-in, tokens never leave the daemon.
+    let (_, chat) = http(
+        &d.ui,
+        "POST",
+        "/v1/providers",
+        Some(json!({"name": "cx-chatgpt", "kind": "codex", "default_model": "gpt-5-codex"})),
+    )
+    .await;
+    let login = format!(
+        "/v1/providers/{}/chatgpt-login",
+        chat["id"].as_str().unwrap()
+    );
+    let (status, code) = http(&d.ui, "POST", &login, None).await;
+    assert_eq!(status, 200, "{code}");
+    assert_eq!(code["user_code"], "ABCD-1234");
+    eventually("ChatGPT sign-in", Duration::from_secs(5), || async {
+        let (_, s) = http(&d.ui, "GET", &login, None).await;
+        (s["state"] == "signed_in").then_some(())
+    })
+    .await;
+    create(&d, json!({"name": "chad", "provider_id": chat["id"]})).await;
+    let env = backend.envs.lock().unwrap()["chad"].clone();
+    assert!(!env.values().any(|v| v.contains("eyJhbGciOiJub25lIn0")));
+    let bearer = format!("Bearer {}", env["FERROBOT_AGENT_TOKEN"]);
+    let (status, _, out) = http_raw(
+        &d.agents,
+        "POST",
+        "/model/responses",
+        &[
+            ("authorization", &bearer),
+            ("chatgpt-account-id", "someone-else"),
+        ],
+        b"{}",
+    )
+    .await;
+    let seen: Value = serde_json::from_slice(&out).unwrap();
+    assert_eq!(status, 200, "{seen}");
+    assert_eq!(seen["path"], "/codex/responses");
+    assert!(
+        seen["authorization"]
+            .as_str()
+            .unwrap()
+            .starts_with("Bearer eyJhbGciOiJub25lIn0.")
+    );
+    assert_eq!(
+        seen["accounts"],
+        json!(["acct-123"]),
+        "the agent cannot pick the account"
+    );
+
+    // Sign-in is only for codex providers.
+    let other = format!(
+        "/v1/providers/{}/chatgpt-login",
+        keyed["id"].as_str().unwrap()
+    );
+    let (_, openai) = http(
+        &d.ui,
+        "POST",
+        "/v1/providers",
+        Some(json!({"name": "oa", "kind": "openai", "api_key": "k"})),
+    )
+    .await;
+    let not_codex = format!(
+        "/v1/providers/{}/chatgpt-login",
+        openai["id"].as_str().unwrap()
+    );
+    assert_eq!(http(&d.ui, "POST", &not_codex, None).await.0, 409);
+    assert_eq!(http(&d.ui, "GET", &other, None).await.0, 200);
 }

@@ -11,6 +11,7 @@ use uuid::Uuid;
 
 use super::ApiResult;
 use super::agents::explicit;
+use crate::codex::{self, DeviceCode, LoginStatus};
 use crate::error::{ApiError, ErrorBody};
 use crate::proxy::secret_key;
 use crate::{AppState, lifecycle};
@@ -212,4 +213,48 @@ pub(crate) async fn delete_provider(
     state.store.delete_provider(id).await?;
     state.settings.secrets.delete(&secret_key(id)).await?;
     Ok(StatusCode::NO_CONTENT)
+}
+
+async fn codex_provider(state: &AppState, raw: &str) -> Result<Uuid, ApiError> {
+    let id = parse_pid(raw)?;
+    if state.store.get_provider(id).await?.kind != ProviderKind::Codex {
+        return Err(ApiError::Conflict(
+            "ChatGPT sign-in is only for codex providers".into(),
+        ));
+    }
+    Ok(id)
+}
+
+/// Starts signing a `codex` provider in with `ChatGPT`, on the daemon host's
+/// `codex`. Open `verification_url`, enter `user_code`, then poll the status.
+/// The tokens stay with the host's Codex; agents never see them.
+#[utoipa::path(post, path = "/v1/providers/{id}/chatgpt-login", tag = "providers",
+    params(("id" = String, Path, description = "Provider id (UUID)")),
+    responses((status = 200, body = DeviceCode),
+        (status = 404, description = "Unknown provider", body = ErrorBody),
+        (status = 409, description = "Not a codex provider", body = ErrorBody),
+        (status = 502, description = "codex failed on the daemon host", body = ErrorBody)))]
+pub(crate) async fn start_chatgpt_login(
+    State(state): State<AppState>,
+    Path(id): Path<String>,
+) -> ApiResult<DeviceCode> {
+    let id = codex_provider(&state, &id).await?;
+    let code = codex::start_login(&state, id)
+        .await
+        .map_err(ApiError::Upstream)?;
+    Ok(Json(code))
+}
+
+/// Whether a `codex` provider is signed in with `ChatGPT`.
+#[utoipa::path(get, path = "/v1/providers/{id}/chatgpt-login", tag = "providers",
+    params(("id" = String, Path, description = "Provider id (UUID)")),
+    responses((status = 200, body = LoginStatus),
+        (status = 404, description = "Unknown provider", body = ErrorBody),
+        (status = 409, description = "Not a codex provider", body = ErrorBody)))]
+pub(crate) async fn chatgpt_login_status(
+    State(state): State<AppState>,
+    Path(id): Path<String>,
+) -> ApiResult<LoginStatus> {
+    let id = codex_provider(&state, &id).await?;
+    Ok(Json(codex::login_status(&state, id).await))
 }

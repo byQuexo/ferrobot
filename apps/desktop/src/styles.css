@@ -442,6 +442,7 @@ textarea { resize: vertical; min-height: 40px; line-height: 1.5; }
 .provider-row { display: flex; flex-wrap: wrap; align-items: center; gap: 4px; padding: 8px 10px; border: 1px solid var(--border); border-radius: var(--radius-sm); }
 .provider-main { flex: 1; display: flex; flex-direction: column; gap: 2px; min-width: 0; }
 .provider-rekey { flex-basis: 100%; display: flex; gap: 6px; margin-top: 4px; }
+.provider-login { flex-basis: 100%; display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-top: 4px; }
 
 .empty { display: grid; justify-items: center; text-align: center; gap: 6px; padding: 28px 16px; color: var(--muted); max-width: 420px; }
 .empty-icon { width: 60px; height: 60px; display: grid; place-items: center; border-radius: 50%; background: var(--accent-soft); color: var(--accent); margin-bottom: 4px; }

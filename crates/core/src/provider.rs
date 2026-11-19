@@ -31,6 +31,9 @@ pub enum ProviderKind {
     Ollama,
     /// Any other OpenAI-compatible endpoint; needs `base_url`.
     OpenaiCompatible,
+    /// `OpenAI` models through the Codex harness, with an API key or the
+    /// daemon host's `ChatGPT` sign-in.
+    Codex,
 }
 
 /// How the model proxy authenticates upstream.
@@ -45,7 +48,7 @@ pub enum UpstreamAuth {
 }
 
 impl ProviderKind {
-    pub const ALL: [Self; 8] = [
+    pub const ALL: [Self; 9] = [
         Self::Anthropic,
         Self::Openai,
         Self::Gemini,
@@ -54,6 +57,7 @@ impl ProviderKind {
         Self::Openrouter,
         Self::Ollama,
         Self::OpenaiCompatible,
+        Self::Codex,
     ];
 
     pub fn as_str(self) -> &'static str {
@@ -66,6 +70,7 @@ impl ProviderKind {
             Self::Openrouter => "openrouter",
             Self::Ollama => "ollama",
             Self::OpenaiCompatible => "openai_compatible",
+            Self::Codex => "codex",
         }
     }
 
@@ -73,6 +78,7 @@ impl ProviderKind {
     pub fn driver(self) -> &'static str {
         match self {
             Self::Anthropic | Self::Bedrock | Self::Vertex => "claude",
+            Self::Codex => "codex",
             _ => "openai",
         }
     }
@@ -87,7 +93,10 @@ impl ProviderKind {
 
     /// Whether the provider is unusable without a stored key.
     pub fn needs_key(self) -> bool {
-        !matches!(self, Self::Vertex | Self::Ollama | Self::OpenaiCompatible)
+        !matches!(
+            self,
+            Self::Vertex | Self::Ollama | Self::OpenaiCompatible | Self::Codex
+        )
     }
 
     /// Upstream base URL unless the provider overrides it. Bedrock and
@@ -95,7 +104,7 @@ impl ProviderKind {
     pub fn default_base_url(self, region: Option<&str>) -> Option<String> {
         let fixed = match self {
             Self::Anthropic => "https://api.anthropic.com",
-            Self::Openai => "https://api.openai.com/v1",
+            Self::Openai | Self::Codex => "https://api.openai.com/v1",
             Self::Gemini => "https://generativelanguage.googleapis.com/v1beta/openai",
             Self::Openrouter => "https://openrouter.ai/api/v1",
             Self::Ollama => "http://127.0.0.1:11434/v1",

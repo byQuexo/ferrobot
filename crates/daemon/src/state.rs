@@ -45,6 +45,12 @@ pub struct Settings {
     pub secrets: crate::secrets::SecretStore,
     /// Prints a Google access token for Vertex providers.
     pub gcloud_token_cmd: Vec<String>,
+    /// The daemon host's `codex` binary, for `ChatGPT` sign-in.
+    pub codex_bin: String,
+    /// One Codex home per `ChatGPT`-signed-in provider lives below this.
+    pub codex_home: std::path::PathBuf,
+    /// Upstream for Codex providers signed in with `ChatGPT`.
+    pub chatgpt_upstream: String,
 }
 
 impl Settings {
@@ -67,6 +73,9 @@ impl Settings {
             gcloud_token_cmd: ["gcloud", "auth", "print-access-token"]
                 .map(String::from)
                 .to_vec(),
+            codex_bin: "codex".into(),
+            codex_home: std::env::temp_dir().join("ferrobot-codex"),
+            chatgpt_upstream: crate::codex::CHATGPT_CODEX_UPSTREAM.into(),
         }
     }
 }
@@ -116,6 +125,8 @@ pub struct AppState {
     pub approvals: Arc<Mutex<HashMap<i64, oneshot::Sender<bool>>>>,
     /// Cached Google access token for Vertex providers and when it was minted.
     pub gcloud_token: Arc<tokio::sync::Mutex<Option<(String, std::time::Instant)>>>,
+    /// `ChatGPT` sign-ins and cached tokens of Codex providers.
+    pub codex: Arc<tokio::sync::Mutex<crate::codex::CodexState>>,
 }
 
 impl AppState {
@@ -133,6 +144,7 @@ impl AppState {
             creating: Arc::default(),
             approvals: Arc::default(),
             gcloud_token: Arc::default(),
+            codex: Arc::default(),
         }
     }
 

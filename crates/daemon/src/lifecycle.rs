@@ -90,6 +90,9 @@ async fn fresh_spec(state: &AppState, agent: &Agent) -> Result<SandboxSpec, ApiE
         "openai" => {
             set("FERROBOT_OPENAI_BASE_URL", &proxy);
         }
+        "codex" => {
+            set("FERROBOT_CODEX_BASE_URL", &proxy);
+        }
         _ => {}
     }
     let model = agent

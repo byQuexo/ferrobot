@@ -32,6 +32,8 @@ export type Provider = Schemas["ProviderView"];
 export type ProviderKind = Schemas["ProviderKind"];
 export type CreateProvider = Schemas["CreateProvider"];
 export type UpdateProvider = Schemas["UpdateProvider"];
+export type DeviceCode = Schemas["DeviceCode"];
+export type LoginStatus = Schemas["LoginStatus"];
 
 export class ApiError extends Error {
   override name = "ApiError";
@@ -103,6 +105,8 @@ export class DaemonClient {
   updateProvider = (id: string, req: UpdateProvider): Promise<Provider> =>
     this.#request("PATCH", `/v1/providers/${id}`, req);
   deleteProvider = (id: string): Promise<void> => this.#request("DELETE", `/v1/providers/${id}`);
+  startChatgptLogin = (id: string): Promise<DeviceCode> => this.#request("POST", `/v1/providers/${id}/chatgpt-login`);
+  chatgptLoginStatus = (id: string): Promise<LoginStatus> => this.#request("GET", `/v1/providers/${id}/chatgpt-login`);
   setAvatar = (id: string, image: Blob): Promise<Agent> => this.#request("PUT", `/v1/agents/${id}/avatar`, image);
   removeAvatar = (id: string): Promise<Agent> => this.#request("DELETE", `/v1/agents/${id}/avatar`);
 

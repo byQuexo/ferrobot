@@ -434,6 +434,28 @@ export interface paths {
         patch: operations["update_provider"];
         trace?: never;
     };
+    "/v1/providers/{id}/chatgpt-login": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Whether a `codex` provider is signed in with `ChatGPT`. */
+        get: operations["chatgpt_login_status"];
+        put?: never;
+        /**
+         * Starts signing a `codex` provider in with `ChatGPT`, on the daemon host's
+         *     `codex`. Open `verification_url`, enter `user_code`, then poll the status.
+         *     The tokens stay with the host's Codex; agents never see them.
+         */
+        post: operations["start_chatgpt_login"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/routines/{rid}": {
         parameters: {
             query?: never;
@@ -699,6 +721,11 @@ export interface components {
             /** @description Default true. */
             enabled?: boolean | null;
         };
+        /** @description A device code the operator enters at `verification_url`. */
+        DeviceCode: {
+            verification_url: string;
+            user_code: string;
+        };
         /** @description JSON body of every non-2xx UI API response. */
         ErrorBody: {
             /**
@@ -747,6 +774,21 @@ export interface components {
         Interrupted: {
             /** @description The interrupted turn, or null if the agent was idle. */
             turn_id?: string | null;
+        };
+        /** @description Sign-in progress per provider (in memory; a restart forgets pending ones). */
+        LoginStatus: {
+            /** @enum {string} */
+            state: "none";
+        } | {
+            /** @enum {string} */
+            state: "pending";
+        } | {
+            /** @enum {string} */
+            state: "signed_in";
+        } | {
+            error: string;
+            /** @enum {string} */
+            state: "failed";
         };
         /** @description One message in an agent's mailbox. */
         MailMessage: {
@@ -825,7 +867,7 @@ export interface components {
          *     URL and how the daemon's model proxy adds the credential.
          * @enum {string}
          */
-        ProviderKind: "anthropic" | "openai" | "gemini" | "bedrock" | "vertex" | "openrouter" | "ollama" | "openai_compatible";
+        ProviderKind: "anthropic" | "openai" | "gemini" | "bedrock" | "vertex" | "openrouter" | "ollama" | "openai_compatible" | "codex";
         ProviderView: components["schemas"]["Provider"] & {
             /** @description Whether an API key is stored. The key itself is never returned. */
             has_key: boolean;
@@ -2757,6 +2799,113 @@ export interface operations {
             };
             /** @description Name already taken */
             409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+        };
+    };
+    chatgpt_login_status: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Provider id (UUID) */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LoginStatus"];
+                };
+            };
+            /** @description Missing or wrong API token */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Unknown provider */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Not a codex provider */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+        };
+    };
+    start_chatgpt_login: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Provider id (UUID) */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DeviceCode"];
+                };
+            };
+            /** @description Missing or wrong API token */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Unknown provider */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Not a codex provider */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description codex failed on the daemon host */
+            502: {
                 headers: {
                     [name: string]: unknown;
                 };
