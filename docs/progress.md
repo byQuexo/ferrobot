@@ -109,3 +109,29 @@ Status per roadmap phase (`docs/roadmap.md`). Decisions are in
 - Unverified protocol details are listed in the driver's report: `move_path`
   in file-change items, approvals without a `command`, Codex calling proxy
   paths other than `/responses`.
+
+## Phase 4: Warm and cold sleep (`feature/sleep-levels`)
+
+**Done**
+
+- `SleepLevel` in `SandboxBackend` (`sleep`), `SandboxState::Paused`,
+  `AgentStatus::Paused`; Docker pause/unpause; supervisor promotes
+  Running → Paused (`--warm-after`) → Stopped (`--idle-timeout`) and never
+  treats Paused as a crash; reconcile keeps paused agents paused.
+- API: `POST /v1/agents/{id}/stop?level=warm|cold`, `warm_after_s` in the
+  sandbox info; OpenAPI and TS types regenerated.
+
+**Tested**
+
+- Daemon: `idle_agents_pause_before_they_stop` (warm, no restart while
+  paused, cold after the idle timeout, operator pause, message resumes
+  without re-creating), `backends_without_pause_stay_awake_until_the_cold_timeout`
+  (local backend), the existing idle/crash test, and a new check that every
+  OpenAPI `$ref` resolves.
+- Docker (real engine): pause → `Paused` → wake → `Running`; stop while
+  paused; pausing a stopped container reports `Cold`.
+
+**Open**
+
+- A long pause with a real runner (WebSocket, model connections) was not
+  measured. Firecracker Warm/Cold (F4a/F4b) needs KVM; see phase 5.

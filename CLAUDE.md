@@ -190,4 +190,4 @@ Status per phase: `docs/progress.md`; assumptions: `docs/decisions.md`.
 2. Firecracker spike on a KVM host.
 3. Firecracker backend behind the `SandboxBackend` trait.
 4. Jailer for isolation.
-5. Warm/cold sleep with a `SleepLevel` enum.
+5. ~~Warm/cold sleep with a `SleepLevel` enum~~ (done for Docker: pause/stop).

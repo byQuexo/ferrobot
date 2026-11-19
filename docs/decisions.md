@@ -107,3 +107,27 @@ the code and this file together.
   to the runner image (a new npm dependency) and whether proxying a ChatGPT
   sign-in this way fits OpenAI's terms for third-party tools. Until then the
   driver fails with "codex is not installed in this sandbox image".
+
+## Phase 4: Warm and cold sleep
+
+- **`SleepLevel { Warm, Cold }` in the trait** via a new `sleep(handle, level)`
+  method that returns the level reached. `Cold` defaults to `stop`; `Warm`
+  defaults to `NotImplemented`, so backends that cannot pause are not stopped
+  early: the supervisor keeps such agents awake until the cold timeout, and
+  `POST /v1/agents/{id}/stop?level=warm` answers 501 there.
+- **Docker Warm = `docker pause`**, wake = `unpause`; `stop` unpauses first so
+  the runner gets SIGTERM. A container that is not running cannot be paused
+  and reports `Cold`.
+- **New `AgentStatus::Paused` and `SandboxState::Paused`.** Paused agents are
+  skipped by crash recovery (the roadmap's "Warm is not a crash" pitfall);
+  they only go colder (`Paused → Stopped` after `--idle-timeout`). Every path
+  that delivers work (`ensure_awake`: messages, routines, exec) resumes them.
+  No migration: `paused` is a new value of the existing text column; an
+  older daemon would fail to read such a row.
+- **Defaults:** `--warm-after 300` (`FERROBOT_WARM_AFTER`), cold stays
+  `--idle-timeout 900`. The roadmap's `FERROBOT_COLD_AFTER` is the existing
+  `FERROBOT_IDLE_TIMEOUT`, not a new name.
+- **WebSocket during a pause:** there is no keepalive on either side, so the
+  runner's connection survives; a long pause is untested.
+- **Presence** shows paused agents as sleeping; the info panel says "paused,
+  resumes quickly".

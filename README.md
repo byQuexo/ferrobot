@@ -259,7 +259,9 @@ providers run on the Claude Agent SDK; the others on the runner's
 OpenAI-compatible driver (bash, file and ferrobot tools). Subscription logins
 are not supported, only API keys.
 
-Other useful flags: `--idle-timeout <secs>` (default 900 = 15 min, 0 = never sleep), `--timezone
+Other useful flags: `--warm-after <secs>` (default 300 = 5 min: pause the
+sandbox, memory kept, resumes in place; 0 = never), `--idle-timeout <secs>`
+(default 900 = 15 min: stop it, disk kept; 0 = never sleep), `--timezone
 <IANA zone>` (default for routines), `--turn-timeout <secs>`.
 
 **Without Docker** (development only, no isolation): build the runner with
@@ -363,7 +365,9 @@ cargo test -p ferrobot-daemon  --features docker-tests --test e2e -- --ignored
 
 - The `claude` driver has not been run against the live API.
 - `SpritesBackend` returns `NotImplemented` for every operation.
-- Snapshots and idle sleep are Docker-only (the local backend has no snapshots).
+- Snapshots are Docker-only (the local backend copies directories but cannot
+  restore). Idle sleep works on every backend; warm sleep (pause) only on
+  Docker, other backends stay awake until the cold timeout.
 
 ## Roadmap
 
