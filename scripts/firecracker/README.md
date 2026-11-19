@@ -23,7 +23,14 @@ Untested parts are marked `TODO(kvm)` in the code and scripts.
 
   For internet access add NAT for `172.16.0.0/24`, as in Firecracker's
   [network-setup.md](https://github.com/firecracker-microvm/firecracker/blob/main/docs/network-setup.md).
-  Guests on the bridge are isolated from each other, not from the host.
+- Guests are isolated from each other on the bridge, not from the host. Allow
+  them only the agent API port:
+
+  ```sh
+  iptables -A INPUT -i fcbr0 -m conntrack --ctstate ESTABLISHED,RELATED -j ACCEPT
+  iptables -A INPUT -i fcbr0 -p tcp --dport 7879 -j ACCEPT
+  iptables -A INPUT -i fcbr0 -j DROP
+  ```
 
 ## Kernel
 
@@ -63,3 +70,4 @@ VM state lives in `<data dir>/vms/<agent>/`.
 - `exec`, file access and snapshots need the guest agent (F2) and snapshot
   sleep (F4b); they return "not implemented". Cold sleep is a plain stop.
 - No DNS in the guest (`/etc/resolv.conf` is empty).
+- Stopping the daemon kills its VMs without a guest shutdown.
