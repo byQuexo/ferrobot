@@ -37,6 +37,26 @@ export interface paths {
         delete: operations["delete_agent"];
         options?: never;
         head?: never;
+        /** Edits an agent's profile. */
+        patch: operations["update_agent"];
+        trace?: never;
+    };
+    "/v1/agents/{id}/avatar": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** The agent's avatar image. */
+        get: operations["get_avatar"];
+        /** Uploads (replaces) the avatar. Body: the raw image. */
+        put: operations["put_avatar"];
+        post?: never;
+        /** Removes the avatar (clients fall back to initials). */
+        delete: operations["delete_avatar"];
+        options?: never;
+        head?: never;
         patch?: never;
         trace?: never;
     };
@@ -47,7 +67,10 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** Turn events (text, tool use, denials, logs, turn results), up to 500 per call. */
+        /**
+         * Turn events (incoming messages, text, tool calls and results, lifecycle),
+         *     oldest first, up to 500 per call; page with `after`.
+         */
         get: operations["list_events"];
         put?: never;
         post?: never;
@@ -66,7 +89,10 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** Runs a command in the agent's computer (operator only, loopback API). */
+        /**
+         * Runs a command in the agent's computer (operator only, loopback API).
+         *     Wakes the computer if it sleeps.
+         */
         post: operations["exec"];
         delete?: never;
         options?: never;
@@ -91,6 +117,41 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/agents/{id}/memory": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Lists or searches the agent's memories. */
+        get: operations["list_memory"];
+        put?: never;
+        /** Creates or replaces a memory. */
+        post: operations["put_memory"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/agents/{id}/memory/{key}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /** Deletes one memory by key (URL-encoded). */
+        delete: operations["delete_memory"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/agents/{id}/messages": {
         parameters: {
             query?: never;
@@ -101,8 +162,46 @@ export interface paths {
         /** The agent's conversation: messages to and from it, oldest first (last 200). */
         get: operations["list_messages"];
         put?: never;
-        /** Sends a message from the operator (`user`) to an agent's mailbox. */
+        /**
+         * Sends a message from the operator (`user`) to an agent's mailbox. Wakes
+         *     the agent if it sleeps.
+         */
         post: operations["post_message"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/agents/{id}/read": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Marks the agent's chat as read (resets `unread`). */
+        post: operations["mark_read"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/agents/{id}/routines": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** The agent's routines, by name. */
+        get: operations["list_routines"];
+        put?: never;
+        /** Creates a routine. */
+        post: operations["create_routine"];
         delete?: never;
         options?: never;
         head?: never;
@@ -116,7 +215,8 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        get?: never;
+        /** Live sandbox status for the info panel. */
+        get: operations["sandbox_info"];
         put?: never;
         post?: never;
         /** Removes the sandbox but keeps the agent and its disk; `wake` recreates it. */
@@ -126,7 +226,25 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/v1/agents/{id}/snapshot": {
+    "/v1/agents/{id}/snapshots": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Snapshots of the agent's sandbox, newest first. */
+        get: operations["list_snapshots"];
+        put?: never;
+        /** Snapshots the sandbox (Docker: root filesystem + home directory). */
+        post: operations["create_snapshot"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/agents/{id}/snapshots/{sid}": {
         parameters: {
             query?: never;
             header?: never;
@@ -135,8 +253,28 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** Snapshots the sandbox (backend-specific scope, see `SnapshotRef.scope`). */
-        post: operations["snapshot"];
+        post?: never;
+        /** Deletes a snapshot and its data. */
+        delete: operations["delete_snapshot"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/agents/{id}/snapshots/{sid}/restore": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Replaces the sandbox with one booted from the snapshot. The current
+         *     disk state is discarded; the agent's chat and memory are kept.
+         */
+        post: operations["restore_snapshot"];
         delete?: never;
         options?: never;
         head?: never;
@@ -152,7 +290,10 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** Stops the agent's sandbox (disk is kept). */
+        /**
+         * Puts the agent to sleep (stops the sandbox, keeps its disk). A new
+         *     message or `wake` starts it again.
+         */
         post: operations["stop"];
         delete?: never;
         options?: never;
@@ -194,6 +335,58 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/routines/{rid}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /** Deletes a routine and its run history. */
+        delete: operations["delete_routine"];
+        options?: never;
+        head?: never;
+        /** Edits, enables or disables a routine. */
+        patch: operations["update_routine"];
+        trace?: never;
+    };
+    "/v1/routines/{rid}/run": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Runs a routine now (does not move its schedule). Wakes the agent if needed. */
+        post: operations["run_routine"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/routines/{rid}/runs": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Run history, newest first (last 50). */
+        get: operations["list_runs"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/ws": {
         parameters: {
             query?: never;
@@ -204,6 +397,7 @@ export interface paths {
         /**
          * WebSocket stream of `UiEvent` JSON text frames (schema:
          *     `protocol/ui-events.schema.json`). Client-to-server frames are ignored.
+         *     After a reconnect (or a `lagged` gap) clients should refetch over HTTP.
          */
         get: operations["ui_ws"];
         put?: never;
@@ -222,8 +416,15 @@ export interface components {
         Agent: {
             id: components["schemas"]["AgentId"];
             name: components["schemas"]["AgentName"];
-            /** @description Operator-provided role description handed to the model. */
+            /** @description One-line description shown in agent lists. */
+            description: string;
+            /** @description Operator-provided role handed to the model as system instructions. */
             instructions: string;
+            /**
+             * Format: int64
+             * @description Changes whenever the avatar changes; positive while an avatar exists.
+             */
+            avatar_rev: number;
             status: components["schemas"]["AgentStatus"];
             /** @description Backend kind that owns the sandbox, e.g. `docker`. */
             backend?: string | null;
@@ -253,19 +454,47 @@ export interface components {
          * @enum {string}
          */
         AgentStatus: "created" | "running" | "stopped" | "failed";
-        /** @description An agent plus live connection state. */
+        /** @description An agent plus live state. */
         AgentView: components["schemas"]["Agent"] & {
             /** @description Whether the agent's runner is connected right now. */
             connected: boolean;
+            presence: components["schemas"]["Presence"];
+            /**
+             * Format: int32
+             * @description Finished turns since the operator last marked the chat as read.
+             */
+            unread: number;
+            /** @description Relative URL of the avatar image, if one was uploaded. */
+            avatar_url?: string | null;
         };
         CreateAgent: {
             /**
-             * @description 1-32 chars, `a-z0-9-`, starts with a letter.
+             * @description 1-32 chars, `a-z0-9-`, starts with a letter. Cannot be changed later.
              * @example alice
              */
             name: string;
-            /** @description Extra system instructions for this agent. */
+            /** @description One line shown in agent lists (max 280 bytes). */
+            description?: string;
+            /** @description System instructions (role) for the agent's model. */
             instructions?: string;
+        };
+        CreateRoutine: {
+            /**
+             * @description Unique per agent, 1-64 bytes.
+             * @example morning-digest
+             */
+            name: string;
+            /**
+             * @description 5-field cron expression or alias (`@hourly`, `@daily`, ...).
+             * @example 0 9 * * 1-5
+             */
+            schedule: string;
+            /** @description Message the agent receives on every run. */
+            prompt: string;
+            /** @description IANA time zone; defaults to the daemon's (see `/v1/health`). */
+            timezone?: string | null;
+            /** @description Default true. */
+            enabled?: boolean | null;
         };
         /** @description JSON body of every non-2xx UI API response. */
         ErrorBody: {
@@ -302,6 +531,15 @@ export interface components {
             version: string;
             backend: string;
             driver: string;
+            /** @description Whether real model calls are possible (driver `claude` with a key). */
+            model_proxy: boolean;
+            /**
+             * Format: int64
+             * @description Seconds of inactivity before a sandbox sleeps; null when disabled.
+             */
+            idle_timeout_s?: number | null;
+            /** @description Default time zone for new routines. */
+            timezone: string;
         };
         Interrupted: {
             /** @description The interrupted turn, or null if the agent was idle. */
@@ -330,10 +568,93 @@ export interface components {
          * @enum {string}
          */
         MailStatus: "pending" | "in_flight" | "delivered" | "failed";
+        MemoryEntry: {
+            key: string;
+            content: string;
+            /** Format: date-time */
+            updated_at: string;
+        };
         PostMessage: {
             /** @description 1..32768 bytes after trimming. */
             body: string;
         };
+        /**
+         * @description What an agent is doing right now, for status badges.
+         * @enum {string}
+         */
+        Presence: "working" | "awake" | "starting" | "sleeping" | "error";
+        PutMemory: {
+            /** @description 1-128 bytes; an existing key is overwritten. */
+            key: string;
+            content: string;
+        };
+        Routine: {
+            /** Format: int64 */
+            id: number;
+            agent_id: components["schemas"]["AgentId"];
+            name: string;
+            /** @description Cron expression (5 fields, minute granularity) or an alias like `@hourly`. */
+            schedule: string;
+            /** @description IANA time zone the schedule is evaluated in, e.g. `Europe/Berlin`. */
+            timezone: string;
+            /** @description Message sent to the agent on every run. */
+            prompt: string;
+            enabled: boolean;
+            /**
+             * Format: date-time
+             * @description Next scheduled run; null while disabled.
+             */
+            next_run_at?: string | null;
+            /** Format: date-time */
+            last_run_at?: string | null;
+            /** Format: date-time */
+            created_at: string;
+        };
+        /** @description One execution of a routine: the message it queued and how that went. */
+        RoutineRun: {
+            /** Format: int64 */
+            id: number;
+            /** Format: int64 */
+            routine_id: number;
+            /** Format: int64 */
+            message_id?: number | null;
+            trigger: components["schemas"]["RunTrigger"];
+            status?: components["schemas"]["MailStatus"] | null;
+            /** @description Last delivery error, if any. */
+            error?: string | null;
+            /** Format: date-time */
+            created_at: string;
+        };
+        /** @description A routine plus a readable form of its schedule. */
+        RoutineView: components["schemas"]["Routine"] & {
+            /** @description English description of the schedule, e.g. "At 09:00 on Monday through Friday". */
+            schedule_text: string;
+        };
+        /**
+         * @description What started a run.
+         * @enum {string}
+         */
+        RunTrigger: "schedule" | "manual";
+        SandboxInfo: {
+            /** @description Backend kind, e.g. `docker`; null before provisioning. */
+            backend?: string | null;
+            /** @description Backend-specific id (container id, ...). */
+            sandbox_id?: string | null;
+            state?: components["schemas"]["SandboxState"] | null;
+            presence: components["schemas"]["Presence"];
+            connected: boolean;
+            /**
+             * Format: int64
+             * @description Seconds since the last activity; sleeps when it reaches `idle_timeout_s`.
+             */
+            idle_s: number;
+            /** Format: int64 */
+            idle_timeout_s?: number | null;
+            /** @description Whether the backend can snapshot and restore. */
+            snapshots_supported: boolean;
+        };
+        /** @enum {string} */
+        SandboxState: "running" | "stopped" | "missing";
         /** @description Who sent a mailbox message. */
         Sender: {
             /** @enum {string} */
@@ -343,14 +664,31 @@ export interface components {
             id: components["schemas"]["AgentId"];
             /** @enum {string} */
             kind: "agent";
+        } | {
+            /**
+             * Format: int64
+             * @description A scheduled routine (by routine id).
+             */
+            id: number;
+            /** @enum {string} */
+            kind: "routine";
         };
-        SnapshotRef: {
-            id: string;
-            /** @description What the snapshot covers, e.g. "container rootfs (home volume excluded)". */
+        SnapshotRecord: {
+            /** Format: int64 */
+            id: number;
+            agent_id: components["schemas"]["AgentId"];
+            /** @description Backend that created it, e.g. `docker`. */
+            backend: string;
+            /** @description Backend-specific reference (e.g. an image tag). */
+            snapshot_ref: string;
+            label: string;
+            /** @description What the snapshot covers. */
             scope: string;
+            /** Format: date-time */
+            created_at: string;
         };
         SnapshotReq: {
-            /** @description Free-form label (default `manual`). */
+            /** @description Free-form label (default `manual`, max 64 bytes). */
             label?: string;
         };
         StoredEvent: {
@@ -370,8 +708,13 @@ export interface components {
             /** @enum {string} */
             type: "event";
         } | {
-            agent: components["schemas"]["Agent"];
-            connected: boolean;
+            agent_id: components["schemas"]["AgentId"];
+            turn_id: string;
+            text: string;
+            /** @enum {string} */
+            type: "delta";
+        } | {
+            agent: components["schemas"]["AgentView"];
             /** @enum {string} */
             type: "agent";
         } | {
@@ -382,6 +725,28 @@ export interface components {
             message: components["schemas"]["MailMessage"];
             /** @enum {string} */
             type: "message";
+        } | {
+            agent_id: components["schemas"]["AgentId"];
+            /** @enum {string} */
+            type: "memory_changed";
+        } | {
+            agent_id: components["schemas"]["AgentId"];
+            /** @enum {string} */
+            type: "routines_changed";
+        };
+        /** @description Partial profile update. Omitted fields stay unchanged. */
+        UpdateAgent: {
+            description?: string | null;
+            /** @description New system instructions; a connected runner applies them from its next turn. */
+            instructions?: string | null;
+        };
+        /** @description Partial update; omitted fields stay unchanged. */
+        UpdateRoutine: {
+            name?: string | null;
+            schedule?: string | null;
+            prompt?: string | null;
+            timezone?: string | null;
+            enabled?: boolean | null;
         };
     };
     responses: never;
@@ -432,7 +797,7 @@ export interface operations {
                     "application/json": components["schemas"]["AgentView"];
                 };
             };
-            /** @description Invalid name or instructions */
+            /** @description Invalid name or texts */
             400: {
                 headers: {
                     [name: string]: unknown;
@@ -495,7 +860,7 @@ export interface operations {
     delete_agent: {
         parameters: {
             query?: {
-                /** @description Also delete the agent's persistent disk. */
+                /** @description Also delete the agent's persistent disk and snapshots. */
                 purge?: boolean;
             };
             header?: never;
@@ -525,6 +890,157 @@ export interface operations {
             };
             /** @description Sandbox backend error */
             502: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+        };
+    };
+    update_agent: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Agent id (UUID) */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["UpdateAgent"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AgentView"];
+                };
+            };
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Unknown agent */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+        };
+    };
+    get_avatar: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Agent id (UUID) */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The image */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "image/*": number[];
+                };
+            };
+            /** @description Unknown agent or no avatar */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+        };
+    };
+    put_avatar: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Agent id (UUID) */
+                id: string;
+            };
+            cookie?: never;
+        };
+        /** @description PNG, JPEG, WebP or GIF, at most 512 KiB */
+        requestBody: {
+            content: {
+                "image/*": number[];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AgentView"];
+                };
+            };
+            /** @description Not a supported image */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Unknown agent */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+        };
+    };
+    delete_avatar: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Agent id (UUID) */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AgentView"];
+                };
+            };
+            /** @description Unknown agent */
+            404: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -609,6 +1125,15 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorBody"];
                 };
             };
+            /** @description No sandbox */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
             /** @description Sandbox backend error */
             502: {
                 headers: {
@@ -641,6 +1166,116 @@ export interface operations {
                 };
             };
             /** @description Unknown agent */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+        };
+    };
+    list_memory: {
+        parameters: {
+            query?: {
+                /** @description Full-text search; empty lists the most recently updated entries. */
+                q?: string;
+                /** @description 1-200, default 100. */
+                limit?: number;
+            };
+            header?: never;
+            path: {
+                /** @description Agent id (UUID) */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MemoryEntry"][];
+                };
+            };
+            /** @description Unknown agent */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+        };
+    };
+    put_memory: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Agent id (UUID) */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PutMemory"];
+            };
+        };
+        responses: {
+            /** @description Stored */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Unknown agent */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+        };
+    };
+    delete_memory: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Agent id (UUID) */
+                id: string;
+                /** @description Memory key */
+                key: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Deleted */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Unknown agent or key */
             404: {
                 headers: {
                     [name: string]: unknown;
@@ -726,6 +1361,151 @@ export interface operations {
             };
         };
     };
+    mark_read: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Agent id (UUID) */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Marked as read */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Unknown agent */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+        };
+    };
+    list_routines: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Agent id (UUID) */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RoutineView"][];
+                };
+            };
+            /** @description Unknown agent */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+        };
+    };
+    create_routine: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Agent id (UUID) */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CreateRoutine"];
+            };
+        };
+        responses: {
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RoutineView"];
+                };
+            };
+            /** @description Invalid schedule, time zone or texts */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Unknown agent */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Name already used by this agent */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+        };
+    };
+    sandbox_info: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Agent id (UUID) */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SandboxInfo"];
+                };
+            };
+            /** @description Unknown agent */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+        };
+    };
     destroy_sandbox: {
         parameters: {
             query?: never;
@@ -754,6 +1534,15 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorBody"];
                 };
             };
+            /** @description No sandbox */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
             /** @description Sandbox backend error */
             502: {
                 headers: {
@@ -765,7 +1554,38 @@ export interface operations {
             };
         };
     };
-    snapshot: {
+    list_snapshots: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Agent id (UUID) */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SnapshotRecord"][];
+                };
+            };
+            /** @description Unknown agent */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+        };
+    };
+    create_snapshot: {
         parameters: {
             query?: never;
             header?: never;
@@ -781,12 +1601,20 @@ export interface operations {
             };
         };
         responses: {
-            200: {
+            201: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["SnapshotRef"];
+                    "application/json": components["schemas"]["SnapshotRecord"];
+                };
+            };
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
                 };
             };
             /** @description Unknown agent */
@@ -798,7 +1626,125 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorBody"];
                 };
             };
+            /** @description No sandbox */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
             /** @description Backend cannot snapshot */
+            501: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Sandbox backend error */
+            502: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+        };
+    };
+    delete_snapshot: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Agent id (UUID) */
+                id: string;
+                /** @description Snapshot id */
+                sid: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Deleted */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Unknown agent or snapshot */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Backend cannot delete snapshots */
+            501: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Sandbox backend error */
+            502: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+        };
+    };
+    restore_snapshot: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Agent id (UUID) */
+                id: string;
+                /** @description Snapshot id */
+                sid: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Restored and running */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Unknown agent or snapshot */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description No sandbox or wrong backend */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Backend cannot restore */
             501: {
                 headers: {
                     [name: string]: unknown;
@@ -830,7 +1776,7 @@ export interface operations {
         };
         requestBody?: never;
         responses: {
-            /** @description Stopped */
+            /** @description Sleeping */
             204: {
                 headers: {
                     [name: string]: unknown;
@@ -911,6 +1857,151 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["Health"];
+                };
+            };
+        };
+    };
+    delete_routine: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Routine id */
+                rid: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Deleted */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Unknown routine */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+        };
+    };
+    update_routine: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Routine id */
+                rid: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["UpdateRoutine"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RoutineView"];
+                };
+            };
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Unknown routine */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Name already used by this agent */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+        };
+    };
+    run_routine: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Routine id */
+                rid: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Prompt queued */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MailMessage"];
+                };
+            };
+            /** @description Unknown routine */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+        };
+    };
+    list_runs: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Routine id */
+                rid: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RoutineRun"][];
+                };
+            };
+            /** @description Unknown routine */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
                 };
             };
         };

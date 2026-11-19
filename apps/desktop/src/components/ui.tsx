@@ -1,0 +1,117 @@
+import type { ComponentChildren, JSX } from "preact";
+import { useEffect, useRef } from "preact/hooks";
+import { X } from "lucide-preact";
+
+export function IconButton(props: {
+  label: string;
+  onClick: () => void;
+  children: ComponentChildren;
+  disabled?: boolean;
+  tone?: "default" | "danger" | "accent";
+  pressed?: boolean;
+}): JSX.Element {
+  return (
+    <button
+      type="button"
+      class={`icon-btn tone-${props.tone ?? "default"}`}
+      aria-label={props.label}
+      title={props.label}
+      aria-pressed={props.pressed}
+      disabled={props.disabled}
+      onClick={props.onClick}
+    >
+      {props.children}
+    </button>
+  );
+}
+
+export function Button(props: {
+  onClick?: () => void;
+  children: ComponentChildren;
+  variant?: "primary" | "secondary" | "ghost" | "danger";
+  type?: "button" | "submit";
+  disabled?: boolean;
+  small?: boolean;
+}): JSX.Element {
+  return (
+    <button
+      type={props.type ?? "button"}
+      class={`btn btn-${props.variant ?? "secondary"}${props.small ? " btn-sm" : ""}`}
+      disabled={props.disabled}
+      onClick={props.onClick}
+    >
+      {props.children}
+    </button>
+  );
+}
+
+export function Switch(props: { checked: boolean; onChange: (v: boolean) => void; label: string }): JSX.Element {
+  return (
+    <button
+      type="button"
+      role="switch"
+      class="switch"
+      aria-checked={props.checked}
+      aria-label={props.label}
+      title={props.label}
+      onClick={() => { props.onChange(!props.checked); }}
+    >
+      <span class="switch-knob" />
+    </button>
+  );
+}
+
+export function Dialog(props: {
+  title: string;
+  onClose: () => void;
+  children: ComponentChildren;
+  footer?: ComponentChildren;
+}): JSX.Element {
+  const ref = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent): void => {
+      if (e.key === "Escape") props.onClose();
+    };
+    document.addEventListener("keydown", onKey);
+    ref.current?.querySelector<HTMLElement>("input:not([disabled]):not([hidden]), textarea")?.focus();
+    return () => { document.removeEventListener("keydown", onKey); };
+  }, []);
+  return (
+    <div class="overlay" onMouseDown={(e) => { if (e.target === e.currentTarget) props.onClose(); }}>
+      <div class="dialog" role="dialog" aria-modal="true" aria-label={props.title} ref={ref}>
+        <header class="dialog-head">
+          <h2>{props.title}</h2>
+          <IconButton label="Close" onClick={props.onClose}>
+            <X size={18} />
+          </IconButton>
+        </header>
+        <div class="dialog-body">{props.children}</div>
+        {props.footer && <footer class="dialog-foot">{props.footer}</footer>}
+      </div>
+    </div>
+  );
+}
+
+export function Empty(props: { icon: ComponentChildren; title: string; children?: ComponentChildren }): JSX.Element {
+  return (
+    <div class="empty">
+      <div class="empty-icon">{props.icon}</div>
+      <p class="empty-title">{props.title}</p>
+      {props.children && <div class="empty-text">{props.children}</div>}
+    </div>
+  );
+}
+
+/** ferrobot's own mark: a rounded square with two "eyes" and a spark. */
+export function Logo(props: { size?: number }): JSX.Element {
+  const s = props.size ?? 28;
+  return (
+    <svg width={s} height={s} viewBox="0 0 32 32" aria-hidden="true" class="logo">
+      <rect x="2" y="5" width="28" height="23" rx="8" class="logo-body" />
+      <circle cx="11.5" cy="16.5" r="2.6" class="logo-eye" />
+      <circle cx="20.5" cy="16.5" r="2.6" class="logo-eye" />
+      <path d="M16 1.5 L17.6 5 L14.4 5 Z" class="logo-spark" />
+      <rect x="12" y="22" width="8" height="1.8" rx="0.9" class="logo-eye" />
+    </svg>
+  );
+}

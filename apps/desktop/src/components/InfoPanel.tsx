@@ -1,0 +1,474 @@
+import type { JSX } from "preact";
+import { useEffect, useState } from "preact/hooks";
+import {
+  Brain,
+  CalendarClock,
+  Camera,
+  Cpu,
+  History,
+  Moon,
+  Play,
+  Plus,
+  Power,
+  RotateCcw,
+  Search,
+  Trash2,
+  UserRound,
+} from "lucide-preact";
+
+import type { Agent, MemoryEntry, Routine, RoutineRun, SandboxInfo, Snapshot } from "../api.ts";
+import { useApp } from "../context.ts";
+import { dateTime, duration, presenceLabel, relativeTime } from "../lib/format.ts";
+import { Avatar } from "./Avatar.tsx";
+import { Button, Empty, IconButton, Switch } from "./ui.tsx";
+
+type Tab = "profile" | "computer" | "routines" | "memory";
+
+const TABS: [Tab, string, typeof UserRound][] = [
+  ["profile", "Profile", UserRound],
+  ["computer", "Computer", Cpu],
+  ["routines", "Routines", CalendarClock],
+  ["memory", "Memory", Brain],
+];
+
+export function InfoPanel(props: {
+  agent: Agent;
+  tab: Tab;
+  onTab: (t: Tab) => void;
+  onEdit: () => void;
+  onDeleted: () => void;
+}): JSX.Element {
+  return (
+    <aside class="info" aria-label="Agent details">
+      <div class="tabs" role="tablist">
+        {TABS.map(([t, label, Icon]) => (
+          <button
+            key={t}
+            type="button"
+            role="tab"
+            aria-selected={props.tab === t}
+            class={props.tab === t ? "active" : ""}
+            onClick={() => { props.onTab(t); }}
+          >
+            <Icon size={15} />
+            <span>{label}</span>
+          </button>
+        ))}
+      </div>
+      <div class="info-body">
+        {props.tab === "profile" && <Profile agent={props.agent} onEdit={props.onEdit} onDeleted={props.onDeleted} />}
+        {props.tab === "computer" && <Computer agent={props.agent} />}
+        {props.tab === "routines" && <Routines agent={props.agent} />}
+        {props.tab === "memory" && <Memory agent={props.agent} />}
+      </div>
+    </aside>
+  );
+}
+export type { Tab as InfoTab };
+
+function Profile(props: { agent: Agent; onEdit: () => void; onDeleted: () => void }): JSX.Element {
+  const { client, run } = useApp();
+  const a = props.agent;
+  const [confirm, setConfirm] = useState(false);
+  return (
+    <div class="profile">
+      <Avatar agent={a} size={88} />
+      <h2>{a.name}</h2>
+      <p class="muted center">{a.description || "No description yet."}</p>
+      <div class="kv">
+        <span>Status</span>
+        <span class={`status-chip p-${a.presence}`}>{presenceLabel(a.presence)}</span>
+        <span>Created</span>
+        <span>{dateTime(a.created_at)}</span>
+      </div>
+      <section class="card">
+        <h3>Instructions</h3>
+        {a.instructions.trim() ? <p class="prewrap">{a.instructions}</p> : <p class="muted">None. The agent uses its defaults.</p>}
+      </section>
+      <div class="row-actions">
+        <Button variant="primary" onClick={props.onEdit}>Edit profile</Button>
+        {confirm ? (
+          <Button
+            variant="danger"
+            onClick={() =>
+              void run(async () => {
+                await client.deleteAgent(a.id);
+                props.onDeleted();
+              })
+            }
+          >
+            Delete for good
+          </Button>
+        ) : (
+          <Button variant="ghost" onClick={() => { setConfirm(true); }}>
+            <Trash2 size={15} /> Delete agent
+          </Button>
+        )}
+      </div>
+      {confirm && <p class="muted small">This removes the agent, its computer, chat, memory and routines.</p>}
+    </div>
+  );
+}
+
+function Computer(props: { agent: Agent }): JSX.Element {
+  const { client, run, listen } = useApp();
+  const id = props.agent.id;
+  const [info, setInfo] = useState<SandboxInfo | null>(null);
+  const [snaps, setSnaps] = useState<Snapshot[]>([]);
+  const [busy, setBusy] = useState(false);
+  const [label, setLabel] = useState("");
+
+  const refresh = async (): Promise<void> => {
+    const [i, s] = await Promise.all([client.sandbox(id), client.snapshots(id)]);
+    setInfo(i);
+    setSnaps(s);
+  };
+  useEffect(() => {
+    void run(refresh);
+    const timer = setInterval(() => void refresh().catch(() => undefined), 10_000);
+    const off = listen((e) => {
+      if (e.type === "agent" && e.agent.id === id) void refresh().catch(() => undefined);
+    });
+    return () => {
+      clearInterval(timer);
+      off();
+    };
+  }, [id, props.agent.status]);
+
+  const act = async (fn: () => Promise<unknown>): Promise<void> => {
+    setBusy(true);
+    await run(async () => {
+      await fn();
+      await refresh();
+    });
+    setBusy(false);
+  };
+
+  if (!info) return <p class="muted pad">Loading…</p>;
+  const asleep = props.agent.status === "stopped";
+  return (
+    <div class="stack">
+      <section class="card computer">
+        <div class={`machine p-${info.presence}`}>
+          <Cpu size={26} />
+          <div>
+            <strong>{presenceLabel(info.presence)}</strong>
+            <span class="muted small">
+              {info.state ? `Container ${info.state}` : "No container"}
+              {info.connected ? " · runner connected" : ""}
+            </span>
+          </div>
+        </div>
+        <div class="kv">
+          <span>Backend</span>
+          <span>{info.backend ?? "—"}</span>
+          <span>Sandbox</span>
+          <span class="mono ellipsis" title={info.sandbox_id ?? ""}>{info.sandbox_id ?? "—"}</span>
+          <span>Idle</span>
+          <span>
+            {asleep ? "asleep" : duration(info.idle_s)}
+            {!asleep && info.idle_timeout_s ? ` · sleeps after ${duration(info.idle_timeout_s)}` : ""}
+          </span>
+        </div>
+        <div class="row-actions">
+          {asleep ? (
+            <Button variant="primary" disabled={busy} onClick={() => void act(() => client.wake(id))}>
+              <Power size={15} /> Wake up
+            </Button>
+          ) : (
+            <Button disabled={busy} onClick={() => void act(() => client.sleep(id))}>
+              <Moon size={15} /> Put to sleep
+            </Button>
+          )}
+        </div>
+      </section>
+
+      <section class="card">
+        <h3>
+          <History size={15} /> Snapshots
+        </h3>
+        {info.snapshots_supported ? (
+          <>
+            <form
+              class="inline-form"
+              onSubmit={(e) => {
+                e.preventDefault();
+                void act(() => client.snapshot(id, label.trim() || "manual")).then(() => { setLabel(""); });
+              }}
+            >
+              <input placeholder="Label (optional)" value={label} maxLength={64} onInput={(e) => { setLabel(e.currentTarget.value); }} />
+              <Button type="submit" small disabled={busy}>
+                <Camera size={14} /> Take
+              </Button>
+            </form>
+            {snaps.length === 0 && <p class="muted small">No snapshots yet. A snapshot saves the whole computer, including files.</p>}
+            <ul class="list">
+              {snaps.map((s) => (
+                <li key={s.id}>
+                  <div class="grow">
+                    <strong>{s.label}</strong>
+                    <span class="muted small">{dateTime(s.created_at)}</span>
+                  </div>
+                  <IconButton label="Restore this snapshot" disabled={busy} onClick={() => void act(() => client.restore(id, s.id))}>
+                    <RotateCcw size={15} />
+                  </IconButton>
+                  <IconButton label="Delete snapshot" tone="danger" disabled={busy} onClick={() => void act(() => client.deleteSnapshot(id, s.id))}>
+                    <Trash2 size={15} />
+                  </IconButton>
+                </li>
+              ))}
+            </ul>
+          </>
+        ) : (
+          <p class="muted small">This sandbox backend does not support snapshots.</p>
+        )}
+      </section>
+    </div>
+  );
+}
+
+const PRESETS: [string, string][] = [
+  ["0 9 * * *", "Every day at 09:00"],
+  ["0 9 * * 1-5", "Weekdays at 09:00"],
+  ["@hourly", "Every hour"],
+  ["0 18 * * 5", "Fridays at 18:00"],
+];
+
+function Routines(props: { agent: Agent }): JSX.Element {
+  const { client, run, listen, health } = useApp();
+  const id = props.agent.id;
+  const [routines, setRoutines] = useState<Routine[] | null>(null);
+  const [adding, setAdding] = useState(false);
+  const [open, setOpen] = useState<number | null>(null);
+
+  const refresh = async (): Promise<void> => { setRoutines(await client.routines(id)); };
+  useEffect(() => {
+    void run(refresh);
+    return listen((e) => {
+      if (e.type === "routines_changed" && e.agent_id === id) void refresh().catch(() => undefined);
+    });
+  }, [id]);
+
+  if (!routines) return <p class="muted pad">Loading…</p>;
+  return (
+    <div class="stack">
+      {routines.length === 0 && !adding && (
+        <Empty icon={<CalendarClock size={28} />} title="No routines">
+          Routines send {props.agent.name} a prompt on a schedule, waking it if it sleeps.
+        </Empty>
+      )}
+      {routines.map((r) => (
+        <section key={r.id} class={`card routine${r.enabled ? "" : " disabled"}`}>
+          <div class="routine-head">
+            <button type="button" class="link grow" onClick={() => { setOpen(open === r.id ? null : r.id); }}>
+              <strong>{r.name}</strong>
+              <span class="muted small">{r.schedule_text || r.schedule}</span>
+            </button>
+            <Switch
+              checked={r.enabled}
+              label={r.enabled ? "Disable routine" : "Enable routine"}
+              onChange={(v) => void run(() => client.updateRoutine(r.id, { enabled: v }))}
+            />
+          </div>
+          <div class="routine-meta small muted">
+            {r.enabled && r.next_run_at ? `Next ${relativeTime(r.next_run_at)}` : "Paused"}
+            {r.last_run_at ? ` · last ${relativeTime(r.last_run_at)}` : ""}
+            {r.timezone !== "UTC" ? ` · ${r.timezone}` : ""}
+          </div>
+          {open === r.id && <RoutineDetail routine={r} />}
+          <div class="row-actions">
+            <Button small onClick={() => void run(() => client.runRoutine(r.id))}>
+              <Play size={14} /> Run now
+            </Button>
+            <span class="spacer" />
+            <IconButton label="Delete routine" tone="danger" onClick={() => void run(() => client.deleteRoutine(r.id))}>
+              <Trash2 size={15} />
+            </IconButton>
+          </div>
+        </section>
+      ))}
+      {adding ? (
+        <RoutineForm
+          timezone={health?.timezone ?? "UTC"}
+          onCancel={() => { setAdding(false); }}
+          onSave={async (req) => {
+            const ok = await run(() => client.createRoutine(id, req));
+            if (ok) setAdding(false);
+          }}
+        />
+      ) : (
+        <Button onClick={() => { setAdding(true); }}>
+          <Plus size={15} /> New routine
+        </Button>
+      )}
+    </div>
+  );
+}
+
+function RoutineDetail(props: { routine: Routine }): JSX.Element {
+  const { client } = useApp();
+  const [runs, setRuns] = useState<RoutineRun[]>([]);
+  useEffect(() => {
+    void client.routineRuns(props.routine.id).then(setRuns).catch(() => undefined);
+  }, [props.routine.id, props.routine.last_run_at]);
+  return (
+    <div class="routine-detail">
+      <div class="tool-label">Prompt</div>
+      <p class="prewrap">{props.routine.prompt}</p>
+      <div class="tool-label">
+        Schedule <span class="mono">{props.routine.schedule}</span>
+      </div>
+      <div class="tool-label">Recent runs</div>
+      {runs.length === 0 ? (
+        <p class="muted small">Not run yet.</p>
+      ) : (
+        <ul class="runs">
+          {runs.slice(0, 5).map((run) => (
+            <li key={run.id}>
+              <span>{dateTime(run.created_at)}</span>
+              <span class="muted">{run.trigger === "manual" ? "manual" : "scheduled"}</span>
+              <span class={`run-status s-${run.status ?? "unknown"}`}>{run.status ?? "—"}</span>
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
+  );
+}
+
+function RoutineForm(props: {
+  timezone: string;
+  onCancel: () => void;
+  onSave: (req: { name: string; schedule: string; prompt: string; timezone: string }) => Promise<void>;
+}): JSX.Element {
+  const [name, setName] = useState("");
+  const [schedule, setSchedule] = useState(PRESETS[0]?.[0] ?? "@daily");
+  const [prompt, setPrompt] = useState("");
+  const [timezone, setTimezone] = useState(props.timezone);
+  const [saving, setSaving] = useState(false);
+  return (
+    <form
+      class="card form"
+      onSubmit={(e) => {
+        e.preventDefault();
+        setSaving(true);
+        void props.onSave({ name: name.trim(), schedule: schedule.trim(), prompt, timezone: timezone.trim() }).finally(() => {
+          setSaving(false);
+        });
+      }}
+    >
+      <label>
+        Name
+        <input required maxLength={64} placeholder="morning-digest" value={name} onInput={(e) => { setName(e.currentTarget.value); }} />
+      </label>
+      <label>
+        Schedule
+        <input required class="mono" value={schedule} onInput={(e) => { setSchedule(e.currentTarget.value); }} />
+      </label>
+      <div class="chips">
+        {PRESETS.map(([expr, text]) => (
+          <button key={expr} type="button" class={`chip${schedule === expr ? " on" : ""}`} onClick={() => { setSchedule(expr); }}>
+            {text}
+          </button>
+        ))}
+      </div>
+      <label>
+        Time zone
+        <input required value={timezone} onInput={(e) => { setTimezone(e.currentTarget.value); }} />
+      </label>
+      <label>
+        Prompt
+        <textarea required rows={3} placeholder="Summarize what changed since yesterday." value={prompt} onInput={(e) => { setPrompt(e.currentTarget.value); }} />
+      </label>
+      <div class="row-actions">
+        <Button variant="ghost" onClick={props.onCancel}>Cancel</Button>
+        <Button variant="primary" type="submit" disabled={saving}>Create routine</Button>
+      </div>
+    </form>
+  );
+}
+
+function Memory(props: { agent: Agent }): JSX.Element {
+  const { client, run, listen } = useApp();
+  const id = props.agent.id;
+  const [q, setQ] = useState("");
+  const [entries, setEntries] = useState<MemoryEntry[] | null>(null);
+  const [adding, setAdding] = useState(false);
+  const [key, setKey] = useState("");
+  const [content, setContent] = useState("");
+
+  const refresh = async (query = q): Promise<void> => { setEntries(await client.memory(id, query)); };
+  useEffect(() => {
+    void run(() => refresh(""));
+    setQ("");
+    return listen((e) => {
+      if (e.type === "memory_changed" && e.agent_id === id) void refresh().catch(() => undefined);
+    });
+  }, [id]);
+  useEffect(() => {
+    const t = setTimeout(() => void refresh(q).catch(() => undefined), 200);
+    return () => { clearTimeout(t); };
+  }, [q]);
+
+  return (
+    <div class="stack">
+      <div class="inline-form">
+        <label class="search grow">
+          <Search size={15} aria-hidden="true" />
+          <input type="search" placeholder="Search memory" value={q} onInput={(e) => { setQ(e.currentTarget.value); }} />
+        </label>
+        <IconButton label="Add memory" tone="accent" onClick={() => { setAdding(!adding); }}>
+          <Plus size={17} />
+        </IconButton>
+      </div>
+      {adding && (
+        <form
+          class="card form"
+          onSubmit={(e) => {
+            e.preventDefault();
+            void run(async () => {
+              await client.remember(id, key.trim(), content);
+              setKey("");
+              setContent("");
+              setAdding(false);
+              await refresh();
+            });
+          }}
+        >
+          <label>
+            Key
+            <input required maxLength={128} placeholder="deploy-day" value={key} onInput={(e) => { setKey(e.currentTarget.value); }} />
+          </label>
+          <label>
+            Content
+            <textarea required rows={3} value={content} onInput={(e) => { setContent(e.currentTarget.value); }} />
+          </label>
+          <div class="row-actions">
+            <Button variant="ghost" onClick={() => { setAdding(false); }}>Cancel</Button>
+            <Button variant="primary" type="submit">Save</Button>
+          </div>
+        </form>
+      )}
+      {entries?.length === 0 && !adding && (
+        <Empty icon={<Brain size={28} />} title={q ? "Nothing found" : "No memories yet"}>
+          {q ? "Try other words." : `${props.agent.name} saves notes here with its memory tools; you can add some too.`}
+        </Empty>
+      )}
+      <ul class="memories">
+        {entries?.map((m) => (
+          <li key={m.key} class="card memory">
+            <div class="memory-head">
+              <strong class="mono">{m.key}</strong>
+              <span class="spacer" />
+              <span class="muted small">{relativeTime(m.updated_at)}</span>
+              <IconButton label={`Forget ${m.key}`} tone="danger" onClick={() => void run(async () => { await client.forget(id, m.key); await refresh(); })}>
+                <Trash2 size={14} />
+              </IconButton>
+            </div>
+            <p class="prewrap clamp">{m.content}</p>
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
+}

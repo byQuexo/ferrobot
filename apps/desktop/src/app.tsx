@@ -1,0 +1,189 @@
+import type { JSX } from "preact";
+import { useCallback, useEffect, useMemo, useRef, useState } from "preact/hooks";
+import { Bot, Plus, WifiOff } from "lucide-preact";
+
+import { DEFAULT_DAEMON, DaemonClient, type Agent, type Health, type UiEvent } from "./api.ts";
+import { AgentDialog } from "./components/AgentDialog.tsx";
+import { Chat } from "./components/Chat.tsx";
+import { InfoPanel, type InfoTab } from "./components/InfoPanel.tsx";
+import { Sidebar } from "./components/Sidebar.tsx";
+import { Button, Empty } from "./components/ui.tsx";
+import { AppContext, type AppContextValue } from "./context.ts";
+import { applyTheme, followSystem, loadTheme, type ThemePref } from "./lib/theme.ts";
+
+interface Toast {
+  id: number;
+  message: string;
+  kind: "error" | "info";
+}
+
+const DAEMON_KEY = "ferrobot.daemon";
+
+export function App(): JSX.Element {
+  const [base, setBase] = useState(() => localStorage.getItem(DAEMON_KEY) ?? DEFAULT_DAEMON);
+  const client = useMemo(() => new DaemonClient(base), [base]);
+  const [agents, setAgents] = useState<Map<string, Agent>>(new Map());
+  const [health, setHealth] = useState<Health | null>(null);
+  const [online, setOnline] = useState(false);
+  const [selected, setSelected] = useState<string | null>(() => localStorage.getItem("ferrobot.selected"));
+  const [dialog, setDialog] = useState<"create" | "edit" | null>(null);
+  const [infoOpen, setInfoOpen] = useState(() => localStorage.getItem("ferrobot.info") !== "closed");
+  const [tab, setTab] = useState<InfoTab>("profile");
+  const [theme, setTheme] = useState<ThemePref>(loadTheme);
+  const [toasts, setToasts] = useState<Toast[]>([]);
+  const listeners = useRef(new Set<(e: UiEvent) => void>());
+  const themeRef = useRef(theme);
+
+  useEffect(() => {
+    themeRef.current = theme;
+    applyTheme(theme);
+  }, [theme]);
+  useEffect(() => followSystem(() => themeRef.current), []);
+  useEffect(() => { localStorage.setItem("ferrobot.info", infoOpen ? "open" : "closed"); }, [infoOpen]);
+  useEffect(() => { if (selected) localStorage.setItem("ferrobot.selected", selected); }, [selected]);
+
+  const toast = useCallback((message: string, kind: "error" | "info" = "error") => {
+    const id = Date.now() + Math.random();
+    setToasts((t) => [...t.slice(-2), { id, message, kind }]);
+    setTimeout(() => { setToasts((t) => t.filter((x) => x.id !== id)); }, 5000);
+  }, []);
+
+  const run = useCallback(
+    async <T,>(action: () => Promise<T>): Promise<T | undefined> => {
+      try {
+        return await action();
+      } catch (err) {
+        toast(err instanceof Error ? err.message : String(err));
+        return undefined;
+      }
+    },
+    [toast],
+  );
+
+  const refresh = useCallback(async () => {
+    const [h, list] = await Promise.all([client.health(), client.listAgents()]);
+    setHealth(h);
+    setAgents(new Map(list.map((a) => [a.id, a])));
+  }, [client]);
+
+  // Connect, load, and keep the agent list live.
+  useEffect(() => {
+    void refresh().catch(() => { setOnline(false); });
+    return client.subscribe({
+      onStatus: (up) => {
+        setOnline(up);
+        if (up) void refresh().catch(() => undefined);
+      },
+      onEvent: (e) => {
+        if (e.type === "agent") setAgents((m) => new Map(m).set(e.agent.id, e.agent));
+        if (e.type === "agent_deleted") {
+          setAgents((m) => {
+            const next = new Map(m);
+            next.delete(e.agent_id);
+            return next;
+          });
+        }
+        for (const fn of listeners.current) fn(e);
+      },
+    });
+  }, [client]);
+
+  // Fall back to the first agent when the selection is gone.
+  useEffect(() => {
+    if (selected && agents.has(selected)) return;
+    const first = [...agents.values()].sort((a, b) => a.name.localeCompare(b.name))[0];
+    if (first) setSelected(first.id);
+    else if (agents.size === 0) setSelected(null);
+  }, [agents, selected]);
+
+  const listen = useCallback((fn: (e: UiEvent) => void) => {
+    listeners.current.add(fn);
+    return () => { listeners.current.delete(fn); };
+  }, []);
+
+  const ctx: AppContextValue = { client, health, agents, listen, toast, run };
+  const agent = selected ? agents.get(selected) : undefined;
+
+  return (
+    <AppContext.Provider value={ctx}>
+      <div class={`shell${agent && infoOpen ? " with-info" : ""}`}>
+        <Sidebar
+          selected={selected}
+          onSelect={setSelected}
+          onCreate={() => { setDialog("create"); }}
+          online={online}
+          theme={theme}
+          onTheme={setTheme}
+        />
+        {agent ? (
+          <Chat
+            key={agent.id}
+            agent={agent}
+            infoOpen={infoOpen}
+            onToggleInfo={() => { setInfoOpen(!infoOpen); }}
+            onEdit={() => { setDialog("edit"); }}
+          />
+        ) : (
+          <main class="chat chat-none">
+            {online || agents.size > 0 ? (
+              <Empty icon={<Bot size={36} />} title="Create your first agent">
+                <p>Each agent gets its own computer, memory and mailbox. Agents can message each other.</p>
+                <Button variant="primary" onClick={() => { setDialog("create"); }}>
+                  <Plus size={16} /> New agent
+                </Button>
+              </Empty>
+            ) : (
+              <Offline base={base} onChange={(b) => { localStorage.setItem(DAEMON_KEY, b); setBase(b); }} />
+            )}
+          </main>
+        )}
+        {agent && infoOpen && (
+          <InfoPanel
+            agent={agent}
+            tab={tab}
+            onTab={setTab}
+            onEdit={() => { setDialog("edit"); }}
+            onDeleted={() => { setSelected(null); }}
+          />
+        )}
+      </div>
+      {dialog && (
+        <AgentDialog
+          agent={dialog === "edit" ? agent : undefined}
+          onClose={() => { setDialog(null); }}
+          onSaved={(a) => {
+            setAgents((m) => new Map(m).set(a.id, a));
+            setSelected(a.id);
+            setDialog(null);
+          }}
+        />
+      )}
+      <div class="toasts" role="status" aria-live="polite">
+        {toasts.map((t) => (
+          <div key={t.id} class={`toast toast-${t.kind}`}>{t.message}</div>
+        ))}
+      </div>
+    </AppContext.Provider>
+  );
+}
+
+function Offline(props: { base: string; onChange: (b: string) => void }): JSX.Element {
+  const [value, setValue] = useState(props.base);
+  return (
+    <Empty icon={<WifiOff size={36} />} title="Can’t reach the ferrobot daemon">
+      <p>
+        Start it with <code>ferrobotd</code>, or point this app at another address. It retries automatically.
+      </p>
+      <form
+        class="inline-form"
+        onSubmit={(e) => {
+          e.preventDefault();
+          props.onChange(value.trim() || DEFAULT_DAEMON);
+        }}
+      >
+        <input class="mono" value={value} onInput={(e) => { setValue(e.currentTarget.value); }} />
+        <Button type="submit">Connect</Button>
+      </form>
+    </Empty>
+  );
+}

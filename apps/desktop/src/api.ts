@@ -1,6 +1,7 @@
-// Typed client for the ferrobotd UI API (v1).
-
-import type { components } from "./generated/api-types.js";
+// Typed client for the ferrobotd UI API (v1). The desktop app is a thin
+// client: every action is one of these HTTP calls, and live updates come
+// from the /v1/ws stream.
+import type { components } from "./generated/api-types.ts";
 
 export const DEFAULT_DAEMON = "http://127.0.0.1:7878";
 
@@ -8,17 +9,31 @@ export const DEFAULT_DAEMON = "http://127.0.0.1:7878";
 // which in turn is generated from the daemon's Rust types. Do not hand-edit.
 type Schemas = components["schemas"];
 export type Agent = Schemas["AgentView"];
+export type Presence = Schemas["Presence"];
 export type StoredEvent = Schemas["StoredEvent"];
 export type MailMessage = Schemas["MailMessage"];
 export type UiEvent = Schemas["UiEvent"];
 export type Health = Schemas["Health"];
-export type Interrupted = Schemas["Interrupted"];
-type CreateAgent = Schemas["CreateAgent"];
-type PostMessage = Schemas["PostMessage"];
+export type MemoryEntry = Schemas["MemoryEntry"];
+export type Routine = Schemas["RoutineView"];
+export type RoutineRun = Schemas["RoutineRun"];
+export type SandboxInfo = Schemas["SandboxInfo"];
+export type Snapshot = Schemas["SnapshotRecord"];
+export type CreateAgent = Schemas["CreateAgent"];
+export type UpdateAgent = Schemas["UpdateAgent"];
+export type CreateRoutine = Schemas["CreateRoutine"];
+export type UpdateRoutine = Schemas["UpdateRoutine"];
 
 export class ApiError extends Error {
   override name = "ApiError";
+  readonly status: number;
+  constructor(message: string, status: number) {
+    super(message);
+    this.status = status;
+  }
 }
+
+const enc = encodeURIComponent;
 
 export class DaemonClient {
   readonly base: string;
@@ -27,9 +42,12 @@ export class DaemonClient {
     this.base = base.replace(/\/+$/, "");
   }
 
-  async #request<T>(method: string, path: string, body?: unknown): Promise<T> {
+  async #request<T>(method: string, path: string, body?: unknown, contentType?: string): Promise<T> {
     const init: RequestInit = { method };
-    if (body !== undefined) {
+    if (body instanceof Blob) {
+      init.headers = { "Content-Type": contentType ?? body.type };
+      init.body = body;
+    } else if (body !== undefined) {
       init.headers = { "Content-Type": "application/json" };
       init.body = JSON.stringify(body);
     }
@@ -42,60 +60,95 @@ export class DaemonClient {
       } catch {
         // non-JSON error body
       }
-      throw new ApiError(message);
+      throw new ApiError(message, res.status);
     }
     return (res.status === 204 ? undefined : await res.json()) as T;
   }
 
-  health(): Promise<Health> {
-    return this.#request("GET", "/v1/health");
+  /** Absolute URL for a path returned by the API (e.g. `avatar_url`). */
+  url(path: string): string {
+    return `${this.base}${path}`;
   }
 
-  listAgents(): Promise<Agent[]> {
-    return this.#request("GET", "/v1/agents");
-  }
+  health = (): Promise<Health> => this.#request("GET", "/v1/health");
 
-  createAgent(name: string, instructions: string): Promise<Agent> {
-    const req: CreateAgent = { name, instructions };
-    return this.#request("POST", "/v1/agents", req);
-  }
+  // agents
+  listAgents = (): Promise<Agent[]> => this.#request("GET", "/v1/agents");
+  createAgent = (req: CreateAgent): Promise<Agent> => this.#request("POST", "/v1/agents", req);
+  updateAgent = (id: string, req: UpdateAgent): Promise<Agent> =>
+    this.#request("PATCH", `/v1/agents/${id}`, req);
+  deleteAgent = (id: string): Promise<void> => this.#request("DELETE", `/v1/agents/${id}?purge=true`);
+  setAvatar = (id: string, image: Blob): Promise<Agent> => this.#request("PUT", `/v1/agents/${id}/avatar`, image);
+  removeAvatar = (id: string): Promise<Agent> => this.#request("DELETE", `/v1/agents/${id}/avatar`);
 
-  events(agentId: string, after = 0): Promise<StoredEvent[]> {
-    return this.#request("GET", `/v1/agents/${agentId}/events?after=${String(after)}`);
-  }
+  // chat
+  messages = (id: string): Promise<MailMessage[]> => this.#request("GET", `/v1/agents/${id}/messages`);
+  events = (id: string, after = 0): Promise<StoredEvent[]> =>
+    this.#request("GET", `/v1/agents/${id}/events?after=${String(after)}`);
+  send = (id: string, body: string): Promise<MailMessage> =>
+    this.#request("POST", `/v1/agents/${id}/messages`, { body });
+  markRead = (id: string): Promise<void> => this.#request("POST", `/v1/agents/${id}/read`);
+  interrupt = (id: string): Promise<unknown> => this.#request("POST", `/v1/agents/${id}/interrupt`);
 
-  send(agentId: string, body: string): Promise<MailMessage> {
-    const req: PostMessage = { body };
-    return this.#request("POST", `/v1/agents/${agentId}/messages`, req);
-  }
+  // memory
+  memory = (id: string, q = ""): Promise<MemoryEntry[]> =>
+    this.#request("GET", `/v1/agents/${id}/memory?q=${enc(q)}`);
+  remember = (id: string, key: string, content: string): Promise<void> =>
+    this.#request("POST", `/v1/agents/${id}/memory`, { key, content });
+  forget = (id: string, key: string): Promise<void> =>
+    this.#request("DELETE", `/v1/agents/${id}/memory/${enc(key)}`);
 
-  action(agentId: string, action: "interrupt" | "stop" | "wake"): Promise<unknown> {
-    return this.#request("POST", `/v1/agents/${agentId}/${action}`);
-  }
+  // routines
+  routines = (id: string): Promise<Routine[]> => this.#request("GET", `/v1/agents/${id}/routines`);
+  createRoutine = (id: string, req: CreateRoutine): Promise<Routine> =>
+    this.#request("POST", `/v1/agents/${id}/routines`, req);
+  updateRoutine = (rid: number, req: UpdateRoutine): Promise<Routine> =>
+    this.#request("PATCH", `/v1/routines/${String(rid)}`, req);
+  deleteRoutine = (rid: number): Promise<void> => this.#request("DELETE", `/v1/routines/${String(rid)}`);
+  runRoutine = (rid: number): Promise<MailMessage> => this.#request("POST", `/v1/routines/${String(rid)}/run`);
+  routineRuns = (rid: number): Promise<RoutineRun[]> => this.#request("GET", `/v1/routines/${String(rid)}/runs`);
+
+  // sandbox
+  sandbox = (id: string): Promise<SandboxInfo> => this.#request("GET", `/v1/agents/${id}/sandbox`);
+  sleep = (id: string): Promise<void> => this.#request("POST", `/v1/agents/${id}/stop`);
+  wake = (id: string): Promise<void> => this.#request("POST", `/v1/agents/${id}/wake`);
+  snapshots = (id: string): Promise<Snapshot[]> => this.#request("GET", `/v1/agents/${id}/snapshots`);
+  snapshot = (id: string, label: string): Promise<Snapshot> =>
+    this.#request("POST", `/v1/agents/${id}/snapshots`, { label });
+  restore = (id: string, sid: number): Promise<void> =>
+    this.#request("POST", `/v1/agents/${id}/snapshots/${String(sid)}/restore`);
+  deleteSnapshot = (id: string, sid: number): Promise<void> =>
+    this.#request("DELETE", `/v1/agents/${id}/snapshots/${String(sid)}`);
 
   /** Live updates; reconnects with backoff. Returns a stop function. */
-  subscribe(onEvent: (e: UiEvent) => void, onReconnect: () => void): () => void {
+  subscribe(handlers: {
+    onEvent: (e: UiEvent) => void;
+    onStatus: (online: boolean) => void;
+  }): () => void {
     let ws: WebSocket | null = null;
     let stopped = false;
     let attempt = 0;
+    let timer: ReturnType<typeof setTimeout> | undefined;
     const connect = (): void => {
       ws = new WebSocket(`${this.base.replace(/^http/, "ws")}/v1/ws`);
       ws.onopen = () => {
-        if (attempt > 0) onReconnect();
         attempt = 0;
+        handlers.onStatus(true);
       };
       ws.onmessage = (msg) => {
-        if (typeof msg.data === "string") onEvent(JSON.parse(msg.data) as UiEvent);
+        if (typeof msg.data === "string") handlers.onEvent(JSON.parse(msg.data) as UiEvent);
       };
       ws.onclose = () => {
         if (stopped) return;
+        handlers.onStatus(false);
         const delay = Math.min(10_000, 500 * 2 ** attempt++);
-        setTimeout(connect, delay);
+        timer = setTimeout(connect, delay);
       };
     };
     connect();
     return () => {
       stopped = true;
+      clearTimeout(timer);
       ws?.close();
     };
   }
