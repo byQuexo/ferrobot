@@ -1,7 +1,4 @@
-// OpenAI's Codex harness, run as `codex app-server` inside the sandbox so its
-// own tools (shell, apply_patch, ...) work on the agent's computer. Codex
-// reaches the model through the daemon's proxy with this agent's token; the
-// real OpenAI key or ChatGPT token stays in the daemon.
+// Codex (`codex app-server`) in the sandbox; its model traffic goes through the daemon's proxy.
 import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
 import { mkdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
@@ -38,7 +35,6 @@ interface FileUpdate {
   diff: string;
 }
 
-/** The fields of Codex's v2 `ThreadItem` the driver reads. */
 type CodexItem =
   | { type: "agentMessage"; id: string; text: string }
   | { type: "commandExecution"; id: string; command: string; status: string; aggregatedOutput: string | null }
@@ -55,7 +51,6 @@ type CodexItem =
     };
 
 export interface CodexDriverOptions {
-  /** The `codex` executable (FERROBOT_CODEX_BIN). */
   bin: string;
   /** Responses API base of the daemon's model proxy, e.g. http://host.docker.internal:7879/model */
   baseUrl: URL;
@@ -124,7 +119,6 @@ function changedPaths(changes: FileUpdate[]): string[] {
   return changes.flatMap((c) => (c.kind.move_path ? [c.path, c.kind.move_path] : [c.path]));
 }
 
-/** The policy verdict for an approval request, or null if the request is not one. */
 function review(
   method: string,
   params: Params,
@@ -149,7 +143,6 @@ function review(
   }
 }
 
-/** The turn a notification, request or response belongs to. */
 function turnOf(params: Params): unknown {
   return params["turnId"] ?? (params["turn"] as { id?: unknown } | undefined)?.id;
 }
@@ -167,7 +160,6 @@ class AppServer {
   #nextId = 0;
   #stderr = "";
   #exit: Error | null = null;
-  /** Resolves with the reason once the process is gone. */
   readonly closed: Promise<Error>;
   onNotification: (method: string, params: Params) => void = () => {};
   /** The result to send back, or undefined for requests the runner does not handle. */
@@ -283,7 +275,6 @@ export class CodexDriver implements ModelDriver {
   readonly name = "codex";
   readonly #opts: CodexDriverOptions;
   #server: AppServer | null = null;
-  /** The thread loaded in the current app-server and the instructions it was given. */
   #thread: { id: string; instructions: string } | null = null;
 
   constructor(opts: CodexDriverOptions) {
