@@ -6,6 +6,7 @@
 //!
 //! * [`DockerBackend`]: one container per agent via the Docker Engine API
 //!   (works with Podman's Docker-compatible socket too).
+//! * [`FirecrackerBackend`]: one Firecracker microVM per agent (Linux + KVM).
 //! * [`LocalProcessBackend`]: runs the runner as a plain child process in a
 //!   per-agent directory. **No isolation**; for development and CI only.
 //! * [`SpritesBackend`]: Fly.io Sprites (Firecracker microVM per agent).
@@ -14,6 +15,7 @@
 
 mod docker;
 mod error;
+mod firecracker;
 mod local;
 mod path;
 mod sprites;
@@ -25,6 +27,7 @@ use serde::{Deserialize, Serialize};
 
 pub use docker::{DockerBackend, DockerConfig};
 pub use error::SandboxError;
+pub use firecracker::{FirecrackerBackend, FirecrackerConfig};
 pub use local::{LocalProcessBackend, LocalProcessConfig};
 pub use path::SandboxPath;
 pub use sprites::{SpritesBackend, SpritesConfig};
