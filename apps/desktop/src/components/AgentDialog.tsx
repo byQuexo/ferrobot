@@ -2,12 +2,13 @@ import type { JSX } from "preact";
 import { useEffect, useRef, useState } from "preact/hooks";
 import { Dices, ImageUp, RotateCcw, X } from "lucide-preact";
 
-import type { Agent } from "../api.ts";
+import type { Agent, Provider } from "../api.ts";
 import { useApp } from "../context.ts";
 import { BODIES, EYES, HUES, characterOf, deriveCharacter, rerollCharacter, type Character } from "../lib/character.ts";
 import { toAvatarPng } from "../lib/image.ts";
 import { CharacterFace } from "./Character.tsx";
 import { Avatar } from "./Avatar.tsx";
+import { KIND_LABELS } from "./ProvidersDialog.tsx";
 import { Button, Dialog } from "./ui.tsx";
 
 const NAME = /^[a-z][a-z0-9-]{0,31}$/;
@@ -23,6 +24,12 @@ export function AgentDialog(props: { agent?: Agent; onClose: () => void; onSaved
   const [avatar, setAvatar] = useState<Blob | null | undefined>(undefined);
   const [preview, setPreview] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
+  const [providers, setProviders] = useState<Provider[]>([]);
+  const [providerId, setProviderId] = useState<string | null>(editing?.provider_id ?? null);
+  const [model, setModel] = useState(editing?.model ?? "");
+  const chosen = providers.find((p) => p.id === providerId);
+  const modelChanged =
+    !editing || providerId !== (editing.provider_id ?? null) || model.trim() !== (editing.model ?? "");
   const file = useRef<HTMLInputElement>(null);
   // New agents get a random starting look (saved with the agent); existing
   // ones start from their stored or id-derived look.
@@ -32,6 +39,9 @@ export function AgentDialog(props: { agent?: Agent; onClose: () => void; onSaved
   const lookChanged = !editing || !same(look, characterOf(editing));
 
   useEffect(() => () => { if (preview) URL.revokeObjectURL(preview); }, [preview]);
+  useEffect(() => {
+    client.listProviders().then(setProviders, () => undefined);
+  }, []);
 
   const nameOk = NAME.test(name);
   const imageUrl = avatar === null ? null : editing?.avatar_url ?? null;
@@ -59,8 +69,16 @@ export function AgentDialog(props: { agent?: Agent; onClose: () => void; onSaved
             description,
             instructions,
             ...(lookChanged ? { character: same(look, deriveCharacter(editing.id)) ? null : look } : {}),
+            ...(modelChanged ? { provider_id: providerId, model: model.trim() || null } : {}),
           })
-        : await client.createAgent({ name, description, instructions, character: look });
+        : await client.createAgent({
+            name,
+            description,
+            instructions,
+            character: look,
+            provider_id: providerId,
+            model: model.trim() || null,
+          });
       if (avatar instanceof Blob) agent = await client.setAvatar(agent.id, avatar);
       else if (avatar === null && editing?.avatar_url) agent = await client.removeAvatar(agent.id);
       props.onSaved(agent);
@@ -213,6 +231,28 @@ export function AgentDialog(props: { agent?: Agent; onClose: () => void; onSaved
             onInput={(e) => { setInstructions(e.currentTarget.value); }}
           />
           <span class="hint">Becomes part of the agent’s system prompt. Changes apply from its next turn.</span>
+        </label>
+        <label>
+          Model provider
+          <select value={providerId ?? ""} onChange={(e) => { setProviderId(e.currentTarget.value || null); }}>
+            <option value="">Default (the daemon’s Anthropic key)</option>
+            {providers.map((p) => (
+              <option key={p.id} value={p.id}>{p.name} · {KIND_LABELS[p.kind]}</option>
+            ))}
+          </select>
+        </label>
+        <label>
+          Model
+          <input
+            value={model}
+            maxLength={200}
+            spellcheck={false}
+            placeholder={chosen?.default_model ?? "The provider’s default"}
+            onInput={(e) => { setModel(e.currentTarget.value); }}
+          />
+          {editing && modelChanged && (
+            <span class="hint">Saving restarts the agent’s computer with the new model. Its files are kept.</span>
+          )}
         </label>
         <button type="submit" hidden />
       </form>

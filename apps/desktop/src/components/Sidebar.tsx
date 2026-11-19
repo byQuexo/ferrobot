@@ -1,6 +1,6 @@
 import type { JSX } from "preact";
 import { useMemo, useState } from "preact/hooks";
-import { Monitor, Moon, Plus, Search, Sun } from "lucide-preact";
+import { KeyRound, Monitor, Moon, Plus, Search, Sun } from "lucide-preact";
 
 import type { Agent } from "../api.ts";
 import { useApp } from "../context.ts";
@@ -16,6 +16,7 @@ export function Sidebar(props: {
   pair: Pair | null;
   onOpenPair: (p: Pair) => void;
   onCreate: () => void;
+  onProviders: () => void;
   online: boolean;
   theme: ThemePref;
   onTheme: (t: ThemePref) => void;
@@ -35,6 +36,9 @@ export function Sidebar(props: {
         <Logo />
         <span class="brand-name">ferrobot</span>
         <span class="spacer" />
+        <IconButton label="Model providers" onClick={props.onProviders}>
+          <KeyRound size={16} />
+        </IconButton>
         <IconButton label="New agent" onClick={props.onCreate} tone="accent">
           <Plus size={18} />
         </IconButton>
