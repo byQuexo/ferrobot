@@ -1,0 +1,273 @@
+// Contract test for the Claude driver against the Claude Agent SDK's own
+// types. No API key or network: fixtures are typed as the SDK's message
+// types (so an SDK upgrade that changes these shapes fails `npm run
+// typecheck`), and `query` is replaced by a fake generator.
+import assert from "node:assert/strict";
+import { mkdtempSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { describe, it } from "node:test";
+
+import type {
+  Options,
+  SDKAssistantMessage,
+  SDKMessage,
+  SDKPartialAssistantMessage,
+  SDKUserMessage,
+} from "@anthropic-ai/claude-agent-sdk";
+
+import {
+  ClaudeDriver,
+  MAX_TOOL_OUTPUT,
+  buildOptions,
+  mapSdkMessage,
+  type QueryFn,
+} from "../src/drivers/claude.ts";
+import type { TurnContext } from "../src/drivers/types.ts";
+import { TurnAbortedError } from "../src/drivers/types.ts";
+import type { TurnEvent } from "../src/protocol.ts";
+import { SessionStore } from "../src/session.ts";
+
+const SESSION = "5f1a6a3e-2c51-4b51-9a4e-0f2b8c7d1e01";
+const uuid = "8a6b4c2d-1e3f-4a5b-9c7d-0e1f2a3b4c5d" as const;
+
+const delta: SDKPartialAssistantMessage = {
+  type: "stream_event",
+  event: { type: "content_block_delta", index: 0, delta: { type: "text_delta", text: "Hel" } },
+  parent_tool_use_id: null,
+  uuid,
+  session_id: SESSION,
+};
+
+const subagentDelta: SDKPartialAssistantMessage = { ...delta, parent_tool_use_id: "toolu_task" };
+
+const assistant: SDKAssistantMessage = {
+  type: "assistant",
+  message: {
+    id: "msg_01",
+    type: "message",
+    role: "assistant",
+    model: "claude-test",
+    content: [
+      { type: "text", text: "Hello, I will ask bob.", citations: null },
+      {
+        type: "tool_use",
+        id: "toolu_01",
+        name: "mcp__ferrobot__send_message",
+        input: { to: "bob", body: "hi" },
+      },
+    ],
+    stop_reason: "tool_use",
+    stop_sequence: null,
+    stop_details: null,
+    diagnostics: null,
+    container: null,
+    context_management: null,
+    usage: {
+      input_tokens: 1,
+      output_tokens: 1,
+      cache_creation_input_tokens: null,
+      cache_read_input_tokens: null,
+      cache_creation: null,
+      server_tool_use: null,
+      service_tier: null,
+      inference_geo: null,
+      iterations: null,
+      output_tokens_details: null,
+      speed: null,
+      fallback_credit: null,
+    },
+  },
+  parent_tool_use_id: null,
+  uuid,
+  session_id: SESSION,
+};
+
+const toolResult: SDKUserMessage = {
+  type: "user",
+  message: {
+    role: "user",
+    content: [
+      {
+        type: "tool_result",
+        tool_use_id: "toolu_01",
+        content: [{ type: "text", text: "x".repeat(MAX_TOOL_OUTPUT + 10) }],
+      },
+      { type: "tool_result", tool_use_id: "toolu_02", content: "boom", is_error: true },
+    ],
+  },
+  parent_tool_use_id: null,
+  session_id: SESSION,
+};
+
+// The result message has many timing fields; the driver reads only these.
+const result = {
+  type: "result",
+  subtype: "success",
+  result: "Asked bob.",
+  session_id: SESSION,
+} as const;
+const resultMessage = result as unknown as SDKMessage;
+// Compile-time check that the fields the driver reads exist with these types.
+type ResultSuccess = Extract<SDKMessage, { type: "result"; subtype: "success" }>;
+const _resultFields: Pick<ResultSuccess, "type" | "subtype" | "result" | "session_id"> = result;
+assert.ok(_resultFields);
+
+describe("mapSdkMessage (SDK-typed fixtures)", () => {
+  it("streams top-level text deltas only", () => {
+    assert.deepEqual(mapSdkMessage(delta).events, [{ kind: "assistant_delta", text: "Hel" }]);
+    assert.deepEqual(mapSdkMessage(subagentDelta).events, []);
+    assert.equal(mapSdkMessage(delta).sessionId, SESSION);
+  });
+
+  it("maps assistant text and tool calls with ids", () => {
+    assert.deepEqual(mapSdkMessage(assistant).events, [
+      { kind: "assistant_text", text: "Hello, I will ask bob." },
+      { kind: "tool_use", id: "toolu_01", name: "mcp__ferrobot__send_message", input: { to: "bob", body: "hi" } },
+    ]);
+  });
+
+  it("maps tool results, clipping long output", () => {
+    const events = mapSdkMessage(toolResult).events;
+    assert.equal(events.length, 2);
+    const [first, second] = events;
+    assert.ok(first?.kind === "tool_result" && second?.kind === "tool_result");
+    assert.equal(first.id, "toolu_01");
+    assert.equal(first.is_error, false);
+    assert.ok(first.output.length < MAX_TOOL_OUTPUT + 100);
+    assert.match(first.output, /more characters/);
+    assert.deepEqual(second, { kind: "tool_result", id: "toolu_02", output: "boom", is_error: true });
+  });
+
+  it("reads the final result", () => {
+    assert.deepEqual(mapSdkMessage(resultMessage).outcome, { ok: true, result: "Asked bob." });
+  });
+});
+
+describe("buildOptions", () => {
+  it("produces SDK Options with streaming, MCP, instructions and resume", () => {
+    const options: Options = buildOptions({
+      ctx: { agentName: "ada", instructions: "Review pull requests." },
+      workspaceDir: "/home/node/workspace",
+      mcpUrl: new URL("http://host.docker.internal:7879/mcp"),
+      token: "tok",
+      model: "claude-test",
+      resume: SESSION,
+      abortController: new AbortController(),
+      canUseTool: () => Promise.resolve({ behavior: "allow", updatedInput: {} }),
+      audit: () => Promise.resolve({ continue: true }),
+    });
+    assert.equal(options.includePartialMessages, true);
+    assert.equal(options.resume, SESSION);
+    assert.equal(options.model, "claude-test");
+    assert.deepEqual(options.settingSources, []);
+    const sp = options.systemPrompt;
+    assert.ok(typeof sp === "object" && !Array.isArray(sp) && sp.type === "preset");
+    assert.match(sp.append ?? "", /Review pull requests\./);
+    assert.match(sp.append ?? "", /"ada"/);
+    assert.deepEqual(options.mcpServers?.["ferrobot"], {
+      type: "http",
+      url: "http://host.docker.internal:7879/mcp",
+      headers: { Authorization: "Bearer tok" },
+    });
+  });
+});
+
+function ctx(overrides: Partial<TurnContext> = {}): { ctx: TurnContext; events: TurnEvent[] } {
+  const events: TurnEvent[] = [];
+  return {
+    events,
+    ctx: {
+      turn: {
+        type: "turn",
+        turn_id: "t1",
+        message_id: 3,
+        sender: { kind: "user" },
+        sender_name: "user",
+        body: "ask bob",
+      },
+      instructions: "be brief",
+      agentName: "ada",
+      sessionId: null,
+      signal: new AbortController().signal,
+      emit: (e) => events.push(e),
+      ...overrides,
+    },
+  };
+}
+
+function driver(query: QueryFn): ClaudeDriver {
+  return new ClaudeDriver({
+    mcpUrl: new URL("http://daemon/mcp"),
+    token: "tok",
+    workspaceDir: mkdtempSync(join(tmpdir(), "ferrobot-")),
+    model: undefined,
+    session: new SessionStore(mkdtempSync(join(tmpdir(), "ferrobot-"))),
+    query,
+  });
+}
+
+describe("ClaudeDriver with a fake query()", () => {
+  it("emits events in order and returns result and session", async () => {
+    const prompts: string[] = [];
+    const d = driver(async function* ({ prompt, options }) {
+      await Promise.resolve();
+      prompts.push(prompt);
+      assert.equal(options.includePartialMessages, true);
+      yield delta;
+      yield assistant;
+      yield toolResult;
+      yield resultMessage;
+    });
+    const { ctx: c, events } = ctx();
+    const out = await d.runTurn(c);
+    assert.deepEqual(
+      events.map((e) => e.kind),
+      ["assistant_delta", "assistant_text", "tool_use", "tool_result", "tool_result"],
+    );
+    assert.deepEqual(out, { result: "Asked bob.", sessionId: SESSION });
+    assert.match(prompts[0] ?? "", /^Message #3 from user:/);
+  });
+
+  it("aborts the SDK query on interrupt", async () => {
+    const abort = new AbortController();
+    let sdkAborted = false;
+    const d = driver(async function* ({ options }) {
+      yield delta;
+      await new Promise<void>((resolve) => {
+        options.abortController?.signal.addEventListener("abort", () => {
+          sdkAborted = true;
+          resolve();
+        });
+      });
+      throw new Error("aborted by SDK");
+    });
+    const { ctx: c } = ctx({ signal: abort.signal });
+    const running = d.runTurn(c);
+    setTimeout(() => { abort.abort(); }, 10);
+    await assert.rejects(running, TurnAbortedError);
+    assert.ok(sdkAborted);
+  });
+
+  it("resumes the session, and starts fresh when resume fails", async () => {
+    const resumes: (string | undefined)[] = [];
+    const d = driver(async function* ({ options }) {
+      await Promise.resolve();
+      resumes.push(options.resume);
+      if (options.resume) throw new Error("No conversation found with session ID");
+      yield resultMessage;
+    });
+    const { ctx: c } = ctx({ sessionId: "old-session" });
+    const out = await d.runTurn(c);
+    assert.deepEqual(resumes, ["old-session", undefined]);
+    assert.equal(out.sessionId, SESSION);
+  });
+
+  it("reports SDK error results as failures", async () => {
+    const d = driver(async function* () {
+      await Promise.resolve();
+      yield { ...result, subtype: "error_max_turns" } as unknown as SDKMessage;
+    });
+    await assert.rejects(d.runTurn(ctx().ctx), /error_max_turns/);
+  });
+});

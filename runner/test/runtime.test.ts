@@ -115,3 +115,38 @@ async function waitFor(cond: () => boolean, timeoutMs = 2000): Promise<void> {
     await new Promise((r) => setTimeout(r, 10));
   }
 }
+
+describe("Runner configure", () => {
+  it("applies new instructions from the next turn", async () => {
+    const seen: string[] = [];
+    const driver: ModelDriver = {
+      name: "fake",
+      runTurn: (ctx) => {
+        seen.push(ctx.instructions);
+        return Promise.resolve({ result: null, sessionId: null });
+      },
+      close: () => Promise.resolve(),
+    };
+    const dir = mkdtempSync(join(tmpdir(), "ferrobot-"));
+    const sent: RunnerFrame[] = [];
+    const runner = new Runner(
+      { driver, session: new SessionStore(dir), agentName: "a", send: (f) => sent.push(f) > 0 },
+      null,
+    );
+    runner.handle({
+      type: "welcome",
+      protocol_version: 1,
+      agent_id: "0b5c2a0e-8f5e-4a51-9d6e-3f1f6f0c9a11",
+      agent_name: "a",
+      instructions: "old",
+      resume_session_id: null,
+    });
+    runner.handle(turn("t1"));
+    await new Promise((r) => setTimeout(r, 10));
+    runner.handle({ type: "configure", instructions: "new" });
+    runner.handle(turn("t2"));
+    await new Promise((r) => setTimeout(r, 10));
+    assert.deepEqual(seen, ["old", "new"]);
+  });
+});
+

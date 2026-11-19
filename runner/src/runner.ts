@@ -44,6 +44,11 @@ export class Runner {
         }
         void this.#runTurn(frame);
         break;
+      case "configure":
+        // Applies from the next turn; a running turn keeps its prompt.
+        this.#instructions = frame.instructions;
+        log.info("instructions updated");
+        break;
       case "interrupt":
         if (this.#current?.turnId === frame.turn_id) {
           log.info("interrupting turn", { turn: frame.turn_id });

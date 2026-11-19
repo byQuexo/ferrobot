@@ -86,6 +86,19 @@ async fn two_agents_talk(d: Daemon) {
     })
     .await;
 
+    // tool calls carry ids and their results come back paired
+    let evs = events(&d, &alice).await;
+    let call = evs
+        .iter()
+        .find(|e| e["kind"] == "tool_use")
+        .expect("tool_use event");
+    let id = call["payload"]["id"].as_str().expect("tool call id");
+    assert!(
+        evs.iter()
+            .any(|e| e["kind"] == "tool_result" && e["payload"]["id"] == id),
+        "no tool_result for {id}"
+    );
+
     // memory through MCP
     http(
         &d.ui,
@@ -106,6 +119,35 @@ async fn two_agents_talk(d: Daemon) {
             && e["payload"]["text"]
                 .as_str()
                 .is_some_and(|t| t.contains("blue"))
+    })
+    .await;
+
+    // ... and visible through the API
+    let (_, mem) = http(&d.ui, "GET", &format!("/v1/agents/{bob}/memory?q=color"), None).await;
+    assert_eq!(mem[0]["content"], "blue", "{mem}");
+
+    // a routine run reaches the runner as a message from routine:<name>
+    let (status, r) = http(
+        &d.ui,
+        "POST",
+        &format!("/v1/agents/{alice}/routines"),
+        Some(json!({"name": "standup", "schedule": "0 9 * * 1-5", "prompt": "status report"})),
+    )
+    .await;
+    assert_eq!(status, 201, "{r}");
+    let (status, _) = http(
+        &d.ui,
+        "POST",
+        &format!("/v1/routines/{}/run", r["id"]),
+        None,
+    )
+    .await;
+    assert_eq!(status, 202);
+    wait_event(&d, &alice, |e| {
+        e["kind"] == "turn_done"
+            && e["payload"]["result"]
+                .as_str()
+                .is_some_and(|r| r.contains("status report") && r.contains("routine:standup"))
     })
     .await;
 
@@ -136,7 +178,7 @@ async fn two_agents_talk(d: Daemon) {
         (Some(0), Some("hi\n"))
     );
 
-    // stop / wake: runner disconnects and comes back, queued work survives
+    // sleep / auto-wake: runner disconnects, a new message wakes it
     let (status, _) = http(&d.ui, "POST", &format!("/v1/agents/{bob}/stop"), None).await;
     assert_eq!(status, 204);
     eventually("bob disconnected", WAIT, || async {
@@ -151,8 +193,6 @@ async fn two_agents_talk(d: Daemon) {
         Some(json!({"body": "queued while asleep"})),
     )
     .await;
-    let (status, _) = http(&d.ui, "POST", &format!("/v1/agents/{bob}/wake"), None).await;
-    assert_eq!(status, 204);
     wait_event(&d, &bob, |e| {
         e["kind"] == "turn_done"
             && e["payload"]["result"]

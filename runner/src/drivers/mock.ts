@@ -18,7 +18,11 @@ export type MockAction =
   | { kind: "echo" };
 
 /** Pure parser so the mock's behaviour is unit-testable. */
-export function planMockAction(body: string, senderKind: "user" | "agent", senderName: string): MockAction {
+export function planMockAction(
+  body: string,
+  senderKind: "user" | "agent" | "routine",
+  senderName: string,
+): MockAction {
   const text = body.trim();
   const send = /^@([a-z][a-z0-9-]{0,31})\s+([\s\S]+)$/.exec(text);
   if (send?.[1] && send[2]) return { kind: "send", to: send[1], body: send[2].trim() };
@@ -34,6 +38,11 @@ export function planMockAction(body: string, senderKind: "user" | "agent", sende
   return { kind: "echo" };
 }
 
+/** Splits text into word-sized streaming fragments that concatenate back to it. */
+export function streamPieces(text: string): string[] {
+  return text.match(/\S+\s*|\s+/g) ?? [];
+}
+
 export class MockDriver implements ModelDriver {
   readonly name = "mock";
   readonly #mcp: FerrobotMcp;
@@ -45,10 +54,20 @@ export class MockDriver implements ModelDriver {
   async runTurn(ctx: TurnContext): Promise<TurnResult> {
     const { turn, emit } = ctx;
     const action = planMockAction(turn.body, turn.sender.kind, turn.sender_name);
+    let calls = 0;
     const tool = async (name: string, input: Record<string, unknown>): Promise<unknown> => {
       if (ctx.signal.aborted) throw new TurnAbortedError("interrupted");
-      emit({ kind: "tool_use", name: `mcp__ferrobot__${name}`, input });
-      return this.#mcp.call(name, input);
+      calls += 1;
+      const id = `mock_${turn.turn_id}_${String(calls)}`;
+      emit({ kind: "tool_use", id, name: `mcp__ferrobot__${name}`, input });
+      try {
+        const output = await this.#mcp.call(name, input);
+        emit({ kind: "tool_result", id, output: JSON.stringify(output), is_error: false });
+        return output;
+      } catch (err) {
+        emit({ kind: "tool_result", id, output: String(err), is_error: true });
+        throw err;
+      }
     };
 
     let result: string;
@@ -73,6 +92,11 @@ export class MockDriver implements ModelDriver {
       case "echo":
         result = `[mock ${ctx.agentName}] got "${turn.body}" from ${turn.sender_name}`;
         break;
+    }
+    // Stream the answer word by word like a real model would.
+    for (const piece of streamPieces(result)) {
+      if (ctx.signal.aborted) throw new TurnAbortedError("interrupted");
+      emit({ kind: "assistant_delta", text: piece });
     }
     emit({ kind: "assistant_text", text: result });
     return { result, sessionId: ctx.sessionId ?? `mock-${ctx.agentName}` };

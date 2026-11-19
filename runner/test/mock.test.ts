@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 
-import { MockDriver, planMockAction } from "../src/drivers/mock.ts";
+import { MockDriver, planMockAction, streamPieces } from "../src/drivers/mock.ts";
 import type { FerrobotMcp } from "../src/mcp-client.ts";
 import type { TurnEvent } from "../src/protocol.ts";
 
@@ -27,6 +27,12 @@ describe("mock driver grammar", () => {
     assert.deepEqual(planMockAction("hi", "agent", "alice"), { kind: "reply", to: "alice", body: "re: hi" });
     assert.deepEqual(planMockAction("re: hi", "agent", "bob"), { kind: "echo" });
     assert.deepEqual(planMockAction("hi", "user", "user"), { kind: "echo" });
+    assert.deepEqual(planMockAction("daily digest", "routine", "routine:digest"), { kind: "echo" });
+  });
+
+  it("splits streaming pieces losslessly", () => {
+    assert.deepEqual(streamPieces("a  b\nc"), ["a  ", "b\n", "c"]);
+    assert.deepEqual(streamPieces(""), []);
   });
 });
 
@@ -58,8 +64,17 @@ describe("MockDriver", () => {
       emit: (e) => events.push(e),
     });
     assert.deepEqual(calls, [["send_message", { to: "alice", body: "re: ping", reply_to: 7 }]]);
-    assert.equal(events[0]?.kind, "tool_use");
-    assert.equal(events[1]?.kind, "assistant_text");
+    const kinds = events.map((e) => e.kind);
+    assert.deepEqual(kinds.slice(0, 2), ["tool_use", "tool_result"]);
+    assert.equal(kinds.at(-1), "assistant_text");
+    assert.ok(kinds.includes("assistant_delta"));
+    const [use, result] = events;
+    assert.ok(use?.kind === "tool_use" && result?.kind === "tool_result");
+    assert.equal(use.id, result.id, "result pairs with its call");
+    const streamed = events.flatMap((e) => (e.kind === "assistant_delta" ? [e.text] : [])).join("");
+    const final = events.at(-1);
+    assert.ok(final?.kind === "assistant_text");
+    assert.equal(streamed, final.text);
     assert.equal(out.sessionId, "mock-bob");
   });
 });
