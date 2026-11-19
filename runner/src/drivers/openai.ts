@@ -196,6 +196,7 @@ export class OpenAIDriver implements ModelDriver {
   }
 
   async #runTool(call: RequestedCall, ctx: TurnContext): Promise<string> {
+    if (aborted(ctx.signal)) throw new TurnAbortedError("interrupted");
     const { id, name, input } = call;
     if (input === null) {
       const output = `invalid JSON arguments for ${name}: ${call.args.slice(0, 200)}`;

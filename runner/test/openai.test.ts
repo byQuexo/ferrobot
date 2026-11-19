@@ -296,6 +296,29 @@ describe("OpenAIDriver", () => {
     assert.ok(Date.now() - started < 10_000, "did not wait for the command");
   });
 
+  it("runs no further tools after an abort", async () => {
+    const abort = new AbortController();
+    const { driver } = setup({
+      replies: [
+        [
+          call(0, { name: "write_file", arguments: '{"path":"a.txt","content":"x"}' }, "w"),
+          call(1, { name: "bash", arguments: '{"command":"sleep 30"}' }, "b"),
+        ],
+      ],
+    });
+    const { ctx, events } = context({ signal: abort.signal });
+    const emit = ctx.emit;
+    ctx.emit = (e) => {
+      emit(e);
+      if (e.kind === "tool_use") abort.abort();
+    };
+    await assert.rejects(driver.runTurn(ctx), TurnAbortedError);
+    assert.deepEqual(
+      events.flatMap((e) => (e.kind === "tool_use" ? [e.name] : [])),
+      ["write_file"],
+    );
+  });
+
   it("aborts a pending model request", async () => {
     const abort = new AbortController();
     const hanging = ((_url: string, init: RequestInit) =>
