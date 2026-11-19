@@ -16,10 +16,10 @@ and reaches the daemon through MCP tools.
 
 | Light | Dark |
 | --- | --- |
-| ![Chat with a mention and a tool call, light theme](docs/screenshots/light-chat.png) | ![Chat with an expanded tool call, dark theme](docs/screenshots/dark-chat.png) |
+| ![Chat with a collapsed agent-to-agent hint, an inline mention and a question card, light theme](docs/screenshots/light-chat.png) | ![Question card on its multiple-choice step, dark theme](docs/screenshots/dark-chat.png) |
 | ![Read-only conversation between two agents, with the Conversations section in the sidebar](docs/screenshots/light-conversation.png) | ![Info panel: computer and snapshots](docs/screenshots/dark-info-computer.png) |
 | ![Info panel: memory](docs/screenshots/light-info-memory.png) | ![Info panel: routines](docs/screenshots/dark-info-routines.png) |
-| ![Create-agent dialog](docs/screenshots/light-create-agent.png) | |
+| ![Create-agent dialog with the character avatar editor](docs/screenshots/light-create-agent.png) | |
 
 More in [`docs/screenshots/`](docs/screenshots). The agents in the screenshots
 run on the mock driver (replies like `[mock ada] got "..."`); they were seeded

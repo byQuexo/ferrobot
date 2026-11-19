@@ -39,5 +39,14 @@ post "/v1/agents/$ATLAS/messages" '{"body":"Draft notes for v0.2"}' >/dev/null
 post "/v1/agents/$ATLAS/messages" '{"body":"Also list the new API endpoints"}' >/dev/null
 post "/v1/agents/$ADA/snapshots" '{"label":"before-upgrade"}' >/dev/null
 sleep 2
+# bob writes to ada, ada answers: a two-message exchange in ada's chat
+post "/v1/agents/$BOB/messages" '{"body":"@ada @bob the release notes look good"}' >/dev/null
+sleep 3
+post "/v1/agents/$ADA/messages" '{"body":"Loop in @atlas once the notes are final"}' >/dev/null
+sleep 1
+# bob relays a question card to ada's operator (mock grammar: "ask <q>; <q>",
+# "+" = multiple choice, "..." = allow a custom answer)
+post "/v1/agents/$BOB/messages" '{"body":"@ada ask Which day should we ship?: Thursday | Friday | ...; Where should we announce it?+: Changelog | Team chat | Email; Anything atlas should mention?"}' >/dev/null
+sleep 3
 curl -sf -H "Authorization: Bearer $TOKEN" -X POST "$API/v1/agents/$NOVA/stop"
 echo "seeded: ada=$ADA bob=$BOB atlas=$ATLAS nova-ops=$NOVA"

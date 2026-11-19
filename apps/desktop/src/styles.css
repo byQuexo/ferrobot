@@ -458,7 +458,7 @@ textarea { resize: vertical; min-height: 40px; line-height: 1.5; }
 .dialog-foot { display: flex; justify-content: flex-end; gap: 8px; padding: 14px 22px 18px; }
 .avatar-picker { display: flex; align-items: flex-start; gap: 18px; }
 .avatar-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
-.char-editor { display: flex; flex-direction: column; gap: 10px; min-width: 0; }
+.char-editor { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
 .char-options { display: flex; flex-wrap: wrap; align-items: center; gap: 4px; }
 .char-option {
   width: 34px; height: 34px; padding: 2px; border-radius: 50%; border: 1.5px solid transparent;
@@ -467,8 +467,9 @@ textarea { resize: vertical; min-height: 40px; line-height: 1.5; }
 .char-option:hover { border-color: var(--border-strong); }
 .char-option.on { border-color: var(--accent); }
 .char-option .char-eyes { animation: none; }
-.char-sep { width: 1px; height: 22px; margin: 0 4px; background: var(--border); }
-.char-swatches { display: flex; flex-wrap: wrap; gap: 6px; }
+.char-label { width: 44px; font-size: 12px; font-weight: 550; color: var(--muted); }
+.char-swatches { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+.char-editor .avatar-actions { padding-left: 48px; }
 .swatch {
   width: 20px; height: 20px; border-radius: 50%; border: 2px solid var(--surface); padding: 0;
   background: hsl(var(--char-hue) 62% 58%); box-shadow: 0 0 0 1px var(--border);

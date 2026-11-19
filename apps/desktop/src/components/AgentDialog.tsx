@@ -98,7 +98,8 @@ export function AgentDialog(props: { agent?: Agent; onClose: () => void; onSaved
               <span class="muted small">The uploaded image is shown instead of the character.</span>
             ) : (
               <>
-                <div class="char-options" role="group" aria-label="Body">
+                <div class="char-options" role="group" aria-label="Shape">
+                  <span class="char-label">Shape</span>
                   {BODIES.map((body) => (
                     <button
                       key={body}
@@ -111,7 +112,9 @@ export function AgentDialog(props: { agent?: Agent; onClose: () => void; onSaved
                       <CharacterFace look={{ ...look, body }} mood="idle" blinkDelay={0} />
                     </button>
                   ))}
-                  <span class="char-sep" />
+                </div>
+                <div class="char-options" role="group" aria-label="Eyes">
+                  <span class="char-label">Eyes</span>
                   {EYES.map((eyes) => (
                     <button
                       key={eyes}
@@ -126,6 +129,7 @@ export function AgentDialog(props: { agent?: Agent; onClose: () => void; onSaved
                   ))}
                 </div>
                 <div class="char-swatches" role="group" aria-label="Color">
+                  <span class="char-label">Color</span>
                   {HUES.map((hue) => (
                     <button
                       key={hue}
