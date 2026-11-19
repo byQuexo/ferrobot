@@ -141,6 +141,11 @@ async fn main() -> Result<()> {
     settings.model = cli.model.clone();
     settings.turn_timeout = Duration::from_secs(cli.turn_timeout);
     settings.idle_timeout = (cli.idle_timeout > 0).then(|| Duration::from_secs(cli.idle_timeout));
+    // Check often enough that short idle timeouts are honoured promptly.
+    if let Some(idle) = settings.idle_timeout {
+        settings.supervisor_interval =
+            (idle / 2).clamp(Duration::from_secs(1), Duration::from_secs(15));
+    }
     settings.default_timezone = default_timezone;
     let state = AppState::new(store, backend, settings);
 

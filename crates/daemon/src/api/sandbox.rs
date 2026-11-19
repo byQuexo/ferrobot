@@ -111,6 +111,7 @@ pub(crate) struct ExecReq {
 }
 
 /// Runs a command in the agent's computer (operator only, loopback API).
+/// Wakes the computer if it sleeps.
 #[utoipa::path(post, path = "/v1/agents/{id}/exec", tag = "sandbox",
     params(("id" = String, Path, description = "Agent id (UUID)")),
     request_body = ExecReq,
@@ -127,7 +128,11 @@ pub(crate) async fn exec(
     if req.cmd.is_empty() {
         return Err(ApiError::BadRequest("cmd must not be empty".into()));
     }
-    let agent = state.store.get_agent(parse_id(&id)?).await?;
+    let id = parse_id(&id)?;
+    // Operator commands count as activity and wake a sleeping computer.
+    lifecycle::ensure_awake(&state, id).await?;
+    state.hub.touch(id);
+    let agent = state.store.get_agent(id).await?;
     let handle = lifecycle::sandbox_handle(&agent)?;
     let request = ExecRequest {
         cmd: req.cmd,
@@ -181,7 +186,9 @@ pub(crate) async fn create_snapshot(
     if label.is_empty() || label.len() > 64 {
         return Err(ApiError::BadRequest("label must be 1-64 bytes".into()));
     }
-    let record = lifecycle::snapshot(&state, parse_id(&id)?, label).await?;
+    let id = parse_id(&id)?;
+    state.hub.touch(id);
+    let record = lifecycle::snapshot(&state, id, label).await?;
     Ok((StatusCode::CREATED, Json(record)))
 }
 
@@ -204,7 +211,9 @@ pub(crate) async fn restore_snapshot(
     State(state): State<AppState>,
     Path((id, sid)): Path<(String, String)>,
 ) -> Result<StatusCode, ApiError> {
-    lifecycle::restore(&state, parse_id(&id)?, parse_sid(&sid)?).await?;
+    let id = parse_id(&id)?;
+    state.hub.touch(id);
+    lifecycle::restore(&state, id, parse_sid(&sid)?).await?;
     Ok(StatusCode::NO_CONTENT)
 }
 

@@ -461,7 +461,7 @@
         "tags": [
           "sandbox"
         ],
-        "summary": "Runs a command in the agent's computer (operator only, loopback API).",
+        "summary": "Runs a command in the agent's computer (operator only, loopback API).\nWakes the computer if it sleeps.",
         "operationId": "exec",
         "parameters": [
           {

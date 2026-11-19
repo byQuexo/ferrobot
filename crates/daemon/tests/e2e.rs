@@ -123,7 +123,13 @@ async fn two_agents_talk(d: Daemon) {
     .await;
 
     // ... and visible through the API
-    let (_, mem) = http(&d.ui, "GET", &format!("/v1/agents/{bob}/memory?q=color"), None).await;
+    let (_, mem) = http(
+        &d.ui,
+        "GET",
+        &format!("/v1/agents/{bob}/memory?q=color"),
+        None,
+    )
+    .await;
     assert_eq!(mem[0]["content"], "blue", "{mem}");
 
     // a routine run reaches the runner as a message from routine:<name>
