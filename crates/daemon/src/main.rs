@@ -1,6 +1,6 @@
 //! `ferrobotd`: the ferrobot daemon binary.
 
-use std::net::SocketAddr;
+use std::net::{Ipv4Addr, SocketAddr};
 use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::Duration;
@@ -12,7 +12,8 @@ use ferrobot_daemon::{
     AppState, Settings, agent_router, lifecycle, scheduler, storage, supervisor, ui_router,
 };
 use ferrobot_sandbox::{
-    DockerBackend, DockerConfig, LocalProcessBackend, LocalProcessConfig, SandboxBackend,
+    DockerBackend, DockerConfig, FirecrackerBackend, FirecrackerConfig, LocalProcessBackend,
+    LocalProcessConfig, SandboxBackend,
 };
 use ferrobot_store::Store;
 use tracing_subscriber::EnvFilter;
@@ -23,6 +24,8 @@ enum Backend {
     Docker,
     /// Runner as a host child process. No isolation, development only.
     Local,
+    /// One Firecracker microVM per agent. Linux with KVM only.
+    Firecracker,
 }
 
 #[derive(Debug, Clone, Copy, ValueEnum)]
@@ -87,6 +90,30 @@ struct Cli {
     /// `file:///dir`. Default: the data directory.
     #[arg(long, env = "FERROBOT_STORAGE_URL")]
     storage_url: Option<String>,
+    /// The `firecracker` binary for the Firecracker backend.
+    #[arg(long, env = "FERROBOT_FC_BIN", default_value = "firecracker")]
+    fc_bin: PathBuf,
+    /// Uncompressed guest kernel (`vmlinux`) for the Firecracker backend.
+    #[arg(
+        long,
+        env = "FERROBOT_FC_KERNEL",
+        required_if_eq("backend", "firecracker")
+    )]
+    fc_kernel: Option<PathBuf>,
+    /// Guest root filesystem (ext4) from `scripts/firecracker/build-rootfs.sh`.
+    #[arg(
+        long,
+        env = "FERROBOT_FC_ROOTFS",
+        required_if_eq("backend", "firecracker")
+    )]
+    fc_rootfs: Option<PathBuf>,
+    /// The host's IP on the Firecracker bridge: the guests' gateway, where
+    /// they reach the agent API.
+    #[arg(long, env = "FERROBOT_FC_HOST_IP", default_value_t = FirecrackerConfig::default().host_ip)]
+    fc_host_ip: Ipv4Addr,
+    /// Host bridge the microVMs' TAP devices join.
+    #[arg(long, env = "FERROBOT_FC_BRIDGE", default_value_t = FirecrackerConfig::default().bridge)]
+    fc_bridge: String,
     /// Runner entry point for the local backend.
     #[arg(
         long,
@@ -164,8 +191,9 @@ async fn main() -> Result<()> {
     }
     let sandbox_daemon_url = cli.sandbox_daemon_url.clone().unwrap_or_else(|| {
         let host = match cli.backend {
-            Backend::Docker => "host.docker.internal",
-            Backend::Local => "127.0.0.1",
+            Backend::Docker => "host.docker.internal".to_owned(),
+            Backend::Local => "127.0.0.1".to_owned(),
+            Backend::Firecracker => cli.fc_host_ip.to_string(),
         };
         format!("http://{host}:{}", cli.agent_listen.port())
     });
@@ -295,14 +323,22 @@ async fn make_backend(cli: &Cli) -> Result<Arc<dyn SandboxBackend>> {
                 .ping()
                 .await
                 .context("Docker/Podman engine not reachable (is the daemon running?)")?;
-            if cli.agent_listen.ip().is_loopback() {
-                tracing::warn!(
-                    "agent API listens on loopback; containers cannot reach it. \
-                     Use --agent-listen 0.0.0.0:{} (token-authenticated)",
-                    cli.agent_listen.port()
-                );
-            }
             Arc::new(docker)
+        }
+        Backend::Firecracker => {
+            let firecracker = FirecrackerBackend::new(FirecrackerConfig {
+                firecracker_bin: cli.fc_bin.clone(),
+                kernel: cli.fc_kernel.clone().unwrap_or_default(),
+                rootfs: cli.fc_rootfs.clone().unwrap_or_default(),
+                state_dir: cli.data_dir.join("vms"),
+                host_ip: cli.fc_host_ip,
+                bridge: cli.fc_bridge.clone(),
+                ..FirecrackerConfig::default()
+            });
+            firecracker.check_kvm().context(
+                "--backend firecracker runs on Linux with KVM only; use --backend docker here",
+            )?;
+            Arc::new(firecracker)
         }
         Backend::Local => {
             let entry = std::fs::canonicalize(&cli.runner_entry).with_context(|| {
@@ -318,6 +354,13 @@ async fn make_backend(cli: &Cli) -> Result<Arc<dyn SandboxBackend>> {
             })?)
         }
     };
+    if !matches!(cli.backend, Backend::Local) && cli.agent_listen.ip().is_loopback() {
+        tracing::warn!(
+            "agent API listens on loopback; sandboxes cannot reach it. \
+             Use --agent-listen 0.0.0.0:{} (token-authenticated)",
+            cli.agent_listen.port()
+        );
+    }
     Ok(backend)
 }
 
