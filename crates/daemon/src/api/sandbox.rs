@@ -56,7 +56,7 @@ pub(crate) async fn sandbox_info(
         idle_s: state.hub.last_activity(agent.id).elapsed().as_secs(),
         warm_after_s: state.settings.warm_timeout.map(|d| d.as_secs()),
         idle_timeout_s: state.settings.idle_timeout.map(|d| d.as_secs()),
-        snapshots_supported: state.backend.kind() == "docker",
+        snapshots_supported: state.backend.supports_snapshots(),
         backend: agent.backend,
         sandbox_id: agent.sandbox_id,
         state: live,

@@ -123,6 +123,11 @@ pub trait SandboxBackend: Send + Sync + std::fmt::Debug {
     /// Stable backend kind, stored next to the sandbox id.
     fn kind(&self) -> &'static str;
 
+    /// Whether [`snapshot`](Self::snapshot) and [`restore`](Self::restore) work.
+    fn supports_snapshots(&self) -> bool {
+        false
+    }
+
     /// Creates (or adopts) and starts the sandbox.
     async fn create(&self, spec: &SandboxSpec) -> Result<SandboxHandle, SandboxError>;
 

@@ -240,6 +240,10 @@ impl SandboxBackend for DockerBackend {
         KIND
     }
 
+    fn supports_snapshots(&self) -> bool {
+        true
+    }
+
     async fn create(&self, spec: &SandboxSpec) -> Result<SandboxHandle, SandboxError> {
         let id = self.create_container(spec, &self.config.image).await?;
         self.ensure_started(&id).await?;
