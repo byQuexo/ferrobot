@@ -131,3 +131,26 @@ the code and this file together.
   runner's connection survives; a long pause is untested.
 - **Presence** shows paused agents as sleeping; the info panel says "paused,
   resumes quickly".
+
+## Phase 5: Firecracker without KVM
+
+- **Thin client, no SDK.** HTTP/1.1 over the API socket with `hyper` 1 +
+  `hyper-util` + `http-body-util`, which were already in `Cargo.lock`
+  transitively (no new packages). Not `firecracker-rs-sdk`, not
+  `firecracker-containerd`.
+- **Runner env through MMDS (V2)**, never kernel args or disk: the token is
+  in guest memory only, like in a container's env.
+- **One shared bridge** (`fcbr0`, host `172.16.0.1/24`, guests `.2`, `.3`, …,
+  TAP `fctap<N>`, index kept per VM so the IP is stable). The sandbox daemon
+  URL is `http://<fc-host-ip>:<agent port>`; the agent API must listen on the
+  bridge IP or `0.0.0.0`. `scripts/firecracker/README.md` lists firewall rules
+  so guests reach only the agent port.
+- **Home disk:** a sparse file on the host; the guest init formats it on
+  first boot only (`blkid -p` exit 2). No `mkfs` on the host.
+- **Snapshot support is a backend property** (`supports_snapshots()`),
+  replacing the hardcoded `kind == "docker"` in the sandbox info API.
+- **Warm = `PATCH /vm Paused`**, Cold = stop for now (snapshot sleep is F4b).
+- **Left for Tim (needs a decision on a KVM host):** stopping the daemon
+  kills all VMs (`kill_on_drop`); aarch64 has no `SendCtrlAltDel`, so `stop`
+  there is a hard kill; `destroy(false)` leaves the VM `Stopped`, not
+  `Missing`; the guest has no DNS yet.

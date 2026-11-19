@@ -29,7 +29,8 @@ a versioned HTTP/WebSocket API (`/v1`).
 crates/core      domain types (Agent, mail, mentions, question cards, runner protocol)
 crates/store     SQLite (rusqlite, bundled): agents, mailbox, events, memory (FTS),
                  routines, snapshots, forward-only migrations
-crates/sandbox   SandboxBackend trait + docker (bollard), local, sprites backends
+crates/sandbox   SandboxBackend trait + docker (bollard), local, firecracker
+                 (API client; boot untested, needs KVM), sprites backends
 crates/mcp       rmcp Streamable-HTTP server: the agents' tools (send_message,
                  ask_user, create_agent, remember, ...), per-agent token auth
 crates/daemon    ferrobotd: axum UI API (/v1), agent API (/runner/ws, /mcp, /model),
@@ -120,6 +121,7 @@ docker build -f runner/Dockerfile -t ferrobot-runner:dev .           # runner im
 cargo test -p ferrobot-sandbox --features docker-tests --test docker
 cargo test -p ferrobot-daemon --features docker-tests --test e2e -- --ignored
 ./scripts/smoke-docker.sh            # real ferrobotd + Docker + mock driver
+sudo scripts/firecracker/build-rootfs.sh   # Linux only; see scripts/firecracker/README.md
 ```
 
 Runner (`runner/`): `npm ci && npm run lint && npm run typecheck && npm test && npm run build`
@@ -173,8 +175,9 @@ daemon, `docker ps -a` must be empty of ferrobot containers.
   time out tool calls earlier).
 - `docs/screenshots/light-conversation.png` shows a raw mock-driver bubble
   (`ask Which day ...`).
-- Rebuild the runner image (`runner/src/drivers/openai.ts` is new).
-- Docker e2e last run on `feature/m1-storage`; `smoke-docker.sh` not re-run after 024f12f.
+- Docker e2e, `smoke-docker.sh` and the Docker sandbox test passed on
+  `feature/firecracker-client` (macOS, Docker Desktop); runner image rebuilt.
+- Firecracker: no microVM has booted; every `TODO(kvm)` needs a KVM host.
 - No provider has been run against its real upstream (no keys used).
 - The Codex driver has only run against a fake app-server; the runner image
   has no `codex` binary yet (adding `@openai/codex` needs Tim's OK).
@@ -187,7 +190,9 @@ Roadmap: https://cursor.com/canvas/store-0b9dda1f-693e-4629-9899-c87852755bdc/ad
 Status per phase: `docs/progress.md`; assumptions: `docs/decisions.md`.
 
 1. ~~Storage layer on `object_store`~~ (done: snapshot archives, `--storage-url`).
-2. Firecracker spike on a KVM host.
-3. Firecracker backend behind the `SandboxBackend` trait.
+2. Firecracker spike on a KVM host (API client, boot sequence, init and
+   rootfs script exist; never booted).
+3. Firecracker backend behind the `SandboxBackend` trait (written, `TODO(kvm)`:
+   process spawn, TAP, guest agent for exec/files, snapshots).
 4. Jailer for isolation.
 5. ~~Warm/cold sleep with a `SleepLevel` enum~~ (done for Docker: pause/stop).

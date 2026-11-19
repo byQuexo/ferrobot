@@ -135,3 +135,37 @@ Status per roadmap phase (`docs/roadmap.md`). Decisions are in
 
 - A long pause with a real runner (WebSocket, model connections) was not
   measured. Firecracker Warm/Cold (F4a/F4b) needs KVM; see phase 5.
+
+## Phase 5: Firecracker, as far as it goes without KVM (`feature/firecracker-client`)
+
+**Done**
+
+- `crates/sandbox/src/firecracker/`: API client (machine config, boot source,
+  drives, network, MMDS, vsock, actions, pause/resume, snapshot create/load,
+  instance info), pure boot-sequence builder, `FirecrackerBackend`
+  (create/wake/stop/sleep/destroy/state; exec/files/snapshots
+  `NotImplemented`).
+- `--backend firecracker` with `--fc-bin`, `--fc-kernel`, `--fc-rootfs`,
+  `--fc-host-ip`, `--fc-bridge`; refuses clearly without `/dev/kvm`.
+- `scripts/firecracker/`: `build-rootfs.sh` (runner image → ext4 with init),
+  `ferrobot-init` (PID 1: mounts, home disk, env from MMDS, runner as `node`,
+  power-off), README with host requirements and firewall rules.
+- `supports_snapshots()` on the trait.
+
+**Tested (macOS, no KVM)**
+
+- 17 new sandbox tests: every client call's verb/path/body against a fake
+  API on a Unix socket, error mapping (`fault_message`), the exact boot
+  sequence (env only in MMDS), the KVM refusal, state mapping, pause/resume,
+  disk keep/purge.
+- The init's MMDS env reading ran inside `ferrobot-runner:dev` against a fake
+  MMDS (curl and node paths). Scripts checked with `bash -n`/`sh -n`/`dash -n`
+  (no shellcheck installed).
+- Whole stack: 102 Rust tests, Docker sandbox test, Docker e2e and
+  `smoke-docker.sh` all pass on this branch.
+
+**Open (`TODO(kvm)`, 13 places)**
+
+- No microVM has booted: process spawn, TAP setup, guest kernel `ip=`,
+  init, MMDS from the guest, runner reaching the daemon.
+- Guest agent for exec/files (F2), jailer (F3), snapshot sleep (F4b).
