@@ -65,9 +65,9 @@ async fn two_agents_talk(d: Daemon) {
     }
 
     // the agent's computer: exec inside it
-    let (status, out) = http(&d.ui, "POST", &format!("/v1/agents/{alice}/exec"), Some(json!({"cmd": ["sh", "-c", "echo $FERROBOT_AGENT_NAME"]}))).await;
+    let (status, out) = http(&d.ui, "POST", &format!("/v1/agents/{alice}/exec"), Some(json!({"cmd": ["sh", "-c", "echo hi > note.txt && cat note.txt"]}))).await;
     assert_eq!(status, 200, "{out}");
-    assert_eq!(out["stdout"].as_str().map(str::trim), Some(""), "exec env is not the runner env");
+    assert_eq!((out["exit_code"].as_i64(), out["stdout"].as_str()), (Some(0), Some("hi\n")));
 
     // stop / wake: runner disconnects and comes back, queued work survives
     let (status, _) = http(&d.ui, "POST", &format!("/v1/agents/{bob}/stop"), None).await;
