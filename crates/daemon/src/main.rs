@@ -7,7 +7,9 @@ use std::time::Duration;
 
 use anyhow::{Context, Result, bail};
 use clap::{Parser, ValueEnum};
-use ferrobot_daemon::{AppState, Settings, agent_router, lifecycle, ui_router};
+use ferrobot_daemon::{
+    AppState, Settings, agent_router, lifecycle, scheduler, supervisor, ui_router,
+};
 use ferrobot_sandbox::{
     DockerBackend, DockerConfig, LocalProcessBackend, LocalProcessConfig, SandboxBackend,
 };
@@ -80,6 +82,20 @@ struct Cli {
     /// Seconds before a turn is interrupted and its message retried.
     #[arg(long, env = "FERROBOT_TURN_TIMEOUT", default_value_t = 600)]
     turn_timeout: u64,
+    /// Seconds without activity before an agent's sandbox goes to sleep
+    /// (0 disables). Messages and routines wake it again.
+    #[arg(long, env = "FERROBOT_IDLE_TIMEOUT", default_value_t = 900)]
+    idle_timeout: u64,
+    /// Default IANA time zone for routines (default: the system's).
+    #[arg(long, env = "FERROBOT_TIMEZONE")]
+    timezone: Option<String>,
+    /// Upstream for the model proxy.
+    #[arg(
+        long,
+        env = "FERROBOT_ANTHROPIC_UPSTREAM",
+        default_value = "https://api.anthropic.com"
+    )]
+    anthropic_upstream: String,
 }
 
 #[tokio::main]
@@ -96,39 +112,7 @@ async fn main() -> Result<()> {
         .with_context(|| format!("creating {}", cli.data_dir.display()))?;
     let store = Store::open(cli.data_dir.join("ferrobot.db")).context("opening database")?;
 
-    let backend: Arc<dyn SandboxBackend> = match cli.backend {
-        Backend::Docker => {
-            let docker = DockerBackend::connect(DockerConfig {
-                image: cli.runner_image.clone(),
-                ..DockerConfig::default()
-            })?;
-            docker
-                .ping()
-                .await
-                .context("Docker/Podman engine not reachable (is the daemon running?)")?;
-            if cli.agent_listen.ip().is_loopback() {
-                tracing::warn!(
-                    "agent API listens on loopback; containers cannot reach it. \
-                     Use --agent-listen 0.0.0.0:{} (token-authenticated)",
-                    cli.agent_listen.port()
-                );
-            }
-            Arc::new(docker)
-        }
-        Backend::Local => {
-            let entry = std::fs::canonicalize(&cli.runner_entry).with_context(|| {
-                format!(
-                    "runner entry {} not found; build it with `npm --prefix runner run build`",
-                    cli.runner_entry.display()
-                )
-            })?;
-            tracing::warn!("local backend: agents run as host processes WITHOUT isolation");
-            Arc::new(LocalProcessBackend::new(LocalProcessConfig {
-                root: cli.data_dir.join("sandboxes"),
-                runner_cmd: vec!["node".into(), entry.display().to_string()],
-            })?)
-        }
-    };
+    let backend = make_backend(&cli).await?;
 
     let anthropic_api_key = std::env::var("ANTHROPIC_API_KEY")
         .ok()
@@ -144,17 +128,21 @@ async fn main() -> Result<()> {
         format!("http://{host}:{}", cli.agent_listen.port())
     });
 
-    let state = AppState::new(
-        store,
-        backend,
-        Settings {
-            sandbox_daemon_url,
-            driver: cli.driver.as_str().into(),
-            anthropic_api_key,
-            model: cli.model.clone(),
-            turn_timeout: Duration::from_secs(cli.turn_timeout),
-        },
-    );
+    let default_timezone = cli
+        .timezone
+        .clone()
+        .unwrap_or_else(scheduler::system_timezone);
+    scheduler::Schedule::parse("@daily", &default_timezone)
+        .map_err(|e| anyhow::anyhow!("--timezone: {e}"))?;
+    let mut settings = Settings::new(sandbox_daemon_url);
+    settings.driver = cli.driver.as_str().into();
+    settings.anthropic_api_key = anthropic_api_key;
+    settings.anthropic_upstream = cli.anthropic_upstream.trim_end_matches('/').to_owned();
+    settings.model = cli.model.clone();
+    settings.turn_timeout = Duration::from_secs(cli.turn_timeout);
+    settings.idle_timeout = (cli.idle_timeout > 0).then(|| Duration::from_secs(cli.idle_timeout));
+    settings.default_timezone = default_timezone;
+    let state = AppState::new(store, backend, settings);
 
     let ui = tokio::net::TcpListener::bind(cli.listen)
         .await
@@ -165,6 +153,8 @@ async fn main() -> Result<()> {
     tracing::info!(ui = %cli.listen, agents = %cli.agent_listen, backend = ?cli.backend, driver = ?cli.driver, "ferrobotd listening");
 
     lifecycle::reconcile(&state).await;
+    tokio::spawn(scheduler::run(state.clone()));
+    tokio::spawn(supervisor::run(state.clone()));
 
     let (stop_tx, stop_rx) = tokio::sync::watch::channel(false);
     tokio::spawn(async move {
@@ -194,6 +184,44 @@ async fn main() -> Result<()> {
     }
     tracing::info!("bye");
     Ok(())
+}
+
+async fn make_backend(cli: &Cli) -> Result<Arc<dyn SandboxBackend>> {
+    let backend: Arc<dyn SandboxBackend> = match cli.backend {
+        Backend::Docker => {
+            let docker = DockerBackend::connect(DockerConfig {
+                image: cli.runner_image.clone(),
+                snapshot_dir: Some(cli.data_dir.join("snapshots")),
+                ..DockerConfig::default()
+            })?;
+            docker
+                .ping()
+                .await
+                .context("Docker/Podman engine not reachable (is the daemon running?)")?;
+            if cli.agent_listen.ip().is_loopback() {
+                tracing::warn!(
+                    "agent API listens on loopback; containers cannot reach it. \
+                     Use --agent-listen 0.0.0.0:{} (token-authenticated)",
+                    cli.agent_listen.port()
+                );
+            }
+            Arc::new(docker)
+        }
+        Backend::Local => {
+            let entry = std::fs::canonicalize(&cli.runner_entry).with_context(|| {
+                format!(
+                    "runner entry {} not found; build it with `npm --prefix runner run build`",
+                    cli.runner_entry.display()
+                )
+            })?;
+            tracing::warn!("local backend: agents run as host processes WITHOUT isolation");
+            Arc::new(LocalProcessBackend::new(LocalProcessConfig {
+                root: cli.data_dir.join("sandboxes"),
+                runner_cmd: vec!["node".into(), entry.display().to_string()],
+            })?)
+        }
+    };
+    Ok(backend)
 }
 
 const SHUTDOWN_GRACE: std::time::Duration = std::time::Duration::from_secs(3);

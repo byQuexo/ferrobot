@@ -161,8 +161,12 @@ impl FromStr for AgentStatus {
 pub struct Agent {
     pub id: AgentId,
     pub name: AgentName,
-    /// Operator-provided role description handed to the model.
+    /// One-line description shown in agent lists.
+    pub description: String,
+    /// Operator-provided role handed to the model as system instructions.
     pub instructions: String,
+    /// Changes whenever the avatar changes; positive while an avatar exists.
+    pub avatar_rev: i64,
     pub status: AgentStatus,
     /// Backend kind that owns the sandbox, e.g. `docker`.
     pub backend: Option<String>,

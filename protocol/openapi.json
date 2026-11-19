@@ -68,7 +68,7 @@
             }
           },
           "400": {
-            "description": "Invalid name or instructions",
+            "description": "Invalid name or texts",
             "content": {
               "application/json": {
                 "schema": {
@@ -159,7 +159,7 @@
           {
             "name": "purge",
             "in": "query",
-            "description": "Also delete the agent's persistent disk.",
+            "description": "Also delete the agent's persistent disk and snapshots.",
             "required": false,
             "schema": {
               "type": "boolean"
@@ -191,14 +191,223 @@
             }
           }
         }
+      },
+      "patch": {
+        "tags": [
+          "agents"
+        ],
+        "summary": "Edits an agent's profile.",
+        "operationId": "update_agent",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "Agent id (UUID)",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateAgent"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AgentView"
+                }
+              }
+            }
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Unknown agent",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/agents/{id}/avatar": {
+      "get": {
+        "tags": [
+          "agents"
+        ],
+        "summary": "The agent's avatar image.",
+        "operationId": "get_avatar",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "Agent id (UUID)",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The image",
+            "content": {
+              "image/*": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "type": "integer",
+                    "format": "int32",
+                    "minimum": 0
+                  }
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Unknown agent or no avatar",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        }
+      },
+      "put": {
+        "tags": [
+          "agents"
+        ],
+        "summary": "Uploads (replaces) the avatar. Body: the raw image.",
+        "operationId": "put_avatar",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "Agent id (UUID)",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "description": "PNG, JPEG, WebP or GIF, at most 512 KiB",
+          "content": {
+            "image/*": {
+              "schema": {
+                "type": "array",
+                "items": {
+                  "type": "integer",
+                  "format": "int32",
+                  "minimum": 0
+                }
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AgentView"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Not a supported image",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Unknown agent",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "agents"
+        ],
+        "summary": "Removes the avatar (clients fall back to initials).",
+        "operationId": "delete_avatar",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "Agent id (UUID)",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AgentView"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Unknown agent",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        }
       }
     },
     "/v1/agents/{id}/events": {
       "get": {
         "tags": [
-          "events"
+          "chat"
         ],
-        "summary": "Turn events (text, tool use, denials, logs, turn results), up to 500 per call.",
+        "summary": "Turn events (incoming messages, text, tool calls and results, lifecycle),\noldest first, up to 500 per call; page with `after`.",
         "operationId": "list_events",
         "parameters": [
           {
@@ -304,6 +513,16 @@
               }
             }
           },
+          "409": {
+            "description": "No sandbox",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
           "502": {
             "description": "Sandbox backend error",
             "content": {
@@ -320,7 +539,7 @@
     "/v1/agents/{id}/interrupt": {
       "post": {
         "tags": [
-          "agents"
+          "chat"
         ],
         "summary": "Aborts the agent's running turn, if any. Interrupted messages are not retried.",
         "operationId": "interrupt",
@@ -358,10 +577,170 @@
         }
       }
     },
+    "/v1/agents/{id}/memory": {
+      "get": {
+        "tags": [
+          "memory"
+        ],
+        "summary": "Lists or searches the agent's memories.",
+        "operationId": "list_memory",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "Agent id (UUID)",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "q",
+            "in": "query",
+            "description": "Full-text search; empty lists the most recently updated entries.",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "description": "1-200, default 100.",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "format": "int32",
+              "minimum": 0
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/MemoryEntry"
+                  }
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Unknown agent",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "memory"
+        ],
+        "summary": "Creates or replaces a memory.",
+        "operationId": "put_memory",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "Agent id (UUID)",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PutMemory"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "204": {
+            "description": "Stored"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Unknown agent",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/agents/{id}/memory/{key}": {
+      "delete": {
+        "tags": [
+          "memory"
+        ],
+        "summary": "Deletes one memory by key (URL-encoded).",
+        "operationId": "delete_memory",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "Agent id (UUID)",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "key",
+            "in": "path",
+            "description": "Memory key",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Deleted"
+          },
+          "404": {
+            "description": "Unknown agent or key",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/v1/agents/{id}/messages": {
       "get": {
         "tags": [
-          "mailbox"
+          "chat"
         ],
         "summary": "The agent's conversation: messages to and from it, oldest first (last 200).",
         "operationId": "list_messages",
@@ -403,9 +782,9 @@
       },
       "post": {
         "tags": [
-          "mailbox"
+          "chat"
         ],
-        "summary": "Sends a message from the operator (`user`) to an agent's mailbox.",
+        "summary": "Sends a message from the operator (`user`) to an agent's mailbox. Wakes\nthe agent if it sleeps.",
         "operationId": "post_message",
         "parameters": [
           {
@@ -461,7 +840,194 @@
         }
       }
     },
+    "/v1/agents/{id}/read": {
+      "post": {
+        "tags": [
+          "chat"
+        ],
+        "summary": "Marks the agent's chat as read (resets `unread`).",
+        "operationId": "mark_read",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "Agent id (UUID)",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Marked as read"
+          },
+          "404": {
+            "description": "Unknown agent",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/agents/{id}/routines": {
+      "get": {
+        "tags": [
+          "routines"
+        ],
+        "summary": "The agent's routines, by name.",
+        "operationId": "list_routines",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "Agent id (UUID)",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/RoutineView"
+                  }
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Unknown agent",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "routines"
+        ],
+        "summary": "Creates a routine.",
+        "operationId": "create_routine",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "Agent id (UUID)",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateRoutine"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RoutineView"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid schedule, time zone or texts",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Unknown agent",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Name already used by this agent",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/v1/agents/{id}/sandbox": {
+      "get": {
+        "tags": [
+          "sandbox"
+        ],
+        "summary": "Live sandbox status for the info panel.",
+        "operationId": "sandbox_info",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "Agent id (UUID)",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SandboxInfo"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Unknown agent",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        }
+      },
       "delete": {
         "tags": [
           "sandbox"
@@ -493,6 +1059,16 @@
               }
             }
           },
+          "409": {
+            "description": "No sandbox",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
           "502": {
             "description": "Sandbox backend error",
             "content": {
@@ -506,13 +1082,55 @@
         }
       }
     },
-    "/v1/agents/{id}/snapshot": {
+    "/v1/agents/{id}/snapshots": {
+      "get": {
+        "tags": [
+          "sandbox"
+        ],
+        "summary": "Snapshots of the agent's sandbox, newest first.",
+        "operationId": "list_snapshots",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "Agent id (UUID)",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/SnapshotRecord"
+                  }
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Unknown agent",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        }
+      },
       "post": {
         "tags": [
           "sandbox"
         ],
-        "summary": "Snapshots the sandbox (backend-specific scope, see `SnapshotRef.scope`).",
-        "operationId": "snapshot",
+        "summary": "Snapshots the sandbox (Docker: root filesystem + home directory).",
+        "operationId": "create_snapshot",
         "parameters": [
           {
             "name": "id",
@@ -535,17 +1153,36 @@
           "required": true
         },
         "responses": {
-          "200": {
+          "201": {
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/SnapshotRef"
+                  "$ref": "#/components/schemas/SnapshotRecord"
+                }
+              }
+            }
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
                 }
               }
             }
           },
           "404": {
             "description": "Unknown agent",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "No sandbox",
             "content": {
               "application/json": {
                 "schema": {
@@ -577,12 +1214,152 @@
         }
       }
     },
+    "/v1/agents/{id}/snapshots/{sid}": {
+      "delete": {
+        "tags": [
+          "sandbox"
+        ],
+        "summary": "Deletes a snapshot and its data.",
+        "operationId": "delete_snapshot",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "Agent id (UUID)",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "sid",
+            "in": "path",
+            "description": "Snapshot id",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Deleted"
+          },
+          "404": {
+            "description": "Unknown agent or snapshot",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "501": {
+            "description": "Backend cannot delete snapshots",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "Sandbox backend error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/agents/{id}/snapshots/{sid}/restore": {
+      "post": {
+        "tags": [
+          "sandbox"
+        ],
+        "summary": "Replaces the sandbox with one booted from the snapshot. The current\ndisk state is discarded; the agent's chat and memory are kept.",
+        "operationId": "restore_snapshot",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "Agent id (UUID)",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "sid",
+            "in": "path",
+            "description": "Snapshot id",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Restored and running"
+          },
+          "404": {
+            "description": "Unknown agent or snapshot",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "No sandbox or wrong backend",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "501": {
+            "description": "Backend cannot restore",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "Sandbox backend error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/v1/agents/{id}/stop": {
       "post": {
         "tags": [
           "sandbox"
         ],
-        "summary": "Stops the agent's sandbox (disk is kept).",
+        "summary": "Puts the agent to sleep (stops the sandbox, keeps its disk). A new\nmessage or `wake` starts it again.",
         "operationId": "stop",
         "parameters": [
           {
@@ -597,7 +1374,7 @@
         ],
         "responses": {
           "204": {
-            "description": "Stopped"
+            "description": "Sleeping"
           },
           "404": {
             "description": "Unknown agent",
@@ -687,12 +1464,205 @@
         }
       }
     },
+    "/v1/routines/{rid}": {
+      "delete": {
+        "tags": [
+          "routines"
+        ],
+        "summary": "Deletes a routine and its run history.",
+        "operationId": "delete_routine",
+        "parameters": [
+          {
+            "name": "rid",
+            "in": "path",
+            "description": "Routine id",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Deleted"
+          },
+          "404": {
+            "description": "Unknown routine",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        }
+      },
+      "patch": {
+        "tags": [
+          "routines"
+        ],
+        "summary": "Edits, enables or disables a routine.",
+        "operationId": "update_routine",
+        "parameters": [
+          {
+            "name": "rid",
+            "in": "path",
+            "description": "Routine id",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateRoutine"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RoutineView"
+                }
+              }
+            }
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Unknown routine",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Name already used by this agent",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/routines/{rid}/run": {
+      "post": {
+        "tags": [
+          "routines"
+        ],
+        "summary": "Runs a routine now (does not move its schedule). Wakes the agent if needed.",
+        "operationId": "run_routine",
+        "parameters": [
+          {
+            "name": "rid",
+            "in": "path",
+            "description": "Routine id",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          }
+        ],
+        "responses": {
+          "202": {
+            "description": "Prompt queued",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MailMessage"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Unknown routine",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/routines/{rid}/runs": {
+      "get": {
+        "tags": [
+          "routines"
+        ],
+        "summary": "Run history, newest first (last 50).",
+        "operationId": "list_runs",
+        "parameters": [
+          {
+            "name": "rid",
+            "in": "path",
+            "description": "Routine id",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/RoutineRun"
+                  }
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Unknown routine",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/v1/ws": {
       "get": {
         "tags": [
-          "events"
+          "chat"
         ],
-        "summary": "WebSocket stream of `UiEvent` JSON text frames (schema:\n`protocol/ui-events.schema.json`). Client-to-server frames are ignored.",
+        "summary": "WebSocket stream of `UiEvent` JSON text frames (schema:\n`protocol/ui-events.schema.json`). Client-to-server frames are ignored.\nAfter a reconnect (or a `lagged` gap) clients should refetch over HTTP.",
         "operationId": "ui_ws",
         "responses": {
           "101": {
@@ -710,7 +1680,9 @@
         "required": [
           "id",
           "name",
+          "description",
           "instructions",
+          "avatar_rev",
           "status",
           "created_at"
         ],
@@ -721,9 +1693,18 @@
           "name": {
             "$ref": "#/components/schemas/AgentName"
           },
+          "description": {
+            "type": "string",
+            "description": "One-line description shown in agent lists."
+          },
           "instructions": {
             "type": "string",
-            "description": "Operator-provided role description handed to the model."
+            "description": "Operator-provided role handed to the model as system instructions."
+          },
+          "avatar_rev": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Changes whenever the avatar changes; positive while an avatar exists."
           },
           "status": {
             "$ref": "#/components/schemas/AgentStatus"
@@ -784,17 +1765,35 @@
           {
             "type": "object",
             "required": [
-              "connected"
+              "connected",
+              "presence",
+              "unread"
             ],
             "properties": {
               "connected": {
                 "type": "boolean",
                 "description": "Whether the agent's runner is connected right now."
+              },
+              "presence": {
+                "$ref": "#/components/schemas/Presence"
+              },
+              "unread": {
+                "type": "integer",
+                "format": "int32",
+                "description": "Finished turns since the operator last marked the chat as read.",
+                "minimum": 0
+              },
+              "avatar_url": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "description": "Relative URL of the avatar image, if one was uploaded."
               }
             }
           }
         ],
-        "description": "An agent plus live connection state."
+        "description": "An agent plus live state."
       },
       "CreateAgent": {
         "type": "object",
@@ -804,12 +1803,54 @@
         "properties": {
           "name": {
             "type": "string",
-            "description": "1-32 chars, `a-z0-9-`, starts with a letter.",
+            "description": "1-32 chars, `a-z0-9-`, starts with a letter. Cannot be changed later.",
             "example": "alice"
+          },
+          "description": {
+            "type": "string",
+            "description": "One line shown in agent lists (max 280 bytes)."
           },
           "instructions": {
             "type": "string",
-            "description": "Extra system instructions for this agent."
+            "description": "System instructions (role) for the agent's model."
+          }
+        }
+      },
+      "CreateRoutine": {
+        "type": "object",
+        "required": [
+          "name",
+          "schedule",
+          "prompt"
+        ],
+        "properties": {
+          "name": {
+            "type": "string",
+            "description": "Unique per agent, 1-64 bytes.",
+            "example": "morning-digest"
+          },
+          "schedule": {
+            "type": "string",
+            "description": "5-field cron expression or alias (`@hourly`, `@daily`, ...).",
+            "example": "0 9 * * 1-5"
+          },
+          "prompt": {
+            "type": "string",
+            "description": "Message the agent receives on every run."
+          },
+          "timezone": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "IANA time zone; defaults to the daemon's (see `/v1/health`)."
+          },
+          "enabled": {
+            "type": [
+              "boolean",
+              "null"
+            ],
+            "description": "Default true."
           }
         }
       },
@@ -888,7 +1929,9 @@
           "name",
           "version",
           "backend",
-          "driver"
+          "driver",
+          "model_proxy",
+          "timezone"
         ],
         "properties": {
           "name": {
@@ -902,6 +1945,23 @@
           },
           "driver": {
             "type": "string"
+          },
+          "model_proxy": {
+            "type": "boolean",
+            "description": "Whether real model calls are possible (driver `claude` with a key)."
+          },
+          "idle_timeout_s": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64",
+            "description": "Seconds of inactivity before a sandbox sleeps; null when disabled.",
+            "minimum": 0
+          },
+          "timezone": {
+            "type": "string",
+            "description": "Default time zone for new routines."
           }
         }
       },
@@ -974,6 +2034,26 @@
           "failed"
         ]
       },
+      "MemoryEntry": {
+        "type": "object",
+        "required": [
+          "key",
+          "content",
+          "updated_at"
+        ],
+        "properties": {
+          "key": {
+            "type": "string"
+          },
+          "content": {
+            "type": "string"
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      },
       "PostMessage": {
         "type": "object",
         "required": [
@@ -985,6 +2065,240 @@
             "description": "1..32768 bytes after trimming."
           }
         }
+      },
+      "Presence": {
+        "type": "string",
+        "description": "What an agent is doing right now, for status badges.",
+        "enum": [
+          "working",
+          "awake",
+          "starting",
+          "sleeping",
+          "error"
+        ]
+      },
+      "PutMemory": {
+        "type": "object",
+        "required": [
+          "key",
+          "content"
+        ],
+        "properties": {
+          "key": {
+            "type": "string",
+            "description": "1-128 bytes; an existing key is overwritten."
+          },
+          "content": {
+            "type": "string"
+          }
+        }
+      },
+      "Routine": {
+        "type": "object",
+        "required": [
+          "id",
+          "agent_id",
+          "name",
+          "schedule",
+          "timezone",
+          "prompt",
+          "enabled",
+          "created_at"
+        ],
+        "properties": {
+          "id": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "agent_id": {
+            "$ref": "#/components/schemas/AgentId"
+          },
+          "name": {
+            "type": "string"
+          },
+          "schedule": {
+            "type": "string",
+            "description": "Cron expression (5 fields, minute granularity) or an alias like `@hourly`."
+          },
+          "timezone": {
+            "type": "string",
+            "description": "IANA time zone the schedule is evaluated in, e.g. `Europe/Berlin`."
+          },
+          "prompt": {
+            "type": "string",
+            "description": "Message sent to the agent on every run."
+          },
+          "enabled": {
+            "type": "boolean"
+          },
+          "next_run_at": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time",
+            "description": "Next scheduled run; null while disabled."
+          },
+          "last_run_at": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      },
+      "RoutineRun": {
+        "type": "object",
+        "description": "One execution of a routine: the message it queued and how that went.",
+        "required": [
+          "id",
+          "routine_id",
+          "trigger",
+          "created_at"
+        ],
+        "properties": {
+          "id": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "routine_id": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "message_id": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64"
+          },
+          "trigger": {
+            "$ref": "#/components/schemas/RunTrigger"
+          },
+          "status": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/MailStatus",
+                "description": "Delivery status of the message; null if the message was deleted."
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "error": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Last delivery error, if any."
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      },
+      "RoutineView": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/Routine"
+          },
+          {
+            "type": "object",
+            "required": [
+              "schedule_text"
+            ],
+            "properties": {
+              "schedule_text": {
+                "type": "string",
+                "description": "English description of the schedule, e.g. \"At 09:00 on Monday through Friday\"."
+              }
+            }
+          }
+        ],
+        "description": "A routine plus a readable form of its schedule."
+      },
+      "RunTrigger": {
+        "type": "string",
+        "description": "What started a run.",
+        "enum": [
+          "schedule",
+          "manual"
+        ]
+      },
+      "SandboxInfo": {
+        "type": "object",
+        "required": [
+          "presence",
+          "connected",
+          "idle_s",
+          "snapshots_supported"
+        ],
+        "properties": {
+          "backend": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Backend kind, e.g. `docker`; null before provisioning."
+          },
+          "sandbox_id": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Backend-specific id (container id, ...)."
+          },
+          "state": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/SandboxState",
+                "description": "Live state reported by the backend; null if unknown or not provisioned."
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "presence": {
+            "$ref": "#/components/schemas/Presence"
+          },
+          "connected": {
+            "type": "boolean"
+          },
+          "idle_s": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Seconds since the last activity; sleeps when it reaches `idle_timeout_s`.",
+            "minimum": 0
+          },
+          "idle_timeout_s": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64",
+            "minimum": 0
+          },
+          "snapshots_supported": {
+            "type": "boolean",
+            "description": "Whether the backend can snapshot and restore."
+          }
+        }
+      },
+      "SandboxState": {
+        "type": "string",
+        "enum": [
+          "running",
+          "stopped",
+          "missing"
+        ]
       },
       "Sender": {
         "oneOf": [
@@ -1022,23 +2336,68 @@
                 ]
               }
             }
+          },
+          {
+            "type": "object",
+            "description": "A scheduled routine (by routine id).",
+            "required": [
+              "id",
+              "kind"
+            ],
+            "properties": {
+              "id": {
+                "type": "integer",
+                "format": "int64",
+                "description": "A scheduled routine (by routine id)."
+              },
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "routine"
+                ]
+              }
+            }
           }
         ],
         "description": "Who sent a mailbox message."
       },
-      "SnapshotRef": {
+      "SnapshotRecord": {
         "type": "object",
         "required": [
           "id",
-          "scope"
+          "agent_id",
+          "backend",
+          "snapshot_ref",
+          "label",
+          "scope",
+          "created_at"
         ],
         "properties": {
           "id": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "agent_id": {
+            "$ref": "#/components/schemas/AgentId"
+          },
+          "backend": {
+            "type": "string",
+            "description": "Backend that created it, e.g. `docker`."
+          },
+          "snapshot_ref": {
+            "type": "string",
+            "description": "Backend-specific reference (e.g. an image tag)."
+          },
+          "label": {
             "type": "string"
           },
           "scope": {
             "type": "string",
-            "description": "What the snapshot covers, e.g. \"container rootfs (home volume excluded)\"."
+            "description": "What the snapshot covers."
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
           }
         }
       },
@@ -1047,7 +2406,7 @@
         "properties": {
           "label": {
             "type": "string",
-            "description": "Free-form label (default `manual`)."
+            "description": "Free-form label (default `manual`, max 64 bytes)."
           }
         }
       },
@@ -1110,18 +2469,41 @@
           },
           {
             "type": "object",
-            "description": "An agent was created or changed status / connection.",
+            "description": "Live text fragment of the assistant message being written in a turn.\nNot persisted: the final `assistant_text` event replaces it.",
+            "required": [
+              "agent_id",
+              "turn_id",
+              "text",
+              "type"
+            ],
+            "properties": {
+              "agent_id": {
+                "$ref": "#/components/schemas/AgentId"
+              },
+              "turn_id": {
+                "type": "string"
+              },
+              "text": {
+                "type": "string"
+              },
+              "type": {
+                "type": "string",
+                "enum": [
+                  "delta"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "description": "An agent was created or changed (profile, presence, unread count).",
             "required": [
               "agent",
-              "connected",
               "type"
             ],
             "properties": {
               "agent": {
-                "$ref": "#/components/schemas/Agent"
-              },
-              "connected": {
-                "type": "boolean"
+                "$ref": "#/components/schemas/AgentView"
               },
               "type": {
                 "type": "string",
@@ -1168,9 +2550,102 @@
                 ]
               }
             }
+          },
+          {
+            "type": "object",
+            "description": "The agent's memory changed; refetch it.",
+            "required": [
+              "agent_id",
+              "type"
+            ],
+            "properties": {
+              "agent_id": {
+                "$ref": "#/components/schemas/AgentId"
+              },
+              "type": {
+                "type": "string",
+                "enum": [
+                  "memory_changed"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "description": "The agent's routines or their runs changed; refetch them.",
+            "required": [
+              "agent_id",
+              "type"
+            ],
+            "properties": {
+              "agent_id": {
+                "$ref": "#/components/schemas/AgentId"
+              },
+              "type": {
+                "type": "string",
+                "enum": [
+                  "routines_changed"
+                ]
+              }
+            }
           }
         ],
         "description": "Pushed to every UI WebSocket client."
+      },
+      "UpdateAgent": {
+        "type": "object",
+        "description": "Partial profile update. Omitted fields stay unchanged.",
+        "properties": {
+          "description": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "instructions": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "New system instructions; a connected runner applies them from its next turn."
+          }
+        }
+      },
+      "UpdateRoutine": {
+        "type": "object",
+        "description": "Partial update; omitted fields stay unchanged.",
+        "properties": {
+          "name": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "schedule": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "prompt": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "timezone": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "enabled": {
+            "type": [
+              "boolean",
+              "null"
+            ]
+          }
+        }
       }
     }
   },
@@ -1181,19 +2656,23 @@
     },
     {
       "name": "agents",
-      "description": "Agent registry and turn control"
+      "description": "Agent registry and profiles"
     },
     {
-      "name": "mailbox",
-      "description": "Asynchronous messages between the operator and agents"
+      "name": "chat",
+      "description": "Messages, turn events and the live stream"
     },
     {
-      "name": "events",
-      "description": "Turn events, polled or streamed"
+      "name": "memory",
+      "description": "Per-agent long-term memory"
+    },
+    {
+      "name": "routines",
+      "description": "Scheduled prompts"
     },
     {
       "name": "sandbox",
-      "description": "Each agent's own computer"
+      "description": "Each agent's own computer: sleep, wake, snapshots"
     }
   ]
 }

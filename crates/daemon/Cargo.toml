@@ -27,6 +27,12 @@ ferrobot-mcp.workspace = true
 ferrobot-sandbox = { workspace = true, features = ["schema"] }
 ferrobot-store = { workspace = true, features = ["schema"] }
 futures-util.workspace = true
+croner.workspace = true
+chrono.workspace = true
+chrono-tz.workspace = true
+iana-time-zone.workspace = true
+reqwest = { workspace = true, features = ["stream"] }
+time = { workspace = true, features = ["macros"] }
 serde.workspace = true
 serde_json.workspace = true
 thiserror.workspace = true
@@ -37,7 +43,6 @@ tracing-subscriber.workspace = true
 uuid.workspace = true
 
 [dev-dependencies]
-time.workspace = true
 jsonschema = { version = "0.61", default-features = false }
 tempfile.workspace = true
 tokio-tungstenite.workspace = true

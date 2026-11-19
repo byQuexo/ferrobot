@@ -3,6 +3,11 @@
     "Agent": {
       "description": "A registered agent. Secrets (the runner token) are never part of this type.",
       "properties": {
+        "avatar_rev": {
+          "description": "Changes whenever the avatar changes; positive while an avatar exists.",
+          "format": "int64",
+          "type": "integer"
+        },
         "backend": {
           "description": "Backend kind that owns the sandbox, e.g. `docker`.",
           "type": [
@@ -14,11 +19,15 @@
           "format": "date-time",
           "type": "string"
         },
+        "description": {
+          "description": "One-line description shown in agent lists.",
+          "type": "string"
+        },
         "id": {
           "$ref": "#/$defs/AgentId"
         },
         "instructions": {
-          "description": "Operator-provided role description handed to the model.",
+          "description": "Operator-provided role handed to the model as system instructions.",
           "type": "string"
         },
         "name": {
@@ -45,7 +54,9 @@
       "required": [
         "id",
         "name",
+        "description",
         "instructions",
+        "avatar_rev",
         "status",
         "created_at"
       ],
@@ -71,6 +82,44 @@
         "failed"
       ],
       "type": "string"
+    },
+    "AgentView": {
+      "allOf": [
+        {
+          "$ref": "#/$defs/Agent"
+        },
+        {
+          "properties": {
+            "avatar_url": {
+              "description": "Relative URL of the avatar image, if one was uploaded.",
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "connected": {
+              "description": "Whether the agent's runner is connected right now.",
+              "type": "boolean"
+            },
+            "presence": {
+              "$ref": "#/$defs/Presence"
+            },
+            "unread": {
+              "description": "Finished turns since the operator last marked the chat as read.",
+              "format": "int32",
+              "minimum": 0,
+              "type": "integer"
+            }
+          },
+          "required": [
+            "connected",
+            "presence",
+            "unread"
+          ],
+          "type": "object"
+        }
+      ],
+      "description": "An agent plus live state."
     },
     "MailMessage": {
       "description": "One message in an agent's mailbox.",
@@ -129,6 +178,17 @@
       ],
       "type": "string"
     },
+    "Presence": {
+      "description": "What an agent is doing right now, for status badges.",
+      "enum": [
+        "working",
+        "awake",
+        "starting",
+        "sleeping",
+        "error"
+      ],
+      "type": "string"
+    },
     "Sender": {
       "description": "Who sent a mailbox message.",
       "oneOf": [
@@ -157,6 +217,27 @@
             "kind": {
               "enum": [
                 "agent"
+              ],
+              "type": "string"
+            }
+          },
+          "required": [
+            "id",
+            "kind"
+          ],
+          "type": "object"
+        },
+        {
+          "description": "A scheduled routine (by routine id).",
+          "properties": {
+            "id": {
+              "description": "A scheduled routine (by routine id).",
+              "format": "int64",
+              "type": "integer"
+            },
+            "kind": {
+              "enum": [
+                "routine"
               ],
               "type": "string"
             }
@@ -228,13 +309,37 @@
           "type": "object"
         },
         {
-          "description": "An agent was created or changed status / connection.",
+          "description": "Live text fragment of the assistant message being written in a turn.\nNot persisted: the final `assistant_text` event replaces it.",
+          "properties": {
+            "agent_id": {
+              "$ref": "#/$defs/AgentId"
+            },
+            "text": {
+              "type": "string"
+            },
+            "turn_id": {
+              "type": "string"
+            },
+            "type": {
+              "enum": [
+                "delta"
+              ],
+              "type": "string"
+            }
+          },
+          "required": [
+            "agent_id",
+            "turn_id",
+            "text",
+            "type"
+          ],
+          "type": "object"
+        },
+        {
+          "description": "An agent was created or changed (profile, presence, unread count).",
           "properties": {
             "agent": {
-              "$ref": "#/$defs/Agent"
-            },
-            "connected": {
-              "type": "boolean"
+              "$ref": "#/$defs/AgentView"
             },
             "type": {
               "enum": [
@@ -245,7 +350,6 @@
           },
           "required": [
             "agent",
-            "connected",
             "type"
           ],
           "type": "object"
@@ -284,6 +388,44 @@
           },
           "required": [
             "message",
+            "type"
+          ],
+          "type": "object"
+        },
+        {
+          "description": "The agent's memory changed; refetch it.",
+          "properties": {
+            "agent_id": {
+              "$ref": "#/$defs/AgentId"
+            },
+            "type": {
+              "enum": [
+                "memory_changed"
+              ],
+              "type": "string"
+            }
+          },
+          "required": [
+            "agent_id",
+            "type"
+          ],
+          "type": "object"
+        },
+        {
+          "description": "The agent's routines or their runs changed; refetch them.",
+          "properties": {
+            "agent_id": {
+              "$ref": "#/$defs/AgentId"
+            },
+            "type": {
+              "enum": [
+                "routines_changed"
+              ],
+              "type": "string"
+            }
+          },
+          "required": [
+            "agent_id",
             "type"
           ],
           "type": "object"

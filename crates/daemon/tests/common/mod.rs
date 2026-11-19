@@ -20,23 +20,46 @@ pub async fn start(
     sandbox_url: Option<String>,
     agent_bind: &str,
 ) -> Daemon {
+    start_with(backend, sandbox_url, agent_bind, |_| {}).await
+}
+
+/// Like [`start`], with a hook to adjust the settings.
+pub async fn start_with(
+    backend: Arc<dyn SandboxBackend>,
+    sandbox_url: Option<String>,
+    agent_bind: &str,
+    configure: impl FnOnce(&mut Settings),
+) -> Daemon {
+    start_on(
+        Store::open_in_memory().unwrap(),
+        backend,
+        sandbox_url,
+        agent_bind,
+        configure,
+    )
+    .await
+}
+
+/// Like [`start_with`], on a given store (e.g. a file, to test restarts).
+pub async fn start_on(
+    store: Store,
+    backend: Arc<dyn SandboxBackend>,
+    sandbox_url: Option<String>,
+    agent_bind: &str,
+    configure: impl FnOnce(&mut Settings),
+) -> Daemon {
     let agents_listener = tokio::net::TcpListener::bind(agent_bind).await.unwrap();
     let agents_addr = agents_listener.local_addr().unwrap();
     let ui_listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
     let ui_addr = ui_listener.local_addr().unwrap();
-    let state = AppState::new(
-        Store::open_in_memory().unwrap(),
-        backend,
-        Settings {
-            sandbox_daemon_url: sandbox_url
-                .unwrap_or_else(|| format!("http://127.0.0.1:{}", agents_addr.port()))
-                .replace("{port}", &agents_addr.port().to_string()),
-            driver: "mock".into(),
-            anthropic_api_key: None,
-            model: None,
-            turn_timeout: Duration::from_secs(30),
-        },
+    let mut settings = Settings::new(
+        sandbox_url
+            .unwrap_or_else(|| format!("http://127.0.0.1:{}", agents_addr.port()))
+            .replace("{port}", &agents_addr.port().to_string()),
     );
+    settings.turn_timeout = Duration::from_secs(30);
+    configure(&mut settings);
+    let state = AppState::new(store, backend, settings);
     let ui = ui_router(state.clone());
     let agents = agent_router(state.clone());
     tokio::spawn(async move { axum::serve(ui_listener, ui).await.unwrap() });
@@ -76,6 +99,69 @@ pub async fn http(addr: &str, method: &str, path: &str, body: Option<Value>) -> 
         assert_conforms(method, path, status, &value);
     }
     (status, value)
+}
+
+/// Raw HTTP/1.1 request with arbitrary bytes; returns status, lower-cased
+/// headers and the (de-chunked) body bytes.
+pub async fn http_raw(
+    addr: &str,
+    method: &str,
+    path: &str,
+    headers: &[(&str, &str)],
+    body: &[u8],
+) -> (u16, Vec<(String, String)>, Vec<u8>) {
+    use tokio::io::{AsyncReadExt, AsyncWriteExt};
+    let mut s = tokio::net::TcpStream::connect(addr).await.unwrap();
+    let mut req = format!(
+        "{method} {path} HTTP/1.1\r\nHost: {addr}\r\nContent-Length: {}\r\nConnection: close\r\n",
+        body.len()
+    );
+    for (k, v) in headers {
+        use std::fmt::Write as _;
+        let _ = write!(req, "{k}: {v}\r\n");
+    }
+    req.push_str("\r\n");
+    s.write_all(req.as_bytes()).await.unwrap();
+    s.write_all(body).await.unwrap();
+    let mut buf = Vec::new();
+    s.read_to_end(&mut buf).await.unwrap();
+    let split = buf.windows(4).position(|w| w == b"\r\n\r\n").unwrap();
+    let head = String::from_utf8_lossy(&buf[..split]).into_owned();
+    let mut raw = buf[split + 4..].to_vec();
+    let mut lines = head.lines();
+    let status = lines
+        .next()
+        .unwrap()
+        .split_whitespace()
+        .nth(1)
+        .unwrap()
+        .parse()
+        .unwrap();
+    let headers: Vec<(String, String)> = lines
+        .filter_map(|l| l.split_once(':'))
+        .map(|(k, v)| (k.trim().to_ascii_lowercase(), v.trim().to_owned()))
+        .collect();
+    if headers
+        .iter()
+        .any(|(k, v)| k == "transfer-encoding" && v.contains("chunked"))
+    {
+        raw = dechunk_bytes(&raw);
+    }
+    (status, headers, raw)
+}
+
+fn dechunk_bytes(mut raw: &[u8]) -> Vec<u8> {
+    let mut out = Vec::new();
+    while let Some(pos) = raw.windows(2).position(|w| w == b"\r\n") {
+        let n = usize::from_str_radix(String::from_utf8_lossy(&raw[..pos]).trim(), 16).unwrap_or(0);
+        if n == 0 {
+            break;
+        }
+        let rest = &raw[pos + 2..];
+        out.extend_from_slice(&rest[..n]);
+        raw = &rest[n + 2..];
+    }
+    out
 }
 
 /// Checks a UI API response against the generated `OpenAPI` document: the status

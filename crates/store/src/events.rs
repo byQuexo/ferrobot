@@ -101,6 +101,7 @@ mod tests {
         let a = store
             .create_agent(NewAgent {
                 name: AgentName::parse("alice").unwrap(),
+                description: String::new(),
                 instructions: String::new(),
             })
             .await

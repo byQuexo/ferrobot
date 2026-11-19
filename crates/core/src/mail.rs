@@ -15,6 +15,8 @@ pub enum Sender {
     User,
     /// Another agent, via the `send_message` MCP tool.
     Agent(AgentId),
+    /// A scheduled routine (by routine id).
+    Routine(i64),
 }
 
 impl fmt::Display for Sender {
@@ -22,6 +24,7 @@ impl fmt::Display for Sender {
         match self {
             Self::User => f.write_str("user"),
             Self::Agent(id) => write!(f, "agent:{id}"),
+            Self::Routine(id) => write!(f, "routine:{id}"),
         }
     }
 }
@@ -32,6 +35,12 @@ impl FromStr for Sender {
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         if s == "user" {
             return Ok(Self::User);
+        }
+        if let Some(id) = s.strip_prefix("routine:") {
+            return id
+                .parse()
+                .map(Self::Routine)
+                .map_err(|_| CoreError::InvalidSender(s.to_owned()));
         }
         s.strip_prefix("agent:")
             .and_then(|id| id.parse().ok())
@@ -105,7 +114,7 @@ mod tests {
     #[test]
     fn sender_roundtrip() {
         let id = AgentId::new();
-        for s in [Sender::User, Sender::Agent(id)] {
+        for s in [Sender::User, Sender::Agent(id), Sender::Routine(7)] {
             assert_eq!(s.to_string().parse::<Sender>().unwrap(), s);
         }
         assert!("agent:nope".parse::<Sender>().is_err());

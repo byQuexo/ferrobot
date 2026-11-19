@@ -1,3 +1,5 @@
+use std::collections::HashMap;
+
 use ferrobot_core::{Agent, AgentId, AgentName, AgentStatus};
 use rusqlite::{OptionalExtension, Row, params};
 use sha2::{Digest, Sha256};
@@ -9,7 +11,22 @@ use crate::{Store, StoreError};
 #[derive(Debug, Clone)]
 pub struct NewAgent {
     pub name: AgentName,
+    pub description: String,
     pub instructions: String,
+}
+
+/// Partial profile update; `None` leaves a field unchanged.
+#[derive(Debug, Clone, Default)]
+pub struct AgentPatch {
+    pub description: Option<String>,
+    pub instructions: Option<String>,
+}
+
+/// An avatar image as stored.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Avatar {
+    pub mime: String,
+    pub bytes: Vec<u8>,
 }
 
 /// SHA-256 of a runner token. Only hashes are stored.
@@ -17,7 +34,8 @@ pub fn hash_token(token: &str) -> String {
     hex::encode(Sha256::digest(token.as_bytes()))
 }
 
-const COLUMNS: &str = "id, name, instructions, status, backend, sandbox_id, session_id, created_at";
+const COLUMNS: &str = "id, name, instructions, status, backend, sandbox_id, session_id, created_at, \
+                       description, avatar_rev";
 
 fn from_row(row: &Row<'_>) -> Result<Agent, StoreError> {
     let id: String = row.get(0)?;
@@ -27,7 +45,9 @@ fn from_row(row: &Row<'_>) -> Result<Agent, StoreError> {
     Ok(Agent {
         id: id.parse()?,
         name: AgentName::parse(name)?,
+        description: row.get(8)?,
         instructions: row.get(2)?,
+        avatar_rev: row.get(9)?,
         status: status.parse()?,
         backend: row.get(4)?,
         sandbox_id: row.get(5)?,
@@ -48,7 +68,9 @@ impl Store {
         let agent = Agent {
             id: AgentId::new(),
             name: new.name,
+            description: new.description,
             instructions: new.instructions,
+            avatar_rev: 0,
             status: AgentStatus::Created,
             backend: None,
             sandbox_id: None,
@@ -58,11 +80,12 @@ impl Store {
         let row = agent.clone();
         self.with(move |c| {
             c.execute(
-                "INSERT INTO agents (id, name, instructions, status, created_at)
-                 VALUES (?1, ?2, ?3, ?4, ?5)",
+                "INSERT INTO agents (id, name, description, instructions, status, created_at)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
                 params![
                     row.id.to_string(),
                     row.name.as_str(),
+                    row.description,
                     row.instructions,
                     row.status.as_str(),
                     fmt_ts(row.created_at)
@@ -200,6 +223,87 @@ impl Store {
         .await
     }
 
+    /// Updates description and/or instructions.
+    pub async fn update_agent_profile(
+        &self,
+        id: AgentId,
+        patch: AgentPatch,
+    ) -> Result<(), StoreError> {
+        self.update_agent(id, move |c, id| {
+            c.execute(
+                "UPDATE agents SET description = COALESCE(?2, description),
+                                   instructions = COALESCE(?3, instructions)
+                 WHERE id = ?1",
+                params![id, patch.description, patch.instructions],
+            )
+        })
+        .await
+    }
+
+    /// Sets or (with `None`) removes the avatar. `avatar_rev` changes on every
+    /// call (so URLs can cache-bust) and is positive only while an avatar exists.
+    pub async fn set_avatar(&self, id: AgentId, avatar: Option<Avatar>) -> Result<(), StoreError> {
+        self.update_agent(id, move |c, id| {
+            let (mime, bytes) = avatar.map(|a| (a.mime, a.bytes)).unzip();
+            c.execute(
+                "UPDATE agents SET avatar = ?2, avatar_mime = ?3,
+                    avatar_rev = (abs(avatar_rev) + 1) * CASE WHEN ?2 IS NULL THEN -1 ELSE 1 END
+                 WHERE id = ?1",
+                params![id, bytes, mime],
+            )
+        })
+        .await
+    }
+
+    pub async fn get_avatar(&self, id: AgentId) -> Result<Option<Avatar>, StoreError> {
+        self.with(move |c| {
+            let row: Option<(Option<String>, Option<Vec<u8>>)> = c
+                .query_row(
+                    "SELECT avatar_mime, avatar FROM agents WHERE id = ?1",
+                    [id.to_string()],
+                    |r| Ok((r.get(0)?, r.get(1)?)),
+                )
+                .optional()?;
+            let (mime, bytes) = row.ok_or_else(|| not_found(&id))?;
+            Ok(mime.zip(bytes).map(|(mime, bytes)| Avatar { mime, bytes }))
+        })
+        .await
+    }
+
+    /// Marks everything the agent produced so far as read.
+    pub async fn mark_read(&self, id: AgentId) -> Result<(), StoreError> {
+        self.update_agent(id, |c, id| {
+            c.execute(
+                "UPDATE agents SET last_read_event_id =
+                    (SELECT COALESCE(MAX(id), 0) FROM events WHERE agent_id = ?1)
+                 WHERE id = ?1",
+                [id],
+            )
+        })
+        .await
+    }
+
+    /// Unread finished turns per agent (only agents with unread > 0).
+    pub async fn unread_counts(&self) -> Result<HashMap<AgentId, u32>, StoreError> {
+        self.with(|c| {
+            let mut stmt = c.prepare(
+                "SELECT a.id, COUNT(e.id) FROM agents a
+                 JOIN events e ON e.agent_id = a.id
+                 WHERE e.id > a.last_read_event_id AND e.kind = 'turn_done'
+                 GROUP BY a.id",
+            )?;
+            let mut rows = stmt.query([])?;
+            let mut out = HashMap::new();
+            while let Some(row) = rows.next()? {
+                let id: String = row.get(0)?;
+                let n: u32 = row.get(1)?;
+                out.insert(id.parse()?, n);
+            }
+            Ok(out)
+        })
+        .await
+    }
+
     async fn update_agent<F>(&self, id: AgentId, f: F) -> Result<(), StoreError>
     where
         F: FnOnce(&rusqlite::Connection, String) -> rusqlite::Result<usize> + Send + 'static,
@@ -219,6 +323,7 @@ mod tests {
     fn new(name: &str) -> NewAgent {
         NewAgent {
             name: AgentName::parse(name).unwrap(),
+            description: String::new(),
             instructions: "test".into(),
         }
     }
@@ -285,5 +390,48 @@ mod tests {
         assert_eq!(got.status, AgentStatus::Running);
         assert_eq!(got.session_id.as_deref(), Some("s-1"));
         assert_eq!(got.sandbox_id.as_deref(), Some("c1"));
+    }
+
+    #[tokio::test]
+    async fn profile_avatar_and_unread() {
+        let store = Store::open_in_memory().unwrap();
+        let a = store.create_agent(new("alice")).await.unwrap();
+        store
+            .update_agent_profile(
+                a.id,
+                AgentPatch {
+                    description: Some("Reviews code".into()),
+                    instructions: None,
+                },
+            )
+            .await
+            .unwrap();
+        let got = store.get_agent(a.id).await.unwrap();
+        assert_eq!(got.description, "Reviews code");
+        assert_eq!(got.instructions, "test");
+
+        assert_eq!(store.get_avatar(a.id).await.unwrap(), None);
+        let png = Avatar {
+            mime: "image/png".into(),
+            bytes: vec![1, 2, 3],
+        };
+        store.set_avatar(a.id, Some(png.clone())).await.unwrap();
+        store.set_avatar(a.id, Some(png.clone())).await.unwrap();
+        assert_eq!(store.get_avatar(a.id).await.unwrap(), Some(png));
+        assert_eq!(store.get_agent(a.id).await.unwrap().avatar_rev, 2);
+        store.set_avatar(a.id, None).await.unwrap();
+        assert_eq!(store.get_agent(a.id).await.unwrap().avatar_rev, -3);
+
+        let none: HashMap<AgentId, u32> = HashMap::new();
+        assert_eq!(store.unread_counts().await.unwrap(), none);
+        for kind in ["assistant_text", "turn_done", "turn_done"] {
+            store
+                .append_event(a.id, None, kind.into(), serde_json::json!({}))
+                .await
+                .unwrap();
+        }
+        assert_eq!(store.unread_counts().await.unwrap()[&a.id], 2);
+        store.mark_read(a.id).await.unwrap();
+        assert_eq!(store.unread_counts().await.unwrap(), none);
     }
 }

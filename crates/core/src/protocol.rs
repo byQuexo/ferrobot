@@ -35,6 +35,8 @@ pub enum DaemonFrame {
     },
     /// Abort the running turn, if it matches.
     Interrupt { turn_id: String },
+    /// The operator changed the agent's profile; applies from the next turn.
+    Configure { instructions: String },
 }
 
 /// Frames sent from a runner to the daemon.
@@ -69,13 +71,29 @@ pub enum RunnerFrame {
 #[cfg_attr(feature = "schema", derive(utoipa::ToSchema))]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum TurnEvent {
+    /// Final text of one assistant message.
     AssistantText {
         text: String,
     },
+    /// Streaming fragment of the assistant message being written. Forwarded
+    /// live to UI clients but not persisted; `assistant_text` follows.
+    AssistantDelta {
+        text: String,
+    },
     ToolUse {
+        /// Model-assigned id that links the call to its `tool_result`.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        id: Option<String>,
         name: String,
         #[cfg_attr(feature = "schema", schema(value_type = Object))]
         input: serde_json::Value,
+    },
+    ToolResult {
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        id: Option<String>,
+        /// Tool output as text, truncated by the runner.
+        output: String,
+        is_error: bool,
     },
     ToolDenied {
         name: String,
@@ -119,6 +137,7 @@ mod tests {
         let frame = RunnerFrame::Event {
             turn_id: "t1".into(),
             event: TurnEvent::ToolUse {
+                id: None,
                 name: "mcp__ferrobot__send_message".into(),
                 input: serde_json::json!({"to": "bob"}),
             },

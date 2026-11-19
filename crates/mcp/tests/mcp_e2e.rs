@@ -57,6 +57,7 @@ async fn tools_act_as_the_authenticated_agent() {
         let a = store
             .create_agent(NewAgent {
                 name: AgentName::parse(name).unwrap(),
+                description: String::new(),
                 instructions: format!("{name} role"),
             })
             .await

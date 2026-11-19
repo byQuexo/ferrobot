@@ -120,6 +120,7 @@ mod tests {
         store
             .create_agent(NewAgent {
                 name: AgentName::parse(name).unwrap(),
+                description: String::new(),
                 instructions: String::new(),
             })
             .await

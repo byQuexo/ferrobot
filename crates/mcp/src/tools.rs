@@ -6,7 +6,7 @@ use rmcp::{ErrorData, ServerHandler, tool, tool_handler, tool_router};
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
-use crate::{Caller, MAX_MESSAGE_BYTES, McpState};
+use crate::{Caller, MAX_MEMORY_KEY_BYTES, MAX_MESSAGE_BYTES, McpState};
 
 type ToolResult<T> = Result<Json<T>, ErrorData>;
 
@@ -45,6 +45,8 @@ fn store_err(e: StoreError) -> ErrorData {
 pub struct AgentInfo {
     pub name: String,
     pub status: String,
+    /// One-line description.
+    pub description: String,
     pub instructions: String,
     /// True for the calling agent itself.
     pub is_you: bool,
@@ -149,6 +151,7 @@ impl FerrobotTools {
                     is_you: a.id == me,
                     name: a.name.to_string(),
                     status: a.status.as_str().to_owned(),
+                    description: a.description,
                     instructions: a.instructions,
                 })
                 .collect(),
@@ -224,6 +227,7 @@ impl FerrobotTools {
                 .iter()
                 .find(|a| a.id == *id)
                 .map_or_else(|| format!("agent:{id}"), |a| a.name.to_string()),
+            Sender::Routine(id) => format!("routine:{id}"),
         };
         Ok(Json(Mailbox {
             messages: messages
@@ -248,8 +252,11 @@ impl FerrobotTools {
     ) -> ToolResult<Ack> {
         let me = caller(&parts)?.0.id;
         let key = args.key.trim();
-        if key.is_empty() || key.len() > 128 {
-            return Err(ErrorData::invalid_params("key must be 1-128 bytes", None));
+        if key.is_empty() || key.len() > MAX_MEMORY_KEY_BYTES {
+            return Err(ErrorData::invalid_params(
+                format!("key must be 1-{MAX_MEMORY_KEY_BYTES} bytes"),
+                None,
+            ));
         }
         if args.content.len() > MAX_MESSAGE_BYTES {
             return Err(ErrorData::invalid_params("content too large", None));
@@ -259,6 +266,7 @@ impl FerrobotTools {
             .remember(me, key.to_owned(), args.content)
             .await
             .map_err(store_err)?;
+        self.state.notifier.memory_changed(me);
         Ok(Json(Ack { ok: true }))
     }
 
@@ -301,6 +309,9 @@ impl FerrobotTools {
             .forget(me, args.key)
             .await
             .map_err(store_err)?;
+        if existed {
+            self.state.notifier.memory_changed(me);
+        }
         Ok(Json(Ack { ok: existed }))
     }
 }

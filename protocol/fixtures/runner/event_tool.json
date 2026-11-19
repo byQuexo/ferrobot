@@ -1,5 +1,10 @@
 {
   "type": "event",
   "turn_id": "turn-1",
-  "event": { "kind": "tool_use", "name": "send_message", "input": { "to": "bob", "body": "hi" } }
+  "event": {
+    "kind": "tool_use",
+    "id": "toolu_01",
+    "name": "mcp__ferrobot__send_message",
+    "input": { "to": "bob", "body": "hi" }
+  }
 }

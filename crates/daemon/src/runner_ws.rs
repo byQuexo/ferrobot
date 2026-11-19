@@ -8,13 +8,13 @@ use axum::extract::ws::{Message, WebSocket, WebSocketUpgrade};
 use axum::http::{HeaderMap, StatusCode, header};
 use axum::response::{IntoResponse, Response};
 use axum::routing::get;
-use ferrobot_core::protocol::{DaemonFrame, RunnerFrame, TurnOutcome};
+use ferrobot_core::protocol::{DaemonFrame, RunnerFrame, TurnEvent, TurnOutcome};
 use ferrobot_core::{Agent, AgentId, MailMessage, PROTOCOL_VERSION, Sender};
 use futures_util::{SinkExt, StreamExt};
 use serde_json::json;
 use tokio::sync::mpsc;
 
-use crate::AppState;
+use crate::{AppState, UiEvent};
 
 const HELLO_TIMEOUT: Duration = Duration::from_secs(10);
 const STORE_RETRY: Duration = Duration::from_secs(1);
@@ -153,7 +153,18 @@ async fn run_connection(state: AppState, agent: Agent, socket: WebSocket) {
 /// Handles one frame from the runner after the handshake.
 async fn handle_frame(state: &AppState, agent: &Agent, done_tx: &mpsc::Sender<Done>, text: &str) {
     match serde_json::from_str::<RunnerFrame>(text) {
+        Ok(RunnerFrame::Event {
+            turn_id,
+            event: TurnEvent::AssistantDelta { text },
+        }) => {
+            state.publish(UiEvent::Delta {
+                agent_id: agent.id,
+                turn_id,
+                text,
+            });
+        }
         Ok(RunnerFrame::Event { turn_id, event }) => {
+            state.hub.touch(agent.id);
             let payload = serde_json::to_value(&event).unwrap_or_default();
             let kind = payload["kind"].as_str().unwrap_or("event").to_owned();
             state.record(agent.id, Some(turn_id), &kind, payload).await;
@@ -207,6 +218,10 @@ async fn sender_name(state: &AppState, sender: Sender) -> String {
             .get_agent(id)
             .await
             .map_or_else(|_| format!("agent:{id}"), |a| a.name.to_string()),
+        Sender::Routine(id) => state.store.get_routine(id).await.map_or_else(
+            |_| format!("routine:{id}"),
+            |r| format!("routine:{}", r.name),
+        ),
     }
 }
 
@@ -254,12 +269,14 @@ async fn run_turn(
             agent,
             Some(turn_id.clone()),
             "message_in",
-            json!({ "message_id": msg.id, "from": from, "body": msg.body, "attempt": msg.attempts }),
+            json!({ "message_id": msg.id, "from": from, "sender": msg.sender, "body": msg.body, "attempt": msg.attempts }),
         )
         .await;
     state
         .hub
         .set_current_turn(agent, conn_id, Some(turn_id.clone()));
+    state.hub.touch(agent);
+    state.publish_agent(agent).await;
     let frame = DaemonFrame::Turn {
         turn_id: turn_id.clone(),
         message_id: msg.id,
@@ -281,6 +298,7 @@ async fn run_turn(
         }
     };
     state.hub.set_current_turn(agent, conn_id, None);
+    state.hub.touch(agent);
 
     let store_result = match result {
         // An interrupt is the operator's decision: do not redeliver.
@@ -307,5 +325,9 @@ async fn run_turn(
         tracing::error!(error = %e, message = msg.id, "failed to settle message");
     }
     state.publish_message(msg.id).await;
+    state.publish_agent(agent).await;
+    if let Sender::Routine(_) = msg.sender {
+        state.publish(UiEvent::RoutinesChanged { agent_id: agent });
+    }
     true
 }

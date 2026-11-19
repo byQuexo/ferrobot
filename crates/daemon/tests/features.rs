@@ -1,0 +1,790 @@
+//! Phase-1 features against a stateful fake backend: profiles and avatars,
+//! memory, routines and the scheduler, idle sleep and auto-wake, snapshots,
+//! and the model proxy. No Node, no Docker.
+
+#![allow(clippy::too_many_lines)]
+
+mod common;
+
+use std::collections::{BTreeMap, HashMap};
+use std::sync::{Arc, Mutex};
+use std::time::Duration;
+
+use async_trait::async_trait;
+use axum::body::Body;
+use axum::http::HeaderMap;
+use axum::response::IntoResponse;
+use common::{Daemon, events, eventually, http, http_raw, start, start_on, start_with};
+use ferrobot_core::protocol::{DaemonFrame, RunnerFrame};
+use ferrobot_sandbox::{
+    ExecOutput, ExecRequest, SandboxBackend, SandboxError, SandboxHandle, SandboxPath, SandboxSpec,
+    SandboxState, SnapshotRef,
+};
+use futures_util::{SinkExt, StreamExt};
+use serde_json::{Value, json};
+use tokio_tungstenite::tungstenite::Message;
+use tokio_tungstenite::tungstenite::client::IntoClientRequest;
+
+/// Tracks container state like a real engine would.
+#[derive(Debug, Default)]
+struct StatefulBackend {
+    envs: Mutex<HashMap<String, BTreeMap<String, String>>>,
+    states: Mutex<HashMap<String, SandboxState>>,
+    log: Mutex<Vec<String>>,
+}
+
+impl StatefulBackend {
+    fn set(&self, id: &str, s: SandboxState) {
+        self.states.lock().unwrap().insert(id.into(), s);
+    }
+    fn log(&self, what: String) {
+        self.log.lock().unwrap().push(what);
+    }
+    fn calls(&self) -> Vec<String> {
+        self.log.lock().unwrap().clone()
+    }
+    fn token(&self, name: &str) -> String {
+        self.envs.lock().unwrap()[name]["FERROBOT_AGENT_TOKEN"].clone()
+    }
+}
+
+#[async_trait]
+impl SandboxBackend for StatefulBackend {
+    fn kind(&self) -> &'static str {
+        "fake"
+    }
+    async fn create(&self, spec: &SandboxSpec) -> Result<SandboxHandle, SandboxError> {
+        self.envs
+            .lock()
+            .unwrap()
+            .insert(spec.name.clone(), spec.env.clone());
+        self.set(&spec.name, SandboxState::Running);
+        self.log(format!("create {}", spec.name));
+        Ok(SandboxHandle {
+            backend: "fake".into(),
+            id: spec.name.clone(),
+        })
+    }
+    async fn exec(&self, _: &SandboxHandle, _: &ExecRequest) -> Result<ExecOutput, SandboxError> {
+        Ok(ExecOutput {
+            exit_code: 0,
+            stdout: String::new(),
+            stderr: String::new(),
+            truncated: false,
+        })
+    }
+    async fn read_file(&self, _: &SandboxHandle, p: &SandboxPath) -> Result<Vec<u8>, SandboxError> {
+        Err(SandboxError::NotFound(p.to_string()))
+    }
+    async fn write_file(
+        &self,
+        _: &SandboxHandle,
+        _: &SandboxPath,
+        _: &[u8],
+    ) -> Result<(), SandboxError> {
+        Ok(())
+    }
+    async fn snapshot(&self, h: &SandboxHandle, label: &str) -> Result<SnapshotRef, SandboxError> {
+        self.log(format!("snapshot {} {label}", h.id));
+        Ok(SnapshotRef {
+            id: format!("snap-{label}"),
+            scope: "fake disk".into(),
+        })
+    }
+    async fn restore(
+        &self,
+        h: &SandboxHandle,
+        snapshot: &str,
+        spec: &SandboxSpec,
+    ) -> Result<SandboxHandle, SandboxError> {
+        self.log(format!("restore {} {snapshot}", h.id));
+        self.create(spec).await
+    }
+    async fn delete_snapshot(&self, snapshot: &str) -> Result<(), SandboxError> {
+        self.log(format!("delete_snapshot {snapshot}"));
+        Ok(())
+    }
+    async fn wake(&self, h: &SandboxHandle) -> Result<(), SandboxError> {
+        self.set(&h.id, SandboxState::Running);
+        self.log(format!("wake {}", h.id));
+        Ok(())
+    }
+    async fn stop(&self, h: &SandboxHandle) -> Result<(), SandboxError> {
+        self.set(&h.id, SandboxState::Stopped);
+        self.log(format!("stop {}", h.id));
+        Ok(())
+    }
+    async fn destroy(&self, h: &SandboxHandle, _: bool) -> Result<(), SandboxError> {
+        self.states.lock().unwrap().remove(&h.id);
+        self.log(format!("destroy {}", h.id));
+        Ok(())
+    }
+    async fn state(&self, h: &SandboxHandle) -> Result<SandboxState, SandboxError> {
+        Ok(self
+            .states
+            .lock()
+            .unwrap()
+            .get(&h.id)
+            .copied()
+            .unwrap_or(SandboxState::Missing))
+    }
+}
+
+type Ws =
+    tokio_tungstenite::WebSocketStream<tokio_tungstenite::MaybeTlsStream<tokio::net::TcpStream>>;
+
+async fn connect_runner(agents: &str, token: &str) -> Ws {
+    let mut req = format!("ws://{agents}/runner/ws")
+        .into_client_request()
+        .unwrap();
+    req.headers_mut()
+        .insert("authorization", format!("Bearer {token}").parse().unwrap());
+    let (mut ws, _) = tokio_tungstenite::connect_async(req).await.unwrap();
+    let hello = RunnerFrame::Hello {
+        protocol_version: ferrobot_core::PROTOCOL_VERSION,
+        runner_version: "test".into(),
+        driver: "fake".into(),
+        session_id: None,
+    };
+    ws.send(Message::text(serde_json::to_string(&hello).unwrap()))
+        .await
+        .unwrap();
+    assert!(matches!(
+        next_frame(&mut ws).await,
+        DaemonFrame::Welcome { .. }
+    ));
+    ws
+}
+
+async fn next_frame(ws: &mut Ws) -> DaemonFrame {
+    loop {
+        let msg = tokio::time::timeout(Duration::from_secs(10), ws.next())
+            .await
+            .expect("frame in time")
+            .expect("stream open")
+            .expect("ws ok");
+        if let Message::Text(t) = msg {
+            return serde_json::from_str(&t).expect("daemon frame");
+        }
+    }
+}
+
+async fn create(d: &Daemon, body: Value) -> Value {
+    let (status, agent) = http(&d.ui, "POST", "/v1/agents", Some(body)).await;
+    assert_eq!(status, 201, "{agent}");
+    agent
+}
+
+const PNG: &[u8] = b"\x89PNG\r\n\x1a\n\0\0\0\rIHDR-not-a-real-image";
+
+#[tokio::test]
+async fn profile_avatar_unread_and_memory() {
+    let backend = Arc::new(StatefulBackend::default());
+    let d = start(backend.clone(), None, "127.0.0.1:0").await;
+    let a = create(
+        &d,
+        json!({"name": "ada", "description": "  Research lead ", "instructions": "be brief"}),
+    )
+    .await;
+    let id = a["id"].as_str().unwrap().to_owned();
+    assert_eq!(a["description"], "Research lead");
+    assert_eq!(a["avatar_url"], Value::Null);
+    assert_eq!(a["unread"], 0);
+
+    // Instructions edits reach a connected runner as a configure frame.
+    let mut ws = connect_runner(&d.agents, &backend.token("ada")).await;
+    let (status, a) = http(
+        &d.ui,
+        "PATCH",
+        &format!("/v1/agents/{id}"),
+        Some(json!({"instructions": "be thorough"})),
+    )
+    .await;
+    assert_eq!(status, 200, "{a}");
+    assert_eq!(a["instructions"], "be thorough");
+    assert_eq!(a["description"], "Research lead", "untouched");
+    match next_frame(&mut ws).await {
+        DaemonFrame::Configure { instructions } => assert_eq!(instructions, "be thorough"),
+        other => panic!("expected configure, got {other:?}"),
+    }
+    let (status, _) = http(
+        &d.ui,
+        "PATCH",
+        &format!("/v1/agents/{id}"),
+        Some(json!({"description": "x".repeat(300)})),
+    )
+    .await;
+    assert_eq!(status, 400);
+
+    // Avatar: type must match the bytes, then it is served back.
+    let path = format!("/v1/agents/{id}/avatar");
+    let (status, _, _) =
+        http_raw(&d.ui, "PUT", &path, &[("Content-Type", "image/jpeg")], PNG).await;
+    assert_eq!(status, 400);
+    let (status, _, _) = http_raw(
+        &d.ui,
+        "PUT",
+        &path,
+        &[("Content-Type", "image/svg+xml")],
+        b"<svg/>",
+    )
+    .await;
+    assert_eq!(status, 400);
+    let (status, _, body) =
+        http_raw(&d.ui, "PUT", &path, &[("Content-Type", "image/png")], PNG).await;
+    assert_eq!(status, 200);
+    let view: Value = serde_json::from_slice(&body).unwrap();
+    common::assert_conforms("PUT", &path, 200, &view);
+    let url = view["avatar_url"].as_str().unwrap().to_owned();
+    assert!(url.starts_with(&path), "{url}");
+    let (status, headers, body) = http_raw(&d.ui, "GET", &url, &[], b"").await;
+    assert_eq!(status, 200);
+    assert_eq!(body, PNG);
+    assert!(headers.contains(&("content-type".into(), "image/png".into())));
+    let (status, view) = http(&d.ui, "DELETE", &path, None).await;
+    assert_eq!(status, 200);
+    assert_eq!(view["avatar_url"], Value::Null);
+    let (status, _, _) = http_raw(&d.ui, "GET", &path, &[], b"").await;
+    assert_eq!(status, 404);
+
+    // Unread counts finished turns until the chat is marked read.
+    let (status, _) = http(
+        &d.ui,
+        "POST",
+        &format!("/v1/agents/{id}/messages"),
+        Some(json!({"body": "hello"})),
+    )
+    .await;
+    assert_eq!(status, 202);
+    let turn_id = match next_frame(&mut ws).await {
+        DaemonFrame::Turn { turn_id, .. } => turn_id,
+        other => panic!("expected turn, got {other:?}"),
+    };
+    // Streaming deltas go to UI clients but are not persisted.
+    let mut ui = d.state.ui.subscribe();
+    let delta = RunnerFrame::Event {
+        turn_id: turn_id.clone(),
+        event: ferrobot_core::protocol::TurnEvent::AssistantDelta { text: "hi".into() },
+    };
+    ws.send(Message::text(serde_json::to_string(&delta).unwrap()))
+        .await
+        .unwrap();
+    let got = tokio::time::timeout(Duration::from_secs(5), async {
+        loop {
+            if let ferrobot_daemon::UiEvent::Delta {
+                text, turn_id: t, ..
+            } = ui.recv().await.unwrap()
+            {
+                break (t, text);
+            }
+        }
+    })
+    .await
+    .unwrap();
+    assert_eq!(got, (turn_id.clone(), "hi".to_owned()));
+    let done = RunnerFrame::TurnDone {
+        turn_id,
+        outcome: ferrobot_core::protocol::TurnOutcome::Completed,
+        session_id: None,
+        result: Some("hi".into()),
+        error: None,
+    };
+    ws.send(Message::text(serde_json::to_string(&done).unwrap()))
+        .await
+        .unwrap();
+    eventually("unread", Duration::from_secs(5), || async {
+        let (_, a) = http(&d.ui, "GET", &format!("/v1/agents/{id}"), None).await;
+        (a["unread"] == 1).then_some(())
+    })
+    .await;
+    let (status, _) = http(&d.ui, "POST", &format!("/v1/agents/{id}/read"), None).await;
+    assert_eq!(status, 204);
+    let (_, a) = http(&d.ui, "GET", &format!("/v1/agents/{id}"), None).await;
+    assert_eq!(a["unread"], 0);
+    assert_eq!(a["presence"], "awake");
+    let kinds: Vec<Value> = events(&d, &id)
+        .await
+        .iter()
+        .map(|e| e["kind"].clone())
+        .collect();
+    assert!(!kinds.contains(&json!("assistant_delta")), "{kinds:?}");
+
+    // Memory CRUD + search.
+    let mem = format!("/v1/agents/{id}/memory");
+    for (key, content) in [("db", "Postgres on port 5432"), ("lang", "Rust first")] {
+        let (status, _) = http(
+            &d.ui,
+            "POST",
+            &mem,
+            Some(json!({"key": key, "content": content})),
+        )
+        .await;
+        assert_eq!(status, 204);
+    }
+    let (status, _) = http(
+        &d.ui,
+        "POST",
+        &mem,
+        Some(json!({"key": "", "content": "x"})),
+    )
+    .await;
+    assert_eq!(status, 400);
+    let (_, all) = http(&d.ui, "GET", &mem, None).await;
+    assert_eq!(all.as_array().unwrap().len(), 2);
+    let (_, hits) = http(&d.ui, "GET", &format!("{mem}?q=postgres"), None).await;
+    assert_eq!(hits[0]["key"], "db", "{hits}");
+    assert_eq!(hits.as_array().unwrap().len(), 1);
+    let (status, _) = http(&d.ui, "DELETE", &format!("{mem}/db"), None).await;
+    assert_eq!(status, 204);
+    let (status, _) = http(&d.ui, "DELETE", &format!("{mem}/db"), None).await;
+    assert_eq!(status, 404);
+}
+
+#[tokio::test]
+async fn routines_crud_run_now_and_schedule() {
+    let backend = Arc::new(StatefulBackend::default());
+    let d = start(backend.clone(), None, "127.0.0.1:0").await;
+    let id = create(&d, json!({"name": "rex"})).await["id"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    let list = format!("/v1/agents/{id}/routines");
+    for bad in [
+        json!({"name": "x", "schedule": "61 * * * *", "prompt": "p"}),
+        json!({"name": "x", "schedule": "0 9 * * *", "prompt": "p", "timezone": "Mars/Base"}),
+        json!({"name": "x", "schedule": "0 9 * * *", "prompt": " "}),
+    ] {
+        let (status, _) = http(&d.ui, "POST", &list, Some(bad)).await;
+        assert_eq!(status, 400);
+    }
+    let (status, r) = http(
+        &d.ui,
+        "POST",
+        &list,
+        Some(json!({"name": "digest", "schedule": "0 9 * * 1-5",
+                    "prompt": "Summarize the news", "timezone": "Europe/Berlin"})),
+    )
+    .await;
+    assert_eq!(status, 201, "{r}");
+    assert!(r["next_run_at"].is_string());
+    assert_ne!(r["schedule_text"], "");
+    let rid = r["id"].as_i64().unwrap();
+    let (status, _) = http(
+        &d.ui,
+        "POST",
+        &list,
+        Some(json!({"name": "digest", "schedule": "@daily", "prompt": "p"})),
+    )
+    .await;
+    assert_eq!(status, 409);
+
+    // Disable / enable.
+    let (_, r) = http(
+        &d.ui,
+        "PATCH",
+        &format!("/v1/routines/{rid}"),
+        Some(json!({"enabled": false})),
+    )
+    .await;
+    assert_eq!(r["enabled"], false);
+    assert_eq!(r["next_run_at"], Value::Null);
+    let (_, r) = http(
+        &d.ui,
+        "PATCH",
+        &format!("/v1/routines/{rid}"),
+        Some(json!({"enabled": true, "schedule": "@hourly"})),
+    )
+    .await;
+    assert_eq!(r["schedule"], "@hourly");
+    let next = r["next_run_at"].clone();
+
+    // Run now: queues the prompt from `routine:<id>`, keeps the schedule.
+    let (status, msg) = http(&d.ui, "POST", &format!("/v1/routines/{rid}/run"), None).await;
+    assert_eq!(status, 202, "{msg}");
+    assert_eq!(msg["sender"], json!({"kind": "routine", "id": rid}));
+    assert_eq!(msg["body"], "Summarize the news");
+    let (_, runs) = http(&d.ui, "GET", &format!("/v1/routines/{rid}/runs"), None).await;
+    assert_eq!(runs[0]["trigger"], "manual");
+    let (_, rs) = http(&d.ui, "GET", &list, None).await;
+    assert_eq!(rs[0]["next_run_at"], next);
+    assert!(rs[0]["last_run_at"].is_string());
+
+    // The scheduler fires due routines and moves them to the next slot.
+    let mut routine = d.state.store.get_routine(rid).await.unwrap();
+    routine.next_run_at = Some(time::OffsetDateTime::now_utc() - time::Duration::minutes(1));
+    d.state.store.update_routine(routine).await.unwrap();
+    tokio::spawn(ferrobot_daemon::scheduler::run(d.state.clone()));
+    let runs = eventually("scheduled run", Duration::from_secs(5), || async {
+        let (_, runs) = http(&d.ui, "GET", &format!("/v1/routines/{rid}/runs"), None).await;
+        (runs.as_array().unwrap().len() == 2).then_some(runs)
+    })
+    .await;
+    assert_eq!(runs[0]["trigger"], "schedule");
+    let after = d.state.store.get_routine(rid).await.unwrap();
+    assert!(after.next_run_at.unwrap() > time::OffsetDateTime::now_utc());
+
+    // The routine prompt is delivered to the agent like any message.
+    let mut ws = connect_runner(&d.agents, &backend.token("rex")).await;
+    match next_frame(&mut ws).await {
+        DaemonFrame::Turn {
+            sender_name, body, ..
+        } => {
+            assert_eq!(sender_name, "routine:digest");
+            assert_eq!(body, "Summarize the news");
+        }
+        other => panic!("expected turn, got {other:?}"),
+    }
+
+    let (status, _) = http(&d.ui, "DELETE", &format!("/v1/routines/{rid}"), None).await;
+    assert_eq!(status, 204);
+    let (status, _) = http(&d.ui, "GET", &format!("/v1/routines/{rid}/runs"), None).await;
+    assert_eq!(status, 404);
+}
+
+#[tokio::test]
+async fn idle_sleep_auto_wake_and_crash_recovery() {
+    let backend = Arc::new(StatefulBackend::default());
+    let d = start_with(backend.clone(), None, "127.0.0.1:0", |s| {
+        s.idle_timeout = Some(Duration::from_millis(300));
+    })
+    .await;
+    let id = create(&d, json!({"name": "sam"})).await["id"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    let ws = connect_runner(&d.agents, &backend.token("sam")).await;
+
+    // Not idle long enough yet.
+    ferrobot_daemon::supervisor::check_all(&d.state).await;
+    let (_, a) = http(&d.ui, "GET", &format!("/v1/agents/{id}"), None).await;
+    assert_eq!(a["status"], "running");
+
+    tokio::time::sleep(Duration::from_millis(400)).await;
+    ferrobot_daemon::supervisor::check_all(&d.state).await;
+    let (_, a) = http(&d.ui, "GET", &format!("/v1/agents/{id}"), None).await;
+    assert_eq!(a["status"], "stopped");
+    assert_eq!(a["presence"], "sleeping");
+    assert!(
+        backend.calls().contains(&"stop sam".to_owned()),
+        "{:?}",
+        backend.calls()
+    );
+    let (_, info) = http(&d.ui, "GET", &format!("/v1/agents/{id}/sandbox"), None).await;
+    assert_eq!(info["state"], "stopped");
+    drop(ws);
+
+    // A message wakes it again.
+    let (status, _) = http(
+        &d.ui,
+        "POST",
+        &format!("/v1/agents/{id}/messages"),
+        Some(json!({"body": "wake up"})),
+    )
+    .await;
+    assert_eq!(status, 202);
+    eventually("auto-wake", Duration::from_secs(5), || async {
+        let (_, a) = http(&d.ui, "GET", &format!("/v1/agents/{id}"), None).await;
+        (a["status"] == "running").then_some(())
+    })
+    .await;
+    let kinds: Vec<Value> = events(&d, &id)
+        .await
+        .iter()
+        .map(|e| e["kind"].clone())
+        .collect();
+    assert!(kinds.contains(&json!("sleeping")), "{kinds:?}");
+    assert!(kinds.contains(&json!("awake")), "{kinds:?}");
+
+    // Crash recovery: the container died behind the daemon's back.
+    let wakes = |calls: Vec<String>| calls.iter().filter(|c| c.starts_with("wake")).count();
+    let before = wakes(backend.calls());
+    let handle = d
+        .state
+        .store
+        .get_agent(id.parse().unwrap())
+        .await
+        .unwrap()
+        .sandbox_id
+        .unwrap();
+    backend.set(&handle, SandboxState::Stopped);
+    ferrobot_daemon::supervisor::check_all(&d.state).await;
+    assert_eq!(wakes(backend.calls()), before + 1, "{:?}", backend.calls());
+    let kinds: Vec<Value> = events(&d, &id)
+        .await
+        .iter()
+        .map(|e| e["kind"].clone())
+        .collect();
+    assert!(kinds.contains(&json!("sandbox_restarted")), "{kinds:?}");
+
+    // Manual stop / wake.
+    let (status, _) = http(&d.ui, "POST", &format!("/v1/agents/{id}/stop"), None).await;
+    assert_eq!(status, 204);
+    let (status, _) = http(&d.ui, "POST", &format!("/v1/agents/{id}/wake"), None).await;
+    assert_eq!(status, 204);
+    let (_, a) = http(&d.ui, "GET", &format!("/v1/agents/{id}"), None).await;
+    assert_eq!(a["status"], "running");
+}
+
+#[tokio::test]
+async fn snapshots_create_restore_delete() {
+    let backend = Arc::new(StatefulBackend::default());
+    let d = start(backend.clone(), None, "127.0.0.1:0").await;
+    let id = create(&d, json!({"name": "sid"})).await["id"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    let old_token = backend.token("sid");
+    let snaps = format!("/v1/agents/{id}/snapshots");
+    let (status, s) = http(
+        &d.ui,
+        "POST",
+        &snaps,
+        Some(json!({"label": "before-upgrade"})),
+    )
+    .await;
+    assert_eq!(status, 201, "{s}");
+    assert_eq!(s["snapshot_ref"], "snap-before-upgrade");
+    let sid = s["id"].as_i64().unwrap();
+    let (_, list) = http(&d.ui, "GET", &snaps, None).await;
+    assert_eq!(list.as_array().unwrap().len(), 1);
+
+    let (status, _) = http(&d.ui, "POST", &format!("{snaps}/{sid}/restore"), None).await;
+    assert_eq!(status, 204);
+    assert!(
+        backend
+            .calls()
+            .iter()
+            .any(|c| c.starts_with("restore") && c.ends_with("snap-before-upgrade")),
+        "{:?}",
+        backend.calls()
+    );
+    assert_ne!(
+        backend.token("sid"),
+        old_token,
+        "restored sandbox gets a fresh token"
+    );
+    let (status, _) = http(&d.ui, "POST", &format!("{snaps}/999/restore"), None).await;
+    assert_eq!(status, 404);
+
+    let (status, _) = http(&d.ui, "DELETE", &format!("{snaps}/{sid}"), None).await;
+    assert_eq!(status, 204);
+    assert!(
+        backend
+            .calls()
+            .contains(&"delete_snapshot snap-before-upgrade".to_owned())
+    );
+    let (_, list) = http(&d.ui, "GET", &snaps, None).await;
+    assert_eq!(list, json!([]));
+}
+
+/// Fake model API: echoes the key it saw and streams two SSE chunks.
+async fn fake_upstream() -> String {
+    async fn handler(headers: HeaderMap, body: String) -> axum::response::Response {
+        let key = headers
+            .get("x-api-key")
+            .and_then(|v| v.to_str().ok())
+            .unwrap_or("none")
+            .to_owned();
+        let stream = futures_util::stream::iter([
+            Ok::<_, std::io::Error>(format!("event: key\ndata: {key}\n\n")),
+            Ok(format!("event: body\ndata: {body}\n\n")),
+        ]);
+        (
+            [("content-type", "text/event-stream")],
+            Body::from_stream(stream),
+        )
+            .into_response()
+    }
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let addr = listener.local_addr().unwrap();
+    let app = axum::Router::new().route("/v1/messages", axum::routing::post(handler));
+    tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });
+    format!("http://{addr}")
+}
+
+#[tokio::test]
+async fn model_proxy_swaps_key_and_streams() {
+    let upstream = fake_upstream().await;
+    let backend = Arc::new(StatefulBackend::default());
+    let d = start_with(backend.clone(), None, "127.0.0.1:0", |s| {
+        s.driver = "claude".into();
+        s.anthropic_api_key = Some("sk-real-secret".into());
+        s.anthropic_upstream = upstream;
+    })
+    .await;
+    create(&d, json!({"name": "pia"})).await;
+    let env = backend.envs.lock().unwrap()["pia"].clone();
+    let token = env["FERROBOT_AGENT_TOKEN"].clone();
+    // The sandbox only ever sees its own token.
+    assert_eq!(env["ANTHROPIC_API_KEY"], token);
+    assert!(env["ANTHROPIC_BASE_URL"].ends_with("/model"), "{env:?}");
+    assert!(!env.values().any(|v| v.contains("sk-real-secret")));
+
+    let body = br#"{"model":"m","stream":true}"#;
+    let (status, headers, out) = http_raw(
+        &d.agents,
+        "POST",
+        "/model/v1/messages",
+        &[("x-api-key", &token), ("content-type", "application/json")],
+        body,
+    )
+    .await;
+    let out = String::from_utf8(out).unwrap();
+    assert_eq!(status, 200, "{out}");
+    assert!(headers.contains(&("content-type".into(), "text/event-stream".into())));
+    assert!(out.contains("data: sk-real-secret"), "{out}");
+    assert!(
+        out.contains(r#"data: {"model":"m","stream":true}"#),
+        "{out}"
+    );
+
+    // Bearer form works too; bad tokens and non-API paths do not.
+    let bearer = format!("Bearer {token}");
+    let (status, _, _) = http_raw(
+        &d.agents,
+        "POST",
+        "/model/v1/messages",
+        &[("authorization", &bearer)],
+        body,
+    )
+    .await;
+    assert_eq!(status, 200);
+    let (status, _, _) = http_raw(
+        &d.agents,
+        "POST",
+        "/model/v1/messages",
+        &[("x-api-key", "nope")],
+        body,
+    )
+    .await;
+    assert_eq!(status, 401);
+    let (status, _, _) = http_raw(
+        &d.agents,
+        "GET",
+        "/model/admin",
+        &[("x-api-key", &token)],
+        b"",
+    )
+    .await;
+    assert_eq!(status, 404);
+
+    // Without a configured key the proxy says so.
+    let d2 = start(Arc::new(StatefulBackend::default()), None, "127.0.0.1:0").await;
+    let (status, _, out) = http_raw(
+        &d2.agents,
+        "POST",
+        "/model/v1/messages",
+        &[("x-api-key", "x")],
+        body,
+    )
+    .await;
+    assert_eq!(status, 503);
+    assert!(String::from_utf8_lossy(&out).contains("ferrobot_proxy_error"));
+}
+
+#[tokio::test]
+async fn state_survives_a_daemon_restart() {
+    let dir = tempfile::tempdir().unwrap();
+    let db = dir.path().join("ferrobot.db");
+    let backend = Arc::new(StatefulBackend::default());
+    let d = start_on(
+        ferrobot_store::Store::open(&db).unwrap(),
+        backend.clone(),
+        None,
+        "127.0.0.1:0",
+        |_| {},
+    )
+    .await;
+    let awake = create(&d, json!({"name": "amy", "description": "stays up"})).await["id"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    let asleep = create(&d, json!({"name": "bob"})).await["id"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    http(
+        &d.ui,
+        "POST",
+        &format!("/v1/agents/{awake}/memory"),
+        Some(json!({"key": "k", "content": "remember me"})),
+    )
+    .await;
+    let (status, _) = http(
+        &d.ui,
+        "POST",
+        &format!("/v1/agents/{awake}/routines"),
+        Some(json!({"name": "r", "schedule": "@daily", "prompt": "p", "timezone": "UTC"})),
+    )
+    .await;
+    assert_eq!(status, 201);
+    http(
+        &d.ui,
+        "POST",
+        &format!("/v1/agents/{awake}/messages"),
+        Some(json!({"body": "queued while down"})),
+    )
+    .await;
+    let (status, _) = http(&d.ui, "POST", &format!("/v1/agents/{asleep}/stop"), None).await;
+    assert_eq!(status, 204);
+    let amy = d
+        .state
+        .store
+        .get_agent(awake.parse().unwrap())
+        .await
+        .unwrap();
+    let bob = d
+        .state
+        .store
+        .get_agent(asleep.parse().unwrap())
+        .await
+        .unwrap();
+    drop(d);
+
+    // While the daemon is "down", amy's container dies and bob's is started by hand.
+    backend.set(amy.sandbox_id.as_deref().unwrap(), SandboxState::Stopped);
+    backend.set(bob.sandbox_id.as_deref().unwrap(), SandboxState::Running);
+
+    let d = start_on(
+        ferrobot_store::Store::open(&db).unwrap(),
+        backend.clone(),
+        None,
+        "127.0.0.1:0",
+        |_| {},
+    )
+    .await;
+    ferrobot_daemon::lifecycle::reconcile(&d.state).await;
+
+    let (_, agents) = http(&d.ui, "GET", "/v1/agents", None).await;
+    let names: Vec<&str> = agents
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|a| a["name"].as_str().unwrap())
+        .collect();
+    assert_eq!(names, ["amy", "bob"]);
+    assert_eq!(agents[0]["description"], "stays up");
+    assert_eq!(agents[0]["status"], "running");
+    assert_eq!(agents[1]["status"], "stopped");
+    let (_, info) = http(&d.ui, "GET", &format!("/v1/agents/{awake}/sandbox"), None).await;
+    assert_eq!(info["state"], "running", "dead container was woken");
+    let (_, info) = http(&d.ui, "GET", &format!("/v1/agents/{asleep}/sandbox"), None).await;
+    assert_eq!(
+        info["state"], "stopped",
+        "sleeping agent's container put back to sleep"
+    );
+
+    let (_, mem) = http(&d.ui, "GET", &format!("/v1/agents/{awake}/memory"), None).await;
+    assert_eq!(mem[0]["content"], "remember me");
+    let (_, routines) = http(&d.ui, "GET", &format!("/v1/agents/{awake}/routines"), None).await;
+    assert_eq!(routines[0]["name"], "r");
+    let (_, msgs) = http(&d.ui, "GET", &format!("/v1/agents/{awake}/messages"), None).await;
+    assert_eq!(msgs[0]["body"], "queued while down");
+
+    // The queued message is delivered once the runner reconnects.
+    let mut ws = connect_runner(&d.agents, &backend.token("amy")).await;
+    match next_frame(&mut ws).await {
+        DaemonFrame::Turn { body, .. } => assert_eq!(body, "queued while down"),
+        other => panic!("expected turn, got {other:?}"),
+    }
+}

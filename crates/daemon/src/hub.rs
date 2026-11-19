@@ -3,6 +3,7 @@
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex, MutexGuard};
+use std::time::Instant;
 
 use ferrobot_core::AgentId;
 use ferrobot_core::protocol::DaemonFrame;
@@ -26,6 +27,12 @@ pub struct Hub {
 struct Inner {
     conns: HashMap<AgentId, Conn>,
     notifies: HashMap<AgentId, Arc<Notify>>,
+    /// Last time something happened for the agent (connect, message, turn).
+    activity: HashMap<AgentId, Instant>,
+    /// When the sandbox was last (re)started by the daemon.
+    started: HashMap<AgentId, Instant>,
+    /// Serializes sandbox lifecycle operations per agent.
+    lifecycle: HashMap<AgentId, Arc<tokio::sync::Mutex<()>>>,
 }
 
 impl Hub {
@@ -46,7 +53,9 @@ impl Hub {
     /// Returns the connection id used for unregistering.
     pub fn register(&self, agent: AgentId, out: mpsc::Sender<DaemonFrame>) -> u64 {
         let id = self.next_id.fetch_add(1, Ordering::Relaxed);
-        self.lock().conns.insert(
+        let mut inner = self.lock();
+        inner.activity.insert(agent, Instant::now());
+        inner.conns.insert(
             agent,
             Conn {
                 id,
@@ -67,6 +76,54 @@ impl Hub {
 
     pub fn is_connected(&self, agent: AgentId) -> bool {
         self.lock().conns.contains_key(&agent)
+    }
+
+    /// True while the agent's runner is executing a turn.
+    pub fn is_working(&self, agent: AgentId) -> bool {
+        self.lock()
+            .conns
+            .get(&agent)
+            .is_some_and(|c| c.current_turn.is_some())
+    }
+
+    /// Lock that serializes wake/stop/restore/delete for one agent.
+    pub fn lifecycle_lock(&self, agent: AgentId) -> Arc<tokio::sync::Mutex<()>> {
+        Arc::clone(self.lock().lifecycle.entry(agent).or_default())
+    }
+
+    /// Records activity (resets the idle timer).
+    pub fn touch(&self, agent: AgentId) {
+        self.lock().activity.insert(agent, Instant::now());
+    }
+
+    /// Last recorded activity; starts the clock now if there is none yet.
+    pub fn last_activity(&self, agent: AgentId) -> Instant {
+        *self
+            .lock()
+            .activity
+            .entry(agent)
+            .or_insert_with(Instant::now)
+    }
+
+    /// Records that the daemon (re)started the agent's sandbox.
+    pub fn mark_started(&self, agent: AgentId) {
+        let now = Instant::now();
+        let mut inner = self.lock();
+        inner.started.insert(agent, now);
+        inner.activity.insert(agent, now);
+    }
+
+    /// When the daemon last started the sandbox, if it did.
+    pub fn started_at(&self, agent: AgentId) -> Option<Instant> {
+        self.lock().started.get(&agent).copied()
+    }
+
+    /// Sends a frame to the agent's runner if connected. Returns whether it was queued.
+    pub fn send(&self, agent: AgentId, frame: DaemonFrame) -> bool {
+        self.lock()
+            .conns
+            .get(&agent)
+            .is_some_and(|c| c.out.try_send(frame).is_ok())
     }
 
     pub fn set_current_turn(&self, agent: AgentId, conn_id: u64, turn: Option<String>) {
@@ -96,6 +153,8 @@ impl Hub {
         let mut inner = self.lock();
         inner.conns.remove(&agent);
         inner.notifies.remove(&agent);
+        inner.activity.remove(&agent);
+        inner.started.remove(&agent);
     }
 
     /// Wakes the agent's dispatch loop (no-op if nothing is waiting yet; the

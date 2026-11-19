@@ -83,6 +83,52 @@ const MIGRATIONS: &[&str] = &[
     );
     CREATE INDEX routines_due ON routines(enabled, next_due_at);
     ",
+    // v2: agent profiles, unread tracking, cron routines with run history, snapshots
+    r"
+    ALTER TABLE agents ADD COLUMN description TEXT NOT NULL DEFAULT '';
+    ALTER TABLE agents ADD COLUMN avatar BLOB;
+    ALTER TABLE agents ADD COLUMN avatar_mime TEXT;
+    ALTER TABLE agents ADD COLUMN avatar_rev INTEGER NOT NULL DEFAULT 0;
+    ALTER TABLE agents ADD COLUMN last_read_event_id INTEGER NOT NULL DEFAULT 0;
+
+    -- The v1 routines table was never used by a scheduler.
+    DROP TABLE routines;
+    CREATE TABLE routines (
+        id          INTEGER PRIMARY KEY AUTOINCREMENT,
+        agent_id    TEXT NOT NULL REFERENCES agents(id) ON DELETE CASCADE,
+        name        TEXT NOT NULL,
+        schedule    TEXT NOT NULL,
+        timezone    TEXT NOT NULL,
+        prompt      TEXT NOT NULL,
+        enabled     INTEGER NOT NULL DEFAULT 1,
+        next_run_at TEXT,
+        last_run_at TEXT,
+        created_at  TEXT NOT NULL,
+        updated_at  TEXT NOT NULL,
+        UNIQUE (agent_id, name)
+    );
+    CREATE INDEX routines_due ON routines(enabled, next_run_at);
+
+    CREATE TABLE routine_runs (
+        id         INTEGER PRIMARY KEY AUTOINCREMENT,
+        routine_id INTEGER NOT NULL REFERENCES routines(id) ON DELETE CASCADE,
+        message_id INTEGER REFERENCES messages(id) ON DELETE SET NULL,
+        trigger    TEXT NOT NULL CHECK (trigger IN ('schedule','manual')),
+        created_at TEXT NOT NULL
+    );
+    CREATE INDEX routine_runs_routine ON routine_runs(routine_id, id);
+
+    CREATE TABLE snapshots (
+        id           INTEGER PRIMARY KEY AUTOINCREMENT,
+        agent_id     TEXT NOT NULL REFERENCES agents(id) ON DELETE CASCADE,
+        backend      TEXT NOT NULL,
+        snapshot_ref TEXT NOT NULL,
+        label        TEXT NOT NULL,
+        scope        TEXT NOT NULL,
+        created_at   TEXT NOT NULL
+    );
+    CREATE INDEX snapshots_agent ON snapshots(agent_id, id);
+    ",
 ];
 
 pub(crate) fn run(conn: &mut Connection) -> Result<(), StoreError> {
@@ -103,4 +149,34 @@ pub(crate) fn run(conn: &mut Connection) -> Result<(), StoreError> {
         tx.commit()?;
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn v1_database_upgrades_in_place() {
+        let mut conn = Connection::open_in_memory().unwrap();
+        conn.execute_batch(MIGRATIONS[0]).unwrap();
+        conn.pragma_update(None, "user_version", 1).unwrap();
+        conn.execute(
+            "INSERT INTO agents (id, name, instructions, status, created_at)
+             VALUES ('00000000-0000-4000-8000-000000000001', 'alice', 'x', 'running',
+                     '2026-01-01T00:00:00Z')",
+            [],
+        )
+        .unwrap();
+        run(&mut conn).unwrap();
+        let (desc, rev): (String, i64) = conn
+            .query_row("SELECT description, avatar_rev FROM agents", [], |r| {
+                Ok((r.get(0)?, r.get(1)?))
+            })
+            .unwrap();
+        assert_eq!((desc.as_str(), rev), ("", 0));
+        let version: i64 = conn
+            .query_row("PRAGMA user_version", [], |r| r.get(0))
+            .unwrap();
+        assert_eq!(version, i64::try_from(MIGRATIONS.len()).unwrap());
+    }
 }

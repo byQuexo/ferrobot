@@ -4,16 +4,22 @@
 //!
 //! * **UI API** (`/v1/...`): operator-facing HTTP + WebSocket, bind it to
 //!   loopback only. Unauthenticated in phase 0.
-//! * **Agent API** (`/runner/ws`, `/mcp`): reached from sandboxes, every request
-//!   is authenticated with the agent's bearer token.
+//! * **Agent API** (`/runner/ws`, `/mcp`, `/model`): reached from sandboxes,
+//!   every request is authenticated with the agent's token. `/model` is the
+//!   model proxy: it swaps the agent token for the real API key, which never
+//!   enters a sandbox.
 
 pub mod api;
 pub mod error;
 pub mod hub;
 pub mod lifecycle;
+pub mod proxy;
 pub mod runner_ws;
+pub mod scheduler;
 pub mod spec;
 pub mod state;
+pub mod supervisor;
+pub mod views;
 
 use axum::Router;
 use axum::http::{HeaderValue, Method, header};
@@ -32,18 +38,25 @@ pub fn ui_router(state: AppState) -> Router {
             ]
             .map(HeaderValue::from_static),
         )
-        .allow_methods([Method::GET, Method::POST, Method::DELETE])
+        .allow_methods([
+            Method::GET,
+            Method::POST,
+            Method::PATCH,
+            Method::PUT,
+            Method::DELETE,
+        ])
         .allow_headers([header::CONTENT_TYPE]);
     api::router().layer(cors).with_state(state)
 }
 
-/// Router for sandbox-facing endpoints (runner WebSocket + MCP).
+/// Router for sandbox-facing endpoints (runner WebSocket, MCP, model proxy).
 pub fn agent_router(state: AppState) -> Router {
     let mcp = ferrobot_mcp::router(ferrobot_mcp::McpState {
         store: state.store.clone(),
         notifier: std::sync::Arc::new(state.clone()),
     });
     Router::new()
-        .merge(runner_ws::router().with_state(state))
+        .merge(runner_ws::router().with_state(state.clone()))
+        .merge(proxy::router().with_state(state))
         .nest("/mcp", mcp)
 }

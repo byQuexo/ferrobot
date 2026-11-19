@@ -1,0 +1,8 @@
+{
+  "type": "turn",
+  "turn_id": "turn-3",
+  "message_id": 9,
+  "sender": { "kind": "routine", "id": 4 },
+  "sender_name": "routine:morning-digest",
+  "body": "Summarize what changed overnight."
+}

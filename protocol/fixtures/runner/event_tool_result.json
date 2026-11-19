@@ -1,0 +1,5 @@
+{
+  "type": "event",
+  "turn_id": "turn-1",
+  "event": { "kind": "tool_result", "id": "toolu_01", "output": "Sent to bob.", "is_error": false }
+}

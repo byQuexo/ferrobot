@@ -25,6 +25,46 @@ fn from_row(row: &Row<'_>) -> Result<MailMessage, StoreError> {
     })
 }
 
+/// Inserts a pending message (shared with routine firing, which needs it
+/// inside its own transaction).
+pub(crate) fn insert_message(
+    c: &rusqlite::Connection,
+    sender: Sender,
+    recipient: AgentId,
+    body: &str,
+    reply_to: Option<i64>,
+) -> Result<MailMessage, StoreError> {
+    let ts = fmt_ts(now());
+    c.execute(
+        "INSERT INTO messages (sender, recipient, body, reply_to, status, created_at, updated_at)
+         VALUES (?1, ?2, ?3, ?4, 'pending', ?5, ?5)",
+        params![
+            sender.to_string(),
+            recipient.to_string(),
+            body,
+            reply_to,
+            ts
+        ],
+    )
+    .map_err(|e| match e {
+        rusqlite::Error::SqliteFailure(f, _)
+            if f.extended_code == rusqlite::ffi::SQLITE_CONSTRAINT_FOREIGNKEY =>
+        {
+            StoreError::NotFound {
+                entity: "agent or reply_to message",
+                key: recipient.to_string(),
+            }
+        }
+        other => other.into(),
+    })?;
+    let id = c.last_insert_rowid();
+    c.query_row(
+        &format!("SELECT {COLUMNS} FROM messages WHERE id = ?1"),
+        [id],
+        |row| Ok(from_row(row)),
+    )?
+}
+
 impl Store {
     /// Appends a message to `recipient`'s queue.
     pub async fn enqueue_message(
@@ -34,30 +74,19 @@ impl Store {
         body: String,
         reply_to: Option<i64>,
     ) -> Result<MailMessage, StoreError> {
+        self.with(move |c| insert_message(c, sender, recipient, &body, reply_to))
+            .await
+    }
+
+    /// True if the agent has pending or in-flight messages.
+    pub async fn has_queued_messages(&self, agent: AgentId) -> Result<bool, StoreError> {
         self.with(move |c| {
-            let ts = fmt_ts(now());
-            c.execute(
-                "INSERT INTO messages (sender, recipient, body, reply_to, status, created_at, updated_at)
-                 VALUES (?1, ?2, ?3, ?4, 'pending', ?5, ?5)",
-                params![sender.to_string(), recipient.to_string(), body, reply_to, ts],
-            )
-            .map_err(|e| match e {
-                rusqlite::Error::SqliteFailure(f, _)
-                    if f.extended_code == rusqlite::ffi::SQLITE_CONSTRAINT_FOREIGNKEY =>
-                {
-                    StoreError::NotFound {
-                        entity: "agent or reply_to message",
-                        key: recipient.to_string(),
-                    }
-                }
-                other => other.into(),
-            })?;
-            let id = c.last_insert_rowid();
-            c.query_row(
-                &format!("SELECT {COLUMNS} FROM messages WHERE id = ?1"),
-                [id],
-                |row| Ok(from_row(row)),
-            )?
+            Ok(c.query_row(
+                "SELECT EXISTS (SELECT 1 FROM messages
+                 WHERE recipient = ?1 AND status IN ('pending', 'in_flight'))",
+                [agent.to_string()],
+                |r| r.get(0),
+            )?)
         })
         .await
     }
@@ -201,6 +230,7 @@ mod tests {
             let a = store
                 .create_agent(NewAgent {
                     name: AgentName::parse(n).unwrap(),
+                    description: String::new(),
                     instructions: String::new(),
                 })
                 .await

@@ -109,6 +109,25 @@
             "type"
           ],
           "type": "object"
+        },
+        {
+          "description": "The operator changed the agent's profile; applies from the next turn.",
+          "properties": {
+            "instructions": {
+              "type": "string"
+            },
+            "type": {
+              "enum": [
+                "configure"
+              ],
+              "type": "string"
+            }
+          },
+          "required": [
+            "instructions",
+            "type"
+          ],
+          "type": "object"
         }
       ]
     },
@@ -256,6 +275,27 @@
             "kind"
           ],
           "type": "object"
+        },
+        {
+          "description": "A scheduled routine (by routine id).",
+          "properties": {
+            "id": {
+              "description": "A scheduled routine (by routine id).",
+              "format": "int64",
+              "type": "integer"
+            },
+            "kind": {
+              "enum": [
+                "routine"
+              ],
+              "type": "string"
+            }
+          },
+          "required": [
+            "id",
+            "kind"
+          ],
+          "type": "object"
         }
       ]
     },
@@ -263,6 +303,7 @@
       "description": "Observable steps of a turn, persisted and streamed to the UI.",
       "oneOf": [
         {
+          "description": "Final text of one assistant message.",
           "properties": {
             "kind": {
               "enum": [
@@ -281,7 +322,33 @@
           "type": "object"
         },
         {
+          "description": "Streaming fragment of the assistant message being written. Forwarded\nlive to UI clients but not persisted; `assistant_text` follows.",
           "properties": {
+            "kind": {
+              "enum": [
+                "assistant_delta"
+              ],
+              "type": "string"
+            },
+            "text": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "text",
+            "kind"
+          ],
+          "type": "object"
+        },
+        {
+          "properties": {
+            "id": {
+              "description": "Model-assigned id that links the call to its `tool_result`.",
+              "type": [
+                "string",
+                "null"
+              ]
+            },
             "input": {
               "type": "object"
             },
@@ -298,6 +365,35 @@
           "required": [
             "name",
             "input",
+            "kind"
+          ],
+          "type": "object"
+        },
+        {
+          "properties": {
+            "id": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "is_error": {
+              "type": "boolean"
+            },
+            "kind": {
+              "enum": [
+                "tool_result"
+              ],
+              "type": "string"
+            },
+            "output": {
+              "description": "Tool output as text, truncated by the runner.",
+              "type": "string"
+            }
+          },
+          "required": [
+            "output",
+            "is_error",
             "kind"
           ],
           "type": "object"

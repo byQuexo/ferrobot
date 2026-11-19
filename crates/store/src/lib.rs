@@ -1,8 +1,8 @@
 //! SQLite persistence for the ferrobot daemon.
 //!
 //! One database file holds the agent registry, the agent-to-agent mailbox,
-//! per-agent memory (FTS5 full-text search), the turn event log and the
-//! routines schema. Access goes through [`Store`], a cheap-to-clone handle
+//! per-agent memory (FTS5 full-text search), the turn event log, routines
+//! with their run history and snapshot records. Access goes through [`Store`], a cheap-to-clone handle
 //! that runs every query on Tokio's blocking pool so async callers never
 //! block the reactor.
 
@@ -13,6 +13,7 @@ mod mailbox;
 mod memory;
 mod migrations;
 mod routines;
+mod snapshots;
 mod util;
 
 use std::path::Path;
@@ -20,11 +21,12 @@ use std::sync::{Arc, Mutex};
 
 use rusqlite::Connection;
 
-pub use agents::{NewAgent, hash_token};
+pub use agents::{AgentPatch, Avatar, NewAgent, hash_token};
 pub use error::StoreError;
 pub use events::StoredEvent;
 pub use memory::MemoryEntry;
-pub use routines::Routine;
+pub use routines::{NewRoutine, Routine, RoutineRun, RunTrigger};
+pub use snapshots::SnapshotRecord;
 
 /// Maximum delivery attempts before a message is marked failed.
 pub const MAX_DELIVERY_ATTEMPTS: u32 = 3;

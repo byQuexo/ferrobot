@@ -22,9 +22,17 @@ pub const SERVER_NAME: &str = "ferrobot";
 /// Upper bound for one message body (bytes).
 pub const MAX_MESSAGE_BYTES: usize = 32 * 1024;
 
-/// Called after a tool enqueued a message, so the daemon can dispatch it.
+/// Upper bound for a memory key (bytes).
+pub const MAX_MEMORY_KEY_BYTES: usize = 128;
+
+/// Hooks the daemon uses to react to tool calls.
 pub trait MailboxNotifier: Send + Sync + 'static {
+    /// A tool enqueued a message, so the daemon can dispatch it.
     fn message_enqueued(&self, recipient: AgentId, message_id: i64);
+    /// A tool changed the agent's memory.
+    fn memory_changed(&self, agent: AgentId) {
+        let _ = agent;
+    }
 }
 
 /// Shared state for the MCP endpoint.

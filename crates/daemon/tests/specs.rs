@@ -6,6 +6,7 @@
 use std::path::PathBuf;
 
 use ferrobot_core::{Agent, AgentId, AgentName, AgentStatus, MailMessage, MailStatus, Sender};
+use ferrobot_daemon::views::{AgentView, Presence};
 use ferrobot_daemon::{UiEvent, spec};
 use ferrobot_store::StoredEvent;
 use serde_json::json;
@@ -42,23 +43,33 @@ fn every_routed_path_is_documented() {
     let documented: Vec<&str> = doc.paths.paths.keys().map(String::as_str).collect();
     for path in [
         "/v1/health",
+        "/v1/ws",
         "/v1/agents",
         "/v1/agents/{id}",
-        "/v1/agents/{id}/sandbox",
+        "/v1/agents/{id}/avatar",
         "/v1/agents/{id}/messages",
         "/v1/agents/{id}/events",
+        "/v1/agents/{id}/read",
         "/v1/agents/{id}/interrupt",
+        "/v1/agents/{id}/memory",
+        "/v1/agents/{id}/memory/{key}",
+        "/v1/agents/{id}/routines",
+        "/v1/routines/{rid}",
+        "/v1/routines/{rid}/run",
+        "/v1/routines/{rid}/runs",
+        "/v1/agents/{id}/sandbox",
         "/v1/agents/{id}/stop",
         "/v1/agents/{id}/wake",
-        "/v1/agents/{id}/snapshot",
         "/v1/agents/{id}/exec",
-        "/v1/ws",
+        "/v1/agents/{id}/snapshots",
+        "/v1/agents/{id}/snapshots/{sid}",
+        "/v1/agents/{id}/snapshots/{sid}/restore",
     ] {
         assert!(documented.contains(&path), "{path} missing from OpenAPI");
     }
     assert_eq!(
         documented.len(),
-        12,
+        22,
         "undocumented extra paths: {documented:?}"
     );
 }
@@ -96,7 +107,9 @@ fn ui_events_validate_against_schema() {
     let agent = Agent {
         id: AgentId::new(),
         name: AgentName::parse("alice").unwrap(),
+        description: "Researcher".into(),
         instructions: String::new(),
+        avatar_rev: 2,
         status: AgentStatus::Running,
         backend: Some("docker".into()),
         sandbox_id: Some("ferrobot-alice".into()),
@@ -123,9 +136,21 @@ fn ui_events_validate_against_schema() {
     };
     for ev in [
         UiEvent::Agent {
-            agent: agent.clone(),
-            connected: true,
+            agent: AgentView {
+                agent: agent.clone(),
+                connected: true,
+                presence: Presence::Working,
+                unread: 3,
+                avatar_url: Some(format!("/v1/agents/{}/avatar?v=2", agent.id)),
+            },
         },
+        UiEvent::Delta {
+            agent_id: agent.id,
+            turn_id: "t1".into(),
+            text: "hel".into(),
+        },
+        UiEvent::MemoryChanged { agent_id: agent.id },
+        UiEvent::RoutinesChanged { agent_id: agent.id },
         UiEvent::AgentDeleted { agent_id: agent.id },
         UiEvent::Message { message },
         UiEvent::Event { event },
