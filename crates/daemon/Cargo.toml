@@ -1,0 +1,42 @@
+[package]
+name = "ferrobot-daemon"
+description = "ferrobotd: agent registry, mailbox dispatcher, MCP server and HTTP/WebSocket API."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+publish = false
+
+[[bin]]
+name = "ferrobotd"
+path = "src/main.rs"
+
+[features]
+docker-tests = []
+
+[dependencies]
+anyhow.workspace = true
+async-trait.workspace = true
+axum.workspace = true
+clap.workspace = true
+ferrobot-core.workspace = true
+ferrobot-mcp.workspace = true
+ferrobot-sandbox.workspace = true
+ferrobot-store.workspace = true
+futures-util.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true
+tokio.workspace = true
+tower-http.workspace = true
+tracing.workspace = true
+tracing-subscriber.workspace = true
+uuid.workspace = true
+
+[dev-dependencies]
+tempfile.workspace = true
+tokio-tungstenite.workspace = true
+
+[lints]
+workspace = true

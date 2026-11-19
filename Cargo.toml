@@ -1,6 +1,6 @@
 [workspace]
 resolver = "3"
-members = ["crates/core", "crates/store", "crates/sandbox", "crates/mcp"]
+members = ["crates/core", "crates/store", "crates/sandbox", "crates/mcp", "crates/daemon"]
 # The Tauri shell has its own workspace so the core build never needs WebKitGTK.
 exclude = ["apps/desktop/src-tauri"]
 
