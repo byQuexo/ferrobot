@@ -1,0 +1,178 @@
+# CLAUDE.md — ferrobot
+
+Guidance for Claude Code in this repo. Keep it accurate: if a command or path
+here stops matching the code, fix this file in the same change.
+
+## Goal
+
+ferrobot is a self-hosted platform for a team of AI agents by Tim Gühnemann.
+Each agent gets its own sandboxed computer (container), a mailbox to talk to
+other agents, memory, routines (cron), question cards for the operator and a
+profile with an animated character avatar. A Rust daemon (`ferrobotd`) owns
+all state and logic; a thin desktop app and any other client talk to it over
+a versioned HTTP/WebSocket API (`/v1`).
+
+## Clean-room rules (hard)
+
+- OpenBot is PolyForm Noncommercial. Do **not** open, copy, translate or
+  paraphrase its code, comments or prompt texts. Ideas and architecture only.
+- No Grok Bot / OpenBot logos, icons, brand names, UI texts or 1:1 screens.
+  Icons come from lucide (`lucide-preact`); avatars are our own SVG + CSS.
+  Reference screenshots are for feel only.
+- The repo (github.com/byQuexo/ferrobot) stays **private** until Tim says
+  otherwise. Do not push, publish, create repos or change remotes unless asked.
+- Never fabricate test results; say what was not run.
+
+## Architecture
+
+```
+crates/core      domain types (Agent, mail, mentions, question cards, runner protocol)
+crates/store     SQLite (rusqlite, bundled): agents, mailbox, events, memory (FTS),
+                 routines, snapshots, forward-only migrations
+crates/sandbox   SandboxBackend trait + docker (bollard), local, sprites backends
+crates/mcp       rmcp Streamable-HTTP server: the agents' tools (send_message,
+                 ask_user, create_agent, remember, ...), per-agent token auth
+crates/daemon    ferrobotd: axum UI API (/v1), agent API (/runner/ws, /mcp, /model),
+                 lifecycle, supervisor, scheduler, model proxy, OpenAPI (utoipa)
+runner/          TypeScript runner inside each sandbox: drives the model
+                 (drivers/claude.ts via Claude Agent SDK, drivers/mock.ts)
+apps/desktop/    Preact + Vite UI in a Tauri shell (own Cargo workspace)
+protocol/        generated OpenAPI + JSON Schemas, fixtures, README (the contract)
+scripts/         seed-demo.sh, smoke-docker.sh
+```
+
+Principles:
+- **Core crates stay plain**: `core`, `store`, `sandbox` (and `mcp`) must not
+  depend on Tauri or axum, so they stay embeddable (e.g. a future UniFFI
+  binding). API derives are behind features (`core`/`sandbox`: `schema` for
+  utoipa, `core`: `mcp` for schemars). CI checks
+  `cargo check -p ferrobot-core -p ferrobot-store -p ferrobot-sandbox`.
+- **Desktop is thin**: no business logic in Tauri (there are no Tauri
+  commands); the UI does everything through the `/v1` API and the `/v1/ws`
+  event stream. Generated API types live in `apps/desktop/src/generated/`.
+- **The API is versioned** (`/v1`). Additive changes only; breaking changes
+  need a new version. `protocol/` is generated from the code, never by hand.
+- Two listeners with different trust: UI API on loopback (operator token),
+  agent API reached from sandboxes (per-agent tokens).
+
+## Key entry files
+
+- `crates/daemon/src/main.rs` — CLI flags/env (`FERROBOT_*`), startup.
+- `crates/daemon/src/lib.rs` — routers (`ui_router`, `agent_router`).
+- `crates/daemon/src/api/` — `/v1` handlers (agents, chat, memory, routines, sandbox, ws).
+- `crates/daemon/src/agents.rs` — agent creation shared by API and `create_agent`,
+  approval flow, limit.
+- `crates/daemon/src/state.rs` — `AppState`, `Settings`, `UiEvent`.
+- `crates/daemon/src/spec.rs` — OpenAPI + schema generation.
+- `crates/daemon/src/proxy.rs` — model proxy; `auth.rs` — operator token.
+- `crates/daemon/src/lifecycle.rs`, `supervisor.rs`, `scheduler.rs`, `runner_ws.rs`.
+- `crates/mcp/src/tools.rs` — MCP tools; `crates/mcp/src/lib.rs` — `MailboxNotifier`.
+- `crates/store/src/migrations.rs` — schema migrations.
+- `crates/core/src/question.rs` — question/approval cards.
+- `runner/src/index.ts`, `runner/src/runner.ts`, `runner/src/drivers/`.
+- `apps/desktop/src/app.tsx`, `src/api.ts`, `src/components/`, `src/lib/timeline.ts`.
+
+## Code conventions
+
+- Rust 2024, stable toolchain (`rust-toolchain.toml`), `rustfmt.toml`.
+- `unsafe_code = "forbid"`; clippy `pedantic` is on and CI uses `-D warnings`.
+  Fix lints; an `#[allow(...)]` needs a `reason = "..."`.
+- Errors: `thiserror` in libraries, `ApiError` in the daemon (JSON
+  `{"error", "message"}`); `anyhow` only in `main.rs`.
+- Every API type/route gets utoipa annotations with doc comments; they become
+  the public spec.
+- Tests: unit tests next to the code; daemon integration tests in
+  `crates/daemon/tests/` (`features.rs`, `e2e.rs`, `specs.rs`, `protocol.rs`).
+  New behaviour gets a test.
+- TypeScript: strict, ESM, `node --test` tests; runner is linted with eslint.
+- UI text is English, short and plain.
+
+## Commands
+
+Rust (repo root):
+```
+cargo build --workspace
+cargo fmt --all --check
+cargo clippy --workspace --all-targets --all-features -- -D warnings
+cargo test --workspace
+cargo check -p ferrobot-core -p ferrobot-store -p ferrobot-sandbox
+```
+
+Spec drift (`protocol/` must match the code):
+```
+cargo test -p ferrobot-daemon --test specs                          # check
+FERROBOT_UPDATE_SPECS=1 cargo test -p ferrobot-daemon --test specs  # regenerate
+cd apps/desktop && npm run gen:api     # regenerate TS types; check:api = gen + git diff
+```
+
+End-to-end:
+```
+cargo test -p ferrobot-daemon --test e2e -- --ignored                # local backend (needs runner/dist)
+docker build -f runner/Dockerfile -t ferrobot-runner:dev .           # runner image
+cargo test -p ferrobot-sandbox --features docker-tests --test docker
+cargo test -p ferrobot-daemon --features docker-tests --test e2e -- --ignored
+./scripts/smoke-docker.sh            # real ferrobotd + Docker + mock driver
+```
+
+Runner (`runner/`): `npm ci && npm run lint && npm run typecheck && npm test && npm run build`
+
+Desktop (`apps/desktop/`): `npm ci && npm run check:api && npm run typecheck && npm test && npm run build`;
+Tauri shell: `cd src-tauri && cargo fmt --check && cargo clippy --all-targets -- -D warnings`.
+The built `dist/` is embedded at compile time: run `npm run build` before
+`cargo build` in `src-tauri`.
+
+Demo data:
+```
+FERROBOT_DATA_DIR=/tmp/fbdemo ./target/debug/ferrobotd --backend docker --driver mock --idle-timeout 0
+FERROBOT_DATA_DIR=/tmp/fbdemo bash scripts/seed-demo.sh [avatar.png]
+```
+Clean up afterwards: delete demo agents (`DELETE /v1/agents/{id}`), stop the
+daemon, `docker ps -a` must be empty of ferrobot containers.
+
+## Migrations
+
+- `crates/store/src/migrations.rs`, tracked with `PRAGMA user_version`.
+- Forward-only, numbered v1..v6 (v6: `agents.created_by`). Append a new entry
+  with a `// vN: ...` comment; **never edit or reorder existing ones**.
+- Every migration gets a test (upgrade an old DB, check defaults of existing
+  rows). New columns on existing tables need a default.
+- An older daemon cannot open a newer DB; mention new migrations as a
+  notable change in reports.
+
+## Must not break
+
+- **Model key stays in the daemon.** `ANTHROPIC_API_KEY` is read by
+  `ferrobotd` only. Sandboxes reach the model through `/model` with their
+  agent token; the proxy swaps in the real key. Never pass the key into a
+  sandbox, env, log or event.
+- **Operator token on `/v1`.** Every UI route requires
+  `Authorization: Bearer <token>` (`FERROBOT_API_TOKEN` or
+  `<data dir>/api-token`); only `/v1/health` is open. Keep the UI listener on
+  loopback by default.
+- **Per-agent tokens** on `/runner/ws`, `/mcp`, `/model`. An agent can only act
+  as itself (MCP tools read the caller from the token). Only hashes are stored.
+- **`create_agent` needs operator approval**: an Approve/Decline card, the
+  tool waits; decline or `FERROBOT_APPROVAL_TIMEOUT` (300 s) creates nothing.
+- **`FERROBOT_MAX_AGENTS`** (default 10) applies to `POST /v1/agents` and to
+  `create_agent` (both through `daemon::agents::create`).
+- Question cards are answered at most once (`409` after).
+
+## Open items
+
+- Approval timeout (300 s) is untested with the real Claude MCP client (it may
+  time out tool calls earlier).
+- `docs/screenshots/light-conversation.png` shows a raw mock-driver bubble
+  (`ask Which day ...`).
+- Rebuild the runner image (`runner/src/drivers/claude.ts` prompt text changed).
+- Docker e2e and `smoke-docker.sh` not re-run after 024f12f.
+- A live Claude run (`--driver claude`) has never been tested.
+
+## Next up: Firecracker
+
+Roadmap: https://cursor.com/canvas/store-0b9dda1f-693e-4629-9899-c87852755bdc/ad9f72df-2257-4c5f-ba31-48368896c60a
+
+1. Storage layer on `object_store` (disks/snapshots off the host).
+2. Firecracker spike on a KVM host.
+3. Firecracker backend behind the `SandboxBackend` trait.
+4. Jailer for isolation.
+5. Warm/cold sleep with a `SleepLevel` enum.
