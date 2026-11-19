@@ -9,11 +9,44 @@ persistent memory. Inside each sandbox an agent runner drives the
 [Claude Agent SDK](https://www.npmjs.com/package/@anthropic-ai/claude-agent-sdk)
 and reaches the daemon through MCP tools.
 
-> Status: **Phase 0 proof of concept.** It works end to end with Docker and a
-> mock model. The Claude driver is implemented but has not been run against
-> the real API yet (see [Status](#status)).
+> Status: **Phase 1 MVP.** Everything below works end to end with Docker and
+> the built-in mock model and is covered by tests. The Claude driver is
+> verified against the SDK's message types by a contract test but has not yet
+> been run against the live API (see [Status](#status)).
 
-![Desktop UI](docs/desktop-ui.png)
+| Light | Dark |
+| --- | --- |
+| ![Chat with a tool call, light theme](docs/screenshots/light-chat.png) | ![Chat, dark theme](docs/screenshots/dark-chat.png) |
+| ![Info panel: memory](docs/screenshots/light-info-memory.png) | ![Info panel: routines](docs/screenshots/dark-info-routines.png) |
+| ![Create-agent dialog](docs/screenshots/light-create-agent.png) | ![Info panel: computer and snapshots](docs/screenshots/dark-info-computer.png) |
+
+More in [`docs/screenshots/`](docs/screenshots). The agents in the screenshots
+run on the mock driver (replies like `[mock ada] got "..."`); they were seeded
+with `scripts/seed-demo.sh`.
+
+## Features
+
+- **One computer per agent.** Each agent gets a container with its own disk.
+  Idle agents go to sleep after `--idle-timeout` (default 15 min); a message,
+  a routine or an operator command wakes them. Crashed containers are
+  restarted, and snapshots (root filesystem + home) can be taken and restored.
+- **Agents talk to each other** through an asynchronous mailbox with retries,
+  using MCP tools inside the sandbox (`send_message`, `list_agents`, ...).
+- **Memory** per agent with full-text search, usable by the agent (MCP
+  `remember` / `recall` / `forget`), over the API and in the desktop app.
+- **Routines:** cron schedules with time zones that send the agent a prompt,
+  with enable/disable, run now and a run history.
+- **Profiles:** name, description, avatar and instructions (appended to the
+  system prompt).
+- **Live streaming:** assistant text deltas, tool calls with their results,
+  presence (working / awake / starting / sleeping / error) and unread counts
+  over one WebSocket.
+- **Model proxy:** with the Claude driver, sandboxes never see your
+  `ANTHROPIC_API_KEY`; they call the daemon, which adds the key.
+- **Persistence:** agents, conversations, memory, routines, snapshots and
+  sleep state live in SQLite and survive daemon restarts.
+- **Desktop app:** a thin Tauri v2 window over the `/v1` API with a sidebar,
+  streaming chat, info panel and light/dark themes.
 
 ## Architecture
 
@@ -68,14 +101,15 @@ reconnects. Interrupted turns are not retried.
 | Path | What |
 | --- | --- |
 | `crates/core` | Domain types (agent, mailbox, wire protocol). No I/O, no async runtime. |
-| `crates/store` | SQLite persistence: registry, **mailbox**, memory (FTS5), events, routines (schema only). |
+| `crates/store` | SQLite persistence: registry and profiles, **mailbox**, memory (FTS5), events, routines and runs, snapshots. |
 | `crates/sandbox` | `SandboxBackend` trait + `DockerBackend` (bollard, Docker or Podman), `LocalProcessBackend` (dev/CI only, **no isolation**), `SpritesBackend` (stub). |
 | `crates/mcp` | The daemon's MCP server (rmcp, streamable HTTP) with bearer auth. |
-| `crates/daemon` | `ferrobotd`: HTTP/WS API, runner WebSocket, dispatcher, lifecycle, spec generation. |
+| `crates/daemon` | `ferrobotd`: HTTP/WS API, runner WebSocket, dispatcher, lifecycle, routine scheduler, idle/health supervisor, model proxy, spec generation. |
 | `runner/` | `@ferrobot/runner`: the TypeScript agent runner + its Docker image. |
-| `apps/desktop/` | Tauri v2 desktop app (thin UI). |
+| `apps/desktop/` | Tauri v2 desktop app: a Preact + Vite UI with no Tauri commands. |
 | `protocol/` | Generated OpenAPI + JSON Schemas and shared fixtures. See [`protocol/README.md`](protocol/README.md). |
-| `scripts/smoke-docker.sh` | End-to-end smoke test of the real binary with Docker. |
+| `scripts/smoke-docker.sh` | End-to-end smoke test of the real binary with Docker (incl. sleep/wake and a daemon restart). |
+| `scripts/seed-demo.sh` | Fills a running daemon with demo agents, mail, memory and routines. |
 
 ### Design rules
 
@@ -127,18 +161,46 @@ With the mock driver, `@name text` makes the agent send `text` to `name`,
 `remember key: value` / `recall query` use the memory tools, and an agent
 answers a message from another agent with `re: <text>`.
 
-**Real model:** `ANTHROPIC_API_KEY=sk-... cargo run -p ferrobot-daemon -- --backend docker --driver claude --agent-listen 0.0.0.0:7879`
-(optionally `--model <id>`).
+### Running with a real Claude model
+
+```bash
+export ANTHROPIC_API_KEY=sk-ant-...        # stays in the daemon's environment
+cargo run -p ferrobot-daemon -- --backend docker --driver claude \
+    --agent-listen 0.0.0.0:7879 [--model <model-id>]
+```
+
+The key is never passed into a sandbox. Containers get
+`ANTHROPIC_BASE_URL=<agent API>/model` and their own agent token as
+`ANTHROPIC_API_KEY`; the daemon's model proxy checks that token, replaces it
+with the real key and streams the response back (`--anthropic-upstream`
+changes the upstream). The runner streams text as it arrives, reports every
+tool call with its result, resumes each agent's SDK session across turns and
+restarts, and supports interrupts. An agent's instructions are appended to the
+SDK's default system prompt.
+
+The daemon refuses to start with `--driver claude` and no key. The driver is
+covered by a contract test with SDK-typed fixtures
+(`runner/test/claude-contract.test.ts`) but has not been run against the live
+API in CI.
+
+Other useful flags: `--idle-timeout <secs>` (0 = never sleep), `--timezone
+<IANA zone>` (default for routines), `--turn-timeout <secs>`.
 
 **Without Docker** (development only, no isolation): build the runner with
 `npm --prefix runner ci && npm --prefix runner run build`, then use `--backend local`.
 
-**Desktop app:**
+**Desktop app** (needs a running daemon on `127.0.0.1:7878`):
 
 ```bash
-cd apps/desktop && npm ci && npm run build
-npm run tauri dev          # or: cd src-tauri && cargo run
+cd apps/desktop && npm ci
+npm run build && npm run tauri dev     # the Tauri window
+npm run dev                            # or: the same UI in a browser at http://localhost:1420
+scripts/seed-demo.sh [avatar.png]      # optional demo data
 ```
+
+The UI is Preact + Vite with [lucide](https://lucide.dev) icons (ISC). Its
+API types are generated from `protocol/openapi.json` (`npm run gen:api`);
+`npm test` runs the unit tests of its pure modules.
 
 On Linux, Tauri needs `libwebkit2gtk-4.1-dev` and `libsoup-3.0-dev` (see the CI file).
 
@@ -147,10 +209,14 @@ turn timeout, runner image, ...).
 
 ## API
 
-- HTTP: `protocol/openapi.json`: health, agents (create / list / get / delete),
-  mailbox (post / list), events (poll), interrupt, stop, wake, snapshot, exec,
-  sandbox removal.
-- Live updates: `GET /v1/ws` streams `UiEvent` frames (`protocol/ui-events.schema.json`).
+- HTTP: `protocol/openapi.json`: health; agents (create / list / get / edit
+  profile / delete, avatar upload, mark read); conversation (post / list) and
+  events; interrupt, stop, wake, exec; sandbox status; snapshots (list / take
+  / restore / delete); memory (list, search, upsert, delete); routines (CRUD,
+  enable/disable, run now, run history).
+- Live updates: `GET /v1/ws` streams `UiEvent` frames (`protocol/ui-events.schema.json`):
+  agent snapshots with presence and unread count, turn events, text deltas,
+  messages, memory and routine changes.
 - Agents' MCP tools: `list_agents`, `send_message`, `read_mailbox`, `remember`,
   `recall`, `forget`.
 - Daemon ↔ runner frames: `protocol/runner-protocol.schema.json`.
@@ -163,6 +229,7 @@ cargo clippy --workspace --all-targets --all-features -- -D warnings
 cargo test --workspace                                       # unit, MCP, protocol, spec-drift tests
 
 npm --prefix runner run lint && npm --prefix runner run typecheck && npm --prefix runner test
+(cd apps/desktop && npm run check:api && npm run typecheck && npm test)
 
 # e2e with the real runner as local processes (needs a built runner)
 cargo test -p ferrobot-daemon --test e2e -- --ignored
@@ -184,38 +251,46 @@ cargo test -p ferrobot-daemon  --features docker-tests --test e2e -- --ignored
 - Agent tokens are 256-bit random values, stored only as SHA-256 hashes, and
   rotated whenever a sandbox is provisioned. Every agent-API request is
   scoped to the calling agent.
-- **Known PoC limitations:** the agent token and `ANTHROPIC_API_KEY` are plain
-  environment variables inside the container (anything running there can read
-  them). A daemon-side model proxy is on the roadmap. The operator API on
-  `127.0.0.1:7878` is unauthenticated and meant for local use only.
+- `ANTHROPIC_API_KEY` stays in the daemon; sandboxes only hold their own agent
+  token, which the model proxy and the agent API accept for that agent only.
+  The token is a plain environment variable inside the container.
+- Avatar uploads are limited to PNG, JPEG, WebP and GIF (checked by content,
+  max 512 KiB).
+- **Known limitation:** the operator API on `127.0.0.1:7878` is
+  unauthenticated and meant for local use only. `exec` there runs any command
+  in an agent's computer.
 
 ## Status
 
-**Working and tested (Phase 0):**
+**Working and tested:**
 
-- Daemon with the agent registry, a SQLite mailbox with retries, memory with full-text
-  recall, an event log, and the versioned HTTP + WebSocket API.
-- Docker/Podman backend: create, exec, file read/write, snapshot (`docker commit`),
-  wake, stop and destroy. Agents survive daemon restarts; runners reconnect.
-- Two agents talking through the mailbox, end to end in containers (mock model).
+- Daemon: agent registry with profiles and avatars, a SQLite mailbox with
+  retries, memory with full-text search, an event log, routines with a cron
+  scheduler and run history, unread counts, and the versioned HTTP + WebSocket
+  API. State survives restarts (`crates/daemon/tests/features.rs`).
+- Docker/Podman backend: create, exec, files, wake, stop, destroy, idle sleep,
+  crash recovery, and snapshots with restore (root filesystem image + home
+  archive).
+- Agents talking through the mailbox, end to end in containers (mock model).
 - The MCP server, with per-agent auth, used by the runner.
-- The runner, with session persistence and resume, interrupts, a permission policy and an audit log.
-- The desktop UI: an agent list, a create form, a live timeline, a composer and
-  interrupt/stop/wake.
+- The runner: streaming, tool results, session resume, interrupts, a permission
+  policy and an audit log; the Claude driver against SDK-typed fixtures.
+- The model proxy (tested against a fake upstream).
+- The desktop app as described above (screenshots taken under Xvfb).
 
 **Stubbed or not yet done:**
 
-- The `claude` driver has not been run against the real API.
+- The `claude` driver has not been run against the live API.
 - `SpritesBackend` returns `NotImplemented` for every operation.
-- Routines have a database schema but no scheduler yet.
-- Snapshots can't be restored yet.
+- Snapshots and idle sleep are Docker-only (the local backend has no snapshots).
+- Agent names can't be changed after creation (other agents address them by name).
 - The UI API has no authentication.
 
 ## Roadmap
 
-- **Phase 1:** a routines scheduler, snapshot restore, a model/API-key proxy (no
-  secrets in sandboxes), auth for the UI API, and a richer desktop app
-  (memory browser, file view, terminal).
+- **Next:** a live run of the Claude driver with a key, auth for the UI API,
+  renaming agents, a file browser and terminal in the info panel, and
+  packaging the desktop app.
 - **Phase 2:** computer use inside sandboxes: Xvfb desktop, browser automation via
   CDP (`chromiumoxide`), a desktop-control driver, and screenshots in the timeline.
 - **Phase 3:** a Sprites (Fly.io microVM) backend with checkpoints, plus other remote
@@ -230,7 +305,9 @@ a mailbox between agents, an agent runner inside the sandbox) were inspired by
 public descriptions of existing agent platforms, including OpenBot (PolyForm
 Noncommercial). No OpenBot source code, comments, prompt texts or other
 material were viewed, copied, translated or paraphrased. All code, prompts and
-documentation here are original.
+documentation here are original. The desktop UI's design, copy and logo are
+our own; its icons come from lucide (ISC license). No third-party logos or
+brand assets are included.
 
 ## License
 

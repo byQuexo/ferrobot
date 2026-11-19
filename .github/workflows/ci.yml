@@ -108,7 +108,7 @@ jobs:
       # Generated TS types must match protocol/openapi.json.
       - run: npm run check:api
         working-directory: apps/desktop
-      - run: npm run typecheck && npm run build
+      - run: npm run typecheck && npm test && npm run build
         working-directory: apps/desktop
       - run: cargo fmt --check && cargo clippy --all-targets -- -D warnings
         working-directory: apps/desktop/src-tauri

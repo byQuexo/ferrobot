@@ -23,6 +23,36 @@ Machine-readable contracts for everything that talks to `ferrobotd`. They are
 - The desktop app's TypeScript types are generated from `openapi.json`
   (`npm run gen:api` in `apps/desktop`); CI fails if they are stale.
 
+## What is in v1
+
+**HTTP** (`openapi.json`, tags `system`, `agents`, `chat`, `memory`,
+`routines`, `sandbox`): health; agents with profile edits (`PATCH`), avatars
+(`PUT/GET/DELETE …/avatar`, raw PNG/JPEG/WebP/GIF body ≤ 512 KiB) and
+`POST …/read`; conversation and events; interrupt, stop, wake, exec; sandbox
+status; snapshots with restore; memory (`?q=` searches); routines
+(`/v1/agents/{id}/routines`, `/v1/routines/{rid}`, `…/run`, `…/runs`).
+
+**`UiEvent`** (`GET /v1/ws`, field `type`):
+
+| `type` | Meaning |
+| --- | --- |
+| `agent` | Full `AgentView` after any change: profile, `presence` (`working`, `awake`, `starting`, `sleeping`, `error`), `connected`, `unread`. |
+| `agent_deleted` | The agent is gone. |
+| `message` | A mailbox message to or from the agent (`sender`: user, agent or routine). |
+| `event` | A stored turn event (incoming message, text, tool use, tool result, lifecycle). |
+| `delta` | Streaming assistant text for the running turn; not stored. The final `text` event replaces it. |
+| `memory_changed` | The agent's memory changed; refetch. |
+| `routines_changed` | The agent's routines or their runs changed; refetch. |
+
+**Runner frames** (`/runner/ws`): runner → daemon `hello`, `event`,
+`turn_done`; daemon → runner `welcome` (includes the instructions), `turn`,
+`interrupt`, and `configure` (new instructions after a profile edit; they apply
+from the next turn). Turn events (field `kind`) include `assistant_delta`
+(streamed text, not stored), `assistant_text`, `tool_use` with an `id`, and
+`tool_result` referencing that id. A turn's `sender` is `user`,
+`agent:<id>` or `routine:<id>` (the `sender_name` of a routine turn is
+`routine:<name>`).
+
 ## Versioning
 
 - HTTP paths are prefixed with `/v1`. Breaking changes get a new prefix; adding
