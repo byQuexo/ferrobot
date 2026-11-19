@@ -65,6 +65,8 @@ Principles:
 - `crates/daemon/src/state.rs` — `AppState`, `Settings`, `UiEvent`.
 - `crates/daemon/src/spec.rs` — OpenAPI + schema generation.
 - `crates/daemon/src/proxy.rs` — model proxy; `auth.rs` — operator token.
+- `crates/daemon/src/storage.rs` — object storage (`object_store`) for snapshot
+  archives, `--storage-url` (default: the data dir; `s3://` for S3/R2).
 - `crates/daemon/src/lifecycle.rs`, `supervisor.rs`, `scheduler.rs`, `runner_ws.rs`.
 - `crates/mcp/src/tools.rs` — MCP tools; `crates/mcp/src/lib.rs` — `MailboxNotifier`.
 - `crates/store/src/migrations.rs` — schema migrations.
@@ -170,8 +172,9 @@ daemon, `docker ps -a` must be empty of ferrobot containers.
 ## Next up: Firecracker
 
 Roadmap: https://cursor.com/canvas/store-0b9dda1f-693e-4629-9899-c87852755bdc/ad9f72df-2257-4c5f-ba31-48368896c60a
+Status per phase: `docs/progress.md`; assumptions: `docs/decisions.md`.
 
-1. Storage layer on `object_store` (disks/snapshots off the host).
+1. ~~Storage layer on `object_store`~~ (done: snapshot archives, `--storage-url`).
 2. Firecracker spike on a KVM host.
 3. Firecracker backend behind the `SandboxBackend` trait.
 4. Jailer for isolation.
