@@ -12,6 +12,7 @@
     "windows": [
       {
         "title": "ferrobot",
+        "create": false,
         "width": 1320,
         "height": 820,
         "minWidth": 900,

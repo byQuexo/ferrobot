@@ -107,6 +107,7 @@ fn ui_events_validate_against_schema() {
     let agent = Agent {
         id: AgentId::new(),
         name: AgentName::parse("alice").unwrap(),
+        sandbox_name: "alice".into(),
         description: "Researcher".into(),
         instructions: String::new(),
         avatar_rev: 2,

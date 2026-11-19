@@ -37,18 +37,23 @@ const enc = encodeURIComponent;
 
 export class DaemonClient {
   readonly base: string;
+  readonly #token: string;
 
-  constructor(base: string = DEFAULT_DAEMON) {
+  /** `token`: the daemon's operator token (`<data dir>/api-token`). */
+  constructor(base: string = DEFAULT_DAEMON, token = "") {
     this.base = base.replace(/\/+$/, "");
+    this.#token = token;
   }
 
   async #request<T>(method: string, path: string, body?: unknown, contentType?: string): Promise<T> {
-    const init: RequestInit = { method };
+    const headers: Record<string, string> = {};
+    if (this.#token) headers["Authorization"] = `Bearer ${this.#token}`;
+    const init: RequestInit = { method, headers };
     if (body instanceof Blob) {
-      init.headers = { "Content-Type": contentType ?? body.type };
+      headers["Content-Type"] = contentType ?? body.type;
       init.body = body;
     } else if (body !== undefined) {
-      init.headers = { "Content-Type": "application/json" };
+      headers["Content-Type"] = "application/json";
       init.body = JSON.stringify(body);
     }
     const res = await fetch(`${this.base}${path}`, init);
@@ -65,9 +70,15 @@ export class DaemonClient {
     return (res.status === 204 ? undefined : await res.json()) as T;
   }
 
-  /** Absolute URL for a path returned by the API (e.g. `avatar_url`). */
+  /**
+   * Absolute URL for a path returned by the API (e.g. `avatar_url`), for
+   * `<img>` and WebSocket requests, which cannot send headers: the token goes
+   * in the `access_token` query parameter (accepted on GET only).
+   */
   url(path: string): string {
-    return `${this.base}${path}`;
+    if (!this.#token) return `${this.base}${path}`;
+    const sep = path.includes("?") ? "&" : "?";
+    return `${this.base}${path}${sep}access_token=${encodeURIComponent(this.#token)}`;
   }
 
   health = (): Promise<Health> => this.#request("GET", "/v1/health");
@@ -77,7 +88,7 @@ export class DaemonClient {
   createAgent = (req: CreateAgent): Promise<Agent> => this.#request("POST", "/v1/agents", req);
   updateAgent = (id: string, req: UpdateAgent): Promise<Agent> =>
     this.#request("PATCH", `/v1/agents/${id}`, req);
-  deleteAgent = (id: string): Promise<void> => this.#request("DELETE", `/v1/agents/${id}?purge=true`);
+  deleteAgent = (id: string): Promise<void> => this.#request("DELETE", `/v1/agents/${id}`);
   setAvatar = (id: string, image: Blob): Promise<Agent> => this.#request("PUT", `/v1/agents/${id}/avatar`, image);
   removeAvatar = (id: string): Promise<Agent> => this.#request("DELETE", `/v1/agents/${id}/avatar`);
 
@@ -130,7 +141,7 @@ export class DaemonClient {
     let attempt = 0;
     let timer: ReturnType<typeof setTimeout> | undefined;
     const connect = (): void => {
-      ws = new WebSocket(`${this.base.replace(/^http/, "ws")}/v1/ws`);
+      ws = new WebSocket(this.url("/v1/ws").replace(/^http/, "ws"));
       ws.onopen = () => {
         attempt = 0;
         handlers.onStatus(true);

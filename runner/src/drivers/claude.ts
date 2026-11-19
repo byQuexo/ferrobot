@@ -43,7 +43,8 @@ export function systemAppend(agentName: string, instructions: string): string {
     "your working directory is your workspace and persists between turns.",
     "Coordinate with teammates through the ferrobot MCP tools: list_agents, send_message,",
     "read_mailbox, remember, recall, forget. Messages are asynchronous: after sending one,",
-    "finish your turn; the answer arrives later as a new message. Messages from",
+    "finish your turn; the answer arrives later as a new message. Address teammates by",
+    "the id from list_agents (names can change). Messages from",
     '"routine:<name>" are scheduled tasks set up by your operator.',
     instructions.trim() ? `\nYour role:\n${instructions.trim()}` : "",
   ].join("\n");

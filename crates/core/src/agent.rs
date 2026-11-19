@@ -160,7 +160,11 @@ impl FromStr for AgentStatus {
 #[cfg_attr(feature = "schema", derive(utoipa::ToSchema))]
 pub struct Agent {
     pub id: AgentId,
+    /// Display and addressing name; unique, can be changed (rename).
     pub name: AgentName,
+    /// Stable name of the agent's sandbox resources (container, disk). Set
+    /// at creation and kept on rename.
+    pub sandbox_name: String,
     /// One-line description shown in agent lists.
     pub description: String,
     /// Operator-provided role handed to the model as system instructions.

@@ -114,9 +114,9 @@ impl SandboxBackend for StatefulBackend {
         self.log(format!("stop {}", h.id));
         Ok(())
     }
-    async fn destroy(&self, h: &SandboxHandle, _: bool) -> Result<(), SandboxError> {
+    async fn destroy(&self, h: &SandboxHandle, purge: bool) -> Result<(), SandboxError> {
         self.states.lock().unwrap().remove(&h.id);
-        self.log(format!("destroy {}", h.id));
+        self.log(format!("destroy {} purge={purge}", h.id));
         Ok(())
     }
     async fn state(&self, h: &SandboxHandle) -> Result<SandboxState, SandboxError> {
@@ -204,9 +204,48 @@ async fn profile_avatar_unread_and_memory() {
     assert_eq!(a["instructions"], "be thorough");
     assert_eq!(a["description"], "Research lead", "untouched");
     match next_frame(&mut ws).await {
-        DaemonFrame::Configure { instructions } => assert_eq!(instructions, "be thorough"),
+        DaemonFrame::Configure {
+            agent_name,
+            instructions,
+        } => {
+            assert_eq!(
+                (agent_name.as_str(), instructions.as_str()),
+                ("ada", "be thorough")
+            );
+        }
         other => panic!("expected configure, got {other:?}"),
     }
+
+    // Renaming keeps the id and sandbox and tells the runner; names stay unique.
+    let (status, a) = http(
+        &d.ui,
+        "PATCH",
+        &format!("/v1/agents/{id}"),
+        Some(json!({"name": "ada-lead"})),
+    )
+    .await;
+    assert_eq!(status, 200, "{a}");
+    assert_eq!(
+        (a["name"].as_str(), a["sandbox_name"].as_str()),
+        (Some("ada-lead"), Some("ada"))
+    );
+    assert_eq!(a["id"], id.as_str());
+    match next_frame(&mut ws).await {
+        DaemonFrame::Configure { agent_name, .. } => assert_eq!(agent_name.as_str(), "ada-lead"),
+        other => panic!("expected configure, got {other:?}"),
+    }
+    create(&d, json!({"name": "taken"})).await;
+    for (name, want) in [("taken", 409), ("Bad Name", 400), ("ada", 200)] {
+        let (status, body) = http(
+            &d.ui,
+            "PATCH",
+            &format!("/v1/agents/{id}"),
+            Some(json!({ "name": name })),
+        )
+        .await;
+        assert_eq!(status, want, "{name}: {body}");
+    }
+    let _ = next_frame(&mut ws).await; // configure for the rename back
     let (status, _) = http(
         &d.ui,
         "PATCH",
@@ -575,6 +614,83 @@ async fn snapshots_create_restore_delete() {
     );
     let (_, list) = http(&d.ui, "GET", &snaps, None).await;
     assert_eq!(list, json!([]));
+
+    // Deleting an agent purges its disk and snapshots unless `keep_data`.
+    let (status, _) = http(&d.ui, "POST", &snaps, Some(json!({"label": "last"}))).await;
+    assert_eq!(status, 201);
+    let (status, _) = http(&d.ui, "DELETE", &format!("/v1/agents/{id}"), None).await;
+    assert_eq!(status, 204);
+    let calls = backend.calls();
+    assert!(
+        calls.contains(&"destroy sid purge=true".to_owned()),
+        "{calls:?}"
+    );
+    assert!(
+        calls.contains(&"delete_snapshot snap-last".to_owned()),
+        "{calls:?}"
+    );
+
+    let keep = create(&d, json!({"name": "keeper"})).await["id"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    let keep_snaps = format!("/v1/agents/{keep}/snapshots");
+    let (status, _) = http(&d.ui, "POST", &keep_snaps, Some(json!({"label": "kept"}))).await;
+    assert_eq!(status, 201);
+    let path = format!("/v1/agents/{keep}?keep_data=true");
+    let (status, _) = http(&d.ui, "DELETE", &path, None).await;
+    assert_eq!(status, 204);
+    let calls = backend.calls();
+    assert!(
+        calls.contains(&"destroy keeper purge=false".to_owned()),
+        "{calls:?}"
+    );
+    assert!(
+        !calls.contains(&"delete_snapshot snap-kept".to_owned()),
+        "{calls:?}"
+    );
+}
+
+#[tokio::test]
+async fn operator_api_requires_the_token() {
+    let d = start(Arc::new(StatefulBackend::default()), None, "127.0.0.1:0").await;
+    let get = |path: &'static str, auth: &'static str| {
+        let ui = d.ui.clone();
+        async move {
+            let (status, headers, _) =
+                http_raw(&ui, "GET", path, &[("Authorization", auth)], b"").await;
+            (status, headers)
+        }
+    };
+    // Health stays open.
+    assert_eq!(get("/v1/health", "").await.0, 200);
+    let (status, headers) = get("/v1/agents", "").await;
+    assert_eq!(status, 401);
+    assert!(headers.contains(&("www-authenticate".into(), "Bearer".into())));
+    assert_eq!(
+        get("/v1/agents", "Bearer wrong-token-0123456789").await.0,
+        401
+    );
+    assert_eq!(
+        get("/v1/agents", "Bearer test-operator-token-0123456789")
+            .await
+            .0,
+        200
+    );
+    // GET (WebSocket, images) may use the query parameter instead.
+    let with_query = "/v1/agents?access_token=test-operator-token-0123456789";
+    assert_eq!(get(with_query, "").await.0, 200);
+    assert_eq!(get("/v1/ws?access_token=nope", "").await.0, 401);
+    // ... but other methods may not.
+    let (status, _, _) = http_raw(
+        &d.ui,
+        "POST",
+        "/v1/agents?access_token=test-operator-token-0123456789",
+        &[("Authorization", ""), ("Content-Type", "application/json")],
+        br#"{"name":"x"}"#,
+    )
+    .await;
+    assert_eq!(status, 401);
 }
 
 /// Fake model API: echoes the key it saw and streams two SSE chunks.

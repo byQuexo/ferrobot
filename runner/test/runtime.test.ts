@@ -117,12 +117,12 @@ async function waitFor(cond: () => boolean, timeoutMs = 2000): Promise<void> {
 }
 
 describe("Runner configure", () => {
-  it("applies new instructions from the next turn", async () => {
+  it("applies a new name and instructions from the next turn", async () => {
     const seen: string[] = [];
     const driver: ModelDriver = {
       name: "fake",
       runTurn: (ctx) => {
-        seen.push(ctx.instructions);
+        seen.push(`${ctx.agentName}:${ctx.instructions}`);
         return Promise.resolve({ result: null, sessionId: null });
       },
       close: () => Promise.resolve(),
@@ -143,10 +143,10 @@ describe("Runner configure", () => {
     });
     runner.handle(turn("t1"));
     await new Promise((r) => setTimeout(r, 10));
-    runner.handle({ type: "configure", instructions: "new" });
+    runner.handle({ type: "configure", agent_name: "b", instructions: "new" });
     runner.handle(turn("t2"));
     await new Promise((r) => setTimeout(r, 10));
-    assert.deepEqual(seen, ["old", "new"]);
+    assert.deepEqual(seen, ["a:old", "b:new"]);
   });
 });
 

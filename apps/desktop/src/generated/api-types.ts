@@ -33,7 +33,7 @@ export interface paths {
         get: operations["get_agent"];
         put?: never;
         post?: never;
-        /** Deletes an agent and its sandbox. */
+        /** Deletes an agent with its sandbox, disk and snapshots (unless `keep_data`). */
         delete: operations["delete_agent"];
         options?: never;
         head?: never;
@@ -415,7 +415,13 @@ export interface components {
         /** @description A registered agent. Secrets (the runner token) are never part of this type. */
         Agent: {
             id: components["schemas"]["AgentId"];
+            /** @description Display and addressing name; unique, can be changed (rename). */
             name: components["schemas"]["AgentName"];
+            /**
+             * @description Stable name of the agent's sandbox resources (container, disk). Set
+             *     at creation and kept on rename.
+             */
+            sandbox_name: string;
             /** @description One-line description shown in agent lists. */
             description: string;
             /** @description Operator-provided role handed to the model as system instructions. */
@@ -469,7 +475,8 @@ export interface components {
         };
         CreateAgent: {
             /**
-             * @description 1-32 chars, `a-z0-9-`, starts with a letter. Cannot be changed later.
+             * @description 1-32 chars, `a-z0-9-`, starts with a letter. Unique; can be changed later
+             *     with `PATCH` (other agents address it by id, or by its current name).
              * @example alice
              */
             name: string;
@@ -499,8 +506,8 @@ export interface components {
         /** @description JSON body of every non-2xx UI API response. */
         ErrorBody: {
             /**
-             * @description Stable machine-readable code: `bad_request`, `not_found`, `conflict`,
-             *     `not_implemented`, `sandbox_error` or `internal`.
+             * @description Stable machine-readable code: `bad_request`, `unauthorized`,
+             *     `not_found`, `conflict`, `not_implemented`, `sandbox_error` or `internal`.
              */
             error: string;
             /** @description Human-readable description. */
@@ -736,6 +743,12 @@ export interface components {
         };
         /** @description Partial profile update. Omitted fields stay unchanged. */
         UpdateAgent: {
+            /**
+             * @description New name (same rules as on create). The agent keeps its id, sandbox,
+             *     disk, memory and history.
+             * @example ada
+             */
+            name?: string | null;
             description?: string | null;
             /** @description New system instructions; a connected runner applies them from its next turn. */
             instructions?: string | null;
@@ -774,6 +787,15 @@ export interface operations {
                     "application/json": components["schemas"]["AgentView"][];
                 };
             };
+            /** @description Missing or wrong API token */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
         };
     };
     create_agent: {
@@ -799,6 +821,15 @@ export interface operations {
             };
             /** @description Invalid name or texts */
             400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Missing or wrong API token */
+            401: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -846,6 +877,15 @@ export interface operations {
                     "application/json": components["schemas"]["AgentView"];
                 };
             };
+            /** @description Missing or wrong API token */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
             /** @description Unknown agent */
             404: {
                 headers: {
@@ -860,8 +900,11 @@ export interface operations {
     delete_agent: {
         parameters: {
             query?: {
-                /** @description Also delete the agent's persistent disk and snapshots. */
-                purge?: boolean;
+                /**
+                 * @description Keep the agent's persistent disk (home volume) and snapshot images.
+                 *     By default they are deleted with the agent.
+                 */
+                keep_data?: boolean;
             };
             header?: never;
             path: {
@@ -878,6 +921,15 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content?: never;
+            };
+            /** @description Missing or wrong API token */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
             };
             /** @description Unknown agent */
             404: {
@@ -931,8 +983,26 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorBody"];
                 };
             };
+            /** @description Missing or wrong API token */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
             /** @description Unknown agent */
             404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Name already taken */
+            409: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -961,6 +1031,15 @@ export interface operations {
                 };
                 content: {
                     "image/*": number[];
+                };
+            };
+            /** @description Missing or wrong API token */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
                 };
             };
             /** @description Unknown agent or no avatar */
@@ -1008,6 +1087,15 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorBody"];
                 };
             };
+            /** @description Missing or wrong API token */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
             /** @description Unknown agent */
             404: {
                 headers: {
@@ -1037,6 +1125,15 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["AgentView"];
+                };
+            };
+            /** @description Missing or wrong API token */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
                 };
             };
             /** @description Unknown agent */
@@ -1071,6 +1168,15 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["StoredEvent"][];
+                };
+            };
+            /** @description Missing or wrong API token */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
                 };
             };
             /** @description Unknown agent */
@@ -1109,6 +1215,15 @@ export interface operations {
                 };
             };
             400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Missing or wrong API token */
+            401: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -1165,6 +1280,15 @@ export interface operations {
                     "application/json": components["schemas"]["Interrupted"];
                 };
             };
+            /** @description Missing or wrong API token */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
             /** @description Unknown agent */
             404: {
                 headers: {
@@ -1199,6 +1323,15 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["MemoryEntry"][];
+                };
+            };
+            /** @description Missing or wrong API token */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
                 };
             };
             /** @description Unknown agent */
@@ -1243,6 +1376,15 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorBody"];
                 };
             };
+            /** @description Missing or wrong API token */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
             /** @description Unknown agent */
             404: {
                 headers: {
@@ -1275,6 +1417,15 @@ export interface operations {
                 };
                 content?: never;
             };
+            /** @description Missing or wrong API token */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
             /** @description Unknown agent or key */
             404: {
                 headers: {
@@ -1304,6 +1455,15 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["MailMessage"][];
+                };
+            };
+            /** @description Missing or wrong API token */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
                 };
             };
             /** @description Unknown agent */
@@ -1350,6 +1510,15 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorBody"];
                 };
             };
+            /** @description Missing or wrong API token */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
             /** @description Unknown agent */
             404: {
                 headers: {
@@ -1380,6 +1549,15 @@ export interface operations {
                 };
                 content?: never;
             };
+            /** @description Missing or wrong API token */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
             /** @description Unknown agent */
             404: {
                 headers: {
@@ -1409,6 +1587,15 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["RoutineView"][];
+                };
+            };
+            /** @description Missing or wrong API token */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
                 };
             };
             /** @description Unknown agent */
@@ -1448,6 +1635,15 @@ export interface operations {
             };
             /** @description Invalid schedule, time zone or texts */
             400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Missing or wrong API token */
+            401: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -1495,6 +1691,15 @@ export interface operations {
                     "application/json": components["schemas"]["SandboxInfo"];
                 };
             };
+            /** @description Missing or wrong API token */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
             /** @description Unknown agent */
             404: {
                 headers: {
@@ -1524,6 +1729,15 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content?: never;
+            };
+            /** @description Missing or wrong API token */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
             };
             /** @description Unknown agent */
             404: {
@@ -1574,6 +1788,15 @@ export interface operations {
                     "application/json": components["schemas"]["SnapshotRecord"][];
                 };
             };
+            /** @description Missing or wrong API token */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
             /** @description Unknown agent */
             404: {
                 headers: {
@@ -1610,6 +1833,15 @@ export interface operations {
                 };
             };
             400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Missing or wrong API token */
+            401: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -1676,6 +1908,15 @@ export interface operations {
                 };
                 content?: never;
             };
+            /** @description Missing or wrong API token */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
             /** @description Unknown agent or snapshot */
             404: {
                 headers: {
@@ -1725,6 +1966,15 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content?: never;
+            };
+            /** @description Missing or wrong API token */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
             };
             /** @description Unknown agent or snapshot */
             404: {
@@ -1783,6 +2033,15 @@ export interface operations {
                 };
                 content?: never;
             };
+            /** @description Missing or wrong API token */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
             /** @description Unknown agent */
             404: {
                 headers: {
@@ -1821,6 +2080,15 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content?: never;
+            };
+            /** @description Missing or wrong API token */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
             };
             /** @description Unknown agent */
             404: {
@@ -1880,6 +2148,15 @@ export interface operations {
                 };
                 content?: never;
             };
+            /** @description Missing or wrong API token */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
             /** @description Unknown routine */
             404: {
                 headers: {
@@ -1916,6 +2193,15 @@ export interface operations {
                 };
             };
             400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Missing or wrong API token */
+            401: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -1964,6 +2250,15 @@ export interface operations {
                     "application/json": components["schemas"]["MailMessage"];
                 };
             };
+            /** @description Missing or wrong API token */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
             /** @description Unknown routine */
             404: {
                 headers: {
@@ -1995,6 +2290,15 @@ export interface operations {
                     "application/json": components["schemas"]["RoutineRun"][];
                 };
             };
+            /** @description Missing or wrong API token */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
             /** @description Unknown routine */
             404: {
                 headers: {
@@ -2021,6 +2325,15 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content?: never;
+            };
+            /** @description Missing or wrong API token */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
             };
         };
     };

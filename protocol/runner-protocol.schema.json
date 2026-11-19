@@ -111,8 +111,11 @@
           "type": "object"
         },
         {
-          "description": "The operator changed the agent's profile; applies from the next turn.",
+          "description": "The operator changed the agent's name or instructions; applies from\nthe next turn.",
           "properties": {
+            "agent_name": {
+              "$ref": "#/$defs/AgentName"
+            },
             "instructions": {
               "type": "string"
             },
@@ -124,6 +127,7 @@
             }
           },
           "required": [
+            "agent_name",
             "instructions",
             "type"
           ],

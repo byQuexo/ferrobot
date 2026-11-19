@@ -1,4 +1,4 @@
-use ferrobot_core::{AgentName, Sender};
+use ferrobot_core::{AgentId, AgentName, Sender};
 use ferrobot_store::StoreError;
 use rmcp::handler::server::tool::Extension;
 use rmcp::handler::server::wrapper::{Json, Parameters};
@@ -43,6 +43,8 @@ fn store_err(e: StoreError) -> ErrorData {
 
 #[derive(Debug, Serialize, JsonSchema)]
 pub struct AgentInfo {
+    /// Stable id; use it in `send_message.to`. Names can change.
+    pub id: String,
     pub name: String,
     pub status: String,
     /// One-line description.
@@ -59,7 +61,8 @@ pub struct AgentList {
 
 #[derive(Debug, Deserialize, JsonSchema)]
 pub struct SendMessageArgs {
-    /// Recipient agent name, e.g. "bob".
+    /// Recipient agent id (from `list_agents`). The agent's current name,
+    /// e.g. "bob", also works.
     pub to: String,
     /// Message text.
     pub body: String,
@@ -70,7 +73,10 @@ pub struct SendMessageArgs {
 #[derive(Debug, Serialize, JsonSchema)]
 pub struct SendMessageResult {
     pub message_id: i64,
+    /// Recipient's current name.
     pub queued_for: String,
+    /// Recipient's id.
+    pub agent_id: String,
 }
 
 #[derive(Debug, Deserialize, JsonSchema)]
@@ -149,6 +155,7 @@ impl FerrobotTools {
                 .into_iter()
                 .map(|a| AgentInfo {
                     is_you: a.id == me,
+                    id: a.id.to_string(),
                     name: a.name.to_string(),
                     status: a.status.as_str().to_owned(),
                     description: a.description,
@@ -178,20 +185,23 @@ impl FerrobotTools {
                 None,
             ));
         }
-        let name = AgentName::parse(args.to.trim().trim_start_matches('@'))
-            .map_err(|e| ErrorData::invalid_params(e.to_string(), None))?;
-        if name == me.name {
+        let to = args.to.trim().trim_start_matches('@');
+        let store = &self.state.store;
+        // Ids are stable; names are unique, so a name lookup is unambiguous.
+        let recipient = if let Ok(id) = to.parse::<AgentId>() {
+            store.get_agent(id).await
+        } else {
+            let name =
+                AgentName::parse(to).map_err(|e| ErrorData::invalid_params(e.to_string(), None))?;
+            store.get_agent_by_name(name).await
+        }
+        .map_err(store_err)?;
+        if recipient.id == me.id {
             return Err(ErrorData::invalid_params(
                 "cannot send a message to yourself",
                 None,
             ));
         }
-        let recipient = self
-            .state
-            .store
-            .get_agent_by_name(name)
-            .await
-            .map_err(store_err)?;
         let msg = self
             .state
             .store
@@ -207,6 +217,7 @@ impl FerrobotTools {
         Ok(Json(SendMessageResult {
             message_id: msg.id,
             queued_for: recipient.name.to_string(),
+            agent_id: recipient.id.to_string(),
         }))
     }
 

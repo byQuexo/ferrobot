@@ -53,7 +53,9 @@ export class MockDriver implements ModelDriver {
 
   async runTurn(ctx: TurnContext): Promise<TurnResult> {
     const { turn, emit } = ctx;
-    const action = planMockAction(turn.body, turn.sender.kind, turn.sender_name);
+    // Replies go to the sender's id: names can change, ids cannot.
+    const replyTo = turn.sender.kind === "agent" ? turn.sender.id : turn.sender_name;
+    const action = planMockAction(turn.body, turn.sender.kind, replyTo);
     let calls = 0;
     const tool = async (name: string, input: Record<string, unknown>): Promise<unknown> => {
       if (ctx.signal.aborted) throw new TurnAbortedError("interrupted");
@@ -78,7 +80,7 @@ export class MockDriver implements ModelDriver {
         break;
       case "reply":
         await tool("send_message", { to: action.to, body: action.body, reply_to: turn.message_id });
-        result = `Replied to ${action.to}.`;
+        result = `Replied to ${turn.sender_name}.`;
         break;
       case "remember":
         await tool("remember", { key: action.key, content: action.content });

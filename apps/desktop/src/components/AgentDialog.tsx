@@ -44,7 +44,11 @@ export function AgentDialog(props: { agent?: Agent; onClose: () => void; onSaved
     setSaving(true);
     try {
       let agent = editing
-        ? await client.updateAgent(editing.id, { description, instructions })
+        ? await client.updateAgent(editing.id, {
+            ...(name !== editing.name ? { name } : {}),
+            description,
+            instructions,
+          })
         : await client.createAgent({ name, description, instructions });
       if (avatar instanceof Blob) agent = await client.setAvatar(agent.id, avatar);
       else if (avatar === null && editing?.avatar_url) agent = await client.removeAvatar(agent.id);
@@ -108,7 +112,6 @@ export function AgentDialog(props: { agent?: Agent; onClose: () => void; onSaved
           Name
           <input
             value={name}
-            disabled={Boolean(editing)}
             placeholder="e.g. researcher"
             maxLength={32}
             autoComplete="off"
@@ -116,9 +119,8 @@ export function AgentDialog(props: { agent?: Agent; onClose: () => void; onSaved
             onInput={(e) => { setName(e.currentTarget.value.toLowerCase()); }}
           />
           <span class={`hint${name && !nameOk ? " bad" : ""}`}>
-            {editing
-              ? "Names are permanent: they identify the agent’s computer."
-              : "Lowercase letters, digits and dashes; starts with a letter. Other agents use it to message this one."}
+            Lowercase letters, digits and dashes; starts with a letter. Other agents can use it to message this one.
+            {editing && " Renaming keeps the agent’s computer, memory and history."}
           </span>
         </label>
         <label>

@@ -32,6 +32,9 @@ pub struct Settings {
     pub supervisor_interval: Duration,
     /// Default IANA time zone for new routines.
     pub default_timezone: String,
+    /// Bearer token required on the UI API (except health). `None` turns
+    /// auth off; `ferrobotd` always sets one.
+    pub api_token: Option<String>,
 }
 
 impl Settings {
@@ -47,6 +50,7 @@ impl Settings {
             idle_timeout: None,
             supervisor_interval: Duration::from_secs(15),
             default_timezone: "UTC".into(),
+            api_token: None,
         }
     }
 }

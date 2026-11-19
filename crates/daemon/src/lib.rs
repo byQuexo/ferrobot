@@ -3,13 +3,14 @@
 //! Two listeners with different trust levels:
 //!
 //! * **UI API** (`/v1/...`): operator-facing HTTP + WebSocket, bind it to
-//!   loopback only. Unauthenticated in phase 0.
+//!   loopback only. Requires the operator token (see [`auth`]).
 //! * **Agent API** (`/runner/ws`, `/mcp`, `/model`): reached from sandboxes,
 //!   every request is authenticated with the agent's token. `/model` is the
 //!   model proxy: it swaps the agent token for the real API key, which never
 //!   enters a sandbox.
 
 pub mod api;
+pub mod auth;
 pub mod error;
 pub mod hub;
 pub mod lifecycle;
@@ -45,8 +46,14 @@ pub fn ui_router(state: AppState) -> Router {
             Method::PUT,
             Method::DELETE,
         ])
-        .allow_headers([header::CONTENT_TYPE]);
-    api::router().layer(cors).with_state(state)
+        .allow_headers([header::CONTENT_TYPE, header::AUTHORIZATION]);
+    api::router()
+        .layer(axum::middleware::from_fn_with_state(
+            state.clone(),
+            auth::require_token,
+        ))
+        .layer(cors)
+        .with_state(state)
 }
 
 /// Router for sandbox-facing endpoints (runner WebSocket, MCP, model proxy).

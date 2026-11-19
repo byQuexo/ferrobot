@@ -14,11 +14,13 @@ export interface RunnerDeps {
 export class Runner {
   readonly #deps: RunnerDeps;
   #instructions = "";
+  #agentName: string;
   #sessionId: string | null = null;
   #current: { turnId: string; abort: AbortController } | null = null;
 
   constructor(deps: RunnerDeps, sessionId: string | null) {
     this.#deps = deps;
+    this.#agentName = deps.agentName;
     this.#sessionId = sessionId;
   }
 
@@ -34,6 +36,7 @@ export class Runner {
     switch (frame.type) {
       case "welcome":
         this.#instructions = frame.instructions;
+        this.#agentName = frame.agent_name;
         this.#sessionId ??= frame.resume_session_id;
         log.info("welcome", { agent: frame.agent_name, resume: this.#sessionId });
         break;
@@ -47,7 +50,8 @@ export class Runner {
       case "configure":
         // Applies from the next turn; a running turn keeps its prompt.
         this.#instructions = frame.instructions;
-        log.info("instructions updated");
+        this.#agentName = frame.agent_name;
+        log.info("profile updated", { agent: frame.agent_name });
         break;
       case "interrupt":
         if (this.#current?.turnId === frame.turn_id) {
@@ -74,7 +78,7 @@ export class Runner {
       const out = await this.#deps.driver.runTurn({
         turn,
         instructions: this.#instructions,
-        agentName: this.#deps.agentName,
+        agentName: this.#agentName,
         sessionId: this.#sessionId,
         signal: abort.signal,
         emit: (event) => { send({ type: "event", turn_id: turn.turn_id, event }); },

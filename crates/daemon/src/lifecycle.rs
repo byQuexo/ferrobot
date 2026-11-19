@@ -66,7 +66,7 @@ async fn fresh_spec(state: &AppState, agent: &Agent) -> Result<SandboxSpec, ApiE
     }
     env.insert("FERROBOT_AGENT_TOKEN".to_owned(), token);
     Ok(SandboxSpec {
-        name: agent.name.to_string(),
+        name: agent.sandbox_name.clone(),
         env,
         labels: BTreeMap::from([("dev.ferrobot.agent-id".to_owned(), agent.id.to_string())]),
     })

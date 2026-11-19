@@ -129,6 +129,12 @@ const MIGRATIONS: &[&str] = &[
     );
     CREATE INDEX snapshots_agent ON snapshots(agent_id, id);
     ",
+    // v3: renamable agents. Sandbox resources keep the name they were created with.
+    r"
+    ALTER TABLE agents ADD COLUMN sandbox_name TEXT;
+    UPDATE agents SET sandbox_name = name;
+    CREATE UNIQUE INDEX agents_sandbox_name ON agents(sandbox_name);
+    ",
 ];
 
 pub(crate) fn run(conn: &mut Connection) -> Result<(), StoreError> {
@@ -174,6 +180,10 @@ mod tests {
             })
             .unwrap();
         assert_eq!((desc.as_str(), rev), ("", 0));
+        let sandbox: String = conn
+            .query_row("SELECT sandbox_name FROM agents", [], |r| r.get(0))
+            .unwrap();
+        assert_eq!(sandbox, "alice");
         let version: i64 = conn
             .query_row("PRAGMA user_version", [], |r| r.get(0))
             .unwrap();

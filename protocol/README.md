@@ -23,10 +23,21 @@ Machine-readable contracts for everything that talks to `ferrobotd`. They are
 - The desktop app's TypeScript types are generated from `openapi.json`
   (`npm run gen:api` in `apps/desktop`); CI fails if they are stale.
 
+## Authentication
+
+All operations except `GET /v1/health` need the operator token:
+`Authorization: Bearer <token>` (OpenAPI scheme `bearer`), or on `GET`
+requests only, `?access_token=<token>` (scheme `access_token`, for WebSocket
+upgrades and images). Wrong or missing tokens get `401` with
+`{"error": "unauthorized"}` and `WWW-Authenticate: Bearer`. The daemon keeps
+the token in `<data dir>/api-token` (mode 0600) unless `--api-token` sets one.
+
 ## What is in v1
 
 **HTTP** (`openapi.json`, tags `system`, `agents`, `chat`, `memory`,
-`routines`, `sandbox`): health; agents with profile edits (`PATCH`), avatars
+`routines`, `sandbox`): health; agents with profile edits including renames (`PATCH`, `409` if
+the name is taken), deletion (`DELETE` purges disk and snapshots unless
+`?keep_data=true`), avatars
 (`PUT/GET/DELETE …/avatar`, raw PNG/JPEG/WebP/GIF body ≤ 512 KiB) and
 `POST …/read`; conversation and events; interrupt, stop, wake, exec; sandbox
 status; snapshots with restore; memory (`?q=` searches); routines
@@ -46,8 +57,8 @@ status; snapshots with restore; memory (`?q=` searches); routines
 
 **Runner frames** (`/runner/ws`): runner → daemon `hello`, `event`,
 `turn_done`; daemon → runner `welcome` (includes the instructions), `turn`,
-`interrupt`, and `configure` (new instructions after a profile edit; they apply
-from the next turn). Turn events (field `kind`) include `assistant_delta`
+`interrupt`, and `configure` (current `agent_name` and `instructions` after a
+rename or instructions edit; they apply from the next turn). Turn events (field `kind`) include `assistant_delta`
 (streamed text, not stored), `assistant_text`, `tool_use` with an `id`, and
 `tool_result` referencing that id. A turn's `sender` is `user`,
 `agent:<id>` or `routine:<id>` (the `sender_name` of a routine turn is

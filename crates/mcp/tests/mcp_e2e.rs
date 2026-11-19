@@ -50,6 +50,7 @@ async fn call(
 }
 
 #[tokio::test]
+#[allow(clippy::too_many_lines, reason = "one end-to-end scenario")]
 async fn tools_act_as_the_authenticated_agent() {
     let store = Store::open_in_memory().unwrap();
     let mut ids = Vec::new();
@@ -106,8 +107,28 @@ async fn tools_act_as_the_authenticated_agent() {
     .await
     .unwrap();
     assert_eq!(sent["queued_for"], "bob");
+    assert_eq!(sent["agent_id"], ids[1].to_string());
     let msg_id = sent["message_id"].as_i64().unwrap();
     assert_eq!(*recorder.0.lock().unwrap(), [(ids[1], msg_id)]);
+
+    // Ids (as listed by list_agents) address agents too.
+    let bob_id = list["agents"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|a| a["name"] == "bob")
+        .map(|a| a["id"].as_str().unwrap().to_owned())
+        .unwrap();
+    assert_eq!(bob_id, ids[1].to_string());
+    let sent = call(
+        &alice,
+        "send_message",
+        json!({"to": bob_id, "body": "by id"}),
+    )
+    .await
+    .unwrap();
+    assert_eq!(sent["queued_for"], "bob");
+    recorder.0.lock().unwrap().pop();
 
     // validation errors surface as tool errors, not panics
     assert!(

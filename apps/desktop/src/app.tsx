@@ -1,8 +1,8 @@
 import type { JSX } from "preact";
 import { useCallback, useEffect, useMemo, useRef, useState } from "preact/hooks";
-import { Bot, Plus, WifiOff } from "lucide-preact";
+import { Bot, KeyRound, Plus, WifiOff } from "lucide-preact";
 
-import { DEFAULT_DAEMON, DaemonClient, type Agent, type Health, type UiEvent } from "./api.ts";
+import { ApiError, DEFAULT_DAEMON, DaemonClient, type Agent, type Health, type UiEvent } from "./api.ts";
 import { AgentDialog } from "./components/AgentDialog.tsx";
 import { Chat } from "./components/Chat.tsx";
 import { InfoPanel, type InfoTab } from "./components/InfoPanel.tsx";
@@ -18,10 +18,24 @@ interface Toast {
 }
 
 const DAEMON_KEY = "ferrobot.daemon";
+const TOKEN_KEY = "ferrobot.token";
+
+declare global {
+  interface Window {
+    /** Operator token injected by the desktop shell, if it found one. */
+    __FERROBOT_TOKEN__?: string;
+  }
+}
+
+function initialToken(): string {
+  return window.__FERROBOT_TOKEN__ ?? localStorage.getItem(TOKEN_KEY) ?? "";
+}
 
 export function App(): JSX.Element {
   const [base, setBase] = useState(() => localStorage.getItem(DAEMON_KEY) ?? DEFAULT_DAEMON);
-  const client = useMemo(() => new DaemonClient(base), [base]);
+  const [token, setToken] = useState(initialToken);
+  const [needsToken, setNeedsToken] = useState(false);
+  const client = useMemo(() => new DaemonClient(base, token), [base, token]);
   const [agents, setAgents] = useState<Map<string, Agent>>(new Map());
   const [health, setHealth] = useState<Health | null>(null);
   const [online, setOnline] = useState(false);
@@ -61,9 +75,15 @@ export function App(): JSX.Element {
   );
 
   const refresh = useCallback(async () => {
-    const [h, list] = await Promise.all([client.health(), client.listAgents()]);
-    setHealth(h);
-    setAgents(new Map(list.map((a) => [a.id, a])));
+    try {
+      const [h, list] = await Promise.all([client.health(), client.listAgents()]);
+      setHealth(h);
+      setAgents(new Map(list.map((a) => [a.id, a])));
+      setNeedsToken(false);
+    } catch (err) {
+      if (err instanceof ApiError && err.status === 401) setNeedsToken(true);
+      throw err;
+    }
   }, [client]);
 
   // Connect, load, and keep the agent list live.
@@ -125,7 +145,14 @@ export function App(): JSX.Element {
           />
         ) : (
           <main class="chat chat-none">
-            {online || agents.size > 0 ? (
+            {needsToken ? (
+              <TokenForm
+                onSave={(t) => {
+                  localStorage.setItem(TOKEN_KEY, t);
+                  setToken(t);
+                }}
+              />
+            ) : online || agents.size > 0 ? (
               <Empty icon={<Bot size={36} />} title="Create your first agent">
                 <p>Each agent gets its own computer, memory and mailbox. Agents can message each other.</p>
                 <Button variant="primary" onClick={() => { setDialog("create"); }}>
@@ -164,6 +191,27 @@ export function App(): JSX.Element {
         ))}
       </div>
     </AppContext.Provider>
+  );
+}
+
+function TokenForm(props: { onSave: (token: string) => void }): JSX.Element {
+  const [value, setValue] = useState("");
+  return (
+    <Empty icon={<KeyRound size={36} />} title="The daemon needs its access token">
+      <p>
+        Paste the token from <code>api-token</code> in the daemon’s data folder (default <code>.ferrobot/</code>).
+      </p>
+      <form
+        class="inline-form"
+        onSubmit={(e) => {
+          e.preventDefault();
+          if (value.trim()) props.onSave(value.trim());
+        }}
+      >
+        <input class="mono" type="password" autoComplete="off" value={value} onInput={(e) => { setValue(e.currentTarget.value); }} />
+        <Button type="submit">Connect</Button>
+      </form>
+    </Empty>
   );
 }
 

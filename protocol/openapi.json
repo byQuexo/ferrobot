@@ -2,7 +2,7 @@
   "openapi": "3.1.0",
   "info": {
     "title": "ferrobot daemon API",
-    "description": "Operator API of `ferrobotd` (version 1, all paths under `/v1`). Served on the loopback UI listener (default `127.0.0.1:7878`) without authentication. Live updates: `GET /v1/ws` streams `UiEvent` frames, see `ui-events.schema.json`. The separate agent listener (runner WebSocket and MCP, bearer-token auth) is not part of this document; its frames are described in `runner-protocol.schema.json`.",
+    "description": "Operator API of `ferrobotd` (version 1, all paths under `/v1`). Served on the loopback UI listener (default `127.0.0.1:7878`). Every endpoint except `GET /v1/health` needs the operator token as `Authorization: Bearer <token>`; `GET` requests (the WebSocket, avatar images) may pass `?access_token=<token>` instead. The daemon generates the token on first start in `<data dir>/api-token` (mode 0600) unless `--api-token` / `FERROBOT_API_TOKEN` sets one. Live updates: `GET /v1/ws` streams `UiEvent` frames, see `ui-events.schema.json`. The separate agent listener (runner WebSocket and MCP, bearer-token auth) is not part of this document; its frames are described in `runner-protocol.schema.json`.",
     "contact": {
       "name": "Tim Gühnemann"
     },
@@ -38,6 +38,16 @@
                 }
               }
             }
+          },
+          "401": {
+            "description": "Missing or wrong API token",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
           }
         }
       },
@@ -69,6 +79,16 @@
           },
           "400": {
             "description": "Invalid name or texts",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or wrong API token",
             "content": {
               "application/json": {
                 "schema": {
@@ -128,6 +148,16 @@
               }
             }
           },
+          "401": {
+            "description": "Missing or wrong API token",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
           "404": {
             "description": "Unknown agent",
             "content": {
@@ -144,7 +174,7 @@
         "tags": [
           "agents"
         ],
-        "summary": "Deletes an agent and its sandbox.",
+        "summary": "Deletes an agent with its sandbox, disk and snapshots (unless `keep_data`).",
         "operationId": "delete_agent",
         "parameters": [
           {
@@ -157,9 +187,9 @@
             }
           },
           {
-            "name": "purge",
+            "name": "keep_data",
             "in": "query",
-            "description": "Also delete the agent's persistent disk and snapshots.",
+            "description": "Keep the agent's persistent disk (home volume) and snapshot images.\nBy default they are deleted with the agent.",
             "required": false,
             "schema": {
               "type": "boolean"
@@ -169,6 +199,16 @@
         "responses": {
           "204": {
             "description": "Deleted"
+          },
+          "401": {
+            "description": "Missing or wrong API token",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
           },
           "404": {
             "description": "Unknown agent",
@@ -238,8 +278,28 @@
               }
             }
           },
+          "401": {
+            "description": "Missing or wrong API token",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
           "404": {
             "description": "Unknown agent",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Name already taken",
             "content": {
               "application/json": {
                 "schema": {
@@ -281,6 +341,16 @@
                     "format": "int32",
                     "minimum": 0
                   }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or wrong API token",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
                 }
               }
             }
@@ -350,6 +420,16 @@
               }
             }
           },
+          "401": {
+            "description": "Missing or wrong API token",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
           "404": {
             "description": "Unknown agent",
             "content": {
@@ -385,6 +465,16 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/AgentView"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or wrong API token",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
                 }
               }
             }
@@ -443,6 +533,16 @@
               }
             }
           },
+          "401": {
+            "description": "Missing or wrong API token",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
           "404": {
             "description": "Unknown agent",
             "content": {
@@ -495,6 +595,16 @@
             }
           },
           "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or wrong API token",
             "content": {
               "application/json": {
                 "schema": {
@@ -564,6 +674,16 @@
               }
             }
           },
+          "401": {
+            "description": "Missing or wrong API token",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
           "404": {
             "description": "Unknown agent",
             "content": {
@@ -628,6 +748,16 @@
               }
             }
           },
+          "401": {
+            "description": "Missing or wrong API token",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
           "404": {
             "description": "Unknown agent",
             "content": {
@@ -680,6 +810,16 @@
               }
             }
           },
+          "401": {
+            "description": "Missing or wrong API token",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
           "404": {
             "description": "Unknown agent",
             "content": {
@@ -724,6 +864,16 @@
           "204": {
             "description": "Deleted"
           },
+          "401": {
+            "description": "Missing or wrong API token",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
           "404": {
             "description": "Unknown agent or key",
             "content": {
@@ -764,6 +914,16 @@
                   "items": {
                     "$ref": "#/components/schemas/MailMessage"
                   }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or wrong API token",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
                 }
               }
             }
@@ -827,6 +987,16 @@
               }
             }
           },
+          "401": {
+            "description": "Missing or wrong API token",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
           "404": {
             "description": "Unknown agent",
             "content": {
@@ -861,6 +1031,16 @@
         "responses": {
           "204": {
             "description": "Marked as read"
+          },
+          "401": {
+            "description": "Missing or wrong API token",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
           },
           "404": {
             "description": "Unknown agent",
@@ -902,6 +1082,16 @@
                   "items": {
                     "$ref": "#/components/schemas/RoutineView"
                   }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or wrong API token",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
                 }
               }
             }
@@ -965,6 +1155,16 @@
               }
             }
           },
+          "401": {
+            "description": "Missing or wrong API token",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
           "404": {
             "description": "Unknown agent",
             "content": {
@@ -1016,6 +1216,16 @@
               }
             }
           },
+          "401": {
+            "description": "Missing or wrong API token",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
           "404": {
             "description": "Unknown agent",
             "content": {
@@ -1048,6 +1258,16 @@
         "responses": {
           "204": {
             "description": "Sandbox removed"
+          },
+          "401": {
+            "description": "Missing or wrong API token",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
           },
           "404": {
             "description": "Unknown agent",
@@ -1113,6 +1333,16 @@
               }
             }
           },
+          "401": {
+            "description": "Missing or wrong API token",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
           "404": {
             "description": "Unknown agent",
             "content": {
@@ -1163,6 +1393,16 @@
             }
           },
           "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or wrong API token",
             "content": {
               "application/json": {
                 "schema": {
@@ -1246,6 +1486,16 @@
           "204": {
             "description": "Deleted"
           },
+          "401": {
+            "description": "Missing or wrong API token",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
           "404": {
             "description": "Unknown agent or snapshot",
             "content": {
@@ -1310,6 +1560,16 @@
         "responses": {
           "204": {
             "description": "Restored and running"
+          },
+          "401": {
+            "description": "Missing or wrong API token",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
           },
           "404": {
             "description": "Unknown agent or snapshot",
@@ -1376,6 +1636,16 @@
           "204": {
             "description": "Sleeping"
           },
+          "401": {
+            "description": "Missing or wrong API token",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
           "404": {
             "description": "Unknown agent",
             "content": {
@@ -1421,6 +1691,16 @@
           "204": {
             "description": "Running"
           },
+          "401": {
+            "description": "Missing or wrong API token",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
           "404": {
             "description": "Unknown agent",
             "content": {
@@ -1461,7 +1741,10 @@
               }
             }
           }
-        }
+        },
+        "security": [
+          {}
+        ]
       }
     },
     "/v1/routines/{rid}": {
@@ -1486,6 +1769,16 @@
         "responses": {
           "204": {
             "description": "Deleted"
+          },
+          "401": {
+            "description": "Missing or wrong API token",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
           },
           "404": {
             "description": "Unknown routine",
@@ -1538,6 +1831,16 @@
             }
           },
           "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or wrong API token",
             "content": {
               "application/json": {
                 "schema": {
@@ -1599,6 +1902,16 @@
               }
             }
           },
+          "401": {
+            "description": "Missing or wrong API token",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
           "404": {
             "description": "Unknown routine",
             "content": {
@@ -1644,6 +1957,16 @@
               }
             }
           },
+          "401": {
+            "description": "Missing or wrong API token",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
           "404": {
             "description": "Unknown routine",
             "content": {
@@ -1667,6 +1990,16 @@
         "responses": {
           "101": {
             "description": "Switching protocols; then one `UiEvent` per text frame"
+          },
+          "401": {
+            "description": "Missing or wrong API token",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
           }
         }
       }
@@ -1680,6 +2013,7 @@
         "required": [
           "id",
           "name",
+          "sandbox_name",
           "description",
           "instructions",
           "avatar_rev",
@@ -1691,7 +2025,12 @@
             "$ref": "#/components/schemas/AgentId"
           },
           "name": {
-            "$ref": "#/components/schemas/AgentName"
+            "$ref": "#/components/schemas/AgentName",
+            "description": "Display and addressing name; unique, can be changed (rename)."
+          },
+          "sandbox_name": {
+            "type": "string",
+            "description": "Stable name of the agent's sandbox resources (container, disk). Set\nat creation and kept on rename."
           },
           "description": {
             "type": "string",
@@ -1803,7 +2142,7 @@
         "properties": {
           "name": {
             "type": "string",
-            "description": "1-32 chars, `a-z0-9-`, starts with a letter. Cannot be changed later.",
+            "description": "1-32 chars, `a-z0-9-`, starts with a letter. Unique; can be changed later\nwith `PATCH` (other agents address it by id, or by its current name).",
             "example": "alice"
           },
           "description": {
@@ -1864,7 +2203,7 @@
         "properties": {
           "error": {
             "type": "string",
-            "description": "Stable machine-readable code: `bad_request`, `not_found`, `conflict`,\n`not_implemented`, `sandbox_error` or `internal`."
+            "description": "Stable machine-readable code: `bad_request`, `unauthorized`,\n`not_found`, `conflict`, `not_implemented`, `sandbox_error` or `internal`."
           },
           "message": {
             "type": "string",
@@ -2596,6 +2935,14 @@
         "type": "object",
         "description": "Partial profile update. Omitted fields stay unchanged.",
         "properties": {
+          "name": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "New name (same rules as on create). The agent keeps its id, sandbox,\ndisk, memory and history.",
+            "example": "ada"
+          },
           "description": {
             "type": [
               "string",
@@ -2647,8 +2994,29 @@
           }
         }
       }
+    },
+    "securitySchemes": {
+      "access_token": {
+        "type": "apiKey",
+        "in": "query",
+        "name": "access_token",
+        "description": "The same token as a query parameter; accepted on GET requests only (WebSocket upgrades, images)."
+      },
+      "bearer": {
+        "type": "http",
+        "scheme": "bearer",
+        "description": "Operator token from `<data dir>/api-token` or `--api-token`."
+      }
     }
   },
+  "security": [
+    {
+      "bearer": []
+    },
+    {
+      "access_token": []
+    }
+  ],
   "tags": [
     {
       "name": "system",

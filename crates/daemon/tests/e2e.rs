@@ -208,13 +208,7 @@ async fn two_agents_talk(d: Daemon) {
     .await;
 
     for id in [&alice, &bob] {
-        let (status, _) = http(
-            &d.ui,
-            "DELETE",
-            &format!("/v1/agents/{id}?purge=true"),
-            None,
-        )
-        .await;
+        let (status, _) = http(&d.ui, "DELETE", &format!("/v1/agents/{id}"), None).await;
         assert_eq!(status, 204);
     }
 }

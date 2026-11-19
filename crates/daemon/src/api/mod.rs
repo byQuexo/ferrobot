@@ -120,7 +120,7 @@ pub(crate) struct Health {
 }
 
 /// Daemon identity and configuration summary.
-#[utoipa::path(get, path = "/v1/health", tag = "system",
+#[utoipa::path(get, path = "/v1/health", tag = "system", security(()),
     responses((status = 200, body = Health)))]
 pub(crate) async fn health(State(state): State<AppState>) -> Json<Health> {
     let s = &state.settings;

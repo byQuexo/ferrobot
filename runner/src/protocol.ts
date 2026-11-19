@@ -29,7 +29,7 @@ export const daemonFrameSchema = z.discriminatedUnion("type", [
     body: z.string(),
   }),
   z.object({ type: z.literal("interrupt"), turn_id: z.string().min(1) }),
-  z.object({ type: z.literal("configure"), instructions: z.string() }),
+  z.object({ type: z.literal("configure"), agent_name: z.string().min(1), instructions: z.string() }),
 ]);
 export type DaemonFrame = z.infer<typeof daemonFrameSchema>;
 export type TurnFrame = Extract<DaemonFrame, { type: "turn" }>;

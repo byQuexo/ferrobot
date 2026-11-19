@@ -63,7 +63,9 @@ describe("MockDriver", () => {
       signal: new AbortController().signal,
       emit: (e) => events.push(e),
     });
-    assert.deepEqual(calls, [["send_message", { to: "alice", body: "re: ping", reply_to: 7 }]]);
+    assert.deepEqual(calls, [
+      ["send_message", { to: "0b5c2a0e-8f5e-4a51-9d6e-3f1f6f0c9a11", body: "re: ping", reply_to: 7 }],
+    ]);
     const kinds = events.map((e) => e.kind);
     assert.deepEqual(kinds.slice(0, 2), ["tool_use", "tool_result"]);
     assert.equal(kinds.at(-1), "assistant_text");

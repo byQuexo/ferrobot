@@ -9,8 +9,8 @@ use thiserror::Error;
 /// JSON body of every non-2xx UI API response.
 #[derive(Debug, Serialize, utoipa::ToSchema)]
 pub struct ErrorBody {
-    /// Stable machine-readable code: `bad_request`, `not_found`, `conflict`,
-    /// `not_implemented`, `sandbox_error` or `internal`.
+    /// Stable machine-readable code: `bad_request`, `unauthorized`,
+    /// `not_found`, `conflict`, `not_implemented`, `sandbox_error` or `internal`.
     pub error: String,
     /// Human-readable description.
     pub message: String,
@@ -21,6 +21,8 @@ pub struct ErrorBody {
 pub enum ApiError {
     #[error("{0}")]
     BadRequest(String),
+    #[error("missing or wrong API token")]
+    Unauthorized,
     #[error("{0}")]
     NotFound(String),
     #[error("{0}")]
@@ -52,6 +54,7 @@ impl IntoResponse for ApiError {
     fn into_response(self) -> Response {
         let (status, code) = match &self {
             Self::BadRequest(_) => (StatusCode::BAD_REQUEST, "bad_request"),
+            Self::Unauthorized => (StatusCode::UNAUTHORIZED, "unauthorized"),
             Self::NotFound(_) => (StatusCode::NOT_FOUND, "not_found"),
             Self::Conflict(_) => (StatusCode::CONFLICT, "conflict"),
             Self::Sandbox(SandboxError::NotImplemented { .. }) => {

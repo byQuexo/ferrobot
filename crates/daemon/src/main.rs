@@ -96,6 +96,10 @@ struct Cli {
         default_value = "https://api.anthropic.com"
     )]
     anthropic_upstream: String,
+    /// Bearer token for the UI API. Default: generated on first start and
+    /// stored in `<data dir>/api-token` (mode 0600).
+    #[arg(long, env = "FERROBOT_API_TOKEN", hide_env_values = true)]
+    api_token: Option<String>,
 }
 
 #[tokio::main]
@@ -113,6 +117,7 @@ async fn main() -> Result<()> {
     let store = Store::open(cli.data_dir.join("ferrobot.db")).context("opening database")?;
 
     let backend = make_backend(&cli).await?;
+    let api_token = api_token(&cli)?;
 
     let anthropic_api_key = std::env::var("ANTHROPIC_API_KEY")
         .ok()
@@ -147,6 +152,7 @@ async fn main() -> Result<()> {
             (idle / 2).clamp(Duration::from_secs(1), Duration::from_secs(15));
     }
     settings.default_timezone = default_timezone;
+    settings.api_token = Some(api_token);
     let state = AppState::new(store, backend, settings);
 
     let ui = tokio::net::TcpListener::bind(cli.listen)
@@ -189,6 +195,20 @@ async fn main() -> Result<()> {
     }
     tracing::info!("bye");
     Ok(())
+}
+
+/// The operator token: from `--api-token`, else the token file (created on first start).
+fn api_token(cli: &Cli) -> Result<String> {
+    if let Some(token) = cli.api_token.as_deref().filter(|t| !t.is_empty()) {
+        ferrobot_daemon::auth::validate(token).map_err(|e| anyhow::anyhow!("--api-token: {e}"))?;
+        return Ok(token.to_owned());
+    }
+    let token = ferrobot_daemon::auth::load_or_create(&cli.data_dir).context("API token file")?;
+    tracing::info!(
+        file = %ferrobot_daemon::auth::token_path(&cli.data_dir).display(),
+        "UI API token (send as `Authorization: Bearer <token>`)"
+    );
+    Ok(token)
 }
 
 async fn make_backend(cli: &Cli) -> Result<Arc<dyn SandboxBackend>> {

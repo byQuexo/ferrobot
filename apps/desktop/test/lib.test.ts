@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 
-import type { MailMessage, StoredEvent } from "../src/api.ts";
+import { DaemonClient, type MailMessage, type StoredEvent } from "../src/api.ts";
 import { avatarHue, hash, initials } from "../src/lib/avatar.ts";
 import { relativeTime, toolLabel } from "../src/lib/format.ts";
 import { buildTimeline } from "../src/lib/timeline.ts";
@@ -101,5 +101,14 @@ describe("buildTimeline", () => {
     );
     assert.ok(items[0]?.type === "tool" && items[0].denied === "outside workspace");
     assert.ok(items[1]?.type === "error" && items[1].text === "model unavailable");
+  });
+});
+
+describe("DaemonClient", () => {
+  it("puts the token in URLs that cannot carry headers", () => {
+    const c = new DaemonClient("http://127.0.0.1:7878/", "tok-123");
+    assert.equal(c.url("/v1/agents/a/avatar?v=2"), "http://127.0.0.1:7878/v1/agents/a/avatar?v=2&access_token=tok-123");
+    assert.equal(c.url("/v1/ws"), "http://127.0.0.1:7878/v1/ws?access_token=tok-123");
+    assert.equal(new DaemonClient("http://h").url("/v1/ws"), "http://h/v1/ws");
   });
 });

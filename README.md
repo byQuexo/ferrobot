@@ -36,8 +36,8 @@ with `scripts/seed-demo.sh`.
   `remember` / `recall` / `forget`), over the API and in the desktop app.
 - **Routines:** cron schedules with time zones that send the agent a prompt,
   with enable/disable, run now and a run history.
-- **Profiles:** name, description, avatar and instructions (appended to the
-  system prompt).
+- **Profiles:** name (renamable; agents are addressed by a stable id),
+  description, avatar and instructions (appended to the system prompt).
 - **Live streaming:** assistant text deltas, tool calls with their results,
   presence (working / awake / starting / sleeping / error) and unread counts
   over one WebSocket.
@@ -58,7 +58,7 @@ flowchart LR
     end
 
     subgraph daemon["ferrobotd (Rust: tokio + axum)"]
-        API["UI API /v1 (HTTP + WebSocket)<br/>127.0.0.1:7878, loopback only"]
+        API["UI API /v1 (HTTP + WebSocket)<br/>127.0.0.1:7878, loopback only, operator token"]
         AGENT["Agent API (bearer token per agent)<br/>/runner/ws + /mcp (rmcp)"]
         CORE["registry · dispatcher · lifecycle"]
         STORE[("SQLite: agents, mailbox,<br/>memory (FTS5), events, routines")]
@@ -146,16 +146,44 @@ cargo run -p ferrobot-daemon -- --backend docker --driver mock --agent-listen 0.
 
 `--agent-listen 0.0.0.0:7879` lets containers reach the agent API through
 `host.docker.internal`; every request on it needs the agent's own bearer token.
-The operator API stays on `127.0.0.1:7878`.
+The operator API stays on `127.0.0.1:7878` and needs the operator token
+(see [Operator token](#operator-token)).
 
 ```bash
 # 3. Create two agents and let them talk
-curl -s -X POST localhost:7878/v1/agents -H 'content-type: application/json' -d '{"name":"alice"}'
-curl -s -X POST localhost:7878/v1/agents -H 'content-type: application/json' -d '{"name":"bob"}'
-curl -s -X POST localhost:7878/v1/agents/<alice-id>/messages \
+AUTH="Authorization: Bearer $(cat .ferrobot/api-token)"
+curl -s -H "$AUTH" -X POST localhost:7878/v1/agents -H 'content-type: application/json' -d '{"name":"alice"}'
+curl -s -H "$AUTH" -X POST localhost:7878/v1/agents -H 'content-type: application/json' -d '{"name":"bob"}'
+curl -s -H "$AUTH" -X POST localhost:7878/v1/agents/<alice-id>/messages \
      -H 'content-type: application/json' -d '{"body":"@bob hello"}'
-curl -s localhost:7878/v1/agents/<alice-id>/messages
+curl -s -H "$AUTH" localhost:7878/v1/agents/<alice-id>/messages
 ```
+
+### Operator token
+
+Every `/v1` endpoint except `GET /v1/health` requires
+`Authorization: Bearer <token>`. On first start the daemon generates a random
+token and stores it in `<data dir>/api-token` (default `.ferrobot/api-token`,
+mode 0600); `--api-token` / `FERROBOT_API_TOKEN` sets your own (16+ characters
+of `A-Z a-z 0-9 - . _ ~`) instead. Browsers can't send headers on WebSockets
+and images, so `GET` requests may pass `?access_token=<token>` instead. Tokens
+are compared in constant time.
+
+The desktop app picks the token up by itself from `FERROBOT_API_TOKEN`,
+the file named by `FERROBOT_API_TOKEN_FILE`, or `$FERROBOT_DATA_DIR/api-token`
+(default `.ferrobot/api-token`, relative to where you start it). If it finds
+none, it asks you to paste it once (kept in the app's local storage).
+
+### Agents, names and deletion
+
+Agents are identified by their id. Names are unique and can be changed with
+`PATCH /v1/agents/{id}` (or the edit dialog); the agent keeps its computer,
+disk, memory and history (`sandbox_name` keeps the original name). Agents
+message each other with `send_message`, whose `to` takes an id from
+`list_agents`; the current name works too.
+
+`DELETE /v1/agents/{id}` removes the agent **with its disk and snapshots**;
+add `?keep_data=true` to keep the home volume and snapshot images.
 
 With the mock driver, `@name text` makes the agent send `text` to `name`,
 `remember key: value` / `recall query` use the memory tools, and an agent
@@ -183,19 +211,20 @@ covered by a contract test with SDK-typed fixtures
 (`runner/test/claude-contract.test.ts`) but has not been run against the live
 API in CI.
 
-Other useful flags: `--idle-timeout <secs>` (0 = never sleep), `--timezone
+Other useful flags: `--idle-timeout <secs>` (default 900 = 15 min, 0 = never sleep), `--timezone
 <IANA zone>` (default for routines), `--turn-timeout <secs>`.
 
 **Without Docker** (development only, no isolation): build the runner with
 `npm --prefix runner ci && npm --prefix runner run build`, then use `--backend local`.
 
-**Desktop app** (needs a running daemon on `127.0.0.1:7878`):
+**Desktop app** (needs a running daemon on `127.0.0.1:7878`; it reads the
+operator token as described above):
 
 ```bash
 cd apps/desktop && npm ci
-npm run build && npm run tauri dev     # the Tauri window
+npm run build && FERROBOT_API_TOKEN_FILE=$PWD/../../.ferrobot/api-token npm run tauri dev
 npm run dev                            # or: the same UI in a browser at http://localhost:1420
-scripts/seed-demo.sh [avatar.png]      # optional demo data
+scripts/seed-demo.sh [avatar.png]      # optional demo data (reads the same token)
 ```
 
 The UI is Preact + Vite with [lucide](https://lucide.dev) icons (ISC). Its
@@ -256,9 +285,10 @@ cargo test -p ferrobot-daemon  --features docker-tests --test e2e -- --ignored
   The token is a plain environment variable inside the container.
 - Avatar uploads are limited to PNG, JPEG, WebP and GIF (checked by content,
   max 512 KiB).
-- **Known limitation:** the operator API on `127.0.0.1:7878` is
-  unauthenticated and meant for local use only. `exec` there runs any command
-  in an agent's computer.
+- The operator API on `127.0.0.1:7878` requires the operator token (see
+  above) and is still meant for local use only (plain HTTP). Anyone with the
+  token can run any command in an agent's computer via `exec`. The token file
+  is created with mode 0600 (tightened if it is wider).
 
 ## Status
 
@@ -283,14 +313,11 @@ cargo test -p ferrobot-daemon  --features docker-tests --test e2e -- --ignored
 - The `claude` driver has not been run against the live API.
 - `SpritesBackend` returns `NotImplemented` for every operation.
 - Snapshots and idle sleep are Docker-only (the local backend has no snapshots).
-- Agent names can't be changed after creation (other agents address them by name).
-- The UI API has no authentication.
 
 ## Roadmap
 
-- **Next:** a live run of the Claude driver with a key, auth for the UI API,
-  renaming agents, a file browser and terminal in the info panel, and
-  packaging the desktop app.
+- **Next:** a live run of the Claude driver with a key, a file browser and
+  terminal in the info panel, and packaging the desktop app.
 - **Phase 2:** computer use inside sandboxes: Xvfb desktop, browser automation via
   CDP (`chromiumoxide`), a desktop-control driver, and screenshots in the timeline.
 - **Phase 3:** a Sprites (Fly.io microVM) backend with checkpoints, plus other remote

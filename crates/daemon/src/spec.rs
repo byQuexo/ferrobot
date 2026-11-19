@@ -25,14 +25,20 @@ pub const RUNNER_PROTOCOL_FILE: &str = "runner-protocol.schema.json";
     info(
         title = "ferrobot daemon API",
         description = "Operator API of `ferrobotd` (version 1, all paths under `/v1`). \
-            Served on the loopback UI listener (default `127.0.0.1:7878`) without \
-            authentication. Live updates: `GET /v1/ws` streams `UiEvent` frames, \
+            Served on the loopback UI listener (default `127.0.0.1:7878`). Every \
+            endpoint except `GET /v1/health` needs the operator token as \
+            `Authorization: Bearer <token>`; `GET` requests (the WebSocket, avatar \
+            images) may pass `?access_token=<token>` instead. The daemon generates \
+            the token on first start in `<data dir>/api-token` (mode 0600) unless \
+            `--api-token` / `FERROBOT_API_TOKEN` sets one. Live updates: `GET /v1/ws` streams `UiEvent` frames, \
             see `ui-events.schema.json`. The separate agent listener (runner \
             WebSocket and MCP, bearer-token auth) is not part of this document; \
             its frames are described in `runner-protocol.schema.json`.",
         license(name = "MIT OR Apache-2.0", identifier = "MIT OR Apache-2.0"),
     ),
     servers((url = "http://127.0.0.1:7878", description = "Default local daemon")),
+    modifiers(&SecurityAddon),
+    security(("bearer" = []), ("access_token" = [])),
     paths(
         api::health,
         api::agents::list_agents,
@@ -79,6 +85,66 @@ pub const RUNNER_PROTOCOL_FILE: &str = "runner-protocol.schema.json";
     )
 )]
 struct ApiDoc;
+
+/// Declares the operator token schemes referenced by `security`.
+struct SecurityAddon;
+
+impl utoipa::Modify for SecurityAddon {
+    fn modify(&self, openapi: &mut Spec) {
+        use utoipa::openapi::security::{
+            ApiKey, ApiKeyValue, HttpAuthScheme, HttpBuilder, SecurityScheme,
+        };
+        let components = openapi.components.get_or_insert_with(Default::default);
+        components.add_security_scheme(
+            "bearer",
+            SecurityScheme::Http(
+                HttpBuilder::new()
+                    .scheme(HttpAuthScheme::Bearer)
+                    .description(Some(
+                        "Operator token from `<data dir>/api-token` or `--api-token`.",
+                    ))
+                    .build(),
+            ),
+        );
+        components.add_security_scheme(
+            "access_token",
+            SecurityScheme::ApiKey(ApiKey::Query(ApiKeyValue::with_description(
+                crate::auth::QUERY_PARAM,
+                "The same token as a query parameter; accepted on GET requests only \
+                 (WebSocket upgrades, images).",
+            ))),
+        );
+        // Every authenticated operation can answer 401.
+        let unauthorized = utoipa::openapi::ResponseBuilder::new()
+            .description("Missing or wrong API token")
+            .content(
+                "application/json",
+                utoipa::openapi::ContentBuilder::new()
+                    .schema(Some(utoipa::openapi::Ref::from_schema_name("ErrorBody")))
+                    .build(),
+            )
+            .build();
+        for (path, item) in &mut openapi.paths.paths {
+            if path == "/v1/health" {
+                continue;
+            }
+            for op in [
+                &mut item.get,
+                &mut item.post,
+                &mut item.put,
+                &mut item.patch,
+                &mut item.delete,
+            ]
+            .into_iter()
+            .flatten()
+            {
+                op.responses
+                    .responses
+                    .insert("401".into(), unauthorized.clone().into());
+            }
+        }
+    }
+}
 
 #[derive(OpenApi)]
 #[openapi(components(schemas(UiEvent)))]

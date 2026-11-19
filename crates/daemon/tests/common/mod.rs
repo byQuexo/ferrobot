@@ -9,6 +9,9 @@ use ferrobot_sandbox::SandboxBackend;
 use ferrobot_store::Store;
 use serde_json::Value;
 
+/// Operator token the harness configures and sends on `/v1` requests.
+pub const TEST_TOKEN: &str = "test-operator-token-0123456789";
+
 pub struct Daemon {
     pub state: AppState,
     pub ui: String,
@@ -58,6 +61,7 @@ pub async fn start_on(
             .replace("{port}", &agents_addr.port().to_string()),
     );
     settings.turn_timeout = Duration::from_secs(30);
+    settings.api_token = Some(TEST_TOKEN.into());
     configure(&mut settings);
     let state = AppState::new(store, backend, settings);
     let ui = ui_router(state.clone());
@@ -76,8 +80,13 @@ pub async fn http(addr: &str, method: &str, path: &str, body: Option<Value>) -> 
     use tokio::io::{AsyncReadExt, AsyncWriteExt};
     let mut s = tokio::net::TcpStream::connect(addr).await.unwrap();
     let body = body.map(|b| b.to_string()).unwrap_or_default();
+    let auth = if path.starts_with("/v1/") {
+        format!("Authorization: Bearer {TEST_TOKEN}\r\n")
+    } else {
+        String::new()
+    };
     let req = format!(
-        "{method} {path} HTTP/1.1\r\nHost: {addr}\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",
+        "{method} {path} HTTP/1.1\r\nHost: {addr}\r\n{auth}Content-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",
         body.len()
     );
     s.write_all(req.as_bytes()).await.unwrap();
@@ -110,14 +119,22 @@ pub async fn http_raw(
     headers: &[(&str, &str)],
     body: &[u8],
 ) -> (u16, Vec<(String, String)>, Vec<u8>) {
+    use std::fmt::Write as _;
     use tokio::io::{AsyncReadExt, AsyncWriteExt};
     let mut s = tokio::net::TcpStream::connect(addr).await.unwrap();
     let mut req = format!(
         "{method} {path} HTTP/1.1\r\nHost: {addr}\r\nContent-Length: {}\r\nConnection: close\r\n",
         body.len()
     );
+    // `/v1` requests carry the test token unless the caller sets its own
+    // Authorization header (an empty one sends none that is valid).
+    let custom_auth = headers
+        .iter()
+        .any(|(k, _)| k.eq_ignore_ascii_case("authorization"));
+    if path.starts_with("/v1/") && !custom_auth {
+        let _ = write!(req, "Authorization: Bearer {TEST_TOKEN}\r\n");
+    }
     for (k, v) in headers {
-        use std::fmt::Write as _;
         let _ = write!(req, "{k}: {v}\r\n");
     }
     req.push_str("\r\n");

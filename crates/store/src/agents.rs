@@ -18,6 +18,8 @@ pub struct NewAgent {
 /// Partial profile update; `None` leaves a field unchanged.
 #[derive(Debug, Clone, Default)]
 pub struct AgentPatch {
+    /// Rename. Must stay unique; the sandbox keeps its original name.
+    pub name: Option<AgentName>,
     pub description: Option<String>,
     pub instructions: Option<String>,
 }
@@ -35,7 +37,7 @@ pub fn hash_token(token: &str) -> String {
 }
 
 const COLUMNS: &str = "id, name, instructions, status, backend, sandbox_id, session_id, created_at, \
-                       description, avatar_rev";
+                       description, avatar_rev, COALESCE(sandbox_name, name)";
 
 fn from_row(row: &Row<'_>) -> Result<Agent, StoreError> {
     let id: String = row.get(0)?;
@@ -45,6 +47,7 @@ fn from_row(row: &Row<'_>) -> Result<Agent, StoreError> {
     Ok(Agent {
         id: id.parse()?,
         name: AgentName::parse(name)?,
+        sandbox_name: row.get(10)?,
         description: row.get(8)?,
         instructions: row.get(2)?,
         avatar_rev: row.get(9)?,
@@ -65,8 +68,10 @@ fn not_found(key: &impl std::fmt::Display) -> StoreError {
 
 impl Store {
     pub async fn create_agent(&self, new: NewAgent) -> Result<Agent, StoreError> {
+        let id = AgentId::new();
         let agent = Agent {
-            id: AgentId::new(),
+            id,
+            sandbox_name: new.name.to_string(),
             name: new.name,
             description: new.description,
             instructions: new.instructions,
@@ -77,18 +82,30 @@ impl Store {
             session_id: None,
             created_at: now(),
         };
-        let row = agent.clone();
+        let mut row = agent;
         self.with(move |c| {
+            // A renamed agent may still own sandbox resources under this name.
+            let taken: bool = c.query_row(
+                "SELECT EXISTS(SELECT 1 FROM agents WHERE sandbox_name = ?1)",
+                [&row.sandbox_name],
+                |r| r.get(0),
+            )?;
+            if taken {
+                let short = id.to_string();
+                row.sandbox_name = format!("{}-{}", row.name, &short[..8]);
+            }
             c.execute(
-                "INSERT INTO agents (id, name, description, instructions, status, created_at)
-                 VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+                "INSERT INTO agents (id, name, description, instructions, status, created_at,
+                                     sandbox_name)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
                 params![
                     row.id.to_string(),
                     row.name.as_str(),
                     row.description,
                     row.instructions,
                     row.status.as_str(),
-                    fmt_ts(row.created_at)
+                    fmt_ts(row.created_at),
+                    row.sandbox_name,
                 ],
             )
             .map_err(|e| {
@@ -101,10 +118,9 @@ impl Store {
                     e.into()
                 }
             })?;
-            Ok(())
+            Ok(row)
         })
-        .await?;
-        Ok(agent)
+        .await
     }
 
     pub async fn list_agents(&self) -> Result<Vec<Agent>, StoreError> {
@@ -223,21 +239,31 @@ impl Store {
         .await
     }
 
-    /// Updates description and/or instructions.
+    /// Updates name, description and/or instructions.
     pub async fn update_agent_profile(
         &self,
         id: AgentId,
         patch: AgentPatch,
     ) -> Result<(), StoreError> {
+        let name = patch.name.map(String::from);
+        let key = name.clone().unwrap_or_default();
         self.update_agent(id, move |c, id| {
             c.execute(
-                "UPDATE agents SET description = COALESCE(?2, description),
-                                   instructions = COALESCE(?3, instructions)
+                "UPDATE agents SET name = COALESCE(?2, name),
+                                   description = COALESCE(?3, description),
+                                   instructions = COALESCE(?4, instructions)
                  WHERE id = ?1",
-                params![id, patch.description, patch.instructions],
+                params![id, name, patch.description, patch.instructions],
             )
         })
         .await
+        .map_err(|e| match e {
+            StoreError::Sqlite(ref inner) if is_unique_violation(inner) => StoreError::Conflict {
+                entity: "agent",
+                key,
+            },
+            other => other,
+        })
     }
 
     /// Sets or (with `None`) removes the avatar. `avatar_rev` changes on every
@@ -360,6 +386,35 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn rename_keeps_sandbox_name() {
+        let store = Store::open_in_memory().unwrap();
+        let a = store.create_agent(new("alice")).await.unwrap();
+        store.create_agent(new("bob")).await.unwrap();
+        let rename = |n: &str| AgentPatch {
+            name: Some(AgentName::parse(n).unwrap()),
+            ..AgentPatch::default()
+        };
+        assert!(matches!(
+            store.update_agent_profile(a.id, rename("bob")).await,
+            Err(StoreError::Conflict { .. })
+        ));
+        store
+            .update_agent_profile(a.id, rename("ada"))
+            .await
+            .unwrap();
+        let got = store.get_agent(a.id).await.unwrap();
+        assert_eq!(
+            (got.name.as_str(), got.sandbox_name.as_str()),
+            ("ada", "alice")
+        );
+        // The old name is free again, but its sandbox name is still taken.
+        let c = store.create_agent(new("alice")).await.unwrap();
+        assert_eq!(c.name.as_str(), "alice");
+        assert!(c.sandbox_name.starts_with("alice-"), "{}", c.sandbox_name);
+        assert_eq!(store.get_agent(c.id).await.unwrap(), c);
+    }
+
+    #[tokio::test]
     async fn token_lookup_uses_hash_and_rotates() {
         let store = Store::open_in_memory().unwrap();
         let a = store.create_agent(new("alice")).await.unwrap();
@@ -401,7 +456,7 @@ mod tests {
                 a.id,
                 AgentPatch {
                     description: Some("Reviews code".into()),
-                    instructions: None,
+                    ..AgentPatch::default()
                 },
             )
             .await

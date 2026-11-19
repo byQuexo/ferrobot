@@ -31,7 +31,8 @@ pub(crate) async fn list_agents(State(state): State<AppState>) -> ApiResult<Vec<
 
 #[derive(Debug, Deserialize, ToSchema)]
 pub(crate) struct CreateAgent {
-    /// 1-32 chars, `a-z0-9-`, starts with a letter. Cannot be changed later.
+    /// 1-32 chars, `a-z0-9-`, starts with a letter. Unique; can be changed later
+    /// with `PATCH` (other agents address it by id, or by its current name).
     #[schema(example = "alice")]
     name: String,
     /// One line shown in agent lists (max 280 bytes).
@@ -96,6 +97,10 @@ pub(crate) async fn get_agent(
 /// Partial profile update. Omitted fields stay unchanged.
 #[derive(Debug, Deserialize, ToSchema)]
 pub(crate) struct UpdateAgent {
+    /// New name (same rules as on create). The agent keeps its id, sandbox,
+    /// disk, memory and history.
+    #[schema(example = "ada")]
+    name: Option<String>,
     description: Option<String>,
     /// New system instructions; a connected runner applies them from its next turn.
     instructions: Option<String>,
@@ -107,13 +112,15 @@ pub(crate) struct UpdateAgent {
     request_body = UpdateAgent,
     responses((status = 200, body = AgentView),
         (status = 400, body = ErrorBody),
-        (status = 404, description = "Unknown agent", body = ErrorBody)))]
+        (status = 404, description = "Unknown agent", body = ErrorBody),
+        (status = 409, description = "Name already taken", body = ErrorBody)))]
 pub(crate) async fn update_agent(
     State(state): State<AppState>,
     Path(id): Path<String>,
     Json(req): Json<UpdateAgent>,
 ) -> ApiResult<AgentView> {
     let id = parse_id(&id)?;
+    let name = req.name.map(|n| AgentName::parse(n.trim())).transpose()?;
     let description = req.description.map(|d| d.trim().to_owned());
     if let Some(d) = &description {
         check_description(d)?;
@@ -121,18 +128,27 @@ pub(crate) async fn update_agent(
     if let Some(i) = &req.instructions {
         check_len("instructions", i)?;
     }
+    let reconfigure = name.is_some() || req.instructions.is_some();
     state
         .store
         .update_agent_profile(
             id,
             AgentPatch {
+                name,
                 description,
-                instructions: req.instructions.clone(),
+                instructions: req.instructions,
             },
         )
         .await?;
-    if let Some(instructions) = req.instructions {
-        state.hub.send(id, DaemonFrame::Configure { instructions });
+    if reconfigure {
+        let agent = state.store.get_agent(id).await?;
+        state.hub.send(
+            id,
+            DaemonFrame::Configure {
+                agent_name: agent.name,
+                instructions: agent.instructions,
+            },
+        );
     }
     state.publish_agent(id).await;
     Ok(Json(views::agent_view(&state, id).await?))
@@ -141,12 +157,13 @@ pub(crate) async fn update_agent(
 #[derive(Debug, Deserialize, IntoParams)]
 #[into_params(parameter_in = Query)]
 pub(crate) struct DeleteQuery {
-    /// Also delete the agent's persistent disk and snapshots.
+    /// Keep the agent's persistent disk (home volume) and snapshot images.
+    /// By default they are deleted with the agent.
     #[serde(default)]
-    purge: bool,
+    keep_data: bool,
 }
 
-/// Deletes an agent and its sandbox.
+/// Deletes an agent with its sandbox, disk and snapshots (unless `keep_data`).
 #[utoipa::path(delete, path = "/v1/agents/{id}", tag = "agents",
     params(("id" = String, Path, description = "Agent id (UUID)"), DeleteQuery),
     responses((status = 204, description = "Deleted"),
@@ -157,7 +174,7 @@ pub(crate) async fn delete_agent(
     Path(id): Path<String>,
     Query(q): Query<DeleteQuery>,
 ) -> Result<StatusCode, ApiError> {
-    lifecycle::delete(&state, parse_id(&id)?, q.purge).await?;
+    lifecycle::delete(&state, parse_id(&id)?, !q.keep_data).await?;
     Ok(StatusCode::NO_CONTENT)
 }
 

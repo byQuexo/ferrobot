@@ -31,7 +31,8 @@
           "type": "string"
         },
         "name": {
-          "$ref": "#/$defs/AgentName"
+          "$ref": "#/$defs/AgentName",
+          "description": "Display and addressing name; unique, can be changed (rename)."
         },
         "sandbox_id": {
           "description": "Backend-specific sandbox identifier (container id, sprite name, ...).",
@@ -39,6 +40,10 @@
             "string",
             "null"
           ]
+        },
+        "sandbox_name": {
+          "description": "Stable name of the agent's sandbox resources (container, disk). Set\nat creation and kept on rename.",
+          "type": "string"
         },
         "session_id": {
           "description": "Last model session id reported by the runner, used for resume.",
@@ -54,6 +59,7 @@
       "required": [
         "id",
         "name",
+        "sandbox_name",
         "description",
         "instructions",
         "avatar_rev",
