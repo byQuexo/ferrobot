@@ -53,6 +53,7 @@ pub struct SandboxHandle {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(utoipa::ToSchema))]
 #[serde(rename_all = "snake_case")]
 pub enum SandboxState {
     Running,
@@ -139,6 +140,30 @@ pub trait SandboxBackend: Send + Sync + std::fmt::Debug {
         sandbox: &SandboxHandle,
         label: &str,
     ) -> Result<SnapshotRef, SandboxError>;
+
+    /// Replaces the sandbox with one booted from `snapshot` (an id returned by
+    /// [`snapshot`](Self::snapshot)) and starts it. Returns the new handle.
+    async fn restore(
+        &self,
+        sandbox: &SandboxHandle,
+        snapshot: &str,
+        spec: &SandboxSpec,
+    ) -> Result<SandboxHandle, SandboxError> {
+        let _ = (sandbox, snapshot, spec);
+        Err(SandboxError::NotImplemented {
+            backend: self.kind(),
+            operation: "restore",
+        })
+    }
+
+    /// Deletes a snapshot's data. Unknown snapshots are not an error.
+    async fn delete_snapshot(&self, snapshot: &str) -> Result<(), SandboxError> {
+        let _ = snapshot;
+        Err(SandboxError::NotImplemented {
+            backend: self.kind(),
+            operation: "delete_snapshot",
+        })
+    }
 
     /// Starts a stopped/sleeping sandbox.
     async fn wake(&self, sandbox: &SandboxHandle) -> Result<(), SandboxError>;

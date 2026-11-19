@@ -2,6 +2,7 @@
 
 use std::collections::HashMap;
 use std::io::Read;
+use std::path::PathBuf;
 
 use async_trait::async_trait;
 use bollard::Docker;
@@ -10,7 +11,8 @@ use bollard::models::{ContainerCreateBody, ExecConfig, HostConfig};
 use bollard::query_parameters::{
     CommitContainerOptionsBuilder, CreateContainerOptionsBuilder,
     DownloadFromContainerOptionsBuilder, InspectContainerOptions, RemoveContainerOptionsBuilder,
-    RemoveVolumeOptions, StopContainerOptionsBuilder, UploadToContainerOptionsBuilder,
+    RemoveImageOptionsBuilder, RemoveVolumeOptions, StopContainerOptionsBuilder,
+    UploadToContainerOptionsBuilder,
 };
 use bytes::Bytes;
 use futures_util::{StreamExt, TryStreamExt};
@@ -36,6 +38,9 @@ pub struct DockerConfig {
     pub pids_limit: i64,
     /// Repository for snapshot images created by `snapshot`.
     pub snapshot_repo: String,
+    /// Where `snapshot` stores archives of the home volume (which `docker
+    /// commit` does not capture). `None`: snapshots cover the root filesystem only.
+    pub snapshot_dir: Option<PathBuf>,
 }
 
 impl Default for DockerConfig {
@@ -47,6 +52,7 @@ impl Default for DockerConfig {
             memory_bytes: 2 * 1024 * 1024 * 1024,
             pids_limit: 512,
             snapshot_repo: "ferrobot-snapshot".into(),
+            snapshot_dir: None,
         }
     }
 }
@@ -94,6 +100,81 @@ impl DockerBackend {
                 expected: KIND,
                 actual: handle.backend.clone(),
             })
+        }
+    }
+
+    /// Archive file for a snapshot image reference (`repo:tag`).
+    fn archive_path(&self, snapshot: &str) -> Option<PathBuf> {
+        let tag = snapshot.rsplit_once(':').map_or(snapshot, |(_, tag)| tag);
+        let safe = tag
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_' || c == '.');
+        if !safe || tag.starts_with('.') {
+            return None;
+        }
+        Some(
+            self.config
+                .snapshot_dir
+                .as_ref()?
+                .join(format!("{tag}.tar")),
+        )
+    }
+
+    fn check_snapshot<'a>(&self, snapshot: &'a str) -> Result<&'a str, SandboxError> {
+        match snapshot.split_once(':') {
+            Some((repo, tag)) if repo == self.config.snapshot_repo && !tag.is_empty() => {
+                Ok(snapshot)
+            }
+            _ => Err(SandboxError::NotFound(snapshot.to_owned())),
+        }
+    }
+
+    /// Creates (or adopts) the container for `spec` from `image` without starting it.
+    async fn create_container(
+        &self,
+        spec: &SandboxSpec,
+        image: &str,
+    ) -> Result<String, SandboxError> {
+        let name = self.container_name(&spec.name);
+        let mut labels: HashMap<String, String> = spec.labels.clone().into_iter().collect();
+        labels.insert(LABEL_MANAGED.into(), "true".into());
+
+        let body = ContainerCreateBody {
+            image: Some(image.to_owned()),
+            env: Some(spec.env.iter().map(|(k, v)| format!("{k}={v}")).collect()),
+            labels: Some(labels),
+            host_config: Some(HostConfig {
+                binds: Some(vec![format!(
+                    "{}:{}",
+                    self.volume_name(&spec.name),
+                    self.config.home_dir
+                )]),
+                extra_hosts: Some(vec!["host.docker.internal:host-gateway".into()]),
+                cap_drop: Some(vec!["ALL".into()]),
+                security_opt: Some(vec!["no-new-privileges".into()]),
+                memory: Some(self.config.memory_bytes),
+                pids_limit: Some(self.config.pids_limit),
+                init: Some(true),
+                ..HostConfig::default()
+            }),
+            ..ContainerCreateBody::default()
+        };
+
+        let options = CreateContainerOptionsBuilder::default().name(&name).build();
+        match self.docker.create_container(Some(options), body).await {
+            Ok(created) => Ok(created.id),
+            // Adopt an existing container with the same name (idempotent create).
+            Err(bollard::errors::Error::DockerResponseServerError {
+                status_code: 409, ..
+            }) => {
+                tracing::info!(container = %name, "adopting existing container");
+                self.docker
+                    .inspect_container(&name, None::<InspectContainerOptions>)
+                    .await?
+                    .id
+                    .ok_or_else(|| SandboxError::Other("container without id".into()))
+            }
+            Err(e) => Err(e.into()),
         }
     }
 
@@ -159,47 +240,7 @@ impl SandboxBackend for DockerBackend {
     }
 
     async fn create(&self, spec: &SandboxSpec) -> Result<SandboxHandle, SandboxError> {
-        let name = self.container_name(&spec.name);
-        let mut labels: HashMap<String, String> = spec.labels.clone().into_iter().collect();
-        labels.insert(LABEL_MANAGED.into(), "true".into());
-
-        let body = ContainerCreateBody {
-            image: Some(self.config.image.clone()),
-            env: Some(spec.env.iter().map(|(k, v)| format!("{k}={v}")).collect()),
-            labels: Some(labels),
-            host_config: Some(HostConfig {
-                binds: Some(vec![format!(
-                    "{}:{}",
-                    self.volume_name(&spec.name),
-                    self.config.home_dir
-                )]),
-                extra_hosts: Some(vec!["host.docker.internal:host-gateway".into()]),
-                cap_drop: Some(vec!["ALL".into()]),
-                security_opt: Some(vec!["no-new-privileges".into()]),
-                memory: Some(self.config.memory_bytes),
-                pids_limit: Some(self.config.pids_limit),
-                init: Some(true),
-                ..HostConfig::default()
-            }),
-            ..ContainerCreateBody::default()
-        };
-
-        let options = CreateContainerOptionsBuilder::default().name(&name).build();
-        let id = match self.docker.create_container(Some(options), body).await {
-            Ok(created) => created.id,
-            // Adopt an existing container with the same name (idempotent create).
-            Err(bollard::errors::Error::DockerResponseServerError {
-                status_code: 409, ..
-            }) => {
-                tracing::info!(container = %name, "adopting existing container");
-                self.docker
-                    .inspect_container(&name, None::<InspectContainerOptions>)
-                    .await?
-                    .id
-                    .ok_or_else(|| SandboxError::Other("container without id".into()))?
-            }
-            Err(e) => return Err(e.into()),
-        };
+        let id = self.create_container(spec, &self.config.image).await?;
         self.ensure_started(&id).await?;
         Ok(SandboxHandle {
             backend: KIND.into(),
@@ -321,6 +362,23 @@ impl SandboxBackend for DockerBackend {
                 .collect::<String>(),
             time::OffsetDateTime::now_utc().unix_timestamp()
         );
+        let image = format!("{}:{tag}", self.config.snapshot_repo);
+        let archive = self.archive_path(&image);
+        if let Some(path) = &archive {
+            let options = DownloadFromContainerOptionsBuilder::default()
+                .path(&self.config.home_dir)
+                .build();
+            let chunks: Vec<Bytes> = self
+                .docker
+                .download_from_container(id, Some(options))
+                .try_collect()
+                .await
+                .map_err(|e| not_found_or(e, id))?;
+            if let Some(dir) = path.parent() {
+                tokio::fs::create_dir_all(dir).await?;
+            }
+            tokio::fs::write(path, chunks.concat()).await?;
+        }
         let options = CommitContainerOptionsBuilder::default()
             .container(id)
             .repo(&self.config.snapshot_repo)
@@ -331,10 +389,74 @@ impl SandboxBackend for DockerBackend {
             .commit_container(options, bollard::models::ContainerConfig::default())
             .await
             .map_err(|e| not_found_or(e, id))?;
+        let scope = if archive.is_some() {
+            "container root filesystem and home directory"
+        } else {
+            "container root filesystem; the home volume is not included"
+        };
         Ok(SnapshotRef {
-            id: format!("{}:{tag}", self.config.snapshot_repo),
-            scope: "container root filesystem; the home volume is not included".into(),
+            id: image,
+            scope: scope.into(),
         })
+    }
+
+    async fn restore(
+        &self,
+        sandbox: &SandboxHandle,
+        snapshot: &str,
+        spec: &SandboxSpec,
+    ) -> Result<SandboxHandle, SandboxError> {
+        let image = self.check_snapshot(snapshot)?;
+        Self::check(sandbox)?;
+        self.docker
+            .inspect_image(image)
+            .await
+            .map_err(|e| not_found_or(e, image))?;
+        let archive = match self.archive_path(image) {
+            Some(path) if tokio::fs::try_exists(&path).await? => Some(tokio::fs::read(path).await?),
+            _ => None,
+        };
+        // With a home archive the volume is recreated from it; without one the
+        // current home volume is kept.
+        self.destroy(sandbox, archive.is_some()).await?;
+        let id = self.create_container(spec, image).await?;
+        if let Some(archive) = archive {
+            let parent = std::path::Path::new(&self.config.home_dir)
+                .parent()
+                .and_then(|p| p.to_str())
+                .unwrap_or("/");
+            let options = UploadToContainerOptionsBuilder::default()
+                .path(parent)
+                .copy_uidgid("true")
+                .build();
+            self.docker
+                .upload_to_container(&id, Some(options), bollard::body_full(archive.into()))
+                .await?;
+        }
+        self.ensure_started(&id).await?;
+        Ok(SandboxHandle {
+            backend: KIND.into(),
+            id,
+        })
+    }
+
+    async fn delete_snapshot(&self, snapshot: &str) -> Result<(), SandboxError> {
+        let image = self.check_snapshot(snapshot)?;
+        let options = RemoveImageOptionsBuilder::default().force(true).build();
+        match self.docker.remove_image(image, Some(options), None).await {
+            Ok(_)
+            | Err(bollard::errors::Error::DockerResponseServerError {
+                status_code: 404, ..
+            }) => {}
+            Err(e) => return Err(e.into()),
+        }
+        if let Some(path) = self.archive_path(image) {
+            match tokio::fs::remove_file(path).await {
+                Err(e) if e.kind() != std::io::ErrorKind::NotFound => return Err(e.into()),
+                _ => {}
+            }
+        }
+        Ok(())
     }
 
     async fn wake(&self, sandbox: &SandboxHandle) -> Result<(), SandboxError> {

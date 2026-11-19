@@ -13,11 +13,13 @@ use ferrobot_sandbox::{
 
 #[tokio::test]
 async fn container_lifecycle() {
+    let snapshots = tempfile::tempdir().unwrap();
     let backend = DockerBackend::connect(DockerConfig {
         // Any long-running image works for the lifecycle test.
         image: std::env::var("FERROBOT_TEST_IMAGE")
             .unwrap_or_else(|_| "ferrobot-runner:dev".into()),
         name_prefix: "ferrobot-test-".into(),
+        snapshot_dir: Some(snapshots.path().to_owned()),
         ..DockerConfig::default()
     })
     .expect("docker client");
@@ -61,6 +63,40 @@ async fn container_lifecycle() {
 
     let snap = backend.snapshot(&h, "test").await.expect("snapshot");
     assert!(snap.id.starts_with("ferrobot-snapshot:"));
+    assert!(snap.scope.contains("home"), "{}", snap.scope);
+
+    // Change the disk after the snapshot, then restore it.
+    backend
+        .write_file(&h, &path, b"changed")
+        .await
+        .expect("overwrite");
+    let extra = SandboxPath::parse("/home/node/later.txt").unwrap();
+    backend.write_file(&h, &extra, b"x").await.unwrap();
+    let h = backend.restore(&h, &snap.id, &spec).await.expect("restore");
+    assert_eq!(backend.state(&h).await.unwrap(), SandboxState::Running);
+    assert_eq!(backend.read_file(&h, &path).await.unwrap(), b"hi from host");
+    assert!(
+        backend.read_file(&h, &extra).await.is_err(),
+        "later file must be gone"
+    );
+    let owner = backend
+        .exec(
+            &h,
+            &ExecRequest::new(["stat", "-c", "%u", "/home/node/hello.txt"]),
+        )
+        .await
+        .unwrap();
+    assert_eq!(
+        owner.stdout.trim(),
+        "1000",
+        "restored files keep their owner"
+    );
+    assert!(
+        backend
+            .restore(&h, "ferrobot-snapshot:../../etc", &spec)
+            .await
+            .is_err()
+    );
 
     backend.stop(&h).await.expect("stop");
     assert_eq!(backend.state(&h).await.unwrap(), SandboxState::Stopped);
@@ -70,4 +106,9 @@ async fn container_lifecycle() {
 
     backend.destroy(&h, true).await.expect("destroy");
     assert_eq!(backend.state(&h).await.unwrap(), SandboxState::Missing);
+    backend
+        .delete_snapshot(&snap.id)
+        .await
+        .expect("delete snapshot");
+    assert_eq!(std::fs::read_dir(snapshots.path()).unwrap().count(), 0);
 }
