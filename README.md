@@ -234,10 +234,26 @@ tool call with its result, resumes each agent's SDK session across turns and
 restarts, and supports interrupts. An agent's instructions are appended to the
 SDK's default system prompt.
 
-The daemon refuses to start with `--driver claude` and no key. The driver is
+Without `ANTHROPIC_API_KEY` the daemon still starts and warns: agents that
+use a model provider (below) work, agents on the default cannot reach a model.
+The Claude driver is
 covered by a contract test with SDK-typed fixtures
 (`runner/test/claude-contract.test.ts`) but has not been run against the live
 API in CI.
+
+### Model providers
+
+The key icon in the sidebar (or `POST /v1/providers`) adds providers:
+Anthropic, OpenAI, Google Gemini, Amazon Bedrock and Google Vertex AI (Claude),
+OpenRouter, Ollama and any OpenAI-compatible endpoint. Each agent picks a
+provider and a model in its profile; agents without one use
+`ANTHROPIC_API_KEY`. Keys are stored in the OS keychain of the daemon's
+machine (`--secret-store file` writes a plaintext `secrets.json` for headless
+CI) and never leave the daemon: the proxy adds them upstream. Bedrock uses a
+Bedrock API key; Vertex uses the daemon host's `gcloud` login. Claude-based
+providers run on the Claude Agent SDK; the others on the runner's
+OpenAI-compatible driver (bash, file and ferrobot tools). Subscription logins
+are not supported, only API keys.
 
 Other useful flags: `--idle-timeout <secs>` (default 900 = 15 min, 0 = never sleep), `--timezone
 <IANA zone>` (default for routines), `--turn-timeout <secs>`.

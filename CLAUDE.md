@@ -35,7 +35,8 @@ crates/mcp       rmcp Streamable-HTTP server: the agents' tools (send_message,
 crates/daemon    ferrobotd: axum UI API (/v1), agent API (/runner/ws, /mcp, /model),
                  lifecycle, supervisor, scheduler, model proxy, OpenAPI (utoipa)
 runner/          TypeScript runner inside each sandbox: drives the model
-                 (drivers/claude.ts via Claude Agent SDK, drivers/mock.ts)
+                 (drivers/claude.ts via Claude Agent SDK, drivers/openai.ts for
+                 OpenAI-compatible providers, drivers/mock.ts)
 apps/desktop/    Preact + Vite UI in a Tauri shell (own Cargo workspace)
 protocol/        generated OpenAPI + JSON Schemas, fixtures, README (the contract)
 scripts/         seed-demo.sh, smoke-docker.sh
@@ -65,6 +66,8 @@ Principles:
 - `crates/daemon/src/state.rs` — `AppState`, `Settings`, `UiEvent`.
 - `crates/daemon/src/spec.rs` — OpenAPI + schema generation.
 - `crates/daemon/src/proxy.rs` — model proxy; `auth.rs` — operator token.
+- `crates/daemon/src/api/providers.rs`, `secrets.rs` — model providers and
+  their keychain-stored keys; `crates/core/src/provider.rs` — provider kinds.
 - `crates/daemon/src/storage.rs` — object storage (`object_store`) for snapshot
   archives, `--storage-url` (default: the data dir; `s3://` for S3/R2).
 - `crates/daemon/src/lifecycle.rs`, `supervisor.rs`, `scheduler.rs`, `runner_ws.rs`.
@@ -134,7 +137,7 @@ daemon, `docker ps -a` must be empty of ferrobot containers.
 ## Migrations
 
 - `crates/store/src/migrations.rs`, tracked with `PRAGMA user_version`.
-- Forward-only, numbered v1..v6 (v6: `agents.created_by`). Append a new entry
+- Forward-only, numbered v1..v7 (v7: `providers`, `agents.provider_id`/`model`). Append a new entry
   with a `// vN: ...` comment; **never edit or reorder existing ones**.
 - Every migration gets a test (upgrade an old DB, check defaults of existing
   rows). New columns on existing tables need a default.
@@ -143,10 +146,12 @@ daemon, `docker ps -a` must be empty of ferrobot containers.
 
 ## Must not break
 
-- **Model key stays in the daemon.** `ANTHROPIC_API_KEY` is read by
-  `ferrobotd` only. Sandboxes reach the model through `/model` with their
-  agent token; the proxy swaps in the real key. Never pass the key into a
-  sandbox, env, log or event.
+- **Model keys stay in the daemon.** `ANTHROPIC_API_KEY` and provider keys
+  (OS keychain via `secrets.rs`, never SQLite) are read by `ferrobotd` only.
+  Sandboxes reach the model through `/model` with their agent token; the
+  proxy picks the upstream from the agent's provider and swaps in the real
+  key. Never pass a key into a sandbox, env, log, event or API response.
+  No subscription (OAuth) logins.
 - **Operator token on `/v1`.** Every UI route requires
   `Authorization: Bearer <token>` (`FERROBOT_API_TOKEN` or
   `<data dir>/api-token`); only `/v1/health` is open. Keep the UI listener on
@@ -165,8 +170,10 @@ daemon, `docker ps -a` must be empty of ferrobot containers.
   time out tool calls earlier).
 - `docs/screenshots/light-conversation.png` shows a raw mock-driver bubble
   (`ask Which day ...`).
-- Rebuild the runner image (`runner/src/drivers/claude.ts` prompt text changed).
-- Docker e2e and `smoke-docker.sh` not re-run after 024f12f.
+- Rebuild the runner image (`runner/src/drivers/openai.ts` is new).
+- Docker e2e last run on `feature/m1-storage`; `smoke-docker.sh` not re-run after 024f12f.
+- No provider has been run against its real upstream (no keys used).
+- The desktop provider dialog was type-checked and built, not looked at in a window.
 - A live Claude run (`--driver claude`) has never been tested.
 
 ## Next up: Firecracker

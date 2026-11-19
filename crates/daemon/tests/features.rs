@@ -1113,7 +1113,18 @@ async fn agents_create_agents_only_with_approval() {
         s.approval_timeout = Duration::from_secs(2);
     })
     .await;
-    let ada = create(&d, json!({"name": "ada"})).await;
+    let (_, provider) = http(
+        &d.ui,
+        "POST",
+        "/v1/providers",
+        Some(json!({"name": "local", "kind": "ollama", "default_model": "llama3"})),
+    )
+    .await;
+    let ada = create(
+        &d,
+        json!({"name": "ada", "provider_id": provider["id"], "model": "qwen3"}),
+    )
+    .await;
     assert!(ada["created_by"].is_null(), "operator-created: {ada}");
     let ada = ada["id"].as_str().unwrap().to_owned();
     let ada_id: AgentId = ada.parse().unwrap();
@@ -1145,6 +1156,11 @@ async fn agents_create_agents_only_with_approval() {
     let (status, scout) = http(&d.ui, "GET", &format!("/v1/agents/{id}"), None).await;
     assert_eq!(status, 200);
     assert_eq!(scout["created_by"], ada.as_str());
+    assert_eq!(
+        scout["provider_id"], provider["id"],
+        "inherits the provider"
+    );
+    assert_eq!(scout["model"], "qwen3");
     assert_eq!(scout["description"], "Writes release notes");
     let (_, msgs) = http(&d.ui, "GET", &format!("/v1/agents/{ada}/messages"), None).await;
     assert_eq!(msgs.as_array().unwrap().len(), 0, "{msgs}");
