@@ -1,0 +1,113 @@
+//! JSON wire protocol between the daemon and the agent runner.
+//!
+//! Transport: one WebSocket per runner, opened *by the runner* (outbound from
+//! the sandbox) so that sleeping or restarted sandboxes simply reconnect.
+//! Every frame is a JSON text message with a `type` tag. The TypeScript mirror
+//! lives in `runner/src/protocol.ts`; both sides are tested against the shared
+//! fixtures in `protocol/fixtures/`.
+
+use serde::{Deserialize, Serialize};
+
+use crate::{AgentId, AgentName, Sender};
+
+/// Frames sent from the daemon to a runner.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(tag = "type", rename_all = "snake_case")]
+pub enum DaemonFrame {
+    /// First frame after a successful `hello`.
+    Welcome {
+        protocol_version: u32,
+        agent_id: AgentId,
+        agent_name: AgentName,
+        instructions: String,
+        /// Session to resume, if the daemon knows one.
+        resume_session_id: Option<String>,
+    },
+    /// Run one turn for a mailbox message.
+    Turn {
+        turn_id: String,
+        message_id: i64,
+        sender: Sender,
+        /// Display name of the sender (`user` or the agent name).
+        sender_name: String,
+        body: String,
+    },
+    /// Abort the running turn, if it matches.
+    Interrupt { turn_id: String },
+}
+
+/// Frames sent from a runner to the daemon.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(tag = "type", rename_all = "snake_case")]
+pub enum RunnerFrame {
+    /// First frame on every connection.
+    Hello {
+        protocol_version: u32,
+        runner_version: String,
+        /// `claude` or `mock`.
+        driver: String,
+        /// Session id persisted on the sandbox disk, if any.
+        session_id: Option<String>,
+    },
+    /// Progress inside a turn.
+    Event { turn_id: String, event: TurnEvent },
+    /// Turn finished (successfully or not). Exactly one per `Turn`.
+    TurnDone {
+        turn_id: String,
+        outcome: TurnOutcome,
+        session_id: Option<String>,
+        /// Final assistant text, if any.
+        result: Option<String>,
+        error: Option<String>,
+    },
+}
+
+/// Observable steps of a turn, persisted and streamed to the UI.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum TurnEvent {
+    AssistantText { text: String },
+    ToolUse { name: String, input: serde_json::Value },
+    ToolDenied { name: String, reason: String },
+    Log { level: String, message: String },
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum TurnOutcome {
+    Completed,
+    Interrupted,
+    Failed,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn turn_done_shape_is_stable() {
+        let frame = RunnerFrame::TurnDone {
+            turn_id: "t1".into(),
+            outcome: TurnOutcome::Completed,
+            session_id: Some("s1".into()),
+            result: Some("ok".into()),
+            error: None,
+        };
+        let json = serde_json::to_value(&frame).unwrap();
+        assert_eq!(json["type"], "turn_done");
+        assert_eq!(json["outcome"], "completed");
+    }
+
+    #[test]
+    fn event_shape_is_stable() {
+        let frame = RunnerFrame::Event {
+            turn_id: "t1".into(),
+            event: TurnEvent::ToolUse {
+                name: "mcp__ferrobot__send_message".into(),
+                input: serde_json::json!({"to": "bob"}),
+            },
+        };
+        let json = serde_json::to_value(&frame).unwrap();
+        assert_eq!(json["event"]["kind"], "tool_use");
+    }
+}

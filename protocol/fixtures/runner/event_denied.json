@@ -1,0 +1,5 @@
+{
+  "type": "event",
+  "turn_id": "turn-1",
+  "event": { "kind": "tool_denied", "name": "Bash", "reason": "destructive command" }
+}

@@ -1,0 +1,8 @@
+{
+  "type": "turn",
+  "turn_id": "turn-1",
+  "message_id": 1,
+  "sender": { "kind": "user" },
+  "sender_name": "user",
+  "body": "@bob please say hi"
+}

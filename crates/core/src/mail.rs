@@ -1,0 +1,122 @@
+use std::fmt;
+use std::str::FromStr;
+
+use serde::{Deserialize, Serialize};
+use time::OffsetDateTime;
+
+use crate::{AgentId, CoreError};
+
+/// Who sent a mailbox message.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(tag = "kind", content = "id", rename_all = "snake_case")]
+pub enum Sender {
+    /// The human operator, via the UI or HTTP API.
+    User,
+    /// Another agent, via the `send_message` MCP tool.
+    Agent(AgentId),
+}
+
+impl fmt::Display for Sender {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::User => f.write_str("user"),
+            Self::Agent(id) => write!(f, "agent:{id}"),
+        }
+    }
+}
+
+impl FromStr for Sender {
+    type Err = CoreError;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        if s == "user" {
+            return Ok(Self::User);
+        }
+        s.strip_prefix("agent:")
+            .and_then(|id| id.parse().ok())
+            .map(Self::Agent)
+            .ok_or_else(|| CoreError::InvalidSender(s.to_owned()))
+    }
+}
+
+/// Delivery state of a mailbox message.
+///
+/// `Pending -> InFlight -> Delivered`, or back to `Pending` when a runner
+/// disconnects mid-turn, or `Failed` after too many attempts.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum MailStatus {
+    Pending,
+    InFlight,
+    Delivered,
+    Failed,
+}
+
+impl MailStatus {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Pending => "pending",
+            Self::InFlight => "in_flight",
+            Self::Delivered => "delivered",
+            Self::Failed => "failed",
+        }
+    }
+}
+
+impl FromStr for MailStatus {
+    type Err = CoreError;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s {
+            "pending" => Ok(Self::Pending),
+            "in_flight" => Ok(Self::InFlight),
+            "delivered" => Ok(Self::Delivered),
+            "failed" => Ok(Self::Failed),
+            other => Err(CoreError::UnknownVariant {
+                kind: "mail status",
+                value: other.to_owned(),
+            }),
+        }
+    }
+}
+
+/// One message in an agent's mailbox.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct MailMessage {
+    pub id: i64,
+    pub sender: Sender,
+    pub recipient: AgentId,
+    pub body: String,
+    pub reply_to: Option<i64>,
+    pub status: MailStatus,
+    pub attempts: u32,
+    #[serde(with = "time::serde::rfc3339")]
+    pub created_at: OffsetDateTime,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn sender_roundtrip() {
+        let id = AgentId::new();
+        for s in [Sender::User, Sender::Agent(id)] {
+            assert_eq!(s.to_string().parse::<Sender>().unwrap(), s);
+        }
+        assert!("agent:nope".parse::<Sender>().is_err());
+        assert!("robot".parse::<Sender>().is_err());
+    }
+
+    #[test]
+    fn status_roundtrip() {
+        for s in [
+            MailStatus::Pending,
+            MailStatus::InFlight,
+            MailStatus::Delivered,
+            MailStatus::Failed,
+        ] {
+            assert_eq!(s.as_str().parse::<MailStatus>().unwrap(), s);
+        }
+    }
+}

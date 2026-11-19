@@ -1,0 +1,33 @@
+[package]
+name = "ferrobot-sandbox"
+description = "The SandboxBackend trait (one computer per agent) with Docker, local-process and Sprites (stub) backends."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+publish = false
+
+[features]
+# Enables tests that need a running Docker/Podman daemon and the runner image.
+docker-tests = []
+
+[dependencies]
+async-trait.workspace = true
+bollard.workspace = true
+bytes.workspace = true
+futures-util.workspace = true
+reqwest.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+tar.workspace = true
+thiserror.workspace = true
+time.workspace = true
+tokio.workspace = true
+tracing.workspace = true
+
+[dev-dependencies]
+tempfile.workspace = true
+
+[lints]
+workspace = true

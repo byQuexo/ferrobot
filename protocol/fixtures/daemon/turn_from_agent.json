@@ -1,0 +1,8 @@
+{
+  "type": "turn",
+  "turn_id": "turn-2",
+  "message_id": 2,
+  "sender": { "kind": "agent", "id": "0b5c2a0e-8f5e-4a51-9d6e-3f1f6f0c9a11" },
+  "sender_name": "alice",
+  "body": "please say hi"
+}

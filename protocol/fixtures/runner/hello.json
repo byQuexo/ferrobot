@@ -1,0 +1,7 @@
+{
+  "type": "hello",
+  "protocol_version": 1,
+  "runner_version": "0.1.0",
+  "driver": "mock",
+  "session_id": null
+}
