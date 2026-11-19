@@ -122,3 +122,31 @@ describe("mentions", () => {
     assert.equal(mentionsAsText(`<@${ME}>`, () => undefined), "@unknown-agent");
   });
 });
+
+describe("groupExchanges", () => {
+  it("folds consecutive agent mail with one peer and its send_message calls", async () => {
+    const { groupExchanges } = await import("../src/lib/timeline.ts");
+    const items = buildTimeline(
+      ME,
+      [
+        msg(1, { kind: "user" }, ME, "ask bob", "2026-01-01T10:00:00Z"),
+        msg(2, { kind: "agent", id: ME }, BOB, "hi bob", "2026-01-01T10:00:02Z"),
+        msg(3, { kind: "agent", id: BOB }, ME, "re: hi bob", "2026-01-01T10:00:05Z"),
+      ],
+      [
+        ev(11, "tool_use", { id: "c1", name: "mcp__ferrobot__send_message", input: { to: "bob" } }, "2026-01-01T10:00:01Z"),
+        ev(12, "tool_use", { id: "c2", name: "mcp__ferrobot__recall", input: {} }, "2026-01-01T10:00:06Z"),
+        ev(13, "assistant_text", { text: "done" }, "2026-01-01T10:00:07Z"),
+      ],
+      new Map(),
+      names,
+    );
+    const shown = groupExchanges(items);
+    assert.deepEqual(shown.map((i) => i.type), ["user", "exchange", "tool", "assistant"]);
+    const x = shown[1];
+    assert.ok(x?.type === "exchange");
+    assert.equal(x.peerId, BOB);
+    assert.equal(x.messages.length, 2);
+    assert.equal(x.tools.length, 1);
+  });
+});

@@ -448,14 +448,11 @@ textarea { resize: vertical; min-height: 40px; line-height: 1.5; }
 
 /* Mentions and agent-to-agent conversations */
 .mention {
-  display: inline-flex; align-items: center; gap: 4px; vertical-align: -3px;
-  padding: 1px 8px 1px 2px; margin: 0 1px; border-radius: 999px; border: 1px solid var(--border);
-  background: var(--surface); color: var(--text); font: inherit; font-weight: 550; font-size: 0.92em; cursor: pointer;
-  box-shadow: 0 1px 2px rgba(16, 24, 40, 0.05);
+  display: inline-flex; align-items: center; gap: 4px; vertical-align: -3px; padding: 0; margin: 0 1px;
+  border: none; background: none; color: inherit; font: inherit; font-weight: 650; cursor: pointer;
 }
-.mention:hover { border-color: var(--accent); }
+.mention:hover { color: var(--accent); }
 .mention .avatar { flex: none; }
-.bubble-user .mention { background: var(--surface); }
 .mention-gone { color: var(--text-2); }
 .convo-section { margin-top: 14px; display: flex; flex-direction: column; gap: 2px; }
 .section-label { margin: 0 10px 4px; font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.07em; color: var(--muted); }
@@ -477,3 +474,15 @@ textarea { resize: vertical; min-height: 40px; line-height: 1.5; }
 .chat-head .pair-avatars .avatar + .avatar { box-shadow: 0 0 0 2px var(--bg); }
 .row-agent .bubble-agent > .meta { text-align: left; }
 :root[data-theme="dark"] .agent-row.active, :root[data-theme="dark"] .convo-row.active { background: var(--surface-2); }
+
+/* Collapsed agent-to-agent mail in an agent's chat */
+.exchange { align-items: center; gap: 2px; }
+.exchange-hint, .exchange-open {
+  display: inline-flex; align-items: center; gap: 6px; border: none; background: none;
+  color: var(--muted); font-size: 12.5px; padding: 4px 8px; border-radius: 999px;
+}
+.exchange-hint strong { color: var(--text-2); font-weight: 600; }
+.exchange-hint:hover, .exchange-open:hover { background: var(--surface-2); color: var(--text-2); }
+.exchange-hint .chev { transition: transform 0.15s var(--ease); }
+.exchange.open .exchange-hint .chev { transform: rotate(90deg); }
+.exchange-open { padding: 5px; }

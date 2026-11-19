@@ -127,7 +127,10 @@ export function App(): JSX.Element {
     setPair(null);
     setSelected(id);
   }, []);
-  const ctx: AppContextValue = { client, health, agents, listen, toast, run, openAgent };
+  const openConversation = useCallback((a: string, b: string) => {
+    setPair(a < b ? [a, b] : [b, a]);
+  }, []);
+  const ctx: AppContextValue = { client, health, agents, listen, toast, run, openAgent, openConversation };
   const agent = selected ? agents.get(selected) : undefined;
 
   return (

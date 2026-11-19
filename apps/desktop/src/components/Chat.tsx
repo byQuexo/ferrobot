@@ -7,6 +7,7 @@ import {
   CalendarClock,
   ChevronRight,
   CircleStop,
+  MessagesSquare,
   Info,
   Pencil,
   SendHorizontal,
@@ -17,7 +18,7 @@ import {
 import type { Agent, MailMessage, Routine, StoredEvent } from "../api.ts";
 import { useApp } from "../context.ts";
 import { clockTime, presenceLabel, toolLabel } from "../lib/format.ts";
-import { buildTimeline, type TimelineItem } from "../lib/timeline.ts";
+import { buildTimeline, groupExchanges, type DisplayItem, type Exchange, type TimelineItem } from "../lib/timeline.ts";
 import { Avatar } from "./Avatar.tsx";
 import { RichText } from "./RichText.tsx";
 import { Button, IconButton } from "./ui.tsx";
@@ -108,7 +109,7 @@ export function Chat(props: {
       agents: new Map([...agents.values()].map((a) => [a.id, a.name])),
       routines: new Map(routines.map((r) => [r.id, r.name])),
     };
-    return buildTimeline(id, messages, events, live, names);
+    return groupExchanges(buildTimeline(id, messages, events, live, names));
   }, [id, messages, events, live, agents, routines]);
 
   // Keep the view pinned to the bottom unless the user scrolled up.
@@ -184,10 +185,49 @@ export function Chat(props: {
   );
 }
 
-function Item(props: { item: TimelineItem; agent: Agent }): JSX.Element {
+/** "N messages with <peer>": collapsed agent-to-agent mail, expandable inline. */
+function ExchangeHint(props: { item: Exchange; agent: Agent }): JSX.Element {
+  const { item, agent } = props;
+  const { agents, openConversation } = useApp();
+  const [open, setOpen] = useState(false);
+  const peer = agents.get(item.peerId);
+  const n = item.messages.length;
+  return (
+    <>
+      <div class={`row row-center exchange${open ? " open" : ""}`}>
+        <button type="button" class="exchange-hint" aria-expanded={open} onClick={() => { setOpen(!open); }}>
+          <span>
+            {n} {n === 1 ? "message" : "messages"} with
+          </span>
+          {peer && <Avatar agent={peer} size={18} />}
+          <strong>{peer?.name ?? item.peerName}</strong>
+          <ChevronRight size={14} class="chev" />
+        </button>
+        {peer && (
+          <button
+            type="button"
+            class="exchange-open"
+            title={`Open the thread between ${agent.name} and ${peer.name}`}
+            aria-label="Open thread"
+            onClick={() => { openConversation(agent.id, peer.id); }}
+          >
+            <MessagesSquare size={14} />
+          </button>
+        )}
+      </div>
+      {open && [...item.tools, ...item.messages]
+        .sort((a, b) => Date.parse(a.at) - Date.parse(b.at))
+        .map((m) => <Item key={m.key} item={m} agent={agent} />)}
+    </>
+  );
+}
+
+function Item(props: { item: DisplayItem; agent: Agent }): JSX.Element {
   const { item, agent } = props;
   const { agents } = useApp();
   switch (item.type) {
+    case "exchange":
+      return <ExchangeHint item={item} agent={agent} />;
     case "user":
       return (
         <div class="row row-user">
@@ -216,7 +256,7 @@ function Item(props: { item: TimelineItem; agent: Agent }): JSX.Element {
     case "incoming":
     case "outgoing": {
       const peerName = item.type === "incoming" ? item.from : item.to;
-      const peer = [...agents.values()].find((a) => a.name === peerName);
+      const peer = agents.get(item.peerId);
       return (
         <div class={`row row-a2a ${item.type}`}>
           <div class="a2a">

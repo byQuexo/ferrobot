@@ -12,6 +12,8 @@ export interface AppContextValue {
   toast: (message: string, kind?: "error" | "info") => void;
   /** Opens an agent's chat (e.g. from a mention). */
   openAgent: (id: string) => void;
+  /** Opens the read-only thread between two agents. */
+  openConversation: (a: string, b: string) => void;
   /** Runs an action and reports failures as a toast. */
   run: <T>(action: () => Promise<T>) => Promise<T | undefined>;
 }

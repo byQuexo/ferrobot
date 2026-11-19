@@ -4,9 +4,9 @@ import type { MailMessage, StoredEvent } from "../api.ts";
 
 export type TimelineItem =
   | { type: "user"; key: string; at: string; text: string; status: MailMessage["status"] }
-  | { type: "incoming"; key: string; at: string; text: string; from: string }
+  | { type: "incoming"; key: string; at: string; text: string; from: string; peerId: string }
   | { type: "routine"; key: string; at: string; text: string; routine: string }
-  | { type: "outgoing"; key: string; at: string; text: string; to: string }
+  | { type: "outgoing"; key: string; at: string; text: string; to: string; peerId: string }
   | { type: "assistant"; key: string; at: string; text: string; streaming: boolean }
   | {
       type: "tool";
@@ -65,13 +65,27 @@ export function buildTimeline(
       if (m.sender.kind === "user") {
         push({ type: "user", key, at: m.created_at, text: m.body, status: m.status });
       } else if (m.sender.kind === "agent") {
-        push({ type: "incoming", key, at: m.created_at, text: m.body, from: names.agents.get(m.sender.id) ?? "agent" });
+        push({
+          type: "incoming",
+          key,
+          at: m.created_at,
+          text: m.body,
+          from: names.agents.get(m.sender.id) ?? "agent",
+          peerId: m.sender.id,
+        });
       } else {
         const routine = names.routines.get(m.sender.id) ?? `#${String(m.sender.id)}`;
         push({ type: "routine", key, at: m.created_at, text: m.body, routine });
       }
     } else if (m.sender.kind === "agent" && m.sender.id === agentId) {
-      push({ type: "outgoing", key, at: m.created_at, text: m.body, to: names.agents.get(m.recipient) ?? "agent" });
+      push({
+        type: "outgoing",
+        key,
+        at: m.created_at,
+        text: m.body,
+        to: names.agents.get(m.recipient) ?? "agent",
+        peerId: m.recipient,
+      });
     }
   }
 
@@ -147,4 +161,64 @@ export function buildTimeline(
     return t !== 0 ? t : a.order - b.order;
   });
   return items.map((x) => x.item);
+}
+
+export type A2aItem = Extract<TimelineItem, { type: "incoming" | "outgoing" }>;
+type ToolItem = Extract<TimelineItem, { type: "tool" }>;
+
+/** A run of agent-to-agent mail with one peer, shown collapsed in the chat. */
+export interface Exchange {
+  type: "exchange";
+  key: string;
+  at: string;
+  peerId: string;
+  peerName: string;
+  messages: A2aItem[];
+  /** The `send_message` calls that produced the outgoing messages. */
+  tools: ToolItem[];
+}
+
+export type DisplayItem = TimelineItem | Exchange;
+
+const isSendCall = (i: TimelineItem): i is ToolItem =>
+  i.type === "tool" && i.denied === null && /(^|__)send_message$/.test(i.name);
+
+/**
+ * Folds consecutive agent-to-agent messages with the same peer (and the
+ * `send_message` calls right before them) into one `exchange` item.
+ * Anything else between them (user mail, replies, other tools) ends the run.
+ */
+export function groupExchanges(items: readonly TimelineItem[]): DisplayItem[] {
+  const out: DisplayItem[] = [];
+  const cur: { run: Exchange | null } = { run: null };
+  let calls: ToolItem[] = [];
+  const close = (): void => {
+    if (cur.run) out.push(cur.run);
+    cur.run = null;
+  };
+  for (const item of items) {
+    if (isSendCall(item)) {
+      calls.push(item);
+      continue;
+    }
+    if (item.type === "incoming" || item.type === "outgoing") {
+      let run = cur.run;
+      if (run?.peerId !== item.peerId) {
+        close();
+        const peerName = item.type === "incoming" ? item.from : item.to;
+        run = { type: "exchange", key: `x-${item.key}`, at: item.at, peerId: item.peerId, peerName, messages: [], tools: [] };
+        cur.run = run;
+      }
+      run.tools.push(...calls);
+      run.messages.push(item);
+      calls = [];
+      continue;
+    }
+    close();
+    out.push(...calls, item);
+    calls = [];
+  }
+  close();
+  out.push(...calls);
+  return out;
 }
