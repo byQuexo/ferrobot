@@ -250,7 +250,11 @@ provider and a model in its profile; agents without one use
 `ANTHROPIC_API_KEY`. Keys are stored in the OS keychain of the daemon's
 machine (`--secret-store file` writes a plaintext `secrets.json` for headless
 CI) and never leave the daemon: the proxy adds them upstream. Bedrock uses a
-Bedrock API key; Vertex uses the daemon host's `gcloud` login. Claude-based
+Bedrock API key; Vertex uses the daemon host's `gcloud` login. A `codex`
+provider runs OpenAI's Codex harness in the sandbox (`codex app-server`) with
+an OpenAI API key, or with a ChatGPT sign-in done by the `codex` CLI on the
+daemon's computer (device code; the tokens stay there and the proxy adds
+them). The runner image does not ship `codex` yet. Claude-based
 providers run on the Claude Agent SDK; the others on the runner's
 OpenAI-compatible driver (bash, file and ferrobot tools). Subscription logins
 are not supported, only API keys.

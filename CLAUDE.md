@@ -36,7 +36,8 @@ crates/daemon    ferrobotd: axum UI API (/v1), agent API (/runner/ws, /mcp, /mod
                  lifecycle, supervisor, scheduler, model proxy, OpenAPI (utoipa)
 runner/          TypeScript runner inside each sandbox: drives the model
                  (drivers/claude.ts via Claude Agent SDK, drivers/openai.ts for
-                 OpenAI-compatible providers, drivers/mock.ts)
+                 OpenAI-compatible providers, drivers/codex.ts via `codex
+                 app-server`, drivers/mock.ts)
 apps/desktop/    Preact + Vite UI in a Tauri shell (own Cargo workspace)
 protocol/        generated OpenAPI + JSON Schemas, fixtures, README (the contract)
 scripts/         seed-demo.sh, smoke-docker.sh
@@ -68,6 +69,8 @@ Principles:
 - `crates/daemon/src/proxy.rs` — model proxy; `auth.rs` — operator token.
 - `crates/daemon/src/api/providers.rs`, `secrets.rs` — model providers and
   their keychain-stored keys; `crates/core/src/provider.rs` — provider kinds.
+- `crates/daemon/src/codex.rs` — host-side `codex app-server`: ChatGPT
+  sign-in and tokens for `codex` providers (tokens never enter a sandbox).
 - `crates/daemon/src/storage.rs` — object storage (`object_store`) for snapshot
   archives, `--storage-url` (default: the data dir; `s3://` for S3/R2).
 - `crates/daemon/src/lifecycle.rs`, `supervisor.rs`, `scheduler.rs`, `runner_ws.rs`.
@@ -173,6 +176,8 @@ daemon, `docker ps -a` must be empty of ferrobot containers.
 - Rebuild the runner image (`runner/src/drivers/openai.ts` is new).
 - Docker e2e last run on `feature/m1-storage`; `smoke-docker.sh` not re-run after 024f12f.
 - No provider has been run against its real upstream (no keys used).
+- The Codex driver has only run against a fake app-server; the runner image
+  has no `codex` binary yet (adding `@openai/codex` needs Tim's OK).
 - The desktop provider dialog was type-checked and built, not looked at in a window.
 - A live Claude run (`--driver claude`) has never been tested.
 

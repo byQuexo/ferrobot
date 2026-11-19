@@ -72,3 +72,38 @@ the code and this file together.
 - **Deleting a provider in use is refused** (409); the agents have to switch
   first.
 - **Subscription logins (Claude OAuth) are not built**, per Tim's rule.
+
+## Phase 3: Codex driver
+
+- **Codex runs inside the sandbox.** The runner spawns `codex app-server`
+  (JSON lines over stdio) so Codex's shell and patch tools act on the agent's
+  own computer. A host-side app-server would have run agent commands on the
+  daemon host.
+- **No credential in the sandbox.** The runner writes `$CODEX_HOME/config.toml`
+  with a custom model provider (`base_url` = the daemon proxy, `env_key` =
+  `FERROBOT_AGENT_TOKEN`, Responses wire API) and the ferrobot MCP server with
+  the same bearer variable. Only the variable *name* is written.
+- **New provider kind `codex`** (driver `codex`). With an API key the proxy
+  forwards `/responses` to `https://api.openai.com/v1`. Without one it uses the
+  host's ChatGPT sign-in: upstream `https://chatgpt.com/backend-api/codex`,
+  `Authorization: Bearer <access token>`, `chatgpt-account-id: <account>`
+  (header name from Codex's `openai_headers.rs`); inbound
+  `chatgpt-account-id` headers from agents are dropped.
+- **ChatGPT sign-in on the host via the official surface.** The daemon runs the
+  host's `codex app-server` with `CODEX_HOME=<data dir>/codex/<provider id>`
+  and calls `account/login/start {type: "chatgptDeviceCode"}`; the UI shows the
+  URL and code. Tokens are read with `getAuthStatus {includeToken,
+  refreshToken}` (Codex refreshes them itself) and cached until 5 minutes
+  before the JWT's `exp` (at most 30 minutes). The account id comes from the
+  token's `https://api.openai.com/auth.chatgpt_account_id` claim.
+- **Not used:** `account/login/start {type: "chatgptAuthTokens"}`, which would
+  hand tokens to an app-server; Codex marks it "OPENAI INTERNAL USE ONLY".
+- **Approvals:** `approval_policy = "untrusted"` so Codex asks before commands
+  and patches; the runner answers with the same `decide()` policy as the other
+  drivers. `sandbox_mode = "danger-full-access"`: the container is the
+  boundary, Codex's own Landlock/Seatbelt sandbox is not relied on. ferrobot
+  MCP tools are pre-approved (`default_tools_approval_mode = "approve"`).
+- **Open question for Tim (not decided here):** whether to add `@openai/codex`
+  to the runner image (a new npm dependency) and whether proxying a ChatGPT
+  sign-in this way fits OpenAI's terms for third-party tools. Until then the
+  driver fails with "codex is not installed in this sandbox image".

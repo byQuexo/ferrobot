@@ -53,7 +53,7 @@ Status per roadmap phase (`docs/roadmap.md`). Decisions are in
   upgrade, secret stores (memory, file with mode 0600), and a daemon test
   per kind that checks sandbox env (no secret inside) and the credential the
   upstream receives (`features.rs`: `providers_keep_keys_in_the_daemon`).
-- Runner: 13 new tests for the driver (fake fetch and MCP).
+- Runner: 14 new tests for the driver (fake fetch and MCP).
 - End to end by hand: real `ferrobotd` (local backend) + real runner with the
   openai driver + a fake OpenAI-compatible server. A message ran a `bash`
   tool call and streamed the answer back; the upstream saw the provider key,
@@ -73,3 +73,39 @@ Status per roadmap phase (`docs/roadmap.md`). Decisions are in
   lines like the Claude driver writes.
 - Runner image must be rebuilt for Docker to have the new driver.
 - The desktop dialogs were not looked at in a running window.
+
+## Phase 3: Codex driver (`feature/codex-driver`)
+
+**Done**
+
+- Provider kind `codex`; agents on it get the new `codex` runner driver.
+- Runner `drivers/codex.ts`: one `codex app-server` per runner, thread
+  start/resume (session id = thread id), turns, streaming text, command /
+  patch / MCP items as tool events, approvals through `decide()`, interrupt,
+  failed turns, clear error when `codex` is missing.
+- Daemon: proxy routing with an OpenAI key or the host's ChatGPT token
+  (+ account header); `POST/GET /v1/providers/{id}/chatgpt-login` (device
+  code sign-in through the host's `codex`, status polling); `--codex-bin`.
+- Desktop: "Sign in with ChatGPT" on codex providers, showing URL and code.
+
+**Tested**
+
+- Runner: 13 tests against a scripted fake app-server (handshake, resume,
+  approvals allowed/refused, command items, failed turn, interrupt, missing
+  binary, generated config without secrets, config validation).
+- Daemon: `codex_providers_use_a_key_or_the_hosts_chatgpt_login` with a fake
+  host `codex` (shell script): key path, device-code sign-in, token + account
+  header injection, agents cannot set the account header.
+- Desktop dialog looked at in a browser against a real daemon: the sign-in
+  button and a missing host `codex` are shown plainly.
+
+**Open (needs Tim)**
+
+- No real `codex` binary was run, in the sandbox or on the host. The runner
+  image does not include it; adding `@openai/codex` is a new npm dependency.
+- A live ChatGPT sign-in and model call need Tim's ChatGPT account. Whether
+  the ChatGPT backend accepts requests from a custom-provider Codex with only
+  bearer + account headers is unverified.
+- Unverified protocol details are listed in the driver's report: `move_path`
+  in file-change items, approvals without a `command`, Codex calling proxy
+  paths other than `/responses`.
