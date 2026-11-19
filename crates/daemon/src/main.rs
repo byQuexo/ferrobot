@@ -94,18 +94,10 @@ struct Cli {
     #[arg(long, env = "FERROBOT_FC_BIN", default_value = "firecracker")]
     fc_bin: PathBuf,
     /// Uncompressed guest kernel (`vmlinux`) for the Firecracker backend.
-    #[arg(
-        long,
-        env = "FERROBOT_FC_KERNEL",
-        required_if_eq("backend", "firecracker")
-    )]
+    #[arg(long, env = "FERROBOT_FC_KERNEL")]
     fc_kernel: Option<PathBuf>,
     /// Guest root filesystem (ext4) from `scripts/firecracker/build-rootfs.sh`.
-    #[arg(
-        long,
-        env = "FERROBOT_FC_ROOTFS",
-        required_if_eq("backend", "firecracker")
-    )]
+    #[arg(long, env = "FERROBOT_FC_ROOTFS")]
     fc_rootfs: Option<PathBuf>,
     /// The host's IP on the Firecracker bridge: the guests' gateway, where
     /// they reach the agent API.
@@ -338,6 +330,10 @@ async fn make_backend(cli: &Cli) -> Result<Arc<dyn SandboxBackend>> {
             firecracker.check_kvm().context(
                 "--backend firecracker runs on Linux with KVM only; use --backend docker here",
             )?;
+            anyhow::ensure!(
+                cli.fc_kernel.is_some() && cli.fc_rootfs.is_some(),
+                "--backend firecracker needs --fc-kernel and --fc-rootfs"
+            );
             Arc::new(firecracker)
         }
         Backend::Local => {
