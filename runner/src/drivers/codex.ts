@@ -294,6 +294,7 @@ export class CodexDriver implements ModelDriver {
     if (aborted(ctx.signal)) throw new TurnAbortedError("interrupted");
     const server = await this.#start();
     const threadId = await this.#openThread(server, ctx);
+    if (aborted(ctx.signal)) throw new TurnAbortedError("interrupted");
     return { result: await this.#turn(server, threadId, ctx), sessionId: threadId };
   }
 
