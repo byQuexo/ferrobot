@@ -198,3 +198,29 @@ fn question_card_schema_accepts_cards_and_answers() {
         &json!({"version": 1, "card": {"questions": [{"prompt": "x", "kind": "nope"}]}})
     ));
 }
+
+#[test]
+fn every_schema_reference_resolves() {
+    fn refs(v: &serde_json::Value, out: &mut Vec<String>) {
+        match v {
+            serde_json::Value::Object(m) => {
+                if let Some(r) = m.get("$ref").and_then(|r| r.as_str()) {
+                    out.push(r.to_owned());
+                }
+                m.values().for_each(|v| refs(v, out));
+            }
+            serde_json::Value::Array(a) => a.iter().for_each(|v| refs(v, out)),
+            _ => {}
+        }
+    }
+    let doc = serde_json::to_value(spec::openapi()).unwrap();
+    let mut found = Vec::new();
+    refs(&doc, &mut found);
+    for r in found {
+        let name = r.trim_start_matches("#/components/schemas/");
+        assert!(
+            doc["components"]["schemas"].get(name).is_some(),
+            "dangling {r}"
+        );
+    }
+}

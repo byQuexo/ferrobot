@@ -20,7 +20,7 @@ use ferrobot_core::{AgentId, Sender};
 use ferrobot_mcp::MailboxNotifier;
 use ferrobot_sandbox::{
     ExecOutput, ExecRequest, SandboxBackend, SandboxError, SandboxHandle, SandboxPath, SandboxSpec,
-    SandboxState, SnapshotRef,
+    SandboxState, SleepLevel, SnapshotRef,
 };
 use futures_util::{SinkExt, StreamExt};
 use serde_json::{Value, json};
@@ -110,6 +110,19 @@ impl SandboxBackend for StatefulBackend {
         self.set(&h.id, SandboxState::Running);
         self.log(format!("wake {}", h.id));
         Ok(())
+    }
+    async fn sleep(
+        &self,
+        h: &SandboxHandle,
+        level: SleepLevel,
+    ) -> Result<SleepLevel, SandboxError> {
+        if level == SleepLevel::Cold {
+            self.stop(h).await?;
+        } else {
+            self.set(&h.id, SandboxState::Paused);
+            self.log(format!("pause {}", h.id));
+        }
+        Ok(level)
     }
     async fn stop(&self, h: &SandboxHandle) -> Result<(), SandboxError> {
         self.set(&h.id, SandboxState::Stopped);
@@ -1564,4 +1577,77 @@ async fn codex_providers_use_a_key_or_the_hosts_chatgpt_login() {
     );
     assert_eq!(http(&d.ui, "POST", &not_codex, None).await.0, 409);
     assert_eq!(http(&d.ui, "GET", &other, None).await.0, 200);
+}
+
+#[tokio::test]
+async fn idle_agents_pause_before_they_stop() {
+    let backend = Arc::new(StatefulBackend::default());
+    let d = start_with(backend.clone(), None, "127.0.0.1:0", |s| {
+        s.warm_timeout = Some(Duration::from_millis(200));
+        s.idle_timeout = Some(Duration::from_millis(600));
+    })
+    .await;
+    let id = create(&d, json!({"name": "wren"})).await["id"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    let _ws = connect_runner(&d.agents, &backend.token("wren")).await;
+    let agent = || async {
+        http(&d.ui, "GET", &format!("/v1/agents/{id}"), None)
+            .await
+            .1
+    };
+    let count = |what: &str| backend.calls().iter().filter(|c| *c == what).count();
+
+    tokio::time::sleep(Duration::from_millis(300)).await;
+    ferrobot_daemon::supervisor::check_all(&d.state).await;
+    let a = agent().await;
+    assert_eq!(
+        (&a["status"], &a["presence"]),
+        (&json!("paused"), &json!("sleeping"))
+    );
+    let (_, info) = http(&d.ui, "GET", &format!("/v1/agents/{id}/sandbox"), None).await;
+    assert_eq!(info["state"], "paused");
+    assert_eq!(info["warm_after_s"], 0);
+    assert_eq!(count("pause wren"), 1);
+
+    // A paused sandbox is not a crash: the supervisor leaves it alone...
+    ferrobot_daemon::supervisor::check_all(&d.state).await;
+    assert_eq!((count("wake wren"), count("create wren")), (0, 1));
+    // ...until the cold timeout, when it stops.
+    tokio::time::sleep(Duration::from_millis(400)).await;
+    ferrobot_daemon::supervisor::check_all(&d.state).await;
+    assert_eq!(agent().await["status"], "stopped");
+    assert_eq!(count("stop wren"), 1);
+
+    // An operator can pause on purpose; a message resumes it in place.
+    http(&d.ui, "POST", &format!("/v1/agents/{id}/wake"), None).await;
+    let (status, _) = http(
+        &d.ui,
+        "POST",
+        &format!("/v1/agents/{id}/stop?level=warm"),
+        None,
+    )
+    .await;
+    assert_eq!(status, 204);
+    assert_eq!(agent().await["status"], "paused");
+    let (status, _) = http(
+        &d.ui,
+        "POST",
+        &format!("/v1/agents/{id}/messages"),
+        Some(json!({"body": "resume"})),
+    )
+    .await;
+    assert_eq!(status, 202);
+    eventually("resume", Duration::from_secs(5), || async {
+        (agent().await["status"] == "running").then_some(())
+    })
+    .await;
+    assert_eq!(
+        count("create wren"),
+        1,
+        "resumed, not re-created: {:?}",
+        backend.calls()
+    );
+    assert_eq!(count("wake wren"), 2);
 }

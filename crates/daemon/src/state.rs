@@ -27,7 +27,11 @@ pub struct Settings {
     pub model: Option<String>,
     /// A turn running longer than this is interrupted and retried.
     pub turn_timeout: Duration,
-    /// Sleep an agent's sandbox after this long without activity (`None`: never).
+    /// Pause an agent's sandbox (warm sleep) after this long without activity
+    /// (`None`: never).
+    pub warm_timeout: Option<Duration>,
+    /// Stop an agent's sandbox (cold sleep) after this long without activity
+    /// (`None`: never).
     pub idle_timeout: Option<Duration>,
     /// How often the supervisor checks idle and crashed sandboxes.
     pub supervisor_interval: Duration,
@@ -63,6 +67,7 @@ impl Settings {
             anthropic_upstream: "https://api.anthropic.com".into(),
             model: None,
             turn_timeout: Duration::from_secs(600),
+            warm_timeout: None,
             idle_timeout: None,
             supervisor_interval: Duration::from_secs(15),
             default_timezone: "UTC".into(),

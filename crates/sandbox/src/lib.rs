@@ -57,8 +57,21 @@ pub struct SandboxHandle {
 #[serde(rename_all = "snake_case")]
 pub enum SandboxState {
     Running,
+    /// Frozen by a warm sleep: memory kept, processes resume on wake.
+    Paused,
     Stopped,
     Missing,
+}
+
+/// How deeply a sandbox sleeps.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(utoipa::ToSchema))]
+#[serde(rename_all = "snake_case")]
+pub enum SleepLevel {
+    /// Paused: processes frozen, memory kept, wakes without a restart.
+    Warm,
+    /// Stopped: processes end and memory is freed; the disk is kept.
+    Cold,
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
@@ -165,8 +178,20 @@ pub trait SandboxBackend: Send + Sync + std::fmt::Debug {
         })
     }
 
-    /// Starts a stopped/sleeping sandbox.
+    /// Starts a stopped/sleeping sandbox (resumes a paused one).
     async fn wake(&self, sandbox: &SandboxHandle) -> Result<(), SandboxError>;
+
+    /// Puts the sandbox to sleep and returns the level reached. Backends
+    /// that cannot pause sleep `Cold` (a [`stop`](Self::stop)) instead.
+    async fn sleep(
+        &self,
+        sandbox: &SandboxHandle,
+        level: SleepLevel,
+    ) -> Result<SleepLevel, SandboxError> {
+        let _ = level;
+        self.stop(sandbox).await?;
+        Ok(SleepLevel::Cold)
+    }
 
     /// Stops the sandbox, keeping its disk.
     async fn stop(&self, sandbox: &SandboxHandle) -> Result<(), SandboxError>;

@@ -314,8 +314,8 @@ export interface paths {
         get?: never;
         put?: never;
         /**
-         * Puts the agent to sleep (stops the sandbox, keeps its disk). A new
-         *     message or `wake` starts it again.
+         * Puts the agent to sleep, keeping its disk. A new message or `wake`
+         *     starts (or resumes) it again.
          */
         post: operations["stop"];
         delete?: never;
@@ -590,7 +590,7 @@ export interface components {
          * @description Lifecycle state of an agent's sandbox as tracked by the daemon.
          * @enum {string}
          */
-        AgentStatus: "created" | "running" | "stopped" | "failed";
+        AgentStatus: "created" | "running" | "paused" | "stopped" | "failed";
         /** @description An agent plus live state. */
         AgentView: components["schemas"]["Agent"] & {
             /** @description Whether the agent's runner is connected right now. */
@@ -991,16 +991,25 @@ export interface components {
             connected: boolean;
             /**
              * Format: int64
-             * @description Seconds since the last activity; sleeps when it reaches `idle_timeout_s`.
+             * @description Seconds since the last activity; pauses at `warm_after_s`, stops at
+             *     `idle_timeout_s`.
              */
             idle_s: number;
-            /** Format: int64 */
+            /**
+             * Format: int64
+             * @description Warm sleep (pause) after this long idle; `null`: never.
+             */
+            warm_after_s?: number | null;
+            /**
+             * Format: int64
+             * @description Cold sleep (stop) after this long idle; `null`: never.
+             */
             idle_timeout_s?: number | null;
             /** @description Whether the backend can snapshot and restore. */
             snapshots_supported: boolean;
         };
         /** @enum {string} */
-        SandboxState: "running" | "stopped" | "missing";
+        SandboxState: "running" | "paused" | "stopped" | "missing";
         /** @description Who sent a mailbox message. */
         Sender: {
             /** @enum {string} */
@@ -1019,6 +1028,11 @@ export interface components {
             /** @enum {string} */
             kind: "routine";
         };
+        /**
+         * @description How deeply a sandbox sleeps.
+         * @enum {string}
+         */
+        SleepLevel: "warm" | "cold";
         SnapshotRecord: {
             /** Format: int64 */
             id: number;
@@ -2439,7 +2453,13 @@ export interface operations {
     };
     stop: {
         parameters: {
-            query?: never;
+            query?: {
+                /**
+                 * @description `cold` (default) stops the sandbox; `warm` pauses it, keeping memory,
+                 *     where the backend can (otherwise it sleeps cold).
+                 */
+                level?: components["schemas"]["SleepLevel"];
+            };
             header?: never;
             path: {
                 /** @description Agent id (UUID) */

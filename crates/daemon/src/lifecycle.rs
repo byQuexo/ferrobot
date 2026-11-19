@@ -7,7 +7,7 @@
 use std::collections::BTreeMap;
 
 use ferrobot_core::{Agent, AgentId, AgentStatus, ProviderKind};
-use ferrobot_sandbox::{SandboxError, SandboxHandle, SandboxSpec, SandboxState};
+use ferrobot_sandbox::{SandboxError, SandboxHandle, SandboxSpec, SandboxState, SleepLevel};
 use ferrobot_store::SnapshotRecord;
 use serde_json::json;
 
@@ -184,22 +184,38 @@ pub async fn ensure_awake(state: &AppState, id: AgentId) -> Result<(), ApiError>
 
 /// Puts the agent to sleep: stops the sandbox, keeping its disk. Queued
 /// messages wait; a new message wakes it again.
-pub async fn sleep(state: &AppState, id: AgentId, reason: &str) -> Result<(), ApiError> {
+pub async fn sleep(
+    state: &AppState,
+    id: AgentId,
+    reason: &str,
+    level: SleepLevel,
+) -> Result<(), ApiError> {
     let lock = state.hub.lifecycle_lock(id);
     let _guard = lock.lock().await;
     let agent = state.store.get_agent(id).await?;
+    let mut reached = SleepLevel::Cold;
     if let Some(handle) = handle_of(&agent) {
-        match state.backend.stop(&handle).await {
-            Ok(()) | Err(SandboxError::NotFound(_)) => {}
+        match state.backend.sleep(&handle, level).await {
+            Ok(level) => reached = level,
+            Err(SandboxError::NotFound(_)) => {}
             Err(e) => return Err(e.into()),
         }
     }
-    if agent.status != AgentStatus::Stopped {
+    let status = match reached {
+        SleepLevel::Warm => AgentStatus::Paused,
+        SleepLevel::Cold => AgentStatus::Stopped,
+    };
+    if agent.status != status {
         state
-            .record(id, None, "sleeping", json!({ "reason": reason }))
+            .record(
+                id,
+                None,
+                "sleeping",
+                json!({ "reason": reason, "level": reached }),
+            )
             .await;
     }
-    set_status(state, id, AgentStatus::Stopped).await
+    set_status(state, id, status).await
 }
 
 /// Destroys the sandbox and removes the agent with all its data.
@@ -358,19 +374,28 @@ pub async fn reconcile(state: &AppState) {
                 }
             }
             // Sleeping agents with something queued get woken; otherwise make
-            // sure a sandbox that kept running is put back to sleep.
-            (AgentStatus::Stopped, live) => {
+            // sure the sandbox sleeps as deeply as the agent's status says.
+            (status @ (AgentStatus::Paused | AgentStatus::Stopped), live) => {
+                let level = match status {
+                    AgentStatus::Paused if live == Some(SandboxState::Paused) => None,
+                    AgentStatus::Paused if live == Some(SandboxState::Running) => {
+                        Some(SleepLevel::Warm)
+                    }
+                    AgentStatus::Paused => Some(SleepLevel::Cold),
+                    _ if matches!(live, Some(SandboxState::Running | SandboxState::Paused)) => {
+                        Some(SleepLevel::Cold)
+                    }
+                    _ => None,
+                };
                 let queued = state
                     .store
                     .has_waking_messages(agent.id)
                     .await
                     .unwrap_or(false);
-                let result = if queued {
-                    wake(state, agent.id).await
-                } else if live == Some(SandboxState::Running) {
-                    sleep(state, agent.id, "reconcile").await
-                } else {
-                    Ok(())
+                let result = match level {
+                    _ if queued => wake(state, agent.id).await,
+                    Some(level) => sleep(state, agent.id, "reconcile", level).await,
+                    None => Ok(()),
                 };
                 if let Err(e) = result {
                     tracing::warn!(agent = %agent.name, error = %e, "reconcile failed");

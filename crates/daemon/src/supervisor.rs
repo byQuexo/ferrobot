@@ -1,9 +1,10 @@
-//! Background care for sandboxes: idle auto-sleep and crash recovery.
+//! Background care for sandboxes: idle auto-sleep (warm, then cold) and
+//! crash recovery.
 
 use std::time::{Duration, Instant};
 
 use ferrobot_core::{Agent, AgentStatus};
-use ferrobot_sandbox::SandboxState;
+use ferrobot_sandbox::{SandboxState, SleepLevel};
 use serde_json::json;
 
 use crate::AppState;
@@ -33,7 +34,7 @@ pub async fn check_all(state: &AppState) {
     };
     for agent in agents
         .into_iter()
-        .filter(|a| a.status == AgentStatus::Running)
+        .filter(|a| matches!(a.status, AgentStatus::Running | AgentStatus::Paused))
     {
         if let Err(e) = check(state, &agent).await {
             tracing::warn!(agent = %agent.name, error = %e, "supervisor check failed");
@@ -46,10 +47,21 @@ async fn check(state: &AppState, agent: &Agent) -> Result<(), crate::error::ApiE
     let Some(handle) = handle_of(agent) else {
         return Ok(());
     };
+    let idle = Instant::now().duration_since(state.hub.last_activity(id));
+    if agent.status == AgentStatus::Paused {
+        // A paused sandbox is asleep on purpose, never a crash; it only goes colder.
+        if state.settings.idle_timeout.is_some_and(|t| idle >= t)
+            && !state.store.has_queued_messages(id).await?
+        {
+            tracing::info!(agent = %agent.name, "idle, going to cold sleep");
+            lifecycle::sleep(state, id, "idle", SleepLevel::Cold).await?;
+        }
+        return Ok(());
+    }
     // Crash recovery: the agent should be awake but its sandbox is not running.
     match state.backend.state(&handle).await? {
         SandboxState::Running => {}
-        live @ (SandboxState::Stopped | SandboxState::Missing) => {
+        live @ (SandboxState::Paused | SandboxState::Stopped | SandboxState::Missing) => {
             tracing::warn!(agent = %agent.name, ?live, "sandbox down, restarting");
             state
                 .record(id, None, "sandbox_restarted", json!({ "was": live }))
@@ -78,14 +90,21 @@ async fn check(state: &AppState, agent: &Agent) -> Result<(), crate::error::ApiE
         state.backend.stop(&handle).await?;
         return lifecycle::wake(state, id).await;
     }
-    // Idle auto-sleep.
-    if let Some(timeout) = state.settings.idle_timeout
+    // Idle auto-sleep: the deepest level whose timeout has passed.
+    let s = &state.settings;
+    let level = if s.idle_timeout.is_some_and(|t| idle >= t) {
+        Some(SleepLevel::Cold)
+    } else if s.warm_timeout.is_some_and(|t| idle >= t) {
+        Some(SleepLevel::Warm)
+    } else {
+        None
+    };
+    if let Some(level) = level
         && !working
-        && Instant::now().duration_since(state.hub.last_activity(id)) >= timeout
         && !state.store.has_queued_messages(id).await?
     {
-        tracing::info!(agent = %agent.name, "idle, going to sleep");
-        lifecycle::sleep(state, id, "idle").await?;
+        tracing::info!(agent = %agent.name, ?level, "idle, going to sleep");
+        lifecycle::sleep(state, id, "idle", level).await?;
     }
     Ok(())
 }

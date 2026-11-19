@@ -159,7 +159,8 @@ function Computer(props: { agent: Agent }): JSX.Element {
   };
 
   if (!info) return <p class="muted pad">Loading…</p>;
-  const asleep = props.agent.status === "stopped";
+  const paused = props.agent.status === "paused";
+  const asleep = paused || props.agent.status === "stopped";
   return (
     <div class="stack">
       <section class="card computer">
@@ -180,8 +181,10 @@ function Computer(props: { agent: Agent }): JSX.Element {
           <span class="mono ellipsis" title={info.sandbox_id ?? ""}>{info.sandbox_id ?? "—"}</span>
           <span>Idle</span>
           <span>
-            {asleep ? "asleep" : duration(info.idle_s)}
-            {!asleep && info.idle_timeout_s ? ` · sleeps after ${duration(info.idle_timeout_s)}` : ""}
+            {paused ? "paused, resumes quickly" : asleep ? "asleep" : duration(info.idle_s)}
+            {!asleep && info.warm_after_s ? ` · pauses after ${duration(info.warm_after_s)}` : ""}
+            {!paused && !asleep && info.idle_timeout_s ? ` · sleeps after ${duration(info.idle_timeout_s)}` : ""}
+            {paused && info.idle_timeout_s ? ` · sleeps after ${duration(info.idle_timeout_s)} idle` : ""}
           </span>
         </div>
         <div class="row-actions">

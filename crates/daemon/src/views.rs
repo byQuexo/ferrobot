@@ -40,7 +40,7 @@ pub struct AgentView {
 pub fn presence(agent: &Agent, connected: bool, working: bool) -> Presence {
     match agent.status {
         AgentStatus::Failed => Presence::Error,
-        AgentStatus::Stopped => Presence::Sleeping,
+        AgentStatus::Paused | AgentStatus::Stopped => Presence::Sleeping,
         AgentStatus::Running if working => Presence::Working,
         AgentStatus::Running if connected => Presence::Awake,
         AgentStatus::Created | AgentStatus::Running => Presence::Starting,

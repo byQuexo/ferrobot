@@ -121,6 +121,9 @@ pub enum AgentStatus {
     Created,
     /// Sandbox running; the runner may or may not be connected.
     Running,
+    /// Sandbox paused (warm sleep): memory kept, wakes without a restart.
+    /// Messages queue up until it wakes.
+    Paused,
     /// Sandbox stopped (disk kept). Messages queue up until it wakes.
     Stopped,
     /// Sandbox creation or start failed; see daemon logs.
@@ -132,6 +135,7 @@ impl AgentStatus {
         match self {
             Self::Created => "created",
             Self::Running => "running",
+            Self::Paused => "paused",
             Self::Stopped => "stopped",
             Self::Failed => "failed",
         }
@@ -145,6 +149,7 @@ impl FromStr for AgentStatus {
         match s {
             "created" => Ok(Self::Created),
             "running" => Ok(Self::Running),
+            "paused" => Ok(Self::Paused),
             "stopped" => Ok(Self::Stopped),
             "failed" => Ok(Self::Failed),
             other => Err(CoreError::UnknownVariant {

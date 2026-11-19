@@ -1711,7 +1711,7 @@
         "tags": [
           "sandbox"
         ],
-        "summary": "Puts the agent to sleep (stops the sandbox, keeps its disk). A new\nmessage or `wake` starts it again.",
+        "summary": "Puts the agent to sleep, keeping its disk. A new message or `wake`\nstarts (or resumes) it again.",
         "operationId": "stop",
         "parameters": [
           {
@@ -1721,6 +1721,15 @@
             "required": true,
             "schema": {
               "type": "string"
+            }
+          },
+          {
+            "name": "level",
+            "in": "query",
+            "description": "`cold` (default) stops the sandbox; `warm` pauses it, keeping memory,\nwhere the backend can (otherwise it sleeps cold).",
+            "required": false,
+            "schema": {
+              "$ref": "#/components/schemas/SleepLevel"
             }
           }
         ],
@@ -2670,6 +2679,7 @@
         "enum": [
           "created",
           "running",
+          "paused",
           "stopped",
           "failed"
         ]
@@ -3733,7 +3743,16 @@
           "idle_s": {
             "type": "integer",
             "format": "int64",
-            "description": "Seconds since the last activity; sleeps when it reaches `idle_timeout_s`.",
+            "description": "Seconds since the last activity; pauses at `warm_after_s`, stops at\n`idle_timeout_s`.",
+            "minimum": 0
+          },
+          "warm_after_s": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64",
+            "description": "Warm sleep (pause) after this long idle; `null`: never.",
             "minimum": 0
           },
           "idle_timeout_s": {
@@ -3742,6 +3761,7 @@
               "null"
             ],
             "format": "int64",
+            "description": "Cold sleep (stop) after this long idle; `null`: never.",
             "minimum": 0
           },
           "snapshots_supported": {
@@ -3754,6 +3774,7 @@
         "type": "string",
         "enum": [
           "running",
+          "paused",
           "stopped",
           "missing"
         ]
@@ -3818,6 +3839,14 @@
           }
         ],
         "description": "Who sent a mailbox message."
+      },
+      "SleepLevel": {
+        "type": "string",
+        "description": "How deeply a sandbox sleeps.",
+        "enum": [
+          "warm",
+          "cold"
+        ]
       },
       "SnapshotRecord": {
         "type": "object",

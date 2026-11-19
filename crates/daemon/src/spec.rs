@@ -86,7 +86,7 @@ pub const QUESTION_CARD_FILE: &str = "question-card.v1.schema.json";
         api::providers::chatgpt_login_status,
         api::ws::ui_ws,
     ),
-    components(schemas(UiEvent, QuestionEvent, QuestionAnswered)),
+    components(schemas(UiEvent, QuestionEvent, QuestionAnswered, ferrobot_sandbox::SleepLevel)),
     tags(
         (name = "system", description = "Daemon status"),
         (name = "agents", description = "Agent registry and profiles"),

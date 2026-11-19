@@ -97,8 +97,13 @@ struct Cli {
     /// Seconds before a turn is interrupted and its message retried.
     #[arg(long, env = "FERROBOT_TURN_TIMEOUT", default_value_t = 600)]
     turn_timeout: u64,
-    /// Seconds without activity before an agent's sandbox goes to sleep
-    /// (0 disables). Messages and routines wake it again.
+    /// Seconds without activity before an agent's sandbox is paused (warm
+    /// sleep: memory kept, quick wake; 0 disables). Backends that cannot
+    /// pause stop it instead.
+    #[arg(long, env = "FERROBOT_WARM_AFTER", default_value_t = 300)]
+    warm_after: u64,
+    /// Seconds without activity before an agent's sandbox is stopped (cold
+    /// sleep, 0 disables). Messages and routines wake it again.
     #[arg(long, env = "FERROBOT_IDLE_TIMEOUT", default_value_t = 900)]
     idle_timeout: u64,
     /// Default IANA time zone for routines (default: the system's).
@@ -178,10 +183,16 @@ async fn main() -> Result<()> {
     settings.model = cli.model.clone();
     settings.turn_timeout = Duration::from_secs(cli.turn_timeout);
     settings.idle_timeout = (cli.idle_timeout > 0).then(|| Duration::from_secs(cli.idle_timeout));
+    settings.warm_timeout = (cli.warm_after > 0).then(|| Duration::from_secs(cli.warm_after));
     // Check often enough that short idle timeouts are honoured promptly.
-    if let Some(idle) = settings.idle_timeout {
+    if let Some(first) = settings
+        .warm_timeout
+        .into_iter()
+        .chain(settings.idle_timeout)
+        .min()
+    {
         settings.supervisor_interval =
-            (idle / 2).clamp(Duration::from_secs(1), Duration::from_secs(15));
+            (first / 2).clamp(Duration::from_secs(1), Duration::from_secs(15));
     }
     settings.default_timezone = default_timezone;
     settings.api_token = Some(api_token);

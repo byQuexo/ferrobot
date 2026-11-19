@@ -21,7 +21,7 @@ use object_store::{ObjectStore, ObjectStoreExt};
 
 use crate::{
     ExecOutput, ExecRequest, SandboxBackend, SandboxError, SandboxHandle, SandboxPath, SandboxSpec,
-    SandboxState, SnapshotRef, capture,
+    SandboxState, SleepLevel, SnapshotRef, capture,
 };
 
 const KIND: &str = "docker";
@@ -183,8 +183,10 @@ impl DockerBackend {
             .inspect_container(id, None::<InspectContainerOptions>)
             .await
             .map_err(|e| not_found_or(e, id))?;
-        let running = info.state.and_then(|s| s.running).unwrap_or(false);
-        if !running {
+        let state = info.state.unwrap_or_default();
+        if state.paused == Some(true) {
+            self.docker.unpause_container(id).await?;
+        } else if state.running != Some(true) {
             self.docker.start_container(id, None).await?;
         }
         Ok(())
@@ -465,8 +467,35 @@ impl SandboxBackend for DockerBackend {
         self.ensure_started(Self::check(sandbox)?).await
     }
 
+    async fn sleep(
+        &self,
+        sandbox: &SandboxHandle,
+        level: SleepLevel,
+    ) -> Result<SleepLevel, SandboxError> {
+        if level == SleepLevel::Cold {
+            self.stop(sandbox).await?;
+            return Ok(level);
+        }
+        let id = Self::check(sandbox)?;
+        match self.docker.pause_container(id).await {
+            Ok(()) => Ok(level),
+            // 409: already paused, or not running (then it already sleeps cold).
+            Err(bollard::errors::Error::DockerResponseServerError {
+                status_code: 409, ..
+            }) => Ok(match self.state(sandbox).await? {
+                SandboxState::Paused => SleepLevel::Warm,
+                _ => SleepLevel::Cold,
+            }),
+            Err(e) => Err(not_found_or(e, id)),
+        }
+    }
+
     async fn stop(&self, sandbox: &SandboxHandle) -> Result<(), SandboxError> {
         let id = Self::check(sandbox)?;
+        // A paused container cannot handle SIGTERM; resume it so it stops cleanly.
+        if self.state(sandbox).await? == SandboxState::Paused {
+            self.docker.unpause_container(id).await?;
+        }
         let options = StopContainerOptionsBuilder::default().t(10).build();
         match self.docker.stop_container(id, Some(options)).await {
             // 304: already stopped
@@ -514,11 +543,16 @@ impl SandboxBackend for DockerBackend {
             .inspect_container(id, None::<InspectContainerOptions>)
             .await
         {
-            Ok(info) => Ok(if info.state.and_then(|s| s.running).unwrap_or(false) {
-                SandboxState::Running
-            } else {
-                SandboxState::Stopped
-            }),
+            Ok(info) => {
+                let state = info.state.unwrap_or_default();
+                Ok(if state.paused == Some(true) {
+                    SandboxState::Paused
+                } else if state.running == Some(true) {
+                    SandboxState::Running
+                } else {
+                    SandboxState::Stopped
+                })
+            }
             Err(bollard::errors::Error::DockerResponseServerError {
                 status_code: 404, ..
             }) => Ok(SandboxState::Missing),

@@ -9,7 +9,7 @@ use std::sync::Arc;
 
 use ferrobot_sandbox::{
     DockerBackend, DockerConfig, ExecRequest, SandboxBackend, SandboxPath, SandboxSpec,
-    SandboxState,
+    SandboxState, SleepLevel,
 };
 
 #[tokio::test]
@@ -104,6 +104,9 @@ async fn container_lifecycle() {
     backend.stop(&h).await.expect("stop");
     assert_eq!(backend.state(&h).await.unwrap(), SandboxState::Stopped);
     backend.wake(&h).await.expect("wake");
+
+    warm_sleep_round_trip(&backend, &h).await;
+    backend.wake(&h).await.expect("wake after pause+stop");
     // state survives stop/wake (home volume)
     assert_eq!(backend.read_file(&h, &path).await.unwrap(), b"hi from host");
 
@@ -118,5 +121,28 @@ async fn container_lifecycle() {
             .unwrap()
             .count(),
         0
+    );
+}
+
+/// Warm sleep pauses in place; wake resumes; a paused container still stops cleanly.
+async fn warm_sleep_round_trip(backend: &DockerBackend, h: &ferrobot_sandbox::SandboxHandle) {
+    let warm = backend.sleep(h, SleepLevel::Warm).await.expect("pause");
+    assert_eq!(warm, SleepLevel::Warm);
+    assert_eq!(backend.state(h).await.unwrap(), SandboxState::Paused);
+    backend.wake(h).await.expect("resume");
+    assert_eq!(backend.state(h).await.unwrap(), SandboxState::Running);
+    backend
+        .sleep(h, SleepLevel::Warm)
+        .await
+        .expect("pause again");
+    backend.stop(h).await.expect("stop while paused");
+    assert_eq!(backend.state(h).await.unwrap(), SandboxState::Stopped);
+    assert_eq!(
+        backend
+            .sleep(h, SleepLevel::Warm)
+            .await
+            .expect("pause stopped"),
+        SleepLevel::Cold,
+        "a stopped container cannot be paused"
     );
 }
