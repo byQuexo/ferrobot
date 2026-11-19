@@ -78,6 +78,10 @@ pub const QUESTION_CARD_FILE: &str = "question-card.v1.schema.json";
         api::sandbox::create_snapshot,
         api::sandbox::restore_snapshot,
         api::sandbox::delete_snapshot,
+        api::providers::list_providers,
+        api::providers::create_provider,
+        api::providers::update_provider,
+        api::providers::delete_provider,
         api::ws::ui_ws,
     ),
     components(schemas(UiEvent, QuestionEvent, QuestionAnswered)),
@@ -88,6 +92,7 @@ pub const QUESTION_CARD_FILE: &str = "question-card.v1.schema.json";
         (name = "memory", description = "Per-agent long-term memory"),
         (name = "routines", description = "Scheduled prompts"),
         (name = "sandbox", description = "Each agent's own computer: sleep, wake, snapshots"),
+        (name = "providers", description = "Model providers and their API keys"),
     )
 )]
 struct ApiDoc;

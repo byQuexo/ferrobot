@@ -52,9 +52,24 @@
           "description": "Operator-provided role handed to the model as system instructions.",
           "type": "string"
         },
+        "model": {
+          "description": "Model id; `null` uses the provider's default model.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
         "name": {
           "$ref": "#/$defs/AgentName",
           "description": "Display and addressing name; unique, can be changed (rename)."
+        },
+        "provider_id": {
+          "description": "Model provider (`GET /v1/providers`); `null` uses the daemon's\n`ANTHROPIC_API_KEY`.",
+          "format": "uuid",
+          "type": [
+            "string",
+            "null"
+          ]
         },
         "sandbox_id": {
           "description": "Backend-specific sandbox identifier (container id, sprite name, ...).",

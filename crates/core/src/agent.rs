@@ -221,6 +221,11 @@ pub struct Agent {
     /// Agent that created this one (with operator approval); `null` means
     /// the operator created it.
     pub created_by: Option<AgentId>,
+    /// Model provider (`GET /v1/providers`); `null` uses the daemon's
+    /// `ANTHROPIC_API_KEY`.
+    pub provider_id: Option<uuid::Uuid>,
+    /// Model id; `null` uses the provider's default model.
+    pub model: Option<String>,
     pub status: AgentStatus,
     /// Backend kind that owns the sandbox, e.g. `docker`.
     pub backend: Option<String>,

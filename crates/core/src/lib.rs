@@ -9,6 +9,7 @@ pub mod error;
 pub mod mail;
 pub mod mention;
 pub mod protocol;
+pub mod provider;
 pub mod question;
 
 pub use agent::{
@@ -16,6 +17,7 @@ pub use agent::{
 };
 pub use error::CoreError;
 pub use mail::{MailMessage, MailStatus, Sender};
+pub use provider::{Provider, ProviderKind, UpstreamAuth};
 
 /// Human-readable project name (also set in the workspace `Cargo.toml` and README).
 pub const PROJECT_NAME: &str = "ferrobot";

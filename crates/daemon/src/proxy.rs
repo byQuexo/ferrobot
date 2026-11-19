@@ -1,9 +1,12 @@
-//! Model proxy: sandboxes call the Anthropic API through the daemon.
+//! Model proxy: sandboxes call their model provider through the daemon.
 //!
-//! Inside a sandbox `ANTHROPIC_BASE_URL` points at `<agent API>/model` and
-//! `ANTHROPIC_API_KEY` holds the agent's own token. The proxy checks that
-//! token, swaps in the real key (which never leaves the daemon) and streams
-//! the upstream response back unchanged, including server-sent events.
+//! Inside a sandbox the model base URL points at `<agent API>/model` and the
+//! only credential is the agent's own token. The proxy checks that token,
+//! picks the upstream from the agent's provider, swaps in the real credential
+//! (which never leaves the daemon) and streams the response back unchanged,
+//! including server-sent events.
+
+use std::time::{Duration, Instant};
 
 use axum::Router;
 use axum::body::Body;
@@ -12,7 +15,12 @@ use axum::http::{HeaderMap, StatusCode, header};
 use axum::response::{IntoResponse, Response};
 use axum::routing::any;
 
+use ferrobot_core::{Agent, ProviderKind, UpstreamAuth};
+
 use crate::AppState;
+
+/// Google access tokens live an hour; refresh well before.
+const GCLOUD_TOKEN_TTL: Duration = Duration::from_secs(45 * 60);
 
 /// Largest request body forwarded (prompts with images can be big).
 const MAX_REQUEST_BYTES: usize = 32 * 1024 * 1024;
@@ -62,17 +70,126 @@ fn error(status: StatusCode, message: &str) -> Response {
     (status, axum::Json(body)).into_response()
 }
 
+/// Where one agent's model requests go and with which credential.
+struct Route {
+    upstream: String,
+    auth: UpstreamAuth,
+    secret: Option<String>,
+}
+
+pub fn secret_key(provider: uuid::Uuid) -> String {
+    format!("provider:{provider}")
+}
+
+/// Status and message for the agent when a request cannot be routed.
+type Failure = (StatusCode, String);
+
+async fn route(state: &AppState, agent: &Agent, path: &str) -> Result<Route, Failure> {
+    let Some(id) = agent.provider_id else {
+        if !path.starts_with("v1/") {
+            return Err((
+                StatusCode::NOT_FOUND,
+                "only /v1/ API paths are proxied".into(),
+            ));
+        }
+        let Some(key) = state.settings.anthropic_api_key.clone() else {
+            return Err((
+                StatusCode::SERVICE_UNAVAILABLE,
+                "the daemon has no ANTHROPIC_API_KEY configured".into(),
+            ));
+        };
+        return Ok(Route {
+            upstream: state.settings.anthropic_upstream.clone(),
+            auth: UpstreamAuth::ApiKeyHeader,
+            secret: Some(key),
+        });
+    };
+    let unavailable = |msg: String| (StatusCode::SERVICE_UNAVAILABLE, msg);
+    let provider = state
+        .store
+        .get_provider(id)
+        .await
+        .map_err(|e| unavailable(format!("provider: {e}")))?;
+    if provider.kind == ProviderKind::Anthropic && !path.starts_with("v1/") {
+        return Err((
+            StatusCode::NOT_FOUND,
+            "only /v1/ API paths are proxied".into(),
+        ));
+    }
+    // Bedrock model listings live on the control plane, invocations on the runtime.
+    let upstream = if provider.kind == ProviderKind::Bedrock && !path.starts_with("model/") {
+        provider
+            .region
+            .as_ref()
+            .map(|r| format!("https://bedrock.{r}.amazonaws.com"))
+    } else {
+        provider.upstream()
+    };
+    let upstream = upstream
+        .ok_or_else(|| unavailable(format!("provider {} has no upstream", provider.name)))?;
+    let auth = provider.kind.upstream_auth();
+    let secret = match auth {
+        UpstreamAuth::GcloudToken => Some(gcloud_token(state).await?),
+        _ => state
+            .settings
+            .secrets
+            .get(&secret_key(id))
+            .await
+            .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?,
+    };
+    if secret.is_none() && provider.kind.needs_key() {
+        return Err(unavailable(format!(
+            "provider {} has no API key; set one in the providers settings",
+            provider.name
+        )));
+    }
+    Ok(Route {
+        upstream,
+        auth,
+        secret,
+    })
+}
+
+/// A Google access token from the daemon host's `gcloud` login, cached.
+async fn gcloud_token(state: &AppState) -> Result<String, Failure> {
+    let mut cached = state.gcloud_token.lock().await;
+    if let Some((token, minted)) = cached.as_ref()
+        && minted.elapsed() < GCLOUD_TOKEN_TTL
+    {
+        return Ok(token.clone());
+    }
+    let failed = || {
+        (
+            StatusCode::SERVICE_UNAVAILABLE,
+            "could not get a Google access token; run `gcloud auth login` on the daemon host"
+                .into(),
+        )
+    };
+    let [program, args @ ..] = state.settings.gcloud_token_cmd.as_slice() else {
+        return Err(failed());
+    };
+    let output = tokio::process::Command::new(program)
+        .args(args)
+        .output()
+        .await
+        .map_err(|e| {
+            tracing::warn!(error = %e, "gcloud token command failed to start");
+            failed()
+        })?;
+    let token = String::from_utf8_lossy(&output.stdout).trim().to_owned();
+    if !output.status.success() || token.is_empty() {
+        tracing::warn!(status = %output.status, "gcloud token command failed");
+        return Err(failed());
+    }
+    *cached = Some((token.clone(), Instant::now()));
+    Ok(token)
+}
+
 async fn forward(
     State(state): State<AppState>,
     Path(path): Path<String>,
     request: Request,
 ) -> Response {
-    let Some(key) = state.settings.anthropic_api_key.clone() else {
-        return error(
-            StatusCode::SERVICE_UNAVAILABLE,
-            "the daemon has no ANTHROPIC_API_KEY configured",
-        );
-    };
     let Some(token) = agent_token(request.headers()) else {
         return error(StatusCode::UNAUTHORIZED, "missing agent token");
     };
@@ -84,18 +201,19 @@ async fn forward(
             return error(StatusCode::INTERNAL_SERVER_ERROR, "token lookup failed");
         }
     };
-    if !path.starts_with("v1/") || path.contains("..") {
-        return error(StatusCode::NOT_FOUND, "only /v1/ API paths are proxied");
+    if path.contains("..") {
+        return error(StatusCode::NOT_FOUND, "invalid path");
     }
+    let route = match route(&state, &agent, &path).await {
+        Ok(route) => route,
+        Err((status, message)) => return error(status, &message),
+    };
 
     let (parts, body) = request.into_parts();
     let Ok(body) = axum::body::to_bytes(body, MAX_REQUEST_BYTES).await else {
         return error(StatusCode::PAYLOAD_TOO_LARGE, "request body too large");
     };
-    let mut url = format!(
-        "{}/{path}",
-        state.settings.anthropic_upstream.trim_end_matches('/')
-    );
+    let mut url = format!("{}/{path}", route.upstream.trim_end_matches('/'));
     if let Some(q) = parts.uri.query() {
         url.push('?');
         url.push_str(q);
@@ -106,7 +224,15 @@ async fn forward(
             upstream = upstream.header(name, value);
         }
     }
-    upstream = upstream.header("x-api-key", key).body(body);
+    if let Some(secret) = route.secret {
+        upstream = match route.auth {
+            UpstreamAuth::ApiKeyHeader => upstream.header("x-api-key", secret),
+            UpstreamAuth::Bearer | UpstreamAuth::GcloudToken => {
+                upstream.header(header::AUTHORIZATION, format!("Bearer {secret}"))
+            }
+        };
+    }
+    upstream = upstream.body(body);
 
     tracing::debug!(agent = %agent.name, method = %parts.method, %path, "model request");
     let response = match upstream.send().await {

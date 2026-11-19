@@ -12,6 +12,7 @@ mod events;
 mod mailbox;
 mod memory;
 mod migrations;
+mod providers;
 mod routines;
 mod snapshots;
 mod util;

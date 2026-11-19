@@ -70,12 +70,14 @@ fn every_routed_path_is_documented() {
         "/v1/agents/{id}/snapshots",
         "/v1/agents/{id}/snapshots/{sid}",
         "/v1/agents/{id}/snapshots/{sid}/restore",
+        "/v1/providers",
+        "/v1/providers/{id}",
     ] {
         assert!(documented.contains(&path), "{path} missing from OpenAPI");
     }
     assert_eq!(
         documented.len(),
-        25,
+        27,
         "undocumented extra paths: {documented:?}"
     );
 }
@@ -123,6 +125,8 @@ fn ui_events_validate_against_schema() {
             hue: 150,
         }),
         created_by: Some(AgentId::new()),
+        provider_id: Some(uuid::Uuid::nil()),
+        model: Some("gpt-test".into()),
         status: AgentStatus::Running,
         backend: Some("docker".into()),
         sandbox_id: Some("ferrobot-alice".into()),

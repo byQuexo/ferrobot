@@ -6,7 +6,7 @@
 
 use std::collections::BTreeMap;
 
-use ferrobot_core::{Agent, AgentId, AgentStatus};
+use ferrobot_core::{Agent, AgentId, AgentStatus, ProviderKind};
 use ferrobot_sandbox::{SandboxError, SandboxHandle, SandboxSpec, SandboxState};
 use ferrobot_store::SnapshotRecord;
 use serde_json::json;
@@ -40,29 +40,65 @@ async fn fresh_spec(state: &AppState, agent: &Agent) -> Result<SandboxSpec, ApiE
     let token = new_token();
     state.store.set_agent_token(agent.id, &token).await?;
     let s = &state.settings;
+    let provider = match agent.provider_id {
+        Some(id) => Some(state.store.get_provider(id).await?),
+        None => None,
+    };
+    let driver = match &provider {
+        _ if s.driver == "mock" => "mock",
+        Some(p) => p.kind.driver(),
+        None => "claude",
+    };
     let mut env = BTreeMap::from([
         (
             "FERROBOT_DAEMON_URL".to_owned(),
             s.sandbox_daemon_url.clone(),
         ),
         ("FERROBOT_AGENT_NAME".to_owned(), agent.name.to_string()),
-        ("FERROBOT_DRIVER".to_owned(), s.driver.clone()),
+        ("FERROBOT_DRIVER".to_owned(), driver.to_owned()),
     ]);
-    if s.driver == "claude" {
-        // The real key never enters the sandbox: the SDK talks to the
-        // daemon's model proxy and authenticates with the agent token.
-        env.insert(
-            "ANTHROPIC_BASE_URL".to_owned(),
-            format!("{}/model", s.sandbox_daemon_url.trim_end_matches('/')),
-        );
-        env.insert("ANTHROPIC_API_KEY".to_owned(), token.clone());
-        env.insert(
-            "CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC".to_owned(),
-            "1".to_owned(),
-        );
-        if let Some(model) = &s.model {
-            env.insert("FERROBOT_MODEL".to_owned(), model.clone());
+    // Real credentials never enter the sandbox: the runner talks to the
+    // daemon's model proxy and authenticates with the agent token.
+    let proxy = format!("{}/model", s.sandbox_daemon_url.trim_end_matches('/'));
+    let mut set = |k: &str, v: &str| env.insert(k.to_owned(), v.to_owned());
+    match driver {
+        "claude" => {
+            set("ANTHROPIC_BASE_URL", &proxy);
+            set("ANTHROPIC_API_KEY", &token);
+            set("CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC", "1");
+            let region = provider.as_ref().and_then(|p| p.region.as_deref());
+            match provider.as_ref().map(|p| p.kind) {
+                Some(ProviderKind::Bedrock) => {
+                    set("CLAUDE_CODE_USE_BEDROCK", "1");
+                    set("ANTHROPIC_BEDROCK_BASE_URL", &proxy);
+                    // The agent token, sent as a bearer; the proxy swaps in the Bedrock key.
+                    set("AWS_BEARER_TOKEN_BEDROCK", &token);
+                    set("AWS_REGION", region.unwrap_or_default());
+                }
+                Some(ProviderKind::Vertex) => {
+                    set("CLAUDE_CODE_USE_VERTEX", "1");
+                    set("ANTHROPIC_VERTEX_BASE_URL", &proxy);
+                    // The SDK then sends ANTHROPIC_API_KEY (the agent token) as x-api-key.
+                    set("CLAUDE_CODE_SKIP_VERTEX_AUTH", "1");
+                    set("CLOUD_ML_REGION", region.unwrap_or_default());
+                    let project = provider.as_ref().and_then(|p| p.project.as_deref());
+                    set("ANTHROPIC_VERTEX_PROJECT_ID", project.unwrap_or_default());
+                }
+                _ => {}
+            }
         }
+        "openai" => {
+            set("FERROBOT_OPENAI_BASE_URL", &proxy);
+        }
+        _ => {}
+    }
+    let model = agent
+        .model
+        .clone()
+        .or_else(|| provider.as_ref().and_then(|p| p.default_model.clone()))
+        .or_else(|| s.model.clone());
+    if let (false, Some(model)) = (driver == "mock", model) {
+        set("FERROBOT_MODEL", &model);
     }
     env.insert("FERROBOT_AGENT_TOKEN".to_owned(), token);
     Ok(SandboxSpec {
@@ -221,6 +257,23 @@ pub async fn snapshot(
 }
 
 /// Replaces the sandbox with one booted from a snapshot.
+/// Rebuilds the sandbox (disk kept) so a new provider or model takes
+/// effect; a running agent comes back up right away.
+pub async fn recreate(state: &AppState, id: AgentId) -> Result<(), ApiError> {
+    let lock = state.hub.lifecycle_lock(id);
+    let _guard = lock.lock().await;
+    let agent = state.store.get_agent(id).await?;
+    let Some(handle) = handle_of(&agent) else {
+        return Ok(());
+    };
+    state.backend.destroy(&handle, false).await?;
+    // A sleeping agent is re-provisioned by its next wake (the backend reports NotFound).
+    if agent.status == AgentStatus::Running {
+        provision_locked(state, &agent).await?;
+    }
+    Ok(())
+}
+
 pub async fn restore(state: &AppState, id: AgentId, snapshot_id: i64) -> Result<(), ApiError> {
     let lock = state.hub.lifecycle_lock(id);
     let _guard = lock.lock().await;

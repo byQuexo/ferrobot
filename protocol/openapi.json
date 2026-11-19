@@ -1935,6 +1935,229 @@
         ]
       }
     },
+    "/v1/providers": {
+      "get": {
+        "tags": [
+          "providers"
+        ],
+        "summary": "Configured model providers, by name.",
+        "operationId": "list_providers",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/ProviderView"
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or wrong API token",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "providers"
+        ],
+        "summary": "Adds a model provider.",
+        "operationId": "create_provider",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateProvider"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProviderView"
+                }
+              }
+            }
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or wrong API token",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Name already taken",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/providers/{id}": {
+      "delete": {
+        "tags": [
+          "providers"
+        ],
+        "summary": "Deletes a provider and its stored key. Fails while agents use it.",
+        "operationId": "delete_provider",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "Provider id (UUID)",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Deleted"
+          },
+          "401": {
+            "description": "Missing or wrong API token",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Unknown provider",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Agents still use it",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        }
+      },
+      "patch": {
+        "tags": [
+          "providers"
+        ],
+        "summary": "Edits a provider. Agents using it restart their computers (disks kept)\nwhen region, project or default model change.",
+        "operationId": "update_provider",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "Provider id (UUID)",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateProvider"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProviderView"
+                }
+              }
+            }
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or wrong API token",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Unknown provider",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Name already taken",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/v1/routines/{rid}": {
       "delete": {
         "tags": [
@@ -2255,6 +2478,21 @@
               }
             ]
           },
+          "provider_id": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "uuid",
+            "description": "Model provider (`GET /v1/providers`); `null` uses the daemon's\n`ANTHROPIC_API_KEY`."
+          },
+          "model": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Model id; `null` uses the provider's default model."
+          },
           "status": {
             "$ref": "#/components/schemas/AgentStatus"
           },
@@ -2508,6 +2746,72 @@
                 "type": "null"
               }
             ]
+          },
+          "provider_id": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "uuid",
+            "description": "Model provider (`GET /v1/providers`); omitted: the daemon's\n`ANTHROPIC_API_KEY`."
+          },
+          "model": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Model id; omitted: the provider's default model."
+          }
+        }
+      },
+      "CreateProvider": {
+        "type": "object",
+        "required": [
+          "name",
+          "kind"
+        ],
+        "properties": {
+          "name": {
+            "type": "string",
+            "description": "Unique display name (1-64 bytes).",
+            "example": "openai-work"
+          },
+          "kind": {
+            "$ref": "#/components/schemas/ProviderKind"
+          },
+          "base_url": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Upstream override; required for `openai_compatible`."
+          },
+          "region": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Required for `bedrock` and `vertex`."
+          },
+          "project": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Google Cloud project; required for `vertex`."
+          },
+          "default_model": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "api_key": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Stored in the OS keychain; never returned."
           }
         }
       },
@@ -2778,6 +3082,94 @@
           "starting",
           "sleeping",
           "error"
+        ]
+      },
+      "Provider": {
+        "type": "object",
+        "description": "A configured model provider. Its credential lives in the daemon's secret\nstore, never here.",
+        "required": [
+          "id",
+          "name",
+          "kind",
+          "created_at"
+        ],
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "name": {
+            "type": "string",
+            "description": "Unique display name, e.g. `openai-work`."
+          },
+          "kind": {
+            "$ref": "#/components/schemas/ProviderKind"
+          },
+          "base_url": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Upstream override; `null` uses the kind's default."
+          },
+          "region": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Bedrock / Vertex region, e.g. `us-east-1`, `us-east5`, `global`."
+          },
+          "project": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Google Cloud project (Vertex)."
+          },
+          "default_model": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Model for agents that do not pick one."
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      },
+      "ProviderKind": {
+        "type": "string",
+        "description": "The API family of a provider. Decides the runner driver, the upstream\nURL and how the daemon's model proxy adds the credential.",
+        "enum": [
+          "anthropic",
+          "openai",
+          "gemini",
+          "bedrock",
+          "vertex",
+          "openrouter",
+          "ollama",
+          "openai_compatible"
+        ]
+      },
+      "ProviderView": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/Provider"
+          },
+          {
+            "type": "object",
+            "required": [
+              "has_key"
+            ],
+            "properties": {
+              "has_key": {
+                "type": "boolean",
+                "description": "Whether an API key is stored. The key itself is never returned."
+              }
+            }
+          }
         ]
       },
       "PutMemory": {
@@ -3479,6 +3871,64 @@
                 "type": "null"
               }
             ]
+          },
+          "provider_id": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "uuid",
+            "description": "New model provider; `null` goes back to the daemon's default. Changing\nprovider or model restarts the agent's computer (its disk is kept)."
+          },
+          "model": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "New model id; `null` goes back to the provider's default model."
+          }
+        }
+      },
+      "UpdateProvider": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "base_url": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "`null` goes back to the kind's default upstream."
+          },
+          "region": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "project": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "default_model": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "api_key": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "New API key; `null` removes the stored one."
           }
         }
       },
@@ -3565,6 +4015,10 @@
     {
       "name": "sandbox",
       "description": "Each agent's own computer: sleep, wake, snapshots"
+    },
+    {
+      "name": "providers",
+      "description": "Model providers and their API keys"
     }
   ]
 }

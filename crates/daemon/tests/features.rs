@@ -786,13 +786,15 @@ async fn model_proxy_swaps_key_and_streams() {
     .await;
     assert_eq!(status, 404);
 
-    // Without a configured key the proxy says so.
-    let d2 = start(Arc::new(StatefulBackend::default()), None, "127.0.0.1:0").await;
+    // Without a configured key the proxy tells the (authenticated) agent so.
+    let backend2 = Arc::new(StatefulBackend::default());
+    let d2 = start(backend2.clone(), None, "127.0.0.1:0").await;
+    create(&d2, json!({"name": "pia"})).await;
     let (status, _, out) = http_raw(
         &d2.agents,
         "POST",
         "/model/v1/messages",
-        &[("x-api-key", "x")],
+        &[("x-api-key", &backend2.token("pia"))],
         body,
     )
     .await;
@@ -1224,4 +1226,197 @@ async fn agent_limit_applies_to_api_and_agents() {
             .any(|e| e["kind"] == "question"),
         "no approval card when the limit is reached"
     );
+}
+
+/// Fake upstream for any provider: echoes the method, path and credentials it saw.
+async fn echo_upstream() -> String {
+    async fn handler(request: axum::extract::Request) -> axum::Json<Value> {
+        let header = |name: &str| {
+            request
+                .headers()
+                .get(name)
+                .and_then(|v| v.to_str().ok())
+                .map(str::to_owned)
+        };
+        axum::Json(json!({
+            "method": request.method().as_str(),
+            "path": request.uri().path(),
+            "authorization": header("authorization"),
+            "x_api_key": header("x-api-key"),
+        }))
+    }
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let addr = listener.local_addr().unwrap();
+    let app = axum::Router::new().fallback(handler);
+    tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });
+    format!("http://{addr}")
+}
+
+async fn model_call(d: &Daemon, path: &str, auth: (&str, &str)) -> (u16, Value) {
+    let (status, _, out) = http_raw(&d.agents, "POST", path, &[auth], b"{}").await;
+    (status, serde_json::from_slice(&out).unwrap_or(Value::Null))
+}
+
+#[tokio::test]
+async fn providers_keep_keys_in_the_daemon() {
+    let upstream = echo_upstream().await;
+    let backend = Arc::new(StatefulBackend::default());
+    let d = start_with(backend.clone(), None, "127.0.0.1:0", |s| {
+        s.driver = "claude".into();
+        s.gcloud_token_cmd = vec!["echo".into(), "google-token".into()];
+    })
+    .await;
+
+    let (status, openai) = http(
+        &d.ui,
+        "POST",
+        "/v1/providers",
+        Some(
+            json!({"name": "oai", "kind": "openai", "base_url": format!("{upstream}/v1"),
+                    "default_model": "gpt-test", "api_key": "sk-openai-secret"}),
+        ),
+    )
+    .await;
+    assert_eq!(status, 201, "{openai}");
+    assert_eq!(openai["has_key"], true);
+    assert!(!openai.to_string().contains("sk-openai-secret"));
+    let (status, err) = http(
+        &d.ui,
+        "POST",
+        "/v1/providers",
+        Some(json!({"name": "bad", "kind": "bedrock"})),
+    )
+    .await;
+    assert_eq!(status, 400, "region is required: {err}");
+
+    // OpenAI-compatible agents get the openai driver and only their own token.
+    let pid = openai["id"].as_str().unwrap();
+    create(&d, json!({"name": "olly", "provider_id": pid})).await;
+    let env = backend.envs.lock().unwrap()["olly"].clone();
+    let token = env["FERROBOT_AGENT_TOKEN"].clone();
+    assert_eq!(env["FERROBOT_DRIVER"], "openai");
+    assert_eq!(env["FERROBOT_MODEL"], "gpt-test");
+    assert!(env["FERROBOT_OPENAI_BASE_URL"].ends_with("/model"));
+    assert!(!env.values().any(|v| v.contains("sk-openai-secret")));
+    let bearer = format!("Bearer {token}");
+    let (status, seen) =
+        model_call(&d, "/model/chat/completions", ("authorization", &bearer)).await;
+    assert_eq!(status, 200, "{seen}");
+    assert_eq!(seen["path"], "/v1/chat/completions");
+    assert_eq!(seen["authorization"], "Bearer sk-openai-secret");
+
+    // Bedrock: invocations go to the runtime with the Bedrock API key.
+    let (_, bedrock) = http(
+        &d.ui,
+        "POST",
+        "/v1/providers",
+        Some(
+            json!({"name": "br", "kind": "bedrock", "region": "eu-central-1",
+                    "base_url": upstream, "api_key": "bedrock-key"}),
+        ),
+    )
+    .await;
+    create(
+        &d,
+        json!({"name": "bert", "provider_id": bedrock["id"], "model": "eu.anthropic.claude-x"}),
+    )
+    .await;
+    let env = backend.envs.lock().unwrap()["bert"].clone();
+    assert_eq!(env["FERROBOT_DRIVER"], "claude");
+    assert_eq!(env["CLAUDE_CODE_USE_BEDROCK"], "1");
+    assert_eq!(env["AWS_REGION"], "eu-central-1");
+    assert_eq!(env["AWS_BEARER_TOKEN_BEDROCK"], env["FERROBOT_AGENT_TOKEN"]);
+    assert_eq!(env["FERROBOT_MODEL"], "eu.anthropic.claude-x");
+    let bearer = format!("Bearer {}", env["FERROBOT_AGENT_TOKEN"]);
+    let (_, seen) = model_call(
+        &d,
+        "/model/model/eu.anthropic.claude-x/invoke",
+        ("authorization", &bearer),
+    )
+    .await;
+    assert_eq!(seen["path"], "/model/eu.anthropic.claude-x/invoke");
+    assert_eq!(seen["authorization"], "Bearer bedrock-key");
+
+    // Vertex: the daemon host's gcloud token, never the agent's.
+    let (_, vertex) = http(
+        &d.ui,
+        "POST",
+        "/v1/providers",
+        Some(
+            json!({"name": "vx", "kind": "vertex", "region": "us-east5", "project": "p1",
+                    "base_url": upstream}),
+        ),
+    )
+    .await;
+    assert_eq!(vertex["has_key"], false);
+    create(&d, json!({"name": "vera", "provider_id": vertex["id"]})).await;
+    let env = backend.envs.lock().unwrap()["vera"].clone();
+    assert_eq!(env["CLAUDE_CODE_USE_VERTEX"], "1");
+    assert_eq!(env["ANTHROPIC_VERTEX_PROJECT_ID"], "p1");
+    assert_eq!(env["CLOUD_ML_REGION"], "us-east5");
+    let (_, seen) = model_call(
+        &d,
+        "/model/projects/p1/locations/us-east5/publishers/anthropic/models/m:streamRawPredict",
+        ("x-api-key", &env["FERROBOT_AGENT_TOKEN"]),
+    )
+    .await;
+    assert_eq!(seen["authorization"], "Bearer google-token");
+    assert_eq!(seen["x_api_key"], Value::Null);
+
+    // Removing the key makes the proxy refuse; the agent is told why.
+    let (status, _) = http(
+        &d.ui,
+        "PATCH",
+        &format!("/v1/providers/{pid}"),
+        Some(json!({"api_key": null})),
+    )
+    .await;
+    assert_eq!(status, 200);
+    let bearer = format!("Bearer {token}");
+    let (status, err) = model_call(&d, "/model/chat/completions", ("authorization", &bearer)).await;
+    assert_eq!(status, 503, "{err}");
+
+    // Providers in use cannot be deleted; switching the model rebuilds the sandbox.
+    let (status, _) = http(&d.ui, "DELETE", &format!("/v1/providers/{pid}"), None).await;
+    assert_eq!(status, 409);
+    let olly = backend.envs.lock().unwrap()["olly"]["FERROBOT_AGENT_TOKEN"].clone();
+    let agents = d.state.store.list_agents().await.unwrap();
+    let olly_id = agents
+        .iter()
+        .find(|a| a.name.as_str() == "olly")
+        .unwrap()
+        .id;
+    let (status, view) = http(
+        &d.ui,
+        "PATCH",
+        &format!("/v1/agents/{olly_id}"),
+        Some(json!({"model": "gpt-other"})),
+    )
+    .await;
+    assert_eq!(status, 200, "{view}");
+    assert_eq!(view["model"], "gpt-other");
+    let env = backend.envs.lock().unwrap()["olly"].clone();
+    assert_eq!(env["FERROBOT_MODEL"], "gpt-other");
+    assert_ne!(
+        env["FERROBOT_AGENT_TOKEN"], olly,
+        "a new sandbox got a new token"
+    );
+    let (status, _) = http(
+        &d.ui,
+        "PATCH",
+        &format!("/v1/agents/{olly_id}"),
+        Some(json!({"provider_id": null})),
+    )
+    .await;
+    assert_eq!(status, 200);
+    let (status, _) = http(&d.ui, "DELETE", &format!("/v1/providers/{pid}"), None).await;
+    assert_eq!(status, 204);
+    let (status, err) = http(
+        &d.ui,
+        "POST",
+        "/v1/agents",
+        Some(json!({"name": "ghost", "provider_id": pid})),
+    )
+    .await;
+    assert_eq!(status, 400, "{err}");
 }

@@ -395,6 +395,45 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/providers": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Configured model providers, by name. */
+        get: operations["list_providers"];
+        put?: never;
+        /** Adds a model provider. */
+        post: operations["create_provider"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/providers/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /** Deletes a provider and its stored key. Fails while agents use it. */
+        delete: operations["delete_provider"];
+        options?: never;
+        head?: never;
+        /**
+         * Edits a provider. Agents using it restart their computers (disks kept)
+         *     when region, project or default model change.
+         */
+        patch: operations["update_provider"];
+        trace?: never;
+    };
     "/v1/routines/{rid}": {
         parameters: {
             query?: never;
@@ -493,6 +532,14 @@ export interface components {
             avatar_rev: number;
             character?: components["schemas"]["AvatarCharacter"] | null;
             created_by?: components["schemas"]["AgentId"] | null;
+            /**
+             * Format: uuid
+             * @description Model provider (`GET /v1/providers`); `null` uses the daemon's
+             *     `ANTHROPIC_API_KEY`.
+             */
+            provider_id?: string | null;
+            /** @description Model id; `null` uses the provider's default model. */
+            model?: string | null;
             status: components["schemas"]["AgentStatus"];
             /** @description Backend kind that owns the sandbox, e.g. `docker`. */
             backend?: string | null;
@@ -608,6 +655,31 @@ export interface components {
             /** @description System instructions (role) for the agent's model. */
             instructions?: string;
             character?: components["schemas"]["AvatarCharacter"] | null;
+            /**
+             * Format: uuid
+             * @description Model provider (`GET /v1/providers`); omitted: the daemon's
+             *     `ANTHROPIC_API_KEY`.
+             */
+            provider_id?: string | null;
+            /** @description Model id; omitted: the provider's default model. */
+            model?: string | null;
+        };
+        CreateProvider: {
+            /**
+             * @description Unique display name (1-64 bytes).
+             * @example openai-work
+             */
+            name: string;
+            kind: components["schemas"]["ProviderKind"];
+            /** @description Upstream override; required for `openai_compatible`. */
+            base_url?: string | null;
+            /** @description Required for `bedrock` and `vertex`. */
+            region?: string | null;
+            /** @description Google Cloud project; required for `vertex`. */
+            project?: string | null;
+            default_model?: string | null;
+            /** @description Stored in the OS keychain; never returned. */
+            api_key?: string | null;
         };
         CreateRoutine: {
             /**
@@ -727,6 +799,37 @@ export interface components {
          * @enum {string}
          */
         Presence: "working" | "awake" | "starting" | "sleeping" | "error";
+        /**
+         * @description A configured model provider. Its credential lives in the daemon's secret
+         *     store, never here.
+         */
+        Provider: {
+            /** Format: uuid */
+            id: string;
+            /** @description Unique display name, e.g. `openai-work`. */
+            name: string;
+            kind: components["schemas"]["ProviderKind"];
+            /** @description Upstream override; `null` uses the kind's default. */
+            base_url?: string | null;
+            /** @description Bedrock / Vertex region, e.g. `us-east-1`, `us-east5`, `global`. */
+            region?: string | null;
+            /** @description Google Cloud project (Vertex). */
+            project?: string | null;
+            /** @description Model for agents that do not pick one. */
+            default_model?: string | null;
+            /** Format: date-time */
+            created_at: string;
+        };
+        /**
+         * @description The API family of a provider. Decides the runner driver, the upstream
+         *     URL and how the daemon's model proxy adds the credential.
+         * @enum {string}
+         */
+        ProviderKind: "anthropic" | "openai" | "gemini" | "bedrock" | "vertex" | "openrouter" | "ollama" | "openai_compatible";
+        ProviderView: components["schemas"]["Provider"] & {
+            /** @description Whether an API key is stored. The key itself is never returned. */
+            has_key: boolean;
+        };
         PutMemory: {
             /** @description 1-128 bytes; an existing key is overwritten. */
             key: string;
@@ -947,6 +1050,24 @@ export interface components {
             /** @description New system instructions; a connected runner applies them from its next turn. */
             instructions?: string | null;
             character?: components["schemas"]["AvatarCharacter"] | null;
+            /**
+             * Format: uuid
+             * @description New model provider; `null` goes back to the daemon's default. Changing
+             *     provider or model restarts the agent's computer (its disk is kept).
+             */
+            provider_id?: string | null;
+            /** @description New model id; `null` goes back to the provider's default model. */
+            model?: string | null;
+        };
+        UpdateProvider: {
+            name?: string | null;
+            /** @description `null` goes back to the kind's default upstream. */
+            base_url?: string | null;
+            region?: string | null;
+            project?: string | null;
+            default_model?: string | null;
+            /** @description New API key; `null` removes the stored one. */
+            api_key?: string | null;
         };
         /** @description Partial update; omitted fields stay unchanged. */
         UpdateRoutine: {
@@ -2455,6 +2576,192 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["Health"];
+                };
+            };
+        };
+    };
+    list_providers: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProviderView"][];
+                };
+            };
+            /** @description Missing or wrong API token */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+        };
+    };
+    create_provider: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CreateProvider"];
+            };
+        };
+        responses: {
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProviderView"];
+                };
+            };
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Missing or wrong API token */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Name already taken */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+        };
+    };
+    delete_provider: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Provider id (UUID) */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Deleted */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Missing or wrong API token */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Unknown provider */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Agents still use it */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+        };
+    };
+    update_provider: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Provider id (UUID) */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["UpdateProvider"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProviderView"];
+                };
+            };
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Missing or wrong API token */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Unknown provider */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Name already taken */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
                 };
             };
         };

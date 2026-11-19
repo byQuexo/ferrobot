@@ -41,6 +41,10 @@ pub struct Settings {
     pub max_agents: usize,
     /// How long a `create_agent` approval card waits for the operator.
     pub approval_timeout: Duration,
+    /// Where provider API keys live.
+    pub secrets: crate::secrets::SecretStore,
+    /// Prints a Google access token for Vertex providers.
+    pub gcloud_token_cmd: Vec<String>,
 }
 
 impl Settings {
@@ -59,6 +63,10 @@ impl Settings {
             api_token: None,
             max_agents: crate::agents::DEFAULT_MAX_AGENTS,
             approval_timeout: crate::agents::DEFAULT_APPROVAL_TIMEOUT,
+            secrets: crate::secrets::SecretStore::default(),
+            gcloud_token_cmd: ["gcloud", "auth", "print-access-token"]
+                .map(String::from)
+                .to_vec(),
         }
     }
 }
@@ -106,6 +114,8 @@ pub struct AppState {
     pub creating: Arc<tokio::sync::Mutex<()>>,
     /// Approval cards waiting for the operator, by `question` event id.
     pub approvals: Arc<Mutex<HashMap<i64, oneshot::Sender<bool>>>>,
+    /// Cached Google access token for Vertex providers and when it was minted.
+    pub gcloud_token: Arc<tokio::sync::Mutex<Option<(String, std::time::Instant)>>>,
 }
 
 impl AppState {
@@ -122,6 +132,7 @@ impl AppState {
             answers: Arc::default(),
             creating: Arc::default(),
             approvals: Arc::default(),
+            gcloud_token: Arc::default(),
         }
     }
 

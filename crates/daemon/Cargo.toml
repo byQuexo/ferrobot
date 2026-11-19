@@ -31,6 +31,7 @@ croner.workspace = true
 chrono.workspace = true
 chrono-tz.workspace = true
 iana-time-zone.workspace = true
+keyring.workspace = true
 object_store = { workspace = true, features = ["fs", "aws"] }
 reqwest = { workspace = true, features = ["stream"] }
 sha2.workspace = true

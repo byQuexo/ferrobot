@@ -43,6 +43,13 @@ pub(crate) struct CreateAgent {
     /// Character avatar look; omitted or `null`: derived from the id.
     #[serde(default)]
     character: Option<AvatarCharacter>,
+    /// Model provider (`GET /v1/providers`); omitted: the daemon's
+    /// `ANTHROPIC_API_KEY`.
+    #[serde(default)]
+    provider_id: Option<uuid::Uuid>,
+    /// Model id; omitted: the provider's default model.
+    #[serde(default)]
+    model: Option<String>,
 }
 
 /// Distinguishes an omitted field (`None`) from an explicit `null` (`Some(None)`).
@@ -50,7 +57,7 @@ pub(crate) struct CreateAgent {
     clippy::option_option,
     reason = "omitted vs. explicit null in a PATCH body"
 )]
-fn explicit<'de, D, T>(d: D) -> Result<Option<Option<T>>, D::Error>
+pub(crate) fn explicit<'de, D, T>(d: D) -> Result<Option<Option<T>>, D::Error>
 where
     D: serde::Deserializer<'de>,
     T: Deserialize<'de>,
@@ -76,6 +83,8 @@ pub(crate) async fn create_agent(
             description: req.description,
             instructions: req.instructions,
             character: req.character,
+            provider_id: req.provider_id,
+            model: req.model,
         },
         None,
     )
@@ -116,6 +125,23 @@ pub(crate) struct UpdateAgent {
         reason = "omitted vs. explicit null in a PATCH body"
     )]
     character: Option<Option<AvatarCharacter>>,
+    /// New model provider; `null` goes back to the daemon's default. Changing
+    /// provider or model restarts the agent's computer (its disk is kept).
+    #[serde(default, deserialize_with = "explicit")]
+    #[schema(value_type = Option<uuid::Uuid>)]
+    #[allow(
+        clippy::option_option,
+        reason = "omitted vs. explicit null in a PATCH body"
+    )]
+    provider_id: Option<Option<uuid::Uuid>>,
+    /// New model id; `null` goes back to the provider's default model.
+    #[serde(default, deserialize_with = "explicit")]
+    #[schema(value_type = Option<String>)]
+    #[allow(
+        clippy::option_option,
+        reason = "omitted vs. explicit null in a PATCH body"
+    )]
+    model: Option<Option<String>>,
 }
 
 /// Edits an agent's profile.
@@ -142,6 +168,16 @@ pub(crate) async fn update_agent(
     }
     check_character(req.character.flatten().as_ref())?;
     let reconfigure = name.is_some() || req.instructions.is_some();
+    let model_change = req.provider_id.is_some() || req.model.is_some();
+    let (provider_id, model) = if model_change {
+        let current = state.store.get_agent(id).await?;
+        let provider_id = req.provider_id.unwrap_or(current.provider_id);
+        let model = req.model.clone().unwrap_or(current.model);
+        let model = agents::check_model(&state, provider_id, model.as_deref()).await?;
+        (Some(provider_id), Some(model))
+    } else {
+        (None, None)
+    };
     state
         .store
         .update_agent_profile(
@@ -151,9 +187,14 @@ pub(crate) async fn update_agent(
                 description,
                 instructions: req.instructions,
                 character: req.character,
+                provider_id,
+                model,
             },
         )
         .await?;
+    if model_change {
+        lifecycle::recreate(&state, id).await?;
+    }
     if reconfigure {
         let agent = state.store.get_agent(id).await?;
         state.hub.send(

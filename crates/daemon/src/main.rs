@@ -5,8 +5,9 @@ use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::Duration;
 
-use anyhow::{Context, Result, bail};
+use anyhow::{Context, Result};
 use clap::{Parser, ValueEnum};
+use ferrobot_daemon::secrets::SecretStore;
 use ferrobot_daemon::{
     AppState, Settings, agent_router, lifecycle, scheduler, storage, supervisor, ui_router,
 };
@@ -28,8 +29,17 @@ enum Backend {
 enum Driver {
     /// Deterministic fake model, no API key needed.
     Mock,
-    /// Claude via the Claude Agent SDK (needs `ANTHROPIC_API_KEY`).
+    /// Real models: each agent's provider, or Claude with the daemon's
+    /// `ANTHROPIC_API_KEY` for agents without one.
     Claude,
+}
+
+#[derive(Debug, Clone, Copy, ValueEnum)]
+enum SecretStoreKind {
+    /// The OS keychain (macOS Keychain, Windows Credential Manager, Secret Service).
+    Keyring,
+    /// `<data dir>/secrets.json` in plaintext (mode 0600). Headless CI only.
+    File,
 }
 
 impl Driver {
@@ -113,6 +123,9 @@ struct Cli {
     /// approval before it counts as declined.
     #[arg(long, env = "FERROBOT_APPROVAL_TIMEOUT", default_value_t = 300)]
     approval_timeout: u64,
+    /// Where provider API keys are kept.
+    #[arg(long, env = "FERROBOT_SECRET_STORE", value_enum, default_value_t = SecretStoreKind::Keyring)]
+    secret_store: SecretStoreKind,
 }
 
 #[tokio::main]
@@ -136,7 +149,9 @@ async fn main() -> Result<()> {
         .ok()
         .filter(|k| !k.is_empty());
     if matches!(cli.driver, Driver::Claude) && anthropic_api_key.is_none() {
-        bail!("--driver claude needs ANTHROPIC_API_KEY in the daemon environment");
+        tracing::warn!(
+            "no ANTHROPIC_API_KEY: agents without a model provider cannot reach a model"
+        );
     }
     let sandbox_daemon_url = cli.sandbox_daemon_url.clone().unwrap_or_else(|| {
         let host = match cli.backend {
@@ -168,6 +183,7 @@ async fn main() -> Result<()> {
     settings.api_token = Some(api_token);
     settings.max_agents = cli.max_agents;
     settings.approval_timeout = Duration::from_secs(cli.approval_timeout);
+    settings.secrets = secret_store(&cli);
     let state = AppState::new(store, backend, settings);
 
     let ui = tokio::net::TcpListener::bind(cli.listen)
@@ -224,6 +240,27 @@ fn api_token(cli: &Cli) -> Result<String> {
         "UI API token (send as `Authorization: Bearer <token>`)"
     );
     Ok(token)
+}
+
+/// The configured secret store for provider API keys.
+fn secret_store(cli: &Cli) -> SecretStore {
+    match cli.secret_store {
+        SecretStoreKind::Keyring => {
+            if let Err(e) = SecretStore::check_keyring() {
+                tracing::warn!(
+                    error = %e,
+                    "OS keychain unavailable: provider API keys cannot be stored \
+                     (use --secret-store file on headless CI hosts)"
+                );
+            }
+            SecretStore::Keyring
+        }
+        SecretStoreKind::File => {
+            let path = cli.data_dir.join("secrets.json");
+            tracing::warn!(file = %path.display(), "provider API keys are stored in PLAINTEXT (--secret-store file); for headless CI only");
+            SecretStore::file(path)
+        }
+    }
 }
 
 async fn make_backend(cli: &Cli) -> Result<Arc<dyn SandboxBackend>> {
