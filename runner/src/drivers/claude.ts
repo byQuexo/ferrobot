@@ -109,7 +109,7 @@ export function clip(text: string, max = MAX_TOOL_OUTPUT): string {
 }
 
 /** Text of a `tool_result` block's content (string or content blocks). */
-function toolResultText(content: unknown): string {
+export function toolResultText(content: unknown): string {
   if (typeof content === "string") return content;
   if (!Array.isArray(content)) return "";
   return content

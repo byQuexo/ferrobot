@@ -1,7 +1,7 @@
 import { homedir } from "node:os";
 import { join } from "node:path";
 
-export type DriverKind = "mock" | "claude" | "openai";
+export type DriverKind = "mock" | "claude" | "openai" | "codex";
 
 interface CommonConfig {
   /** Agent API base, e.g. http://host.docker.internal:7879 */
@@ -20,6 +20,8 @@ export type RunnerConfig = CommonConfig &
     | { driver: "mock" | "claude" }
     // openaiBaseUrl: the daemon's OpenAI-compatible model proxy, e.g. http://host.docker.internal:7879/model
     | { driver: "openai"; model: string; openaiBaseUrl: URL }
+    // codexBaseUrl: the proxy's Responses API base; Codex POSTs <base>/responses
+    | { driver: "codex"; model: string; codexBaseUrl: URL; codexBin: string }
   );
 
 export class ConfigError extends Error {
@@ -49,8 +51,8 @@ function httpUrl(env: NodeJS.ProcessEnv, key: string): URL {
 export function loadConfig(env: NodeJS.ProcessEnv = process.env): RunnerConfig {
   const daemonUrl = httpUrl(env, "FERROBOT_DAEMON_URL");
   const driver = env["FERROBOT_DRIVER"] ?? "mock";
-  if (driver !== "mock" && driver !== "claude" && driver !== "openai") {
-    throw new ConfigError(`FERROBOT_DRIVER must be "mock", "claude" or "openai", got ${driver}`);
+  if (driver !== "mock" && driver !== "claude" && driver !== "openai" && driver !== "codex") {
+    throw new ConfigError(`FERROBOT_DRIVER must be "mock", "claude", "openai" or "codex", got ${driver}`);
   }
   if (driver === "claude" && !env["ANTHROPIC_API_KEY"]) {
     throw new ConfigError("FERROBOT_DRIVER=claude needs ANTHROPIC_API_KEY");
@@ -70,6 +72,15 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): RunnerConfig {
       driver,
       model: required(env, "FERROBOT_MODEL"),
       openaiBaseUrl: httpUrl(env, "FERROBOT_OPENAI_BASE_URL"),
+    };
+  }
+  if (driver === "codex") {
+    return {
+      ...common,
+      driver,
+      model: required(env, "FERROBOT_MODEL"),
+      codexBaseUrl: httpUrl(env, "FERROBOT_CODEX_BASE_URL"),
+      codexBin: env["FERROBOT_CODEX_BIN"]?.trim() || "codex",
     };
   }
   return { ...common, driver };

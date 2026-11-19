@@ -3,6 +3,7 @@ import { mkdir } from "node:fs/promises";
 
 import { ConfigError, loadConfig, mcpUrl, runnerWsUrl, type RunnerConfig } from "./config.ts";
 import { ClaudeDriver } from "./drivers/claude.ts";
+import { CodexDriver } from "./drivers/codex.ts";
 import { MockDriver } from "./drivers/mock.ts";
 import { OpenAIDriver } from "./drivers/openai.ts";
 import type { ModelDriver } from "./drivers/types.ts";
@@ -73,6 +74,16 @@ function createDriver(config: RunnerConfig, session: SessionStore): ModelDriver 
         workspaceDir: config.workspaceDir,
         stateDir: config.stateDir,
         mcp: new FerrobotMcp(mcpUrl(config.daemonUrl), config.token),
+      });
+    case "codex":
+      return new CodexDriver({
+        bin: config.codexBin,
+        baseUrl: config.codexBaseUrl,
+        mcpUrl: mcpUrl(config.daemonUrl),
+        model: config.model,
+        token: config.token,
+        workspaceDir: config.workspaceDir,
+        stateDir: config.stateDir,
       });
     case "mock":
       return new MockDriver(new FerrobotMcp(mcpUrl(config.daemonUrl), config.token));
