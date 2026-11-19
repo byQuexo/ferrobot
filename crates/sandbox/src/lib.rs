@@ -181,16 +181,24 @@ pub trait SandboxBackend: Send + Sync + std::fmt::Debug {
     /// Starts a stopped/sleeping sandbox (resumes a paused one).
     async fn wake(&self, sandbox: &SandboxHandle) -> Result<(), SandboxError>;
 
-    /// Puts the sandbox to sleep and returns the level reached. Backends
-    /// that cannot pause sleep `Cold` (a [`stop`](Self::stop)) instead.
+    /// Puts the sandbox to sleep and returns the level reached (a sandbox
+    /// that is not running reaches `Cold`). `Cold` is [`stop`](Self::stop);
+    /// backends that cannot pause answer `Warm` with `NotImplemented`.
     async fn sleep(
         &self,
         sandbox: &SandboxHandle,
         level: SleepLevel,
     ) -> Result<SleepLevel, SandboxError> {
-        let _ = level;
-        self.stop(sandbox).await?;
-        Ok(SleepLevel::Cold)
+        match level {
+            SleepLevel::Cold => {
+                self.stop(sandbox).await?;
+                Ok(level)
+            }
+            SleepLevel::Warm => Err(SandboxError::NotImplemented {
+                backend: self.kind(),
+                operation: "pause",
+            }),
+        }
     }
 
     /// Stops the sandbox, keeping its disk.

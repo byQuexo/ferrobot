@@ -1757,6 +1757,16 @@
               }
             }
           },
+          "501": {
+            "description": "The backend cannot pause (`level=warm`)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
           "502": {
             "description": "Sandbox backend error",
             "content": {

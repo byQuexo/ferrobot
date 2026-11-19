@@ -79,6 +79,7 @@ pub(crate) struct StopQuery {
     params(("id" = String, Path, description = "Agent id (UUID)"), StopQuery),
     responses((status = 204, description = "Sleeping"),
         (status = 404, description = "Unknown agent", body = ErrorBody),
+        (status = 501, description = "The backend cannot pause (`level=warm`)", body = ErrorBody),
         (status = 502, description = "Sandbox backend error", body = ErrorBody)))]
 pub(crate) async fn stop(
     State(state): State<AppState>,

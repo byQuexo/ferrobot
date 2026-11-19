@@ -1651,3 +1651,37 @@ async fn idle_agents_pause_before_they_stop() {
     );
     assert_eq!(count("wake wren"), 2);
 }
+
+#[tokio::test]
+async fn backends_without_pause_stay_awake_until_the_cold_timeout() {
+    let tmp = tempfile::tempdir().unwrap();
+    let local = Arc::new(
+        ferrobot_sandbox::LocalProcessBackend::new(ferrobot_sandbox::LocalProcessConfig {
+            root: tmp.path().to_path_buf(),
+            runner_cmd: vec!["sleep".into(), "30".into()],
+        })
+        .unwrap(),
+    );
+    let d = start_with(local, None, "127.0.0.1:0", |s| {
+        s.warm_timeout = Some(Duration::from_millis(100));
+        s.idle_timeout = Some(Duration::from_secs(60));
+    })
+    .await;
+    let id = create(&d, json!({"name": "lou"})).await["id"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    tokio::time::sleep(Duration::from_millis(200)).await;
+    ferrobot_daemon::supervisor::check_all(&d.state).await;
+    let (_, a) = http(&d.ui, "GET", &format!("/v1/agents/{id}"), None).await;
+    assert_eq!(a["status"], "running", "no pause on the local backend: {a}");
+    let (status, _) = http(
+        &d.ui,
+        "POST",
+        &format!("/v1/agents/{id}/stop?level=warm"),
+        None,
+    )
+    .await;
+    assert_eq!(status, 501);
+    http(&d.ui, "DELETE", &format!("/v1/agents/{id}"), None).await;
+}

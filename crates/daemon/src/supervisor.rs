@@ -4,10 +4,11 @@
 use std::time::{Duration, Instant};
 
 use ferrobot_core::{Agent, AgentStatus};
-use ferrobot_sandbox::{SandboxState, SleepLevel};
+use ferrobot_sandbox::{SandboxError, SandboxState, SleepLevel};
 use serde_json::json;
 
 use crate::AppState;
+use crate::error::ApiError;
 use crate::lifecycle::{self, handle_of};
 
 /// A running sandbox whose runner has not connected after this long gets restarted.
@@ -104,7 +105,12 @@ async fn check(state: &AppState, agent: &Agent) -> Result<(), crate::error::ApiE
         && !state.store.has_queued_messages(id).await?
     {
         tracing::info!(agent = %agent.name, ?level, "idle, going to sleep");
-        lifecycle::sleep(state, id, "idle", level).await?;
+        match lifecycle::sleep(state, id, "idle", level).await {
+            // Backends that cannot pause keep the agent awake until the cold timeout.
+            Err(ApiError::Sandbox(SandboxError::NotImplemented { .. }))
+                if level == SleepLevel::Warm => {}
+            other => other?,
+        }
     }
     Ok(())
 }
