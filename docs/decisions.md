@@ -325,9 +325,8 @@ the code and this file together.
   connector take turns and a revoked refresh token signs it out, sign-in
   links must be http(s), a URL change drops the tokens, a duplicate `state` is
   refused, and loopback connectors keep rmcp's private-address guard.
-- **Not fixed:** a client secret from dynamic registration is used once and
-  not stored (rmcp has no field for it), so servers that issue one fail at
-  the first refresh; sign-out does not revoke tokens at the server.
+- ~~Not fixed: DCR client secret, revocation~~ (both done in the hardening
+  pass, item 5).
 - **Desktop links** (Markdown, sign-in pages) open in the system browser; the
   window itself only navigates within the app, so the injected operator
   token never reaches another page.
@@ -420,6 +419,14 @@ the code and this file together.
   locking runs per provider; two runs refreshing at once could each use the
   refresh token (the old shared file had the same race).
 
+- **Item 5: a client secret from dynamic registration is kept**
+  (`connector-dcr:<id>`, keychain). The daemon registers the client itself
+  (rmcp's `register_client`, same scopes rmcp would pick) instead of letting
+  rmcp's session do it, because rmcp drops the secret. It is stored only when
+  the sign-in succeeds, so an abandoned sign-in cannot orphan the tokens of
+  the current client, and it is used for refresh and revocation only for
+  the client id it came with. Sign-out, a URL change and delete forget it.
+  Revocation itself (RFC 7009) landed with the connector OAuth apps PR.
 
 ## Connector OAuth: own apps, scopes, expiry, revocation
 

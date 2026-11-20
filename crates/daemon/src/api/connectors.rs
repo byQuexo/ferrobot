@@ -316,12 +316,7 @@ pub(crate) async fn update_connector(
     }
     // OAuth tokens belong to the old server or OAuth app.
     if moved {
-        state
-            .settings
-            .secrets
-            .delete(&oauth::secret_key(id))
-            .await?;
-        state.oauth.forget(id).await;
+        oauth::forget_tokens(&state, id).await?;
     }
     match token {
         Some(Some(token)) => state.settings.secrets.set(&secret_key(id), &token).await?,

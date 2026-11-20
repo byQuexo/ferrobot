@@ -2572,6 +2572,7 @@ fn fake_app_server(base: &str, log: Arc<Mutex<AppServer>>) -> axum::Router {
         "authorization_endpoint": format!("{base}/authorize"),
         "token_endpoint": format!("{base}/token"),
         "revocation_endpoint": format!("{base}/revoke"),
+        "registration_endpoint": format!("{base}/register"),
         "response_types_supported": ["code"],
         "grant_types_supported": ["authorization_code", "refresh_token"],
         "code_challenge_methods_supported": ["S256"],
@@ -2645,6 +2646,83 @@ fn fake_app_server(base: &str, log: Arc<Mutex<AppServer>>) -> axum::Router {
         .route("/.well-known/oauth-authorization-server", get(json(meta)))
         .route("/token", post(token))
         .route("/revoke", post(revoke))
+        .route(
+            "/register",
+            post(|body: axum::Json<Value>| async move {
+                let client = json!({"client_id": "client-app", "client_secret": "app-secret",
+                                    "redirect_uris": body["redirect_uris"],
+                                    "token_endpoint_auth_method": "client_secret_basic"});
+                (axum::http::StatusCode::CREATED, axum::Json(client))
+            }),
+        )
+}
+
+#[tokio::test]
+async fn connectors_keep_the_secret_a_server_registered_them_with() {
+    use rmcp::model::CallToolRequestParams;
+    let log = Arc::new(Mutex::new(AppServer::default()));
+    let server_log = log.clone();
+    let (url, _) = upstream_with("at-1", move |base| fake_app_server(base, server_log)).await;
+    let backend = Arc::new(StatefulBackend::default());
+    let d = start(backend.clone(), None, "127.0.0.1:0").await;
+    let ann = create(&d, json!({"name": "ann"})).await["id"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    let body = json!({"name": "reg", "url": url});
+    let (_, conn) = http(&d.ui, "POST", "/v1/connectors", Some(body)).await;
+    let id = conn["id"].as_str().unwrap().to_owned();
+    let cid: uuid::Uuid = id.parse().unwrap();
+    http(
+        &d.ui,
+        "PUT",
+        &format!("/v1/agents/{ann}/connectors"),
+        Some(json!([id])),
+    )
+    .await;
+
+    // Dynamic registration hands out a confidential client.
+    let (status, started) = http(&d.ui, "POST", &format!("/v1/connectors/{id}/oauth"), None).await;
+    assert_eq!(status, 200, "{started}");
+    let auth = url::Url::parse(started["authorization_url"].as_str().unwrap()).unwrap();
+    let q: HashMap<String, String> = auth.query_pairs().into_owned().collect();
+    assert_eq!(q["client_id"], "client-app");
+    let registration = ferrobot_daemon::oauth::registration_key(cid);
+    let secrets = &d.state.settings.secrets;
+    assert!(
+        secrets.get(&registration).await.unwrap().is_none(),
+        "kept only once the sign-in succeeds"
+    );
+    log.lock().unwrap().challenge = Some(q["code_challenge"].clone());
+    let back = format!("/v1/oauth/callback?code=code-1&state={}", q["state"]);
+    let (status, _, _) = http_raw(&d.ui, "GET", &back, &[("Authorization", "")], b"").await;
+    assert_eq!(status, 200);
+    let (_, all) = http(&d.ui, "GET", "/v1/connectors", None).await;
+    assert_eq!(all[0]["sign_in"], "signed_in");
+    assert_eq!(all[0]["client_id"], Value::Null, "not an own app");
+    assert!(!all.to_string().contains("app-secret"));
+
+    // A fresh session refreshes the expired token with the stored secret.
+    tokio::time::sleep(Duration::from_millis(1500)).await;
+    d.state.connectors.evict_connector(cid).await;
+    let as_ann = mcp_as(&d, backend.token("ann")).await;
+    let r = as_ann
+        .call_tool(CallToolRequestParams::new("reg__list_agents"))
+        .await
+        .unwrap();
+    assert_eq!(r.structured_content.unwrap()["agents"][0]["name"], "up");
+    as_ann.cancel().await.unwrap();
+    let grants = log.lock().unwrap().grants.clone();
+    assert!(
+        grants.iter().any(|(g, _)| g == "refresh_token"),
+        "{grants:?}"
+    );
+    assert!(grants.iter().all(|(_, ok)| *ok), "{grants:?}");
+
+    // Signing out forgets the registration with the tokens.
+    let (status, _) = http(&d.ui, "DELETE", &format!("/v1/connectors/{id}/oauth"), None).await;
+    assert_eq!(status, 204);
+    assert!(secrets.get(&registration).await.unwrap().is_none());
 }
 
 #[tokio::test]

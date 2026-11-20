@@ -428,6 +428,14 @@ store used for the run) or the daemon's own env.
   deleting the provider deletes it. Not tested with the real Codex CLI
   (assumes it writes `auth.json` before `account/login/completed`).
 
+- **Item 5 (connector OAuth):** the DCR client secret is kept in the
+  keychain; revocation on sign-out and delete came with the OAuth apps PR.
+  Tested with a fake OAuth server that registers confidential clients
+  (`connectors_keep_the_secret_a_server_registered_them_with`: sign-in, then
+  a refresh in a fresh session with the stored secret, registration stored
+  only after the sign-in and forgotten on sign-out) and in
+  `connectors_use_an_own_oauth_app_refresh_and_revoke` (no revocation over
+  http; https revocation covered by unit tests only, no real server).
 
 ## Connector OAuth apps, review fixes (`feature/connector-oauth-clients`)
 
