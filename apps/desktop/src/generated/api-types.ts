@@ -739,6 +739,8 @@ export interface components {
             sandbox_id?: string | null;
             /** @description Last model session id reported by the runner, used for resume. */
             session_id?: string | null;
+            /** @description Pinned to the top of the operator's agent list. */
+            pinned?: boolean;
             /** Format: date-time */
             created_at: string;
         };
@@ -1344,6 +1346,8 @@ export interface components {
             provider_id?: string | null;
             /** @description New model id; `null` goes back to the provider's default model. */
             model?: string | null;
+            /** @description Pin to the top of the agent list (or unpin). */
+            pinned?: boolean | null;
         };
         UpdateConnector: {
             name?: string | null;

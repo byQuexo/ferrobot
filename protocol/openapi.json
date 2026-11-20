@@ -3446,6 +3446,10 @@
             ],
             "description": "Last model session id reported by the runner, used for resume."
           },
+          "pinned": {
+            "type": "boolean",
+            "description": "Pinned to the top of the operator's agent list."
+          },
           "created_at": {
             "type": "string",
             "format": "date-time"
@@ -5064,6 +5068,13 @@
               "null"
             ],
             "description": "New model id; `null` goes back to the provider's default model."
+          },
+          "pinned": {
+            "type": [
+              "boolean",
+              "null"
+            ],
+            "description": "Pin to the top of the agent list (or unpin)."
           }
         }
       },

@@ -229,6 +229,17 @@ async fn profile_avatar_unread_and_memory() {
     assert_eq!(a["description"], "Research lead");
     assert_eq!(a["avatar_url"], Value::Null);
     assert_eq!(a["unread"], 0);
+    assert_eq!(a["pinned"], false);
+    let pin = |pinned: bool| {
+        let (ui, path) = (d.ui.clone(), format!("/v1/agents/{id}"));
+        async move { http(&ui, "PATCH", &path, Some(json!({ "pinned": pinned }))).await }
+    };
+    let (status, pinned) = pin(true).await;
+    assert_eq!(
+        (status, &pinned["pinned"], &pinned["description"]),
+        (200, &json!(true), &json!("Research lead"))
+    );
+    assert_eq!(pin(false).await.1["pinned"], false);
 
     // Instructions edits reach a connected runner as a configure frame.
     let mut ws = connect_runner(&d.agents, &backend.token("ada")).await;

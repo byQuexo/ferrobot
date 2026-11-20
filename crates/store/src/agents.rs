@@ -30,6 +30,7 @@ pub struct AgentPatch {
     pub provider_id: Option<Option<uuid::Uuid>>,
     /// `Some(None)` goes back to the provider's default model.
     pub model: Option<Option<String>>,
+    pub pinned: Option<bool>,
 }
 
 /// An avatar image as stored.
@@ -46,7 +47,7 @@ pub fn hash_token(token: &str) -> String {
 
 const COLUMNS: &str = "id, name, instructions, status, backend, sandbox_id, session_id, created_at, \
                        description, avatar_rev, COALESCE(sandbox_name, name), character, created_by, \
-                       provider_id, model";
+                       provider_id, model, pinned";
 
 fn from_row(row: &Row<'_>) -> Result<Agent, StoreError> {
     let id: String = row.get(0)?;
@@ -62,6 +63,7 @@ fn from_row(row: &Row<'_>) -> Result<Agent, StoreError> {
             .transpose()
             .map_err(StoreError::corrupt)?,
         model: row.get(14)?,
+        pinned: row.get(15)?,
         created_by: match created_by.as_str() {
             OPERATOR => None,
             id => Some(id.parse()?),
@@ -112,6 +114,7 @@ impl Store {
             backend: None,
             sandbox_id: None,
             session_id: None,
+            pinned: false,
             created_at: now(),
         };
         let mut row = agent;
@@ -299,7 +302,8 @@ impl Store {
                                    instructions = COALESCE(?4, instructions),
                                    character = CASE WHEN ?5 THEN ?6 ELSE character END,
                                    provider_id = CASE WHEN ?7 THEN ?8 ELSE provider_id END,
-                                   model = CASE WHEN ?9 THEN ?10 ELSE model END
+                                   model = CASE WHEN ?9 THEN ?10 ELSE model END,
+                                   pinned = COALESCE(?11, pinned)
                  WHERE id = ?1",
                 params![
                     id,
@@ -311,7 +315,8 @@ impl Store {
                     set_provider,
                     provider_id,
                     set_model,
-                    model
+                    model,
+                    patch.pinned
                 ],
             )
         })

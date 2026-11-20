@@ -141,6 +141,7 @@ fn ui_events_validate_against_schema() {
         backend: Some("docker".into()),
         sandbox_id: Some("ferrobot-alice".into()),
         session_id: None,
+        pinned: false,
         created_at: OffsetDateTime::UNIX_EPOCH,
     };
     let message = MailMessage {

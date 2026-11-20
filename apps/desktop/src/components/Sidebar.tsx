@@ -1,6 +1,6 @@
 import type { JSX } from "preact";
 import { useMemo, useState } from "preact/hooks";
-import { Brain, KeyRound, Monitor, Moon, Plug, Plus, Search, Sun } from "lucide-preact";
+import { Brain, KeyRound, Monitor, Moon, Pin, Plug, Plus, Search, Sun } from "lucide-preact";
 
 import type { Agent } from "../api.ts";
 import { useApp } from "../context.ts";
@@ -29,7 +29,8 @@ export function Sidebar(props: {
     const f = filter.trim().toLowerCase();
     return [...agents.values()]
       .filter((a) => !f || a.name.includes(f) || a.description.toLowerCase().includes(f))
-      .sort((a, b) => a.name.localeCompare(b.name));
+      // Pinned agents (the main ones) first.
+      .sort((a, b) => Number(Boolean(b.pinned)) - Number(Boolean(a.pinned)) || a.name.localeCompare(b.name));
   }, [agents, filter]);
 
   return (
@@ -101,7 +102,9 @@ export function Sidebar(props: {
 
 function AgentRow(props: { agent: Agent; active: boolean; onSelect: (id: string) => void }): JSX.Element {
   const a = props.agent;
+  const { client, run } = useApp();
   return (
+    <div class={`agent-row-wrap${a.pinned ? " pinned" : ""}`}>
     <button
       type="button"
       class={`agent-row${props.active ? " active" : ""}`}
@@ -122,5 +125,16 @@ function AgentRow(props: { agent: Agent; active: boolean; onSelect: (id: string)
         </span>
       )}
     </button>
+    <button
+      type="button"
+      class="pin-toggle"
+      aria-pressed={Boolean(a.pinned)}
+      aria-label={a.pinned ? `Unpin ${a.name}` : `Pin ${a.name}`}
+      title={a.pinned ? "Unpin" : "Pin to the top"}
+      onClick={() => void run(() => client.updateAgent(a.id, { pinned: !a.pinned }))}
+    >
+      <Pin size={14} />
+    </button>
+    </div>
   );
 }
