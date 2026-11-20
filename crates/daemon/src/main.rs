@@ -232,6 +232,8 @@ async fn main() -> Result<()> {
     settings.secrets = secrets;
     settings.codex_bin.clone_from(&cli.codex_bin);
     settings.codex_home = cli.data_dir.join("codex");
+    // Private homes a crash left behind hold copies of ChatGPT sign-ins.
+    let _ = std::fs::remove_dir_all(ferrobot_daemon::codex::run_dir(&settings.codex_home));
     let state = AppState::new(store, backend, settings);
 
     let ui = tokio::net::TcpListener::bind(cli.listen)

@@ -1538,13 +1538,23 @@ async fn providers_keep_keys_in_the_daemon() {
 /// Fake host `codex app-server`: answers by method, one JSON object per line.
 const FAKE_CODEX: &str = r#"#!/bin/sh
 JWT='eyJhbGciOiJub25lIn0.eyJleHAiOjQxMDI0NDQ4MDAsImh0dHBzOi8vYXBpLm9wZW5haS5jb20vYXV0aCI6eyJjaGF0Z3B0X2FjY291bnRfaWQiOiJhY2N0LTEyMyJ9fQ.sig'
+AUTH="$CODEX_HOME/auth.json"
+ls -ld "$CODEX_HOME" | cut -c1-10 >> "$(dirname "$0")/seen.log"
 while IFS= read -r line; do
   id=$(printf '%s' "$line" | sed -n 's/.*"id":\([0-9]*\).*/\1/p')
   case "$line" in
     *'"initialize"'*) printf '{"id":%s,"result":{}}\n' "$id" ;;
-    *'"getAuthStatus"'*) printf '{"id":%s,"result":{"authMethod":"chatgpt","authToken":"%s"}}\n' "$id" "$JWT" ;;
+    *'"getAuthStatus"'*)
+      if [ -f "$AUTH" ]; then
+        ls -l "$AUTH" | cut -c1-10 >> "$(dirname "$0")/seen.log"
+        case "$line" in *'"refreshToken":true'*) printf '{"tokens":"refreshed"}' > "$AUTH" ;; esac
+        printf '{"id":%s,"result":{"authMethod":"chatgpt","authToken":"%s"}}\n' "$id" "$JWT"
+      else
+        printf '{"id":%s,"result":{"authMethod":null}}\n' "$id"
+      fi ;;
     *'"account/login/start"'*)
       printf '{"id":%s,"result":{"type":"chatgptDeviceCode","loginId":"l1","verificationUrl":"https://auth.example/device","userCode":"ABCD-1234"}}\n' "$id"
+      printf '{"tokens":"signed-in"}' > "$AUTH"
       printf '{"method":"account/login/completed","params":{"loginId":"l1","success":true,"error":null}}\n' ;;
   esac
 done
@@ -1660,6 +1670,69 @@ async fn codex_providers_use_a_key_or_the_hosts_chatgpt_login() {
     );
     assert_eq!(http(&d.ui, "POST", &not_codex, None).await.0, 409);
     assert_eq!(http(&d.ui, "GET", &other, None).await.0, 200);
+
+    // Codex's auth.json lives in the secret store; on disk only while Codex runs.
+    let chat_id: uuid::Uuid = chat["id"].as_str().unwrap().parse().unwrap();
+    let key = ferrobot_daemon::codex::secret_key(chat_id);
+    let secrets = &d.state.settings.secrets;
+    assert_eq!(
+        secrets.get(&key).await.unwrap().as_deref(),
+        Some(r#"{"tokens":"refreshed"}"#),
+        "the refreshed sign-in is kept"
+    );
+    let auth_files = || {
+        fn walk(dir: &std::path::Path, found: &mut Vec<std::path::PathBuf>) {
+            for entry in std::fs::read_dir(dir).into_iter().flatten().flatten() {
+                if entry.path().is_dir() {
+                    walk(&entry.path(), found);
+                } else if entry.file_name() == "auth.json" {
+                    found.push(entry.path());
+                }
+            }
+        }
+        let mut found = Vec::new();
+        walk(&dir.path().join("homes"), &mut found);
+        found
+    };
+    eventually("no auth.json left", Duration::from_secs(5), || async {
+        auth_files().is_empty().then_some(())
+    })
+    .await;
+    let seen = std::fs::read_to_string(dir.path().join("seen.log")).unwrap();
+    assert!(
+        seen.lines().all(|l| l == "drwx------" || l == "-rw-------"),
+        "{seen}"
+    );
+    assert!(seen.contains("-rw-------"), "{seen}");
+
+    // A sign-in from before the secret store moves over on first use.
+    let (_, old) = http(
+        &d.ui,
+        "POST",
+        "/v1/providers",
+        Some(json!({"name": "cx-old", "kind": "codex", "default_model": "gpt-5-codex"})),
+    )
+    .await;
+    let old_id: uuid::Uuid = old["id"].as_str().unwrap().parse().unwrap();
+    let legacy = dir.path().join("homes").join(old_id.to_string());
+    std::fs::create_dir_all(&legacy).unwrap();
+    std::fs::write(legacy.join("auth.json"), r#"{"tokens":"old"}"#).unwrap();
+    let (_, s) = http(
+        &d.ui,
+        "GET",
+        &format!("/v1/providers/{old_id}/chatgpt-login"),
+        None,
+    )
+    .await;
+    assert_eq!(s["state"], "signed_in");
+    assert!(!legacy.exists());
+    let old_key = ferrobot_daemon::codex::secret_key(old_id);
+    assert!(secrets.get(&old_key).await.unwrap().is_some());
+
+    // Deleting the provider deletes its sign-in.
+    let (status, _) = http(&d.ui, "DELETE", &format!("/v1/providers/{old_id}"), None).await;
+    assert_eq!(status, 204);
+    assert!(secrets.get(&old_key).await.unwrap().is_none());
 }
 
 #[tokio::test]

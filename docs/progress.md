@@ -421,3 +421,9 @@ store used for the run) or the daemon's own env.
   header on disk, no plaintext in `home.tar`, a wrong key failing without
   consuming the archive, and the restored token; it runs in CI's Docker
   job, not locally (the Docker engine was down after the disk filled up).
+- **Item 4 (Codex sign-in):** `auth.json` in the secret store, a private temp
+  `CODEX_HOME` per app-server run. Tested with a fake `codex`: sign-in and
+  refresh stored back, the home is 0700 and `auth.json` 0600 while Codex
+  runs, no `auth.json` left on disk afterwards, an old sign-in moves over,
+  deleting the provider deletes it. Not tested with the real Codex CLI
+  (assumes it writes `auth.json` before `account/login/completed`).
