@@ -1,12 +1,9 @@
 name: CI
 
-# Actions minutes are scarce: PRs only, no docs-only runs, every job capped.
+# Actions minutes are scarce: PRs only, docs-only PRs skip the real jobs, every job capped.
 # Full gates run locally (CLAUDE.md); E2E only by hand ("Run workflow").
 on:
   pull_request:
-    paths-ignore:
-      - "docs/**"
-      - "**/*.md"
   workflow_dispatch:
 
 permissions:
@@ -21,8 +18,35 @@ env:
   RUSTFLAGS: -D warnings
 
 jobs:
+  # Skipped jobs count as passed for required checks; a skipped workflow would stay pending.
+  changes:
+    name: Changes
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      code: ${{ steps.diff.outputs.code }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 2
+      # On a pull request the checkout is the merge commit; its first parent is the base branch.
+      - id: diff
+        run: |
+          if [ "$GITHUB_EVENT_NAME" != pull_request ]; then
+            echo code=true >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          files=$(git diff --name-only HEAD^1 HEAD)
+          if printf '%s\n' "$files" | grep -qvE '^docs/|\.md$'; then
+            echo code=true >> "$GITHUB_OUTPUT"
+          else
+            echo code=false >> "$GITHUB_OUTPUT"
+          fi
+
   rust:
     name: Rust (fmt, clippy, tests, API spec drift)
+    needs: changes
+    if: ${{ !cancelled() && needs.changes.outputs.code != 'false' }}
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
@@ -40,6 +64,8 @@ jobs:
 
   ts:
     name: Runner and desktop (TypeScript)
+    needs: changes
+    if: ${{ !cancelled() && needs.changes.outputs.code != 'false' }}
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
@@ -60,6 +86,8 @@ jobs:
 
   audit:
     name: Dependency audit
+    needs: changes
+    if: ${{ !cancelled() && needs.changes.outputs.code != 'false' }}
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
