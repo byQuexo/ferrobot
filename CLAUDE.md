@@ -72,7 +72,8 @@ Principles:
 - `crates/daemon/src/api/providers.rs`, `secrets.rs` — model providers and
   their keychain-stored keys; `crates/core/src/provider.rs` — provider kinds.
 - `crates/daemon/src/codex.rs` — host-side `codex app-server`: ChatGPT
-  sign-in and tokens for `codex` providers (tokens never enter a sandbox).
+  sign-in and tokens for `codex` providers (`auth.json` in the keychain,
+  a private temp `CODEX_HOME` per run; tokens never enter a sandbox).
 - `crates/daemon/src/connectors.rs`, `api/connectors.rs` — connectors: the daemon
   is the MCP client of remote MCP servers and lends their tools to assigned
   agents through `/mcp` (tokens in the keychain, never in a sandbox);

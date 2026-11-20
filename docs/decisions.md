@@ -90,7 +90,7 @@ the code and this file together.
   (header name from Codex's `openai_headers.rs`); inbound
   `chatgpt-account-id` headers from agents are dropped.
 - **ChatGPT sign-in on the host via the official surface.** The daemon runs the
-  host's `codex app-server` with `CODEX_HOME=<data dir>/codex/<provider id>`
+  host's `codex app-server` with a private `CODEX_HOME` (see hardening item 4)
   and calls `account/login/start {type: "chatgptDeviceCode"}`; the UI shows the
   URL and code. Tokens are read with `getAuthStatus {includeToken,
   refreshToken}` (Codex refreshes them itself) and cached until 5 minutes
@@ -409,3 +409,13 @@ the code and this file together.
   Docker engine and are not encrypted either.
 - **Losing the key loses the archives.** It lives in the OS keychain (or
   `secrets.json` with `--secret-store file`); there is no export or escrow.
+- **Item 4: Codex's `auth.json` lives in the secret store**
+  (`codex-auth:<provider>`), not in `<data dir>/codex`. Each `codex
+  app-server` run gets a fresh `CODEX_HOME` under `<data dir>/codex/run/`
+  (0700, `auth.json` 0600), removed when the run ends; leftovers from a crash
+  are removed at start. What Codex wrote (a sign-in, refreshed tokens) is
+  stored back, unless another run replaced the stored sign-in meanwhile, so a
+  stale refresh cannot undo a new sign-in. Sign-ins in the old place move
+  over on first use; deleting the provider deletes its sign-in. Not done:
+  locking runs per provider; two runs refreshing at once could each use the
+  refresh token (the old shared file had the same race).
