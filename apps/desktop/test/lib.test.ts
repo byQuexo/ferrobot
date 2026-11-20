@@ -55,7 +55,8 @@ describe("format", () => {
     const nameOf = (id: string): string | undefined => (id === "b-1" ? "bob" : undefined);
     assert.equal(stepLabel("mcp__ferrobot__send_message", { to: "b-1" }, nameOf), "Messaging @bob");
     assert.equal(stepLabel("mcp__ferrobot__github__create_issue", {}, nameOf), "Using github");
-    assert.equal(stepLabel("Bash", { command: "ls -la" }, nameOf), "Running ls -la");
+    assert.equal(stepLabel("Bash", { command: "ls -la" }, nameOf), "Working on its computer");
+    assert.equal(stepLabel("bash", { command: "curl x", description: "checking flight prices" }, nameOf), "Checking flight prices");
     assert.equal(stepLabel("Read", { file_path: "/w/notes/plan.md" }, nameOf), "Reading plan.md");
     assert.equal(stepLabel("WebFetch", { url: "https://example.com/x" }, nameOf), "Reading example.com");
     assert.equal(stepLabel("mcp__other__thing", {}, nameOf), "Using other");

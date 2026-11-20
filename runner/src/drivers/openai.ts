@@ -80,6 +80,10 @@ function functionTool(name: string, description: string, properties: Record<stri
 const BUILTIN_TOOLS = [
   functionTool("bash", "Run a shell command (bash -lc) in your workspace. Times out after 120 s.", {
     command: { type: "string" },
+    description: {
+      type: "string",
+      description: "What this does in a few plain words for your operator, e.g. \"Checking flight prices\".",
+    },
   }),
   functionTool("read_file", "Read a text file. Relative paths are inside your workspace.", {
     path: { type: "string" },

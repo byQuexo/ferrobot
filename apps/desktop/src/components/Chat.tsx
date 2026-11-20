@@ -108,11 +108,13 @@ export function Chat(props: {
     const all = buildTimeline(id, messages, events, live, names);
     // Tool calls and turn errors live on the Activities tab; the chat shows the conversation.
     const shown = groupExchanges(all.filter((i) => i.type !== "tool" && i.type !== "error"));
-    const last = all.filter((i) => i.type === "tool").pop();
-    const running = last?.type === "tool" && last.output === null && last.denied === null;
+    // The current activity: the newest step since the message being worked on.
+    let start = all.length - 1;
+    while (start >= 0 && !["user", "incoming", "routine"].includes(all[start]?.type ?? "")) start--;
+    const last = all.slice(start + 1).filter((i) => i.type === "tool").pop();
     const nameOf = (agentId: string): string | undefined => agents.get(agentId)?.name;
     const files: ChatFiles = { agent: id, byName: sharedFiles(events) };
-    return { shown, files, step: running ? stepLabel(last.name, last.input, nameOf) : "Thinking" };
+    return { shown, files, step: last?.type === "tool" ? stepLabel(last.name, last.input, nameOf) : "Getting started" };
   }, [id, messages, events, live, agents, routines]);
 
   // Keep the view pinned to the bottom unless the user scrolled up.
@@ -242,20 +244,15 @@ function Item(props: { item: DisplayItem; agent: Agent; files?: ChatFiles }): JS
     case "assistant":
       return (
         <div class="row row-agent">
-          <Avatar agent={agent} size={28} />
           <div class={`bubble-agent${item.streaming ? " streaming" : ""}`}>
-            <span class="agent-msg-head">
-              <strong>{agent.name}</strong>
-              {!item.streaming && <span class="meta">{clockTime(item.at)}</span>}
-            </span>
             <RichText text={item.text} files={props.files} />
+            {!item.streaming && <span class="meta">{clockTime(item.at)}</span>}
           </div>
         </div>
       );
     case "file":
       return (
         <div class="row row-agent">
-          <Avatar agent={agent} size={28} />
           <button type="button" class="file-card" onClick={() => { openFile(agent.id, item.id); }}>
             <FileText size={18} />
             <span class="file-name">{item.name}</span>

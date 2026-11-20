@@ -77,10 +77,13 @@ export function stepLabel(name: string, input: unknown, nameOf: (id: string) => 
     return labels[tool] ?? `Using ${tool}`;
   }
   if (server) return `Using ${server}`;
+  // The model's own words for what the step does (Claude's Bash, our bash tool).
+  const said = str("description").trim();
+  if (said) return short(said.charAt(0).toUpperCase() + said.slice(1));
   switch (tool) {
     case "Bash":
     case "bash":
-      return str("command") ? `Running ${short(str("command"))}` : "Running a command";
+      return "Working on its computer";
     case "Read":
     case "read_file":
       return `Reading ${file(str("file_path") || str("path"))}`;
