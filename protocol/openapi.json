@@ -2209,7 +2209,7 @@
         "tags": [
           "connectors"
         ],
-        "summary": "Deletes a connector, its token and its assignments.",
+        "summary": "Deletes a connector, its token and its assignments; OAuth tokens are\nrevoked at the server when it offers that.",
         "operationId": "delete_connector",
         "parameters": [
           {
@@ -2391,7 +2391,7 @@
         "tags": [
           "connectors"
         ],
-        "summary": "Signs a connector out: forgets its OAuth tokens and client.",
+        "summary": "Signs a connector out: asks the server to revoke its tokens (RFC 7009)\nwhen it offers that, then forgets them here either way.",
         "operationId": "sign_out",
         "parameters": [
           {
@@ -3684,7 +3684,11 @@
             "type": "object",
             "required": [
               "has_token",
-              "signed_in"
+              "signed_in",
+              "sign_in",
+              "has_client_secret",
+              "scopes",
+              "redirect_uri"
             ],
             "properties": {
               "has_token": {
@@ -3694,6 +3698,38 @@
               "signed_in": {
                 "type": "boolean",
                 "description": "Whether the connector is signed in with OAuth."
+              },
+              "sign_in": {
+                "$ref": "#/components/schemas/SignIn"
+              },
+              "client_id": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "description": "Client id of the operator's own OAuth app, if set (else dynamic\nclient registration is used)."
+              },
+              "has_client_secret": {
+                "type": "boolean",
+                "description": "Whether that app's client secret is stored. Never returned."
+              },
+              "scopes": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                },
+                "description": "Scopes asked for at sign-in; empty: the server's choice."
+              },
+              "issuer": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "description": "The authorization server the own OAuth app belongs to."
+              },
+              "redirect_uri": {
+                "type": "string",
+                "description": "Register this redirect URI with the provider for an own OAuth app."
               }
             }
           }
@@ -3798,6 +3834,34 @@
               "null"
             ],
             "description": "Sent as `Authorization: Bearer <token>`. Stored in the OS keychain;\nnever returned."
+          },
+          "client_id": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Client id of your own OAuth app, for servers without dynamic client\nregistration (e.g. Google). Register `redirect_uri` with it."
+          },
+          "client_secret": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "That app's client secret. Stored in the OS keychain; never returned."
+          },
+          "scopes": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Scopes to ask for at sign-in (space-separated entries are split)."
+          },
+          "issuer": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "The authorization server the app belongs to (e.g.\n`https://accounts.google.com`); needed with `client_id`. Sign-ins\nthrough any other server are refused."
           }
         }
       },
@@ -4793,6 +4857,15 @@
           }
         }
       },
+      "SignIn": {
+        "type": "string",
+        "description": "Where a connector stands with OAuth.",
+        "enum": [
+          "signed_out",
+          "signed_in",
+          "expired"
+        ]
+      },
       "SleepLevel": {
         "type": "string",
         "description": "How deeply a sandbox sleeps.",
@@ -5129,6 +5202,36 @@
               "null"
             ],
             "description": "New token; `null` removes the stored one."
+          },
+          "client_id": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Own OAuth app; `null` goes back to dynamic client registration.\nChanging the app signs the connector out."
+          },
+          "client_secret": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "`null` removes the stored client secret. Changing the URL, client id\nor issuer without sending a new secret removes it too."
+          },
+          "scopes": {
+            "type": [
+              "array",
+              "null"
+            ],
+            "items": {
+              "type": "string"
+            }
+          },
+          "issuer": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Issuer of the own OAuth app."
           }
         }
       },

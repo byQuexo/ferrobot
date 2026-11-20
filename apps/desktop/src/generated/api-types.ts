@@ -427,7 +427,10 @@ export interface paths {
         get?: never;
         put?: never;
         post?: never;
-        /** Deletes a connector, its token and its assignments. */
+        /**
+         * Deletes a connector, its token and its assignments; OAuth tokens are
+         *     revoked at the server when it offers that.
+         */
         delete: operations["delete_connector"];
         options?: never;
         head?: never;
@@ -450,7 +453,10 @@ export interface paths {
          *     the page to sign in on. The browser comes back to `/v1/oauth/callback`.
          */
         post: operations["start_oauth"];
-        /** Signs a connector out: forgets its OAuth tokens and client. */
+        /**
+         * Signs a connector out: asks the server to revoke its tokens (RFC 7009)
+         *     when it offers that, then forgets them here either way.
+         */
         delete: operations["sign_out"];
         options?: never;
         head?: never;
@@ -843,6 +849,20 @@ export interface components {
             has_token: boolean;
             /** @description Whether the connector is signed in with OAuth. */
             signed_in: boolean;
+            sign_in: components["schemas"]["SignIn"];
+            /**
+             * @description Client id of the operator's own OAuth app, if set (else dynamic
+             *     client registration is used).
+             */
+            client_id?: string | null;
+            /** @description Whether that app's client secret is stored. Never returned. */
+            has_client_secret: boolean;
+            /** @description Scopes asked for at sign-in; empty: the server's choice. */
+            scopes: string[];
+            /** @description The authorization server the own OAuth app belongs to. */
+            issuer?: string | null;
+            /** @description Register this redirect URI with the provider for an own OAuth app. */
+            redirect_uri: string;
         };
         /** @description Messages two agents exchanged. */
         Conversation: {
@@ -894,6 +914,21 @@ export interface components {
              *     never returned.
              */
             token?: string | null;
+            /**
+             * @description Client id of your own OAuth app, for servers without dynamic client
+             *     registration (e.g. Google). Register `redirect_uri` with it.
+             */
+            client_id?: string | null;
+            /** @description That app's client secret. Stored in the OS keychain; never returned. */
+            client_secret?: string | null;
+            /** @description Scopes to ask for at sign-in (space-separated entries are split). */
+            scopes?: string[];
+            /**
+             * @description The authorization server the app belongs to (e.g.
+             *     `https://accounts.google.com`); needed with `client_id`. Sign-ins
+             *     through any other server are refused.
+             */
+            issuer?: string | null;
         };
         CreateProvider: {
             /**
@@ -1265,6 +1300,11 @@ export interface components {
             url: string;
         };
         /**
+         * @description Where a connector stands with OAuth.
+         * @enum {string}
+         */
+        SignIn: "signed_out" | "signed_in" | "expired";
+        /**
          * @description How deeply a sandbox sleeps.
          * @enum {string}
          */
@@ -1361,6 +1401,19 @@ export interface components {
             url?: string | null;
             /** @description New token; `null` removes the stored one. */
             token?: string | null;
+            /**
+             * @description Own OAuth app; `null` goes back to dynamic client registration.
+             *     Changing the app signs the connector out.
+             */
+            client_id?: string | null;
+            /**
+             * @description `null` removes the stored client secret. Changing the URL, client id
+             *     or issuer without sending a new secret removes it too.
+             */
+            client_secret?: string | null;
+            scopes?: string[] | null;
+            /** @description Issuer of the own OAuth app. */
+            issuer?: string | null;
         };
         UpdateProvider: {
             name?: string | null;

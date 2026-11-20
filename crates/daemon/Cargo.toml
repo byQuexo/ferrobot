@@ -38,6 +38,8 @@ reqwest = { workspace = true, features = ["stream"] }
 rmcp = { workspace = true, features = ["client", "transport-streamable-http-client-reqwest", "auth"] }
 # Already in the tree via rustls: HMAC for share links, AES-GCM for archives.
 ring = "0.17"
+# Same version rmcp uses; for RFC 7009 token revocation on sign-out.
+oauth2 = { version = "5.0", default-features = false }
 sha2.workspace = true
 hex.workspace = true
 time = { workspace = true, features = ["macros"] }

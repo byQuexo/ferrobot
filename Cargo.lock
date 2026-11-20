@@ -1063,6 +1063,7 @@ dependencies = [
  "iana-time-zone",
  "jsonschema",
  "keyring",
+ "oauth2",
  "object_store",
  "reqwest",
  "ring",

@@ -8,7 +8,7 @@ import { BODIES, EYES, HUES, characterOf, deriveCharacter, rerollCharacter, type
 import { toAvatarPng } from "../lib/image.ts";
 import { CharacterFace } from "./Character.tsx";
 import { Avatar } from "./Avatar.tsx";
-import { KIND_LABELS } from "./ProvidersDialog.tsx";
+import { KIND_LABELS } from "./ProvidersSettings.tsx";
 import { Button, Dialog } from "./ui.tsx";
 
 const NAME = /^[a-z][a-z0-9-]{0,31}$/;
