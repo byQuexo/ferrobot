@@ -1191,6 +1191,7 @@ async fn agents_create_agents_only_with_approval() {
         .find(|e| e["id"] == q1)
         .unwrap();
     assert_eq!(card["payload"]["approval"]["name"], "scout");
+    assert_eq!(card["payload"]["card"]["title"], "Approval needed");
     assert_eq!(
         card["payload"]["card"]["questions"][0]["choices"][0]["value"],
         "approve"
@@ -1264,6 +1265,26 @@ async fn agents_create_agents_only_with_approval() {
         .await
         .unwrap_err();
     assert!(err.contains("name"), "{err}");
+
+    // A sub-agent's request shows up where the operator chats: its creator's chat.
+    let st = d.state.clone();
+    let req = tokio::spawn(async move { st.request_agent(id, agent_request("deep")).await });
+    let q4 = approval_card(&d, &ada, q3).await;
+    let card = events(&d, &ada)
+        .await
+        .into_iter()
+        .find(|e| e["id"] == q4)
+        .unwrap();
+    assert_eq!(
+        card["payload"]["card"]["title"],
+        "scout wants to create an agent"
+    );
+    let (status, _) = decide(&d, &ada, q4, "decline").await;
+    assert_eq!(status, 202);
+    assert!(matches!(
+        req.await.unwrap().unwrap(),
+        AgentRequestOutcome::Declined { .. }
+    ));
 }
 
 #[tokio::test]

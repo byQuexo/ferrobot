@@ -6,7 +6,6 @@ import { Check, ChevronLeft, CircleHelp } from "lucide-preact";
 
 import type { Agent, QuestionAnswer, QuestionAnswered, QuestionCard as Card } from "../api.ts";
 import { useApp } from "../context.ts";
-import { Avatar } from "./Avatar.tsx";
 import { Button } from "./ui.tsx";
 
 type Question = Card["questions"][number];
@@ -50,8 +49,7 @@ export function QuestionCardView(props: {
 
   const head = (
     <div class="qcard-head">
-      <Avatar agent={agent} size={20} />
-      <span class="qcard-title">{card.title ?? `${agent.name} has ${total === 1 ? "a question" : "a few questions"}`}</span>
+      <span class="qcard-title">{card.title ?? (total === 1 ? "A question for you" : "A few questions for you")}</span>
       <span class="spacer" />
       {answered ? (
         <span class="qcard-done"><Check size={13} /> Answered</span>

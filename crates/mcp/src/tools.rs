@@ -181,7 +181,7 @@ pub struct Memories {
 
 #[derive(Debug, Serialize, JsonSchema)]
 pub struct AskUserResult {
-    /// Id of the card in your chat.
+    /// Id of the card in your chat, or of the message to your creator.
     pub question_id: i64,
     pub note: String,
 }
@@ -189,6 +189,35 @@ pub struct AskUserResult {
 #[derive(Debug, Serialize, JsonSchema)]
 pub struct Ack {
     pub ok: bool,
+}
+
+/// A question card as a message for the agent that relays it to the operator.
+fn card_text(card: &QuestionCard) -> String {
+    use ferrobot_core::question::QuestionKind;
+    use std::fmt::Write as _;
+    let mut out = String::from(
+        "Questions for our operator. Please ask them with ask_user and send me the answers.\n",
+    );
+    if let Some(title) = &card.title {
+        let _ = write!(out, "\n{title}\n");
+    }
+    for (n, q) in card.questions.iter().enumerate() {
+        let _ = write!(out, "\n{}. {}", n + 1, q.prompt);
+        let labels: Vec<&str> = q.choices.iter().map(|c| c.label.as_str()).collect();
+        match q.kind {
+            QuestionKind::Text => {}
+            QuestionKind::Single => {
+                let _ = write!(out, "\n   Pick one: {}", labels.join(" / "));
+            }
+            QuestionKind::Multi => {
+                let _ = write!(out, "\n   Pick any: {}", labels.join(" / "));
+            }
+        }
+        if q.allow_custom {
+            out.push_str(" (or their own answer)");
+        }
+    }
+    out
 }
 
 fn check_body(body: &str) -> Result<&str, ErrorData> {
@@ -318,7 +347,9 @@ impl FerrobotTools {
     #[tool(
         description = "Show your operator a question card in your chat: one or more questions, \
         each single choice, multiple choice or free text (choices can allow a custom answer). \
-        Does not wait: the answers arrive later as one user message, so finish your turn after asking."
+        Does not wait: the answers arrive later as one user message, so finish your turn after asking. \
+        If a teammate created you, the questions go to it as a message instead; it asks the operator \
+        and sends you the answers."
     )]
     async fn ask_user(
         &self,
@@ -328,6 +359,22 @@ impl FerrobotTools {
         let me = caller(&parts)?.0.id;
         card.normalize()
             .map_err(|e| ErrorData::invalid_params(e, None))?;
+        let store = &self.state.store;
+        let creator = store.get_agent(me).await.map_err(store_err)?.created_by;
+        // The operator talks to the creator; it decides what reaches them.
+        if let Some(creator) = creator
+            && store.get_agent(creator).await.is_ok()
+        {
+            let msg = self
+                .enqueue(me, creator, &card_text(&card), None, None)
+                .await?;
+            return Ok(Json(AskUserResult {
+                question_id: msg.id,
+                note: "Sent to the teammate that created you as a message; it asks the operator \
+                       and sends you the answers. Finish your turn now."
+                    .into(),
+            }));
+        }
         let payload = serde_json::to_value(QuestionEvent {
             version: QUESTION_CARD_VERSION,
             card,
