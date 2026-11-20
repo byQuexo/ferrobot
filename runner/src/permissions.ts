@@ -6,7 +6,8 @@ export type Decision = { allow: true } | { allow: false; reason: string };
 
 const DESTRUCTIVE_SHELL: readonly { pattern: RegExp; reason: string }[] = [
   {
-    pattern: /\brm\s+(-[a-z]*r[a-z]*f|-[a-z]*f[a-z]*r)[a-z]*\s+(\/|~|\$HOME)(\s|$)/i,
+    pattern:
+      /\brm\s+(?:-\S*\s+)*?(?:-[a-zA-Z]*[rR][a-zA-Z]*|--recursive)\s+(?:-\S*\s+)*["']?(?:\/|~\/?|\$HOME\/?|\$\{HOME\}\/?)\*?["']?(?=[\s;&|]|$)/,
     reason: "recursive delete of / or $HOME",
   },
   { pattern: /\bmkfs(\.\w+)?\b/, reason: "formatting a filesystem" },
