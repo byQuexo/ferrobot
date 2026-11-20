@@ -3845,6 +3845,18 @@ async fn message_limits_count_mentions_as_stored() {
     }
     let stored = received(&d, ada).await;
     assert_eq!(stored.len(), 4, "only the @zed bodies are stored");
+
+    // A task that mentions the agent it creates fails before the operator is asked.
+    let task = at_limit(ferrobot_mcp::MAX_MESSAGE_BYTES, "cal");
+    let args = json!({"name": "cal", "description": "calendar", "task": task});
+    let request = CallToolRequestParams::new("create_agent")
+        .with_arguments(args.as_object().cloned().unwrap());
+    let res = tokio::time::timeout(Duration::from_secs(5), as_bob.call_tool(request))
+        .await
+        .expect("rejected without an approval card");
+    assert!(!res.is_ok_and(|r| r.is_error != Some(true)));
+    let (_, all) = http(&d.ui, "GET", "/v1/agents", None).await;
+    assert!(!all.to_string().contains("\"cal\""), "{all}");
 }
 
 /// Fake model API that streams usage like Anthropic and `OpenAI`, split mid-line as networks do.

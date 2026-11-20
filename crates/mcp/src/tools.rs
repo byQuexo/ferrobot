@@ -294,6 +294,22 @@ fn check_body(body: &str) -> Result<&str, ErrorData> {
 }
 
 impl FerrobotTools {
+    /// `body` as stored, with `@name` mentions of existing agents (and of `new_agent`) as
+    /// tokens; fails if that is over the limit.
+    async fn stored_body(&self, body: &str, new_agent: Option<&str>) -> Result<String, ErrorData> {
+        let agents = self.state.store.list_agents().await.map_err(store_err)?;
+        let body = mention::normalize(body, |name| {
+            agents
+                .iter()
+                .find(|a| a.name.as_str() == name)
+                .map(|a| a.id)
+                // Any id: a token's length does not depend on it.
+                .or_else(|| (new_agent == Some(name)).then(AgentId::default))
+        });
+        check_body(&body)?;
+        Ok(body)
+    }
+
     /// Queues mail from agent `from`, with `@name` mentions stored as tokens.
     /// A `task` gets its answer sent back automatically.
     async fn enqueue(
@@ -305,16 +321,8 @@ impl FerrobotTools {
         priority: Option<bool>,
         task: bool,
     ) -> Result<MailMessage, ErrorData> {
+        let body = self.stored_body(body, None).await?;
         let store = &self.state.store;
-        let agents = store.list_agents().await.map_err(store_err)?;
-        let body = mention::normalize(body, |name| {
-            agents
-                .iter()
-                .find(|a| a.name.as_str() == name)
-                .map(|a| a.id)
-        });
-        // Mention tokens are longer than the names they replace.
-        check_body(&body)?;
         let msg = if task {
             store.enqueue_task(from, to, body).await
         } else {
@@ -571,6 +579,10 @@ impl FerrobotTools {
             instructions: args.instructions,
             character: args.character,
         };
+        if let Some(task) = &task {
+            // Before the operator is asked, so a task too long as stored creates no agent.
+            self.stored_body(task, Some(&request.name)).await?;
+        }
         let outcome = self
             .state
             .notifier
