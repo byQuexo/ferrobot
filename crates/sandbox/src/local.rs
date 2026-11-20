@@ -153,6 +153,8 @@ impl SandboxBackend for LocalProcessBackend {
         let out = Command::new(program)
             .args(args)
             .current_dir(cwd)
+            .env_clear()
+            .env("PATH", std::env::var_os("PATH").unwrap_or_default())
             .env("HOME", dir.join("home"))
             .envs(&req.env)
             .stdin(Stdio::null())

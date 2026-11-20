@@ -18,6 +18,8 @@ use crate::AppState;
 /// Claude lists tools on every turn, so a dead connector must not stall it.
 const LIST_TIMEOUT: Duration = Duration::from_secs(5);
 const CALL_TIMEOUT: Duration = Duration::from_secs(120);
+/// Connecting includes the MCP handshake and maybe an OAuth refresh.
+const CONNECT_TIMEOUT: Duration = Duration::from_secs(20);
 /// Claude and `OpenAI` cap function names at 64 chars, including this prefix.
 const MAX_TOOL_NAME: usize = 64;
 const CLIENT_PREFIX: &str = "mcp__ferrobot__";
@@ -176,7 +178,9 @@ pub async fn call(
         .iter()
         .find(|c| c.name == connector)
         .ok_or_else(unknown)?;
-    let s = session(state, agent, c).await?;
+    let s = tokio::time::timeout(CONNECT_TIMEOUT, session(state, agent, c))
+        .await
+        .map_err(|_| format!("connector {} did not answer in time", c.name))??;
     let mut params = CallToolRequestParams::new(tool.to_owned());
     if let Some(arguments) = arguments {
         params = params.with_arguments(arguments);
