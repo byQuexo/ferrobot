@@ -55,7 +55,7 @@ export function InfoPanel(props: {
             class={props.tab === t ? "active" : ""}
             onClick={() => { props.onTab(t); }}
           >
-            <Icon size={15} />
+            <Icon size={16} />
             <span>{label}</span>
           </button>
         ))}
@@ -131,7 +131,7 @@ function Profile(props: { agent: Agent; onEdit: () => void; onDeleted: () => voi
           </Button>
         ) : (
           <Button variant="ghost" onClick={() => { setConfirm(true); }}>
-            <Trash2 size={15} /> Delete agent
+            <Trash2 size={16} /> Delete agent
           </Button>
         )}
       </div>
@@ -182,7 +182,7 @@ function Computer(props: { agent: Agent }): JSX.Element {
     <div class="stack">
       <section class="card computer">
         <div class={`machine p-${info.presence}`}>
-          <Cpu size={26} />
+          <Cpu size={24} />
           <div>
             <strong>{presenceLabel(info.presence)}</strong>
             <span class="muted small">
@@ -207,11 +207,11 @@ function Computer(props: { agent: Agent }): JSX.Element {
         <div class="row-actions">
           {asleep ? (
             <Button variant="primary" disabled={busy} onClick={() => void act(() => client.wake(id))}>
-              <Power size={15} /> Wake up
+              <Power size={16} /> Wake up
             </Button>
           ) : (
             <Button disabled={busy} onClick={() => void act(() => client.sleep(id))}>
-              <Moon size={15} /> Put to sleep
+              <Moon size={16} /> Put to sleep
             </Button>
           )}
         </div>
@@ -219,7 +219,7 @@ function Computer(props: { agent: Agent }): JSX.Element {
 
       <section class="card">
         <h3>
-          <History size={15} /> Snapshots
+          <History size={16} /> Snapshots
         </h3>
         {info.snapshots_supported ? (
           <>
@@ -232,7 +232,7 @@ function Computer(props: { agent: Agent }): JSX.Element {
             >
               <input placeholder="Label (optional)" value={label} maxLength={64} onInput={(e) => { setLabel(e.currentTarget.value); }} />
               <Button type="submit" small disabled={busy}>
-                <Camera size={14} /> Take
+                <Camera size={16} /> Take
               </Button>
             </form>
             {snaps.length === 0 && <p class="muted small">No snapshots yet. A snapshot saves the whole computer, including files.</p>}
@@ -244,10 +244,10 @@ function Computer(props: { agent: Agent }): JSX.Element {
                     <span class="muted small">{dateTime(s.created_at)}</span>
                   </div>
                   <IconButton label="Restore this snapshot" disabled={busy} onClick={() => void act(() => client.restore(id, s.id))}>
-                    <RotateCcw size={15} />
+                    <RotateCcw size={16} />
                   </IconButton>
                   <IconButton label="Delete snapshot" tone="danger" disabled={busy} onClick={() => void act(() => client.deleteSnapshot(id, s.id))}>
-                    <Trash2 size={15} />
+                    <Trash2 size={16} />
                   </IconButton>
                 </li>
               ))}
@@ -312,11 +312,11 @@ function Routines(props: { agent: Agent }): JSX.Element {
           {open === r.id && <RoutineDetail routine={r} />}
           <div class="row-actions">
             <Button small onClick={() => void run(() => client.runRoutine(r.id))}>
-              <Play size={14} /> Run now
+              <Play size={16} /> Run now
             </Button>
             <span class="spacer" />
             <IconButton label="Delete routine" tone="danger" onClick={() => void run(() => client.deleteRoutine(r.id))}>
-              <Trash2 size={15} />
+              <Trash2 size={16} />
             </IconButton>
           </div>
         </section>
@@ -332,7 +332,7 @@ function Routines(props: { agent: Agent }): JSX.Element {
         />
       ) : (
         <Button onClick={() => { setAdding(true); }}>
-          <Plus size={15} /> New routine
+          <Plus size={16} /> New routine
         </Button>
       )}
     </div>
@@ -450,11 +450,11 @@ export function Memory(props: { agent: Agent | null }): JSX.Element {
     <div class="stack">
       <div class="inline-form">
         <label class="search grow">
-          <Search size={15} aria-hidden="true" />
+          <Search size={16} aria-hidden="true" />
           <input type="search" placeholder="Search memory" value={q} onInput={(e) => { setQ(e.currentTarget.value); }} />
         </label>
         <IconButton label="Add memory" tone="accent" onClick={() => { setAdding(!adding); }}>
-          <Plus size={17} />
+          <Plus size={16} />
         </IconButton>
       </div>
       {adding && (
@@ -504,7 +504,7 @@ export function Memory(props: { agent: Agent | null }): JSX.Element {
               <span class="spacer" />
               <span class="muted small">{relativeTime(m.updated_at)}</span>
               <IconButton label={`Forget ${m.key}`} tone="danger" onClick={() => void run(async () => { await client.forget(id, m.key); await refresh(); })}>
-                <Trash2 size={14} />
+                <Trash2 size={16} />
               </IconButton>
             </div>
             <p class="prewrap clamp">{m.content}</p>

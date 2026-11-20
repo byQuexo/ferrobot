@@ -178,16 +178,16 @@ export function AgentDialog(props: { agent?: Agent; onClose: () => void; onSaved
             <div class="avatar-actions">
               {!hasImage && (
                 <Button small onClick={() => { setLook(rerollCharacter(look)); }}>
-                  <Dices size={14} /> Re-roll
+                  <Dices size={16} /> Re-roll
                 </Button>
               )}
               {!hasImage && editing && !same(look, deriveCharacter(editing.id)) && (
                 <Button small variant="ghost" onClick={() => { setLook(deriveCharacter(editing.id)); }}>
-                  <RotateCcw size={14} /> Default
+                  <RotateCcw size={16} /> Default
                 </Button>
               )}
               <Button small variant="ghost" onClick={() => file.current?.click()}>
-                <ImageUp size={14} /> {hasImage ? "Replace image" : "Upload image"}
+                <ImageUp size={16} /> {hasImage ? "Replace image" : "Upload image"}
               </Button>
               {hasImage && (
                 <Button
@@ -198,7 +198,7 @@ export function AgentDialog(props: { agent?: Agent; onClose: () => void; onSaved
                     setPreview(null);
                   }}
                 >
-                  <X size={14} /> Use character
+                  <X size={16} /> Use character
                 </Button>
               )}
             </div>

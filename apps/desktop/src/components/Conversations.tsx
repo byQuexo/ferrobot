@@ -95,7 +95,7 @@ export function ConversationView(props: { pair: Pair }): JSX.Element {
           <span class="chat-sub">{messages.length} messages between agents</span>
         </div>
         <span class="spacer" />
-        <span class="readonly-pill"><Eye size={14} /> Read-only</span>
+        <span class="readonly-pill"><Eye size={16} /> Read-only</span>
       </header>
       <div class="timeline" ref={scroller}>
         {messages.map((m) => {
@@ -113,7 +113,7 @@ export function ConversationView(props: { pair: Pair }): JSX.Element {
                 )}
                 <RichText text={m.body} />
                 <span class="meta">
-                  {m.priority === true && <span class="urgent"><Zap size={11} /> urgent · </span>}
+                  {m.priority === true && <span class="urgent"><Zap size={12} /> urgent · </span>}
                   {m.priority === false && "when free · "}
                   {from?.name ?? "agent"} · {clockTime(m.created_at)}
                   {m.status === "pending" ? " · queued" : m.status === "failed" ? " · not delivered" : ""}

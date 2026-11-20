@@ -46,7 +46,7 @@ export function FileViewer(props: { agent: string; file: number; onClose: () => 
   const footer = (
     <>
       <Button onClick={() => { open(`${file.url}&download=1`); }}>
-        <Download size={15} /> Download
+        <Download size={16} /> Download
       </Button>
       <Button onClick={props.onClose}>Close</Button>
     </>

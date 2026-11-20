@@ -92,7 +92,7 @@ function Inlines(props: { nodes: Inline[]; plain: Plain; files?: ChatFiles | und
         if (files && shared !== undefined) {
           return (
             <button key={i} type="button" class="file-link" title={`Open ${n.code}`} onClick={() => { openFile(files.agent, shared); }}>
-              <FileText size={13} />
+              <FileText size={12} />
               {n.code}
             </button>
           );

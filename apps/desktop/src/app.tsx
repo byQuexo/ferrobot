@@ -178,7 +178,7 @@ export function App(): JSX.Element {
                 }}
               />
             ) : online || agents.size > 0 ? (
-              <Empty icon={<Bot size={36} />} title="Create your first agent">
+              <Empty icon={<Bot size={28} />} title="Create your first agent">
                 <p>Each agent gets its own computer, memory and mailbox. Agents can message each other.</p>
                 <Button variant="primary" onClick={() => { setDialog("create"); }}>
                   <Plus size={16} /> New agent
@@ -223,7 +223,7 @@ export function App(): JSX.Element {
 function TokenForm(props: { onSave: (token: string) => void }): JSX.Element {
   const [value, setValue] = useState("");
   return (
-    <Empty icon={<KeyRound size={36} />} title="The daemon needs its access token">
+    <Empty icon={<KeyRound size={28} />} title="The daemon needs its access token">
       <p>
         Paste the token from <code>api-token</code> in the daemon’s data folder (default <code>.ferrobot/</code>).
       </p>
@@ -244,7 +244,7 @@ function TokenForm(props: { onSave: (token: string) => void }): JSX.Element {
 function Offline(props: { base: string; onChange: (b: string) => void }): JSX.Element {
   const [value, setValue] = useState(props.base);
   return (
-    <Empty icon={<WifiOff size={36} />} title="Can’t reach the ferrobot daemon">
+    <Empty icon={<WifiOff size={28} />} title="Can’t reach the ferrobot daemon">
       <p>
         Start it with <code>ferrobotd</code>, or point this app at another address. It retries automatically.
       </p>
