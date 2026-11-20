@@ -58,6 +58,22 @@ jobs:
       - run: npm ci && npm run check:api && npm run typecheck && npm test && npm run build
         working-directory: apps/desktop
 
+  audit:
+    name: Dependency audit
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-audit
+      # Fails on vulnerabilities only; unmaintained crates stay warnings (docs/decisions.md).
+      - run: cargo audit && cargo audit --file apps/desktop/src-tauri/Cargo.lock
+      - run: npm audit --audit-level=moderate
+        working-directory: runner
+      - run: npm audit --audit-level=moderate
+        working-directory: apps/desktop
+
   docker:
     name: E2E (Docker backend)
     if: github.event_name == 'workflow_dispatch'
