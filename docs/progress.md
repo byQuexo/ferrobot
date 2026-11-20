@@ -598,3 +598,22 @@ store used for the run) or the daemon's own env.
   message steered into a Claude turn whose resume then fails is reported as
   seen but never reaches the model; the bearer scheme is matched
   case-sensitively (all our clients send `Bearer`).
+
+## Release prep 1: security leftovers (`fix/security-leftovers`)
+
+**Done**
+
+- Archived and snapshot images blank every env variable that holds the agent
+  token (value match), so `ANTHROPIC_API_KEY`, `GEMINI_API_KEY` and
+  `AWS_BEARER_TOKEN_BEDROCK` no longer keep the old token in the image config.
+- CI job "Dependency audit": `cargo audit` (workspace and Tauri lockfiles) and
+  `npm audit` (runner, desktop). Local result: no vulnerability after the
+  `time` update; unmaintained-crate warnings listed in decisions.
+- The shared-page CSP test also asserts that `allow-same-origin` is absent.
+
+**Tested**
+
+- Unit test of the env change; the Docker sandbox test now gives the sandbox
+  the token under all four names and checks the snapshot image and the image
+  restored from an archive carry no env value with the token (Docker Desktop
+  on macOS, `ferrobot-runner:dev` image).
