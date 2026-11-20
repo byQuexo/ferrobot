@@ -6,6 +6,7 @@ import { hash } from "../src/lib/avatar.ts";
 import { characterOf, deriveCharacter, moodOf, rerollCharacter } from "../src/lib/character.ts";
 import { relativeTime, stepLabel, toolLabel } from "../src/lib/format.ts";
 import { buildTimeline } from "../src/lib/timeline.ts";
+import { parseBlocks, parseInline } from "../src/lib/markdown.ts";
 
 const ME = "11111111-1111-4111-8111-111111111111";
 const BOB = "22222222-2222-4222-8222-222222222222";
@@ -216,5 +217,38 @@ describe("question cards", () => {
     assert.deepEqual(items.map((i) => i.type), ["question"]);
     const q = items[0];
     assert.ok(q?.type === "question" && q.answered?.message_id === 5);
+  });
+});
+
+describe("markdown", () => {
+  it("splits blocks", () => {
+    const md = "## Plan\n\n- **Day 1**: Gothic Quarter\n  - Boqueria\n1. one\n\n> note\n\n| a | b |\n|---|---|\n| 1 | 2 |\n\n```\nx = 1\n```\n---\nend\nline 2";
+    assert.deepEqual(parseBlocks(md), [
+      { kind: "heading", level: 2, text: "Plan" },
+      { kind: "list", ordered: false, items: [{ text: "**Day 1**: Gothic Quarter", depth: 0 }, { text: "Boqueria", depth: 1 }] },
+      { kind: "list", ordered: true, items: [{ text: "one", depth: 0 }] },
+      { kind: "quote", text: "note" },
+      { kind: "table", head: ["a", "b"], rows: [["1", "2"]] },
+      { kind: "code", text: "x = 1" },
+      { kind: "hr" },
+      { kind: "para", text: "end\nline 2" },
+    ]);
+  });
+
+  it("parses inline marks, links and mentions without touching code", () => {
+    const id = "11111111-2222-4333-8444-555555555555";
+    assert.deepEqual(parseInline(`**bold _it_** see [docs](https://x.dev/a) or https://y.dev. <@${id}> \`**no**\` snake_case_name`), [
+      { strong: [{ text: "bold " }, { em: [{ text: "it" }] }] },
+      { text: " see " },
+      { link: "https://x.dev/a", children: [{ text: "docs" }] },
+      { text: " or " },
+      { link: "https://y.dev", children: [{ text: "https://y.dev" }] },
+      { text: ". " },
+      { mention: id },
+      { text: " " },
+      { code: "**no**" },
+      { text: " snake_case_name" },
+    ]);
+    assert.deepEqual(parseInline("[x](javascript:alert(1))"), [{ text: "[x](javascript:alert(1))" }]);
   });
 });
