@@ -197,7 +197,7 @@ async fn preflight(repo: &Path) -> Result<(), ApiError> {
         .map_err(ApiError::Conflict)?;
     if branch != "main" {
         return Err(ApiError::Conflict(format!(
-            "the checkout is on {branch}, not main"
+            "the checkout is on {branch}; switch to main to update"
         )));
     }
     let changes = git(repo, &["status", "--porcelain", "--untracked-files=no"])
@@ -383,7 +383,7 @@ mod tests {
         let dirty = refusal(|r| std::fs::write(r.join(".gitignore"), "x\n").unwrap()).await;
         assert!(dirty.unwrap().contains("uncommitted changes"));
         let branch = refusal(|r| sh(r, &["checkout", "-q", "-b", "topic"])).await;
-        assert!(branch.unwrap().contains("not main"));
+        assert!(branch.unwrap().contains("switch to main"));
         let manifest = "[package]\nname = \"other\"\n";
         let other =
             refusal(|r| std::fs::write(r.join("crates/daemon/Cargo.toml"), manifest).unwrap());
