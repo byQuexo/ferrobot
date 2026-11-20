@@ -291,6 +291,7 @@ textarea { resize: vertical; min-height: 40px; line-height: 1.5; }
 /* Agent replies: plain text next to the avatar, no bubble. */
 .bubble-agent { flex: 1; max-width: 640px; padding: 0; border-radius: 0; background: none; }
 .agent-msg-head { display: flex; align-items: baseline; gap: 8px; margin: 1px 0 2px; }
+.bubble-agent > .meta { display: block; margin-top: 2px; }
 .agent-msg-head strong { font-size: 13.5px; font-weight: 600; }
 .agent-msg-head .meta { display: inline; margin: 0; }
 /* In read-only threads the second agent's messages sit on the right in a soft bubble. */
@@ -321,7 +322,8 @@ textarea { resize: vertical; min-height: 40px; line-height: 1.5; }
 .file-card:hover { border-color: var(--accent); }
 .file-card .file-name { font-weight: 600; }
 .file-view { max-height: 70vh; overflow: auto; }
-.file-frame { width: min(860px, 80vw); height: 70vh; border: 1px solid var(--border); border-radius: 8px; background: #fff; }
+.dialog-wide { width: min(1040px, 100%); }
+.file-frame { display: block; width: 100%; height: 72vh; border: 1px solid var(--border); border-radius: 8px; background: #fff; }
 .rich table { border-collapse: collapse; font-size: 13.5px; }
 .rich th, .rich td { border: 1px solid var(--border); padding: 4px 8px; text-align: left; vertical-align: top; }
 .rich th { background: var(--surface-2); font-weight: 600; }

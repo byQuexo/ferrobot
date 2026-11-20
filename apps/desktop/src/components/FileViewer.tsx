@@ -38,7 +38,7 @@ export function FileViewer(props: { agent: string; file: number; onClose: () => 
     body = <pre class="code-block"><code>{file.content}</code></pre>;
   }
   return (
-    <Dialog title={file.name} onClose={props.onClose} footer={close}>
+    <Dialog title={file.name} onClose={props.onClose} footer={close} wide>
       <div class="file-view">{body}</div>
     </Dialog>
   );
