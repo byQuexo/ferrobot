@@ -1,9 +1,13 @@
 #!/usr/bin/env bash
 # Live smoke test: real models, real Docker sandboxes, a throwaway daemon.
 #
-#   ANTHROPIC_API_KEY=... scripts/smoke-live.sh      # in your own terminal
+#   scripts/smoke-live.sh      # in your own terminal
 #
-# 1. A Claude agent (driver claude, key from ANTHROPIC_API_KEY) runs one
+# It asks for the Anthropic API key without echoing it, so the key stays out
+# of the terminal and the shell history (Enter skips the Claude part); an
+# ANTHROPIC_API_KEY already in the environment is used as is.
+#
+# 1. A Claude agent (driver claude, the key above) runs one
 #    tool-using turn: it writes a file with its shell tool and reports it.
 # 2. An agent on local Ollama (OpenAI-compatible driver) does the same, if
 #    Ollama runs and has OLLAMA_MODEL (default qwen2.5:3b; `ollama pull` it).
@@ -23,10 +27,16 @@ BIN=target/debug/ferrobotd
 OLLAMA_MODEL=${OLLAMA_MODEL:-qwen2.5:3b}
 TOKEN=smoke-live-operator-token-0123456789
 FAILED=0
+KEY=${ANTHROPIC_API_KEY:-}
+if [ -z "$KEY" ] && [ -t 0 ]; then
+  read -rsp "Anthropic API key (hidden; Enter skips Claude): " KEY
+  echo
+fi
 cargo build -q -p ferrobot-daemon
 [ -n "${SKIP_BUILD:-}" ] || docker build -q -f runner/Dockerfile -t ferrobot-runner:dev . >/dev/null
 
-"$BIN" --data-dir "$DATA" --backend docker --driver claude --idle-timeout 0 \
+# The daemon is the only process that gets the key.
+ANTHROPIC_API_KEY="$KEY" "$BIN" --data-dir "$DATA" --backend docker --driver claude --idle-timeout 0 \
   --secret-store file --listen 127.0.0.1:17878 --agent-listen 0.0.0.0:17879 \
   --api-token "$TOKEN" >>"$DATA/daemon.log" 2>&1 &
 PID=$!
@@ -72,10 +82,11 @@ turn() { # turn <agent-id> <label>
 
 # The real key must be nowhere the agent or a log could see it. grep -c reads
 # the whole stream (no early exit, no SIGPIPE under pipefail); a source that
-# cannot be read counts as a failure, not as clean.
+# cannot be read counts as a failure, not as clean. The pattern comes from a
+# pipe, not argv, so the key never shows up in `ps`.
 leak_check() { # leak_check <what> <command...>
   local what=$1 count; shift
-  if ! count=$("$@" 2>/dev/null | grep -acF -- "$KEY"; exit "${PIPESTATUS[0]}"); then
+  if ! count=$("$@" 2>/dev/null | grep -acFf <(printf '%s\n' "$KEY"); exit "${PIPESTATUS[0]}"); then
     fail "could not read $what"
   elif [ "$count" = 0 ]; then ok "key not in $what"
   else fail "key in $what"
@@ -90,13 +101,12 @@ no_key() { # no_key <container> <label>
   leak_check "$2: container logs" docker logs "$1"
 }
 
-KEY=${ANTHROPIC_API_KEY:-}
 if [ -n "$KEY" ]; then
   CLAUDE=$(post /v1/agents '{"name":"live-claude"}' | json "d['id']")
   turn "$CLAUDE" claude
   no_key ferrobot-live-claude claude
 else
-  echo "skipped: Claude (no ANTHROPIC_API_KEY in this shell)"
+  echo "skipped: Claude (no Anthropic API key given)"
 fi
 
 if curl -sf -m 3 http://127.0.0.1:11434/api/tags | json "any(m['name']=='$OLLAMA_MODEL' for m in d['models'])" | grep -q True; then
