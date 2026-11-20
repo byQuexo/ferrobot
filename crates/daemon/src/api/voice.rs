@@ -491,8 +491,9 @@ pub(crate) async fn put_call(
 
 #[derive(Debug, Deserialize, ToSchema)]
 pub(crate) struct CallMessage {
-    /// 1..20224 bytes after trimming (the rest of a message is left for
-    /// what the others said).
+    /// 1..20224 bytes after trimming, counting `@name` mentions as their
+    /// stored `<@agent-id>` tokens (the rest of a message is left for what
+    /// the others said).
     body: String,
 }
 
@@ -508,13 +509,12 @@ pub(crate) async fn post_call_message(
     State(state): State<AppState>,
     Json(req): Json<CallMessage>,
 ) -> Result<(StatusCode, Json<Vec<MailMessage>>), ApiError> {
-    let body = req.body.trim();
+    let body = state.normalize_mentions(req.body.trim()).await;
     if body.is_empty() || body.len() > MAX_CALL_TEXT_BYTES {
         return Err(ApiError::BadRequest(format!(
             "body must be 1..{MAX_CALL_TEXT_BYTES} bytes"
         )));
     }
-    let body = state.normalize_mentions(body).await;
     let parts = state.call_messages(&body);
     if parts.is_empty() {
         return Err(ApiError::Conflict("there is no voice call".into()));

@@ -1022,8 +1022,9 @@ export interface components {
         };
         CallMessage: {
             /**
-             * @description 1..20224 bytes after trimming (the rest of a message is left for
-             *     what the others said).
+             * @description 1..20224 bytes after trimming, counting `@name` mentions as their
+             *     stored `<@agent-id>` tokens (the rest of a message is left for what
+             *     the others said).
              */
             body: string;
         };
@@ -1354,7 +1355,7 @@ export interface components {
         PostMessage: {
             /**
              * @description 1..32768 bytes after trimming. `@name` mentions of existing agents are
-             *     stored as `<@agent-id>` tokens.
+             *     stored as `<@agent-id>` tokens, and the limit counts them as stored.
              */
             body: string;
         };

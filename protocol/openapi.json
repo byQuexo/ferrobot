@@ -4446,7 +4446,7 @@
         "properties": {
           "body": {
             "type": "string",
-            "description": "1..20224 bytes after trimming (the rest of a message is left for\nwhat the others said)."
+            "description": "1..20224 bytes after trimming, counting `@name` mentions as their\nstored `<@agent-id>` tokens (the rest of a message is left for what\nthe others said)."
           }
         }
       },
@@ -5265,7 +5265,7 @@
         "properties": {
           "body": {
             "type": "string",
-            "description": "1..32768 bytes after trimming. `@name` mentions of existing agents are\nstored as `<@agent-id>` tokens."
+            "description": "1..32768 bytes after trimming. `@name` mentions of existing agents are\nstored as `<@agent-id>` tokens, and the limit counts them as stored."
           }
         }
       },

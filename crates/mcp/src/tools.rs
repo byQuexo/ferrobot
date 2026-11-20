@@ -313,6 +313,8 @@ impl FerrobotTools {
                 .find(|a| a.name.as_str() == name)
                 .map(|a| a.id)
         });
+        // Mention tokens are longer than the names they replace.
+        check_body(&body)?;
         let msg = if task {
             store.enqueue_task(from, to, body).await
         } else {
