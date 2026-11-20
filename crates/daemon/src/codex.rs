@@ -180,8 +180,15 @@ pub fn secret_key(provider: Uuid) -> String {
 }
 
 /// Private `CODEX_HOME`s of running app-servers, under the codex dir.
-pub fn run_dir(codex_home: &Path) -> std::path::PathBuf {
+fn run_dir(codex_home: &Path) -> std::path::PathBuf {
     codex_home.join("run")
+}
+
+/// The codex dir, without private homes a crash left behind (they hold
+/// copies of `ChatGPT` sign-ins).
+pub fn clean_home(codex_home: std::path::PathBuf) -> std::path::PathBuf {
+    let _ = std::fs::remove_dir_all(run_dir(&codex_home));
+    codex_home
 }
 
 /// A `CODEX_HOME` that exists while one app-server runs (0700, `auth.json`

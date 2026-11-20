@@ -231,9 +231,7 @@ async fn main() -> Result<()> {
     settings.approval_timeout = Duration::from_secs(cli.approval_timeout);
     settings.secrets = secrets;
     settings.codex_bin.clone_from(&cli.codex_bin);
-    settings.codex_home = cli.data_dir.join("codex");
-    // Private homes a crash left behind hold copies of ChatGPT sign-ins.
-    let _ = std::fs::remove_dir_all(ferrobot_daemon::codex::run_dir(&settings.codex_home));
+    settings.codex_home = ferrobot_daemon::codex::clean_home(cli.data_dir.join("codex"));
     let state = AppState::new(store, backend, settings);
 
     let ui = tokio::net::TcpListener::bind(cli.listen)
