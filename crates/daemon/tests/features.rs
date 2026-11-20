@@ -1896,6 +1896,136 @@ async fn gemini_cli_agents_reach_the_gemini_api_through_the_proxy() {
     assert_eq!(status, 401);
 }
 
+/// Fake model lists that answer only when the provider's key arrives in the right header.
+async fn models_upstream() -> String {
+    async fn handler(request: axum::extract::Request) -> axum::response::Response {
+        let header = |name: &str| {
+            request
+                .headers()
+                .get(name)
+                .and_then(|v| v.to_str().ok())
+                .unwrap_or_default()
+                .to_owned()
+        };
+        let uri = request.uri();
+        let body = match uri.path() {
+            "/v1/models"
+                if header("x-api-key") == "sk-ant-secret"
+                    && !header("anthropic-version").is_empty()
+                    && uri.query() == Some("limit=1000") =>
+            {
+                json!({"data": [{"id": "claude-x", "display_name": "Claude X"}], "has_more": false})
+            }
+            "/oai/models" if header("authorization") == "Bearer sk-oai-secret" => {
+                json!({"object": "list", "data": [{"id": "gpt-x", "object": "model"}]})
+            }
+            _ => {
+                return (
+                    axum::http::StatusCode::UNAUTHORIZED,
+                    "Incorrect API key provided: sk-wrong-secret",
+                )
+                    .into_response();
+            }
+        };
+        axum::Json(body).into_response()
+    }
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let addr = listener.local_addr().unwrap();
+    tokio::spawn(async move {
+        axum::serve(listener, axum::Router::new().fallback(handler))
+            .await
+            .unwrap();
+    });
+    format!("http://{addr}")
+}
+
+async fn model_list(d: &Daemon, provider: &str) -> Value {
+    let (status, list) = http(
+        &d.ui,
+        "GET",
+        &format!("/v1/providers/{provider}/models"),
+        None,
+    )
+    .await;
+    assert_eq!(status, 200, "{list}");
+    assert!(!list.to_string().contains("secret"), "a key leaked: {list}");
+    list
+}
+
+#[tokio::test]
+async fn model_lists_come_from_the_provider_or_suggestions() {
+    let upstream = models_upstream().await;
+    let closed = {
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        format!("http://{}", listener.local_addr().unwrap())
+    };
+    let d = start(Arc::new(StatefulBackend::default()), None, "127.0.0.1:0").await;
+    let mut ids = HashMap::new();
+    for (name, kind, base_url, key) in [
+        ("ant", "anthropic", upstream.clone(), "sk-ant-secret"),
+        ("oai", "openai", format!("{upstream}/oai"), "sk-oai-secret"),
+        (
+            "wrong",
+            "openai",
+            format!("{upstream}/oai"),
+            "sk-wrong-secret",
+        ),
+        ("down", "openai", closed.clone(), "sk-oai-secret"),
+    ] {
+        let (status, p) = http(
+            &d.ui,
+            "POST",
+            "/v1/providers",
+            Some(json!({"name": name, "kind": kind, "base_url": base_url, "api_key": key})),
+        )
+        .await;
+        assert_eq!(status, 201, "{p}");
+        ids.insert(name, p["id"].as_str().unwrap().to_owned());
+    }
+
+    assert_eq!(
+        model_list(&d, &ids["ant"]).await,
+        json!({"source": "provider", "models": [{"id": "claude-x", "name": "Claude X"}]})
+    );
+    assert_eq!(
+        model_list(&d, &ids["oai"]).await,
+        json!({"source": "provider", "models": [{"id": "gpt-x", "name": null}]})
+    );
+    for name in ["wrong", "down"] {
+        let list = model_list(&d, &ids[name]).await;
+        assert_eq!(list["source"], "suggested", "{name}: {list}");
+        assert!(
+            list["models"][0]["id"]
+                .as_str()
+                .unwrap()
+                .starts_with("gpt-")
+        );
+    }
+
+    // A fixed key or URL shows at once: failures are not cached and edits drop the cache.
+    for (name, body) in [
+        ("wrong", json!({"api_key": "sk-oai-secret"})),
+        ("ant", json!({"base_url": closed})),
+    ] {
+        let path = format!("/v1/providers/{}", ids[name]);
+        assert_eq!(http(&d.ui, "PATCH", &path, Some(body)).await.0, 200);
+    }
+    assert_eq!(model_list(&d, &ids["wrong"]).await["source"], "provider");
+    assert_eq!(model_list(&d, &ids["ant"]).await["source"], "suggested");
+
+    let (status, list) = http(&d.ui, "GET", "/v1/provider-kinds/bedrock/models", None).await;
+    assert_eq!(status, 200);
+    assert_eq!(list["source"], "suggested");
+    assert!(
+        list["models"][0]["id"]
+            .as_str()
+            .unwrap()
+            .contains("anthropic.claude")
+    );
+    let (status, _) = http(&d.ui, "GET", "/v1/provider-kinds/grok/models", None).await;
+    assert_eq!(status, 404);
+}
+
 async fn mcp_status(agents: &str, token: &str) -> u16 {
     let bearer = format!("Bearer {token}");
     let headers = [

@@ -8,6 +8,7 @@ import { BODIES, EYES, HUES, characterOf, deriveCharacter, rerollCharacter, type
 import { toAvatarPng } from "../lib/image.ts";
 import { CharacterFace } from "./Character.tsx";
 import { Avatar } from "./Avatar.tsx";
+import { ModelPicker } from "./ModelPicker.tsx";
 import { KIND_LABELS } from "./ProvidersSettings.tsx";
 import { Button, Dialog } from "./ui.tsx";
 
@@ -256,12 +257,12 @@ export function AgentDialog(props: { agent?: Agent; onClose: () => void; onSaved
         </label>
         <label>
           Model
-          <input
+          <ModelPicker
+            provider={providerId ?? undefined}
+            kind={chosen?.kind ?? "anthropic"}
             value={model}
-            maxLength={200}
-            spellcheck={false}
-            placeholder={chosen?.default_model ?? "The provider’s default"}
-            onInput={(e) => { setModel(e.currentTarget.value); }}
+            placeholder={chosen?.default_model ? `Default (${chosen.default_model})` : "The provider’s default"}
+            onChange={setModel}
           />
           {editing && modelChanged && (
             <span class="hint">Saving restarts the agent’s computer with the new model. Its files are kept.</span>

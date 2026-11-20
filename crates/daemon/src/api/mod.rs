@@ -122,6 +122,11 @@ fn integrations() -> Router<AppState> {
             "/v1/providers/{id}",
             axum::routing::patch(providers::update_provider).delete(providers::delete_provider),
         )
+        .route("/v1/providers/{id}/models", get(providers::provider_models))
+        .route(
+            "/v1/provider-kinds/{kind}/models",
+            get(providers::kind_models),
+        )
         .route(
             "/v1/providers/{id}/chatgpt-login",
             get(providers::chatgpt_login_status).post(providers::start_chatgpt_login),

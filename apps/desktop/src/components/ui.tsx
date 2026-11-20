@@ -1,5 +1,5 @@
 import type { ComponentChildren, JSX } from "preact";
-import { useEffect, useRef } from "preact/hooks";
+import { useEffect, useRef, useState } from "preact/hooks";
 import { X } from "lucide-preact";
 
 export function IconButton(props: {
@@ -42,6 +42,52 @@ export function Button(props: {
     >
       {props.children}
     </button>
+  );
+}
+
+const CUSTOM = "\u0000custom";
+
+/** A select with a "Custom…" entry that turns it into a text field. Without options it is the text field. */
+export function Choice(props: {
+  value: string;
+  options: [string, string][];
+  placeholder: string;
+  onChange: (v: string) => void;
+}): JSX.Element {
+  const [custom, setCustom] = useState(false);
+  const input = useRef<HTMLInputElement>(null);
+  useEffect(() => { if (custom) input.current?.focus(); }, [custom]);
+  if (custom || props.options.length === 0) {
+    return (
+      <span class="choice-custom">
+        <input
+          ref={input}
+          value={props.value}
+          maxLength={200}
+          spellcheck={false}
+          autoComplete="off"
+          placeholder={props.placeholder}
+          onInput={(e) => { props.onChange(e.currentTarget.value); }}
+        />
+        {props.options.length > 0 && (
+          <Button small variant="ghost" onClick={() => { setCustom(false); }}>List</Button>
+        )}
+      </span>
+    );
+  }
+  return (
+    <select
+      value={props.value}
+      onChange={(e) => {
+        const v = e.currentTarget.value;
+        if (v === CUSTOM) setCustom(true);
+        else props.onChange(v);
+      }}
+    >
+      <option value="">{props.placeholder}</option>
+      {props.options.map(([v, label]) => <option key={v} value={v}>{label}</option>)}
+      <option value={CUSTOM}>Custom…</option>
+    </select>
   );
 }
 
