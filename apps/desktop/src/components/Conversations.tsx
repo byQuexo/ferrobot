@@ -1,4 +1,3 @@
-// Read-only agent-to-agent threads: a sidebar list and a thread view.
 import type { JSX } from "preact";
 import { useEffect, useRef, useState } from "preact/hooks";
 import { CornerDownRight, Eye, Zap } from "lucide-preact";

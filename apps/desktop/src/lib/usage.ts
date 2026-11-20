@@ -53,7 +53,7 @@ export type SortKey =
   | "cache_write_tokens"
   | "cost_usd";
 
-/** Unknown costs sort below every known one. */
+/** Unknown costs count as lower than any known one. */
 export function sortGroups(groups: UsageGroup[], key: SortKey, desc: boolean): UsageGroup[] {
   const value = (g: UsageGroup): string | number =>
     key === "label" ? g.label.toLowerCase() : (g[key] ?? -1);

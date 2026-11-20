@@ -438,10 +438,7 @@ function RoutineDetail(props: { routine: Routine }): JSX.Element {
   const { client } = useApp();
   const [runs, setRuns] = useState<RoutineRun[]>([]);
   useEffect(() => {
-    void client
-      .routineRuns(props.routine.id)
-      .then(setRuns)
-      .catch(() => undefined);
+    void client.routineRuns(props.routine.id).then(setRuns, () => undefined);
   }, [props.routine.id, props.routine.last_run_at]);
   return (
     <div class="routine-detail">

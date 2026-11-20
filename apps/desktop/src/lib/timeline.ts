@@ -241,9 +241,8 @@ const isSendCall = (i: TimelineItem): i is ToolItem =>
   i.type === "tool" && i.denied === null && /(^|__)send_message$/.test(i.name);
 
 /**
- * Folds consecutive agent-to-agent messages with the same peer (and the
- * `send_message` calls right before them) into one `exchange` item.
- * Anything else between them (user mail, replies, other tools) ends the run.
+ * Folds consecutive agent-to-agent mail with one peer, and the `send_message` calls right
+ * before it, into one `exchange`; anything else in between (user mail, replies, tools) ends it.
  */
 export function groupExchanges(items: readonly TimelineItem[]): DisplayItem[] {
   const out: DisplayItem[] = [];

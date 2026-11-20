@@ -14,9 +14,8 @@ export function fileSize(bytes: number): string {
 }
 
 /**
- * A file an agent shared: .html opens full screen in the browser, a PDF in a
- * full-screen viewer, Markdown and text inline. Every file can be
- * downloaded (the browser saves it; the app window cannot).
+ * A file an agent shared: a page opens in the system browser, a PDF fills the window,
+ * Markdown and text show inline. Downloads go through the browser; the app window cannot save.
  */
 export function FileViewer(props: {
   agent: string;

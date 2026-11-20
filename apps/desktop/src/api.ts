@@ -1,6 +1,3 @@
-// Typed client for the ferrobotd UI API (v1). The desktop app is a thin
-// client: every action is one of these HTTP calls, and live updates come
-// from the /v1/ws stream.
 import type { components } from "./generated/api-types.ts";
 
 export const DEFAULT_DAEMON = "http://127.0.0.1:7878";
@@ -65,6 +62,7 @@ const enc = encodeURIComponent;
 const memoryPath = (agent: string | null): string =>
   agent ? `/v1/agents/${agent}/memory` : "/v1/memory";
 
+/** The ferrobotd `/v1` client: every UI action is one of these calls; live updates come from `/v1/ws`. */
 export class DaemonClient {
   readonly base: string;
   readonly #token: string;
@@ -116,9 +114,8 @@ export class DaemonClient {
   }
 
   /**
-   * Absolute URL for a path returned by the API (e.g. `avatar_url`), for
-   * `<img>` and WebSocket requests, which cannot send headers: the token goes
-   * in the `access_token` query parameter (accepted on GET only).
+   * Absolute URL for `<img>` and WebSocket requests, which cannot send headers:
+   * the token goes in the `access_token` query parameter (accepted on GET only).
    */
   url(path: string): string {
     if (!this.#token) return `${this.base}${path}`;
@@ -128,7 +125,6 @@ export class DaemonClient {
 
   health = (): Promise<Health> => this.#request("GET", "/v1/health");
 
-  // agents
   listAgents = (): Promise<Agent[]> => this.#request("GET", "/v1/agents");
   createAgent = (req: CreateAgent): Promise<Agent> => this.#request("POST", "/v1/agents", req);
   updateAgent = (id: string, req: UpdateAgent): Promise<Agent> =>
@@ -149,7 +145,6 @@ export class DaemonClient {
   kindModels = (kind: ProviderKind): Promise<ModelList> =>
     this.#request("GET", `/v1/provider-kinds/${kind}/models`);
 
-  // connectors
   listConnectors = (): Promise<Connector[]> => this.#request("GET", "/v1/connectors");
   createConnector = (req: CreateConnector): Promise<Connector> =>
     this.#request("POST", "/v1/connectors", req);
@@ -168,7 +163,6 @@ export class DaemonClient {
     this.#request("PUT", `/v1/agents/${id}/avatar`, image);
   removeAvatar = (id: string): Promise<Agent> => this.#request("DELETE", `/v1/agents/${id}/avatar`);
 
-  // chat
   messages = (id: string): Promise<MailMessage[]> =>
     this.#request("GET", `/v1/agents/${id}/messages`);
   events = (id: string, after = 0): Promise<StoredEvent[]> =>
@@ -197,7 +191,7 @@ export class DaemonClient {
   ): Promise<QuestionAnswered> =>
     this.#request("POST", `/v1/agents/${id}/questions/${String(question)}/answer`, { answers });
 
-  // memory; agent `null` is the global memory all agents share
+  // In the memory calls, `id` null is the global memory all agents share.
   memory = (id: string | null, q = ""): Promise<MemoryEntry[]> =>
     this.#request("GET", `${memoryPath(id)}?q=${enc(q)}`);
   remember = (id: string | null, key: string, content: string): Promise<void> =>
@@ -205,7 +199,6 @@ export class DaemonClient {
   forget = (id: string | null, key: string): Promise<void> =>
     this.#request("DELETE", `${memoryPath(id)}/${enc(key)}`);
 
-  // routines
   routines = (id: string): Promise<Routine[]> => this.#request("GET", `/v1/agents/${id}/routines`);
   createRoutine = (id: string, req: CreateRoutine): Promise<Routine> =>
     this.#request("POST", `/v1/agents/${id}/routines`, req);
@@ -218,7 +211,6 @@ export class DaemonClient {
   routineRuns = (rid: number): Promise<RoutineRun[]> =>
     this.#request("GET", `/v1/routines/${String(rid)}/runs`);
 
-  // sandbox
   sandbox = (id: string): Promise<SandboxInfo> => this.#request("GET", `/v1/agents/${id}/sandbox`);
   sleep = (id: string): Promise<void> => this.#request("POST", `/v1/agents/${id}/stop`);
   wake = (id: string): Promise<void> => this.#request("POST", `/v1/agents/${id}/wake`);
@@ -231,7 +223,6 @@ export class DaemonClient {
   deleteSnapshot = (id: string, sid: number): Promise<void> =>
     this.#request("DELETE", `/v1/agents/${id}/snapshots/${String(sid)}`);
 
-  // voice
   voice = (): Promise<VoiceView> => this.#request("GET", "/v1/voice");
   updateVoice = (req: UpdateVoice): Promise<VoiceView> => this.#request("PUT", "/v1/voice", req);
   /** `text` spoken by the configured voice, or by `agent`'s own one (usually mp3). */
@@ -256,7 +247,7 @@ export class DaemonClient {
   sayInCall = (body: string): Promise<MailMessage[]> =>
     this.#request("POST", "/v1/call/messages", { body });
 
-  // model usage; `to` null means until now
+  /** `to` null means until now. */
   usage = (groupBy: UsageGroupBy, from: string, to: string | null): Promise<UsageReport> =>
     this.#request(
       "GET",
@@ -267,7 +258,6 @@ export class DaemonClient {
   setPrices = (prices: SetPrice[]): Promise<PriceEntry[]> =>
     this.#request("PUT", "/v1/usage/prices", prices);
 
-  // agent-to-agent conversations (read-only)
   listConversations = (): Promise<Conversation[]> => this.#request("GET", "/v1/conversations");
   conversation = (a: string, b: string): Promise<MailMessage[]> =>
     this.#request("GET", `/v1/conversations/${a}/${b}`);

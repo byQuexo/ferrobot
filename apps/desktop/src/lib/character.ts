@@ -1,5 +1,3 @@
-// Animated character avatars: a look (body, eyes, hue) derived from the agent
-// id unless the profile stores a chosen one, and a mood from its presence.
 import type { AvatarCharacter, Presence } from "../api.ts";
 import { hash } from "./avatar.ts";
 

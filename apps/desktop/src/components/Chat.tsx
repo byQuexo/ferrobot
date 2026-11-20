@@ -152,7 +152,6 @@ export function Chat(props: {
   const sendRef = useRef(send);
   sendRef.current = send;
 
-  // Initial load + live updates for the selected agent.
   useEffect(() => {
     let cancelled = false;
     setLoaded(false);
@@ -227,11 +226,7 @@ export function Chat(props: {
           break;
         }
         case "routines_changed":
-          if (e.agent_id === id)
-            void client
-              .routines(id)
-              .then(setRoutines)
-              .catch(() => undefined);
+          if (e.agent_id === id) void client.routines(id).then(setRoutines, () => undefined);
           break;
         default:
           break;
@@ -579,7 +574,6 @@ function pretty(value: unknown): string {
   }
 }
 
-/** Pretty-prints JSON tool output; other text is shown as is. */
 function prettyOutput(text: string): string {
   const t = text.trim();
   if (!t.startsWith("{") && !t.startsWith("[")) return text;
@@ -660,7 +654,6 @@ export function ToolCard(props: { item: Extract<TimelineItem, { type: "tool" }> 
   );
 }
 
-/** Joins dictated pieces with single spaces. */
 const joinText = (...parts: string[]): string =>
   parts
     .map((p) => p.trim())
@@ -668,9 +661,8 @@ const joinText = (...parts: string[]): string =>
     .join(" ");
 
 /**
- * Dictation: hold to talk, or click to start and again to stop. The words
- * appear in the message box as they are said (ElevenLabs) or after stopping
- * (other providers); nothing is sent until the operator sends it.
+ * Dictation: hold to talk, or click to start and stop. Words reach the message box live
+ * (ElevenLabs) or after stopping (other providers); nothing is sent until the operator sends it.
  */
 function MicButton(props: {
   agent: Agent;

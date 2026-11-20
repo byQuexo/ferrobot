@@ -493,17 +493,14 @@ describe("modelOptions", () => {
     { id: "gpt-x", name: null },
   ];
 
-  it("labels models and keeps a current id the list lacks", () => {
+  it("labels models, keeps a current id the list lacks, and has none without a list", () => {
     assert.deepEqual(modelOptions(models, ""), [
       ["claude-x", "Claude X (claude-x)"],
       ["gpt-x", "gpt-x"],
     ]);
     assert.equal(modelOptions(models, "gpt-x").length, 2);
     assert.deepEqual(modelOptions(models, "my-finetune")[0], ["my-finetune", "my-finetune"]);
-  });
-
-  it("has no options without a list, so the field is typed", () => {
-    assert.deepEqual(modelOptions([], "my-finetune"), []);
+    assert.deepEqual(modelOptions([], "my-finetune"), [], "no list: the field is typed");
   });
 
   it("keeps a saved voice id the list lacks", () => {

@@ -1,9 +1,8 @@
 import preact from "@preact/preset-vite";
 import { defineConfig } from "vite";
 
-// Tauri serves the built files; there is no dev server in the Tauri config.
-// `npm run dev` is for working on the UI in a browser at localhost:1420
-// (allowed by the daemon's CORS policy).
+// Tauri loads the built dist/ (no devUrl); `npm run dev` serves the UI in a browser on
+// localhost:1420, which the daemon's CORS policy allows.
 export default defineConfig({
   plugins: [preact()],
   clearScreen: false,

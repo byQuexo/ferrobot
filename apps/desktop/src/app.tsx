@@ -110,7 +110,6 @@ export function App(): JSX.Element {
     }
   }, [client]);
 
-  // Connect, load, and keep the agent list live.
   useEffect(() => {
     void refresh().catch(() => {
       setOnline(false);
@@ -134,7 +133,6 @@ export function App(): JSX.Element {
     });
   }, [client]);
 
-  // Fall back to the first agent when the selection is gone.
   useEffect(() => {
     if (selected && agents.has(selected)) return;
     const first = [...agents.values()].sort(
