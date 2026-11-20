@@ -30,9 +30,15 @@ fn token() -> Option<String> {
     ok.then_some(token)
 }
 
-/// The app's own pages: the bundled UI, or the Vite dev server.
+/// The app's own pages (the bundled UI or the Vite dev server), and pages
+/// agents shared, which the viewer frames from the daemon. wry asks this for
+/// frames too; the token script only runs in the main frame.
 fn is_app(url: &tauri::Url) -> bool {
-    url.scheme() == "tauri" || matches!(url.host_str(), Some("tauri.localhost" | "localhost"))
+    url.scheme() == "tauri"
+        || matches!(url.host_str(), Some("tauri.localhost" | "localhost"))
+        || (url.scheme() == "http"
+            && url.host_str() == Some("127.0.0.1")
+            && url.path().starts_with("/artifacts/"))
 }
 
 /// Links open in the system browser, never in this window (which holds the
