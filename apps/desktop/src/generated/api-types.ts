@@ -761,7 +761,10 @@ export interface components {
             version: string;
             backend: string;
             driver: string;
-            /** @description Whether real model calls are possible (driver `claude` with a key). */
+            /**
+             * @description Whether agents make real model calls through the proxy (any driver
+             *     but `mock`); each still needs a provider or `ANTHROPIC_API_KEY`.
+             */
             model_proxy: boolean;
             /**
              * Format: int64

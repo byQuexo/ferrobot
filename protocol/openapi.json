@@ -3113,7 +3113,7 @@
           },
           "model_proxy": {
             "type": "boolean",
-            "description": "Whether real model calls are possible (driver `claude` with a key)."
+            "description": "Whether agents make real model calls through the proxy (any driver\nbut `mock`); each still needs a provider or `ANTHROPIC_API_KEY`."
           },
           "idle_timeout_s": {
             "type": [

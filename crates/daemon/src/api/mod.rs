@@ -130,7 +130,8 @@ pub(crate) struct Health {
     version: &'static str,
     backend: &'static str,
     driver: String,
-    /// Whether real model calls are possible (driver `claude` with a key).
+    /// Whether agents make real model calls through the proxy (any driver
+    /// but `mock`); each still needs a provider or `ANTHROPIC_API_KEY`.
     model_proxy: bool,
     /// Seconds of inactivity before a sandbox sleeps; null when disabled.
     idle_timeout_s: Option<u64>,
@@ -148,7 +149,7 @@ pub(crate) async fn health(State(state): State<AppState>) -> Json<Health> {
         version: env!("CARGO_PKG_VERSION"),
         backend: state.backend.kind(),
         driver: s.driver.clone(),
-        model_proxy: s.anthropic_api_key.is_some(),
+        model_proxy: s.driver != "mock",
         idle_timeout_s: s.idle_timeout.map(|d| d.as_secs()),
         timezone: s.default_timezone.clone(),
     })
