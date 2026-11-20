@@ -18,8 +18,8 @@ use crate::{ExecOutput, ExecRequest, SandboxError, capture};
 pub const GUEST_PORT: u32 = 52;
 /// Commands may run long; file calls finish well within it.
 const TIMEOUT: Duration = Duration::from_secs(600);
-/// Largest answer accepted: two capped output streams, base64-encoded.
-const MAX_ANSWER: u64 = 4 * (crate::MAX_EXEC_OUTPUT as u64 + 1) + 4096;
+/// Largest answer accepted (base64): ~48 MiB files; exec output is capped in the guest.
+const MAX_ANSWER: u64 = 64 * 1024 * 1024;
 
 fn bad(what: impl std::fmt::Display) -> SandboxError {
     SandboxError::Other(format!("guest agent: {what}"))
