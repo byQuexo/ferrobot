@@ -873,3 +873,25 @@ store used for the run) or the daemon's own env.
   sorting usage ascending puts unknown costs first.
 - Daemon: message bodies are length-checked before `@name` becomes
   `<@uuid>`, so a stored body can exceed the cap by a few bytes per mention.
+
+## Release prep 4: demo GIF (`docs/demo-gif`)
+
+**Done**
+
+- `docs/assets/demo.gif` (1.0 MB, 960 px, 12 fps) and `demo.mp4` (0.4 MB),
+  about 17 s, embedded in the README: two agents created, one messages the
+  other (`@bob …`, shown as an agent-to-agent hint), a question card is
+  answered, the agent replies, then the Usage view.
+- Recorded on the polished UI (Vite dev server on 1420) against a throwaway
+  `ferrobotd` on spare ports (Docker backend, `--secret-store file`, temp
+  data dir, mock driver). The usage rows come from one real turn of an
+  Ollama agent (`qwen2.5:3b`) run before the mock restart, so the cost is
+  $0.00; no key or personal data is on screen.
+
+**How**
+
+- The make-demo plugin was not installed (`/plugin` is interactive). The
+  installed Playwright (from the global `@playwright/cli`) drove its cached
+  Chromium; its own video recorder needs an ffmpeg build that is not
+  installed, so frames came from the CDP screencast and the system ffmpeg
+  encoded them.

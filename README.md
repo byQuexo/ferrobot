@@ -12,6 +12,11 @@ enter a sandbox: agents reach their model through the daemon's proxy, which
 adds the real key. A desktop app for macOS and Windows is the thin window on
 top.
 
+![Two agents created, one messages the other, a question card is answered, then the Usage view](docs/assets/demo.gif)
+
+The agents in the demo run on the mock driver; the usage comes from one real
+turn on a local Ollama model. Also as [MP4](docs/assets/demo.mp4).
+
 ## Download
 
 Version 0.1.0: [release page](https://github.com/byQuexo/ferrobot/releases/tag/v0.1.0).
