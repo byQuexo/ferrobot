@@ -8,6 +8,7 @@ import { ConnectorsDialog } from "./components/ConnectorsDialog.tsx";
 import { FileViewer } from "./components/FileViewer.tsx";
 import { Memory } from "./components/InfoPanel.tsx";
 import { ProvidersDialog } from "./components/ProvidersDialog.tsx";
+import { VoiceDialog } from "./components/VoiceDialog.tsx";
 import { Chat } from "./components/Chat.tsx";
 import { ConversationView, type Pair } from "./components/Conversations.tsx";
 import { InfoPanel, type InfoTab } from "./components/InfoPanel.tsx";
@@ -46,7 +47,7 @@ export function App(): JSX.Element {
   const [online, setOnline] = useState(false);
   const [selected, setSelected] = useState<string | null>(() => localStorage.getItem("ferrobot.selected"));
   const [pair, setPair] = useState<Pair | null>(null);
-  const [dialog, setDialog] = useState<"create" | "edit" | "providers" | "memory" | "connectors" | null>(null);
+  const [dialog, setDialog] = useState<"create" | "edit" | "providers" | "memory" | "connectors" | "voice" | null>(null);
   const [infoOpen, setInfoOpen] = useState(() => localStorage.getItem("ferrobot.info") !== "closed");
   const [tab, setTab] = useState<InfoTab>("profile");
   const [theme, setTheme] = useState<ThemePref>(loadTheme);
@@ -153,6 +154,7 @@ export function App(): JSX.Element {
           onProviders={() => { setDialog("providers"); }}
           onMemory={() => { setDialog("memory"); }}
           onConnectors={() => { setDialog("connectors"); }}
+          onVoice={() => { setDialog("voice"); }}
           online={online}
           theme={theme}
           onTheme={setTheme}
@@ -200,6 +202,7 @@ export function App(): JSX.Element {
       </div>
       {dialog === "providers" && <ProvidersDialog onClose={() => { setDialog(null); }} />}
       {dialog === "connectors" && <ConnectorsDialog onClose={() => { setDialog(null); }} />}
+      {dialog === "voice" && <VoiceDialog onClose={() => { setDialog(null); }} />}
       {file && <FileViewer agent={file.agent} file={file.file} onClose={() => { setFile(null); }} />}
       {dialog === "memory" && (
         <Dialog title="Global memory" onClose={() => { setDialog(null); }} footer={<Button onClick={() => { setDialog(null); }}>Done</Button>}>

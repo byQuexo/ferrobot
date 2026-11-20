@@ -38,6 +38,9 @@ export type CreateConnector = Schemas["CreateConnector"];
 export type UpdateConnector = Schemas["UpdateConnector"];
 export type DeviceCode = Schemas["DeviceCode"];
 export type LoginStatus = Schemas["LoginStatus"];
+export type VoiceView = Schemas["VoiceView"];
+export type VoiceProvider = Schemas["VoiceProvider"];
+export type UpdateVoice = Schemas["UpdateVoice"];
 
 export class ApiError extends Error {
   override name = "ApiError";
@@ -62,6 +65,11 @@ export class DaemonClient {
   }
 
   async #request<T>(method: string, path: string, body?: unknown, contentType?: string): Promise<T> {
+    const res = await this.#fetch(method, path, body, contentType);
+    return (res.status === 204 ? undefined : await res.json()) as T;
+  }
+
+  async #fetch(method: string, path: string, body?: unknown, contentType?: string): Promise<Response> {
     const headers: Record<string, string> = {};
     if (this.#token) headers["Authorization"] = `Bearer ${this.#token}`;
     const init: RequestInit = { method, headers };
@@ -83,7 +91,7 @@ export class DaemonClient {
       }
       throw new ApiError(message, res.status);
     }
-    return (res.status === 204 ? undefined : await res.json()) as T;
+    return res;
   }
 
   /**
@@ -181,6 +189,14 @@ export class DaemonClient {
     this.#request("POST", `/v1/agents/${id}/snapshots/${String(sid)}/restore`);
   deleteSnapshot = (id: string, sid: number): Promise<void> =>
     this.#request("DELETE", `/v1/agents/${id}/snapshots/${String(sid)}`);
+
+  // voice
+  voice = (): Promise<VoiceView> => this.#request("GET", "/v1/voice");
+  updateVoice = (req: UpdateVoice): Promise<VoiceView> => this.#request("PUT", "/v1/voice", req);
+  /** `text` spoken by the configured voice (usually mp3). */
+  speech = async (text: string): Promise<Blob> => (await this.#fetch("POST", "/v1/voice/speech", { text })).blob();
+  transcribe = async (audio: Blob): Promise<string> =>
+    (await this.#request<{ text: string }>("POST", "/v1/voice/transcription", audio)).text;
 
   // agent-to-agent conversations (read-only)
   listConversations = (): Promise<Conversation[]> => this.#request("GET", "/v1/conversations");

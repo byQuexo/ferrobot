@@ -1,6 +1,6 @@
 import type { JSX } from "preact";
 import { useMemo, useState } from "preact/hooks";
-import { Brain, KeyRound, Monitor, Moon, Pin, Plug, Plus, Search, Sun } from "lucide-preact";
+import { AudioLines, Brain, KeyRound, Monitor, Moon, Pin, Plug, Plus, Search, Sun } from "lucide-preact";
 
 import type { Agent } from "../api.ts";
 import { useApp } from "../context.ts";
@@ -19,6 +19,7 @@ export function Sidebar(props: {
   onProviders: () => void;
   onMemory: () => void;
   onConnectors: () => void;
+  onVoice: () => void;
   online: boolean;
   theme: ThemePref;
   onTheme: (t: ThemePref) => void;
@@ -44,6 +45,9 @@ export function Sidebar(props: {
         </IconButton>
         <IconButton label="Connectors" onClick={props.onConnectors}>
           <Plug size={16} />
+        </IconButton>
+        <IconButton label="Voice" onClick={props.onVoice}>
+          <AudioLines size={16} />
         </IconButton>
         <IconButton label="Model providers" onClick={props.onProviders}>
           <KeyRound size={16} />

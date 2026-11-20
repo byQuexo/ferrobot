@@ -365,3 +365,59 @@ the code and this file together.
 - **`ferrobot-pdf`** in the runner image renders HTML to PDF with Debian's
   Chromium (`--no-sandbox`: the container is the sandbox). The image grows
   from about 1.3 GB to about 2 GB.
+
+## Voice
+
+- **The UI speaks and listens, the daemon calls the provider.** With voice on
+  in a chat, every `assistant_text` that arrives live (interim updates and
+  the final reply, never history) is spoken in order; the mic button records
+  a message, the daemon transcribes it and the UI sends the text like a typed
+  one. Pressing the mic or switching voice off or changing chats stops the
+  audio. Spoken messages reach a running turn only where typed ones do
+  (steering: so far the OpenAI-compatible driver); with Claude, Codex and
+  Gemini CLI they wait for the turn to end.
+- **Providers: ElevenLabs and OpenRouter** (both checked against their docs
+  on 2026-11-20):
+  - ElevenLabs speech: `POST /v1/text-to-speech/{voice}/stream?output_format=mp3_44100_128`,
+    `xi-api-key`, `{text, model_id}`, default model `eleven_flash_v2_5`
+    (https://elevenlabs.io/docs/api-reference/text-to-speech/stream,
+    https://elevenlabs.io/docs/overview/models). No default voice: the docs'
+    example voice expires on 2026-12-31 and voices differ per account, so the
+    operator enters a voice id.
+  - ElevenLabs transcription: `POST /v1/speech-to-text`, multipart `model_id`
+    + `file`, answer `{text}`, default `scribe_v3`
+    (https://elevenlabs.io/docs/api-reference/speech-to-text/convert).
+  - OpenRouter speech: `POST /api/v1/audio/speech`, Bearer,
+    `{model, input, voice, response_format: "mp3"}` (its default is pcm,
+    which `<audio>` cannot play); default `mistralai/voxtral-mini-tts-2603`
+    with `en_paul_neutral`
+    (https://openrouter.ai/docs/guides/overview/multimodal/tts).
+  - OpenRouter transcription: `POST /api/v1/audio/transcriptions`, multipart
+    `model` + `file`, answer `{text}`, default `openai/whisper-large-v3`
+    (https://openrouter.ai/docs/guides/overview/multimodal/stt).
+- **No OpenAI provider.** Its `/v1/audio/speech` models all shut down on
+  2027-01-06 (https://developers.openai.com/api/docs/deprecations) and the
+  same models are reachable through OpenRouter.
+- **Keys** live in the secret store as `voice:elevenlabs` and
+  `voice:openrouter`, write-only over `PUT /v1/voice` (`has_key` per
+  provider), separate from model provider keys. **Settings** (provider,
+  models, voice) are JSON under the key `voice` in a new `settings` table
+  (v12), so later voice fields need no migration.
+- **Multipart is built by hand** (about 15 lines): reqwest's `multipart`
+  feature would add `mime_guess`. No new crates.
+- **Limits so a stuck UI stays cheap:** speech text at most 4096 characters
+  (the UI cuts replies at about 1500, at a sentence), recordings at most
+  10 MiB and 2 minutes, and per minute at most 6000 characters of speech
+  (about four times listening speed) and 20 transcriptions; above that the
+  API answers 429. Provider calls time out after 120 s. Neither text nor
+  audio is logged; a provider's error reason goes to the operator only.
+- **Playback waits for each clip** (fetch, then `<audio>` with a blob URL)
+  instead of streaming through `MediaSource`; clips are fetched as soon as
+  they arrive, so the next one is ready while the current one plays.
+- **Tauri:** the CSP allows `media-src 'self' blob:`, and
+  `src-tauri/Info.plist` carries `NSMicrophoneUsageDescription` (Tauri
+  embeds it in dev builds and merges it into bundles). wry 0.55 grants the
+  page's microphone request itself. Not tried in the real window; a signed
+  build with the hardened runtime also needs the
+  `com.apple.security.device.audio-input` entitlement.
+- **Follow-up:** a voice per agent; cheaper streaming playback.

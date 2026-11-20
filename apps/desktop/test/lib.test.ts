@@ -7,6 +7,7 @@ import { characterOf, deriveCharacter, moodOf, rerollCharacter } from "../src/li
 import { relativeTime, stepLabel, toolLabel } from "../src/lib/format.ts";
 import { buildTimeline, sharedFiles } from "../src/lib/timeline.ts";
 import { parseBlocks, parseInline } from "../src/lib/markdown.ts";
+import { speakable } from "../src/lib/voice.ts";
 
 const ME = "11111111-1111-4111-8111-111111111111";
 const BOB = "22222222-2222-4222-8222-222222222222";
@@ -261,5 +262,29 @@ describe("markdown", () => {
       { text: " snake_case_name" },
     ]);
     assert.deepEqual(parseInline("[x](javascript:alert(1))"), [{ text: "[x](javascript:alert(1))" }]);
+  });
+});
+
+describe("voice", () => {
+  const nameOf = (id: string): string | undefined => names.agents.get(id);
+
+  it("reads the words of a message, not its Markdown or code", () => {
+    const text = [
+      "## Done",
+      `**Deploy** finished, <@${BOB}> checked it.`,
+      "- see [the log](https://x.dev/log) and `plan.md`",
+      "```sh\nrm -rf /tmp/x\n```",
+      "Keep scribe_v3_live and _this_ word, see https://y.dev/a.",
+    ].join("\n");
+    assert.equal(
+      speakable(text, nameOf),
+      "Done Deploy finished, @bob checked it. see the log and plan.md (code) Keep scribe_v3_live and this word, see (link)",
+    );
+  });
+
+  it("cuts long replies at a sentence", () => {
+    const out = speakable("This is one sentence. ".repeat(100), nameOf);
+    assert.ok(out.length < 1600);
+    assert.ok(out.endsWith("sentence. The rest is in the chat."));
   });
 });

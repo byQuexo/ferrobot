@@ -10,9 +10,13 @@ import {
   CircleStop,
   MessagesSquare,
   Info,
+  Mic,
   Pencil,
   SendHorizontal,
   ShieldAlert,
+  Square,
+  Volume2,
+  VolumeX,
   Wrench,
 } from "lucide-preact";
 
@@ -20,6 +24,7 @@ import type { Agent, MailMessage, Routine, StoredEvent } from "../api.ts";
 import { useApp } from "../context.ts";
 import { clockTime, presenceLabel, stepLabel, toolLabel } from "../lib/format.ts";
 import { buildTimeline, groupExchanges, sharedFiles, type DisplayItem, type Exchange, type TimelineItem } from "../lib/timeline.ts";
+import { record, Speaker, speakable, type Recording } from "../lib/voice.ts";
 import { fileSize } from "./FileViewer.tsx";
 import { Avatar } from "./Avatar.tsx";
 import { QuestionCardView } from "./QuestionCard.tsx";
@@ -33,7 +38,7 @@ export function Chat(props: {
   onToggleInfo: () => void;
   onEdit: () => void;
 }): JSX.Element {
-  const { client, agents, listen, run } = useApp();
+  const { client, agents, listen, run, toast } = useApp();
   const agent = props.agent;
   const id = agent.id;
   const [messages, setMessages] = useState<MailMessage[]>([]);
@@ -41,6 +46,30 @@ export function Chat(props: {
   const [routines, setRoutines] = useState<Routine[]>([]);
   const [live, setLive] = useState<Map<string, string>>(new Map());
   const [loaded, setLoaded] = useState(false);
+  const [voice, setVoice] = useState(false);
+  // Read by the live-event listener, which outlives renders.
+  const voiceOn = useRef(false);
+  voiceOn.current = voice;
+  const names = useRef(agents);
+  names.current = agents;
+  const spoken = useRef(new Set<number>());
+  const speaker = useMemo(
+    () => new Speaker(client.speech, (err) => { toast(err instanceof Error ? err.message : String(err)); }),
+    [client],
+  );
+
+  const toggleVoice = async (): Promise<void> => {
+    if (voice) {
+      speaker.stop();
+      setVoice(false);
+      return;
+    }
+    const settings = await run(() => client.voice());
+    if (!settings) return;
+    const ready = settings.providers.find((p) => p.kind === settings.provider)?.has_key;
+    if (ready) setVoice(true);
+    else toast("Set up voice first (the sound wave button in the sidebar)", "info");
+  };
 
   // Initial load + live updates for the selected agent.
   useEffect(() => {
@@ -65,6 +94,11 @@ export function Chat(props: {
         case "event":
           if (e.event.agent_id !== id) return;
           setEvents((prev) => (prev.some((x) => x.id === e.event.id) ? prev : [...prev, e.event]));
+          if (voiceOn.current && e.event.kind === "assistant_text" && !spoken.current.has(e.event.id)) {
+            spoken.current.add(e.event.id);
+            const text = (e.event.payload as { text?: unknown }).text;
+            if (typeof text === "string") speaker.say(speakable(text, (aid) => names.current.get(aid)?.name));
+          }
           if (e.event.turn_id && (e.event.kind === "assistant_text" || e.event.kind === "turn_done")) {
             const turn = e.event.turn_id;
             setLive((prev) => {
@@ -97,6 +131,8 @@ export function Chat(props: {
     return () => {
       cancelled = true;
       off();
+      speaker.stop();
+      setVoice(false);
     };
   }, [id]);
 
@@ -145,6 +181,9 @@ export function Chat(props: {
             <CircleStop size={15} /> Stop turn
           </Button>
         )}
+        <IconButton label={voice ? "Stop reading replies aloud" : "Read replies aloud"} onClick={() => void toggleVoice()} pressed={voice}>
+          {voice ? <Volume2 size={18} /> : <VolumeX size={18} />}
+        </IconButton>
         <IconButton label="Edit agent" onClick={props.onEdit}>
           <Pencil size={17} />
         </IconButton>
@@ -181,7 +220,7 @@ export function Chat(props: {
         )}
       </div>
 
-      <Composer agent={agent} />
+      <Composer agent={agent} onTalk={() => { speaker.stop(); }} />
     </section>
   );
 }
@@ -396,7 +435,77 @@ export function ToolCard(props: { item: Extract<TimelineItem, { type: "tool" }> 
   );
 }
 
-function Composer(props: { agent: Agent }): JSX.Element {
+/** Hold to talk, or click to start and click again to send; the recording is transcribed and sent. */
+function MicButton(props: { agent: Agent; onTalk: () => void }): JSX.Element {
+  const { client, run, toast } = useApp();
+  const [recording, setRecording] = useState(false);
+  const [transcribing, setTranscribing] = useState(false);
+  const rec = useRef<Recording | null>(null);
+  const pressedAt = useRef(0);
+  const limit = useRef<ReturnType<typeof setTimeout>>();
+
+  const finish = async (): Promise<void> => {
+    const r = rec.current;
+    if (!r) return;
+    rec.current = null;
+    clearTimeout(limit.current);
+    setRecording(false);
+    setTranscribing(true);
+    const text = await run(async () => client.transcribe(await r.stop()));
+    setTranscribing(false);
+    if (text === undefined) return;
+    if (!text) toast("Nothing heard", "info");
+    else await run(() => client.send(props.agent.id, text));
+  };
+  const start = async (): Promise<void> => {
+    props.onTalk();
+    try {
+      rec.current = await record();
+      setRecording(true);
+      limit.current = setTimeout(() => void finish(), 120_000);
+    } catch (err) {
+      toast(err instanceof Error ? err.message : String(err));
+    }
+  };
+  // Leaving the chat drops a recording in progress.
+  useEffect(() => () => {
+    clearTimeout(limit.current);
+    void rec.current?.stop();
+    rec.current = null;
+  }, [props.agent.id]);
+
+  return (
+    <button
+      type="button"
+      class={`mic${recording ? " on" : ""}`}
+      aria-label={recording ? "Stop and send" : "Speak a message"}
+      title={recording ? "Stop and send" : "Hold to talk, or click to start and stop"}
+      aria-pressed={recording}
+      disabled={transcribing}
+      onPointerDown={(e) => {
+        if (e.button !== 0) return;
+        if (rec.current) {
+          void finish();
+        } else {
+          pressedAt.current = Date.now();
+          void start();
+        }
+      }}
+      onPointerUp={() => {
+        if (rec.current && pressedAt.current && Date.now() - pressedAt.current > 400) void finish();
+        pressedAt.current = 0;
+      }}
+      onClick={(e) => {
+        // Keyboard presses arrive as clicks without pointer events.
+        if (e.detail === 0) void (rec.current ? finish() : start());
+      }}
+    >
+      {recording ? <Square size={16} /> : <Mic size={18} />}
+    </button>
+  );
+}
+
+function Composer(props: { agent: Agent; onTalk: () => void }): JSX.Element {
   const { client, run } = useApp();
   const [text, setText] = useState("");
   const [sending, setSending] = useState(false);
@@ -440,6 +549,7 @@ function Composer(props: { agent: Agent }): JSX.Element {
           }
         }}
       />
+      <MicButton agent={props.agent} onTalk={props.onTalk} />
       <button type="submit" class="send" disabled={!text.trim() || sending} aria-label="Send" title="Send (Enter)">
         <SendHorizontal size={18} />
       </button>

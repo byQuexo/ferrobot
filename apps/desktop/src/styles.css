@@ -419,6 +419,14 @@ textarea { resize: vertical; min-height: 40px; line-height: 1.5; }
 }
 .send:hover:not(:disabled) { background: var(--accent-strong); }
 .send:disabled { background: var(--surface-3); color: var(--muted); opacity: 1; }
+.mic {
+  display: grid; place-items: center; width: 36px; height: 36px; flex: none; border-radius: 50%;
+  border: none; background: transparent; color: var(--muted); touch-action: none; transition: background 0.15s, color 0.15s;
+}
+.mic:hover:not(:disabled) { background: var(--surface-2); color: var(--text); }
+.mic.on { background: var(--err); color: #fff; animation: mic-pulse 1.2s ease-in-out infinite; }
+@keyframes mic-pulse { 50% { box-shadow: 0 0 0 6px var(--err-soft); } }
+@media (prefers-reduced-motion: reduce) { .mic.on { animation: none; } }
 
 /* ---------- info panel ---------- */
 .info { display: flex; flex-direction: column; min-height: 0; background: var(--sidebar); border-left: 1px solid var(--border); }
