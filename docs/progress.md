@@ -677,3 +677,46 @@ store used for the run) or the daemon's own env.
   as ruleset contexts are taken from docs, not tried. Linear history means
   switching from merge commits to squash merges before the ruleset goes on.
 - The new `Changes` job has not run on GitHub (Actions minutes are used up).
+
+## Release prep 7: desktop release (`feat/desktop-release`)
+
+**Done**
+
+- The desktop shell starts the bundled `ferrobotd` and stops it on exit; the
+  daemon keeps running without Docker and says so in `/v1/health`; the app
+  then shows a "Docker is not running" page that continues by itself.
+- Docker pulls the runner image on first use; release builds name
+  `ghcr.io/byquexo/ferrobot-runner:0.1.0`.
+- `.github/workflows/release.yml` (tag `v*`): draft release, universal `.dmg`,
+  NSIS `.exe`, `SHA256SUMS`, multi-arch runner image; optional signing.
+- `CHANGELOG.md`; version 0.1.0 was already set everywhere (workspace,
+  `package.json` files, `tauri.conf.json`, the Tauri crate).
+
+**Tested**
+
+- Daemon test: `/v1/health` reports `sandbox_ready: true` with a working
+  backend. All Rust, runner, desktop and Tauri shell gates pass.
+- `ferrobot_0.1.0_aarch64.dmg` built locally (`CI=true` skips the Finder
+  layout step, which times out without a GUI session; GitHub runners set
+  `CI`). The bundle holds `ferrobotd` next to the app binary, and
+  `ferrobotd --version` runs from the mounted image.
+- The release `ferrobotd`, started the way the app starts it but on spare
+  ports with the mock driver and the file secret store: health reports
+  `sandbox_ready: true`, a mock agent in a Docker container answered, and
+  deleting it left no container.
+- Without a Docker socket the daemon starts and reports `sandbox_ready:
+  false`; once the socket appears, the next health call reports `true`.
+- The Docker sandbox test passes with the reconnecting client.
+
+**Not verified**
+
+- The app was not launched: the window, the sidecar start and stop, the
+  Docker page, the token injection and the blob download handler. A launch
+  needs port 7878 (in use on the build machine) and the real keychain; left
+  for Tim.
+- The universal macOS build, any Windows build (Windows: CI only, never run
+  on real hardware), signing, notarization.
+- The release workflow and the runner image push never ran (no Actions
+  minutes; macOS runners cost ten times the minutes on a private repo and are
+  free once the repo is public). `ubuntu-24.04-arm` runners are free for
+  public repos only.

@@ -567,6 +567,20 @@ impl SandboxBackend for FirecrackerBackend {
     }
 }
 
+/// Lets the crate build on Windows, where Firecracker cannot run anyway.
+#[cfg(not(unix))]
+struct NoUnixSockets;
+
+#[cfg(not(unix))]
+impl NoUnixSockets {
+    async fn connect(_: impl AsRef<Path>) -> std::io::Result<tokio::io::DuplexStream> {
+        Err(std::io::Error::new(
+            std::io::ErrorKind::Unsupported,
+            "Firecracker needs Linux with KVM",
+        ))
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::client::fake::{Recorded, serve};

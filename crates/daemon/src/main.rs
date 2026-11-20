@@ -325,10 +325,10 @@ async fn make_backend(cli: &Cli, secrets: &SecretStore) -> Result<Arc<dyn Sandbo
                 accept_plaintext: storage::is_local(cli.storage_url.as_deref()),
                 ..DockerConfig::default()
             })?;
-            docker
-                .ping()
-                .await
-                .context("Docker/Podman engine not reachable (is the daemon running?)")?;
+            // Keep running without an engine: /v1/health tells the app, which asks for Docker.
+            if let Err(e) = docker.ping().await {
+                tracing::error!(error = %e, "Docker/Podman engine not reachable; agents cannot start until it runs");
+            }
             Arc::new(docker)
         }
         Backend::Firecracker => {

@@ -4,10 +4,13 @@
 use std::path::Path;
 use std::time::Duration;
 
+#[cfg(not(unix))]
+use super::NoUnixSockets as UnixStream;
 use base64::Engine as _;
 use base64::engine::general_purpose::STANDARD as B64;
 use serde_json::{Value, json};
 use tokio::io::{AsyncBufReadExt, AsyncReadExt, AsyncWriteExt, BufReader};
+#[cfg(unix)]
 use tokio::net::UnixStream;
 
 use crate::{ExecOutput, ExecRequest, SandboxError, capture};
