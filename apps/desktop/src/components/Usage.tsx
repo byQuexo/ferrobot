@@ -37,10 +37,11 @@ const today = (): string => {
 
 /** Model calls, tokens and estimated cost, from what the daemon’s model proxy saw. */
 export function Usage(props: { onClose: () => void }): JSX.Element {
-  const { client, toast } = useApp();
+  const { client } = useApp();
   const [range, setRange] = useState<RangeKind>("7d");
   const [custom, setCustom] = useState({ from: today(), to: today() });
   const [reports, setReports] = useState<Reports | null>(null);
+  const [error, setError] = useState<string | null>(null);
   const [prices, setPrices] = useState<PriceEntry[]>([]);
   const [by, setBy] = useState<Breakdown>("provider");
   const [sort, setSort] = useState<{ key: SortKey; desc: boolean }>({ key: "cost_usd", desc: true });
@@ -52,15 +53,19 @@ export function Usage(props: { onClose: () => void }): JSX.Element {
     if (!span) return;
     let live = true;
     setReports(null);
+    setError(null);
     const report = (g: UsageGroupBy): Promise<UsageReport> => client.usage(g, span.from, span.to);
-    Promise.all([report("day"), report("provider"), report("model"), report("agent"), client.prices()]).then(
-      ([day, provider, model, agent, p]) => {
+    const load = async (): Promise<void> => {
+      try {
+        const [day, provider, model, agent, p] = await Promise.all([report("day"), report("provider"), report("model"), report("agent"), client.prices()]);
         if (!live) return;
         setReports({ day, provider, model, agent });
         setPrices(p);
-      },
-      (err: unknown) => { toast(err instanceof Error ? err.message : String(err)); },
-    );
+      } catch (err) {
+        if (live) setError(err instanceof Error ? err.message : String(err));
+      }
+    };
+    void load();
     return () => { live = false; };
   }, [span?.from, span?.to, reload]);
 
@@ -104,6 +109,11 @@ export function Usage(props: { onClose: () => void }): JSX.Element {
         </div>
         {!span ? (
           <p class="hint bad">Pick a start day on or before the end day.</p>
+        ) : error ? (
+          <Empty icon={<ChartColumn size={36} />} title="Usage could not be loaded">
+            <p>{error}</p>
+            <Button small onClick={() => { setReload((n) => n + 1); }}>Retry</Button>
+          </Empty>
         ) : !reports ? (
           <Skeleton lines={8} />
         ) : reports.day.totals.calls === 0 ? (
@@ -291,11 +301,11 @@ function PriceForm(props: { modelKey: string; prices: PriceEntry[]; onSaved: () 
   const valid = [values.input, values.output].every((v) => v.trim() !== "" && Number(v) >= 0) &&
     [values.cache_read, values.cache_write].every((v) => v.trim() === "" || Number(v) >= 0);
 
-  const save = (): void => {
+  const save = async (): Promise<void> => {
     const others = props.prices
       .filter((p) => p.source == null && !(p.provider_kind === kind && p.model === model))
       .map(({ provider_kind, model: m, input, output, cache_read, cache_write }) => ({ provider_kind, model: m, input, output, cache_read, cache_write }));
-    void run(() =>
+    const saved = await run(() =>
       client.setPrices([
         ...others,
         {
@@ -307,11 +317,12 @@ function PriceForm(props: { modelKey: string; prices: PriceEntry[]; onSaved: () 
           cache_write: number(values.cache_write),
         },
       ]),
-    ).then((saved) => { if (saved) props.onSaved(); });
+    );
+    if (saved) props.onSaved();
   };
 
   return (
-    <form class="usage-price" onSubmit={(e) => { e.preventDefault(); if (valid) save(); }}>
+    <form class="usage-price" onSubmit={(e) => { e.preventDefault(); if (valid) void save(); }}>
       <span class="muted small">
         USD per 1M tokens for {model}
         {current?.source ? ` · now from ${new URL(current.source).host}, checked ${current.checked ?? "?"}` : current ? " · your price" : " · no price yet"}
