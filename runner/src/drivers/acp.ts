@@ -131,10 +131,15 @@ function contentText(call: ToolCallUpdate): string {
 
 function review(call: ToolCallUpdate, home: string): { name: string; verdict: Decision } {
   const { name } = toolUse(call);
-  const paths = (tool: string): Decision =>
-    pathsOf(call)
-      .map((file_path) => decide(tool, { file_path }, home))
-      .find((v) => !v.allow) ?? { allow: true };
+  const paths = (tool: string): Decision => {
+    const files = pathsOf(call);
+    if (files.length === 0) return { allow: false, reason: "blocked: file access without a path" };
+    return (
+      files.map((file_path) => decide(tool, { file_path }, home)).find((v) => !v.allow) ?? {
+        allow: true,
+      }
+    );
+  };
   switch (call.kind ?? "other") {
     case "execute":
       return { name, verdict: decide("Bash", { command: commandOf(call) }, home) };

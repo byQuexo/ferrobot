@@ -307,6 +307,8 @@ describe("AcpDriver", () => {
             title: "Writing to passwd",
             locations: [{ path: "/etc/passwd" }],
           }),
+          toolCall("d1", "delete", "Deleting files"),
+          ask({ toolCallId: "d1", kind: "delete", title: "Deleting files" }),
           { request: "fs/read_text_file", params: { path: "/etc/hosts" } },
           chunk("Found it."),
         ],
@@ -332,6 +334,8 @@ describe("AcpDriver", () => {
       { kind: "tool_result", id: "e1", output: `${ok}\nx\n`, is_error: false },
       { kind: "tool_use", id: "e2", name: "edit", input: { title: "Writing to passwd" } },
       { kind: "tool_denied", name: "edit", reason: `blocked: Write outside ${workspaceDir}` },
+      { kind: "tool_use", id: "d1", name: "delete", input: { title: "Deleting files" } },
+      { kind: "tool_denied", name: "delete", reason: "blocked: file access without a path" },
       { kind: "assistant_delta", text: "Found it." },
       { kind: "assistant_text", text: "Found it." },
     ]);
@@ -340,7 +344,8 @@ describe("AcpDriver", () => {
     assert.deepEqual(answer("srv-2")?.result, selected("cancel"));
     assert.deepEqual(answer("srv-3")?.result, selected("proceed_once"));
     assert.deepEqual(answer("srv-4")?.result, selected("cancel"));
-    assert.equal(answer("srv-5")?.error?.code, -32601);
+    assert.deepEqual(answer("srv-5")?.result, selected("cancel"));
+    assert.equal(answer("srv-6")?.error?.code, -32601);
   });
 
   it("starts a new message when the message id changes", async () => {
