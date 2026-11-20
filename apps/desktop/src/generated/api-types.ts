@@ -314,8 +314,8 @@ export interface paths {
         get?: never;
         put?: never;
         /**
-         * Puts the agent to sleep (stops the sandbox, keeps its disk). A new
-         *     message or `wake` starts it again.
+         * Puts the agent to sleep, keeping its disk. A new message or `wake`
+         *     starts (or resumes) it again.
          */
         post: operations["stop"];
         delete?: never;
@@ -389,6 +389,67 @@ export interface paths {
         get: operations["health"];
         put?: never;
         post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/providers": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Configured model providers, by name. */
+        get: operations["list_providers"];
+        put?: never;
+        /** Adds a model provider. */
+        post: operations["create_provider"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/providers/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /** Deletes a provider and its stored key. Fails while agents use it. */
+        delete: operations["delete_provider"];
+        options?: never;
+        head?: never;
+        /**
+         * Edits a provider. Agents using it restart their computers (disks kept)
+         *     when region, project or default model change.
+         */
+        patch: operations["update_provider"];
+        trace?: never;
+    };
+    "/v1/providers/{id}/chatgpt-login": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Whether a `codex` provider is signed in with `ChatGPT`. */
+        get: operations["chatgpt_login_status"];
+        put?: never;
+        /**
+         * Starts signing a `codex` provider in with `ChatGPT`, on the daemon host's
+         *     `codex`. Open `verification_url`, enter `user_code`, then poll the status.
+         *     The tokens stay with the host's Codex; agents never see them.
+         */
+        post: operations["start_chatgpt_login"];
         delete?: never;
         options?: never;
         head?: never;
@@ -493,6 +554,14 @@ export interface components {
             avatar_rev: number;
             character?: components["schemas"]["AvatarCharacter"] | null;
             created_by?: components["schemas"]["AgentId"] | null;
+            /**
+             * Format: uuid
+             * @description Model provider (`GET /v1/providers`); `null` uses the daemon's
+             *     `ANTHROPIC_API_KEY`.
+             */
+            provider_id?: string | null;
+            /** @description Model id; `null` uses the provider's default model. */
+            model?: string | null;
             status: components["schemas"]["AgentStatus"];
             /** @description Backend kind that owns the sandbox, e.g. `docker`. */
             backend?: string | null;
@@ -521,7 +590,7 @@ export interface components {
          * @description Lifecycle state of an agent's sandbox as tracked by the daemon.
          * @enum {string}
          */
-        AgentStatus: "created" | "running" | "stopped" | "failed";
+        AgentStatus: "created" | "running" | "paused" | "stopped" | "archived" | "failed";
         /** @description An agent plus live state. */
         AgentView: components["schemas"]["Agent"] & {
             /** @description Whether the agent's runner is connected right now. */
@@ -608,6 +677,31 @@ export interface components {
             /** @description System instructions (role) for the agent's model. */
             instructions?: string;
             character?: components["schemas"]["AvatarCharacter"] | null;
+            /**
+             * Format: uuid
+             * @description Model provider (`GET /v1/providers`); omitted: the daemon's
+             *     `ANTHROPIC_API_KEY`.
+             */
+            provider_id?: string | null;
+            /** @description Model id; omitted: the provider's default model. */
+            model?: string | null;
+        };
+        CreateProvider: {
+            /**
+             * @description Unique display name (1-64 bytes).
+             * @example openai-work
+             */
+            name: string;
+            kind: components["schemas"]["ProviderKind"];
+            /** @description Upstream override; required for `openai_compatible`. */
+            base_url?: string | null;
+            /** @description Required for `bedrock` and `vertex`. */
+            region?: string | null;
+            /** @description Google Cloud project; required for `vertex`. */
+            project?: string | null;
+            default_model?: string | null;
+            /** @description Stored in the OS keychain; never returned. */
+            api_key?: string | null;
         };
         CreateRoutine: {
             /**
@@ -626,6 +720,11 @@ export interface components {
             timezone?: string | null;
             /** @description Default true. */
             enabled?: boolean | null;
+        };
+        /** @description A device code the operator enters at `verification_url`. */
+        DeviceCode: {
+            verification_url: string;
+            user_code: string;
         };
         /** @description JSON body of every non-2xx UI API response. */
         ErrorBody: {
@@ -662,7 +761,10 @@ export interface components {
             version: string;
             backend: string;
             driver: string;
-            /** @description Whether real model calls are possible (driver `claude` with a key). */
+            /**
+             * @description Whether agents make real model calls through the proxy (any driver
+             *     but `mock`); each still needs a provider or `ANTHROPIC_API_KEY`.
+             */
             model_proxy: boolean;
             /**
              * Format: int64
@@ -675,6 +777,21 @@ export interface components {
         Interrupted: {
             /** @description The interrupted turn, or null if the agent was idle. */
             turn_id?: string | null;
+        };
+        /** @description Sign-in progress per provider (in memory; a restart forgets pending ones). */
+        LoginStatus: {
+            /** @enum {string} */
+            state: "none";
+        } | {
+            /** @enum {string} */
+            state: "pending";
+        } | {
+            /** @enum {string} */
+            state: "signed_in";
+        } | {
+            error: string;
+            /** @enum {string} */
+            state: "failed";
         };
         /** @description One message in an agent's mailbox. */
         MailMessage: {
@@ -727,6 +844,37 @@ export interface components {
          * @enum {string}
          */
         Presence: "working" | "awake" | "starting" | "sleeping" | "error";
+        /**
+         * @description A configured model provider. Its credential lives in the daemon's secret
+         *     store, never here.
+         */
+        Provider: {
+            /** Format: uuid */
+            id: string;
+            /** @description Unique display name, e.g. `openai-work`. */
+            name: string;
+            kind: components["schemas"]["ProviderKind"];
+            /** @description Upstream override; `null` uses the kind's default. */
+            base_url?: string | null;
+            /** @description Bedrock / Vertex region, e.g. `us-east-1`, `us-east5`, `global`. */
+            region?: string | null;
+            /** @description Google Cloud project (Vertex). */
+            project?: string | null;
+            /** @description Model for agents that do not pick one. */
+            default_model?: string | null;
+            /** Format: date-time */
+            created_at: string;
+        };
+        /**
+         * @description The API family of a provider. Decides the runner driver, the upstream
+         *     URL and how the daemon's model proxy adds the credential.
+         * @enum {string}
+         */
+        ProviderKind: "anthropic" | "openai" | "gemini" | "bedrock" | "vertex" | "openrouter" | "ollama" | "openai_compatible" | "codex" | "gemini_cli";
+        ProviderView: components["schemas"]["Provider"] & {
+            /** @description Whether an API key is stored. The key itself is never returned. */
+            has_key: boolean;
+        };
         PutMemory: {
             /** @description 1-128 bytes; an existing key is overwritten. */
             key: string;
@@ -846,16 +994,25 @@ export interface components {
             connected: boolean;
             /**
              * Format: int64
-             * @description Seconds since the last activity; sleeps when it reaches `idle_timeout_s`.
+             * @description Seconds since the last activity; pauses at `warm_after_s`, stops at
+             *     `idle_timeout_s`.
              */
             idle_s: number;
-            /** Format: int64 */
+            /**
+             * Format: int64
+             * @description Warm sleep (pause) after this long idle; `null`: never.
+             */
+            warm_after_s?: number | null;
+            /**
+             * Format: int64
+             * @description Cold sleep (stop) after this long idle; `null`: never.
+             */
             idle_timeout_s?: number | null;
             /** @description Whether the backend can snapshot and restore. */
             snapshots_supported: boolean;
         };
         /** @enum {string} */
-        SandboxState: "running" | "stopped" | "missing";
+        SandboxState: "running" | "paused" | "stopped" | "missing";
         /** @description Who sent a mailbox message. */
         Sender: {
             /** @enum {string} */
@@ -874,6 +1031,11 @@ export interface components {
             /** @enum {string} */
             kind: "routine";
         };
+        /**
+         * @description How deeply a sandbox sleeps.
+         * @enum {string}
+         */
+        SleepLevel: "warm" | "cold" | "archived";
         SnapshotRecord: {
             /** Format: int64 */
             id: number;
@@ -947,6 +1109,24 @@ export interface components {
             /** @description New system instructions; a connected runner applies them from its next turn. */
             instructions?: string | null;
             character?: components["schemas"]["AvatarCharacter"] | null;
+            /**
+             * Format: uuid
+             * @description New model provider; `null` goes back to the daemon's default. Changing
+             *     provider or model restarts the agent's computer (its disk is kept).
+             */
+            provider_id?: string | null;
+            /** @description New model id; `null` goes back to the provider's default model. */
+            model?: string | null;
+        };
+        UpdateProvider: {
+            name?: string | null;
+            /** @description `null` goes back to the kind's default upstream. */
+            base_url?: string | null;
+            region?: string | null;
+            project?: string | null;
+            default_model?: string | null;
+            /** @description New API key; `null` removes the stored one. */
+            api_key?: string | null;
         };
         /** @description Partial update; omitted fields stay unchanged. */
         UpdateRoutine: {
@@ -2276,7 +2456,14 @@ export interface operations {
     };
     stop: {
         parameters: {
-            query?: never;
+            query?: {
+                /**
+                 * @description `cold` (default) stops the sandbox; `warm` pauses it, keeping memory;
+                 *     `archived` moves it to object storage (a wake restores it). Backends
+                 *     that cannot pause or archive answer 501.
+                 */
+                level?: components["schemas"]["SleepLevel"];
+            };
             header?: never;
             path: {
                 /** @description Agent id (UUID) */
@@ -2304,6 +2491,15 @@ export interface operations {
             };
             /** @description Unknown agent */
             404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description The backend cannot pause or archive */
+            501: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -2455,6 +2651,299 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["Health"];
+                };
+            };
+        };
+    };
+    list_providers: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProviderView"][];
+                };
+            };
+            /** @description Missing or wrong API token */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+        };
+    };
+    create_provider: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CreateProvider"];
+            };
+        };
+        responses: {
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProviderView"];
+                };
+            };
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Missing or wrong API token */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Name already taken */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+        };
+    };
+    delete_provider: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Provider id (UUID) */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Deleted */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Missing or wrong API token */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Unknown provider */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Agents still use it */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+        };
+    };
+    update_provider: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Provider id (UUID) */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["UpdateProvider"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProviderView"];
+                };
+            };
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Missing or wrong API token */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Unknown provider */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Name already taken */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+        };
+    };
+    chatgpt_login_status: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Provider id (UUID) */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LoginStatus"];
+                };
+            };
+            /** @description Missing or wrong API token */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Unknown provider */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Not a codex provider */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+        };
+    };
+    start_chatgpt_login: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Provider id (UUID) */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DeviceCode"];
+                };
+            };
+            /** @description Missing or wrong API token */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Unknown provider */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Not a codex provider */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description codex failed on the daemon host */
+            502: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
                 };
             };
         };

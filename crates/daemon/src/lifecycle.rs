@@ -6,8 +6,8 @@
 
 use std::collections::BTreeMap;
 
-use ferrobot_core::{Agent, AgentId, AgentStatus};
-use ferrobot_sandbox::{SandboxError, SandboxHandle, SandboxSpec, SandboxState};
+use ferrobot_core::{Agent, AgentId, AgentStatus, ProviderKind};
+use ferrobot_sandbox::{SandboxError, SandboxHandle, SandboxSpec, SandboxState, SleepLevel};
 use ferrobot_store::SnapshotRecord;
 use serde_json::json;
 
@@ -40,29 +40,74 @@ async fn fresh_spec(state: &AppState, agent: &Agent) -> Result<SandboxSpec, ApiE
     let token = new_token();
     state.store.set_agent_token(agent.id, &token).await?;
     let s = &state.settings;
+    let provider = match agent.provider_id {
+        Some(id) => Some(state.store.get_provider(id).await?),
+        None => None,
+    };
+    let driver = match &provider {
+        _ if s.driver == "mock" => "mock",
+        Some(p) => p.kind.driver(),
+        None => "claude",
+    };
     let mut env = BTreeMap::from([
         (
             "FERROBOT_DAEMON_URL".to_owned(),
             s.sandbox_daemon_url.clone(),
         ),
         ("FERROBOT_AGENT_NAME".to_owned(), agent.name.to_string()),
-        ("FERROBOT_DRIVER".to_owned(), s.driver.clone()),
+        ("FERROBOT_DRIVER".to_owned(), driver.to_owned()),
     ]);
-    if s.driver == "claude" {
-        // The real key never enters the sandbox: the SDK talks to the
-        // daemon's model proxy and authenticates with the agent token.
-        env.insert(
-            "ANTHROPIC_BASE_URL".to_owned(),
-            format!("{}/model", s.sandbox_daemon_url.trim_end_matches('/')),
-        );
-        env.insert("ANTHROPIC_API_KEY".to_owned(), token.clone());
-        env.insert(
-            "CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC".to_owned(),
-            "1".to_owned(),
-        );
-        if let Some(model) = &s.model {
-            env.insert("FERROBOT_MODEL".to_owned(), model.clone());
+    // Real credentials never enter the sandbox: the runner talks to the
+    // daemon's model proxy and authenticates with the agent token.
+    let proxy = format!("{}/model", s.sandbox_daemon_url.trim_end_matches('/'));
+    let mut set = |k: &str, v: &str| env.insert(k.to_owned(), v.to_owned());
+    match driver {
+        "claude" => {
+            set("ANTHROPIC_BASE_URL", &proxy);
+            set("ANTHROPIC_API_KEY", &token);
+            set("CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC", "1");
+            let region = provider.as_ref().and_then(|p| p.region.as_deref());
+            match provider.as_ref().map(|p| p.kind) {
+                Some(ProviderKind::Bedrock) => {
+                    set("CLAUDE_CODE_USE_BEDROCK", "1");
+                    set("ANTHROPIC_BEDROCK_BASE_URL", &proxy);
+                    // The agent token, sent as a bearer; the proxy swaps in the Bedrock key.
+                    set("AWS_BEARER_TOKEN_BEDROCK", &token);
+                    set("AWS_REGION", region.unwrap_or_default());
+                }
+                Some(ProviderKind::Vertex) => {
+                    set("CLAUDE_CODE_USE_VERTEX", "1");
+                    set("ANTHROPIC_VERTEX_BASE_URL", &proxy);
+                    // The SDK then sends ANTHROPIC_API_KEY (the agent token) as x-api-key.
+                    set("CLAUDE_CODE_SKIP_VERTEX_AUTH", "1");
+                    set("CLOUD_ML_REGION", region.unwrap_or_default());
+                    let project = provider.as_ref().and_then(|p| p.project.as_deref());
+                    set("ANTHROPIC_VERTEX_PROJECT_ID", project.unwrap_or_default());
+                }
+                _ => {}
+            }
         }
+        "openai" => {
+            set("FERROBOT_OPENAI_BASE_URL", &proxy);
+        }
+        "codex" => {
+            set("FERROBOT_CODEX_BASE_URL", &proxy);
+        }
+        "acp" => {
+            set("FERROBOT_ACP_AGENT", "gemini");
+            // The agent token, sent as `x-goog-api-key`; the proxy swaps in the real key.
+            set("GEMINI_API_KEY", &token);
+            set("GOOGLE_GEMINI_BASE_URL", &proxy);
+        }
+        _ => {}
+    }
+    let model = agent
+        .model
+        .clone()
+        .or_else(|| provider.as_ref().and_then(|p| p.default_model.clone()))
+        .or_else(|| s.model.clone());
+    if let (false, Some(model)) = (driver == "mock", model) {
+        set("FERROBOT_MODEL", &model);
     }
     env.insert("FERROBOT_AGENT_TOKEN".to_owned(), token);
     Ok(SandboxSpec {
@@ -145,22 +190,43 @@ pub async fn ensure_awake(state: &AppState, id: AgentId) -> Result<(), ApiError>
 
 /// Puts the agent to sleep: stops the sandbox, keeping its disk. Queued
 /// messages wait; a new message wakes it again.
-pub async fn sleep(state: &AppState, id: AgentId, reason: &str) -> Result<(), ApiError> {
+pub async fn sleep(
+    state: &AppState,
+    id: AgentId,
+    reason: &str,
+    level: SleepLevel,
+) -> Result<(), ApiError> {
     let lock = state.hub.lifecycle_lock(id);
     let _guard = lock.lock().await;
     let agent = state.store.get_agent(id).await?;
+    let mut reached = SleepLevel::Cold;
     if let Some(handle) = handle_of(&agent) {
-        match state.backend.stop(&handle).await {
-            Ok(()) | Err(SandboxError::NotFound(_)) => {}
+        match state.backend.sleep(&handle, level).await {
+            Ok(level) => reached = level,
+            Err(SandboxError::NotFound(_)) => {}
             Err(e) => return Err(e.into()),
         }
     }
-    if agent.status != AgentStatus::Stopped {
+    let status = match reached {
+        SleepLevel::Warm => AgentStatus::Paused,
+        SleepLevel::Cold => AgentStatus::Stopped,
+        SleepLevel::Archived => {
+            // The archived image still carries the old token in its env: retire it.
+            state.store.set_agent_token(id, &new_token()).await?;
+            AgentStatus::Archived
+        }
+    };
+    if agent.status != status {
         state
-            .record(id, None, "sleeping", json!({ "reason": reason }))
+            .record(
+                id,
+                None,
+                "sleeping",
+                json!({ "reason": reason, "level": reached }),
+            )
             .await;
     }
-    set_status(state, id, AgentStatus::Stopped).await
+    set_status(state, id, status).await
 }
 
 /// Destroys the sandbox and removes the agent with all its data.
@@ -172,6 +238,7 @@ pub async fn delete(state: &AppState, id: AgentId, purge_disk: bool) -> Result<(
         state.backend.destroy(&handle, purge_disk).await?;
     }
     if purge_disk {
+        state.backend.delete_archive(&agent.sandbox_name).await?;
         for snap in state.store.list_snapshots(id).await? {
             if let Err(e) = state.backend.delete_snapshot(&snap.snapshot_ref).await {
                 tracing::warn!(snapshot = %snap.snapshot_ref, error = %e, "cannot delete snapshot");
@@ -221,6 +288,23 @@ pub async fn snapshot(
 }
 
 /// Replaces the sandbox with one booted from a snapshot.
+/// Rebuilds the sandbox (disk kept) so a new provider or model takes
+/// effect; a running agent comes back up right away.
+pub async fn recreate(state: &AppState, id: AgentId) -> Result<(), ApiError> {
+    let lock = state.hub.lifecycle_lock(id);
+    let _guard = lock.lock().await;
+    let agent = state.store.get_agent(id).await?;
+    let Some(handle) = handle_of(&agent) else {
+        return Ok(());
+    };
+    state.backend.destroy(&handle, false).await?;
+    // A sleeping agent is re-provisioned by its next wake (the backend reports NotFound).
+    if agent.status == AgentStatus::Running {
+        provision_locked(state, &agent).await?;
+    }
+    Ok(())
+}
+
 pub async fn restore(state: &AppState, id: AgentId, snapshot_id: i64) -> Result<(), ApiError> {
     let lock = state.hub.lifecycle_lock(id);
     let _guard = lock.lock().await;
@@ -302,19 +386,38 @@ pub async fn reconcile(state: &AppState) {
                 }
             }
             // Sleeping agents with something queued get woken; otherwise make
-            // sure a sandbox that kept running is put back to sleep.
-            (AgentStatus::Stopped, live) => {
+            // sure the sandbox sleeps as deeply as the agent's status says.
+            (AgentStatus::Archived, _) => {
                 let queued = state
                     .store
                     .has_waking_messages(agent.id)
                     .await
                     .unwrap_or(false);
-                let result = if queued {
-                    wake(state, agent.id).await
-                } else if live == Some(SandboxState::Running) {
-                    sleep(state, agent.id, "reconcile").await
-                } else {
-                    Ok(())
+                if queued && let Err(e) = wake(state, agent.id).await {
+                    tracing::warn!(agent = %agent.name, error = %e, "reconcile: wake failed");
+                }
+            }
+            (status @ (AgentStatus::Paused | AgentStatus::Stopped), live) => {
+                let level = match status {
+                    AgentStatus::Paused if live == Some(SandboxState::Paused) => None,
+                    AgentStatus::Paused if live == Some(SandboxState::Running) => {
+                        Some(SleepLevel::Warm)
+                    }
+                    AgentStatus::Paused => Some(SleepLevel::Cold),
+                    _ if matches!(live, Some(SandboxState::Running | SandboxState::Paused)) => {
+                        Some(SleepLevel::Cold)
+                    }
+                    _ => None,
+                };
+                let queued = state
+                    .store
+                    .has_waking_messages(agent.id)
+                    .await
+                    .unwrap_or(false);
+                let result = match level {
+                    _ if queued => wake(state, agent.id).await,
+                    Some(level) => sleep(state, agent.id, "reconcile", level).await,
+                    None => Ok(()),
                 };
                 if let Err(e) = result {
                     tracing::warn!(agent = %agent.name, error = %e, "reconcile failed");

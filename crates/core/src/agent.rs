@@ -121,8 +121,13 @@ pub enum AgentStatus {
     Created,
     /// Sandbox running; the runner may or may not be connected.
     Running,
+    /// Sandbox paused (warm sleep): memory kept, wakes without a restart.
+    /// Messages queue up until it wakes.
+    Paused,
     /// Sandbox stopped (disk kept). Messages queue up until it wakes.
     Stopped,
+    /// Sandbox moved to object storage; waking restores it.
+    Archived,
     /// Sandbox creation or start failed; see daemon logs.
     Failed,
 }
@@ -132,7 +137,9 @@ impl AgentStatus {
         match self {
             Self::Created => "created",
             Self::Running => "running",
+            Self::Paused => "paused",
             Self::Stopped => "stopped",
+            Self::Archived => "archived",
             Self::Failed => "failed",
         }
     }
@@ -145,7 +152,9 @@ impl FromStr for AgentStatus {
         match s {
             "created" => Ok(Self::Created),
             "running" => Ok(Self::Running),
+            "paused" => Ok(Self::Paused),
             "stopped" => Ok(Self::Stopped),
+            "archived" => Ok(Self::Archived),
             "failed" => Ok(Self::Failed),
             other => Err(CoreError::UnknownVariant {
                 kind: "agent status",
@@ -221,6 +230,11 @@ pub struct Agent {
     /// Agent that created this one (with operator approval); `null` means
     /// the operator created it.
     pub created_by: Option<AgentId>,
+    /// Model provider (`GET /v1/providers`); `null` uses the daemon's
+    /// `ANTHROPIC_API_KEY`.
+    pub provider_id: Option<uuid::Uuid>,
+    /// Model id; `null` uses the provider's default model.
+    pub model: Option<String>,
     pub status: AgentStatus,
     /// Backend kind that owns the sandbox, e.g. `docker`.
     pub backend: Option<String>,

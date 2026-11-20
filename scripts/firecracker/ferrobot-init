@@ -1,0 +1,97 @@
+#!/bin/sh
+# PID 1 of a ferrobot Firecracker guest (kernel arg init=/sbin/ferrobot-init).
+# Mounts the basics and the home disk, reads the runner env from MMDS, runs
+# the runner as `node` and powers off when it exits.
+# TODO(kvm): untested; it has never booted in a microVM.
+# Never `set -x` or print the env: the console ends up in a host log file.
+set -f
+export PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+MMDS=http://169.254.169.254
+HOME_DEV=/dev/vdb
+HOME_DIR=/home/node
+
+power_off() {
+  sync
+  umount "$HOME_DIR" 2>/dev/null
+  # Firecracker has no power management; a guest reboot (reboot=k) ends the VM.
+  echo b >/proc/sysrq-trigger
+  # If sysrq is missing, PID 1 exiting panics and panic=1 reboots.
+  exit 1
+}
+
+fail() {
+  echo "ferrobot-init: $*" >&2
+  power_off
+}
+
+mnt() { # TYPE TARGET OPTIONS
+  mountpoint -q "$2" || mount -t "$1" -o "$3" "$1" "$2" || fail "cannot mount $2"
+}
+
+mnt proc /proc nosuid,nodev,noexec
+mnt sysfs /sys nosuid,nodev,noexec
+mnt devtmpfs /dev nosuid,mode=0755
+mnt tmpfs /run nosuid,nodev,mode=0755
+# The root filesystem is read-only.
+mnt tmpfs /tmp nosuid,nodev,mode=1777
+
+# Format the home disk only when it has no filesystem (blkid -p exits 2).
+blkid -p "$HOME_DEV" >/dev/null 2>&1
+case $? in
+  0) ;;
+  2) mkfs.ext4 -q "$HOME_DEV" || fail "cannot format $HOME_DEV" ;;
+  *) fail "cannot probe $HOME_DEV" ;;
+esac
+mount -t ext4 -o nosuid,nodev "$HOME_DEV" "$HOME_DIR" || fail "cannot mount $HOME_DEV"
+chown node:node "$HOME_DIR"
+
+# eth0 is up from the kernel's ip= argument; MMDS needs its own route.
+ip link set lo up || fail "cannot bring up lo"
+ip route add 169.254.169.254 dev eth0 || fail "cannot route to MMDS"
+
+mmds() { # METHOD PATH HEADER
+  if command -v curl >/dev/null 2>&1; then
+    curl -fsS -X "$1" -H "$3" "$MMDS/$2"
+  else
+    node -e '
+      const [method, path, header] = process.argv.slice(1);
+      const i = header.indexOf(":");
+      fetch(`http://169.254.169.254/${path}`, {
+        method,
+        headers: { [header.slice(0, i)]: header.slice(i + 1).trim() },
+      })
+        .then(async (r) => {
+          if (!r.ok) process.exit(1);
+          process.stdout.write(await r.text());
+        })
+        .catch(() => process.exit(1));
+    ' "$1" "$2" "$3"
+  fi
+}
+
+# MMDS v2: a session token first, then {"ferrobot":{"env":{KEY:value}}} key by key.
+token=$(mmds PUT latest/api/token "X-metadata-token-ttl-seconds: 60") || fail "no MMDS token"
+keys=$(mmds GET ferrobot/env/ "X-metadata-token: $token") || fail "no runner env in MMDS"
+for key in $keys; do
+  case $key in
+    [!A-Za-z_]* | *[!A-Za-z0-9_]*) fail "bad env name from MMDS" ;;
+  esac
+  value=$(mmds GET "ferrobot/env/$key" "X-metadata-token: $token") || fail "cannot read $key from MMDS"
+  export "$key=$value"
+done
+unset token keys key value
+
+export HOME="$HOME_DIR" USER=node NODE_ENV=production
+cd "$HOME_DIR" || fail "no $HOME_DIR"
+# Guest agent for the host's exec/file calls: one node process per vsock connection.
+setpriv --reuid=node --regid=node --init-groups \
+  socat VSOCK-LISTEN:52,fork,reuseaddr EXEC:"node /opt/ferrobot-runner/dist/guest-agent.js" &
+setpriv --reuid=node --regid=node --init-groups node /opt/ferrobot-runner/dist/index.js &
+runner=$!
+# SendCtrlAltDel from the host arrives here as SIGINT.
+trap 'kill -TERM "$runner" 2>/dev/null' INT TERM
+# dash's wait also reaps orphans reparented to PID 1.
+while kill -0 "$runner" 2>/dev/null; do
+  wait "$runner"
+done
+power_off

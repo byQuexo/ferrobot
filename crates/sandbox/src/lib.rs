@@ -6,6 +6,7 @@
 //!
 //! * [`DockerBackend`]: one container per agent via the Docker Engine API
 //!   (works with Podman's Docker-compatible socket too).
+//! * [`FirecrackerBackend`]: one Firecracker microVM per agent (Linux + KVM).
 //! * [`LocalProcessBackend`]: runs the runner as a plain child process in a
 //!   per-agent directory. **No isolation**; for development and CI only.
 //! * [`SpritesBackend`]: Fly.io Sprites (Firecracker microVM per agent).
@@ -14,6 +15,7 @@
 
 mod docker;
 mod error;
+mod firecracker;
 mod local;
 mod path;
 mod sprites;
@@ -25,6 +27,7 @@ use serde::{Deserialize, Serialize};
 
 pub use docker::{DockerBackend, DockerConfig};
 pub use error::SandboxError;
+pub use firecracker::{FirecrackerBackend, FirecrackerConfig};
 pub use local::{LocalProcessBackend, LocalProcessConfig};
 pub use path::SandboxPath;
 pub use sprites::{SpritesBackend, SpritesConfig};
@@ -57,8 +60,24 @@ pub struct SandboxHandle {
 #[serde(rename_all = "snake_case")]
 pub enum SandboxState {
     Running,
+    /// Frozen by a warm sleep: memory kept, processes resume on wake.
+    Paused,
     Stopped,
     Missing,
+}
+
+/// How deeply a sandbox sleeps.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(utoipa::ToSchema))]
+#[serde(rename_all = "snake_case")]
+pub enum SleepLevel {
+    /// Paused: processes frozen, memory kept, wakes without a restart.
+    Warm,
+    /// Stopped: processes end and memory is freed; the disk is kept.
+    Cold,
+    /// Moved to object storage: nothing is left on the host. The next
+    /// `create` for the same name restores it.
+    Archived,
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
@@ -110,7 +129,13 @@ pub trait SandboxBackend: Send + Sync + std::fmt::Debug {
     /// Stable backend kind, stored next to the sandbox id.
     fn kind(&self) -> &'static str;
 
-    /// Creates (or adopts) and starts the sandbox.
+    /// Whether [`snapshot`](Self::snapshot) and [`restore`](Self::restore) work.
+    fn supports_snapshots(&self) -> bool {
+        false
+    }
+
+    /// Creates (or adopts) and starts the sandbox. A sandbox archived with
+    /// `sleep(Archived)` comes back from its archive.
     async fn create(&self, spec: &SandboxSpec) -> Result<SandboxHandle, SandboxError>;
 
     /// Runs a command to completion and captures its output.
@@ -165,8 +190,38 @@ pub trait SandboxBackend: Send + Sync + std::fmt::Debug {
         })
     }
 
-    /// Starts a stopped/sleeping sandbox.
+    /// Starts a stopped/sleeping sandbox (resumes a paused one).
     async fn wake(&self, sandbox: &SandboxHandle) -> Result<(), SandboxError>;
+
+    /// Puts the sandbox to sleep and returns the level reached (a sandbox
+    /// that is not running reaches `Cold`). `Cold` is [`stop`](Self::stop);
+    /// backends that cannot pause answer `Warm` with `NotImplemented`.
+    async fn sleep(
+        &self,
+        sandbox: &SandboxHandle,
+        level: SleepLevel,
+    ) -> Result<SleepLevel, SandboxError> {
+        match level {
+            SleepLevel::Cold => {
+                self.stop(sandbox).await?;
+                Ok(level)
+            }
+            SleepLevel::Warm => Err(SandboxError::NotImplemented {
+                backend: self.kind(),
+                operation: "pause",
+            }),
+            SleepLevel::Archived => Err(SandboxError::NotImplemented {
+                backend: self.kind(),
+                operation: "archive",
+            }),
+        }
+    }
+
+    /// Deletes the archive of sandbox `name`, if any.
+    async fn delete_archive(&self, name: &str) -> Result<(), SandboxError> {
+        let _ = name;
+        Ok(())
+    }
 
     /// Stops the sandbox, keeping its disk.
     async fn stop(&self, sandbox: &SandboxHandle) -> Result<(), SandboxError>;

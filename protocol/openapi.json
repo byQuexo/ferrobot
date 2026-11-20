@@ -1711,7 +1711,7 @@
         "tags": [
           "sandbox"
         ],
-        "summary": "Puts the agent to sleep (stops the sandbox, keeps its disk). A new\nmessage or `wake` starts it again.",
+        "summary": "Puts the agent to sleep, keeping its disk. A new message or `wake`\nstarts (or resumes) it again.",
         "operationId": "stop",
         "parameters": [
           {
@@ -1721,6 +1721,15 @@
             "required": true,
             "schema": {
               "type": "string"
+            }
+          },
+          {
+            "name": "level",
+            "in": "query",
+            "description": "`cold` (default) stops the sandbox; `warm` pauses it, keeping memory;\n`archived` moves it to object storage (a wake restores it). Backends\nthat cannot pause or archive answer 501.",
+            "required": false,
+            "schema": {
+              "$ref": "#/components/schemas/SleepLevel"
             }
           }
         ],
@@ -1740,6 +1749,16 @@
           },
           "404": {
             "description": "Unknown agent",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "501": {
+            "description": "The backend cannot pause or archive",
             "content": {
               "application/json": {
                 "schema": {
@@ -1933,6 +1952,359 @@
         "security": [
           {}
         ]
+      }
+    },
+    "/v1/providers": {
+      "get": {
+        "tags": [
+          "providers"
+        ],
+        "summary": "Configured model providers, by name.",
+        "operationId": "list_providers",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/ProviderView"
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or wrong API token",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "providers"
+        ],
+        "summary": "Adds a model provider.",
+        "operationId": "create_provider",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateProvider"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProviderView"
+                }
+              }
+            }
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or wrong API token",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Name already taken",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/providers/{id}": {
+      "delete": {
+        "tags": [
+          "providers"
+        ],
+        "summary": "Deletes a provider and its stored key. Fails while agents use it.",
+        "operationId": "delete_provider",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "Provider id (UUID)",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Deleted"
+          },
+          "401": {
+            "description": "Missing or wrong API token",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Unknown provider",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Agents still use it",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        }
+      },
+      "patch": {
+        "tags": [
+          "providers"
+        ],
+        "summary": "Edits a provider. Agents using it restart their computers (disks kept)\nwhen region, project or default model change.",
+        "operationId": "update_provider",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "Provider id (UUID)",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateProvider"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProviderView"
+                }
+              }
+            }
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or wrong API token",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Unknown provider",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Name already taken",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/providers/{id}/chatgpt-login": {
+      "get": {
+        "tags": [
+          "providers"
+        ],
+        "summary": "Whether a `codex` provider is signed in with `ChatGPT`.",
+        "operationId": "chatgpt_login_status",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "Provider id (UUID)",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LoginStatus"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or wrong API token",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Unknown provider",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Not a codex provider",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "providers"
+        ],
+        "summary": "Starts signing a `codex` provider in with `ChatGPT`, on the daemon host's\n`codex`. Open `verification_url`, enter `user_code`, then poll the status.\nThe tokens stay with the host's Codex; agents never see them.",
+        "operationId": "start_chatgpt_login",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "Provider id (UUID)",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DeviceCode"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or wrong API token",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Unknown provider",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Not a codex provider",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "codex failed on the daemon host",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        }
       }
     },
     "/v1/routines/{rid}": {
@@ -2255,6 +2627,21 @@
               }
             ]
           },
+          "provider_id": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "uuid",
+            "description": "Model provider (`GET /v1/providers`); `null` uses the daemon's\n`ANTHROPIC_API_KEY`."
+          },
+          "model": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Model id; `null` uses the provider's default model."
+          },
           "status": {
             "$ref": "#/components/schemas/AgentStatus"
           },
@@ -2302,7 +2689,9 @@
         "enum": [
           "created",
           "running",
+          "paused",
           "stopped",
+          "archived",
           "failed"
         ]
       },
@@ -2508,6 +2897,72 @@
                 "type": "null"
               }
             ]
+          },
+          "provider_id": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "uuid",
+            "description": "Model provider (`GET /v1/providers`); omitted: the daemon's\n`ANTHROPIC_API_KEY`."
+          },
+          "model": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Model id; omitted: the provider's default model."
+          }
+        }
+      },
+      "CreateProvider": {
+        "type": "object",
+        "required": [
+          "name",
+          "kind"
+        ],
+        "properties": {
+          "name": {
+            "type": "string",
+            "description": "Unique display name (1-64 bytes).",
+            "example": "openai-work"
+          },
+          "kind": {
+            "$ref": "#/components/schemas/ProviderKind"
+          },
+          "base_url": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Upstream override; required for `openai_compatible`."
+          },
+          "region": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Required for `bedrock` and `vertex`."
+          },
+          "project": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Google Cloud project; required for `vertex`."
+          },
+          "default_model": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "api_key": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Stored in the OS keychain; never returned."
           }
         }
       },
@@ -2546,6 +3001,22 @@
               "null"
             ],
             "description": "Default true."
+          }
+        }
+      },
+      "DeviceCode": {
+        "type": "object",
+        "description": "A device code the operator enters at `verification_url`.",
+        "required": [
+          "verification_url",
+          "user_code"
+        ],
+        "properties": {
+          "verification_url": {
+            "type": "string"
+          },
+          "user_code": {
+            "type": "string"
           }
         }
       },
@@ -2643,7 +3114,7 @@
           },
           "model_proxy": {
             "type": "boolean",
-            "description": "Whether real model calls are possible (driver `claude` with a key)."
+            "description": "Whether agents make real model calls through the proxy (any driver\nbut `mock`); each still needs a provider or `ANTHROPIC_API_KEY`."
           },
           "idle_timeout_s": {
             "type": [
@@ -2671,6 +3142,73 @@
             "description": "The interrupted turn, or null if the agent was idle."
           }
         }
+      },
+      "LoginStatus": {
+        "oneOf": [
+          {
+            "type": "object",
+            "description": "Not signed in.",
+            "required": [
+              "state"
+            ],
+            "properties": {
+              "state": {
+                "type": "string",
+                "enum": [
+                  "none"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "description": "Waiting for the operator to confirm the code in the browser.",
+            "required": [
+              "state"
+            ],
+            "properties": {
+              "state": {
+                "type": "string",
+                "enum": [
+                  "pending"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "state"
+            ],
+            "properties": {
+              "state": {
+                "type": "string",
+                "enum": [
+                  "signed_in"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "error",
+              "state"
+            ],
+            "properties": {
+              "error": {
+                "type": "string"
+              },
+              "state": {
+                "type": "string",
+                "enum": [
+                  "failed"
+                ]
+              }
+            }
+          }
+        ],
+        "description": "Sign-in progress per provider (in memory; a restart forgets pending ones)."
       },
       "MailMessage": {
         "type": "object",
@@ -2778,6 +3316,96 @@
           "starting",
           "sleeping",
           "error"
+        ]
+      },
+      "Provider": {
+        "type": "object",
+        "description": "A configured model provider. Its credential lives in the daemon's secret\nstore, never here.",
+        "required": [
+          "id",
+          "name",
+          "kind",
+          "created_at"
+        ],
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "name": {
+            "type": "string",
+            "description": "Unique display name, e.g. `openai-work`."
+          },
+          "kind": {
+            "$ref": "#/components/schemas/ProviderKind"
+          },
+          "base_url": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Upstream override; `null` uses the kind's default."
+          },
+          "region": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Bedrock / Vertex region, e.g. `us-east-1`, `us-east5`, `global`."
+          },
+          "project": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Google Cloud project (Vertex)."
+          },
+          "default_model": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Model for agents that do not pick one."
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      },
+      "ProviderKind": {
+        "type": "string",
+        "description": "The API family of a provider. Decides the runner driver, the upstream\nURL and how the daemon's model proxy adds the credential.",
+        "enum": [
+          "anthropic",
+          "openai",
+          "gemini",
+          "bedrock",
+          "vertex",
+          "openrouter",
+          "ollama",
+          "openai_compatible",
+          "codex",
+          "gemini_cli"
+        ]
+      },
+      "ProviderView": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/Provider"
+          },
+          {
+            "type": "object",
+            "required": [
+              "has_key"
+            ],
+            "properties": {
+              "has_key": {
+                "type": "boolean",
+                "description": "Whether an API key is stored. The key itself is never returned."
+              }
+            }
+          }
         ]
       },
       "PutMemory": {
@@ -3127,7 +3755,16 @@
           "idle_s": {
             "type": "integer",
             "format": "int64",
-            "description": "Seconds since the last activity; sleeps when it reaches `idle_timeout_s`.",
+            "description": "Seconds since the last activity; pauses at `warm_after_s`, stops at\n`idle_timeout_s`.",
+            "minimum": 0
+          },
+          "warm_after_s": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64",
+            "description": "Warm sleep (pause) after this long idle; `null`: never.",
             "minimum": 0
           },
           "idle_timeout_s": {
@@ -3136,6 +3773,7 @@
               "null"
             ],
             "format": "int64",
+            "description": "Cold sleep (stop) after this long idle; `null`: never.",
             "minimum": 0
           },
           "snapshots_supported": {
@@ -3148,6 +3786,7 @@
         "type": "string",
         "enum": [
           "running",
+          "paused",
           "stopped",
           "missing"
         ]
@@ -3212,6 +3851,15 @@
           }
         ],
         "description": "Who sent a mailbox message."
+      },
+      "SleepLevel": {
+        "type": "string",
+        "description": "How deeply a sandbox sleeps.",
+        "enum": [
+          "warm",
+          "cold",
+          "archived"
+        ]
       },
       "SnapshotRecord": {
         "type": "object",
@@ -3479,6 +4127,64 @@
                 "type": "null"
               }
             ]
+          },
+          "provider_id": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "uuid",
+            "description": "New model provider; `null` goes back to the daemon's default. Changing\nprovider or model restarts the agent's computer (its disk is kept)."
+          },
+          "model": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "New model id; `null` goes back to the provider's default model."
+          }
+        }
+      },
+      "UpdateProvider": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "base_url": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "`null` goes back to the kind's default upstream."
+          },
+          "region": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "project": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "default_model": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "api_key": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "New API key; `null` removes the stored one."
           }
         }
       },
@@ -3565,6 +4271,10 @@
     {
       "name": "sandbox",
       "description": "Each agent's own computer: sleep, wake, snapshots"
+    },
+    {
+      "name": "providers",
+      "description": "Model providers and their API keys"
     }
   ]
 }

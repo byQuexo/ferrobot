@@ -30,6 +30,10 @@ pub struct AgentSpec {
     pub description: String,
     pub instructions: String,
     pub character: Option<AvatarCharacter>,
+    /// `None` with `model` also `None`: the creating agent's choice (or the
+    /// daemon default for the operator).
+    pub provider_id: Option<uuid::Uuid>,
+    pub model: Option<String>,
 }
 
 impl From<ferrobot_mcp::AgentRequest> for AgentSpec {
@@ -39,8 +43,38 @@ impl From<ferrobot_mcp::AgentRequest> for AgentSpec {
             description: r.description,
             instructions: r.instructions,
             character: r.character,
+            provider_id: None,
+            model: None,
         }
     }
+}
+
+/// Checks that the provider exists and that a model is known where the
+/// provider needs one. Returns the normalised model.
+pub(crate) async fn check_model(
+    state: &AppState,
+    provider_id: Option<uuid::Uuid>,
+    model: Option<&str>,
+) -> Result<Option<String>, ApiError> {
+    let model = model.map(str::trim).filter(|m| !m.is_empty());
+    if model.is_some_and(|m| m.len() > 200) {
+        return Err(ApiError::BadRequest("model exceeds 200 bytes".into()));
+    }
+    if let Some(id) = provider_id {
+        let provider = state
+            .store
+            .get_provider(id)
+            .await
+            .map_err(|_| ApiError::BadRequest(format!("unknown provider {id}")))?;
+        if provider.kind.driver() != "claude" && model.is_none() && provider.default_model.is_none()
+        {
+            return Err(ApiError::BadRequest(format!(
+                "provider {} has no default model; pick a model",
+                provider.name
+            )));
+        }
+    }
+    Ok(model.map(str::to_owned))
 }
 
 pub(crate) fn check_description(d: &str) -> Result<(), ApiError> {
@@ -89,6 +123,14 @@ pub async fn create(
     spec: AgentSpec,
     created_by: Option<AgentId>,
 ) -> Result<Agent, ApiError> {
+    let (provider_id, model) = match (created_by, spec.provider_id, &spec.model) {
+        (Some(creator), None, None) => {
+            let creator = state.store.get_agent(creator).await?;
+            (creator.provider_id, creator.model)
+        }
+        _ => (spec.provider_id, spec.model.clone()),
+    };
+    let model = check_model(state, provider_id, model.as_deref()).await?;
     let mut agent = {
         // Serialize creations so the limit holds under concurrency.
         let _guard = state.creating.lock().await;
@@ -103,18 +145,22 @@ pub async fn create(
             })
             .await?
     };
-    if spec.character.is_some() {
+    if spec.character.is_some() || provider_id.is_some() || model.is_some() {
         state
             .store
             .update_agent_profile(
                 agent.id,
                 AgentPatch {
                     character: Some(spec.character),
+                    provider_id: Some(provider_id),
+                    model: Some(model.clone()),
                     ..AgentPatch::default()
                 },
             )
             .await?;
         agent.character = spec.character;
+        agent.provider_id = provider_id;
+        agent.model = model;
     }
     lifecycle::provision(state, &agent).await?;
     Ok(agent)

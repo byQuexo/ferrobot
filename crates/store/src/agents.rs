@@ -26,6 +26,10 @@ pub struct AgentPatch {
     pub instructions: Option<String>,
     /// `Some(None)` clears the chosen character look.
     pub character: Option<Option<AvatarCharacter>>,
+    /// `Some(None)` goes back to the daemon's default provider.
+    pub provider_id: Option<Option<uuid::Uuid>>,
+    /// `Some(None)` goes back to the provider's default model.
+    pub model: Option<Option<String>>,
 }
 
 /// An avatar image as stored.
@@ -41,7 +45,8 @@ pub fn hash_token(token: &str) -> String {
 }
 
 const COLUMNS: &str = "id, name, instructions, status, backend, sandbox_id, session_id, created_at, \
-                       description, avatar_rev, COALESCE(sandbox_name, name), character, created_by";
+                       description, avatar_rev, COALESCE(sandbox_name, name), character, created_by, \
+                       provider_id, model";
 
 fn from_row(row: &Row<'_>) -> Result<Agent, StoreError> {
     let id: String = row.get(0)?;
@@ -50,7 +55,13 @@ fn from_row(row: &Row<'_>) -> Result<Agent, StoreError> {
     let created: String = row.get(7)?;
     let character: Option<String> = row.get(11)?;
     let created_by: String = row.get(12)?;
+    let provider_id: Option<String> = row.get(13)?;
     Ok(Agent {
+        provider_id: provider_id
+            .map(|id| uuid::Uuid::parse_str(&id))
+            .transpose()
+            .map_err(StoreError::corrupt)?,
+        model: row.get(14)?,
         created_by: match created_by.as_str() {
             OPERATOR => None,
             id => Some(id.parse()?),
@@ -95,6 +106,8 @@ impl Store {
             avatar_rev: 0,
             character: None,
             created_by: new.created_by,
+            provider_id: None,
+            model: None,
             status: AgentStatus::Created,
             backend: None,
             sandbox_id: None,
@@ -269,6 +282,10 @@ impl Store {
         let name = patch.name.map(String::from);
         let key = name.clone().unwrap_or_default();
         let set_character = patch.character.is_some();
+        let set_provider = patch.provider_id.is_some();
+        let provider_id = patch.provider_id.flatten().map(|id| id.to_string());
+        let set_model = patch.model.is_some();
+        let model = patch.model.flatten();
         let character = patch
             .character
             .flatten()
@@ -280,7 +297,9 @@ impl Store {
                 "UPDATE agents SET name = COALESCE(?2, name),
                                    description = COALESCE(?3, description),
                                    instructions = COALESCE(?4, instructions),
-                                   character = CASE WHEN ?5 THEN ?6 ELSE character END
+                                   character = CASE WHEN ?5 THEN ?6 ELSE character END,
+                                   provider_id = CASE WHEN ?7 THEN ?8 ELSE provider_id END,
+                                   model = CASE WHEN ?9 THEN ?10 ELSE model END
                  WHERE id = ?1",
                 params![
                     id,
@@ -288,7 +307,11 @@ impl Store {
                     patch.description,
                     patch.instructions,
                     set_character,
-                    character
+                    character,
+                    set_provider,
+                    provider_id,
+                    set_model,
+                    model
                 ],
             )
         })

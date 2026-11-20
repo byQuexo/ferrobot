@@ -20,7 +20,7 @@ use ferrobot_core::{AgentId, Sender};
 use ferrobot_mcp::MailboxNotifier;
 use ferrobot_sandbox::{
     ExecOutput, ExecRequest, SandboxBackend, SandboxError, SandboxHandle, SandboxPath, SandboxSpec,
-    SandboxState, SnapshotRef,
+    SandboxState, SleepLevel, SnapshotRef,
 };
 use futures_util::{SinkExt, StreamExt};
 use serde_json::{Value, json};
@@ -33,6 +33,8 @@ struct StatefulBackend {
     envs: Mutex<HashMap<String, BTreeMap<String, String>>>,
     states: Mutex<HashMap<String, SandboxState>>,
     log: Mutex<Vec<String>>,
+    /// Sandbox names whose disk went to the archive.
+    archived: Mutex<std::collections::HashSet<String>>,
 }
 
 impl StatefulBackend {
@@ -56,6 +58,9 @@ impl SandboxBackend for StatefulBackend {
         "fake"
     }
     async fn create(&self, spec: &SandboxSpec) -> Result<SandboxHandle, SandboxError> {
+        if self.archived.lock().unwrap().remove(&spec.name) {
+            self.log(format!("unarchive {}", spec.name));
+        }
         self.envs
             .lock()
             .unwrap()
@@ -102,14 +107,38 @@ impl SandboxBackend for StatefulBackend {
         self.log(format!("restore {} {snapshot}", h.id));
         self.create(spec).await
     }
+    async fn delete_archive(&self, name: &str) -> Result<(), SandboxError> {
+        self.log(format!("delete_archive {name}"));
+        Ok(())
+    }
     async fn delete_snapshot(&self, snapshot: &str) -> Result<(), SandboxError> {
         self.log(format!("delete_snapshot {snapshot}"));
         Ok(())
     }
     async fn wake(&self, h: &SandboxHandle) -> Result<(), SandboxError> {
+        if self.archived.lock().unwrap().contains(&h.id) {
+            return Err(SandboxError::NotFound(h.id.clone()));
+        }
         self.set(&h.id, SandboxState::Running);
         self.log(format!("wake {}", h.id));
         Ok(())
+    }
+    async fn sleep(
+        &self,
+        h: &SandboxHandle,
+        level: SleepLevel,
+    ) -> Result<SleepLevel, SandboxError> {
+        if level == SleepLevel::Cold {
+            self.stop(h).await?;
+        } else if level == SleepLevel::Archived {
+            self.states.lock().unwrap().remove(&h.id);
+            self.archived.lock().unwrap().insert(h.id.clone());
+            self.log(format!("archive {}", h.id));
+        } else {
+            self.set(&h.id, SandboxState::Paused);
+            self.log(format!("pause {}", h.id));
+        }
+        Ok(level)
     }
     async fn stop(&self, h: &SandboxHandle) -> Result<(), SandboxError> {
         self.set(&h.id, SandboxState::Stopped);
@@ -786,13 +815,15 @@ async fn model_proxy_swaps_key_and_streams() {
     .await;
     assert_eq!(status, 404);
 
-    // Without a configured key the proxy says so.
-    let d2 = start(Arc::new(StatefulBackend::default()), None, "127.0.0.1:0").await;
+    // Without a configured key the proxy tells the (authenticated) agent so.
+    let backend2 = Arc::new(StatefulBackend::default());
+    let d2 = start(backend2.clone(), None, "127.0.0.1:0").await;
+    create(&d2, json!({"name": "pia"})).await;
     let (status, _, out) = http_raw(
         &d2.agents,
         "POST",
         "/model/v1/messages",
-        &[("x-api-key", "x")],
+        &[("x-api-key", &backend2.token("pia"))],
         body,
     )
     .await;
@@ -1111,7 +1142,18 @@ async fn agents_create_agents_only_with_approval() {
         s.approval_timeout = Duration::from_secs(2);
     })
     .await;
-    let ada = create(&d, json!({"name": "ada"})).await;
+    let (_, provider) = http(
+        &d.ui,
+        "POST",
+        "/v1/providers",
+        Some(json!({"name": "local", "kind": "ollama", "default_model": "llama3"})),
+    )
+    .await;
+    let ada = create(
+        &d,
+        json!({"name": "ada", "provider_id": provider["id"], "model": "qwen3"}),
+    )
+    .await;
     assert!(ada["created_by"].is_null(), "operator-created: {ada}");
     let ada = ada["id"].as_str().unwrap().to_owned();
     let ada_id: AgentId = ada.parse().unwrap();
@@ -1143,6 +1185,11 @@ async fn agents_create_agents_only_with_approval() {
     let (status, scout) = http(&d.ui, "GET", &format!("/v1/agents/{id}"), None).await;
     assert_eq!(status, 200);
     assert_eq!(scout["created_by"], ada.as_str());
+    assert_eq!(
+        scout["provider_id"], provider["id"],
+        "inherits the provider"
+    );
+    assert_eq!(scout["model"], "qwen3");
     assert_eq!(scout["description"], "Writes release notes");
     let (_, msgs) = http(&d.ui, "GET", &format!("/v1/agents/{ada}/messages"), None).await;
     assert_eq!(msgs.as_array().unwrap().len(), 0, "{msgs}");
@@ -1224,4 +1271,539 @@ async fn agent_limit_applies_to_api_and_agents() {
             .any(|e| e["kind"] == "question"),
         "no approval card when the limit is reached"
     );
+}
+
+/// Fake upstream for any provider: echoes the method, path and credentials it saw.
+async fn echo_upstream() -> String {
+    async fn handler(request: axum::extract::Request) -> axum::Json<Value> {
+        let header = |name: &str| {
+            request
+                .headers()
+                .get(name)
+                .and_then(|v| v.to_str().ok())
+                .map(str::to_owned)
+        };
+        axum::Json(json!({
+            "method": request.method().as_str(),
+            "path": request.uri().path(),
+            "authorization": header("authorization"),
+            "x_api_key": header("x-api-key"),
+            "goog_key": header("x-goog-api-key"),
+            "query": request.uri().query(),
+            "accounts": request.headers().get_all("chatgpt-account-id").iter()
+                .filter_map(|v| v.to_str().ok()).collect::<Vec<_>>(),
+        }))
+    }
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let addr = listener.local_addr().unwrap();
+    let app = axum::Router::new().fallback(handler);
+    tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });
+    format!("http://{addr}")
+}
+
+async fn model_call(d: &Daemon, path: &str, auth: (&str, &str)) -> (u16, Value) {
+    let (status, _, out) = http_raw(&d.agents, "POST", path, &[auth], b"{}").await;
+    (status, serde_json::from_slice(&out).unwrap_or(Value::Null))
+}
+
+#[tokio::test]
+async fn providers_keep_keys_in_the_daemon() {
+    let upstream = echo_upstream().await;
+    let backend = Arc::new(StatefulBackend::default());
+    let d = start_with(backend.clone(), None, "127.0.0.1:0", |s| {
+        s.driver = "claude".into();
+        s.gcloud_token_cmd = vec!["echo".into(), "google-token".into()];
+    })
+    .await;
+
+    let (status, openai) = http(
+        &d.ui,
+        "POST",
+        "/v1/providers",
+        Some(
+            json!({"name": "oai", "kind": "openai", "base_url": format!("{upstream}/v1"),
+                    "default_model": "gpt-test", "api_key": "sk-openai-secret"}),
+        ),
+    )
+    .await;
+    assert_eq!(status, 201, "{openai}");
+    assert_eq!(openai["has_key"], true);
+    assert!(!openai.to_string().contains("sk-openai-secret"));
+    let (status, err) = http(
+        &d.ui,
+        "POST",
+        "/v1/providers",
+        Some(json!({"name": "bad", "kind": "bedrock"})),
+    )
+    .await;
+    assert_eq!(status, 400, "region is required: {err}");
+
+    // OpenAI-compatible agents get the openai driver and only their own token.
+    let pid = openai["id"].as_str().unwrap();
+    create(&d, json!({"name": "olly", "provider_id": pid})).await;
+    let env = backend.envs.lock().unwrap()["olly"].clone();
+    let token = env["FERROBOT_AGENT_TOKEN"].clone();
+    assert_eq!(env["FERROBOT_DRIVER"], "openai");
+    assert_eq!(env["FERROBOT_MODEL"], "gpt-test");
+    assert!(env["FERROBOT_OPENAI_BASE_URL"].ends_with("/model"));
+    assert!(!env.values().any(|v| v.contains("sk-openai-secret")));
+    let bearer = format!("Bearer {token}");
+    let (status, seen) =
+        model_call(&d, "/model/chat/completions", ("authorization", &bearer)).await;
+    assert_eq!(status, 200, "{seen}");
+    assert_eq!(seen["path"], "/v1/chat/completions");
+    assert_eq!(seen["authorization"], "Bearer sk-openai-secret");
+
+    // Bedrock: invocations go to the runtime with the Bedrock API key.
+    let (_, bedrock) = http(
+        &d.ui,
+        "POST",
+        "/v1/providers",
+        Some(
+            json!({"name": "br", "kind": "bedrock", "region": "eu-central-1",
+                    "base_url": upstream, "api_key": "bedrock-key"}),
+        ),
+    )
+    .await;
+    create(
+        &d,
+        json!({"name": "bert", "provider_id": bedrock["id"], "model": "eu.anthropic.claude-x"}),
+    )
+    .await;
+    let env = backend.envs.lock().unwrap()["bert"].clone();
+    assert_eq!(env["FERROBOT_DRIVER"], "claude");
+    assert_eq!(env["CLAUDE_CODE_USE_BEDROCK"], "1");
+    assert_eq!(env["AWS_REGION"], "eu-central-1");
+    assert_eq!(env["AWS_BEARER_TOKEN_BEDROCK"], env["FERROBOT_AGENT_TOKEN"]);
+    assert_eq!(env["FERROBOT_MODEL"], "eu.anthropic.claude-x");
+    let bearer = format!("Bearer {}", env["FERROBOT_AGENT_TOKEN"]);
+    let (_, seen) = model_call(
+        &d,
+        "/model/model/eu.anthropic.claude-x/invoke",
+        ("authorization", &bearer),
+    )
+    .await;
+    assert_eq!(seen["path"], "/model/eu.anthropic.claude-x/invoke");
+    assert_eq!(seen["authorization"], "Bearer bedrock-key");
+
+    // Vertex: the daemon host's gcloud token, never the agent's.
+    let (_, vertex) = http(
+        &d.ui,
+        "POST",
+        "/v1/providers",
+        Some(
+            json!({"name": "vx", "kind": "vertex", "region": "us-east5", "project": "p1",
+                    "base_url": upstream}),
+        ),
+    )
+    .await;
+    assert_eq!(vertex["has_key"], false);
+    create(&d, json!({"name": "vera", "provider_id": vertex["id"]})).await;
+    let env = backend.envs.lock().unwrap()["vera"].clone();
+    assert_eq!(env["CLAUDE_CODE_USE_VERTEX"], "1");
+    assert_eq!(env["ANTHROPIC_VERTEX_PROJECT_ID"], "p1");
+    assert_eq!(env["CLOUD_ML_REGION"], "us-east5");
+    let (_, seen) = model_call(
+        &d,
+        "/model/projects/p1/locations/us-east5/publishers/anthropic/models/m:streamRawPredict",
+        ("x-api-key", &env["FERROBOT_AGENT_TOKEN"]),
+    )
+    .await;
+    assert_eq!(seen["authorization"], "Bearer google-token");
+    assert_eq!(seen["x_api_key"], Value::Null);
+
+    // Removing the key makes the proxy refuse; the agent is told why.
+    let (status, _) = http(
+        &d.ui,
+        "PATCH",
+        &format!("/v1/providers/{pid}"),
+        Some(json!({"api_key": null})),
+    )
+    .await;
+    assert_eq!(status, 200);
+    let bearer = format!("Bearer {token}");
+    let (status, err) = model_call(&d, "/model/chat/completions", ("authorization", &bearer)).await;
+    assert_eq!(status, 503, "{err}");
+
+    // Providers in use cannot be deleted; switching the model rebuilds the sandbox.
+    let (status, _) = http(&d.ui, "DELETE", &format!("/v1/providers/{pid}"), None).await;
+    assert_eq!(status, 409);
+    let olly = backend.envs.lock().unwrap()["olly"]["FERROBOT_AGENT_TOKEN"].clone();
+    let agents = d.state.store.list_agents().await.unwrap();
+    let olly_id = agents
+        .iter()
+        .find(|a| a.name.as_str() == "olly")
+        .unwrap()
+        .id;
+    let (status, view) = http(
+        &d.ui,
+        "PATCH",
+        &format!("/v1/agents/{olly_id}"),
+        Some(json!({"model": "gpt-other"})),
+    )
+    .await;
+    assert_eq!(status, 200, "{view}");
+    assert_eq!(view["model"], "gpt-other");
+    let env = backend.envs.lock().unwrap()["olly"].clone();
+    assert_eq!(env["FERROBOT_MODEL"], "gpt-other");
+    assert_ne!(
+        env["FERROBOT_AGENT_TOKEN"], olly,
+        "a new sandbox got a new token"
+    );
+    let (status, _) = http(
+        &d.ui,
+        "PATCH",
+        &format!("/v1/agents/{olly_id}"),
+        Some(json!({"provider_id": null})),
+    )
+    .await;
+    assert_eq!(status, 200);
+    let (status, _) = http(&d.ui, "DELETE", &format!("/v1/providers/{pid}"), None).await;
+    assert_eq!(status, 204);
+    let (status, err) = http(
+        &d.ui,
+        "POST",
+        "/v1/agents",
+        Some(json!({"name": "ghost", "provider_id": pid})),
+    )
+    .await;
+    assert_eq!(status, 400, "{err}");
+}
+
+/// Fake host `codex app-server`: answers by method, one JSON object per line.
+const FAKE_CODEX: &str = r#"#!/bin/sh
+JWT='eyJhbGciOiJub25lIn0.eyJleHAiOjQxMDI0NDQ4MDAsImh0dHBzOi8vYXBpLm9wZW5haS5jb20vYXV0aCI6eyJjaGF0Z3B0X2FjY291bnRfaWQiOiJhY2N0LTEyMyJ9fQ.sig'
+while IFS= read -r line; do
+  id=$(printf '%s' "$line" | sed -n 's/.*"id":\([0-9]*\).*/\1/p')
+  case "$line" in
+    *'"initialize"'*) printf '{"id":%s,"result":{}}\n' "$id" ;;
+    *'"getAuthStatus"'*) printf '{"id":%s,"result":{"authMethod":"chatgpt","authToken":"%s"}}\n' "$id" "$JWT" ;;
+    *'"account/login/start"'*)
+      printf '{"id":%s,"result":{"type":"chatgptDeviceCode","loginId":"l1","verificationUrl":"https://auth.example/device","userCode":"ABCD-1234"}}\n' "$id"
+      printf '{"method":"account/login/completed","params":{"loginId":"l1","success":true,"error":null}}\n' ;;
+  esac
+done
+"#;
+
+#[tokio::test]
+async fn codex_providers_use_a_key_or_the_hosts_chatgpt_login() {
+    let upstream = echo_upstream().await;
+    let dir = tempfile::tempdir().unwrap();
+    let bin = dir.path().join("codex");
+    std::fs::write(&bin, FAKE_CODEX).unwrap();
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        std::fs::set_permissions(&bin, std::fs::Permissions::from_mode(0o755)).unwrap();
+    }
+    let backend = Arc::new(StatefulBackend::default());
+    let (home, chatgpt) = (dir.path().join("homes"), format!("{upstream}/codex"));
+    let d = start_with(backend.clone(), None, "127.0.0.1:0", |s| {
+        s.driver = "claude".into();
+        s.codex_bin = bin.display().to_string();
+        s.codex_home = home;
+        s.chatgpt_upstream = chatgpt;
+    })
+    .await;
+
+    // With an API key: the OpenAI Responses API.
+    let (_, keyed) = http(
+        &d.ui,
+        "POST",
+        "/v1/providers",
+        Some(
+            json!({"name": "cx-key", "kind": "codex", "base_url": format!("{upstream}/v1"),
+                    "api_key": "sk-codex-key", "default_model": "gpt-5-codex"}),
+        ),
+    )
+    .await;
+    create(&d, json!({"name": "cody", "provider_id": keyed["id"]})).await;
+    let env = backend.envs.lock().unwrap()["cody"].clone();
+    assert_eq!(env["FERROBOT_DRIVER"], "codex");
+    assert!(env["FERROBOT_CODEX_BASE_URL"].ends_with("/model"));
+    assert_eq!(env["FERROBOT_MODEL"], "gpt-5-codex");
+    let bearer = format!("Bearer {}", env["FERROBOT_AGENT_TOKEN"]);
+    let (_, seen) = model_call(&d, "/model/responses", ("authorization", &bearer)).await;
+    assert_eq!(seen["path"], "/v1/responses");
+    assert_eq!(seen["authorization"], "Bearer sk-codex-key");
+
+    // Without a key: the host's ChatGPT sign-in, tokens never leave the daemon.
+    let (_, chat) = http(
+        &d.ui,
+        "POST",
+        "/v1/providers",
+        Some(json!({"name": "cx-chatgpt", "kind": "codex", "default_model": "gpt-5-codex"})),
+    )
+    .await;
+    let login = format!(
+        "/v1/providers/{}/chatgpt-login",
+        chat["id"].as_str().unwrap()
+    );
+    let (status, code) = http(&d.ui, "POST", &login, None).await;
+    assert_eq!(status, 200, "{code}");
+    assert_eq!(code["user_code"], "ABCD-1234");
+    eventually("ChatGPT sign-in", Duration::from_secs(5), || async {
+        let (_, s) = http(&d.ui, "GET", &login, None).await;
+        (s["state"] == "signed_in").then_some(())
+    })
+    .await;
+    create(&d, json!({"name": "chad", "provider_id": chat["id"]})).await;
+    let env = backend.envs.lock().unwrap()["chad"].clone();
+    assert!(!env.values().any(|v| v.contains("eyJhbGciOiJub25lIn0")));
+    let bearer = format!("Bearer {}", env["FERROBOT_AGENT_TOKEN"]);
+    let (status, _, out) = http_raw(
+        &d.agents,
+        "POST",
+        "/model/responses",
+        &[
+            ("authorization", &bearer),
+            ("chatgpt-account-id", "someone-else"),
+        ],
+        b"{}",
+    )
+    .await;
+    let seen: Value = serde_json::from_slice(&out).unwrap();
+    assert_eq!(status, 200, "{seen}");
+    assert_eq!(seen["path"], "/codex/responses");
+    assert!(
+        seen["authorization"]
+            .as_str()
+            .unwrap()
+            .starts_with("Bearer eyJhbGciOiJub25lIn0.")
+    );
+    assert_eq!(
+        seen["accounts"],
+        json!(["acct-123"]),
+        "the agent cannot pick the account"
+    );
+
+    // Sign-in is only for codex providers.
+    let other = format!(
+        "/v1/providers/{}/chatgpt-login",
+        keyed["id"].as_str().unwrap()
+    );
+    let (_, openai) = http(
+        &d.ui,
+        "POST",
+        "/v1/providers",
+        Some(json!({"name": "oa", "kind": "openai", "api_key": "k"})),
+    )
+    .await;
+    let not_codex = format!(
+        "/v1/providers/{}/chatgpt-login",
+        openai["id"].as_str().unwrap()
+    );
+    assert_eq!(http(&d.ui, "POST", &not_codex, None).await.0, 409);
+    assert_eq!(http(&d.ui, "GET", &other, None).await.0, 200);
+}
+
+#[tokio::test]
+async fn idle_agents_pause_before_they_stop() {
+    let backend = Arc::new(StatefulBackend::default());
+    let d = start_with(backend.clone(), None, "127.0.0.1:0", |s| {
+        s.warm_timeout = Some(Duration::from_millis(200));
+        s.idle_timeout = Some(Duration::from_millis(600));
+    })
+    .await;
+    let id = create(&d, json!({"name": "wren"})).await["id"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    let _ws = connect_runner(&d.agents, &backend.token("wren")).await;
+    let agent = || async {
+        http(&d.ui, "GET", &format!("/v1/agents/{id}"), None)
+            .await
+            .1
+    };
+    let count = |what: &str| backend.calls().iter().filter(|c| *c == what).count();
+
+    tokio::time::sleep(Duration::from_millis(300)).await;
+    ferrobot_daemon::supervisor::check_all(&d.state).await;
+    let a = agent().await;
+    assert_eq!(
+        (&a["status"], &a["presence"]),
+        (&json!("paused"), &json!("sleeping"))
+    );
+    let (_, info) = http(&d.ui, "GET", &format!("/v1/agents/{id}/sandbox"), None).await;
+    assert_eq!(info["state"], "paused");
+    assert_eq!(info["warm_after_s"], 0);
+    assert_eq!(count("pause wren"), 1);
+
+    // A paused sandbox is not a crash: the supervisor leaves it alone...
+    ferrobot_daemon::supervisor::check_all(&d.state).await;
+    assert_eq!((count("wake wren"), count("create wren")), (0, 1));
+    // ...until the cold timeout, when it stops.
+    tokio::time::sleep(Duration::from_millis(400)).await;
+    ferrobot_daemon::supervisor::check_all(&d.state).await;
+    assert_eq!(agent().await["status"], "stopped");
+    assert_eq!(count("stop wren"), 1);
+
+    // An operator can pause on purpose; a message resumes it in place.
+    http(&d.ui, "POST", &format!("/v1/agents/{id}/wake"), None).await;
+    let (status, _) = http(
+        &d.ui,
+        "POST",
+        &format!("/v1/agents/{id}/stop?level=warm"),
+        None,
+    )
+    .await;
+    assert_eq!(status, 204);
+    assert_eq!(agent().await["status"], "paused");
+    let (status, _) = http(
+        &d.ui,
+        "POST",
+        &format!("/v1/agents/{id}/messages"),
+        Some(json!({"body": "resume"})),
+    )
+    .await;
+    assert_eq!(status, 202);
+    eventually("resume", Duration::from_secs(5), || async {
+        (agent().await["status"] == "running").then_some(())
+    })
+    .await;
+    assert_eq!(
+        count("create wren"),
+        1,
+        "resumed, not re-created: {:?}",
+        backend.calls()
+    );
+    assert_eq!(count("wake wren"), 2);
+}
+
+#[tokio::test]
+async fn backends_without_pause_stay_awake_until_the_cold_timeout() {
+    let tmp = tempfile::tempdir().unwrap();
+    let local = Arc::new(
+        ferrobot_sandbox::LocalProcessBackend::new(ferrobot_sandbox::LocalProcessConfig {
+            root: tmp.path().to_path_buf(),
+            runner_cmd: vec!["sleep".into(), "30".into()],
+        })
+        .unwrap(),
+    );
+    let d = start_with(local, None, "127.0.0.1:0", |s| {
+        s.warm_timeout = Some(Duration::from_millis(100));
+        s.idle_timeout = Some(Duration::from_secs(60));
+    })
+    .await;
+    let id = create(&d, json!({"name": "lou"})).await["id"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    tokio::time::sleep(Duration::from_millis(200)).await;
+    ferrobot_daemon::supervisor::check_all(&d.state).await;
+    let (_, a) = http(&d.ui, "GET", &format!("/v1/agents/{id}"), None).await;
+    assert_eq!(a["status"], "running", "no pause on the local backend: {a}");
+    let (status, _) = http(
+        &d.ui,
+        "POST",
+        &format!("/v1/agents/{id}/stop?level=warm"),
+        None,
+    )
+    .await;
+    assert_eq!(status, 501);
+    http(&d.ui, "DELETE", &format!("/v1/agents/{id}"), None).await;
+}
+
+#[tokio::test]
+async fn gemini_cli_agents_reach_the_gemini_api_through_the_proxy() {
+    let upstream = echo_upstream().await;
+    let backend = Arc::new(StatefulBackend::default());
+    let d = start_with(backend.clone(), None, "127.0.0.1:0", |s| {
+        s.driver = "claude".into();
+    })
+    .await;
+    let (status, provider) = http(
+        &d.ui,
+        "POST",
+        "/v1/providers",
+        Some(
+            json!({"name": "gem", "kind": "gemini_cli", "base_url": upstream,
+                    "api_key": "AIza-real-gemini-key", "default_model": "gemini-2.5-flash"}),
+        ),
+    )
+    .await;
+    assert_eq!(status, 201, "{provider}");
+    create(&d, json!({"name": "gina", "provider_id": provider["id"]})).await;
+    let env = backend.envs.lock().unwrap()["gina"].clone();
+    let token = env["FERROBOT_AGENT_TOKEN"].clone();
+    assert_eq!(env["FERROBOT_DRIVER"], "acp");
+    assert_eq!(env["FERROBOT_ACP_AGENT"], "gemini");
+    assert_eq!(env["GEMINI_API_KEY"], token, "only the agent's own token");
+    assert!(env["GOOGLE_GEMINI_BASE_URL"].ends_with("/model"));
+    assert!(!env.values().any(|v| v.contains("AIza-real-gemini-key")));
+    let (status, seen) = model_call(
+        &d,
+        "/model/v1beta/models/gemini-2.5-flash:streamGenerateContent?alt=sse",
+        ("x-goog-api-key", &token),
+    )
+    .await;
+    assert_eq!(status, 200, "{seen}");
+    assert_eq!(
+        seen["path"],
+        "/v1beta/models/gemini-2.5-flash:streamGenerateContent"
+    );
+    assert_eq!(seen["query"], "alt=sse");
+    assert_eq!(seen["goog_key"], "AIza-real-gemini-key");
+    let (status, _) = model_call(&d, "/model/v1beta/models", ("x-goog-api-key", "wrong")).await;
+    assert_eq!(status, 401);
+}
+
+#[tokio::test]
+async fn idle_sleeping_agents_are_archived_and_restored_on_wake() {
+    let backend = Arc::new(StatefulBackend::default());
+    let d = start_with(backend.clone(), None, "127.0.0.1:0", |s| {
+        s.idle_timeout = Some(Duration::from_millis(100));
+        s.archive_timeout = Some(Duration::from_millis(400));
+    })
+    .await;
+    let id = create(&d, json!({"name": "arlo"})).await["id"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    let old_token = backend.token("arlo");
+    let status = || async {
+        http(&d.ui, "GET", &format!("/v1/agents/{id}"), None)
+            .await
+            .1
+    };
+
+    tokio::time::sleep(Duration::from_millis(200)).await;
+    ferrobot_daemon::supervisor::check_all(&d.state).await;
+    assert_eq!(status().await["status"], "stopped");
+    tokio::time::sleep(Duration::from_millis(300)).await;
+    ferrobot_daemon::supervisor::check_all(&d.state).await;
+    let a = status().await;
+    assert_eq!(
+        (&a["status"], &a["presence"]),
+        (&json!("archived"), &json!("sleeping"))
+    );
+    assert!(backend.calls().contains(&"archive arlo".to_owned()));
+    assert!(
+        d.state
+            .store
+            .agent_by_token(&old_token)
+            .await
+            .unwrap()
+            .is_none(),
+        "the token inside the archived image is retired"
+    );
+
+    // A message brings it back from the archive with a fresh token.
+    let (status_code, _) = http(
+        &d.ui,
+        "POST",
+        &format!("/v1/agents/{id}/messages"),
+        Some(json!({"body": "back"})),
+    )
+    .await;
+    assert_eq!(status_code, 202);
+    eventually("unarchive", Duration::from_secs(5), || async {
+        (status().await["status"] == "running").then_some(())
+    })
+    .await;
+    assert!(backend.calls().contains(&"unarchive arlo".to_owned()));
+    assert_ne!(backend.token("arlo"), old_token);
+
+    http(&d.ui, "DELETE", &format!("/v1/agents/{id}"), None).await;
+    assert!(backend.calls().contains(&"delete_archive arlo".to_owned()));
 }

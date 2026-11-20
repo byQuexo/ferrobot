@@ -5,10 +5,11 @@
 #![cfg(feature = "docker-tests")]
 
 use std::collections::BTreeMap;
+use std::sync::Arc;
 
 use ferrobot_sandbox::{
     DockerBackend, DockerConfig, ExecRequest, SandboxBackend, SandboxPath, SandboxSpec,
-    SandboxState,
+    SandboxState, SleepLevel,
 };
 
 #[tokio::test]
@@ -19,7 +20,9 @@ async fn container_lifecycle() {
         image: std::env::var("FERROBOT_TEST_IMAGE")
             .unwrap_or_else(|_| "ferrobot-runner:dev".into()),
         name_prefix: "ferrobot-test-".into(),
-        snapshot_dir: Some(snapshots.path().to_owned()),
+        snapshot_store: Some(Arc::new(
+            object_store::local::LocalFileSystem::new_with_prefix(snapshots.path()).unwrap(),
+        )),
         ..DockerConfig::default()
     })
     .expect("docker client");
@@ -101,6 +104,9 @@ async fn container_lifecycle() {
     backend.stop(&h).await.expect("stop");
     assert_eq!(backend.state(&h).await.unwrap(), SandboxState::Stopped);
     backend.wake(&h).await.expect("wake");
+
+    warm_sleep_round_trip(&backend, &h).await;
+    backend.wake(&h).await.expect("wake after pause+stop");
     // state survives stop/wake (home volume)
     assert_eq!(backend.read_file(&h, &path).await.unwrap(), b"hi from host");
 
@@ -110,5 +116,87 @@ async fn container_lifecycle() {
         .delete_snapshot(&snap.id)
         .await
         .expect("delete snapshot");
-    assert_eq!(std::fs::read_dir(snapshots.path()).unwrap().count(), 0);
+    assert_eq!(
+        std::fs::read_dir(snapshots.path().join("snapshots"))
+            .unwrap()
+            .count(),
+        0
+    );
+}
+
+/// Warm sleep pauses in place; wake resumes; a paused container still stops cleanly.
+async fn warm_sleep_round_trip(backend: &DockerBackend, h: &ferrobot_sandbox::SandboxHandle) {
+    let warm = backend.sleep(h, SleepLevel::Warm).await.expect("pause");
+    assert_eq!(warm, SleepLevel::Warm);
+    assert_eq!(backend.state(h).await.unwrap(), SandboxState::Paused);
+    backend.wake(h).await.expect("resume");
+    assert_eq!(backend.state(h).await.unwrap(), SandboxState::Running);
+    backend
+        .sleep(h, SleepLevel::Warm)
+        .await
+        .expect("pause again");
+    backend.stop(h).await.expect("stop while paused");
+    assert_eq!(backend.state(h).await.unwrap(), SandboxState::Stopped);
+    assert_eq!(
+        backend
+            .sleep(h, SleepLevel::Warm)
+            .await
+            .expect("pause stopped"),
+        SleepLevel::Cold,
+        "a stopped container cannot be paused"
+    );
+}
+
+#[tokio::test]
+async fn archive_moves_the_sandbox_into_the_store_and_back() {
+    let store_dir = tempfile::tempdir().unwrap();
+    let backend = DockerBackend::connect(DockerConfig {
+        image: std::env::var("FERROBOT_TEST_IMAGE")
+            .unwrap_or_else(|_| "ferrobot-runner:dev".into()),
+        name_prefix: "ferrobot-test-".into(),
+        snapshot_store: Some(Arc::new(
+            object_store::local::LocalFileSystem::new_with_prefix(store_dir.path()).unwrap(),
+        )),
+        ..DockerConfig::default()
+    })
+    .expect("docker client");
+    let name = format!("arch{}", std::process::id());
+    let spec = SandboxSpec {
+        name: name.clone(),
+        env: BTreeMap::from([
+            ("FERROBOT_DAEMON_URL".into(), "http://127.0.0.1:9".into()),
+            ("FERROBOT_AGENT_TOKEN".into(), "test".into()),
+            ("FERROBOT_DRIVER".into(), "mock".into()),
+        ]),
+        labels: BTreeMap::new(),
+    };
+    let h = backend.create(&spec).await.expect("create");
+    let note = SandboxPath::parse("/home/node/kept.txt").unwrap();
+    backend
+        .write_file(&h, &note, b"survives the archive")
+        .await
+        .unwrap();
+
+    let level = backend
+        .sleep(&h, SleepLevel::Archived)
+        .await
+        .expect("archive");
+    assert_eq!(level, SleepLevel::Archived);
+    assert_eq!(backend.state(&h).await.unwrap(), SandboxState::Missing);
+    let archived = store_dir.path().join("archives").join(&name);
+    assert!(archived.join("image.tar").exists() && archived.join("home.tar").exists());
+
+    let h = backend.create(&spec).await.expect("restore from archive");
+    assert_eq!(backend.state(&h).await.unwrap(), SandboxState::Running);
+    assert_eq!(
+        backend.read_file(&h, &note).await.unwrap(),
+        b"survives the archive"
+    );
+    assert!(!archived.join("image.tar").exists(), "archive is consumed");
+
+    backend.destroy(&h, true).await.expect("destroy");
+    backend
+        .delete_archive(&name)
+        .await
+        .expect("no archive left is fine");
 }

@@ -29,7 +29,8 @@ with `scripts/seed-demo.sh`.
 ## Features
 
 - **One computer per agent.** Each agent gets a container with its own disk.
-  Idle agents go to sleep after `--idle-timeout` (default 15 min); a message,
+  Idle agents are paused after `--warm-after` (default 5 min, Docker) and
+  stopped after `--idle-timeout` (default 15 min); a message,
   a routine or an operator command wakes them. Crashed containers are
   restarted, and snapshots (root filesystem + home) can be taken and restored.
 - **Agents talk to each other** through an asynchronous mailbox with retries,
@@ -57,7 +58,8 @@ with `scripts/seed-demo.sh`.
 - **Model proxy:** with the Claude driver, sandboxes never see your
   `ANTHROPIC_API_KEY`; they call the daemon, which adds the key.
 - **Persistence:** agents, conversations, memory, routines, snapshots and
-  sleep state live in SQLite and survive daemon restarts.
+  sleep state live in SQLite and survive daemon restarts. Snapshot archives
+  go to the data dir, or to S3/R2 with `--storage-url s3://bucket/prefix`.
 - **Desktop app:** a thin Tauri v2 window over the `/v1` API with a sidebar,
   streaming chat, info panel and light/dark themes.
 
@@ -233,12 +235,36 @@ tool call with its result, resumes each agent's SDK session across turns and
 restarts, and supports interrupts. An agent's instructions are appended to the
 SDK's default system prompt.
 
-The daemon refuses to start with `--driver claude` and no key. The driver is
+Without `ANTHROPIC_API_KEY` the daemon still starts and warns: agents that
+use a model provider (below) work, agents on the default cannot reach a model.
+The Claude driver is
 covered by a contract test with SDK-typed fixtures
 (`runner/test/claude-contract.test.ts`) but has not been run against the live
 API in CI.
 
-Other useful flags: `--idle-timeout <secs>` (default 900 = 15 min, 0 = never sleep), `--timezone
+### Model providers
+
+The key icon in the sidebar (or `POST /v1/providers`) adds providers:
+Anthropic, OpenAI, Google Gemini, Amazon Bedrock and Google Vertex AI (Claude),
+OpenRouter, Ollama and any OpenAI-compatible endpoint. Each agent picks a
+provider and a model in its profile; agents without one use
+`ANTHROPIC_API_KEY`. Keys are stored in the OS keychain of the daemon's
+machine (`--secret-store file` writes a plaintext `secrets.json` for headless
+CI) and never leave the daemon: the proxy adds them upstream. Bedrock uses a
+Bedrock API key; Vertex uses the daemon host's `gcloud` login. A `codex`
+provider runs OpenAI's Codex harness in the sandbox (`codex app-server`) with
+an OpenAI API key, or with a ChatGPT sign-in done by the `codex` CLI on the
+daemon's computer (device code; the tokens stay there and the proxy adds
+them). The runner image does not ship `codex` yet. Claude-based
+providers run on the Claude Agent SDK; the others on the runner's
+OpenAI-compatible driver (bash, file and ferrobot tools). Subscription logins
+are not supported, only API keys.
+
+Other useful flags: `--warm-after <secs>` (default 300 = 5 min: pause the
+sandbox, memory kept, resumes in place; 0 = never), `--idle-timeout <secs>`
+(default 900 = 15 min: stop it, disk kept; 0 = never sleep), `--archive-after
+<secs>` (Docker: move a sleeping sandbox to `--storage-url`, restored on wake;
+default 0 = off), `--timezone
 <IANA zone>` (default for routines), `--turn-timeout <secs>`.
 
 **Without Docker** (development only, no isolation): build the runner with
@@ -342,7 +368,9 @@ cargo test -p ferrobot-daemon  --features docker-tests --test e2e -- --ignored
 
 - The `claude` driver has not been run against the live API.
 - `SpritesBackend` returns `NotImplemented` for every operation.
-- Snapshots and idle sleep are Docker-only (the local backend has no snapshots).
+- Snapshots are Docker-only (the local backend copies directories but cannot
+  restore). Idle sleep works on every backend; warm sleep (pause) only on
+  Docker, other backends stay awake until the cold timeout.
 
 ## Roadmap
 

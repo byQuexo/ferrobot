@@ -70,12 +70,15 @@ fn every_routed_path_is_documented() {
         "/v1/agents/{id}/snapshots",
         "/v1/agents/{id}/snapshots/{sid}",
         "/v1/agents/{id}/snapshots/{sid}/restore",
+        "/v1/providers",
+        "/v1/providers/{id}",
+        "/v1/providers/{id}/chatgpt-login",
     ] {
         assert!(documented.contains(&path), "{path} missing from OpenAPI");
     }
     assert_eq!(
         documented.len(),
-        25,
+        28,
         "undocumented extra paths: {documented:?}"
     );
 }
@@ -123,6 +126,8 @@ fn ui_events_validate_against_schema() {
             hue: 150,
         }),
         created_by: Some(AgentId::new()),
+        provider_id: Some(uuid::Uuid::nil()),
+        model: Some("gpt-test".into()),
         status: AgentStatus::Running,
         backend: Some("docker".into()),
         sandbox_id: Some("ferrobot-alice".into()),
@@ -192,4 +197,30 @@ fn question_card_schema_accepts_cards_and_answers() {
     assert!(!v.is_valid(
         &json!({"version": 1, "card": {"questions": [{"prompt": "x", "kind": "nope"}]}})
     ));
+}
+
+#[test]
+fn every_schema_reference_resolves() {
+    fn refs(v: &serde_json::Value, out: &mut Vec<String>) {
+        match v {
+            serde_json::Value::Object(m) => {
+                if let Some(r) = m.get("$ref").and_then(|r| r.as_str()) {
+                    out.push(r.to_owned());
+                }
+                m.values().for_each(|v| refs(v, out));
+            }
+            serde_json::Value::Array(a) => a.iter().for_each(|v| refs(v, out)),
+            _ => {}
+        }
+    }
+    let doc = serde_json::to_value(spec::openapi()).unwrap();
+    let mut found = Vec::new();
+    refs(&doc, &mut found);
+    for r in found {
+        let name = r.trim_start_matches("#/components/schemas/");
+        assert!(
+            doc["components"]["schemas"].get(name).is_some(),
+            "dangling {r}"
+        );
+    }
 }

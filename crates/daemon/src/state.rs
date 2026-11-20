@@ -27,8 +27,15 @@ pub struct Settings {
     pub model: Option<String>,
     /// A turn running longer than this is interrupted and retried.
     pub turn_timeout: Duration,
-    /// Sleep an agent's sandbox after this long without activity (`None`: never).
+    /// Pause an agent's sandbox (warm sleep) after this long without activity
+    /// (`None`: never).
+    pub warm_timeout: Option<Duration>,
+    /// Stop an agent's sandbox (cold sleep) after this long without activity
+    /// (`None`: never).
     pub idle_timeout: Option<Duration>,
+    /// Move a sleeping agent's sandbox to object storage after this long
+    /// without activity (`None`: never).
+    pub archive_timeout: Option<Duration>,
     /// How often the supervisor checks idle and crashed sandboxes.
     pub supervisor_interval: Duration,
     /// Default IANA time zone for new routines.
@@ -41,6 +48,16 @@ pub struct Settings {
     pub max_agents: usize,
     /// How long a `create_agent` approval card waits for the operator.
     pub approval_timeout: Duration,
+    /// Where provider API keys live.
+    pub secrets: crate::secrets::SecretStore,
+    /// Prints a Google access token for Vertex providers.
+    pub gcloud_token_cmd: Vec<String>,
+    /// The daemon host's `codex` binary, for `ChatGPT` sign-in.
+    pub codex_bin: String,
+    /// One Codex home per `ChatGPT`-signed-in provider lives below this.
+    pub codex_home: std::path::PathBuf,
+    /// Upstream for Codex providers signed in with `ChatGPT`.
+    pub chatgpt_upstream: String,
 }
 
 impl Settings {
@@ -53,12 +70,21 @@ impl Settings {
             anthropic_upstream: "https://api.anthropic.com".into(),
             model: None,
             turn_timeout: Duration::from_secs(600),
+            warm_timeout: None,
             idle_timeout: None,
+            archive_timeout: None,
             supervisor_interval: Duration::from_secs(15),
             default_timezone: "UTC".into(),
             api_token: None,
             max_agents: crate::agents::DEFAULT_MAX_AGENTS,
             approval_timeout: crate::agents::DEFAULT_APPROVAL_TIMEOUT,
+            secrets: crate::secrets::SecretStore::default(),
+            gcloud_token_cmd: ["gcloud", "auth", "print-access-token"]
+                .map(String::from)
+                .to_vec(),
+            codex_bin: "codex".into(),
+            codex_home: std::env::temp_dir().join("ferrobot-codex"),
+            chatgpt_upstream: crate::codex::CHATGPT_CODEX_UPSTREAM.into(),
         }
     }
 }
@@ -106,6 +132,10 @@ pub struct AppState {
     pub creating: Arc<tokio::sync::Mutex<()>>,
     /// Approval cards waiting for the operator, by `question` event id.
     pub approvals: Arc<Mutex<HashMap<i64, oneshot::Sender<bool>>>>,
+    /// Cached Google access token for Vertex providers and when it was minted.
+    pub gcloud_token: Arc<tokio::sync::Mutex<crate::proxy::CachedToken>>,
+    /// `ChatGPT` sign-ins and cached tokens of Codex providers.
+    pub codex: Arc<tokio::sync::Mutex<crate::codex::CodexState>>,
 }
 
 impl AppState {
@@ -122,6 +152,8 @@ impl AppState {
             answers: Arc::default(),
             creating: Arc::default(),
             approvals: Arc::default(),
+            gcloud_token: Arc::default(),
+            codex: Arc::default(),
         }
     }
 

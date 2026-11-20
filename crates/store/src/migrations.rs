@@ -147,6 +147,21 @@ const MIGRATIONS: &[&str] = &[
     r"
     ALTER TABLE agents ADD COLUMN created_by TEXT NOT NULL DEFAULT 'operator';
     ",
+    // v7: model providers; agents pick one (NULL = the daemon's ANTHROPIC_API_KEY) and a model
+    r"
+    CREATE TABLE providers (
+        id            TEXT PRIMARY KEY,
+        name          TEXT NOT NULL UNIQUE,
+        kind          TEXT NOT NULL,
+        base_url      TEXT,
+        region        TEXT,
+        project       TEXT,
+        default_model TEXT,
+        created_at    TEXT NOT NULL
+    );
+    ALTER TABLE agents ADD COLUMN provider_id TEXT REFERENCES providers(id);
+    ALTER TABLE agents ADD COLUMN model TEXT;
+    ",
 ];
 
 pub(crate) fn run(conn: &mut Connection) -> Result<(), StoreError> {
@@ -203,6 +218,20 @@ mod tests {
             created_by, "operator",
             "existing agents count as operator-created"
         );
+        let (provider, model): (Option<String>, Option<String>) = conn
+            .query_row("SELECT provider_id, model FROM agents", [], |r| {
+                Ok((r.get(0)?, r.get(1)?))
+            })
+            .unwrap();
+        assert_eq!(
+            (provider, model),
+            (None, None),
+            "existing agents keep the daemon's default model"
+        );
+        let providers: i64 = conn
+            .query_row("SELECT COUNT(*) FROM providers", [], |r| r.get(0))
+            .unwrap();
+        assert_eq!(providers, 0);
         let version: i64 = conn
             .query_row("PRAGMA user_version", [], |r| r.get(0))
             .unwrap();

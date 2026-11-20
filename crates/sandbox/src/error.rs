@@ -18,8 +18,12 @@ pub enum SandboxError {
     },
     #[error("docker: {0}")]
     Docker(#[from] bollard::errors::Error),
+    #[error("firecracker API {status}: {fault_message}")]
+    Firecracker { status: u16, fault_message: String },
     #[error("http: {0}")]
     Http(#[from] reqwest::Error),
+    #[error("object store: {0}")]
+    Storage(#[from] object_store::Error),
     #[error("io: {0}")]
     Io(#[from] std::io::Error),
     #[error("{0}")]

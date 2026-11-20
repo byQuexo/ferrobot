@@ -1,12 +1,12 @@
 //! Each agent's computer: state, sleep/wake, snapshots, exec.
 
 use axum::Json;
-use axum::extract::{Path, State};
+use axum::extract::{Path, Query, State};
 use axum::http::StatusCode;
-use ferrobot_sandbox::{ExecOutput, ExecRequest, SandboxState};
+use ferrobot_sandbox::{ExecOutput, ExecRequest, SandboxState, SleepLevel};
 use ferrobot_store::SnapshotRecord;
 use serde::{Deserialize, Serialize};
-use utoipa::ToSchema;
+use utoipa::{IntoParams, ToSchema};
 
 use super::{ApiResult, parse_id};
 use crate::AppState;
@@ -24,8 +24,12 @@ pub(crate) struct SandboxInfo {
     state: Option<SandboxState>,
     presence: Presence,
     connected: bool,
-    /// Seconds since the last activity; sleeps when it reaches `idle_timeout_s`.
+    /// Seconds since the last activity; pauses at `warm_after_s`, stops at
+    /// `idle_timeout_s`.
     idle_s: u64,
+    /// Warm sleep (pause) after this long idle; `null`: never.
+    warm_after_s: Option<u64>,
+    /// Cold sleep (stop) after this long idle; `null`: never.
     idle_timeout_s: Option<u64>,
     /// Whether the backend can snapshot and restore.
     snapshots_supported: bool,
@@ -50,26 +54,41 @@ pub(crate) async fn sandbox_info(
         presence: presence(&agent, connected, state.hub.is_working(agent.id)),
         connected,
         idle_s: state.hub.last_activity(agent.id).elapsed().as_secs(),
+        warm_after_s: state.settings.warm_timeout.map(|d| d.as_secs()),
         idle_timeout_s: state.settings.idle_timeout.map(|d| d.as_secs()),
-        snapshots_supported: state.backend.kind() == "docker",
+        snapshots_supported: state.backend.supports_snapshots(),
         backend: agent.backend,
         sandbox_id: agent.sandbox_id,
         state: live,
     }))
 }
 
-/// Puts the agent to sleep (stops the sandbox, keeps its disk). A new
-/// message or `wake` starts it again.
+#[derive(Debug, Deserialize, IntoParams)]
+#[into_params(parameter_in = Query)]
+pub(crate) struct StopQuery {
+    /// `cold` (default) stops the sandbox; `warm` pauses it, keeping memory;
+    /// `archived` moves it to object storage (a wake restores it). Backends
+    /// that cannot pause or archive answer 501.
+    #[serde(default)]
+    #[param(value_type = Option<SleepLevel>)]
+    level: Option<SleepLevel>,
+}
+
+/// Puts the agent to sleep, keeping its disk. A new message or `wake`
+/// starts (or resumes) it again.
 #[utoipa::path(post, path = "/v1/agents/{id}/stop", tag = "sandbox",
-    params(("id" = String, Path, description = "Agent id (UUID)")),
+    params(("id" = String, Path, description = "Agent id (UUID)"), StopQuery),
     responses((status = 204, description = "Sleeping"),
         (status = 404, description = "Unknown agent", body = ErrorBody),
+        (status = 501, description = "The backend cannot pause or archive", body = ErrorBody),
         (status = 502, description = "Sandbox backend error", body = ErrorBody)))]
 pub(crate) async fn stop(
     State(state): State<AppState>,
     Path(id): Path<String>,
+    Query(q): Query<StopQuery>,
 ) -> Result<StatusCode, ApiError> {
-    lifecycle::sleep(&state, parse_id(&id)?, "operator").await?;
+    let level = q.level.unwrap_or(SleepLevel::Cold);
+    lifecycle::sleep(&state, parse_id(&id)?, "operator", level).await?;
     Ok(StatusCode::NO_CONTENT)
 }
 

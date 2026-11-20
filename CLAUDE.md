@@ -29,13 +29,17 @@ a versioned HTTP/WebSocket API (`/v1`).
 crates/core      domain types (Agent, mail, mentions, question cards, runner protocol)
 crates/store     SQLite (rusqlite, bundled): agents, mailbox, events, memory (FTS),
                  routines, snapshots, forward-only migrations
-crates/sandbox   SandboxBackend trait + docker (bollard), local, sprites backends
+crates/sandbox   SandboxBackend trait + docker (bollard), local, firecracker
+                 (API client; boot untested, needs KVM), sprites backends
 crates/mcp       rmcp Streamable-HTTP server: the agents' tools (send_message,
                  ask_user, create_agent, remember, ...), per-agent token auth
 crates/daemon    ferrobotd: axum UI API (/v1), agent API (/runner/ws, /mcp, /model),
                  lifecycle, supervisor, scheduler, model proxy, OpenAPI (utoipa)
 runner/          TypeScript runner inside each sandbox: drives the model
-                 (drivers/claude.ts via Claude Agent SDK, drivers/mock.ts)
+                 (drivers/claude.ts via Claude Agent SDK, drivers/openai.ts for
+                 OpenAI-compatible providers, drivers/codex.ts via `codex
+                 app-server`, drivers/acp.ts for ACP agents (Gemini CLI),
+                 drivers/mock.ts)
 apps/desktop/    Preact + Vite UI in a Tauri shell (own Cargo workspace)
 protocol/        generated OpenAPI + JSON Schemas, fixtures, README (the contract)
 scripts/         seed-demo.sh, smoke-docker.sh
@@ -65,6 +69,12 @@ Principles:
 - `crates/daemon/src/state.rs` — `AppState`, `Settings`, `UiEvent`.
 - `crates/daemon/src/spec.rs` — OpenAPI + schema generation.
 - `crates/daemon/src/proxy.rs` — model proxy; `auth.rs` — operator token.
+- `crates/daemon/src/api/providers.rs`, `secrets.rs` — model providers and
+  their keychain-stored keys; `crates/core/src/provider.rs` — provider kinds.
+- `crates/daemon/src/codex.rs` — host-side `codex app-server`: ChatGPT
+  sign-in and tokens for `codex` providers (tokens never enter a sandbox).
+- `crates/daemon/src/storage.rs` — object storage (`object_store`) for snapshot
+  archives, `--storage-url` (default: the data dir; `s3://` for S3/R2).
 - `crates/daemon/src/lifecycle.rs`, `supervisor.rs`, `scheduler.rs`, `runner_ws.rs`.
 - `crates/mcp/src/tools.rs` — MCP tools; `crates/mcp/src/lib.rs` — `MailboxNotifier`.
 - `crates/store/src/migrations.rs` — schema migrations.
@@ -112,6 +122,7 @@ docker build -f runner/Dockerfile -t ferrobot-runner:dev .           # runner im
 cargo test -p ferrobot-sandbox --features docker-tests --test docker
 cargo test -p ferrobot-daemon --features docker-tests --test e2e -- --ignored
 ./scripts/smoke-docker.sh            # real ferrobotd + Docker + mock driver
+sudo scripts/firecracker/build-rootfs.sh   # Linux only; see scripts/firecracker/README.md
 ```
 
 Runner (`runner/`): `npm ci && npm run lint && npm run typecheck && npm test && npm run build`
@@ -132,7 +143,7 @@ daemon, `docker ps -a` must be empty of ferrobot containers.
 ## Migrations
 
 - `crates/store/src/migrations.rs`, tracked with `PRAGMA user_version`.
-- Forward-only, numbered v1..v6 (v6: `agents.created_by`). Append a new entry
+- Forward-only, numbered v1..v7 (v7: `providers`, `agents.provider_id`/`model`). Append a new entry
   with a `// vN: ...` comment; **never edit or reorder existing ones**.
 - Every migration gets a test (upgrade an old DB, check defaults of existing
   rows). New columns on existing tables need a default.
@@ -141,10 +152,12 @@ daemon, `docker ps -a` must be empty of ferrobot containers.
 
 ## Must not break
 
-- **Model key stays in the daemon.** `ANTHROPIC_API_KEY` is read by
-  `ferrobotd` only. Sandboxes reach the model through `/model` with their
-  agent token; the proxy swaps in the real key. Never pass the key into a
-  sandbox, env, log or event.
+- **Model keys stay in the daemon.** `ANTHROPIC_API_KEY` and provider keys
+  (OS keychain via `secrets.rs`, never SQLite) are read by `ferrobotd` only.
+  Sandboxes reach the model through `/model` with their agent token; the
+  proxy picks the upstream from the agent's provider and swaps in the real
+  key. Never pass a key into a sandbox, env, log, event or API response.
+  No subscription (OAuth) logins.
 - **Operator token on `/v1`.** Every UI route requires
   `Authorization: Bearer <token>` (`FERROBOT_API_TOKEN` or
   `<data dir>/api-token`); only `/v1/health` is open. Keep the UI listener on
@@ -163,16 +176,28 @@ daemon, `docker ps -a` must be empty of ferrobot containers.
   time out tool calls earlier).
 - `docs/screenshots/light-conversation.png` shows a raw mock-driver bubble
   (`ask Which day ...`).
-- Rebuild the runner image (`runner/src/drivers/claude.ts` prompt text changed).
-- Docker e2e and `smoke-docker.sh` not re-run after 024f12f.
+- Docker e2e, `smoke-docker.sh` and the Docker sandbox test passed on
+  `feature/firecracker-client` (macOS, Docker Desktop); runner image rebuilt.
+- Firecracker: no microVM has booted; every `TODO(kvm)` needs a KVM host.
+- No provider has been run against its real upstream (no keys used).
+- Codex 0.166.0 is in the runner image; a live Codex turn ran against Ollama's
+  Responses API, not against OpenAI (no key in the environment).
+- The Claude driver ran in Docker against a fake Anthropic upstream only; a
+  real Anthropic call still needs a key.
+- The provider dialogs were checked in a browser against a real daemon, not in
+  the Tauri window; the real OS keychain path has never run.
 - A live Claude run (`--driver claude`) has never been tested.
 
 ## Next up: Firecracker
 
 Roadmap: https://cursor.com/canvas/store-0b9dda1f-693e-4629-9899-c87852755bdc/ad9f72df-2257-4c5f-ba31-48368896c60a
+Status per phase: `docs/progress.md`; assumptions: `docs/decisions.md`.
 
-1. Storage layer on `object_store` (disks/snapshots off the host).
-2. Firecracker spike on a KVM host.
-3. Firecracker backend behind the `SandboxBackend` trait.
+1. ~~Storage layer on `object_store`~~ (done: snapshot archives, `--storage-url`).
+2. Firecracker spike on a KVM host (API client, boot sequence, init and
+   rootfs script exist; never booted).
+3. Firecracker backend behind the `SandboxBackend` trait (written, `TODO(kvm)`:
+   process spawn, TAP, snapshots; exec/files via the vsock guest agent,
+   tested only against a mock).
 4. Jailer for isolation.
-5. Warm/cold sleep with a `SleepLevel` enum.
+5. ~~Warm/cold sleep with a `SleepLevel` enum~~ (done for Docker: pause/stop).

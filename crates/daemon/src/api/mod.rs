@@ -4,6 +4,7 @@
 pub(crate) mod agents;
 pub(crate) mod chat;
 pub(crate) mod memory;
+pub(crate) mod providers;
 pub(crate) mod routines;
 pub(crate) mod sandbox;
 pub(crate) mod ws;
@@ -73,6 +74,18 @@ pub fn router() -> Router<AppState> {
             "/v1/routines/{rid}",
             axum::routing::patch(routines::update_routine).delete(routines::delete_routine),
         )
+        .route(
+            "/v1/providers",
+            get(providers::list_providers).post(providers::create_provider),
+        )
+        .route(
+            "/v1/providers/{id}",
+            axum::routing::patch(providers::update_provider).delete(providers::delete_provider),
+        )
+        .route(
+            "/v1/providers/{id}/chatgpt-login",
+            get(providers::chatgpt_login_status).post(providers::start_chatgpt_login),
+        )
         .route("/v1/routines/{rid}/run", post(routines::run_routine))
         .route("/v1/routines/{rid}/runs", get(routines::list_runs))
         .route(
@@ -117,7 +130,8 @@ pub(crate) struct Health {
     version: &'static str,
     backend: &'static str,
     driver: String,
-    /// Whether real model calls are possible (driver `claude` with a key).
+    /// Whether agents make real model calls through the proxy (any driver
+    /// but `mock`); each still needs a provider or `ANTHROPIC_API_KEY`.
     model_proxy: bool,
     /// Seconds of inactivity before a sandbox sleeps; null when disabled.
     idle_timeout_s: Option<u64>,
@@ -135,7 +149,7 @@ pub(crate) async fn health(State(state): State<AppState>) -> Json<Health> {
         version: env!("CARGO_PKG_VERSION"),
         backend: state.backend.kind(),
         driver: s.driver.clone(),
-        model_proxy: s.anthropic_api_key.is_some(),
+        model_proxy: s.driver != "mock",
         idle_timeout_s: s.idle_timeout.map(|d| d.as_secs()),
         timezone: s.default_timezone.clone(),
     })
