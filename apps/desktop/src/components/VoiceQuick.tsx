@@ -64,9 +64,10 @@ export function VoiceQuick(props: {
             value={mine}
             onChange={(e) => {
               const v = e.currentTarget.value;
-              const voices = { ...(view.agent_voices ?? {}) };
+              const voices = Object.fromEntries(
+                Object.entries(view.agent_voices ?? {}).filter(([agent]) => agent !== id),
+              );
               if (v) voices[id] = v;
-              else delete voices[id];
               void save({ agent_voices: voices });
             }}
           >

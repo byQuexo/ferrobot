@@ -35,4 +35,6 @@ export default tseslint.config(
       ],
     },
   },
+  // Vite reads its config from a default export.
+  { files: ["vite.config.ts"], rules: { "no-restricted-syntax": "off" } },
 );

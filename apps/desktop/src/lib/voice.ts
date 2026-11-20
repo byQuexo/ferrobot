@@ -250,6 +250,7 @@ export async function startLive(
     );
   };
   // ScriptProcessor needs no module file, which the app's CSP would block for an AudioWorklet.
+  /* eslint-disable @typescript-eslint/no-deprecated -- see the line above */
   const source = ctx.createMediaStreamSource(stream);
   const proc = ctx.createScriptProcessor(rate >= 32000 ? 8192 : 4096, 1, 1);
   proc.onaudioprocess = (e) => {
@@ -258,12 +259,14 @@ export async function startLive(
   };
   source.connect(proc);
   proc.connect(ctx.destination);
+  /* eslint-enable @typescript-eslint/no-deprecated */
 
   return {
     mute: (on) => {
       muted = on;
     },
     stop: async (commit) => {
+      // eslint-disable-next-line @typescript-eslint/no-deprecated -- ScriptProcessor, see above
       proc.onaudioprocess = null;
       source.disconnect();
       proc.disconnect();
