@@ -42,7 +42,7 @@ runner/          TypeScript runner inside each sandbox: drives the model
                  drivers/mock.ts)
 apps/desktop/    Preact + Vite UI in a Tauri shell (own Cargo workspace)
 protocol/        generated OpenAPI + JSON Schemas, fixtures, README (the contract)
-scripts/         seed-demo.sh, smoke-docker.sh
+scripts/         seed-demo.sh, smoke-docker.sh, smoke-live.sh
 ```
 
 Principles:
@@ -127,6 +127,7 @@ docker build -f runner/Dockerfile -t ferrobot-runner:dev .           # runner im
 cargo test -p ferrobot-sandbox --features docker-tests --test docker
 cargo test -p ferrobot-daemon --features docker-tests --test e2e -- --ignored
 ./scripts/smoke-docker.sh            # real ferrobotd + Docker + mock driver
+ANTHROPIC_API_KEY=... ./scripts/smoke-live.sh   # real Claude + Ollama turns, key-leak check
 sudo scripts/firecracker/build-rootfs.sh   # Linux only; see scripts/firecracker/README.md
 ```
 
@@ -194,7 +195,8 @@ daemon, `docker ps -a` must be empty of ferrobot containers.
   real Anthropic call still needs a key.
 - The provider dialogs were checked in a browser against a real daemon, not in
   the Tauri window; the real OS keychain path has never run.
-- A live Claude run (`--driver claude`) has never been tested.
+- A live Claude run (`--driver claude`) has never been tested; neither has
+  Claude steering (`scripts/smoke-live.sh` covers the plain turn).
 
 ## Next up: Firecracker
 

@@ -473,3 +473,24 @@ store used for the run) or the daemon's own env.
 
 - Revocation against a real https server; Google itself (needs Tim's
   Workspace preview and OAuth client); the Settings page in the Tauri window.
+
+## Live smoke test (hardening pass, 2026-11-20)
+
+- **Runner image and Docker e2e: ran in CI only.** On every hardening PR
+  (#6 to #12) the "E2E (Docker backend)" job built `runner/Dockerfile` and
+  ran the sandbox Docker test (now with encrypted archives: header on disk,
+  no plaintext, wrong key refused, token from the container env) and the
+  daemon's Docker e2e; all green. Not run on Tim's Mac: Docker Desktop
+  stopped answering after the disk filled up and did not come back after a
+  restart.
+- **Real Claude turn: not run.** `ANTHROPIC_API_KEY` is not in this
+  session's environment, and the key must not go through the transcript.
+  `scripts/smoke-live.sh` runs it from Tim's own terminal.
+- **Ollama turn: not run.** Ollama is installed but was not running and has
+  no model pulled; the script needs `OLLAMA_MODEL` (default `qwen2.5:3b`).
+- **Key leak check: written, not yet run live.** `smoke-live.sh` counts
+  matches of the real key over the whole stream of: container config and
+  env, runtime env, root filesystem, home volume, container logs, daemon log
+  and data dir; a source that cannot be read fails the check. Self-tested
+  against known inputs (found, absent, unreadable, key at the end of a large
+  stream).
