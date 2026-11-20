@@ -877,9 +877,38 @@ slop, so polish mode: palette, accent, logo, layout and features stay.
   and `ask_user` cards (questions, not approvals, still go to the operator).
 - **Fails closed:** an unreadable `general` setting counts as off, so the
   card shows.
-- **Only `create_agent` today.** `Approval` has one kind and `request` is its
-  only caller, so there is no per-kind flag; a future approval kind decides
-  its own Auto mode behaviour.
+- **Only `create_agent`.** Each approval kind decides its own Auto mode
+  behaviour; `add_connector` (see Vault) always shows its card.
 - **Agent-facing text** stays true in both modes (the tool list is static per
   connection): the tool description and the Claude prompt say the operator
   approves unless Auto mode is on.
+
+## Vault and connector cards
+
+- **Vault is a view, not a new store.** Every key already lived in the OS
+  keychain under its owner (`provider:<id>`, the connector's token and OAuth
+  app, `voice:<provider>`). Settings, Vault lists them from what SQLite knows
+  (providers, connectors, voice providers) with presence only, and sets or
+  removes them through the existing routes plus `PUT /v1/voice/keys/{provider}`
+  (a voice key without switching the chosen provider). No migration, no
+  keychain moves, no new prompts. The key fields left Model providers,
+  Connectors and Voice. Named, reusable credentials were considered and
+  dropped: a migration, one keychain prompt per entry, and a reference an
+  agent could later point at another URL.
+- **`add_connector` binds the secret to its destination.** The card shows the
+  connector's name, full URL and host ("the token goes only to …") next to
+  the hidden field; approving creates exactly that connector with exactly
+  that token in one step. Agents never refer to stored secrets, so a
+  prompt-injected agent cannot ask for a token and send it elsewhere later.
+- **The secret skips the answer path.** It is a question of kind `secret`
+  (A2UI `TextField`, `obscured`), which only daemon cards carry: `normalize`
+  (used by `ask_user`) refuses it and the MCP schema hides it. The answer
+  route takes it out (`take_secret`) before `question_answered` is recorded,
+  broadcast or returned; the agent gets a plain outcome message.
+- **No waiting tool call.** Unlike `create_agent`, `add_connector` returns at
+  once and the outcome arrives as a message: the operator may need minutes to
+  fetch a token, and the card holds everything needed, so it still works
+  after a daemon restart. Auto mode never skips it (it takes a key).
+- **Given to the requester.** Approving assigns the new connector to the agent
+  that asked (the same path as `PUT /v1/agents/{id}/connectors`). OAuth
+  connectors are created signed out; the operator signs in under Connectors.

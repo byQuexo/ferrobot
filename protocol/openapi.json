@@ -3985,6 +3985,76 @@
         }
       }
     },
+    "/v1/voice/keys/{provider}": {
+      "put": {
+        "tags": [
+          "voice"
+        ],
+        "summary": "Stores or removes one speech provider's key without changing which provider is used.",
+        "operationId": "put_voice_key",
+        "parameters": [
+          {
+            "name": "provider",
+            "in": "path",
+            "description": "Speech provider",
+            "required": true,
+            "schema": {
+              "$ref": "#/components/schemas/VoiceProvider"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/VoiceKey"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/VoiceView"
+                }
+              }
+            }
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or wrong API token",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Unknown provider",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/v1/voice/live": {
       "post": {
         "tags": [
@@ -4478,6 +4548,38 @@
                 ]
               }
             }
+          },
+          {
+            "type": "object",
+            "description": "An agent wants to add a connector (`add_connector` tool). Approving creates it with the\ntoken typed into the card and gives it to the agent; the token only ever goes to `url`.",
+            "required": [
+              "name",
+              "url",
+              "auth",
+              "requester",
+              "kind"
+            ],
+            "properties": {
+              "name": {
+                "type": "string"
+              },
+              "url": {
+                "type": "string"
+              },
+              "auth": {
+                "$ref": "#/components/schemas/ConnectorAuth"
+              },
+              "requester": {
+                "$ref": "#/components/schemas/AgentId",
+                "description": "The agent that asked: it gets the connector and a message with the outcome."
+              },
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "add_connector"
+                ]
+              }
+            }
           }
         ],
         "description": "What an approval card asks the operator to allow; the decision goes to the waiting tool\ncall, not to the agent's mailbox."
@@ -4597,6 +4699,15 @@
             "format": "date-time"
           }
         }
+      },
+      "ConnectorAuth": {
+        "type": "string",
+        "description": "How a connector an agent proposes signs in (`add_connector` tool).",
+        "enum": [
+          "token",
+          "oauth",
+          "none"
+        ]
       },
       "ConnectorView": {
         "allOf": [
@@ -5683,7 +5794,8 @@
         "enum": [
           "single",
           "multi",
-          "text"
+          "text",
+          "secret"
         ]
       },
       "Routine": {
@@ -6677,6 +6789,18 @@
               "$ref": "#/components/schemas/ModelOption"
             },
             "description": "Text-to-speech models of the account (`ElevenLabs`); empty otherwise."
+          }
+        }
+      },
+      "VoiceKey": {
+        "type": "object",
+        "properties": {
+          "api_key": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "The new key; `null` removes it. Kept in the daemon's secret store; never returned."
           }
         }
       },

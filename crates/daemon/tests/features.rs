@@ -4354,3 +4354,137 @@ async fn usage_filters_groups_and_price_overrides() {
     assert_eq!(status, 200, "{by_provider}");
     assert_eq!(by_provider["totals"]["calls"], 1, "{by_provider}");
 }
+
+#[tokio::test]
+async fn agents_get_connectors_through_a_card_whose_token_they_never_see() {
+    use rmcp::model::CallToolRequestParams;
+    const TOKEN: &str = "tok-zebra-4471";
+    let (url, seen) = upstream_with(TOKEN, |_| axum::Router::new()).await;
+    let backend = Arc::new(StatefulBackend::default());
+    let d = start(backend.clone(), None, "127.0.0.1:0").await;
+    let ann = create(&d, json!({"name": "ann"})).await["id"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    // Auto mode skips agent cards, never one that takes a key.
+    let auto = Some(json!({"auto_mode": true}));
+    assert_eq!(http(&d.ui, "PUT", "/v1/settings", auto).await.0, 200);
+    let mut ui = d.state.ui.subscribe();
+
+    let as_ann = mcp_as(&d, backend.token("ann")).await;
+    let args = json!({"name": "gh", "url": url, "auth": "token", "reason": "Read the issues"});
+    let asked = call(&as_ann, "add_connector", args).await;
+    let qid = asked["question_id"].as_i64().unwrap();
+    assert_eq!(
+        http(&d.ui, "GET", "/v1/connectors", None).await.1,
+        json!([])
+    );
+    let card = events(&d, &ann)
+        .await
+        .into_iter()
+        .find(|e| e["id"] == qid)
+        .unwrap();
+    let questions = &card["payload"]["card"]["questions"];
+    let prompt = questions[0]["prompt"].as_str().unwrap();
+    assert!(prompt.contains(&url), "{prompt}");
+    assert!(prompt.contains("goes only to 127.0.0.1"), "{prompt}");
+    assert_eq!(questions[1]["kind"], "secret");
+
+    let path = format!("/v1/agents/{ann}/questions/{qid}/answer");
+    let answer = |token: Option<&str>| {
+        json!({"answers": [
+            {"question_id": "q1", "values": ["approve"]},
+            {"question_id": "token", "custom": token}]})
+    };
+    let (status, _) = http(&d.ui, "POST", &path, Some(answer(None))).await;
+    assert_eq!(status, 400, "approving needs the token");
+    let (status, answered) = http(&d.ui, "POST", &path, Some(answer(Some(TOKEN)))).await;
+    assert_eq!(status, 202, "{answered}");
+    let (status, _) = http(&d.ui, "POST", &path, Some(answer(Some(TOKEN)))).await;
+    assert_eq!(status, 409, "answered once");
+
+    // ann has the connector, and the token went to the URL on the card...
+    let (_, ids) = http(&d.ui, "GET", &format!("/v1/agents/{ann}/connectors"), None).await;
+    assert_eq!(ids.as_array().unwrap().len(), 1);
+    let tools = mcp_as(&d, backend.token("ann"))
+        .await
+        .list_all_tools()
+        .await
+        .unwrap();
+    assert!(
+        tools.iter().any(|t| t.name == "gh__list_agents"),
+        "{tools:?}"
+    );
+    assert!(seen.lock().unwrap().contains(&format!("Bearer {TOKEN}")));
+    let mail_now = mail(&d, &ann).await;
+    assert!(
+        mail_now.iter().any(|m| m["body"]
+            .as_str()
+            .unwrap()
+            .contains("added the connector \"gh\"")),
+        "{mail_now:?}"
+    );
+
+    // ...and nowhere else: not to the agent, an event, a message or the UI stream.
+    let mut seen_by_others = vec![
+        asked.to_string(),
+        answered.to_string(),
+        Value::Array(events(&d, &ann).await).to_string(),
+        Value::Array(mail_now).to_string(),
+    ];
+    loop {
+        match ui.try_recv() {
+            Ok(event) => seen_by_others.push(serde_json::to_string(&event).unwrap()),
+            Err(tokio::sync::broadcast::error::TryRecvError::Empty) => break,
+            Err(e) => panic!("ui stream: {e}"),
+        }
+    }
+    for text in seen_by_others {
+        assert!(!text.contains(TOKEN), "{text}");
+    }
+
+    // Agents cannot put a secret field on their own cards, nor reuse a name.
+    let secret_card = json!({"questions": [{"prompt": "Your key?", "kind": "secret"}]});
+    let request = CallToolRequestParams::new("ask_user")
+        .with_arguments(secret_card.as_object().cloned().unwrap());
+    assert!(as_ann.call_tool(request).await.is_err());
+    let taken = json!({"name": "gh", "url": url, "auth": "none"});
+    let request = CallToolRequestParams::new("add_connector")
+        .with_arguments(taken.as_object().cloned().unwrap());
+    assert!(as_ann.call_tool(request).await.is_err());
+
+    // Declined: nothing is created and ann hears so.
+    let args = json!({"name": "docs", "url": url, "auth": "none"});
+    let qid = call(&as_ann, "add_connector", args).await["question_id"]
+        .as_i64()
+        .unwrap();
+    assert_eq!(decide(&d, &ann, qid, "decline").await.0, 202);
+    let (_, all) = http(&d.ui, "GET", "/v1/connectors", None).await;
+    assert_eq!(all.as_array().unwrap().len(), 1, "{all}");
+    assert!(mail(&d, &ann).await.iter().any(|m| {
+        m["body"]
+            .as_str()
+            .unwrap()
+            .contains("declined adding the connector \"docs\"")
+    }));
+}
+
+#[tokio::test]
+async fn voice_keys_change_without_switching_the_provider() {
+    let d = start(Arc::new(StatefulBackend::default()), None, "127.0.0.1:0").await;
+    let (status, _) = put_voice(&d, json!({"provider": "elevenlabs"})).await;
+    assert_eq!(status, 200);
+    let key = |provider: &str, value: Value| {
+        let path = format!("/v1/voice/keys/{provider}");
+        let d = &d;
+        async move { http(&d.ui, "PUT", &path, Some(json!({ "api_key": value }))).await }
+    };
+    let (status, voice) = key("openrouter", json!("or-voice-key")).await;
+    assert_eq!(status, 200, "{voice}");
+    assert_eq!(voice["provider"], "elevenlabs");
+    assert_eq!(voice["providers"][1]["has_key"], true);
+    assert!(!voice.to_string().contains("or-voice-key"));
+    let (_, voice) = key("openrouter", Value::Null).await;
+    assert_eq!(voice["providers"][1]["has_key"], false);
+    assert_eq!(key("nope", json!("x")).await.0, 404);
+}

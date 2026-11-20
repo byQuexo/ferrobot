@@ -13,7 +13,7 @@ pub mod question;
 pub use agent::{
     Agent, AgentId, AgentName, AgentStatus, AvatarCharacter, CharacterBody, CharacterEyes,
 };
-pub use connector::Connector;
+pub use connector::{Connector, ConnectorAuth};
 pub use error::CoreError;
 pub use mail::{MailMessage, MailStatus, Sender};
 pub use provider::{Provider, ProviderKind, UpstreamAuth};

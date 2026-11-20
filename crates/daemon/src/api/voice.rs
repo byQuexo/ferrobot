@@ -3,7 +3,7 @@
 
 use axum::Json;
 use axum::body::{Body, Bytes};
-use axum::extract::State;
+use axum::extract::{Path, State};
 use axum::http::{HeaderMap, HeaderValue, StatusCode, header};
 use axum::response::Response;
 use ferrobot_core::{AgentId, MailMessage, Sender};
@@ -138,6 +138,38 @@ pub(crate) async fn put_voice(
             None => secrets.delete(provider.secret_key()).await?,
         }
     }
+    Ok(Json(view(&state, settings).await?))
+}
+
+#[derive(Debug, Deserialize, ToSchema)]
+pub(crate) struct VoiceKey {
+    /// The new key; `null` removes it. Kept in the daemon's secret store; never returned.
+    api_key: Option<String>,
+}
+
+/// Stores or removes one speech provider's key without changing which provider is used.
+#[utoipa::path(put, path = "/v1/voice/keys/{provider}", tag = "voice",
+    params(("provider" = VoiceProvider, Path, description = "Speech provider")),
+    request_body = VoiceKey,
+    responses((status = 200, body = VoiceView),
+        (status = 400, body = ErrorBody),
+        (status = 404, description = "Unknown provider", body = ErrorBody)))]
+pub(crate) async fn put_voice_key(
+    State(state): State<AppState>,
+    Path(provider): Path<String>,
+    Json(req): Json<VoiceKey>,
+) -> ApiResult<VoiceView> {
+    let provider: VoiceProvider = serde_json::from_value(serde_json::Value::String(provider))
+        .map_err(|_| ApiError::NotFound("unknown speech provider".into()))?;
+    let secrets = &state.settings.secrets;
+    match clean(req.api_key) {
+        Some(key) => {
+            check_key(&key)?;
+            secrets.set(provider.secret_key(), &key).await?;
+        }
+        None => secrets.delete(provider.secret_key()).await?,
+    }
+    let settings = load(&state).await?;
     Ok(Json(view(&state, settings).await?))
 }
 

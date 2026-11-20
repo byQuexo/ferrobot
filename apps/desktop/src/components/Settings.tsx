@@ -4,6 +4,7 @@ import {
   AudioLines,
   Bot,
   Brain,
+  Cpu,
   KeyRound,
   Monitor,
   Moon,
@@ -19,17 +20,19 @@ import type { ThemePref } from "../lib/theme.ts";
 import { ConnectorsSettings } from "./ConnectorsSettings.tsx";
 import { Memory } from "./InfoPanel.tsx";
 import { ProvidersSettings } from "./ProvidersSettings.tsx";
+import { VaultSettings } from "./VaultSettings.tsx";
 import { VoiceSettings } from "./VoiceSettings.tsx";
 import { IconButton, Switch } from "./ui.tsx";
 
 export type SettingsSection =
-  "providers" | "agents" | "connectors" | "memory" | "voice" | "appearance";
+  "providers" | "vault" | "agents" | "connectors" | "memory" | "voice" | "appearance";
 
 const SECTIONS: [SettingsSection, string, string, typeof KeyRound][] = [
+  ["providers", "Model providers", "The models your agents run on. Their keys live in Vault.", Cpu],
   [
-    "providers",
-    "Model providers",
-    "The models your agents run on. Keys stay in the keychain of the daemon’s computer.",
+    "vault",
+    "Vault",
+    "Every key in one place: model providers, connectors and voice. Kept in the keychain of the daemon’s computer; agents never see them.",
     KeyRound,
   ],
   ["agents", "Agents", "What agents may do without asking you.", Bot],
@@ -105,6 +108,9 @@ export function Settings(props: {
     "",
     KeyRound,
   ];
+  const vault = (): void => {
+    props.onSection("vault");
+  };
   return (
     <main class="settings" aria-label="Settings">
       <nav class="settings-nav" aria-label="Settings sections">
@@ -133,11 +139,12 @@ export function Settings(props: {
             <X size={18} />
           </IconButton>
         </header>
-        {props.section === "providers" && <ProvidersSettings />}
+        {props.section === "providers" && <ProvidersSettings onVault={vault} />}
+        {props.section === "vault" && <VaultSettings />}
         {props.section === "agents" && <AgentSettings />}
-        {props.section === "connectors" && <ConnectorsSettings />}
+        {props.section === "connectors" && <ConnectorsSettings onVault={vault} />}
         {props.section === "memory" && <Memory agent={null} />}
-        {props.section === "voice" && <VoiceSettings />}
+        {props.section === "voice" && <VoiceSettings onVault={vault} />}
         {props.section === "appearance" && (
           <div class="form">
             <span class="field">

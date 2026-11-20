@@ -1,5 +1,10 @@
 {
   "$defs": {
+    "AgentId": {
+      "description": "Stable, opaque identifier of an agent.",
+      "format": "uuid",
+      "type": "string"
+    },
     "Approval": {
       "description": "What an approval card asks the operator to allow; the decision goes to the waiting tool\ncall, not to the agent's mailbox.",
       "oneOf": [
@@ -27,6 +32,38 @@
             "kind"
           ],
           "type": "object"
+        },
+        {
+          "description": "An agent wants to add a connector (`add_connector` tool). Approving creates it with the\ntoken typed into the card and gives it to the agent; the token only ever goes to `url`.",
+          "properties": {
+            "auth": {
+              "$ref": "#/$defs/ConnectorAuth"
+            },
+            "kind": {
+              "enum": [
+                "add_connector"
+              ],
+              "type": "string"
+            },
+            "name": {
+              "type": "string"
+            },
+            "requester": {
+              "$ref": "#/$defs/AgentId",
+              "description": "The agent that asked: it gets the connector and a message with the outcome."
+            },
+            "url": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "name",
+            "url",
+            "auth",
+            "requester",
+            "kind"
+          ],
+          "type": "object"
         }
       ]
     },
@@ -46,6 +83,15 @@
         "label"
       ],
       "type": "object"
+    },
+    "ConnectorAuth": {
+      "description": "How a connector an agent proposes signs in (`add_connector` tool).",
+      "enum": [
+        "token",
+        "oauth",
+        "none"
+      ],
+      "type": "string"
     },
     "Question": {
       "description": "One question on a card.",
@@ -192,7 +238,8 @@
       "enum": [
         "single",
         "multi",
-        "text"
+        "text",
+        "secret"
       ],
       "type": "string"
     }

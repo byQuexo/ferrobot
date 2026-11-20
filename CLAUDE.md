@@ -81,7 +81,8 @@ Principles:
   a private temp `CODEX_HOME` per run; tokens never enter a sandbox).
 - `crates/daemon/src/connectors.rs`, `api/connectors.rs` — connectors: the daemon
   is the MCP client of remote MCP servers and lends their tools to assigned
-  agents through `/mcp` (tokens in the keychain, never in a sandbox);
+  agents through `/mcp` (tokens in the keychain, never in a sandbox), and the
+  `add_connector` approval card with its hidden token field;
   `oauth.rs` — their OAuth sign-in (rmcp's client, loopback callback).
 - `crates/daemon/src/voice.rs`, `api/voice.rs` — voice: speech and
   transcription for the operator's chat via ElevenLabs or OpenRouter (keys
@@ -211,6 +212,10 @@ daemon, `docker ps -a` must be empty of ferrobot containers.
 - **`FERROBOT_MAX_AGENTS`** (default 10) applies to `POST /v1/agents` and to
   `create_agent` (both through `daemon::agents::create`).
 - Question cards are answered at most once (`409` after).
+- **A secret typed into a card goes only to the URL on that card.** Only
+  daemon cards carry `secret` fields (`ask_user` refuses them); the answer
+  route strips the value before anything is recorded, broadcast or sent, and
+  agents can never refer to stored secrets.
 
 ## Open items
 

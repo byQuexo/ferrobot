@@ -973,3 +973,36 @@ store used for the run) or the daemon's own env.
 - Desktop unit test: the `agent_created` notice in `buildTimeline`.
 - Not tested: the Settings switch in a browser or the Tauri window; Auto mode
   with a real model calling `create_agent`.
+
+## Vault and connector cards (`feat/vault`)
+
+**Done**
+
+- Settings, Vault: every stored key in one place (provider keys, connector
+  tokens and OAuth client secrets, voice keys) with add, replace and remove;
+  the key fields left Model providers, Connectors and Voice, which link to
+  Vault. `PUT /v1/voice/keys/{provider}` sets a voice key without switching
+  the chosen provider. No migration.
+- MCP tool `add_connector` (`name`, `url`, `auth`: `token`/`oauth`/`none`,
+  `reason`): an approval card with the URL, the host the token goes to and,
+  for `token`, a hidden field. Approving creates the connector, stores the
+  token and gives it to the agent; the agent gets an outcome message (also on
+  decline). Auto mode never skips it. `ask_user` refuses secret fields and its
+  description says never to ask for keys.
+- Question cards: kind `secret` (daemon cards only), shown as a password
+  field on the last step; the answered card says "Saved in Vault". Card
+  prompts keep their line breaks. `protocol/` and the desktop types are
+  regenerated.
+
+**Tested**
+
+- Rust: `agents_get_connectors_through_a_card_whose_token_they_never_see`
+  (card in Auto mode, URL and host on the card, 400 without the token, 202,
+  409 on a second answer, the connector assigned, the token reaching the
+  upstream, and the token absent from the tool result, the answer, events,
+  messages and the UI event stream; secret fields refused in `ask_user`, a
+  taken name refused, decline creates nothing),
+  `voice_keys_change_without_switching_the_provider`, and the core unit test
+  `secret_fields_stay_out_of_agent_cards_and_answers`.
+- Not tested: a real model calling `add_connector`; the Vault and the card in
+  the Tauri window.

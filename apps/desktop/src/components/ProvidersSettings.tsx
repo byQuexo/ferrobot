@@ -1,6 +1,6 @@
 import type { JSX } from "preact";
 import { useEffect, useState } from "preact/hooks";
-import { KeyRound, LogIn, Plus, Trash2 } from "lucide-preact";
+import { LogIn, Plus, Trash2 } from "lucide-preact";
 
 import type { DeviceCode, LoginStatus, Provider, ProviderKind } from "../api.ts";
 import { useApp } from "../context.ts";
@@ -25,15 +25,12 @@ const KIND_HINTS: Partial<Record<ProviderKind, string>> = {
   vertex: "Uses the gcloud login on the daemon’s computer; no key needed.",
   ollama: "Talks to Ollama on the daemon’s computer (127.0.0.1:11434).",
   openai_compatible: "Any server with an OpenAI-style /chat/completions endpoint.",
-  codex: "Runs OpenAI’s Codex harness. Add an API key, or leave it empty and sign in with ChatGPT.",
+  codex: "Runs OpenAI’s Codex harness. Add an API key in Vault, or sign in with ChatGPT.",
   gemini_cli: "Runs Google’s Gemini CLI harness (over ACP) with a Gemini API key.",
 };
 
 // The daemon's own LOGIN_TIMEOUT in crates/daemon/src/codex.rs.
 const LOGIN_TIMEOUT_MS = 15 * 60_000;
-
-const optionalKey = (kind: ProviderKind): boolean =>
-  kind === "openai_compatible" || kind === "codex";
 
 /** Device-code sign-in with ChatGPT, done by the daemon host’s Codex. */
 function ChatgptLogin(props: { provider: Provider }): JSX.Element {
@@ -92,26 +89,22 @@ function ChatgptLogin(props: { provider: Provider }): JSX.Element {
   );
 }
 
-/** Fields a kind asks for. */
-function fieldsOf(kind: ProviderKind): {
-  key: boolean;
-  baseUrl: boolean;
-  region: boolean;
-  project: boolean;
-} {
+/** Whether a kind takes an API key (kept in Vault). */
+export const needsKey = (kind: ProviderKind): boolean => kind !== "vertex" && kind !== "ollama";
+
+/** Fields a kind asks for besides its key. */
+function fieldsOf(kind: ProviderKind): { baseUrl: boolean; region: boolean; project: boolean } {
   return {
-    key: kind !== "vertex" && kind !== "ollama",
     baseUrl: kind === "openai_compatible",
     region: kind === "bedrock" || kind === "vertex",
     project: kind === "vertex",
   };
 }
 
-const dotOf = (p: Provider): string =>
-  !fieldsOf(p.kind).key || p.has_key ? "p-awake" : "p-sleeping";
+const dotOf = (p: Provider): string => (!needsKey(p.kind) || p.has_key ? "p-awake" : "p-sleeping");
 
-/** Add, re-key and remove model providers (a settings section). Keys go to the daemon’s keychain and never come back. */
-export function ProvidersSettings(): JSX.Element {
+/** Add and remove model providers (a settings section); their keys live in Vault. */
+export function ProvidersSettings(props: { onVault: () => void }): JSX.Element {
   const { client, toast } = useApp();
   const [providers, setProviders] = useState<Provider[]>([]);
   const [kind, setKind] = useState<ProviderKind>("openai");
@@ -120,8 +113,6 @@ export function ProvidersSettings(): JSX.Element {
   const [region, setRegion] = useState("");
   const [project, setProject] = useState("");
   const [model, setModel] = useState("");
-  const [key, setKey] = useState("");
-  const [rekey, setRekey] = useState<{ id: string; key: string } | null>(null);
   const [adding, setAdding] = useState(false);
   const [busy, setBusy] = useState(false);
   const fields = fieldsOf(kind);
@@ -152,10 +143,8 @@ export function ProvidersSettings(): JSX.Element {
         region: opt(region, fields.region),
         project: opt(project, fields.project),
         default_model: opt(model, true),
-        api_key: opt(key, fields.key),
       });
       setName("");
-      setKey("");
       setModel("");
       setAdding(false);
     });
@@ -177,23 +166,14 @@ export function ProvidersSettings(): JSX.Element {
                 <span class="muted small">
                   {KIND_LABELS[p.kind]}
                   {p.default_model ? ` · ${p.default_model}` : ""}
-                  {fieldsOf(p.kind).key
-                    ? p.has_key
-                      ? " · key stored"
-                      : " · no key"
-                    : " · no key needed"}
+                  {!needsKey(p.kind) ? " · no key needed" : p.has_key ? " · key in Vault" : " · "}
+                  {needsKey(p.kind) && !p.has_key && (
+                    <button type="button" class="text-link" onClick={props.onVault}>
+                      add its key in Vault
+                    </button>
+                  )}
                 </span>
               </div>
-              {fieldsOf(p.kind).key && (
-                <IconButton
-                  label={`Replace the key of ${p.name}`}
-                  onClick={() => {
-                    setRekey({ id: p.id, key: "" });
-                  }}
-                >
-                  <KeyRound size={16} />
-                </IconButton>
-              )}
               <IconButton
                 label={`Delete ${p.name}`}
                 tone="danger"
@@ -203,31 +183,6 @@ export function ProvidersSettings(): JSX.Element {
                 <Trash2 size={16} />
               </IconButton>
               {p.kind === "codex" && !p.has_key && <ChatgptLogin provider={p} />}
-              {rekey?.id === p.id && (
-                <form
-                  class="provider-rekey"
-                  onSubmit={(e) => {
-                    e.preventDefault();
-                    void run(async () => {
-                      await client.updateProvider(p.id, { api_key: rekey.key.trim() || null });
-                      setRekey(null);
-                    });
-                  }}
-                >
-                  <input
-                    type="password"
-                    autoComplete="off"
-                    placeholder="New API key (empty removes it)"
-                    value={rekey.key}
-                    onInput={(e) => {
-                      setRekey({ id: p.id, key: e.currentTarget.value });
-                    }}
-                  />
-                  <Button small type="submit" disabled={busy}>
-                    Save key
-                  </Button>
-                </form>
-              )}
             </li>
           ))}
         </ul>
@@ -302,22 +257,6 @@ export function ProvidersSettings(): JSX.Element {
               Default model
               <ModelPicker kind={kind} value={model} placeholder="None" onChange={setModel} />
             </label>
-            {fields.key && (
-              <label>
-                API key{optionalKey(kind) ? " (optional)" : ""}
-                <input
-                  type="password"
-                  autoComplete="off"
-                  value={key}
-                  onInput={(e) => {
-                    setKey(e.currentTarget.value);
-                  }}
-                />
-                <span class="hint">
-                  Stored in the keychain of the daemon’s computer. Agents never see it.
-                </span>
-              </label>
-            )}
             <div class="form-actions">
               <Button variant="primary" disabled={busy || !name.trim()} onClick={() => void add()}>
                 Add provider

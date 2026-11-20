@@ -1,5 +1,7 @@
 use ferrobot_core::question::{QUESTION_CARD_VERSION, QuestionCard, QuestionEvent};
-use ferrobot_core::{Agent, AgentId, AgentName, AvatarCharacter, MailMessage, Sender, mention};
+use ferrobot_core::{
+    Agent, AgentId, AgentName, AvatarCharacter, ConnectorAuth, MailMessage, Sender, mention,
+};
 use ferrobot_store::StoreError;
 use rmcp::handler::server::tool::{Extension, ToolCallContext};
 use rmcp::handler::server::wrapper::{Json, Parameters};
@@ -12,7 +14,8 @@ use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
 use crate::{
-    AgentRequest, AgentRequestOutcome, Caller, MAX_MEMORY_KEY_BYTES, MAX_MESSAGE_BYTES, McpState,
+    AgentRequest, AgentRequestOutcome, Caller, ConnectorRequest, MAX_MEMORY_KEY_BYTES,
+    MAX_MESSAGE_BYTES, McpState,
 };
 
 type ToolResult<T> = Result<Json<T>, ErrorData>;
@@ -148,6 +151,20 @@ pub struct CreateAgentResult {
 }
 
 #[derive(Debug, Deserialize, JsonSchema)]
+pub struct AddConnectorArgs {
+    /// 1-16 chars, lowercase `a-z0-9-`, starts with a letter; prefixes its tools (`github__...`).
+    pub name: String,
+    /// The MCP server's Streamable HTTP endpoint, e.g. `https://api.githubcopilot.com/mcp/`.
+    pub url: String,
+    /// `token`: the operator types a token into the card. `oauth`: they sign in under Settings
+    /// after adding it. `none`: no sign-in.
+    pub auth: ConnectorAuth,
+    /// One line on what you need it for, shown on the card.
+    #[serde(default)]
+    pub reason: String,
+}
+
+#[derive(Debug, Deserialize, JsonSchema)]
 pub struct ShareFileArgs {
     /// The file on your computer: relative to your workspace (`plan.md`),
     /// below your home (`~/out/report.html`) or absolute.
@@ -264,7 +281,7 @@ fn card_text(card: &QuestionCard) -> String {
         let _ = write!(out, "\n{}. {}", n + 1, q.prompt);
         let labels: Vec<&str> = q.choices.iter().map(|c| c.label.as_str()).collect();
         match q.kind {
-            QuestionKind::Text => {}
+            QuestionKind::Text | QuestionKind::Secret => {}
             QuestionKind::Single => {
                 let _ = write!(out, "\n   Pick one: {}", labels.join(" / "));
             }
@@ -514,7 +531,8 @@ impl FerrobotTools {
         each single choice, multiple choice or free text (choices can allow a custom answer). \
         Does not wait: the answers arrive later as one user message, so finish your turn after asking. \
         If a teammate created you, the questions go to it as a message instead; it asks the operator \
-        and sends you the answers."
+        and sends you the answers. Never ask for keys or tokens here: answers are plain messages \
+        (use add_connector)."
     )]
     async fn ask_user(
         &self,
@@ -618,6 +636,39 @@ impl FerrobotTools {
                 name: request.name,
                 note: format!("Not created: {reason}"),
             },
+        }))
+    }
+
+    #[tool(
+        description = "Ask your operator to add a connector (a remote MCP server) and give it to \
+        you. They see a card with its name and URL and, for `token`, a hidden field for the token: \
+        you never see the token, so never ask for keys, passwords or tokens in chat or with \
+        ask_user. Does not wait: a message tells you when it was added or declined; its tools \
+        (`<name>__<tool>`) work from your next turn after that. Finish your turn after asking."
+    )]
+    async fn add_connector(
+        &self,
+        Extension(parts): Extension<http::request::Parts>,
+        Parameters(args): Parameters<AddConnectorArgs>,
+    ) -> ToolResult<AskUserResult> {
+        let me = caller(&parts)?.0.id;
+        let request = ConnectorRequest {
+            name: args.name.trim().to_owned(),
+            url: args.url.trim().to_owned(),
+            auth: args.auth,
+            reason: args.reason.trim().to_owned(),
+        };
+        let question_id = self
+            .state
+            .notifier
+            .request_connector(me, request)
+            .await
+            .map_err(|e| ErrorData::invalid_params(e, None))?;
+        Ok(Json(AskUserResult {
+            question_id,
+            note: "Shown to the operator. A message tells you when they add or decline it; \
+                   finish your turn now."
+                .into(),
         }))
     }
 
