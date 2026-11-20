@@ -242,6 +242,9 @@ pub struct Agent {
     pub sandbox_id: Option<String>,
     /// Last model session id reported by the runner, used for resume.
     pub session_id: Option<String>,
+    /// Pinned to the top of the operator's agent list.
+    #[serde(default)]
+    pub pinned: bool,
     #[serde(with = "time::serde::rfc3339")]
     #[cfg_attr(feature = "schema", schema(value_type = String, format = DateTime))]
     pub created_at: OffsetDateTime,

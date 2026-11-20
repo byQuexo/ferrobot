@@ -142,6 +142,8 @@ pub(crate) struct UpdateAgent {
         reason = "omitted vs. explicit null in a PATCH body"
     )]
     model: Option<Option<String>>,
+    /// Pin to the top of the agent list (or unpin).
+    pinned: Option<bool>,
 }
 
 /// Edits an agent's profile.
@@ -189,6 +191,7 @@ pub(crate) async fn update_agent(
                 character: req.character,
                 provider_id,
                 model,
+                pinned: req.pinned,
             },
         )
         .await?;

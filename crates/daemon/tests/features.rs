@@ -229,6 +229,17 @@ async fn profile_avatar_unread_and_memory() {
     assert_eq!(a["description"], "Research lead");
     assert_eq!(a["avatar_url"], Value::Null);
     assert_eq!(a["unread"], 0);
+    assert_eq!(a["pinned"], false);
+    let pin = |pinned: bool| {
+        let (ui, path) = (d.ui.clone(), format!("/v1/agents/{id}"));
+        async move { http(&ui, "PATCH", &path, Some(json!({ "pinned": pinned }))).await }
+    };
+    let (status, pinned) = pin(true).await;
+    assert_eq!(
+        (status, &pinned["pinned"], &pinned["description"]),
+        (200, &json!(true), &json!("Research lead"))
+    );
+    assert_eq!(pin(false).await.1["pinned"], false);
 
     // Instructions edits reach a connected runner as a configure frame.
     let mut ws = connect_runner(&d.agents, &backend.token("ada")).await;
@@ -2332,9 +2343,54 @@ async fn agents_share_files_that_open_from_storage() {
     let guessed = format!("{}{last}", &url[..url.len() - 1]);
     let (status, _, _) = http_raw(&d.ui, "GET", &guessed, &no_token, b"").await;
     assert_eq!(status, 404, "the view key is the capability");
-    let md_page = format!("/artifacts/{ann}/{}/x", plan.id);
-    let (status, _, _) = http_raw(&d.ui, "GET", &md_page, &no_token, b"").await;
+    let wrong_key = format!("/artifacts/{ann}/{}/x", plan.id);
+    let (status, _, _) = http_raw(&d.ui, "GET", &wrong_key, &no_token, b"").await;
     assert_eq!(status, 404);
+
+    // Any shared file downloads from its url; .html too with ?download.
+    let (_, md) = http(
+        &d.ui,
+        "GET",
+        &format!("/v1/agents/{ann}/files/{}", plan.id),
+        None,
+    )
+    .await;
+    let md_url = md["url"].as_str().unwrap().to_owned();
+    let (status, headers, body) = http_raw(&d.ui, "GET", &md_url, &no_token, b"").await;
+    let header = |name: &str| {
+        headers
+            .iter()
+            .find(|(k, _)| k.eq_ignore_ascii_case(name))
+            .map(|(_, v)| v.clone())
+            .unwrap_or_default()
+    };
+    assert_eq!(status, 200);
+    assert_eq!(body, b"content of /home/node/workspace/plan.md");
+    assert_eq!(
+        header("content-disposition"),
+        "attachment; filename=\"plan.md\""
+    );
+    assert!(header("content-security-policy").starts_with("sandbox"));
+    let (_, headers, _) =
+        http_raw(&d.ui, "GET", &format!("{url}?download=1"), &no_token, b"").await;
+    assert!(
+        headers
+            .iter()
+            .any(|(k, v)| k.eq_ignore_ascii_case("content-disposition")
+                && v.starts_with("attachment"))
+    );
+
+    // A .pdf name alone is not enough to open inline: the content must be a PDF.
+    let fake = d.state.share_file(ann_id, "fake.pdf".into()).await.unwrap();
+    let (_, f) = http(
+        &d.ui,
+        "GET",
+        &format!("/v1/agents/{ann}/files/{}", fake.id),
+        None,
+    )
+    .await;
+    let (_, headers, _) = http_raw(&d.ui, "GET", f["url"].as_str().unwrap(), &no_token, b"").await;
+    assert!(headers.iter().any(|(k, v)| k.eq_ignore_ascii_case("content-type") && v == "application/octet-stream"));
 
     // Deleting the agent deletes its files.
     let (status, _) = http(&d.ui, "DELETE", &format!("/v1/agents/{ann}"), None).await;

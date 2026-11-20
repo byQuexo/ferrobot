@@ -205,6 +205,10 @@ const MIGRATIONS: &[&str] = &[
     r"
     ALTER TABLE global_memories ADD COLUMN author TEXT;
     ",
+    // v11: agents pinned to the top of the operator's list
+    r"
+    ALTER TABLE agents ADD COLUMN pinned INTEGER NOT NULL DEFAULT 0;
+    ",
 ];
 
 pub(crate) fn run(conn: &mut Connection) -> Result<(), StoreError> {
@@ -296,6 +300,10 @@ mod tests {
             author, None,
             "rows without an author count as the operator's"
         );
+        let pinned: bool = conn
+            .query_row("SELECT pinned FROM agents", [], |r| r.get(0))
+            .unwrap();
+        assert!(!pinned, "existing agents are not pinned");
         let version: i64 = conn
             .query_row("PRAGMA user_version", [], |r| r.get(0))
             .unwrap();

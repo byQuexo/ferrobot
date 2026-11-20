@@ -67,6 +67,8 @@ export function Dialog(props: {
   children: ComponentChildren;
   footer?: ComponentChildren;
   wide?: boolean;
+  /** Fills the window (e.g. a PDF). */
+  full?: boolean;
 }): JSX.Element {
   const ref = useRef<HTMLDivElement>(null);
   useEffect(() => {
@@ -79,7 +81,13 @@ export function Dialog(props: {
   }, []);
   return (
     <div class="overlay" onMouseDown={(e) => { if (e.target === e.currentTarget) props.onClose(); }}>
-      <div class={props.wide ? "dialog dialog-wide" : "dialog"} role="dialog" aria-modal="true" aria-label={props.title} ref={ref}>
+      <div
+        class={`dialog${props.wide ? " dialog-wide" : ""}${props.full ? " dialog-full" : ""}`}
+        role="dialog"
+        aria-modal="true"
+        aria-label={props.title}
+        ref={ref}
+      >
         <header class="dialog-head">
           <h2>{props.title}</h2>
           <IconButton label="Close" onClick={props.onClose}>
@@ -89,6 +97,15 @@ export function Dialog(props: {
         <div class="dialog-body">{props.children}</div>
         {props.footer && <footer class="dialog-foot">{props.footer}</footer>}
       </div>
+    </div>
+  );
+}
+
+/** Placeholder lines while something loads. */
+export function Skeleton(props: { lines?: number }): JSX.Element {
+  return (
+    <div class="skeleton" aria-busy="true" aria-label="Loading">
+      {Array.from({ length: props.lines ?? 3 }, (_, i) => <span key={i} class="skeleton-line" />)}
     </div>
   );
 }

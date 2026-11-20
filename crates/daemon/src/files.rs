@@ -95,6 +95,13 @@ pub async fn read(state: &AppState, key: &str) -> object_store::Result<Vec<u8>> 
     Ok(bytes.to_vec())
 }
 
+/// Whether a shared file is a PDF by name (the content is checked too).
+pub fn is_pdf(name: &str) -> bool {
+    std::path::Path::new(name)
+        .extension()
+        .is_some_and(|e| e.eq_ignore_ascii_case("pdf"))
+}
+
 /// Whether a shared file opens as a page.
 pub fn is_page(name: &str) -> bool {
     std::path::Path::new(name)

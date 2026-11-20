@@ -117,7 +117,9 @@ export function App(): JSX.Element {
   // Fall back to the first agent when the selection is gone.
   useEffect(() => {
     if (selected && agents.has(selected)) return;
-    const first = [...agents.values()].sort((a, b) => a.name.localeCompare(b.name))[0];
+    const first = [...agents.values()].sort(
+      (a, b) => Number(Boolean(b.pinned)) - Number(Boolean(a.pinned)) || a.name.localeCompare(b.name),
+    )[0];
     if (first) setSelected(first.id);
     else if (agents.size === 0) setSelected(null);
   }, [agents, selected]);
