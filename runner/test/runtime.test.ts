@@ -12,7 +12,11 @@ import { Runner } from "../src/runner.ts";
 import { SessionStore } from "../src/session.ts";
 
 describe("config", () => {
-  const base = { FERROBOT_DAEMON_URL: "http://host.docker.internal:7879", FERROBOT_AGENT_TOKEN: "t", HOME: "/home/node" };
+  const base = {
+    FERROBOT_DAEMON_URL: "http://host.docker.internal:7879",
+    FERROBOT_AGENT_TOKEN: "t",
+    HOME: "/home/node",
+  };
 
   it("loads defaults and derives URLs", () => {
     const c = loadConfig(base);
@@ -33,10 +37,22 @@ describe("config", () => {
 describe("backoff", () => {
   it("grows exponentially, is capped and jittered", () => {
     const opts = { initialMs: 500, maxMs: 30_000 };
-    assert.equal(backoffDelay(0, opts, () => 1), 500);
-    assert.equal(backoffDelay(3, opts, () => 1), 4000);
-    assert.equal(backoffDelay(30, opts, () => 1), 30_000);
-    assert.equal(backoffDelay(30, opts, () => 0), 15_000);
+    assert.equal(
+      backoffDelay(0, opts, () => 1),
+      500,
+    );
+    assert.equal(
+      backoffDelay(3, opts, () => 1),
+      4000,
+    );
+    assert.equal(
+      backoffDelay(30, opts, () => 1),
+      30_000,
+    );
+    assert.equal(
+      backoffDelay(30, opts, () => 0),
+      15_000,
+    );
   });
 });
 
@@ -76,7 +92,10 @@ describe("Runner", () => {
       close: () => Promise.resolve(),
     };
     const session = new SessionStore(dir);
-    const runner = new Runner({ driver, session, agentName: "a", send: (f) => sent.push(f) > 0 }, null);
+    const runner = new Runner(
+      { driver, session, agentName: "a", send: (f) => sent.push(f) > 0 },
+      null,
+    );
     runner.handle(turn("t1"));
     await waitFor(() => sent.some((f) => f.type === "turn_done"));
     const done = sent.find((f) => f.type === "turn_done");
@@ -91,17 +110,27 @@ describe("Runner", () => {
       name: "steer",
       steering: true,
       runTurn: async (ctx) => {
-        await new Promise<void>((r) => { release = r; });
+        await new Promise<void>((r) => {
+          release = r;
+        });
         const taken = ctx.takeMessages?.() ?? [];
         return { result: taken.map((m) => m.body).join(","), sessionId: null };
       },
       close: () => Promise.resolve(),
     };
     const session = new SessionStore(mkdtempSync(join(tmpdir(), "ferrobot-")));
-    const runner = new Runner({ driver, session, agentName: "a", send: (f) => sent.push(f) > 0 }, null);
+    const runner = new Runner(
+      { driver, session, agentName: "a", send: (f) => sent.push(f) > 0 },
+      null,
+    );
     runner.handle(turn("t1"));
     const steer = (turnId: string, id: number) => ({
-      type: "steer" as const, turn_id: turnId, message_id: id, sender: { kind: "user" as const }, sender_name: "user", body: `m${String(id)}`,
+      type: "steer" as const,
+      turn_id: turnId,
+      message_id: id,
+      sender: { kind: "user" as const },
+      sender_name: "user",
+      body: `m${String(id)}`,
     });
     runner.handle(steer("t1", 8));
     runner.handle(steer("other", 9));
@@ -117,12 +146,17 @@ describe("Runner", () => {
       name: "slow",
       runTurn: (ctx) =>
         new Promise((_resolve, reject) => {
-          ctx.signal.addEventListener("abort", () => { reject(new TurnAbortedError("x")); });
+          ctx.signal.addEventListener("abort", () => {
+            reject(new TurnAbortedError("x"));
+          });
         }),
       close: () => Promise.resolve(),
     };
     const session = new SessionStore(mkdtempSync(join(tmpdir(), "ferrobot-")));
-    const runner = new Runner({ driver, session, agentName: "a", send: (f) => sent.push(f) > 0 }, null);
+    const runner = new Runner(
+      { driver, session, agentName: "a", send: (f) => sent.push(f) > 0 },
+      null,
+    );
     runner.handle(turn("t1"));
     assert.equal(runner.busy, true);
     runner.handle({ type: "interrupt", turn_id: "other" });
@@ -153,7 +187,9 @@ describe("Runner configure", () => {
         seen.push(`${ctx.agentName}:${ctx.instructions}`);
         return Promise.resolve({ result: null, sessionId: null });
       },
-      reconfigure: () => { reconfigured += 1; },
+      reconfigure: () => {
+        reconfigured += 1;
+      },
       close: () => Promise.resolve(),
     };
     const dir = mkdtempSync(join(tmpdir(), "ferrobot-"));
@@ -179,4 +215,3 @@ describe("Runner configure", () => {
     assert.equal(reconfigured, 1, "the driver hears about it");
   });
 });
-

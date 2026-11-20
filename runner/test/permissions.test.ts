@@ -25,7 +25,12 @@ describe("permission policy", () => {
   });
 
   it("allows ordinary shell commands", () => {
-    for (const command of ["ls -la", "rm -rf ./build", "cargo test", "curl -s https://example.com"]) {
+    for (const command of [
+      "ls -la",
+      "rm -rf ./build",
+      "cargo test",
+      "curl -s https://example.com",
+    ]) {
       assert.equal(decide("Bash", { command }, home).allow, true, command);
     }
   });

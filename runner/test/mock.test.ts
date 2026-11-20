@@ -1,44 +1,57 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 
-import { MockDriver, planMockAction, streamPieces } from "../src/drivers/mock.ts";
+import { MockDriver, planMockAction, streamPieces, type MockAction } from "../src/drivers/mock.ts";
 import type { FerrobotMcp } from "../src/mcp-client.ts";
 import type { TurnEvent } from "../src/protocol.ts";
 
 describe("mock driver grammar", () => {
-  it("routes @mentions to send_message", () => {
-    assert.deepEqual(planMockAction("@bob  please say hi ", "user", "user"), {
-      kind: "send",
-      to: "bob",
-      body: "please say hi",
-    });
-  });
-
-  it("parses remember/recall", () => {
-    assert.deepEqual(planMockAction("remember deploy: fridays", "user", "user"), {
-      kind: "remember",
-      key: "deploy",
-      content: "fridays",
-    });
-    assert.deepEqual(planMockAction("recall deploy", "user", "user"), { kind: "recall", query: "deploy" });
-  });
-
-  it("answers agents once and never loops", () => {
-    assert.deepEqual(planMockAction("hi", "agent", "alice"), { kind: "reply", to: "alice", body: "re: hi" });
-    assert.deepEqual(planMockAction("re: hi", "agent", "bob"), { kind: "echo" });
-    assert.deepEqual(planMockAction("hi", "user", "user"), { kind: "echo" });
-    assert.deepEqual(planMockAction("daily digest", "routine", "routine:digest"), { kind: "echo" });
-  });
-
-  it("parses question cards", () => {
-    assert.deepEqual(planMockAction("ask Which day?: Thu | Fri | ...; Where+: email | chat; Notes", "user", "user"), {
-      kind: "ask",
-      questions: [
-        { prompt: "Which day?", kind: "single", choices: [{ label: "Thu" }, { label: "Fri" }], allow_custom: true },
-        { prompt: "Where", kind: "multi", choices: [{ label: "email" }, { label: "chat" }], allow_custom: false },
-        { prompt: "Notes", kind: "text", choices: [], allow_custom: false },
+  it("plans the action for each message", () => {
+    const cases: [string, Parameters<typeof planMockAction>, MockAction][] = [
+      [
+        "@mention",
+        ["@bob  please say hi ", "user", "user"],
+        { kind: "send", to: "bob", body: "please say hi" },
       ],
-    });
+      [
+        "remember",
+        ["remember deploy: fridays", "user", "user"],
+        { kind: "remember", key: "deploy", content: "fridays" },
+      ],
+      ["recall", ["recall deploy", "user", "user"], { kind: "recall", query: "deploy" }],
+      [
+        "agent gets one reply",
+        ["hi", "agent", "alice"],
+        { kind: "reply", to: "alice", body: "re: hi" },
+      ],
+      ["a reply is not answered (no loop)", ["re: hi", "agent", "bob"], { kind: "echo" }],
+      ["user echo", ["hi", "user", "user"], { kind: "echo" }],
+      ["routine echo", ["daily digest", "routine", "routine:digest"], { kind: "echo" }],
+      [
+        "question cards",
+        ["ask Which day?: Thu | Fri | ...; Where+: email | chat; Notes", "user", "user"],
+        {
+          kind: "ask",
+          questions: [
+            {
+              prompt: "Which day?",
+              kind: "single",
+              choices: [{ label: "Thu" }, { label: "Fri" }],
+              allow_custom: true,
+            },
+            {
+              prompt: "Where",
+              kind: "multi",
+              choices: [{ label: "email" }, { label: "chat" }],
+              allow_custom: false,
+            },
+            { prompt: "Notes", kind: "text", choices: [], allow_custom: false },
+          ],
+        },
+      ],
+    ];
+    for (const [label, args, expected] of cases)
+      assert.deepEqual(planMockAction(...args), expected, label);
   });
 
   it("splits streaming pieces losslessly", () => {
@@ -75,7 +88,10 @@ describe("MockDriver", () => {
       emit: (e) => events.push(e),
     });
     assert.deepEqual(calls, [
-      ["send_message", { to: "0b5c2a0e-8f5e-4a51-9d6e-3f1f6f0c9a11", body: "re: ping", reply_to: 7 }],
+      [
+        "send_message",
+        { to: "0b5c2a0e-8f5e-4a51-9d6e-3f1f6f0c9a11", body: "re: ping", reply_to: 7 },
+      ],
     ]);
     const kinds = events.map((e) => e.kind);
     assert.deepEqual(kinds.slice(0, 2), ["tool_use", "tool_result"]);

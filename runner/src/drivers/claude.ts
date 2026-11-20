@@ -1,12 +1,5 @@
-// Claude through the Claude Agent SDK. The SDK runs its own agent loop; we
-// wire in the daemon's MCP server, a permission policy, an audit hook,
-// streaming, interrupts, session resume and steering (messages that arrive
-// mid-turn go into the running query through the SDK's streaming input).
-//
-// Model traffic: the daemon starts the sandbox with ANTHROPIC_BASE_URL
-// pointing at its model proxy and ANTHROPIC_API_KEY set to this agent's
-// token, so the real key never enters the sandbox. The SDK reads both from
-// the environment.
+// Claude through the Claude Agent SDK, which runs its own agent loop. The SDK reads ANTHROPIC_BASE_URL
+// (the daemon's model proxy) and ANTHROPIC_API_KEY (this agent's token) from the env: no real key here.
 import { randomUUID } from "node:crypto";
 
 import {
@@ -73,8 +66,8 @@ export function systemAppend(agentName: string, instructions: string): string {
     "your findings so far (in your reply for your operator, or with send_message without",
     "reply_to to the teammate that gave you the task), then keep working. Do not save it",
     "all for the end.",
-    "A message marked \"sent while you were working\" came in during your task: acknowledge",
-    "it at once in one short line (e.g. \"Noted, I'll finish the flights first\" or \"Good",
+    'A message marked "sent while you were working" came in during your task: acknowledge',
+    'it at once in one short line (e.g. "Noted, I\'ll finish the flights first" or "Good',
     "point, I'll tell @bob\"), then act on it or carry on.",
     "To hand your operator a file you made (a plan, a report), call share_file with its",
     "path; it shows in your chat as a file they can open. For something visual (a page, a",
@@ -106,9 +99,8 @@ class Inbox implements AsyncIterable<SDKUserMessage> {
   /** Queues a user message and returns its uuid. */
   push(text: string): string {
     const uuid = randomUUID();
-    // client_composed: the text is delivered as written (no slash commands
-    // or @-mentions from what another agent typed); "next" folds a message
-    // into the running turn between tool rounds.
+    // client_composed: delivered as written, no slash commands or @-mentions from another agent's text;
+    // priority "next" folds the message into the running turn between tool rounds.
     this.#items.push({
       type: "user",
       message: { role: "user", content: text },
@@ -134,7 +126,9 @@ class Inbox implements AsyncIterable<SDKUserMessage> {
         continue;
       }
       if (this.#ended) return;
-      await new Promise<void>((resolve) => { this.#wake = resolve; });
+      await new Promise<void>((resolve) => {
+        this.#wake = resolve;
+      });
       this.#wake = null;
     }
   }
@@ -205,12 +199,13 @@ export function toolResultText(content: unknown): string {
     .join("\n");
 }
 
-/** Maps one SDK message to turn events. Pure, so it is tested against SDK-typed fixtures. */
+/** Maps one SDK message to turn events. */
 export function mapSdkMessage(message: SDKMessage): Mapped {
   const events: TurnEvent[] = [];
   const out: Mapped = {
     events,
-    sessionId: "session_id" in message && typeof message.session_id === "string" ? message.session_id : null,
+    sessionId:
+      "session_id" in message && typeof message.session_id === "string" ? message.session_id : null,
   };
   if (message.type === "stream_event") {
     // Live text of the top-level assistant only; subagent chatter stays out.
@@ -269,8 +264,7 @@ export class ClaudeDriver implements ModelDriver {
     try {
       return await this.#attempt(ctx, ctx.sessionId);
     } catch (err) {
-      // A session that cannot be resumed (e.g. after restoring an older
-      // snapshot) must not wedge the agent: start a fresh one once.
+      // A session that cannot be resumed (e.g. after restoring an older snapshot) must not wedge the agent.
       if (err instanceof ResumeFailedError) {
         log.warn("could not resume session; starting a new one", { session: ctx.sessionId });
         return this.#attempt(ctx, null);
@@ -283,7 +277,9 @@ export class ClaudeDriver implements ModelDriver {
     const { emit } = ctx;
     const home = this.#opts.workspaceDir;
     const abortController = new AbortController();
-    const onAbort = (): void => { abortController.abort(); };
+    const onAbort = (): void => {
+      abortController.abort();
+    };
     if (aborted(ctx.signal)) throw new TurnAbortedError("interrupted");
     ctx.signal.addEventListener("abort", onAbort, { once: true });
 

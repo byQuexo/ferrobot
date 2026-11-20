@@ -35,14 +35,24 @@ export class FerrobotMcp {
       // A restarted daemon forgets MCP sessions and answers 404; the request
       // was not executed, so open a fresh session and retry once.
       if (!isSessionLost(err)) throw err;
-      await this.close().catch(() => undefined);
+      try {
+        await this.close();
+      } catch {
+        // The old session is gone either way; the retry opens a new one.
+      }
       return send(await this.#connect());
     }
   }
 
   /** Calls a tool and returns its structured result. Throws on tool errors. */
-  async call(name: string, args: Record<string, unknown>, options?: RequestOptions): Promise<unknown> {
-    const result = await this.#request((client) => client.callTool({ name, arguments: args }, undefined, options));
+  async call(
+    name: string,
+    args: Record<string, unknown>,
+    options?: RequestOptions,
+  ): Promise<unknown> {
+    const result = await this.#request((client) =>
+      client.callTool({ name, arguments: args }, undefined, options),
+    );
     if (result.isError === true) {
       throw new Error(`tool ${name} failed: ${JSON.stringify(result.content)}`);
     }

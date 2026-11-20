@@ -23,7 +23,9 @@ describe("protocol fixtures shared with the Rust daemon", () => {
   });
 
   it("runner fixtures have the shapes the runner emits", () => {
-    const types = new Set(load("runner").map(([, text]) => (JSON.parse(text) as { type: string }).type));
+    const types = new Set(
+      load("runner").map(([, text]) => (JSON.parse(text) as { type: string }).type),
+    );
     assert.deepEqual([...types].sort(), ["event", "hello", "turn_done"]);
   });
 
