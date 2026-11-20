@@ -29,6 +29,17 @@ First public release.
 - Runner drivers: Claude Agent SDK, OpenAI-compatible loop, Codex
   app-server, ACP (Gemini CLI) and a mock driver for demos and tests.
 - Connectors: remote MCP servers lent to assigned agents, with OAuth sign-in.
+- Delegated tasks between agents: `assign_task` and `list_tasks`, an
+  automatic report back when a delegate's turn ends and one reminder; mail
+  from an agent wakes a sleeping one; new agents greet the operator first.
+- Voice: a hands-free call with an agent (replies spoken, your speech
+  transcribed live) and dictation in the message box, through ElevenLabs or
+  OpenRouter with keys in the keychain; agents can bring teammates into a
+  call (`invite_to_call`, at most four agents).
+- Model picker: each provider's model list (or suggestions) in a dropdown,
+  with a custom id when the list lacks one.
+- Agent list: pin, reorder by drag and drop, delete by right-click.
+- OpenRouter: prompt caching for Claude models and sticky routing per agent.
 - Usage tab: model calls, tokens and estimated cost per provider, model and
   agent, from the model proxy; prices in `config/pricing.toml` with overrides
   in Settings; CSV export.

@@ -44,7 +44,7 @@ tested against fakes on a machine without KVM.
 
 | Phase | Status | Notes |
 | --- | --- | --- |
-| v0.1.0 | in progress | The [[Usage tab|Usage-and-Costs]] and desktop downloads for macOS and Windows that bundle the daemon. |
+| v0.1.0 | in progress | The [[Usage tab|Usage-and-Costs]], desktop downloads for macOS and Windows that bundle the daemon, voice calls, delegated tasks, the model picker. |
 
 ## Later
 

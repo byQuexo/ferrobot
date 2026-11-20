@@ -76,6 +76,10 @@ run on the mock driver; they were seeded with `scripts/seed-demo.sh`.
   restarted, and snapshots (root filesystem + home) can be taken and restored.
 - **Agents talk to each other** through an asynchronous mailbox with retries,
   using MCP tools inside the sandbox (`send_message`, `list_agents`, ...).
+  Mail from an agent wakes a sleeping one.
+- **Delegated tasks:** `assign_task` (or `create_agent` with a `task`) tracks
+  work handed to a teammate; the delegate's answer goes back to the assigner
+  when its turn ends, with one reminder if it goes quiet (`list_tasks`).
 - **Question cards:** agents can ask the operator structured questions
   (single or multiple choice, free text, several per card) with the MCP tool
   `ask_user`; the answers go back as a message.
@@ -99,9 +103,13 @@ run on the mock driver; they were seeded with `scripts/seed-demo.sh`.
 - **Model providers:** Anthropic, OpenAI, Gemini, Amazon Bedrock, Google
   Vertex AI, OpenRouter, Ollama, any OpenAI-compatible endpoint, OpenAI Codex
   (API key or a ChatGPT sign-in on your machine) and Gemini CLI; provider and
-  model are chosen per agent. Keys live in the OS keychain and never enter a
-  sandbox: sandboxes call the daemon's model proxy with their own agent token
-  and the daemon adds the real credential.
+  model are chosen per agent from the provider's own model list (or a custom
+  id). Keys live in the OS keychain and never enter a sandbox: sandboxes call
+  the daemon's model proxy with their own agent token and the daemon adds the
+  real credential. Claude calls through OpenRouter use its prompt caching.
+- **Voice:** a hands-free call with an agent (replies spoken, your speech
+  transcribed live) and dictation in the message box, through ElevenLabs or
+  OpenRouter; agents can bring teammates into a call (`invite_to_call`).
 - **Usage and cost:** the proxy counts every model call's tokens from the
   provider's own usage fields (never estimated) and the Usage view shows
   calls, tokens and estimated cost per day, provider, model and agent, with
@@ -112,8 +120,9 @@ run on the mock driver; they were seeded with `scripts/seed-demo.sh`.
 - **Persistence:** agents, conversations, memory, routines, snapshots and
   sleep state live in SQLite and survive daemon restarts. Snapshot archives
   go to the data dir, or to S3/R2 with `--storage-url s3://bucket/prefix`.
-- **Desktop app:** a thin Tauri v2 window over the `/v1` API with a sidebar,
-  streaming chat, info panel and light/dark themes.
+- **Desktop app:** a thin Tauri v2 window over the `/v1` API with a sidebar
+  (pin, reorder by drag and drop, delete by right-click), streaming chat,
+  info panel and light/dark themes.
 
 ## Architecture
 
