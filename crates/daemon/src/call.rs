@@ -17,6 +17,8 @@ const MAX_LINE_CHARS: usize = 1500;
 const MAX_HEARD_BYTES: usize = 12 * 1024;
 /// Longest operator message in a call, so the passed-on lines still fit.
 pub const MAX_CALL_TEXT_BYTES: usize = MAX_TEXT_BYTES - MAX_HEARD_BYTES - 256;
+const HEARD_INTRO: &str = "In the call since your last turn:\n";
+const OPERATOR_INTRO: &str = "\n\nThe operator: ";
 
 #[derive(Debug, Default)]
 pub struct Call {
@@ -38,7 +40,13 @@ impl Call {
             }
             let queue = self.heard.entry(*other).or_default();
             queue.push_back(line.clone());
-            while queue.iter().map(String::len).sum::<usize>() > MAX_HEARD_BYTES {
+            // Counted as `messages` assembles them: a newline per line, plus the intros.
+            let size = |q: &VecDeque<String>| {
+                HEARD_INTRO.len()
+                    + OPERATOR_INTRO.len()
+                    + q.iter().map(|l| l.len() + 1).sum::<usize>()
+            };
+            while size(queue) > MAX_HEARD_BYTES {
                 queue.pop_front();
             }
         }
@@ -52,7 +60,7 @@ impl Call {
                 text.to_owned()
             } else {
                 let heard = Vec::from(heard).join("\n");
-                format!("In the call since your last turn:\n{heard}\n\nThe operator: {text}")
+                format!("{HEARD_INTRO}{heard}{OPERATOR_INTRO}{text}")
             };
             out.push((*agent, body));
         }
@@ -179,5 +187,19 @@ mod tests {
         assert!(out[0].1.ends_with("\n\nThe operator: hi"));
         assert_eq!(out[1].1, "hi");
         assert!(call.heard.is_empty());
+    }
+
+    #[test]
+    fn many_tiny_lines_keep_the_call_body_within_the_limit() {
+        let (a, b) = (id(1), id(2));
+        let mut call = Call {
+            agents: vec![a, b],
+            ..Call::default()
+        };
+        for _ in 0..1000 {
+            call.hear(b, "x");
+        }
+        let out = call.messages(&"y".repeat(MAX_CALL_TEXT_BYTES));
+        assert!(out[0].1.len() <= MAX_TEXT_BYTES, "{}", out[0].1.len());
     }
 }
