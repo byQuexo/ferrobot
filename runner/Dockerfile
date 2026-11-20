@@ -14,6 +14,9 @@ FROM node:24-bookworm-slim
 RUN apt-get update \
     && apt-get install -y --no-install-recommends ca-certificates git curl ripgrep \
     && rm -rf /var/lib/apt/lists/*
+# Harness for the `codex` driver (provider kind `codex`); it talks to the model
+# only through the daemon's proxy and never holds a real key.
+RUN npm install -g --no-audit --no-fund @openai/codex@0.166.0 && npm cache clean --force
 WORKDIR /opt/ferrobot-runner
 COPY --from=build /src/package.json ./
 COPY --from=build /src/node_modules ./node_modules

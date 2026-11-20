@@ -315,7 +315,7 @@ describe("codexConfigToml", () => {
       [
         'model = "gpt-5.5"',
         'model_provider = "ferrobot"',
-        'approval_policy = "untrusted"',
+        'approval_policy = "on-request"',
         'sandbox_mode = "danger-full-access"',
         "",
         "[model_providers.ferrobot]",

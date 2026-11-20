@@ -68,8 +68,8 @@ export function codexConfigToml(opts: { model: string; baseUrl: URL; mcpUrl: URL
   return [
     `model = ${str(opts.model)}`,
     `model_provider = ${str(PROVIDER)}`,
-    // Codex asks before every command and patch; the runner answers with decide().
-    `approval_policy = "untrusted"`,
+    // Codex >= 0.166 rejects "untrusted"; requests it still sends are answered with decide().
+    `approval_policy = "on-request"`,
     // The container is the boundary; Codex's own Landlock/Seatbelt may not work inside it.
     `sandbox_mode = "danger-full-access"`,
     "",
