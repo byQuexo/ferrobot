@@ -1,15 +1,55 @@
 # ferrobot
 
-**A free, self-hosted platform for AI agents where every agent gets its own computer.**
+**A free, self-hosted platform for a team of AI agents where every agent gets its own computer.**
 
-ferrobot runs a small Rust daemon (`ferrobotd`) on your machine. Each agent you
-create gets its own sandbox (a Docker/Podman container today; a Firecracker
-microVM backend is written but needs a KVM host), an asynchronous mailbox for
-talking to you and to other agents, and a persistent memory. Inside each
-sandbox an agent runner drives a model harness (the
-[Claude Agent SDK](https://www.npmjs.com/package/@anthropic-ai/claude-agent-sdk),
-OpenAI's Codex, Google's Gemini CLI over ACP, or a built-in loop for
-OpenAI-compatible APIs) and reaches the daemon through MCP tools.
+A small Rust daemon (`ferrobotd`) runs on your machine and gives each agent a
+sandboxed computer (a Docker container today), a mailbox to talk to you and to
+the other agents, a memory, routines and question cards for you to answer.
+Inside each sandbox a runner drives the model harness you pick (the Claude
+Agent SDK, OpenAI's Codex, Gemini CLI, or a built-in loop for any
+OpenAI-compatible API, including local models on Ollama). Model keys never
+enter a sandbox: agents reach their model through the daemon's proxy, which
+adds the real key. A desktop app for macOS and Windows is the thin window on
+top.
+
+## Download
+
+Version 0.1.0: [release page](https://github.com/byQuexo/ferrobot/releases/tag/v0.1.0).
+
+- **macOS** (Apple silicon and Intel): `ferrobot_0.1.0_universal.dmg`
+- **Windows** (x64): `ferrobot_0.1.0_x64-setup.exe`
+- `SHA256SUMS` lists the checksums.
+
+The app needs [Docker Desktop](https://www.docker.com/products/docker-desktop/)
+(it says so on first start when Docker is missing). It starts its own daemon
+and pulls the agents' image (`ghcr.io/byquexo/ferrobot-runner`, about 2 GB)
+the first time an agent starts.
+
+**Unsigned builds.** Unless the release notes say they are signed, the
+installers are not signed, so the operating system warns once:
+
+- macOS: right-click (or Control-click) the app in Applications, choose
+  **Open**, then **Open** again. Later starts work normally.
+- Windows: SmartScreen says "Windows protected your PC"; click
+  **More info**, then **Run anyway**.
+
+## Quick start (macOS, no API key)
+
+About five minutes plus two downloads of about 2 GB each (a local model and
+the agents' image). Everything stays on your machine.
+
+1. Install and start [Docker Desktop](https://www.docker.com/products/docker-desktop/).
+2. Install [Ollama](https://ollama.com/download) and pull a small model:
+   `ollama pull qwen2.5:3b`
+3. Install the app from the [download](#download) and open it.
+4. In **Settings → Model providers**, add an **Ollama** provider (no key; the
+   default URL `http://127.0.0.1:11434/v1` is right for a local Ollama).
+5. Create an agent with that provider and the model `qwen2.5:3b`, and send it
+   a message: "Write today's date into a file and tell me what you wrote."
+
+A 3B model proves the plumbing (a sandbox, a shell tool call, the proxy), not
+much more. For real work pick a larger model or a cloud provider; the keys go
+into the OS keychain of your machine.
 
 | Light | Dark |
 | --- | --- |
@@ -20,8 +60,7 @@ OpenAI-compatible APIs) and reaches the daemon through MCP tools.
 | ![Agent-to-agent hints expanded inline ("2 messages with ada")](docs/screenshots/light-a2a-expanded.png) | |
 
 More in [`docs/screenshots/`](docs/screenshots). The agents in the screenshots
-run on the mock driver (replies like `[mock ada] got "..."`); they were seeded
-with `scripts/seed-demo.sh`.
+run on the mock driver; they were seeded with `scripts/seed-demo.sh`.
 
 ## Features
 
@@ -70,39 +109,25 @@ with `scripts/seed-demo.sh`.
 
 ```mermaid
 flowchart LR
-    subgraph clients[Clients]
-        UI["Desktop app (Tauri v2, thin UI)"]
-        CLI["curl / scripts / future native apps"]
+    UI["Desktop app<br/>(Tauri, thin UI)"] -- "/v1 HTTP + WebSocket<br/>operator token, loopback" --> API
+
+    subgraph daemon["ferrobotd (Rust)"]
+        API["UI API"] --> CORE["agents · mailbox · scheduler<br/>supervisor · SQLite"]
+        AGENT["Agent API: /runner/ws, /mcp<br/>(per-agent token)"] --> CORE
+        PROXY["Model proxy /model<br/>allowlist, adds the real key"]
+        KEYS[("OS keychain")] --> PROXY
+        CORE --> SB["Sandbox backend<br/>(Docker; Firecracker WIP)"]
     end
 
-    subgraph daemon["ferrobotd (Rust: tokio + axum)"]
-        API["UI API /v1 (HTTP + WebSocket)<br/>127.0.0.1:7878, loopback only, operator token"]
-        AGENT["Agent API (bearer token per agent)<br/>/runner/ws + /mcp (rmcp) + /model (proxy)"]
-        CORE["registry · dispatcher · lifecycle"]
-        STORE[("SQLite: agents, mailbox,<br/>memory (FTS5), events, routines")]
-        SB["SandboxBackend trait"]
+    subgraph sandbox["One sandbox per agent"]
+        RUNNER["Runner (TypeScript)<br/>Claude SDK · Codex · Gemini CLI · OpenAI-compatible"]
     end
 
-    subgraph sandboxes["One computer per agent"]
-        subgraph s1["sandbox: alice"]
-            R1["agent runner (Node/TS)<br/>Claude SDK · Codex · Gemini CLI (ACP)<br/>OpenAI-compatible · mock"]
-        end
-        subgraph s2["sandbox: bob"]
-            R2["agent runner"]
-        end
-    end
-
-    UI --> API
-    CLI --> API
-    API --> CORE
-    CORE --> STORE
-    CORE --> SB
-    SB -- "create / exec / files / snapshot / wake / stop" --> s1
-    SB --> s2
-    R1 -- "outbound WebSocket (turns, events)" --> AGENT
-    R1 -- "MCP: send_message, remember, ..." --> AGENT
-    R2 --> AGENT
-    AGENT --> CORE
+    SB -- "create · exec · files · sleep · snapshot" --> sandbox
+    RUNNER -- "turns and events" --> AGENT
+    RUNNER -- "MCP tools: send_message, ask_user, remember, ..." --> AGENT
+    RUNNER -- "model calls with its agent token" --> PROXY
+    PROXY -- "real key" --> MODELS["Anthropic · OpenAI · Gemini · Bedrock<br/>Vertex · OpenRouter · Ollama · ..."]
 ```
 
 How a message flows: you (or another agent) put a message in an agent's
@@ -152,9 +177,11 @@ reconnects. Interrupted turns are not retried.
 - Libraries use `thiserror`; only binaries use `anyhow`. Strict TypeScript.
   `unsafe` is forbidden in the workspace and Clippy pedantic runs with `-D warnings`.
 
-## Quick start
+## Build from source
 
 Requirements: Rust (stable; MSRV 1.88), Node.js 24, and Docker or Podman.
+Building the runner image takes a while (it ships Chromium, Codex and Gemini
+CLI). [CONTRIBUTING.md](CONTRIBUTING.md) has every check and test command.
 
 ```bash
 # 1. Build the runner image used for every agent sandbox
@@ -181,8 +208,10 @@ curl -s -H "$AUTH" localhost:7878/v1/agents/<alice-id>/messages
 
 ### Operator token
 
-Every `/v1` endpoint except `GET /v1/health` requires
-`Authorization: Bearer <token>`. On first start the daemon generates a random
+Every `/v1` endpoint except `GET /v1/health` and the OAuth sign-in callback
+(`/v1/oauth/callback`, guarded by its single-use `state`) requires
+`Authorization: Bearer <token>`; shared pages under `/artifacts/` use signed,
+expiring links instead. On first start the daemon generates a random
 token and stores it in `<data dir>/api-token` (default `.ferrobot/api-token`,
 mode 0600); `--api-token` / `FERROBOT_API_TOKEN` sets your own (16+ characters
 of `A-Z a-z 0-9 - . _ ~`) instead. Browsers can't send headers on WebSockets
@@ -242,10 +271,10 @@ SDK's default system prompt.
 
 Without `ANTHROPIC_API_KEY` the daemon still starts and warns: agents that
 use a model provider (below) work, agents on the default cannot reach a model.
-The Claude driver is
-covered by a contract test with SDK-typed fixtures
-(`runner/test/claude-contract.test.ts`) and ran a tool-using turn in Docker
-against a fake Anthropic upstream; it has not been run against the live API.
+The Claude driver is covered by a contract test with SDK-typed fixtures
+(`runner/test/claude-contract.test.ts`), and one tool-using turn ran against
+the live Anthropic API through a keychain-stored provider key
+(`scripts/smoke-live.sh`).
 
 ### Model providers
 
@@ -260,10 +289,10 @@ Bedrock API key; Vertex uses the daemon host's `gcloud` login. A `codex`
 provider runs OpenAI's Codex harness in the sandbox (`codex app-server`) with
 an OpenAI API key, or with a ChatGPT sign-in done by the `codex` CLI on the
 daemon's computer (device code; the tokens stay there and the proxy adds
-them). The runner image does not ship `codex` yet. Claude-based
-providers run on the Claude Agent SDK; the others on the runner's
-OpenAI-compatible driver (bash, file and ferrobot tools). Subscription logins
-are not supported, only API keys.
+them). A `gemini_cli` provider runs Gemini CLI over ACP with a Gemini API key.
+Claude-based providers run on the Claude Agent SDK; the others on the
+runner's OpenAI-compatible driver (bash, file and MCP tools). Claude
+subscription logins are not supported, by design.
 
 Other useful flags: `--warm-after <secs>` (default 300 = 5 min: pause the
 sandbox, memory kept, resumes in place; 0 = never), `--idle-timeout <secs>`
@@ -289,7 +318,7 @@ The UI is Preact + Vite with [lucide](https://lucide.dev) icons (ISC). Its
 API types are generated from `protocol/openapi.json` (`npm run gen:api`);
 `npm test` runs the unit tests of its pure modules.
 
-On Linux, Tauri needs `libwebkit2gtk-4.1-dev` and `libsoup-3.0-dev` (see the CI file).
+On Linux, Tauri needs `libwebkit2gtk-4.1-dev` and `libsoup-3.0-dev`.
 
 Run `cargo run -p ferrobot-daemon -- --help` for all flags (data dir, ports,
 turn timeout, runner image, ...).
@@ -315,22 +344,8 @@ turn timeout, runner image, ...).
 
 ## Testing
 
-```bash
-cargo fmt --all --check
-cargo clippy --workspace --all-targets --all-features -- -D warnings
-cargo test --workspace                                       # unit, MCP, protocol, spec-drift tests
-
-npm --prefix runner run lint && npm --prefix runner run typecheck && npm --prefix runner test
-(cd apps/desktop && npm run check:api && npm run typecheck && npm test)
-
-# e2e with the real runner as local processes (needs a built runner)
-cargo test -p ferrobot-daemon --test e2e -- --ignored
-
-# Docker (needs Docker/Podman + the runner image)
-cargo test -p ferrobot-sandbox --features docker-tests --test docker
-cargo test -p ferrobot-daemon  --features docker-tests --test e2e -- --ignored
-./scripts/smoke-docker.sh
-```
+All checks and test commands, including the Docker end-to-end tests and the
+live smoke test, are in [CONTRIBUTING.md](CONTRIBUTING.md).
 
 ## Security notes
 
@@ -340,7 +355,7 @@ cargo test -p ferrobot-daemon  --features docker-tests --test e2e -- --ignored
 - The runner also has guard rails: it refuses obviously destructive shell
   commands and keeps file tools inside the agent's home. These are a second
   line of defence, not a sandbox.
-- Agent tokens are 256-bit random values, stored only as SHA-256 hashes, and
+- Agent tokens are 244-bit random values, stored only as SHA-256 hashes, and
   rotated whenever a sandbox is provisioned. Every agent-API request is
   scoped to the calling agent.
 - `ANTHROPIC_API_KEY` and provider keys stay in the daemon (provider keys in
@@ -352,8 +367,11 @@ cargo test -p ferrobot-daemon  --features docker-tests --test e2e -- --ignored
 - With the Codex and Gemini CLI harnesses the runner's guard rails mostly do
   not apply (those harnesses run many commands without asking); the sandbox
   is the boundary.
-- Archived sandboxes (`--archive-after`) are stored unencrypted; use a local
-  `--storage-url` until encryption exists.
+- Archives and snapshot home tars are encrypted (AES-256-GCM, key in the
+  keychain) before they reach `--storage-url`; committed images carry no
+  agent token. Files agents share (`artifacts/`) are not encrypted at rest.
+- Known open hardening items and how to report a vulnerability:
+  [SECURITY.md](SECURITY.md).
 - Avatar uploads are limited to PNG, JPEG, WebP and GIF (checked by content,
   max 512 KiB).
 - The operator API on `127.0.0.1:7878` requires the operator token (see
@@ -361,7 +379,7 @@ cargo test -p ferrobot-daemon  --features docker-tests --test e2e -- --ignored
   token can run any command in an agent's computer via `exec`. The token file
   is created with mode 0600 (tightened if it is wider).
 
-## Status
+## Status and limits
 
 **Working and tested:**
 
@@ -384,22 +402,31 @@ cargo test -p ferrobot-daemon  --features docker-tests --test e2e -- --ignored
   policy and an audit log.
 - The desktop app as described above, plus the provider dialogs.
 
-**Stubbed or not yet done:**
+- Live: one tool-using turn each with the Claude driver (real Anthropic API,
+  key in the macOS keychain) and with Ollama `qwen2.5:3b`; the key was found
+  in no container env, file or log.
 
-- No provider has been called with a real key (Anthropic, OpenAI, Gemini,
-  Bedrock, Vertex, ChatGPT sign-in).
-- Firecracker: no microVM has booted; process start, networking, snapshots
-  and the jailer are `TODO(kvm)`.
+**Not done or untested:**
+
+- Firecracker: no microVM has booted (needs a KVM host); process start,
+  networking, snapshot sleep and the jailer are `TODO(kvm)`. Help wanted:
+  [docs/launch/issues/](docs/launch/issues).
+- Never run against their real upstream: OpenAI, Gemini, OpenRouter, Bedrock,
+  Vertex, Codex with a ChatGPT sign-in, Gemini CLI with a real Gemini key.
+- The OS keychain path has run on macOS only; Windows Credential Manager and
+  the Windows desktop build have never run on real hardware.
+- The desktop app is mostly checked in a browser, rarely in the Tauri window.
+  Linux has no desktop download (build it from source).
 - `SpritesBackend` returns `NotImplemented` for every operation.
-- Snapshots and archives are Docker-only; warm sleep (pause) is Docker-only,
-  other backends stay awake until the cold timeout.
+- Snapshots and archives are Docker-only; warm sleep (pause) is written for
+  Firecracker but untested, other backends stay awake until the cold timeout.
 
 Details per phase: [`docs/progress.md`](docs/progress.md).
 
 ## Roadmap
 
 - **Next:** live runs with real provider keys; Firecracker on a KVM host (boot,
-  networking, jailer, snapshot-based cold sleep); encryption for archives.
+  networking, jailer, snapshot-based cold sleep).
 - **Later:** a file browser and terminal in the info panel, packaging the
   desktop app; computer use inside sandboxes (Xvfb desktop, browser automation
   via CDP, screenshots in the timeline); a native macOS app on the same `/v1`

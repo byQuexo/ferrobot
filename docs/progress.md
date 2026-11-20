@@ -617,3 +617,25 @@ store used for the run) or the daemon's own env.
   the token under all four names and checks the snapshot image and the image
   restored from an archive carry no env value with the token (Docker Desktop
   on macOS, `ferrobot-runner:dev` image).
+## Release prep 3: contributor docs (`chore/contributor-docs`)
+
+**Done**
+
+- README: pitch, download section (unsigned-build steps for macOS and
+  Windows), a five-minute quick start with Docker Desktop and Ollama and no
+  key, a new architecture diagram with the model proxy, "Status and limits";
+  stale lines fixed (Codex is in the image, a live Claude turn ran, archives
+  are encrypted, which routes are open, 244-bit agent tokens).
+- CONTRIBUTING.md, CODE_OF_CONDUCT.md (Contributor Covenant 2.1), SECURITY.md
+  (private advisories, known open hardening items), issue forms, PR template,
+  CODEOWNERS, ten issue drafts in `docs/launch/issues/`.
+- Clean-room and employer check: no OpenBot or Grok Bot material; the only
+  mentions are the README's clean-room note and CLAUDE.md's rules. No
+  employer named anywhere.
+
+**Not verified**
+
+- The README describes the desktop download as section 7 builds it (bundled
+  daemon, Docker check, runner image on ghcr.io); true once that lands.
+- The Code of Conduct points reporters to the email on the maintainer's
+  GitHub profile; GitHub has no private messages.

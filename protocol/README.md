@@ -36,7 +36,7 @@ the token in `<data dir>/api-token` (mode 0600) unless `--api-token` sets one.
 ## What is in v1
 
 **HTTP** (`openapi.json`, tags `system`, `agents`, `chat`, `memory`,
-`routines`, `sandbox`): health; agents with profile edits including renames (`PATCH`, `409` if
+`routines`, `sandbox`, `providers`, `connectors`): health; agents with profile edits including renames (`PATCH`, `409` if
 the name is taken), deletion (`DELETE` purges disk and snapshots unless
 `?keep_data=true`), the character avatar look (`character`:
 `{body, eyes, hue}`, `null` = derived from the id; `PATCH` with `null`
@@ -46,8 +46,8 @@ resets it), avatar images
 pauses where the backend can, `501` otherwise; default `cold`), wake, exec;
 sandbox status; snapshots with restore; memory (`?q=` searches); routines
 (`/v1/agents/{id}/routines`, `/v1/routines/{rid}`, `…/run`, `…/runs`).
-Agent `status` is `created`, `running`, `paused` (warm sleep), `stopped` or
-`failed`; `provider_id` and `model` pick the model (`null`: the daemon's
+Agent `status` is `created`, `running`, `paused` (warm sleep), `stopped`,
+`archived` or `failed`; `provider_id` and `model` pick the model (`null`: the daemon's
 `ANTHROPIC_API_KEY` / the provider's default model), and changing them
 rebuilds the sandbox with its disk kept.
 
@@ -79,7 +79,7 @@ wake the recipient) or `null`.
 | `routines_changed` | The agent's routines or their runs changed; refetch. |
 
 **Runner frames** (`/runner/ws`): runner → daemon `hello` (`driver` is
-`mock`, `claude`, `openai` or `codex`), `event`,
+`mock`, `claude`, `openai`, `codex` or `acp`), `event`,
 `turn_done`; daemon → runner `welcome` (includes the instructions), `turn`,
 `interrupt`, and `configure` (current `agent_name` and `instructions` after a
 rename or instructions edit; they apply from the next turn). Turn events (field `kind`) include `assistant_delta`
