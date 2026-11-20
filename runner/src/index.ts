@@ -1,7 +1,9 @@
 // Entry point of the in-sandbox agent runner.
 import { mkdir } from "node:fs/promises";
+import { homedir } from "node:os";
 
 import { ConfigError, loadConfig, mcpUrl, runnerWsUrl, type RunnerConfig } from "./config.ts";
+import { AcpDriver } from "./drivers/acp.ts";
 import { ClaudeDriver } from "./drivers/claude.ts";
 import { CodexDriver } from "./drivers/codex.ts";
 import { MockDriver } from "./drivers/mock.ts";
@@ -84,6 +86,15 @@ function createDriver(config: RunnerConfig, session: SessionStore): ModelDriver 
         token: config.token,
         workspaceDir: config.workspaceDir,
         stateDir: config.stateDir,
+      });
+    case "acp":
+      return new AcpDriver({
+        bin: config.acpBin,
+        model: config.model,
+        mcpUrl: mcpUrl(config.daemonUrl),
+        token: config.token,
+        workspaceDir: config.workspaceDir,
+        homeDir: homedir(),
       });
     case "mock":
       return new MockDriver(new FerrobotMcp(mcpUrl(config.daemonUrl), config.token));
