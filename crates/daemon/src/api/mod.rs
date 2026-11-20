@@ -2,6 +2,7 @@
 
 pub(crate) mod agents;
 pub(crate) mod chat;
+pub(crate) mod clis;
 pub(crate) mod connectors;
 pub(crate) mod files;
 pub(crate) mod memory;
@@ -121,7 +122,7 @@ pub fn router() -> Router<AppState> {
         )
 }
 
-/// Model providers, connectors and voice.
+/// Model providers, connectors, CLIs and voice.
 fn integrations() -> Router<AppState> {
     Router::new()
         .route(
@@ -158,6 +159,7 @@ fn integrations() -> Router<AppState> {
             post(connectors::start_oauth).delete(connectors::sign_out),
         )
         .route("/v1/oauth/callback", get(connectors::oauth_callback))
+        .route("/v1/clis", get(clis::get_clis).put(clis::put_clis))
         .route("/v1/voice", get(voice::get_voice).put(voice::put_voice))
         .route("/v1/voice/speech", post(voice::speech))
         .route("/v1/voice/catalog", get(voice::catalog))

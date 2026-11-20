@@ -1,6 +1,7 @@
 //! Docker / Podman backend: one container plus one named volume per agent.
 
 use std::collections::HashMap;
+use std::fmt::Write as _;
 use std::io::Read;
 use std::sync::{Arc, PoisonError, RwLock};
 
@@ -9,9 +10,10 @@ use bollard::Docker;
 use bollard::exec::{StartExecOptions, StartExecResults};
 use bollard::models::{ContainerCreateBody, ExecConfig, HostConfig};
 use bollard::query_parameters::{
-    CommitContainerOptionsBuilder, CreateContainerOptionsBuilder, CreateImageOptionsBuilder,
-    DownloadFromContainerOptionsBuilder, ImportImageOptionsBuilder, InspectContainerOptions,
-    RemoveContainerOptionsBuilder, RemoveImageOptionsBuilder, RemoveVolumeOptions,
+    BuildImageOptionsBuilder, CommitContainerOptionsBuilder, CreateContainerOptionsBuilder,
+    CreateImageOptionsBuilder, DownloadFromContainerOptionsBuilder, ImportImageOptionsBuilder,
+    InspectContainerOptions, ListImagesOptionsBuilder, RemoveContainerOptionsBuilder,
+    RemoveImageOptions, RemoveImageOptionsBuilder, RemoveVolumeOptions,
     StopContainerOptionsBuilder, UploadToContainerOptionsBuilder,
 };
 use bytes::Bytes;
@@ -30,6 +32,47 @@ const LABEL_MANAGED: &str = "dev.ferrobot.managed";
 /// Image repository for archived sandboxes (separate from snapshots).
 const ARCHIVE_REPO: &str = "ferrobot-archive";
 const TOKEN_VAR: &str = "FERROBOT_AGENT_TOKEN";
+/// Tag prefix of images from `build_image`; the sweep never touches any other image.
+const CLI_TAG_PREFIX: &str = "ferrobot-runner:clis-";
+/// Packages arrive as `"$@"`, never as part of the script.
+const INSTALL: &str = "export DEBIAN_FRONTEND=noninteractive && apt-get update \
+    && apt-get install -y --no-install-recommends \"$@\" && rm -rf /var/lib/apt/lists/*";
+
+/// Deterministic tag for `packages` (sorted) on the base image `base_id`.
+fn cli_tag(base_id: &str, packages: &[String]) -> String {
+    let mut ctx = ring::digest::Context::new(&ring::digest::SHA256);
+    ctx.update(base_id.as_bytes());
+    for p in packages {
+        ctx.update(b"\n");
+        ctx.update(p.as_bytes());
+    }
+    ctx.finish().as_ref()[..8]
+        .iter()
+        .fold(CLI_TAG_PREFIX.to_owned(), |mut tag, b| {
+            let _ = write!(tag, "{b:02x}");
+            tag
+        })
+}
+
+/// Dockerfile installing validated `packages` as root, then back to the base image's user.
+fn dockerfile(base_id: &str, user: &str, packages: &[String]) -> Result<String, SandboxError> {
+    let token = |s: &str| {
+        !s.is_empty()
+            && s.chars()
+                .all(|c| c.is_ascii_alphanumeric() || "_.:-".contains(c))
+    };
+    if !token(base_id) || !token(user) {
+        return Err(SandboxError::Other(format!(
+            "unexpected base image id {base_id:?} or user {user:?}"
+        )));
+    }
+    let mut argv = vec!["sh", "-c", INSTALL, "sh"];
+    argv.extend(packages.iter().map(String::as_str));
+    let run = serde_json::to_string(&argv).map_err(|e| SandboxError::Other(e.to_string()))?;
+    Ok(format!(
+        "FROM {base_id}\nUSER root\nRUN {run}\nUSER {user}\n"
+    ))
+}
 
 /// `ENV` change blanking every variable that holds the agent token: a committed image keeps the
 /// container env, and the token also travels as e.g. `ANTHROPIC_API_KEY`.
@@ -133,14 +176,80 @@ impl DockerBackend {
         Ok(())
     }
 
-    /// Pulls `image` unless the engine has it (a release build names a registry image).
-    async fn pull_if_missing(&self, image: &str) -> Result<(), SandboxError> {
+    async fn has_image(&self, image: &str) -> Result<bool, SandboxError> {
         match self.docker().inspect_image(image).await {
-            Ok(_) => return Ok(()),
+            Ok(_) => Ok(true),
             Err(bollard::errors::Error::DockerResponseServerError {
                 status_code: 404, ..
-            }) => {}
-            Err(e) => return Err(e.into()),
+            }) => Ok(false),
+            Err(e) => Err(e.into()),
+        }
+    }
+
+    /// Builds `tag` from a single-file context; a failed `apt-get` reports its own `E:` line.
+    async fn build(&self, tag: &str, dockerfile: &str) -> Result<(), SandboxError> {
+        let context = single_file_tar("Dockerfile", dockerfile.as_bytes())?;
+        let options = BuildImageOptionsBuilder::default()
+            .dockerfile("Dockerfile")
+            .t(tag)
+            .rm(true)
+            .forcerm(true)
+            .build();
+        let docker = self.docker();
+        let mut steps = docker.build_image(options, None, Some(bollard::body_full(context.into())));
+        let mut apt_error = None;
+        while let Some(step) = steps.next().await {
+            match step {
+                Ok(info) => {
+                    let lines = info.stream.unwrap_or_default();
+                    // The legacy builder colors stderr: "\x1b[91mE: Unable to locate ...".
+                    let plain = lines.lines().map(|l| l.trim_start_matches("\u{1b}[91m"));
+                    if let Some(line) = plain.rev().find(|l| l.starts_with("E: ")) {
+                        apt_error = Some(line.to_owned());
+                    }
+                }
+                Err(bollard::errors::Error::DockerStreamError { error }) => {
+                    return Err(SandboxError::Other(apt_error.unwrap_or(error)));
+                }
+                Err(e) => return Err(e.into()),
+            }
+        }
+        Ok(())
+    }
+
+    /// Removes images from `build_image` other than `keep`; ones a sandbox still uses stay.
+    async fn sweep_cli_images(&self, keep: Option<&str>) -> Result<(), SandboxError> {
+        let filters = HashMap::from([("reference", vec![format!("{CLI_TAG_PREFIX}*")])]);
+        let options = ListImagesOptionsBuilder::default()
+            .filters(&filters)
+            .build();
+        let images = self.docker().list_images(Some(options)).await?;
+        let stale = images
+            .iter()
+            .flat_map(|i| &i.repo_tags)
+            .filter(|t| t.starts_with(CLI_TAG_PREFIX) && Some(t.as_str()) != keep);
+        for tag in stale {
+            match self
+                .docker()
+                .remove_image(tag, None::<RemoveImageOptions>, None)
+                .await
+            {
+                // 409: a container still uses it; a later sweep removes it.
+                Ok(_)
+                | Err(bollard::errors::Error::DockerResponseServerError {
+                    status_code: 404 | 409,
+                    ..
+                }) => {}
+                Err(e) => return Err(e.into()),
+            }
+        }
+        Ok(())
+    }
+
+    /// Pulls `image` unless the engine has it (a release build names a registry image).
+    async fn pull_if_missing(&self, image: &str) -> Result<(), SandboxError> {
+        if self.has_image(image).await? {
+            return Ok(());
         }
         tracing::info!(%image, "pulling the runner image; the first start takes a while");
         let options = CreateImageOptionsBuilder::default()
@@ -526,6 +635,57 @@ impl SandboxBackend for DockerBackend {
         self.config.home_dir.clone()
     }
 
+    fn supports_image_builds(&self) -> bool {
+        true
+    }
+
+    async fn build_image(&self, packages: &[String]) -> Result<Option<String>, SandboxError> {
+        let packages = crate::package_set(packages)?;
+        let image = if packages.is_empty() {
+            None
+        } else {
+            self.pull_if_missing(&self.config.image).await?;
+            let base = self.docker().inspect_image(&self.config.image).await?;
+            let base_id = base.id.unwrap_or_default();
+            let user = base
+                .config
+                .and_then(|c| c.user)
+                .filter(|u| !u.is_empty())
+                .unwrap_or_else(|| "root".into());
+            let tag = cli_tag(&base_id, &packages);
+            if !self.has_image(&tag).await? {
+                tracing::info!(%tag, ?packages, "building the CLI image");
+                self.build(&tag, &dockerfile(&base_id, &user, &packages)?)
+                    .await?;
+            }
+            Some(tag)
+        };
+        self.sweep_cli_images(image.as_deref()).await?;
+        Ok(image)
+    }
+
+    async fn is_stale(
+        &self,
+        sandbox: &SandboxHandle,
+        image: Option<&str>,
+    ) -> Result<bool, SandboxError> {
+        let id = Self::check(sandbox)?;
+        let current = match self
+            .docker()
+            .inspect_container(id, None::<InspectContainerOptions>)
+            .await
+        {
+            Ok(info) => info.config.and_then(|c| c.image).unwrap_or_default(),
+            Err(bollard::errors::Error::DockerResponseServerError {
+                status_code: 404, ..
+            }) => return Ok(false),
+            Err(e) => return Err(e.into()),
+        };
+        let base = &self.config.image;
+        let built = current == *base || current.starts_with(CLI_TAG_PREFIX);
+        Ok(built && current != image.unwrap_or(base))
+    }
+
     async fn ready(&self) -> Result<(), SandboxError> {
         self.ping().await
     }
@@ -534,8 +694,9 @@ impl SandboxBackend for DockerBackend {
         let id = if let Some(id) = self.unarchive(spec).await? {
             id
         } else {
-            self.pull_if_missing(&self.config.image).await?;
-            let id = self.create_container(spec, &self.config.image).await?;
+            let image = spec.image.as_deref().unwrap_or(&self.config.image);
+            self.pull_if_missing(image).await?;
+            let id = self.create_container(spec, image).await?;
             self.ensure_started(&id).await?;
             id
         };
@@ -932,6 +1093,27 @@ mod tests {
     }
 
     use super::*;
+
+    #[test]
+    fn cli_image_passes_packages_as_arguments() {
+        let packages = ["jq".to_owned(), "g++".to_owned()];
+        let file = dockerfile("sha256:ab12", "node", &packages).unwrap();
+        let lines: Vec<&str> = file.lines().collect();
+        assert_eq!(lines[..2], ["FROM sha256:ab12", "USER root"]);
+        assert_eq!(lines[3], "USER node");
+        let argv: Vec<String> =
+            serde_json::from_str(lines[2].strip_prefix("RUN ").unwrap()).unwrap();
+        assert_eq!(argv[..4], ["sh", "-c", INSTALL, "sh"]);
+        assert_eq!(argv[4..], packages);
+        assert!(dockerfile("sha256:ab12", "node\nRUN id", &packages).is_err());
+        assert!(dockerfile("x y", "node", &packages).is_err());
+
+        let tag = cli_tag("sha256:ab12", &packages);
+        assert!(tag.starts_with(CLI_TAG_PREFIX) && tag.len() == CLI_TAG_PREFIX.len() + 16);
+        assert_eq!(tag, cli_tag("sha256:ab12", &packages));
+        assert_ne!(tag, cli_tag("sha256:cd34", &packages));
+        assert_ne!(tag, cli_tag("sha256:ab12", &packages[..1]));
+    }
 
     #[test]
     fn tar_roundtrip() {

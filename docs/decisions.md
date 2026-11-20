@@ -943,3 +943,39 @@ slop, so polish mode: palette, accent, logo, layout and features stay.
   the daemon holds the token; CLIs in the sandbox will be keyless (Tim,
   2026-11-20). A credential-swapping proxy for OAuth CLIs is a later option,
   only for CLIs without an MCP server.
+
+## CLIs in the sandbox image
+
+- **One shared image** (Tim, 2026-11-20): Settings, CLIs picks keyless Debian
+  packages (a short catalog in the UI plus free-form names); the daemon stores
+  them in the `clis` setting (no migration) and the Docker backend builds
+  `FROM <configured image's id>` with them. CLIs that need a login (gh, aws,
+  gcloud, stripe) are out: keys never enter a sandbox, logged-in services go
+  through connectors. Per-agent choice waits for tool scopes (the shell group).
+- **Trust boundary:** names must follow Debian policy
+  (`^[a-z0-9][a-z0-9+.-]{1,62}$`, at most 32, `package_set` in
+  `crates/sandbox`), checked by the API and again by the backend. The
+  Dockerfile is rendered from validated tokens only: `RUN` in exec form,
+  `sh -c '... apt-get install ... "$@"' sh <packages>`, so a name is an argv
+  entry, never shell text. The build runs as root; the image ends with the base
+  image's own `USER` (node), so agents stay unprivileged.
+- **Tag** `ferrobot-runner:clis-<sha256(base id, packages)[..16]>`: the same
+  list on the same base reuses the image; a rebuilt base image gets a new tag.
+  On startup the daemon rebuilds (a cache hit unless the base changed), so a
+  rebuilt `ferrobot-runner:dev` reaches agents with CLIs. A failed build keeps
+  the previous image in use; one build at a time (`409` otherwise).
+- **Cleanup:** after each build every other `ferrobot-runner:clis-*` image is
+  removed without force; one a container still uses stays until a later build
+  or restart. Snapshot, archive and base images are never touched. An empty
+  list means the plain base image.
+- **Existing agents switch on their next wake.** The lifecycle never recreated
+  a container when its image changed (`create` adopts by name, `wake` starts
+  what exists). Now `wake` asks the backend `is_stale`: a container created
+  from the base or a CLI image other than the current one is destroyed without
+  its home volume and provisioned again (fresh token, same volume). Running
+  agents are not interrupted; they switch after their next sleep (warm sleep
+  after 5 minutes idle by default) or an explicit stop and wake. Sandboxes
+  restored from a snapshot or archive keep their root filesystem and are never
+  stale.
+- **Docker only:** other backends report `supported: false` and refuse a
+  non-empty list with `501`.

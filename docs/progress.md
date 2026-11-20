@@ -1052,3 +1052,35 @@ store used for the run) or the daemon's own env.
 - Not tested: a real OAuth sign-in with any catalog server (dynamic
   registration with a loopback redirect is advertised but unproven per
   server); the Tauri window.
+
+## CLIs in the sandbox image (`feat/sandbox-clis`)
+
+**Done**
+
+- `GET`/`PUT /v1/clis`: Debian packages (validated, at most 32) and the build
+  status (`idle`/`building`/`ready`/`failed` with the `apt-get` error). Stored
+  in the `clis` setting, no migration.
+- `SandboxBackend::build_image` / `is_stale` and `SandboxSpec::image`; the
+  Docker backend builds `ferrobot-runner:clis-<hash>` via bollard, removes
+  older CLI images and starts new sandboxes from it. Other backends: not
+  supported.
+- `lifecycle::wake` recreates a sandbox on an outdated image, keeping its home
+  volume; the daemon rebuilds on startup.
+- Desktop: Settings, CLIs (12 catalog packages, free-form names, status).
+
+**Tested**
+
+- Rust: `package_names_follow_debian_policy`,
+  `cli_image_passes_packages_as_arguments` and the daemon test
+  `cli_image_reaches_new_and_woken_sandboxes` (validation, one build at a
+  time, running agents untouched, new and woken sandboxes on the new image,
+  back to the base on an empty list, never a purged volume).
+- Live, throwaway daemon (Docker Desktop, mock driver): an agent created before
+  the build was stopped, `jq` + `tree` built, and the wake recreated it on the
+  new image with its home file intact, `jq`/`tree` working and uid 1000; a new
+  agent got the image directly. A missing package failed with
+  `E: Unable to locate package …`; the startup rebuild ran; an empty list moved
+  a woken agent back to the base image; the sweep kept the in-use image and
+  removed it once its agents were gone. The 12 catalog packages install on the
+  runner image (`apt-get install -s`).
+- Not tested: building all 12 at once (disk), Podman, the Tauri window.

@@ -11,12 +11,14 @@ import {
   Palette,
   Plug,
   Sun,
+  Terminal,
   X,
 } from "lucide-preact";
 
 import type { GeneralSettings } from "../api.ts";
 import { useApp } from "../context.ts";
 import type { ThemePref } from "../lib/theme.ts";
+import { ClisSettings } from "./ClisSettings.tsx";
 import { ConnectorsSettings } from "./ConnectorsSettings.tsx";
 import { Memory } from "./InfoPanel.tsx";
 import { ProvidersSettings } from "./ProvidersSettings.tsx";
@@ -25,7 +27,7 @@ import { VoiceSettings } from "./VoiceSettings.tsx";
 import { IconButton, Switch } from "./ui.tsx";
 
 export type SettingsSection =
-  "providers" | "vault" | "agents" | "connectors" | "memory" | "voice" | "appearance";
+  "providers" | "vault" | "agents" | "connectors" | "clis" | "memory" | "voice" | "appearance";
 
 const SECTIONS: [SettingsSection, string, string, typeof KeyRound][] = [
   ["providers", "Model providers", "The models your agents run on. Their keys live in Vault.", Cpu],
@@ -41,6 +43,12 @@ const SECTIONS: [SettingsSection, string, string, typeof KeyRound][] = [
     "Connectors",
     "Remote MCP servers whose tools you can give to agents, with a token or an OAuth sign-in.",
     Plug,
+  ],
+  [
+    "clis",
+    "CLIs",
+    "Command-line tools in every agent’s computer, built into one shared image.",
+    Terminal,
   ],
   [
     "memory",
@@ -143,6 +151,7 @@ export function Settings(props: {
         {props.section === "vault" && <VaultSettings />}
         {props.section === "agents" && <AgentSettings />}
         {props.section === "connectors" && <ConnectorsSettings onVault={vault} />}
+        {props.section === "clis" && <ClisSettings />}
         {props.section === "memory" && <Memory agent={null} />}
         {props.section === "voice" && <VoiceSettings onVault={vault} />}
         {props.section === "appearance" && (

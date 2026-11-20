@@ -24,6 +24,36 @@ pub use sprites::{SpritesBackend, SpritesConfig};
 /// Upper bound for captured exec output per stream.
 pub const MAX_EXEC_OUTPUT: usize = 1024 * 1024;
 
+/// Most Debian packages [`SandboxBackend::build_image`] installs.
+pub const MAX_PACKAGES: usize = 32;
+
+/// Validates Debian package names (policy 5.6.7: lower case letters, digits, `+`, `-`, `.`,
+/// alphanumeric first, at least two characters) and returns them sorted and deduplicated.
+pub fn package_set(packages: &[String]) -> Result<Vec<String>, SandboxError> {
+    let valid = |p: &str| {
+        let mut chars = p.chars();
+        (2..=63).contains(&p.len())
+            && chars
+                .next()
+                .is_some_and(|c| c.is_ascii_lowercase() || c.is_ascii_digit())
+            && chars.all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || "+.-".contains(c))
+    };
+    if let Some(bad) = packages.iter().find(|p| !valid(p)) {
+        return Err(SandboxError::InvalidPackages(format!(
+            "{bad:?} is not a Debian package name"
+        )));
+    }
+    let mut set = packages.to_vec();
+    set.sort();
+    set.dedup();
+    if set.len() > MAX_PACKAGES {
+        return Err(SandboxError::InvalidPackages(format!(
+            "at most {MAX_PACKAGES} packages"
+        )));
+    }
+    Ok(set)
+}
+
 /// What to create.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SandboxSpec {
@@ -33,6 +63,8 @@ pub struct SandboxSpec {
     pub env: BTreeMap<String, String>,
     /// Free-form labels (agent id, project, ...).
     pub labels: BTreeMap<String, String>,
+    /// Image from [`SandboxBackend::build_image`]; `None`: the backend's default image.
+    pub image: Option<String>,
 }
 
 /// Reference to an existing sandbox. Persisted by the daemon.
@@ -127,6 +159,34 @@ pub trait SandboxBackend: Send + Sync + std::fmt::Debug {
     /// workspace is `<home>/workspace`.
     fn home(&self) -> String {
         "/home/node".into()
+    }
+
+    /// Whether [`build_image`](Self::build_image) can add packages.
+    fn supports_image_builds(&self) -> bool {
+        false
+    }
+
+    /// Builds the default image plus the Debian `packages` (see [`package_set`]) and returns
+    /// it for [`SandboxSpec::image`]; no packages: `None`, the default image.
+    async fn build_image(&self, packages: &[String]) -> Result<Option<String>, SandboxError> {
+        if package_set(packages)?.is_empty() {
+            return Ok(None);
+        }
+        Err(SandboxError::NotImplemented {
+            backend: self.kind(),
+            operation: "image builds",
+        })
+    }
+
+    /// Whether the sandbox must be recreated to run `image` (`None`: the default image).
+    /// Sandboxes restored from a snapshot or archive keep their own filesystem.
+    async fn is_stale(
+        &self,
+        sandbox: &SandboxHandle,
+        image: Option<&str>,
+    ) -> Result<bool, SandboxError> {
+        let _ = (sandbox, image);
+        Ok(false)
     }
 
     /// Whether the backend can run sandboxes right now (e.g. the Docker engine answers).
@@ -241,4 +301,35 @@ pub(crate) fn capture(bytes: &[u8]) -> (String, bool) {
         bytes
     };
     (String::from_utf8_lossy(slice).into_owned(), truncated)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{MAX_PACKAGES, package_set};
+
+    #[test]
+    fn package_names_follow_debian_policy() {
+        for ok in [
+            "jq",
+            "poppler-utils",
+            "g++",
+            "libstdc++6",
+            "python3.11",
+            "7zip",
+        ] {
+            assert!(package_set(&[ok.into()]).is_ok(), "{ok}");
+        }
+        let long = "a".repeat(64);
+        for bad in [
+            "", "a", "-o", "+x", ".x", "Jq", "jq;id", "jq bar", "jq\n", "jq=1.6", "a/b", "$(id)",
+            "jq*", "\"jq\"", &long,
+        ] {
+            assert!(package_set(&[bad.into()]).is_err(), "{bad:?}");
+        }
+        let set = package_set(&["tree".into(), "jq".into(), "tree".into()]).unwrap();
+        assert_eq!(set, ["jq", "tree"]);
+        let many: Vec<String> = (0..=MAX_PACKAGES).map(|i| format!("p{i}")).collect();
+        assert!(package_set(&many).is_err());
+        assert!(package_set(&many[1..]).is_ok());
+    }
 }

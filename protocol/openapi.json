@@ -2275,6 +2275,104 @@
         }
       }
     },
+    "/v1/clis": {
+      "get": {
+        "tags": [
+          "clis"
+        ],
+        "summary": "The CLI packages in every agent's sandbox.",
+        "operationId": "get_clis",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ClisView"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or wrong API token",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        }
+      },
+      "put": {
+        "tags": [
+          "clis"
+        ],
+        "summary": "Replaces the CLI packages and builds their image in the background. New sandboxes start\nfrom it; existing ones switch when they next wake, keeping their home directory.",
+        "operationId": "put_clis",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateClis"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ClisView"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Not a Debian package name, or too many",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or wrong API token",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "A build is running",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "501": {
+            "description": "The sandbox backend cannot build images",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/v1/connectors": {
       "get": {
         "tags": [
@@ -4617,6 +4715,16 @@
           }
         }
       },
+      "BuildStatus": {
+        "type": "string",
+        "description": "Where the image build stands.",
+        "enum": [
+          "idle",
+          "building",
+          "ready",
+          "failed"
+        ]
+      },
       "CallMessage": {
         "type": "object",
         "required": [
@@ -4678,6 +4786,38 @@
           "value": {
             "type": "string",
             "description": "Stable value reported in the answer; defaults to the label."
+          }
+        }
+      },
+      "ClisView": {
+        "type": "object",
+        "description": "The CLI packages and where their image build stands.",
+        "required": [
+          "packages",
+          "status",
+          "supported"
+        ],
+        "properties": {
+          "packages": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Debian packages added to the base image, sorted."
+          },
+          "status": {
+            "$ref": "#/components/schemas/BuildStatus"
+          },
+          "error": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Why the last build failed; null otherwise."
+          },
+          "supported": {
+            "type": "boolean",
+            "description": "Whether the sandbox backend can build images (Docker only)."
           }
         }
       },
@@ -6530,6 +6670,22 @@
           }
         }
       },
+      "UpdateClis": {
+        "type": "object",
+        "description": "A new CLI package list.",
+        "required": [
+          "packages"
+        ],
+        "properties": {
+          "packages": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Debian package names, at most 32; empty: the plain base image."
+          }
+        }
+      },
       "UpdateConnector": {
         "type": "object",
         "properties": {
@@ -7081,6 +7237,10 @@
     {
       "name": "connectors",
       "description": "Remote MCP servers whose tools agents can use"
+    },
+    {
+      "name": "clis",
+      "description": "Command-line tools in every agent's sandbox"
     },
     {
       "name": "voice",
