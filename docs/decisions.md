@@ -390,8 +390,9 @@ the code and this file together.
   rounds) and `client_composed` (the text is not read as a slash command or
   `@`-mention, whoever wrote it). The query ends once every uuid shows up in
   a result's `user_message_uuids`, so a message that lands after the final
-  answer gets its own answer in the same runner turn. A CLI that does not
-  report `user_message_uuids` ends after the first result.
+  answer gets its own answer in the same runner turn. Any result answers the
+  turn's own prompt, so only late messages can hold the query open; a CLI
+  that does not report `user_message_uuids` ends after the first result.
 - **Codex and Gemini CLI do not steer;** their messages wait for the next
   turn as before. ACP's `session/prompt` takes no further input once sent
   (only `session/cancel`). Whether Codex 0.166.0's app-server can add input
