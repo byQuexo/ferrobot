@@ -11,11 +11,6 @@ sandbox an agent runner drives a model harness (the
 OpenAI's Codex, Google's Gemini CLI over ACP, or a built-in loop for
 OpenAI-compatible APIs) and reaches the daemon through MCP tools.
 
-> Status: everything below works end to end with Docker and the built-in mock
-> model and is covered by tests. Each real-model driver has run a tool-using
-> turn in Docker, but against local Ollama or fake upstreams: no provider has
-> been called with a real API key yet (see [Status](#status)).
-
 | Light | Dark |
 | --- | --- |
 | ![Chat with a collapsed agent-to-agent hint, an inline mention and a question card, light theme](docs/screenshots/light-chat.png) | ![Question card on its multiple-choice step, dark theme](docs/screenshots/dark-chat.png) |
