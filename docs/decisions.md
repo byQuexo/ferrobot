@@ -182,3 +182,15 @@ the code and this file together.
 - **MCP server stateless.** Nothing in ferrobot needs MCP sessions or
   server-to-client notifications; stateless removes the GET stream that broke
   Gemini CLI and the session-lost case after a daemon restart.
+
+## F4c: archive
+
+- **Keyed by sandbox name** (`archives/<name>/`), so a wake needs no stored
+  reference: `create` looks for an archive first. A new agent with the same
+  name as an agent deleted with `keep_data=true` would get its archive, the
+  same way it would get its kept home volume today.
+- **No encryption yet:** Tim scoped this step to a local FS target. Before
+  pointing `--storage-url` at S3/R2 for archives, add encryption (needs a key
+  decision: OS keychain like provider keys is the obvious place).
+- **Old token retired on archive** instead of stripping env from the image:
+  `docker commit` copies the container env into the image config.

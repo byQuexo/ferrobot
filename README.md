@@ -262,7 +262,9 @@ are not supported, only API keys.
 
 Other useful flags: `--warm-after <secs>` (default 300 = 5 min: pause the
 sandbox, memory kept, resumes in place; 0 = never), `--idle-timeout <secs>`
-(default 900 = 15 min: stop it, disk kept; 0 = never sleep), `--timezone
+(default 900 = 15 min: stop it, disk kept; 0 = never sleep), `--archive-after
+<secs>` (Docker: move a sleeping sandbox to `--storage-url`, restored on wake;
+default 0 = off), `--timezone
 <IANA zone>` (default for routines), `--turn-timeout <secs>`.
 
 **Without Docker** (development only, no isolation): build the runner with

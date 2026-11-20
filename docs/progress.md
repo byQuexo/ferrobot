@@ -252,3 +252,38 @@ store used for the run) or the daemon's own env.
 - Gemini 0.67 runs some commands without asking, so `decide()` only sees what
   it asks about; its shell results reach the timeline as "completed" only.
 - The `session/load` replay drain is timing-based (200 ms quiet, max 5 s).
+
+## F4c: archive for Docker (`feature/docker-archive`)
+
+**Done**
+
+- `SleepLevel::Archived`; Docker `sleep(Archived)` streams the home
+  directory and the committed image (`docker image save`) into the object
+  store as `archives/<name>/home.tar` and `image.tar` (multipart, never fully
+  in memory), then removes container, volume and image.
+- `create` restores an archived sandbox (load image, create container,
+  unpack home, start) and deletes the archive; so a wake (NotFound →
+  provision) brings it back without daemon changes to the wake path.
+- `AgentStatus::Archived`; supervisor archives stopped agents after
+  `--archive-after` / `FERROBOT_ARCHIVE_AFTER` (default 0 = off);
+  `POST /v1/agents/{id}/stop?level=archived`; deleting an agent with its data
+  deletes its archive; info panel shows "archived, restores on wake".
+- The token inside the archived image's env is retired at archive time.
+
+**Tested**
+
+- Docker (real engine): archive → container gone, both objects in a local
+  store → `create` restores, home file intact, archive consumed
+  (`archive_moves_the_sandbox_into_the_store_and_back`).
+- Daemon: `idle_sleeping_agents_are_archived_and_restored_on_wake` (supervisor
+  archives after the timeout, old token rejected, message restores with a
+  fresh token, delete removes the archive).
+- Live: a real agent archived through the API (11.6 s, `image.tar` 1.29 GB,
+  `home.tar` 188 KB) and restored by an `exec`, its file intact.
+
+**Open**
+
+- No encryption at rest (the roadmap wants it for S3/R2); only a local FS
+  target was used. The archived image still holds the (retired) agent token.
+- Each archive saves the whole image (~1.3 GB); see the `shortcut:` comment.
+- Firecracker archive (snapshot + disk) is part of F4b/F4c on KVM.
