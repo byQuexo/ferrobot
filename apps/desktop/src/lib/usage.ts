@@ -53,12 +53,13 @@ export type SortKey =
   | "cache_write_tokens"
   | "cost_usd";
 
-/** Unknown costs count as lower than any known one. */
+/** Unknown costs sort last in both directions. */
 export function sortGroups(groups: UsageGroup[], key: SortKey, desc: boolean): UsageGroup[] {
-  const value = (g: UsageGroup): string | number =>
-    key === "label" ? g.label.toLowerCase() : (g[key] ?? -1);
+  const value = (g: UsageGroup): string | number | null | undefined =>
+    key === "label" ? g.label.toLowerCase() : g[key];
   return [...groups].sort((a, b) => {
     const [x, y] = [value(a), value(b)];
+    if (x == null || y == null) return Number(x == null) - Number(y == null);
     const order = x < y ? -1 : x > y ? 1 : 0;
     return desc ? -order : order;
   });

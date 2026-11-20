@@ -908,3 +908,44 @@ store used for the run) or the daemon's own env.
   for minutes; noted under the README's limits.
 - CORS already allows both Tauri origins (`tauri://localhost`,
   `http://tauri.localhost`); `/v1/ws` checks no origin.
+
+## Fixed after the lint review (`fix/ui-and-limits`)
+
+**Done**
+
+- Desktop: the provider re-key, connector token and OAuth-app forms and the
+  snapshot label close only after the save succeeded; on failure the input
+  stays and the error shows as a toast.
+- Desktop: a live-transcription socket that closes on its own (or a provider
+  error) releases the microphone and is reported once. A call stops listening
+  but keeps reading replies aloud; dictation ends as if stopped and keeps the
+  text in the box. A provider error now ends the session as well (its toast
+  already said "stopped" while audio kept streaming).
+- Desktop: a message from an unknown or deleted routine shows "A routine"
+  instead of `#<id>`.
+- Desktop: the ChatGPT sign-in stops polling after 15 minutes (the daemon's
+  `LOGIN_TIMEOUT`) and says it timed out.
+- Desktop: unknown costs sort last in the Usage table in both directions.
+- Daemon: chat, call and the MCP `send_message`, `assign_task` and
+  `create_agent` task bodies are length-checked after `@name` becomes
+  `<@uuid>`, so mentions can no longer push a stored body past the limit
+  (still 400 / invalid params). The `PostMessage` and `CallMessage` docs say
+  so; `protocol/` and the desktop types are regenerated.
+- Daemon: `create_agent` checks its task as stored (mentions of the new
+  agent included) before the approval card, so a too-long task creates no
+  agent.
+- Daemon: a call's heard lines are capped with their joining newlines and
+  the intro texts counted, so an assembled call body stays within 32 KiB.
+
+**Tested**
+
+- Desktop unit tests: an unknown routine in `buildTimeline`, the ascending
+  cost sort. Rust: `message_limits_count_mentions_as_stored` (chat, call,
+  `send_message`, `assign_task` with a body at the limit that grows through a
+  mention, and a `create_agent` task that mentions the new agent). The chat,
+  call, `send_message` and `create_agent` legs each failed with their fix
+  reverted; `assign_task` goes through the same check in `enqueue`.
+  `call::tests::many_tiny_lines_keep_the_call_body_within_the_limit` (1000
+  one-letter lines) failed with the old cap.
+- Not tested: the form, live-socket and sign-in timeout changes (no component
+  tests; not run in a browser or the Tauri window).

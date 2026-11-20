@@ -185,6 +185,7 @@ export async function startLive(
   on: {
     partial: (text: string) => void;
     committed: (text: string) => void;
+    /** The session ended on its own (a provider error or a dropped connection). */
     error: (message: string) => void;
   },
 ): Promise<LiveSession> {
@@ -225,18 +226,6 @@ export async function startLive(
     throw err;
   }
   let lastCommit: (() => void) | null = null;
-  ws.onmessage = (e: MessageEvent<string>) => {
-    const ev = liveEvent(e.data);
-    if (ev.kind === "partial") on.partial(ev.text);
-    else if (ev.kind === "committed") {
-      on.committed(ev.text);
-      lastCommit?.();
-    } else if (ev.kind === "error") on.error(ev.message);
-  };
-  ws.onclose = () => {
-    lastCommit?.();
-  };
-
   let muted = false;
   const send = (samples: Float32Array, commit: boolean): void => {
     if (ws.readyState !== WebSocket.OPEN) return;
@@ -261,16 +250,43 @@ export async function startLive(
   proc.connect(ctx.destination);
   /* eslint-enable @typescript-eslint/no-deprecated */
 
+  let ended = false;
+  // Once only: a second ctx.close() rejects.
+  const end = (): boolean => {
+    if (ended) return false;
+    ended = true;
+    // eslint-disable-next-line @typescript-eslint/no-deprecated -- ScriptProcessor, see above
+    proc.onaudioprocess = null;
+    source.disconnect();
+    proc.disconnect();
+    release();
+    void ctx.close();
+    return true;
+  };
+  const fail = (message: string): void => {
+    if (!end()) return;
+    ws.close();
+    on.error(message);
+  };
+  ws.onmessage = (e: MessageEvent<string>) => {
+    const ev = liveEvent(e.data);
+    if (ev.kind === "partial") on.partial(ev.text);
+    else if (ev.kind === "committed") {
+      on.committed(ev.text);
+      lastCommit?.();
+    } else if (ev.kind === "error") fail(ev.message);
+  };
+  ws.onclose = () => {
+    lastCommit?.();
+    fail("the connection closed");
+  };
+
   return {
     mute: (on) => {
       muted = on;
     },
     stop: async (commit) => {
-      // eslint-disable-next-line @typescript-eslint/no-deprecated -- ScriptProcessor, see above
-      proc.onaudioprocess = null;
-      source.disconnect();
-      proc.disconnect();
-      release();
+      if (!end()) return;
       if (commit && ws.readyState === WebSocket.OPEN) {
         const last = new Promise<void>((resolve) => {
           lastCommit = resolve;
@@ -280,7 +296,6 @@ export async function startLive(
         await last;
       }
       ws.close();
-      void ctx.close();
     },
   };
 }

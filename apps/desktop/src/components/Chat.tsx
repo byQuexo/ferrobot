@@ -90,13 +90,16 @@ export function Chat(props: {
   }, [client]);
   const voiceEnabled = voiceView?.enabled !== false;
 
-  const endCall = (): void => {
-    speaker.stop();
-    speaker.onPlaying = () => {};
+  const stopListening = (): void => {
     void listening.current?.stop(false);
     listening.current = null;
     setHearing(false);
     setCaption("");
+  };
+  const endCall = (): void => {
+    speaker.stop();
+    speaker.onPlaying = () => {};
+    stopListening();
     setVoice(false);
     setCall([]);
   };
@@ -135,6 +138,7 @@ export function Chat(props: {
         },
         error: (message) => {
           toast(`Listening stopped: ${message}`);
+          stopListening();
         },
       });
       // The agent's own voice must not come back as something the operator said.
@@ -531,7 +535,13 @@ function Item(props: { item: DisplayItem; agent: Agent; files?: ChatFiles }): JS
             <div class="a2a-head">
               <CalendarClock size={16} />
               <span>
-                Routine <strong>{item.routine}</strong>
+                {item.routine === null ? (
+                  "A routine"
+                ) : (
+                  <>
+                    Routine <strong>{item.routine}</strong>
+                  </>
+                )}
               </span>
               <span class="spacer" />
               <span class="meta">{clockTime(item.at)}</span>
@@ -718,6 +728,7 @@ function MicButton(props: {
           },
           error: (message) => {
             toast(`Dictation stopped: ${message}`);
+            void finish();
           },
         });
         if (startedIn !== chat.current) {

@@ -29,6 +29,9 @@ const KIND_HINTS: Partial<Record<ProviderKind, string>> = {
   gemini_cli: "Runs Google’s Gemini CLI harness (over ACP) with a Gemini API key.",
 };
 
+// The daemon's own LOGIN_TIMEOUT in crates/daemon/src/codex.rs.
+const LOGIN_TIMEOUT_MS = 15 * 60_000;
+
 const optionalKey = (kind: ProviderKind): boolean =>
   kind === "openai_compatible" || kind === "codex";
 
@@ -41,12 +44,14 @@ function ChatgptLogin(props: { provider: Provider }): JSX.Element {
 
   useEffect(() => {
     let live = true;
+    const started = Date.now();
     const poll = (): void => {
       client.chatgptLoginStatus(id).then(
         (s) => {
           if (!live) return;
-          setStatus(s);
-          if (s.state === "pending") setTimeout(poll, 2000);
+          const expired = s.state === "pending" && Date.now() - started >= LOGIN_TIMEOUT_MS;
+          setStatus(expired ? { state: "failed", error: "Sign-in timed out. Sign in again." } : s);
+          if (s.state === "pending" && !expired) setTimeout(poll, 2000);
         },
         () => undefined,
       );
@@ -203,9 +208,8 @@ export function ProvidersSettings(): JSX.Element {
                   class="provider-rekey"
                   onSubmit={(e) => {
                     e.preventDefault();
-                    void run(() =>
-                      client.updateProvider(p.id, { api_key: rekey.key.trim() || null }),
-                    ).then(() => {
+                    void run(async () => {
+                      await client.updateProvider(p.id, { api_key: rekey.key.trim() || null });
                       setRekey(null);
                     });
                   }}

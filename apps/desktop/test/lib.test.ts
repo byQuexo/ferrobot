@@ -118,6 +118,7 @@ describe("buildTimeline", () => {
         msg(2, { kind: "agent", id: ME }, BOB, "hi bob", "2026-01-01T10:00:02Z"),
         msg(3, { kind: "agent", id: BOB }, ME, "re: hi bob", "2026-01-01T10:00:05Z"),
         msg(4, { kind: "routine", id: 4 }, ME, "daily digest", "2026-01-01T10:00:09Z"),
+        msg(5, { kind: "routine", id: 9 }, ME, "from a deleted routine", "2026-01-01T10:00:10Z"),
       ],
       [
         ev(10, "message_in", { message_id: 1 }, "2026-01-01T10:00:01Z"),
@@ -142,7 +143,7 @@ describe("buildTimeline", () => {
     );
     assert.deepEqual(
       items.map((i) => i.type),
-      ["user", "tool", "outgoing", "assistant", "incoming", "system", "routine"],
+      ["user", "tool", "outgoing", "assistant", "incoming", "system", "routine", "routine"],
     );
     const tool = items[1];
     assert.ok(tool?.type === "tool");
@@ -151,6 +152,8 @@ describe("buildTimeline", () => {
     assert.ok(incoming?.type === "incoming" && incoming.from === "bob");
     const routine = items[6];
     assert.ok(routine?.type === "routine" && routine.routine === "digest");
+    const deleted = items[7];
+    assert.ok(deleted?.type === "routine" && deleted.routine === null);
   });
 
   it("shows shared files and finds them by name", () => {
@@ -563,6 +566,10 @@ describe("usage", () => {
     assert.deepEqual(
       sortGroups(rows, "cost_usd", true).map((g) => g.label),
       ["b", "c", "a"],
+    );
+    assert.deepEqual(
+      sortGroups(rows, "cost_usd", false).map((g) => g.label),
+      ["c", "b", "a"],
     );
     assert.deepEqual(
       sortGroups(rows, "label", false).map((g) => g.label),

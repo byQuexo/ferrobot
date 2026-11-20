@@ -3806,6 +3806,59 @@ async fn voice_calls_pass_lines_on_without_agents_waking_each_other() {
     assert_eq!(status, 409);
 }
 
+#[tokio::test]
+async fn message_limits_count_mentions_as_stored() {
+    use rmcp::model::CallToolRequestParams;
+    let backend = Arc::new(StatefulBackend::default());
+    let d = start(backend.clone(), None, "127.0.0.1:0").await;
+    let ada: AgentId = create(&d, json!({"name": "ada"})).await["id"]
+        .as_str()
+        .unwrap()
+        .parse()
+        .unwrap();
+    create(&d, json!({"name": "bob"})).await;
+    let (status, _) = http(&d.ui, "PUT", "/v1/call", Some(json!({"agents": [ada]}))).await;
+    assert_eq!(status, 200);
+    let as_bob = mcp_as(&d, backend.token("bob")).await;
+    let chat = format!("/v1/agents/{ada}/messages");
+
+    // Each body is exactly at its limit; `@bob` grows into a `<@id>` token, `@zed` is no agent.
+    let at_limit = |limit: usize, name: &str| format!("@{name} {}", "x".repeat(limit - 5));
+    for (name, accepted) in [("zed", true), ("bob", false)] {
+        let expected = if accepted { 202 } else { 400 };
+        for (path, limit) in [(chat.as_str(), 32 * 1024), ("/v1/call/messages", 20224)] {
+            let body = json!({"body": at_limit(limit, name)});
+            let (status, _) = http(&d.ui, "POST", path, Some(body)).await;
+            assert_eq!(status, expected, "{path} @{name}");
+        }
+        let body = at_limit(ferrobot_mcp::MAX_MESSAGE_BYTES, name);
+        for (tool, field) in [("send_message", "body"), ("assign_task", "task")] {
+            let mut args = serde_json::Map::new();
+            args.insert("to".into(), json!("ada"));
+            args.insert(field.into(), json!(body));
+            let res = as_bob
+                .call_tool(CallToolRequestParams::new(tool).with_arguments(args))
+                .await;
+            let ok = res.is_ok_and(|r| r.is_error != Some(true));
+            assert_eq!(ok, accepted, "{tool} @{name}");
+        }
+    }
+    let stored = received(&d, ada).await;
+    assert_eq!(stored.len(), 4, "only the @zed bodies are stored");
+
+    // A task that mentions the agent it creates fails before the operator is asked.
+    let task = at_limit(ferrobot_mcp::MAX_MESSAGE_BYTES, "cal");
+    let args = json!({"name": "cal", "description": "calendar", "task": task});
+    let request = CallToolRequestParams::new("create_agent")
+        .with_arguments(args.as_object().cloned().unwrap());
+    let res = tokio::time::timeout(Duration::from_secs(5), as_bob.call_tool(request))
+        .await
+        .expect("rejected without an approval card");
+    assert!(!res.is_ok_and(|r| r.is_error != Some(true)));
+    let (_, all) = http(&d.ui, "GET", "/v1/agents", None).await;
+    assert!(!all.to_string().contains("\"cal\""), "{all}");
+}
+
 /// Fake model API that streams usage like Anthropic and `OpenAI`, split mid-line as networks do.
 /// Model `claude-hang` stalls after its first event; `claude-overloaded` ends in an error event.
 async fn usage_upstream() -> String {

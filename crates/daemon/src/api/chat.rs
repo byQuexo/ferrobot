@@ -16,7 +16,7 @@ use crate::{AppState, UiEvent};
 #[derive(Debug, Deserialize, ToSchema)]
 pub(crate) struct PostMessage {
     /// 1..32768 bytes after trimming. `@name` mentions of existing agents are
-    /// stored as `<@agent-id>` tokens.
+    /// stored as `<@agent-id>` tokens, and the limit counts them as stored.
     body: String,
 }
 
@@ -35,11 +35,10 @@ pub(crate) async fn post_message(
     Json(req): Json<PostMessage>,
 ) -> Result<(StatusCode, Json<MailMessage>), ApiError> {
     let id = parse_id(&id)?;
-    let body = req.body.trim();
+    let body = state.normalize_mentions(req.body.trim()).await;
     if body.is_empty() || body.len() > MAX_TEXT_BYTES {
         return Err(ApiError::BadRequest("body must be 1..32768 bytes".into()));
     }
-    let body = state.normalize_mentions(body).await;
     let msg = state
         .store
         .enqueue_message(Sender::User, id, body, None)
