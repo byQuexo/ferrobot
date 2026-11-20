@@ -29,7 +29,9 @@ fn token() -> Option<String> {
 /// from the daemon; wry asks this for frames too, but the token script only runs in the main frame.
 fn is_app(url: &tauri::Url) -> bool {
     url.scheme() == "tauri"
-        || matches!(url.host_str(), Some("tauri.localhost" | "localhost"))
+        || url.host_str() == Some("tauri.localhost")
+        // Only the Vite dev server (vite.config.ts): any other local server would get the token.
+        || (url.scheme() == "http" && url.host_str() == Some("localhost") && url.port() == Some(1420))
         || (url.scheme() == "http"
             && url.host_str() == Some("127.0.0.1")
             && url.path().starts_with("/artifacts/"))
