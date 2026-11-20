@@ -873,3 +873,44 @@ store used for the run) or the daemon's own env.
   sorting usage ascending puts unknown costs first.
 - Daemon: message bodies are length-checked before `@name` becomes
   `<@uuid>`, so a stored body can exceed the cap by a few bytes per mention.
+
+## Fixed after the lint review (`fix/ui-and-limits`)
+
+**Done**
+
+- Desktop: the provider re-key, connector token and OAuth-app forms and the
+  snapshot label close only after the save succeeded; on failure the input
+  stays and the error shows as a toast.
+- Desktop: a live-transcription socket that closes on its own (or a provider
+  error) releases the microphone and is reported once. A call stops listening
+  but keeps reading replies aloud; dictation ends as if stopped and keeps the
+  text in the box. A provider error now ends the session as well (its toast
+  already said "stopped" while audio kept streaming).
+- Desktop: a message from an unknown or deleted routine shows "A routine"
+  instead of `#<id>`.
+- Desktop: the ChatGPT sign-in stops polling after 15 minutes (the daemon's
+  `LOGIN_TIMEOUT`) and says it timed out.
+- Desktop: unknown costs sort last in the Usage table in both directions.
+- Daemon: chat, call and the MCP `send_message`, `assign_task` and
+  `create_agent` task bodies are length-checked after `@name` becomes
+  `<@uuid>`, so mentions can no longer push a stored body past the limit
+  (still 400 / invalid params). The `PostMessage` and `CallMessage` docs say
+  so; `protocol/` and the desktop types are regenerated.
+
+**Tested**
+
+- Desktop unit tests: an unknown routine in `buildTimeline`, the ascending
+  cost sort. Rust: `message_limits_count_mentions_as_stored` (chat, call,
+  `send_message`, `assign_task` with a body at the limit that grows through a
+  mention). The chat, call and `send_message` legs each failed with their
+  fix reverted; `assign_task` goes through the same check in `enqueue`.
+- Not tested: the form, live-socket and sign-in timeout changes (no component
+  tests; not run in a browser or the Tauri window).
+
+**Found, not fixed (reported)**
+
+- `create_agent`'s task is checked after approval, so a task that grows past
+  the limit through mentions leaves the agent created and the tool failing.
+- Call messages: `hear()` caps the heard lines' summed length, but the
+  newlines joining them and the framing are not counted, so ~300 very short
+  lines could push a call body ~90 bytes past 32 KiB.
