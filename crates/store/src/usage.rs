@@ -76,7 +76,7 @@ pub struct UsageFilter {
     pub model: Option<String>,
 }
 
-/// Sums for one group and one (provider kind, model), so prices can apply.
+/// Sums for one group, (provider kind, model) and cache use, so prices apply as per call.
 #[derive(Debug, Clone, PartialEq)]
 pub struct UsageSlice {
     pub key: String,
@@ -135,8 +135,8 @@ impl Store {
         .await
     }
 
-    /// Usage summed per group and (provider kind, model), ordered by key;
-    /// `by_minute` also splits and orders by UTC minute.
+    /// Usage summed per group, (provider kind, model) and whether cache tokens
+    /// were reported, ordered by key; `by_minute` also splits by UTC minute.
     pub async fn usage_slices(
         &self,
         filter: UsageFilter,
@@ -159,6 +159,8 @@ impl Store {
         } else {
             "NULL"
         };
+        // Cache users apart: a missing cache price leaves the same calls unknown in any grouping.
+        let cache = "COALESCE(u.cache_read_tokens, 0) > 0, COALESCE(u.cache_write_tokens, 0) > 0";
         // The label is a bare column: SQLite takes it from the MAX(u.id) row.
         let sql = format!(
             "SELECT {key}, {label}, u.provider_kind, u.model, COUNT(*),
@@ -172,8 +174,8 @@ impl Store {
                AND (?3 IS NULL OR u.agent_id = ?3)
                AND (?4 IS NULL OR COALESCE(u.provider_id, 'default') = ?4)
                AND (?5 IS NULL OR u.model = ?5)
-             GROUP BY 1, bucket, u.provider_kind, u.model
-             ORDER BY 1, bucket, u.provider_kind, u.model"
+             GROUP BY 1, bucket, u.provider_kind, u.model, {cache}
+             ORDER BY 1, bucket, u.provider_kind, u.model, {cache}"
         );
         self.with(move |c| {
             let mut stmt = c.prepare(&sql)?;
