@@ -36,6 +36,7 @@ async function main(): Promise<void> {
       runner_version: RUNNER_VERSION,
       driver: driver.name,
       session_id: runner.sessionId,
+      steering: driver.steering === true,
     }),
     onFrame: (frame) => { runner.handle(frame); },
     onDisconnect: () => { runner.abortCurrent(); },

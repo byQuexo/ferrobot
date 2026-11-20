@@ -169,6 +169,28 @@ describe("OpenAIDriver", () => {
     assert.match(tool.content, /hi/);
   });
 
+  it("adds messages that arrive mid-turn, also after the final answer", async () => {
+    const { driver, sent } = setup({
+      replies: [
+        [call(0, { name: "bash", arguments: '{"command":"true"}' }, "call_1")],
+        [text("Noted, hotels next. Flights: 3 options.")],
+        [text("Trains too: 2 options.")],
+      ],
+    });
+    const late = (id: number, body: string) => ({
+      type: "steer" as const, turn_id: "t1", message_id: id, sender: { kind: "user" as const }, sender_name: "user", body,
+    });
+    // Taken after the tool round, after the first answer, after the second.
+    const inbox = [[late(8, "also hotels")], [late(9, "and trains")], []];
+    const { ctx } = context({ takeMessages: () => inbox.shift() ?? [] });
+    const out = await driver.runTurn(ctx);
+    assert.equal(out.result, "Trains too: 2 options.");
+    assert.equal(sent.length, 3);
+    const lastUser = (i: number) => at(at(sent, i).body.messages.filter((m) => m.role === "user"), -1).content;
+    assert.equal(lastUser(1), "Message #8 from user, sent while you were working:\n\nalso hotels");
+    assert.equal(lastUser(2), "Message #9 from user, sent while you were working:\n\nand trains");
+  });
+
   it("writes and reads files relative to the workspace", async () => {
     const { driver, sent, workspaceDir } = setup({
       replies: [

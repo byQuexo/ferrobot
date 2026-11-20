@@ -1,0 +1,8 @@
+{
+  "type": "steer",
+  "turn_id": "turn-1",
+  "message_id": 8,
+  "sender": { "kind": "user" },
+  "sender_name": "user",
+  "body": "Also look at hotels near the beach."
+}

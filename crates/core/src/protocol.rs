@@ -33,6 +33,17 @@ pub enum DaemonFrame {
         sender_name: String,
         body: String,
     },
+    /// A message that arrived while turn `turn_id` runs, for runners whose
+    /// driver takes messages mid-turn (`hello.steering`). Unless
+    /// `turn_done.steered` lists it, it is queued again for the next turn.
+    Steer {
+        turn_id: String,
+        message_id: i64,
+        sender: Sender,
+        /// Display name of the sender (`user` or the agent name).
+        sender_name: String,
+        body: String,
+    },
     /// Abort the running turn, if it matches.
     Interrupt { turn_id: String },
     /// The operator changed the agent's name or instructions; applies from
@@ -56,6 +67,9 @@ pub enum RunnerFrame {
         driver: String,
         /// Session id persisted on the sandbox disk, if any.
         session_id: Option<String>,
+        /// The driver can take messages during a turn (`steer`).
+        #[serde(default)]
+        steering: bool,
     },
     /// Progress inside a turn.
     Event { turn_id: String, event: TurnEvent },
@@ -67,6 +81,9 @@ pub enum RunnerFrame {
         /// Final assistant text, if any.
         result: Option<String>,
         error: Option<String>,
+        /// Ids of `steer` messages the model saw during this turn.
+        #[serde(default)]
+        steered: Vec<i64>,
     },
 }
 
@@ -130,6 +147,7 @@ mod tests {
             session_id: Some("s1".into()),
             result: Some("ok".into()),
             error: None,
+            steered: vec![],
         };
         let json = serde_json::to_value(&frame).unwrap();
         assert_eq!(json["type"], "turn_done");

@@ -53,6 +53,7 @@ struct Done {
     turn_id: String,
     outcome: TurnOutcome,
     error: Option<String>,
+    steered: Vec<i64>,
 }
 
 async fn run_connection(state: AppState, agent: Agent, socket: WebSocket) {
@@ -64,13 +65,14 @@ async fn run_connection(state: AppState, agent: Agent, socket: WebSocket) {
         tracing::warn!(agent = %agent.name, "runner did not send hello in time");
         return;
     };
-    let (driver, session_id) = match serde_json::from_str::<RunnerFrame>(&text) {
+    let (driver, session_id, steering) = match serde_json::from_str::<RunnerFrame>(&text) {
         Ok(RunnerFrame::Hello {
             protocol_version,
             driver,
             session_id,
+            steering,
             ..
-        }) if protocol_version == PROTOCOL_VERSION => (driver, session_id),
+        }) if protocol_version == PROTOCOL_VERSION => (driver, session_id, steering),
         other => {
             tracing::warn!(agent = %agent.name, ?other, "bad hello, closing");
             return;
@@ -121,8 +123,11 @@ async fn run_connection(state: AppState, agent: Agent, socket: WebSocket) {
     let dispatcher = tokio::spawn(dispatch_loop(
         state.clone(),
         agent.id,
-        conn_id,
-        out_tx,
+        Conn {
+            id: conn_id,
+            out: out_tx,
+            steering,
+        },
         done_rx,
     ));
 
@@ -181,6 +186,7 @@ async fn handle_frame(state: &AppState, agent: &Agent, done_tx: &mpsc::Sender<Do
             session_id,
             result,
             error,
+            steered,
         }) => {
             if let Some(sid) = session_id {
                 let _ = state.store.set_agent_session(agent.id, sid).await;
@@ -198,6 +204,7 @@ async fn handle_frame(state: &AppState, agent: &Agent, done_tx: &mpsc::Sender<Do
                     turn_id,
                     outcome,
                     error,
+                    steered,
                 })
                 .await;
         }
@@ -232,11 +239,18 @@ async fn sender_name(state: &AppState, sender: Sender) -> String {
 }
 
 /// Feeds queued messages to the runner one turn at a time.
+/// One runner connection, as the dispatch loop sees it.
+struct Conn {
+    id: u64,
+    out: mpsc::Sender<DaemonFrame>,
+    /// The runner's driver takes messages mid-turn.
+    steering: bool,
+}
+
 async fn dispatch_loop(
     state: AppState,
     agent: AgentId,
-    conn_id: u64,
-    out: mpsc::Sender<DaemonFrame>,
+    conn: Conn,
     mut done_rx: mpsc::Receiver<Done>,
 ) {
     let notify = state.hub.notify_handle(agent);
@@ -253,9 +267,72 @@ async fn dispatch_loop(
                 continue;
             }
         };
-        if !run_turn(&state, agent, conn_id, &out, &mut done_rx, msg).await {
+        if !run_turn(&state, agent, &conn, &notify, &mut done_rx, msg).await {
             return;
         }
+    }
+}
+
+/// Hands the operator's messages that arrived during a turn to that turn.
+async fn steer(
+    state: &AppState,
+    agent: AgentId,
+    turn_id: &str,
+    out: &mpsc::Sender<DaemonFrame>,
+    steered: &mut Vec<i64>,
+) {
+    loop {
+        let msg = match state.store.claim_next_user_message(agent).await {
+            Ok(Some(msg)) => msg,
+            Ok(None) => return,
+            Err(e) => {
+                tracing::error!(error = %e, "claim failed");
+                return;
+            }
+        };
+        let from = sender_name(state, msg.sender).await;
+        state
+            .record(
+                agent,
+                Some(turn_id.to_owned()),
+                "message_in",
+                json!({ "message_id": msg.id, "from": from, "sender": msg.sender, "body": msg.body, "attempt": msg.attempts, "steered": true }),
+            )
+            .await;
+        steered.push(msg.id);
+        state.publish_message(msg.id).await;
+        let frame = DaemonFrame::Steer {
+            turn_id: turn_id.to_owned(),
+            message_id: msg.id,
+            sender: msg.sender,
+            sender_name: from,
+            body: state.render_mentions(&msg.body).await,
+        };
+        if out.send(frame).await.is_err() {
+            return; // reader cleanup requeues
+        }
+    }
+}
+
+/// Steered messages the model saw are delivered; the rest wait for the next
+/// turn (also after a failed turn, which is retried without them).
+async fn settle_steered(state: &AppState, steered: Vec<i64>, done: Option<&Done>) {
+    let seen: &[i64] = match done {
+        Some(d) if matches!(d.outcome, TurnOutcome::Completed | TurnOutcome::Interrupted) => {
+            &d.steered
+        }
+        _ => &[],
+    };
+    for id in steered {
+        let settled = if seen.contains(&id) {
+            state.store.complete_message(id).await
+        } else {
+            state.store.requeue_message(id).await
+        };
+        if let Err(e) = settled {
+            tracing::error!(error = %e, message = id, "failed to settle steered message");
+        }
+        state.publish_message(id).await;
     }
 }
 
@@ -263,11 +340,12 @@ async fn dispatch_loop(
 async fn run_turn(
     state: &AppState,
     agent: AgentId,
-    conn_id: u64,
-    out: &mpsc::Sender<DaemonFrame>,
+    conn: &Conn,
+    notify: &tokio::sync::Notify,
     done_rx: &mut mpsc::Receiver<Done>,
     msg: MailMessage,
 ) -> bool {
+    let (conn_id, out) = (conn.id, &conn.out);
     let turn_id = uuid::Uuid::new_v4().to_string();
     let from = sender_name(state, msg.sender).await;
     state
@@ -295,16 +373,23 @@ async fn run_turn(
     }
 
     let deadline = tokio::time::Instant::now() + state.settings.turn_timeout;
+    let mut steered = Vec::new();
     let result = loop {
-        match tokio::time::timeout_at(deadline, done_rx.recv()).await {
-            Ok(Some(report)) if report.turn_id == turn_id => break Some(report),
-            Ok(Some(old)) => tracing::debug!(turn = %old.turn_id, "ignoring stale turn_done"),
-            Ok(None) => return false,
-            Err(_) => break None,
+        tokio::select! {
+            done = tokio::time::timeout_at(deadline, done_rx.recv()) => match done {
+                Ok(Some(report)) if report.turn_id == turn_id => break Some(report),
+                Ok(Some(old)) => tracing::debug!(turn = %old.turn_id, "ignoring stale turn_done"),
+                Ok(None) => return false,
+                Err(_) => break None,
+            },
+            () = notify.notified(), if conn.steering => {
+                steer(state, agent, &turn_id, out, &mut steered).await;
+            }
         }
     };
     state.hub.set_current_turn(agent, conn_id, None);
     state.hub.touch(agent);
+    settle_steered(state, steered, result.as_ref()).await;
 
     let store_result = match result {
         // An interrupt is the operator's decision: do not redeliver.

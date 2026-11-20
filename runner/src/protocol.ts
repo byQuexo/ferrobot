@@ -28,11 +28,20 @@ export const daemonFrameSchema = z.discriminatedUnion("type", [
     sender_name: z.string(),
     body: z.string(),
   }),
+  z.object({
+    type: z.literal("steer"),
+    turn_id: z.string().min(1),
+    message_id: z.number().int(),
+    sender: senderSchema,
+    sender_name: z.string(),
+    body: z.string(),
+  }),
   z.object({ type: z.literal("interrupt"), turn_id: z.string().min(1) }),
   z.object({ type: z.literal("configure"), agent_name: z.string().min(1), instructions: z.string() }),
 ]);
 export type DaemonFrame = z.infer<typeof daemonFrameSchema>;
 export type TurnFrame = Extract<DaemonFrame, { type: "turn" }>;
+export type SteerFrame = Extract<DaemonFrame, { type: "steer" }>;
 export type WelcomeFrame = Extract<DaemonFrame, { type: "welcome" }>;
 
 export type TurnEvent =
@@ -53,6 +62,8 @@ export type RunnerFrame =
       runner_version: string;
       driver: string;
       session_id: string | null;
+      /** The driver takes messages during a turn (`steer` frames). */
+      steering: boolean;
     }
   | { type: "event"; turn_id: string; event: TurnEvent }
   | {
@@ -62,6 +73,8 @@ export type RunnerFrame =
       session_id: string | null;
       result: string | null;
       error: string | null;
+      /** Ids of `steer` messages the model saw during this turn. */
+      steered: number[];
     };
 
 /** Parses and validates a daemon frame. Throws on malformed input. */

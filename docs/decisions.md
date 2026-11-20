@@ -308,3 +308,17 @@ the code and this file together.
   `x-goog-user-project` out; no `set-cookie` back).
 - Risk: an SDK update that calls a new endpoint gets a 404 until it is added
   here.
+
+## Messages during a turn (steering)
+
+- **A message from the operator that arrives while the agent works is handed
+  to the running turn** (`steer` frame) when the runner says it can take it
+  (`hello.steering`). The model sees it as "sent while you were working" and
+  is told to acknowledge it in one line and act on it. Messages from other
+  agents and routines still wait for the next turn.
+- **The runner reports what the model saw** (`turn_done.steered`); everything
+  else goes back to the queue without counting a delivery attempt, so old
+  runners, drivers without steering and failed turns keep the old behaviour.
+- **Only the OpenAI-compatible driver steers so far.** It adds late messages
+  before its next model call, and after a final answer it makes one more call
+  so the reply covers them. Claude, Codex and Gemini CLI queue as before.

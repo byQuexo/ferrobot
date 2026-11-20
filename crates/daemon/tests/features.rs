@@ -165,6 +165,10 @@ type Ws =
     tokio_tungstenite::WebSocketStream<tokio_tungstenite::MaybeTlsStream<tokio::net::TcpStream>>;
 
 async fn connect_runner(agents: &str, token: &str) -> Ws {
+    connect_runner_with(agents, token, false).await
+}
+
+async fn connect_runner_with(agents: &str, token: &str, steering: bool) -> Ws {
     let mut req = format!("ws://{agents}/runner/ws")
         .into_client_request()
         .unwrap();
@@ -176,6 +180,7 @@ async fn connect_runner(agents: &str, token: &str) -> Ws {
         runner_version: "test".into(),
         driver: "fake".into(),
         session_id: None,
+        steering,
     };
     ws.send(Message::text(serde_json::to_string(&hello).unwrap()))
         .await
@@ -358,6 +363,7 @@ async fn profile_avatar_unread_and_memory() {
         session_id: None,
         result: Some("hi".into()),
         error: None,
+        steered: vec![],
     };
     ws.send(Message::text(serde_json::to_string(&done).unwrap()))
         .await
@@ -2159,4 +2165,88 @@ async fn connectors_sign_in_with_oauth() {
     let tools = as_ann.list_all_tools().await.unwrap();
     assert!(!tools.iter().any(|t| t.name.starts_with("up__")));
     as_ann.cancel().await.unwrap();
+}
+
+#[tokio::test]
+async fn messages_reach_a_running_turn_when_the_runner_can_take_them() {
+    use ferrobot_core::protocol::TurnOutcome;
+    let backend = Arc::new(StatefulBackend::default());
+    let d = start(backend.clone(), None, "127.0.0.1:0").await;
+    let id = create(&d, json!({"name": "stella"})).await["id"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    let mut ws = connect_runner_with(&d.agents, &backend.token("stella"), true).await;
+    let post = |body: &'static str| {
+        let path = format!("/v1/agents/{id}/messages");
+        let ui = d.ui.clone();
+        async move {
+            http(&ui, "POST", &path, Some(json!({"body": body})))
+                .await
+                .1["id"]
+                .as_i64()
+                .unwrap()
+        }
+    };
+    let first = post("find flights").await;
+    let DaemonFrame::Turn {
+        turn_id,
+        message_id,
+        ..
+    } = next_frame(&mut ws).await
+    else {
+        panic!("expected a turn");
+    };
+    assert_eq!(message_id, first);
+
+    // Sent while the turn runs: handed to it right away.
+    let hotels = post("also hotels").await;
+    let DaemonFrame::Steer {
+        turn_id: t,
+        message_id: m,
+        body,
+        ..
+    } = next_frame(&mut ws).await
+    else {
+        panic!("expected a steer frame");
+    };
+    assert_eq!(
+        (t.as_str(), m, body.as_str()),
+        (turn_id.as_str(), hotels, "also hotels")
+    );
+    let trains = post("and trains").await;
+    assert!(
+        matches!(next_frame(&mut ws).await, DaemonFrame::Steer { message_id, .. } if message_id == trains)
+    );
+
+    // The model saw "hotels" only: "trains" comes back as the next turn.
+    let done = RunnerFrame::TurnDone {
+        turn_id,
+        outcome: TurnOutcome::Completed,
+        session_id: None,
+        result: None,
+        error: None,
+        steered: vec![hotels],
+    };
+    ws.send(Message::text(serde_json::to_string(&done).unwrap()))
+        .await
+        .unwrap();
+    let DaemonFrame::Turn { message_id, .. } = next_frame(&mut ws).await else {
+        panic!("expected the unseen message as a turn");
+    };
+    assert_eq!(message_id, trains);
+    let (_, msgs) = http(&d.ui, "GET", &format!("/v1/agents/{id}/messages"), None).await;
+    let status = |m: i64| {
+        msgs.as_array()
+            .unwrap()
+            .iter()
+            .find(|x| x["id"] == m)
+            .unwrap()["status"]
+            .clone()
+    };
+    assert_eq!(
+        (status(first), status(hotels)),
+        (json!("delivered"), json!("delivered"))
+    );
+    assert_eq!(status(trains), "in_flight");
 }

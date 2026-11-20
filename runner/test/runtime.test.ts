@@ -84,6 +84,33 @@ describe("Runner", () => {
     assert.equal((await session.load()).sessionId, "s-1");
   });
 
+  it("hands mid-turn messages to a steering driver and reports the seen ones", async () => {
+    const sent: RunnerFrame[] = [];
+    let release = (): void => undefined;
+    const driver: ModelDriver = {
+      name: "steer",
+      steering: true,
+      runTurn: async (ctx) => {
+        await new Promise<void>((r) => { release = r; });
+        const taken = ctx.takeMessages?.() ?? [];
+        return { result: taken.map((m) => m.body).join(","), sessionId: null };
+      },
+      close: () => Promise.resolve(),
+    };
+    const session = new SessionStore(mkdtempSync(join(tmpdir(), "ferrobot-")));
+    const runner = new Runner({ driver, session, agentName: "a", send: (f) => sent.push(f) > 0 }, null);
+    runner.handle(turn("t1"));
+    const steer = (turnId: string, id: number) => ({
+      type: "steer" as const, turn_id: turnId, message_id: id, sender: { kind: "user" as const }, sender_name: "user", body: `m${String(id)}`,
+    });
+    runner.handle(steer("t1", 8));
+    runner.handle(steer("other", 9));
+    release();
+    await waitFor(() => sent.some((f) => f.type === "turn_done"));
+    const done = sent.find((f) => f.type === "turn_done");
+    assert.deepEqual(done?.type === "turn_done" && [done.result, done.steered], ["m8", [8]]);
+  });
+
   it("interrupts the matching turn", async () => {
     const sent: RunnerFrame[] = [];
     const driver: ModelDriver = {

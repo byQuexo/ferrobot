@@ -117,6 +117,7 @@ export function plainSchema(schema: object): Record<string, unknown> {
 
 export class OpenAIDriver implements ModelDriver {
   readonly name = "openai";
+  readonly steering = true;
   readonly #opts: OpenAIDriverOptions;
   readonly #fetch: typeof fetch;
 
@@ -160,6 +161,8 @@ export class OpenAIDriver implements ModelDriver {
       if (reply.text.trim()) ctx.emit({ kind: "assistant_text", text: reply.text });
       if (reply.calls.length === 0) {
         messages.push({ role: "assistant", content: reply.text });
+        // A message that came in while the answer was written gets its own reply.
+        if (this.#late(ctx, messages)) continue;
         // Saved only when a turn completes: never a tool call without its result.
         await this.#save(id, messages);
         return { result: reply.text, sessionId: id };
@@ -177,8 +180,21 @@ export class OpenAIDriver implements ModelDriver {
       for (const c of reply.calls) {
         messages.push({ role: "tool", tool_call_id: c.id, content: await this.#runTool(c, ctx) });
       }
+      this.#late(ctx, messages);
     }
     throw new Error(`turn stopped after ${MAX_MODEL_CALLS} model calls without a final answer`);
+  }
+
+  /** Adds messages that arrived during the turn; true if there were any. */
+  #late(ctx: TurnContext, messages: ChatMessage[]): boolean {
+    const late = ctx.takeMessages?.() ?? [];
+    for (const m of late) {
+      messages.push({
+        role: "user",
+        content: `Message #${String(m.message_id)} from ${m.sender_name}, sent while you were working:\n\n${m.body}`,
+      });
+    }
+    return late.length > 0;
   }
 
   async #complete(
