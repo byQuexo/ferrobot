@@ -1,6 +1,5 @@
-//! Files agents hand to the operator: copied out of the sandbox into object
-//! storage (`artifacts/<agent>/<uuid>`) and shown in the chat as a `file`
-//! event, so they outlive the sandbox and stay the version that was shared.
+//! Files agents share: copied into object storage (`artifacts/<agent>/<uuid>`) and shown as a
+//! `file` event, so they outlive the sandbox and stay the version that was shared.
 
 use std::time::Duration;
 
@@ -89,9 +88,8 @@ pub async fn share(state: &AppState, agent: AgentId, raw: &str) -> Result<Shared
     })
 }
 
-/// The stored copy of a file `agent` shared. The key must be one this module
-/// wrote for that agent (`artifacts/<agent>/<uuid>`): no other agent's
-/// files, no other part of the store.
+/// The stored copy of a file `agent` shared. Only keys `artifacts/<agent>/<uuid>`
+/// are read: no other agent's files, no other part of the store.
 pub async fn read(state: &AppState, agent: AgentId, key: &str) -> object_store::Result<Vec<u8>> {
     let own = key
         .strip_prefix(&format!("artifacts/{agent}/"))

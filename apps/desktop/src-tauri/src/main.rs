@@ -1,10 +1,5 @@
-//! Desktop shell. All logic lives in the daemon; this window only hosts the
-//! web UI, which talks to `ferrobotd` over HTTP and WebSocket.
-//!
-//! The one thing the shell does is hand the UI the daemon's operator token,
-//! so the user doesn't have to paste it: `FERROBOT_API_TOKEN`, else the file
-//! `FERROBOT_API_TOKEN_FILE`, else `$FERROBOT_DATA_DIR/api-token` (default
-//! `.ferrobot/api-token`, like the daemon). Without one, the UI asks for it.
+//! Desktop shell: hosts the web UI and hands it the operator token from `FERROBOT_API_TOKEN`,
+//! else the file `FERROBOT_API_TOKEN_FILE`, else `$FERROBOT_DATA_DIR/api-token` (`.ferrobot`).
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 use std::path::PathBuf;
@@ -30,9 +25,8 @@ fn token() -> Option<String> {
     ok.then_some(token)
 }
 
-/// The app's own pages (the bundled UI or the Vite dev server), and pages
-/// agents shared, which the viewer frames from the daemon. wry asks this for
-/// frames too; the token script only runs in the main frame.
+/// The app's own pages (bundled UI or Vite dev server) and agent-shared pages the viewer frames
+/// from the daemon; wry asks this for frames too, but the token script only runs in the main frame.
 fn is_app(url: &tauri::Url) -> bool {
     url.scheme() == "tauri"
         || matches!(url.host_str(), Some("tauri.localhost" | "localhost"))
@@ -41,8 +35,7 @@ fn is_app(url: &tauri::Url) -> bool {
             && url.path().starts_with("/artifacts/"))
 }
 
-/// Links open in the system browser, never in this window (which holds the
-/// operator token).
+/// Opens http(s) links in the system browser, never in this window (it holds the operator token).
 fn open_external(url: &tauri::Url) {
     if !matches!(url.scheme(), "http" | "https") {
         return;

@@ -46,9 +46,8 @@ pub struct DockerConfig {
     pub pids_limit: i64,
     /// Repository for snapshot images created by `snapshot`.
     pub snapshot_repo: String,
-    /// Where `snapshot` stores archives of the home volume (which `docker
-    /// commit` does not capture), as `snapshots/<tag>.tar`. `None`: snapshots
-    /// cover the root filesystem only.
+    /// Where `snapshot` stores the home volume, which `docker commit` skips, as
+    /// `snapshots/<tag>.tar`. `None`: snapshots cover the root filesystem only.
     pub snapshot_store: Option<Arc<dyn ObjectStore>>,
     /// Encrypts what goes to `snapshot_store`. `None`: written in the clear
     /// (the daemon allows that for a local store only).
@@ -73,12 +72,8 @@ impl Default for DockerConfig {
     }
 }
 
-/// One hardened container per agent.
-///
-/// * all capabilities dropped, `no-new-privileges`, memory + pid limits
-/// * runs as the image's non-root user
-/// * `$HOME` lives on a named volume, so `stop`/`destroy` keep agent state
-/// * `host.docker.internal` resolves to the host so the runner can dial the daemon
+/// One hardened container per agent: no capabilities, `no-new-privileges`, memory and pid limits,
+/// the image's non-root user, and `$HOME` on a named volume that `stop`/`destroy` keep.
 #[derive(Debug, Clone)]
 pub struct DockerBackend {
     docker: Docker,

@@ -1,10 +1,5 @@
-//! Bearer-token authentication for the operator UI API (`/v1`).
-//!
-//! The token is generated on first start and kept in `<data dir>/api-token`
-//! (mode 0600), or set with `--api-token` / `FERROBOT_API_TOKEN`. Clients send
-//! `Authorization: Bearer <token>`. Browsers cannot set headers on WebSocket
-//! upgrades or `<img>` requests, so `GET` requests may pass `?access_token=<token>`
-//! instead. `GET /v1/health` and CORS preflights stay open.
+//! Operator bearer token for the UI API. `GET` may use `?access_token=` instead, since browsers
+//! cannot set headers on WebSocket upgrades or `<img>` requests.
 
 use std::io::{self, Write};
 use std::path::{Path, PathBuf};

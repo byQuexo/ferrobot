@@ -16,7 +16,6 @@ pub(crate) fn parse_ts(raw: &str) -> Result<OffsetDateTime, StoreError> {
     OffsetDateTime::parse(raw, &Rfc3339).map_err(StoreError::corrupt)
 }
 
-/// True if the error is a UNIQUE constraint violation.
 pub(crate) fn is_unique_violation(err: &rusqlite::Error) -> bool {
     matches!(
         err,

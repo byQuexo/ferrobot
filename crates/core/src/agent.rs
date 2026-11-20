@@ -255,16 +255,10 @@ mod tests {
     use super::*;
 
     #[test]
-    fn accepts_valid_names() {
-        for ok in ["a", "alice", "build-bot", "x1", "a-b-c"] {
-            assert!(AgentName::parse(ok).is_ok(), "{ok}");
-        }
-    }
-
-    #[test]
-    fn rejects_invalid_names() {
+    fn validates_names() {
         let too_long = "a".repeat(33);
-        for bad in [
+        let valid = ["a", "alice", "build-bot", "x1", "a-b-c"].map(|n| (n, true));
+        let invalid = [
             "",
             "Alice",
             "1abc",
@@ -274,8 +268,9 @@ mod tests {
             "a b",
             "ä",
             too_long.as_str(),
-        ] {
-            assert!(AgentName::parse(bad).is_err(), "{bad:?}");
+        ];
+        for (name, ok) in valid.into_iter().chain(invalid.map(|n| (n, false))) {
+            assert_eq!(AgentName::parse(name).is_ok(), ok, "{name:?}");
         }
     }
 

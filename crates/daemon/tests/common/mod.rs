@@ -1,5 +1,11 @@
 //! Test harness: runs the daemon in-process on ephemeral ports.
-#![allow(dead_code)]
+#![allow(
+    dead_code,
+    clippy::unwrap_used,
+    clippy::expect_used,
+    clippy::panic,
+    reason = "test harness; each binary uses part of it"
+)]
 
 use std::sync::Arc;
 use std::time::Duration;
@@ -257,7 +263,7 @@ where
     }
 }
 
-/// Event kinds of an agent, oldest first.
+/// An agent's events, oldest first.
 pub async fn events(d: &Daemon, agent_id: &str) -> Vec<Value> {
     let (status, v) = http(&d.ui, "GET", &format!("/v1/agents/{agent_id}/events"), None).await;
     assert_eq!(status, 200);
