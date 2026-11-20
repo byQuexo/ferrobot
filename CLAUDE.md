@@ -75,7 +75,8 @@ Principles:
   sign-in and tokens for `codex` providers (tokens never enter a sandbox).
 - `crates/daemon/src/connectors.rs`, `api/connectors.rs` — connectors: the daemon
   is the MCP client of remote MCP servers and lends their tools to assigned
-  agents through `/mcp` (tokens in the keychain, never in a sandbox).
+  agents through `/mcp` (tokens in the keychain, never in a sandbox);
+  `oauth.rs` — their OAuth sign-in (rmcp's client, loopback callback).
 - `crates/daemon/src/storage.rs` — object storage (`object_store`) for snapshot
   archives, `--storage-url` (default: the data dir; `s3://` for S3/R2).
 - `crates/daemon/src/lifecycle.rs`, `supervisor.rs`, `scheduler.rs`, `runner_ws.rs`.

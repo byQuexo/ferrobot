@@ -118,6 +118,9 @@ export class DaemonClient {
   updateConnector = (id: string, req: UpdateConnector): Promise<Connector> =>
     this.#request("PATCH", `/v1/connectors/${id}`, req);
   deleteConnector = (id: string): Promise<void> => this.#request("DELETE", `/v1/connectors/${id}`);
+  startConnectorOAuth = (id: string): Promise<{ authorization_url: string }> =>
+    this.#request("POST", `/v1/connectors/${id}/oauth`);
+  signOutConnector = (id: string): Promise<void> => this.#request("DELETE", `/v1/connectors/${id}/oauth`);
   agentConnectors = (id: string): Promise<string[]> => this.#request("GET", `/v1/agents/${id}/connectors`);
   setAgentConnectors = (id: string, ids: string[]): Promise<string[]> =>
     this.#request("PUT", `/v1/agents/${id}/connectors`, ids);

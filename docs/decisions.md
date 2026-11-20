@@ -237,12 +237,10 @@ the code and this file together.
   `<connector>__<tool>`. No driver, protocol frame or runner change, and the
   token never leaves the daemon. A reverse proxy per connector would have
   needed MCP config in all four drivers.
-- **Static Bearer tokens only, remote Streamable HTTP only.** OAuth-only
-  services (Notion, Linear, Google, most of Claude Desktop's catalog) need an
-  OAuth flow that is not built. Local stdio servers are not supported (they
-  would run in the sandbox and need new packages there). Put a secret in the
-  token field, not in the URL: URLs are stored in SQLite and may show up in
-  daemon logs.
+- **A static Bearer token or an OAuth sign-in; remote Streamable HTTP only.**
+  Local stdio servers are not supported (they would run in the sandbox and
+  need new packages there). Put a secret in the token field, not in the URL:
+  URLs are stored in SQLite and may show up in daemon logs.
 - **Per-agent assignment** (`agent_connectors`, v9), least privilege: an agent
   only gets connectors the operator ticked. The assignment is checked again
   on every call, not just when listing. Agents created by an agent inherit its
@@ -265,3 +263,27 @@ the code and this file together.
   OpenAI-compatible driver (both re-list per turn). Gemini CLI tool calls of
   connectors show only the connector name in the chat (its call ids are
   parsed up to the first `__`).
+
+## Connector OAuth
+
+- **rmcp's own OAuth client** (`auth` feature): discovery (RFC 9728 protected
+  resource metadata, RFC 8414), dynamic client registration, PKCE S256, the
+  RFC 8707 `resource` parameter, RFC 9207 issuer checks and token refresh.
+  New crates: `oauth2` 5.0 (MIT/Apache-2.0) plus older majors of `rand` and
+  `thiserror` it needs. Hand-rolling the flow would have been more code and
+  more ways to get it wrong.
+- **The daemon is the OAuth client.** Tokens and the registered client live in
+  the secret store under `connector-oauth:<id>`; the gateway sends them, so
+  they never reach a sandbox. A static token wins over a sign-in.
+- **Redirect to the daemon's own loopback UI listener**
+  (`http://127.0.0.1:<port>/v1/oauth/callback`, RFC 8252). It needs no
+  operator token (a browser redirect cannot carry one); the single-use
+  `state` of a sign-in the operator started authorizes it, valid for 10
+  minutes and only in memory, so a daemon restart cancels open sign-ins. The
+  page is static text with `default-src 'none'`. A daemon on another machine
+  cannot be signed in this way (the browser must run where the daemon does).
+- **SSRF guard stays on** for public connectors: rmcp refuses metadata that
+  points at private addresses. Connectors whose own URL is loopback or a
+  private IPv4 address (the operator chose it) skip the guard.
+- rmcp logs the authorization code at `debug` level; the daemon's default
+  filter (`info,ferrobot=debug`) does not include it.

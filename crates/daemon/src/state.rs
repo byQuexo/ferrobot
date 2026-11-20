@@ -58,6 +58,9 @@ pub struct Settings {
     pub codex_home: std::path::PathBuf,
     /// Upstream for Codex providers signed in with `ChatGPT`.
     pub chatgpt_upstream: String,
+    /// The UI API as a browser on this computer reaches it; OAuth sign-ins
+    /// redirect here.
+    pub ui_url: String,
 }
 
 impl Settings {
@@ -85,6 +88,7 @@ impl Settings {
             codex_bin: "codex".into(),
             codex_home: std::env::temp_dir().join("ferrobot-codex"),
             chatgpt_upstream: crate::codex::CHATGPT_CODEX_UPSTREAM.into(),
+            ui_url: "http://127.0.0.1:7878".into(),
         }
     }
 }
@@ -140,6 +144,8 @@ pub struct AppState {
     pub codex: Arc<tokio::sync::Mutex<crate::codex::CodexState>>,
     /// Open sessions with connector MCP servers.
     pub connectors: Arc<crate::connectors::Sessions>,
+    /// Connector OAuth sign-ins waiting for the browser.
+    pub oauth: Arc<crate::oauth::Pending>,
 }
 
 impl AppState {
@@ -159,6 +165,7 @@ impl AppState {
             gcloud_token: Arc::default(),
             codex: Arc::default(),
             connectors: Arc::default(),
+            oauth: Arc::default(),
         }
     }
 

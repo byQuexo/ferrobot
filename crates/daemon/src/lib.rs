@@ -17,6 +17,7 @@ pub mod connectors;
 pub mod error;
 pub mod hub;
 pub mod lifecycle;
+pub mod oauth;
 pub mod proxy;
 pub mod runner_ws;
 pub mod scheduler;

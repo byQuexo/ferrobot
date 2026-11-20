@@ -1830,6 +1830,14 @@ impl MailboxNotifier for Quiet {
 /// Serves ferrobot's own MCP server as a connector upstream that only accepts
 /// `Bearer secret`. Returns its URL and every `Authorization` header it saw.
 async fn upstream_mcp() -> (String, Arc<Mutex<Vec<String>>>) {
+    upstream_with("secret", |_| axum::Router::new()).await
+}
+
+/// [`upstream_mcp`] accepting `token`, plus `extra` routes on the same origin.
+async fn upstream_with(
+    token: &str,
+    extra: impl FnOnce(&str) -> axum::Router,
+) -> (String, Arc<Mutex<Vec<String>>>) {
     let store = ferrobot_store::Store::open_in_memory().unwrap();
     let up = store
         .create_agent(ferrobot_store::NewAgent {
@@ -1840,7 +1848,9 @@ async fn upstream_mcp() -> (String, Arc<Mutex<Vec<String>>>) {
         })
         .await
         .unwrap();
-    store.set_agent_token(up.id, "secret").await.unwrap();
+    store.set_agent_token(up.id, token).await.unwrap();
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let base = format!("http://{}", listener.local_addr().unwrap());
     let seen = Arc::new(Mutex::new(Vec::new()));
     let record = seen.clone();
     let app = axum::Router::new()
@@ -1851,6 +1861,7 @@ async fn upstream_mcp() -> (String, Arc<Mutex<Vec<String>>>) {
                 notifier: Arc::new(Quiet),
             }),
         )
+        .merge(extra(&base))
         .layer(axum::middleware::from_fn(
             move |req: axum::extract::Request, next: axum::middleware::Next| {
                 let record = record.clone();
@@ -1862,10 +1873,71 @@ async fn upstream_mcp() -> (String, Arc<Mutex<Vec<String>>>) {
                 }
             },
         ));
-    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
-    let url = format!("http://{}/mcp", listener.local_addr().unwrap());
     tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });
-    (url, seen)
+    (format!("{base}/mcp"), seen)
+}
+
+/// A minimal OAuth authorization server for the MCP server at `<base>/mcp`:
+/// metadata, dynamic registration and a token endpoint that checks PKCE
+/// against the challenge the test read from the authorization URL.
+fn fake_auth_server(base: &str, challenge: Arc<Mutex<Option<String>>>) -> axum::Router {
+    use axum::routing::{get, post};
+    use base64::Engine as _;
+    use sha2::Digest as _;
+    let json = |v: Value| {
+        move || {
+            let v = v.clone();
+            async move { axum::Json(v) }
+        }
+    };
+    let prm = json!({"resource": format!("{base}/mcp"), "authorization_servers": [base]});
+    let meta = json!({
+        "issuer": base,
+        "authorization_endpoint": format!("{base}/authorize"),
+        "token_endpoint": format!("{base}/token"),
+        "registration_endpoint": format!("{base}/register"),
+        "response_types_supported": ["code"],
+        "grant_types_supported": ["authorization_code", "refresh_token"],
+        "code_challenge_methods_supported": ["S256"],
+        "token_endpoint_auth_methods_supported": ["none"],
+    });
+    let token = move |body: String| {
+        let challenge = challenge.clone();
+        async move {
+            let form: HashMap<String, String> = url::form_urlencoded::parse(body.as_bytes())
+                .into_owned()
+                .collect();
+            let verifier = form.get("code_verifier").cloned().unwrap_or_default();
+            let derived = base64::engine::general_purpose::URL_SAFE_NO_PAD
+                .encode(sha2::Sha256::digest(verifier.as_bytes()));
+            let expected = challenge.lock().unwrap().clone();
+            if form.get("code").map(String::as_str) != Some("code-1")
+                || expected.as_deref() != Some(derived.as_str())
+            {
+                let err = json!({"error": "invalid_grant"});
+                return (axum::http::StatusCode::BAD_REQUEST, axum::Json(err));
+            }
+            let tokens = json!({"access_token": "at-1", "token_type": "Bearer",
+                                "expires_in": 3600, "refresh_token": "rt-1"});
+            (axum::http::StatusCode::OK, axum::Json(tokens))
+        }
+    };
+    axum::Router::new()
+        .route(
+            "/.well-known/oauth-protected-resource",
+            get(json(prm.clone())),
+        )
+        .route("/.well-known/oauth-protected-resource/mcp", get(json(prm)))
+        .route("/.well-known/oauth-authorization-server", get(json(meta)))
+        .route(
+            "/register",
+            post(|body: axum::Json<Value>| async move {
+                let client = json!({"client_id": "client-1", "redirect_uris": body["redirect_uris"],
+                                    "token_endpoint_auth_method": "none"});
+                (axum::http::StatusCode::CREATED, axum::Json(client))
+            }),
+        )
+        .route("/token", post(token))
 }
 
 async fn mcp_as(d: &Daemon, token: String) -> rmcp::service::RunningService<rmcp::RoleClient, ()> {
@@ -1961,4 +2033,99 @@ async fn connectors_lend_upstream_tools_to_assigned_agents_only() {
     assert!(!tools.iter().any(|t| t.name.starts_with("up__")));
     as_ann.cancel().await.unwrap();
     as_ben.cancel().await.unwrap();
+}
+
+#[tokio::test]
+async fn connectors_sign_in_with_oauth() {
+    use rmcp::model::CallToolRequestParams;
+    let challenge = Arc::new(Mutex::new(None));
+    let as_challenge = challenge.clone();
+    let (url, seen) = upstream_with("at-1", move |base| fake_auth_server(base, as_challenge)).await;
+    let backend = Arc::new(StatefulBackend::default());
+    let d = start(backend.clone(), None, "127.0.0.1:0").await;
+    let ann = create(&d, json!({"name": "ann"})).await["id"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    let (_, conn) = http(
+        &d.ui,
+        "POST",
+        "/v1/connectors",
+        Some(json!({"name": "up", "url": url})),
+    )
+    .await;
+    assert_eq!(
+        (conn["has_token"].clone(), conn["signed_in"].clone()),
+        (json!(false), json!(false))
+    );
+    let id = conn["id"].as_str().unwrap().to_owned();
+    http(
+        &d.ui,
+        "PUT",
+        &format!("/v1/agents/{ann}/connectors"),
+        Some(json!([id])),
+    )
+    .await;
+
+    // Start: discovery, registration, PKCE. The URL goes to the browser.
+    let (status, started) = http(&d.ui, "POST", &format!("/v1/connectors/{id}/oauth"), None).await;
+    assert_eq!(status, 200, "{started}");
+    let auth = url::Url::parse(started["authorization_url"].as_str().unwrap()).unwrap();
+    let q: HashMap<String, String> = auth.query_pairs().into_owned().collect();
+    assert!(
+        auth.as_str()
+            .starts_with(&url.replace("/mcp", "/authorize")),
+        "{auth}"
+    );
+    assert_eq!(q["client_id"], "client-1");
+    assert_eq!(q["code_challenge_method"], "S256");
+    assert_eq!(
+        q["redirect_uri"],
+        format!("http://{}/v1/oauth/callback", d.ui)
+    );
+    *challenge.lock().unwrap() = Some(q["code_challenge"].clone());
+    let csrf = &q["state"];
+
+    // The browser comes back without the operator token.
+    let no_token = [("Authorization", "")];
+    let back = format!("/v1/oauth/callback?code=code-1&state={csrf}");
+    let (status, headers, page) = http_raw(&d.ui, "GET", &back, &no_token, b"").await;
+    assert_eq!(status, 200, "{}", String::from_utf8_lossy(&page));
+    assert!(
+        headers
+            .iter()
+            .any(|(k, v)| k.eq_ignore_ascii_case("content-security-policy")
+                && v.starts_with("default-src 'none'"))
+    );
+    let (status, _, _) = http_raw(&d.ui, "GET", &back, &no_token, b"").await;
+    assert_eq!(status, 400, "a state works once");
+    let forged = "/v1/oauth/callback?code=code-1&state=guessed";
+    let (status, _, page) = http_raw(&d.ui, "GET", forged, &no_token, b"").await;
+    assert_eq!(status, 400);
+    assert!(
+        !String::from_utf8_lossy(&page).contains("guessed"),
+        "nothing is echoed"
+    );
+
+    let (_, all) = http(&d.ui, "GET", "/v1/connectors", None).await;
+    assert_eq!(all[0]["signed_in"], true);
+    assert!(!all.to_string().contains("at-1") && !all.to_string().contains("rt-1"));
+
+    // ann uses the upstream with the OAuth access token.
+    let as_ann = mcp_as(&d, backend.token("ann")).await;
+    let r = as_ann
+        .call_tool(CallToolRequestParams::new("up__list_agents"))
+        .await
+        .unwrap();
+    assert_eq!(r.structured_content.unwrap()["agents"][0]["name"], "up");
+    assert!(seen.lock().unwrap().iter().any(|h| h == "Bearer at-1"));
+
+    // Signing out drops the tokens and the tools.
+    let (status, _) = http(&d.ui, "DELETE", &format!("/v1/connectors/{id}/oauth"), None).await;
+    assert_eq!(status, 204);
+    let (_, all) = http(&d.ui, "GET", "/v1/connectors", None).await;
+    assert_eq!(all[0]["signed_in"], false);
+    let tools = as_ann.list_all_tools().await.unwrap();
+    assert!(!tools.iter().any(|t| t.name.starts_with("up__")));
+    as_ann.cancel().await.unwrap();
 }

@@ -344,3 +344,26 @@ store used for the run) or the daemon's own env.
 - No real third-party connector (GitHub, Linear, ...); OAuth-only servers
   cannot be added yet.
 - Connector tool lists in Codex and Gemini CLI after an assignment change.
+
+## Connector OAuth, CI fix (`feature/connector-oauth`)
+
+**Done**
+
+- OAuth sign-in for connectors: `POST/DELETE /v1/connectors/{id}/oauth`,
+  `GET /v1/oauth/callback`, Sign in / Sign out in the Connectors dialog.
+- Bold or backticked agent names become mention chips (models ignore `@`).
+- Runner tests no longer hang in CI: the fake Codex sends `turn/started`
+  like Codex does; `node --test` has a 30 s per-test timeout.
+
+**Tested**
+
+- Daemon against a fake authorization server and MCP server: discovery,
+  registration, PKCE checked at the token endpoint, callback without the
+  operator token, single-use `state`, nothing echoed, access token used
+  upstream, tokens never in API responses, sign-out removes the tools.
+- Runner suite 3x on Linux with `--cpus=0.5` (failed every run before).
+
+**Not tested**
+
+- A real OAuth provider (Linear, Notion, ...), token refresh against one, and
+  the sign-in link in the Tauri window.

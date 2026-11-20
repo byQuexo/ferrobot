@@ -69,16 +69,24 @@ async fn session(state: &AppState, agent: AgentId, c: &Connector) -> Result<Sess
         .await
         .map_err(|_| "the secret store is unavailable".to_owned())?;
     let mut config = StreamableHttpClientTransportConfig::with_uri(c.url.as_str());
-    if let Some(token) = token {
-        config = config.auth_header(token);
-    }
-    let client =
-        ().serve(StreamableHttpClientTransport::from_config(config))
+    let unreachable = |e: &dyn std::fmt::Display| {
+        tracing::warn!(connector = %c.name, error = %e, "cannot connect to connector");
+        format!("cannot connect to connector {}", c.name)
+    };
+    let oauth = match token {
+        Some(token) => {
+            config = config.auth_header(token);
+            None
+        }
+        None => crate::oauth::client(state, c)
             .await
-            .map_err(|e| {
-                tracing::warn!(connector = %c.name, error = %e, "cannot connect to connector");
-                format!("cannot connect to connector {}", c.name)
-            })?;
+            .map_err(|e| unreachable(&e))?,
+    };
+    let client = match oauth {
+        Some(http) => ().serve(StreamableHttpClientTransport::with_client(http, config)).await,
+        None => ().serve(StreamableHttpClientTransport::from_config(config)).await,
+    }
+    .map_err(|e| unreachable(&e))?;
     let client = Arc::new(client);
     state
         .connectors

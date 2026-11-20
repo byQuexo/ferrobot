@@ -134,6 +134,11 @@ fn integrations() -> Router<AppState> {
             "/v1/agents/{id}/connectors",
             get(connectors::agent_connectors).put(connectors::set_agent_connectors),
         )
+        .route(
+            "/v1/connectors/{id}/oauth",
+            post(connectors::start_oauth).delete(connectors::sign_out),
+        )
+        .route("/v1/oauth/callback", get(connectors::oauth_callback))
 }
 
 pub(crate) fn parse_id(raw: &str) -> Result<AgentId, ApiError> {

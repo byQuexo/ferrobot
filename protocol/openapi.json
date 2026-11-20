@@ -2170,6 +2170,110 @@
         }
       }
     },
+    "/v1/connectors/{id}/oauth": {
+      "post": {
+        "tags": [
+          "connectors"
+        ],
+        "summary": "Starts an OAuth sign-in for a connector without a token: discovers the\nserver's authorization server, registers ferrobot as a client and returns\nthe page to sign in on. The browser comes back to `/v1/oauth/callback`.",
+        "operationId": "start_oauth",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "Connector id (UUID)",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OAuthStart"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Uses a token, or the server offers no usable OAuth",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or wrong API token",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Unknown connector",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "connectors"
+        ],
+        "summary": "Signs a connector out: forgets its OAuth tokens and client.",
+        "operationId": "sign_out",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "Connector id (UUID)",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Signed out"
+          },
+          "401": {
+            "description": "Missing or wrong API token",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Unknown connector",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/v1/conversations": {
       "get": {
         "tags": [
@@ -2419,6 +2523,74 @@
           },
           "404": {
             "description": "Unknown key",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/oauth/callback": {
+      "get": {
+        "tags": [
+          "connectors"
+        ],
+        "summary": "Where the authorization server sends the browser back. Needs no operator\ntoken: the single-use `state` from the sign-in it started authorizes it.",
+        "operationId": "oauth_callback",
+        "parameters": [
+          {
+            "name": "state",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "code",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "iss",
+            "in": "query",
+            "description": "RFC 9207 issuer, checked when present.",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Signed in (HTML page)",
+            "content": {
+              "text/html": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Unknown, used, expired or failed sign-in (HTML page)",
+            "content": {
+              "text/html": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or wrong API token",
             "content": {
               "application/json": {
                 "schema": {
@@ -3350,12 +3522,17 @@
           {
             "type": "object",
             "required": [
-              "has_token"
+              "has_token",
+              "signed_in"
             ],
             "properties": {
               "has_token": {
                 "type": "boolean",
                 "description": "Whether a token is stored. The token itself is never returned."
+              },
+              "signed_in": {
+                "type": "boolean",
+                "description": "Whether the connector is signed in with OAuth."
               }
             }
           }
@@ -3840,6 +4017,18 @@
           "updated_at": {
             "type": "string",
             "format": "date-time"
+          }
+        }
+      },
+      "OAuthStart": {
+        "type": "object",
+        "required": [
+          "authorization_url"
+        ],
+        "properties": {
+          "authorization_url": {
+            "type": "string",
+            "description": "Open this in a browser on the daemon's computer to sign in."
           }
         }
       },

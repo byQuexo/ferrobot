@@ -62,6 +62,7 @@ pub async fn start_on(
     );
     settings.turn_timeout = Duration::from_secs(30);
     settings.api_token = Some(TEST_TOKEN.into());
+    settings.ui_url = format!("http://127.0.0.1:{}", ui_addr.port());
     configure(&mut settings);
     let state = AppState::new(store, backend, settings);
     let ui = ui_router(state.clone());

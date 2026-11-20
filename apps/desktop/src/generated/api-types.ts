@@ -395,6 +395,28 @@ export interface paths {
         patch: operations["update_connector"];
         trace?: never;
     };
+    "/v1/connectors/{id}/oauth": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Starts an OAuth sign-in for a connector without a token: discovers the
+         *     server's authorization server, registers ferrobot as a client and returns
+         *     the page to sign in on. The browser comes back to `/v1/oauth/callback`.
+         */
+        post: operations["start_oauth"];
+        /** Signs a connector out: forgets its OAuth tokens and client. */
+        delete: operations["sign_out"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/conversations": {
         parameters: {
             query?: never;
@@ -479,6 +501,26 @@ export interface paths {
         post?: never;
         /** Deletes one global memory by key (URL-encoded). */
         delete: operations["delete_global_memory"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/oauth/callback": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Where the authorization server sends the browser back. Needs no operator
+         *     token: the single-use `state` from the sign-in it started authorizes it.
+         */
+        get: operations["oauth_callback"];
+        put?: never;
+        post?: never;
+        delete?: never;
         options?: never;
         head?: never;
         patch?: never;
@@ -757,6 +799,8 @@ export interface components {
         ConnectorView: components["schemas"]["Connector"] & {
             /** @description Whether a token is stored. The token itself is never returned. */
             has_token: boolean;
+            /** @description Whether the connector is signed in with OAuth. */
+            signed_in: boolean;
         };
         /** @description Messages two agents exchanged. */
         Conversation: {
@@ -954,6 +998,10 @@ export interface components {
             content: string;
             /** Format: date-time */
             updated_at: string;
+        };
+        OAuthStart: {
+            /** @description Open this in a browser on the daemon's computer to sign in. */
+            authorization_url: string;
         };
         PostMessage: {
             /**
@@ -2959,6 +3007,94 @@ export interface operations {
             };
         };
     };
+    start_oauth: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Connector id (UUID) */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OAuthStart"];
+                };
+            };
+            /** @description Uses a token, or the server offers no usable OAuth */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Missing or wrong API token */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Unknown connector */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+        };
+    };
+    sign_out: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Connector id (UUID) */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Signed out */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Missing or wrong API token */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Unknown connector */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+        };
+    };
     list_conversations: {
         parameters: {
             query?: never;
@@ -3150,6 +3286,49 @@ export interface operations {
             };
             /** @description Unknown key */
             404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+        };
+    };
+    oauth_callback: {
+        parameters: {
+            query?: {
+                state?: string;
+                code?: string;
+                /** @description RFC 9207 issuer, checked when present. */
+                iss?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Signed in (HTML page) */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "text/html": string;
+                };
+            };
+            /** @description Unknown, used, expired or failed sign-in (HTML page) */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "text/html": string;
+                };
+            };
+            /** @description Missing or wrong API token */
+            401: {
                 headers: {
                     [name: string]: unknown;
                 };

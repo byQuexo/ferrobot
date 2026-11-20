@@ -122,7 +122,9 @@ pub async fn require_token(State(state): State<AppState>, req: Request, next: Ne
     let Some(expected) = state.settings.api_token.as_deref() else {
         return next.run(req).await;
     };
-    if req.method() == Method::OPTIONS || req.uri().path() == "/v1/health" {
+    // The OAuth callback is a browser redirect without the token; its single-use `state` authorizes it.
+    let open = ["/v1/health", "/v1/oauth/callback"];
+    if req.method() == Method::OPTIONS || open.contains(&req.uri().path()) {
         return next.run(req).await;
     }
     match presented(&req) {
