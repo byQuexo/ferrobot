@@ -21,6 +21,7 @@ import {
   MAX_TOOL_OUTPUT,
   buildOptions,
   mapSdkMessage,
+  systemAppend,
   type QueryFn,
 } from "../src/drivers/claude.ts";
 import type { TurnContext } from "../src/drivers/types.ts";
@@ -171,6 +172,21 @@ describe("buildOptions", () => {
       headers: { Authorization: "Bearer tok" },
     });
   });
+});
+
+describe("systemAppend", () => {
+  const prompt = systemAppend("ada", "");
+  for (const [what, line] of [
+    ["mail wakes a sleeping teammate", /A message wakes a\s+sleeping teammate/],
+    ["tasks report back on their own", /assign_task[\s\S]*answer comes back to you automatically/],
+    ["agents can list their tasks", /list_tasks shows the tasks you gave and got/],
+    ["delegates finish with their answer", /end your turn with your answer and it goes back/],
+    ["new agents get memorable names", /scout \(research\), forge \(building\)/],
+  ] as const) {
+    it(`tells the agent: ${what}`, () => {
+      assert.match(prompt, line);
+    });
+  }
 });
 
 function ctx(overrides: Partial<TurnContext> = {}): { ctx: TurnContext; events: TurnEvent[] } {

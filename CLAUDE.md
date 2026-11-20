@@ -81,6 +81,8 @@ Principles:
 - `crates/daemon/src/storage.rs` — object storage (`object_store`) for snapshot
   archives, `--storage-url` (default: the data dir; `s3://` for S3/R2).
 - `crates/daemon/src/lifecycle.rs`, `supervisor.rs`, `scheduler.rs`, `runner_ws.rs`.
+- `crates/daemon/src/tasks.rs` — tracked tasks: automatic report and reminder;
+  `crates/store/src/tasks.rs` — task state from `task` events and the mailbox.
 - `crates/mcp/src/tools.rs` — MCP tools; `crates/mcp/src/lib.rs` — `MailboxNotifier`.
 - `crates/store/src/migrations.rs` — schema migrations.
 - `crates/core/src/question.rs` — question/approval cards.

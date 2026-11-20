@@ -523,3 +523,31 @@ store used for the run) or the daemon's own env.
   contains a fresh nonce, a `tool_use` event and the nonce in the sandbox
   file; it rebuilds the runner image first and reads the data dir only
   after the daemon stopped.
+
+## Agent collaboration (`feat/agent-collaboration`)
+
+- **Done:** mail from an agent wakes a sleeping one (now tested); tracked
+  tasks (`assign_task`, `create_agent` with `task`, `list_tasks`) with an
+  automatic report when the delegate's turn ends and one reminder from the
+  supervisor; memorable names asked for in the prompt and `create_agent`;
+  a greeting to the operator at the start of a new agent's first turn, in a
+  turn of its own for operator-created agents. Design in `docs/decisions.md`.
+  No migration; the runner protocol only documents `message_id: 0`.
+- **Tested** (in-process daemon, fake runner frames, real MCP tools):
+  `agent_mail_wakes_sleeping_agents` (paused, stopped and archived agents
+  woken by `send_message`, tool descriptions), `tasks_report_back_once_and_never_loop`
+  (report without a reply, none when the delegate replied, one reminder
+  only, a reply threaded to the reminder counts, `list_tasks`, the
+  assigner's turns on answers send nothing back),
+  `new_agents_greet_the_operator_first` (greeting turn, greeting before a
+  queued message, greets once, no own turn for agent-created agents). Runner:
+  the prompt lines (`systemAppend`). Live, with the real `ferrobotd`, the
+  local backend and the mock driver: an operator-created agent's greeting
+  turn runs, shows as its first chat text and counts as unread; its next
+  turn has no greeting.
+- **Not tested:** a real model with any of it: whether models end task turns
+  with their answer, keep `reply_to` for the final answer, pick memorable
+  names and greet in one or two lines. `smoke-docker.sh` was not run (it
+  binds 7878/7879). Not handled: a delegate that hands part of its task to a
+  third agent gets that agent's answer as a normal message, so its final
+  answer to the first assigner then depends on the model again.

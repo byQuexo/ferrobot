@@ -2873,3 +2873,287 @@ async fn connectors_use_an_own_oauth_app_refresh_and_revoke() {
         (Value::Null, json!(false))
     );
 }
+
+type McpClient = rmcp::service::RunningService<rmcp::RoleClient, ()>;
+
+/// Calls one of ferrobot's own tools; returns its structured result.
+async fn call(client: &McpClient, tool: &'static str, args: Value) -> Value {
+    let args = args.as_object().cloned().unwrap();
+    let request = rmcp::model::CallToolRequestParams::new(tool).with_arguments(args);
+    client
+        .call_tool(request)
+        .await
+        .unwrap()
+        .structured_content
+        .unwrap()
+}
+
+/// Ends a fake runner's turn successfully with `result` as its final answer.
+async fn finish(ws: &mut Ws, turn_id: String, result: Option<&str>) {
+    let done = RunnerFrame::TurnDone {
+        turn_id,
+        outcome: ferrobot_core::protocol::TurnOutcome::Completed,
+        session_id: None,
+        result: result.map(Into::into),
+        error: None,
+        steered: vec![],
+    };
+    ws.send(Message::text(serde_json::to_string(&done).unwrap()))
+        .await
+        .unwrap();
+}
+
+async fn next_turn(ws: &mut Ws) -> (String, i64, String) {
+    match next_frame(ws).await {
+        DaemonFrame::Turn {
+            turn_id,
+            message_id,
+            body,
+            ..
+        } => (turn_id, message_id, body),
+        other => panic!("expected a turn, got {other:?}"),
+    }
+}
+
+/// Messages to or from `agent`.
+async fn mail(d: &Daemon, agent: &str) -> Vec<Value> {
+    let (_, msgs) = http(&d.ui, "GET", &format!("/v1/agents/{agent}/messages"), None).await;
+    msgs.as_array().unwrap().clone()
+}
+
+/// Waits until message `id` to `agent` is delivered.
+async fn delivered(d: &Daemon, agent: &str, id: i64) {
+    eventually("delivered", Duration::from_secs(5), || async {
+        mail(d, agent)
+            .await
+            .iter()
+            .any(|m| m["id"] == id && m["status"] == "delivered")
+            .then_some(())
+    })
+    .await;
+}
+
+/// Bodies of the messages to `to` threaded to message `id`.
+async fn replies(d: &Daemon, to: &str, id: i64) -> Vec<Value> {
+    mail(d, to)
+        .await
+        .into_iter()
+        .filter(|m| m["recipient"] == to && m["reply_to"] == id)
+        .map(|m| m["body"].clone())
+        .collect()
+}
+
+#[tokio::test]
+async fn agent_mail_wakes_sleeping_agents() {
+    let backend = Arc::new(StatefulBackend::default());
+    let d = start(backend.clone(), None, "127.0.0.1:0").await;
+    create(&d, json!({"name": "ada"})).await;
+    let as_ada = mcp_as(&d, backend.token("ada")).await;
+    let tools = as_ada.list_all_tools().await.unwrap();
+    for (tool, says) in [
+        ("send_message", "wakes a sleeping recipient"),
+        (
+            "assign_task",
+            "comes back to you as a message automatically",
+        ),
+        ("list_tasks", "with their status"),
+        ("create_agent", "`scout` for research"),
+    ] {
+        let description = tools
+            .iter()
+            .find(|t| t.name == tool)
+            .unwrap()
+            .description
+            .clone();
+        assert!(description.unwrap_or_default().contains(says), "{tool}");
+    }
+    for (name, level, asleep) in [
+        ("wren", SleepLevel::Warm, "paused"),
+        ("cole", SleepLevel::Cold, "stopped"),
+        ("arch", SleepLevel::Archived, "archived"),
+    ] {
+        let id = create(&d, json!({"name": name})).await["id"]
+            .as_str()
+            .unwrap()
+            .to_owned();
+        ferrobot_daemon::lifecycle::sleep(&d.state, id.parse().unwrap(), "test", level)
+            .await
+            .unwrap();
+        let path = format!("/v1/agents/{id}");
+        assert_eq!(http(&d.ui, "GET", &path, None).await.1["status"], asleep);
+        call(
+            &as_ada,
+            "send_message",
+            json!({"to": name, "body": "wake up"}),
+        )
+        .await;
+        eventually(name, Duration::from_secs(5), || async {
+            (http(&d.ui, "GET", &path, None).await.1["status"] == "running").then_some(())
+        })
+        .await;
+    }
+}
+
+#[tokio::test]
+async fn tasks_report_back_once_and_never_loop() {
+    let backend = Arc::new(StatefulBackend::default());
+    let d = start(backend.clone(), None, "127.0.0.1:0").await;
+    let id_of = |v: Value| v["id"].as_str().unwrap().to_owned();
+    let ada = id_of(create(&d, json!({"name": "ada"})).await);
+    let bob = id_of(create(&d, json!({"name": "bob"})).await);
+    let as_ada = mcp_as(&d, backend.token("ada")).await;
+    let as_bob = mcp_as(&d, backend.token("bob")).await;
+    let mut bob_ws = connect_runner(&d.agents, &backend.token("bob")).await;
+    let assign = || {
+        call(
+            &as_ada,
+            "assign_task",
+            json!({"to": "bob", "task": "find flights"}),
+        )
+    };
+
+    // (bob's own reply to the task, bob's final answer, what reaches ada)
+    for (reply, answer, expected) in [
+        (None, Some("3 flights"), "Task #{id} answer:\n\n3 flights"),
+        (
+            Some("here they are"),
+            Some("Sent ada the flights."),
+            "here they are",
+        ),
+    ] {
+        let task = assign().await["message_id"].as_i64().unwrap();
+        let (turn, message_id, _) = next_turn(&mut bob_ws).await;
+        assert_eq!(message_id, task);
+        if let Some(reply) = reply {
+            let args = json!({"to": ada, "body": reply, "reply_to": task});
+            call(&as_bob, "send_message", args).await;
+        }
+        finish(&mut bob_ws, turn, answer).await;
+        delivered(&d, &bob, task).await;
+        let expected = expected.replace("{id}", &task.to_string());
+        assert_eq!(replies(&d, &ada, task).await, [json!(expected)]);
+    }
+
+    // A turn that ends without an answer gets exactly one reminder.
+    let task = assign().await["message_id"].as_i64().unwrap();
+    let (turn, _, _) = next_turn(&mut bob_ws).await;
+    finish(&mut bob_ws, turn, None).await;
+    delivered(&d, &bob, task).await;
+    assert_eq!(
+        replies(&d, &ada, task).await.len(),
+        0,
+        "no answer to pass on"
+    );
+    ferrobot_daemon::supervisor::check_all(&d.state).await;
+    let (turn, nudge, body) = next_turn(&mut bob_ws).await;
+    let reminder = format!("Automatic reminder: task #{task}");
+    assert!(body.starts_with(&reminder), "{body}");
+    finish(&mut bob_ws, turn, None).await;
+    delivered(&d, &bob, nudge).await;
+    ferrobot_daemon::supervisor::check_all(&d.state).await;
+    assert_eq!(replies(&d, &bob, task).await.len(), 1, "one reminder only");
+    let list = call(&as_ada, "list_tasks", json!({})).await;
+    assert_eq!(list["given"][0]["status"], "open", "{list}");
+    // An answer threaded to the reminder counts for the task.
+    let args = json!({"to": ada, "body": "found none", "reply_to": nudge});
+    call(&as_bob, "send_message", args).await;
+    let list = call(&as_ada, "list_tasks", json!({})).await;
+    let given = list["given"].as_array().unwrap();
+    assert_eq!(given.len(), 3, "{list}");
+    assert!(given.iter().all(|t| t["status"] == "done"), "{list}");
+    let list = call(&as_bob, "list_tasks", json!({})).await;
+    assert_eq!(list["received"][0]["agent"], "ada", "{list}");
+
+    // Answers are no tasks: ada's turns on them send bob nothing back.
+    let mut ada_ws = connect_runner(&d.agents, &backend.token("ada")).await;
+    for _ in 0..3 {
+        let (turn, _, _) = next_turn(&mut ada_ws).await;
+        finish(&mut ada_ws, turn, Some("Thanks, bob.")).await;
+    }
+    eventually("ada done", Duration::from_secs(5), || async {
+        mail(&d, &ada)
+            .await
+            .iter()
+            .all(|m| m["recipient"] != ada.as_str() || m["status"] == "delivered")
+            .then_some(())
+    })
+    .await;
+    ferrobot_daemon::supervisor::check_all(&d.state).await;
+    let quiet = tokio::time::timeout(Duration::from_millis(300), bob_ws.next()).await;
+    assert!(quiet.is_err(), "bob got another turn: {quiet:?}");
+    let to_bob = mail(&d, &bob)
+        .await
+        .iter()
+        .filter(|m| m["recipient"] == bob.as_str())
+        .count();
+    assert_eq!(to_bob, 4, "three tasks and one reminder");
+}
+
+#[tokio::test]
+async fn new_agents_greet_the_operator_first() {
+    use ferrobot_daemon::runner_ws::GREETING;
+    let backend = Arc::new(StatefulBackend::default());
+    let d = start_with(backend.clone(), None, "127.0.0.1:0", |s| {
+        s.greet_new_agents = true;
+    })
+    .await;
+    let post = |id: String, body: &'static str| {
+        let ui = d.ui.clone();
+        async move {
+            let path = format!("/v1/agents/{id}/messages");
+            http(&ui, "POST", &path, Some(json!({"body": body})))
+                .await
+                .1["id"]
+                .as_i64()
+                .unwrap()
+        }
+    };
+    // Created by the operator: (message queued before its runner connects).
+    for (name, queued) in [("gia", None), ("hal", Some("plan the trip"))] {
+        let id = create(&d, json!({"name": name})).await["id"]
+            .as_str()
+            .unwrap()
+            .to_owned();
+        let queued_id = match queued {
+            Some(body) => post(id.clone(), body).await,
+            None => 0,
+        };
+        let mut ws = connect_runner(&d.agents, &backend.token(name)).await;
+        let (turn, message_id, body) = next_turn(&mut ws).await;
+        let expected = queued.map_or(GREETING.to_owned(), |q| format!("{GREETING}\n\n{q}"));
+        assert_eq!((message_id, body), (queued_id, expected), "{name}");
+        finish(&mut ws, turn, Some("Hi, I plan trips.")).await;
+        post(id, "next").await;
+        assert_eq!(next_turn(&mut ws).await.2, "next", "{name}: greets once");
+    }
+
+    // Created by an agent: no turn of its own; its first message opens with the greeting.
+    let gia: AgentId = http(&d.ui, "GET", "/v1/agents", None).await.1[0]["id"]
+        .as_str()
+        .unwrap()
+        .parse()
+        .unwrap();
+    let spec = ferrobot_daemon::agents::AgentSpec {
+        name: "ivy".into(),
+        description: String::new(),
+        instructions: String::new(),
+        character: None,
+        provider_id: None,
+        model: None,
+    };
+    let ivy = ferrobot_daemon::agents::create(&d.state, spec, Some(gia))
+        .await
+        .unwrap();
+    let mut ws = connect_runner(&d.agents, &backend.token("ivy")).await;
+    let quiet = tokio::time::timeout(Duration::from_millis(300), ws.next()).await;
+    assert!(quiet.is_err(), "no greeting turn: {quiet:?}");
+    let task = d
+        .state
+        .store
+        .enqueue_task(gia, ivy.id, "book flights".into())
+        .await
+        .unwrap();
+    d.state.message_enqueued(&task);
+    let (_, _, body) = next_turn(&mut ws).await;
+    assert_eq!(body, format!("{GREETING}\n\nbook flights"));
+}
