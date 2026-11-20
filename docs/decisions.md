@@ -554,3 +554,33 @@ the code and this file together.
   `croner`), `humantime` (via `object_store`), `zbus_names`/`zvariant` (the
   keyring's Linux backend), and in the Tauri lockfile `proc-macro-error`, the
   `unic-*` crates and `glib` 0.18 (unsound iterator, Linux GTK stack of Tauri).
+
+- **The desktop app bundles the daemon** as a Tauri sidecar
+  (`tauri.release.conf.json` adds it, so dev builds need no binary). The shell
+  starts it only when nothing answers on `127.0.0.1:7878`, with the OS app
+  data dir as `--data-dir` (macOS: `~/Library/Application Support/dev.ferrobot.desktop`),
+  `--driver claude`, `--agent-listen 0.0.0.0:7879` and the release's runner
+  image, logs to `daemon.log` there, and stops it on exit (SIGTERM, then kill
+  after 5 s; Windows: kill). Ports stay fixed because the CSP and the UI's
+  default URL name them.
+- **The daemon starts without Docker** and logs an error instead of exiting;
+  `/v1/health` reports `sandbox_ready` and `sandbox_error` (live ping, 2 s
+  timeout). Without a socket at start the client points at a port that never
+  answers, and each ping tries the real socket again, so Docker started later
+  is picked up without a restart. When the shell sees `sandbox_ready: false` at start it opens
+  `docker.html` (a static page in `public/`, no UI code), which links Docker
+  Desktop and returns to the app once health says ready.
+- **Release builds use `ghcr.io/byquexo/ferrobot-runner:<version>`,** pushed by
+  the tag workflow (amd64 and arm64 on native runners, one manifest). Docker
+  pulls the configured runner image when the engine lacks it, on the first
+  agent start; archive images are never pulled.
+- **Release workflow on `v*` tags:** a draft release first (so both desktop
+  jobs upload to it), macOS universal `.dmg` (daemon built for both arches and
+  joined with `lipo`) and Windows NSIS `.exe`, then `SHA256SUMS`. Signing is
+  optional: Apple and Windows certificate secrets are used only when set,
+  otherwise the build is unsigned and the README explains how to open it.
+- **Windows build of the sandbox crate:** the Firecracker module keeps
+  compiling with a stand-in for Unix sockets that always fails; Firecracker
+  needs Linux anyway.
+- **Files the page builds (blob URLs, e.g. the usage CSV) save to Downloads**
+  through the shell's download handler; other downloads are refused.
