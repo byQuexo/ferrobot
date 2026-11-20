@@ -436,6 +436,8 @@ live smoke test, are in [CONTRIBUTING.md](CONTRIBUTING.md).
   the Windows desktop build have never run on real hardware.
 - The desktop app is mostly checked in a browser, rarely in the Tauri window.
   Linux has no desktop download (build it from source).
+- The first agent in a fresh install waits for the runner image pull
+  (about 2 GB): creating it blocks until the pull ends, with no progress shown.
 - `SpritesBackend` returns `NotImplemented` for every operation.
 - Snapshots and archives are Docker-only; warm sleep (pause) is written for
   Firecracker but untested, other backends stay awake until the cold timeout.

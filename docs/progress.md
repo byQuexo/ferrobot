@@ -895,3 +895,16 @@ store used for the run) or the daemon's own env.
   Chromium; its own video recorder needs an ffmpeg build that is not
   installed, so frames came from the CDP screencast and the system ffmpeg
   encoded them.
+
+## Release prep 7, follow-up: Windows console and first pull (`fix/windows-console`)
+
+- The desktop shell starts `ferrobotd` with `CREATE_NO_WINDOW` on Windows, so
+  no console window opens next to the app (closing it would kill the
+  daemon). Compiled only on Windows: unverified, like every Windows build.
+- Checked the first-run pull with a small image that was not local
+  (`busybox:1.36.1`, spare ports, file secret store): the daemon logged the
+  pull, the image arrived, and `POST /v1/agents` returned only after the pull
+  (7 s here). With the 2 GB runner image the first agent's create call blocks
+  for minutes; noted under the README's limits.
+- CORS already allows both Tauri origins (`tauri://localhost`,
+  `http://tauri.localhost`); `/v1/ws` checks no origin.
