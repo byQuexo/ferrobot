@@ -415,3 +415,14 @@ describe("acp config", () => {
     assert.equal(config.acpBin, "/opt/gemini/bin/gemini");
   });
 });
+
+describe("acp tool names", () => {
+  it("names Gemini's ferrobot MCP calls like the other drivers", async () => {
+    const { toolUse } = await import("../src/drivers/acp.ts");
+    assert.equal(
+      toolUse({ toolCallId: "mcp_ferrobot_remember__mcp_ferrobot_remember_1_0", kind: "other", title: "remember(...)" }).name,
+      "mcp__ferrobot__remember",
+    );
+    assert.equal(toolUse({ toolCallId: "x_1", kind: "read", title: "Read a" }).name, "read");
+  });
+});

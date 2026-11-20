@@ -107,9 +107,12 @@ function pathsOf(call: ToolCallUpdate): string[] {
   ];
 }
 
-function toolUse(call: ToolCallUpdate): { name: string; input: unknown } {
+export function toolUse(call: ToolCallUpdate): { name: string; input: unknown } {
   if (call.kind === "execute") return { name: "Bash", input: { command: commandOf(call) } };
-  return { name: call.name ?? call.kind ?? "tool", input: call.rawInput ?? { title: call.title } };
+  // Gemini sends no name; its MCP call ids start with `mcp_ferrobot_<tool>__`.
+  const mcp = /^mcp_ferrobot_(\w+?)__/.exec(call.toolCallId);
+  const name = call.name ?? (mcp ? `mcp__ferrobot__${mcp[1] ?? ""}` : (call.kind ?? "tool"));
+  return { name, input: call.rawInput ?? { title: call.title } };
 }
 
 function contentText(call: ToolCallUpdate): string {
