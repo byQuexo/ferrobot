@@ -47,10 +47,14 @@ async fn authenticate(State(state): State<McpState>, mut req: Request, next: Nex
 /// authenticated with a per-agent bearer token instead.
 pub fn router(state: McpState) -> Router {
     let tools_state = state.clone();
+    let mut config = StreamableHttpServerConfig::default().disable_allowed_hosts();
+    // Stateless: no sessions, no standalone GET stream. Gemini CLI drops every
+    // tool when that stream comes back empty, and a restarted daemon loses no sessions.
+    config.legacy_session_mode = false;
     let service = StreamableHttpService::new(
         move || Ok(FerrobotTools::new(tools_state.clone())),
         LocalSessionManager::default().into(),
-        StreamableHttpServerConfig::default().disable_allowed_hosts(),
+        config,
     );
     Router::new()
         .fallback_service(service)
