@@ -236,6 +236,8 @@ const MIGRATIONS: &[&str] = &[
     );
     CREATE INDEX usage_at ON usage(at);
     ",
+    // v14: the USD a call cost as the upstream reported it (OpenRouter's `usage.cost`)
+    "ALTER TABLE usage ADD COLUMN cost_usd REAL;",
 ];
 
 pub(crate) fn run(conn: &mut Connection) -> Result<(), StoreError> {
@@ -369,5 +371,28 @@ mod tests {
             .query_row("SELECT COUNT(*) FROM usage", [], |r| r.get(0))
             .unwrap();
         assert_eq!(usage, 0);
+    }
+
+    #[test]
+    fn v13_usage_rows_keep_their_estimate() {
+        let mut conn = Connection::open_in_memory().unwrap();
+        for sql in &MIGRATIONS[..13] {
+            conn.execute_batch(sql).unwrap();
+        }
+        conn.pragma_update(None, "user_version", 13).unwrap();
+        conn.execute_batch(
+            "INSERT INTO usage (at, agent_id, agent_name, provider_kind, model, input_tokens,
+                                output_tokens, latency_ms, status)
+             VALUES ('2026-01-01T00:00:00Z', '00000000-0000-4000-8000-000000000001', 'alice',
+                     'openrouter', 'm', 10, 5, 100, 'ok');",
+        )
+        .unwrap();
+        run(&mut conn).unwrap();
+        let (tokens, cost): (i64, Option<f64>) = conn
+            .query_row("SELECT input_tokens, cost_usd FROM usage", [], |r| {
+                Ok((r.get(0)?, r.get(1)?))
+            })
+            .unwrap();
+        assert_eq!((tokens, cost), (10, None), "old rows have no reported cost");
     }
 }

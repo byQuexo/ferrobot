@@ -14,6 +14,8 @@ use crate::AppState;
 const MAX_KEPT: usize = 2 * 1024 * 1024;
 /// Longest model id stored.
 const MAX_MODEL: usize = 200;
+/// A reported cost above this (USD per call) is not believed.
+const MAX_REPORTED_COST: f64 = 1000.0;
 
 /// Where an API reports usage.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -105,7 +107,7 @@ impl Call {
     }
 
     /// Writes the row off the request path.
-    pub fn record(self, status: UsageStatus, tokens: Tokens) {
+    pub fn record(self, status: UsageStatus, tokens: Tokens, cost_usd: Option<f64>) {
         let row = UsageRecord {
             at: time::OffsetDateTime::now_utc(),
             agent_id: self.agent_id,
@@ -114,6 +116,7 @@ impl Call {
             provider_kind: self.provider_kind,
             model: stored_model(&self.model, status),
             tokens,
+            cost_usd,
             latency_ms: i64::try_from(self.started.elapsed().as_millis()).unwrap_or(i64::MAX),
             status,
         };
@@ -149,6 +152,8 @@ pub(crate) struct Meter {
     /// Usage may have been in an oversized line: counts are not trusted.
     lost: bool,
     tokens: Tokens,
+    /// What `OpenRouter` said the call cost; only its responses are believed.
+    cost: Option<f64>,
     /// The upstream body reached its end.
     ended: bool,
 }
@@ -187,7 +192,19 @@ impl Meter {
             overflow: false,
             lost: false,
             tokens: Tokens::default(),
+            cost: None,
             ended: false,
+        }
+    }
+
+    fn read(&mut self, v: &Value) {
+        read(self.family, v, &mut self.tokens);
+        let openrouter = self
+            .call
+            .as_ref()
+            .is_some_and(|c| c.provider_kind == "openrouter");
+        if openrouter && let Some(cost) = reported_cost(v) {
+            self.cost = Some(cost);
         }
     }
 
@@ -253,13 +270,14 @@ impl Meter {
             } else if has(data, b"\"usage")
                 && let Some(v) = json()
             {
-                read(self.family, &v, &mut self.tokens);
+                self.read(&v);
             }
         }
     }
 
-    /// Status and counts once the body is gone; a body that never reached its end is an error.
-    fn finish(&mut self) -> (UsageStatus, Tokens) {
+    /// Status, counts and reported cost once the body is gone; a body that never reached its
+    /// end is an error.
+    fn finish(&mut self) -> (UsageStatus, Tokens, Option<f64>) {
         match self.mode {
             Mode::Sse if !self.kept.is_empty() || self.overflow => self.end_line(),
             Mode::Json if self.overflow => self.lost = true,
@@ -267,7 +285,7 @@ impl Meter {
                 if let Ok(v) = serde_json::from_slice::<Value>(&self.kept) {
                     // Gemini's streamGenerateContent without `alt=sse` is one JSON array.
                     for item in v.as_array().map_or(std::slice::from_ref(&v), Vec::as_slice) {
-                        read(self.family, item, &mut self.tokens);
+                        self.read(item);
                     }
                 }
             }
@@ -276,22 +294,28 @@ impl Meter {
         if !self.ended {
             self.status = UsageStatus::Error;
         }
-        let tokens = if self.lost {
-            Tokens::default()
+        if self.lost {
+            (self.status, Tokens::default(), None)
         } else {
-            self.tokens
-        };
-        (self.status, tokens)
+            (self.status, self.tokens, self.cost)
+        }
     }
 }
 
 impl Drop for Meter {
     fn drop(&mut self) {
         if let Some(call) = self.call.take() {
-            let (status, tokens) = self.finish();
-            call.record(status, tokens);
+            let (status, tokens, cost) = self.finish();
+            call.record(status, tokens, cost);
         }
     }
+}
+
+/// `OpenRouter`'s `usage.cost`: what it charged for the call, in USD.
+fn reported_cost(v: &Value) -> Option<f64> {
+    v.pointer("/usage/cost")
+        .and_then(Value::as_f64)
+        .filter(|c| (0.0..=MAX_REPORTED_COST).contains(c))
 }
 
 /// A reported count, clamped so no sum or cost can overflow or go negative.
@@ -394,6 +418,17 @@ mod tests {
             cache_read,
             cache_write,
         }
+    }
+
+    #[test]
+    fn only_a_plausible_reported_cost_counts() {
+        let cost = |c: Value| reported_cost(&json!({"usage": {"prompt_tokens": 1, "cost": c}}));
+        assert_eq!(cost(json!(0.0042)), Some(0.0042));
+        assert_eq!(cost(json!(0)), Some(0.0));
+        for bad in [json!(-1), json!(1e9), json!("0.1"), Value::Null] {
+            assert_eq!(cost(bad.clone()), None, "{bad}");
+        }
+        assert_eq!(reported_cost(&json!({"usage": {"prompt_tokens": 1}})), None);
     }
 
     #[test]
@@ -525,10 +560,10 @@ mod tests {
             output: Some(1),
             ..Tokens::default()
         };
-        assert_eq!(run(&[usage], true), (UsageStatus::Ok, counted));
+        assert_eq!(run(&[usage], true), (UsageStatus::Ok, counted, None));
         assert_eq!(
             run(&[usage], false),
-            (UsageStatus::Error, counted),
+            (UsageStatus::Error, counted, None),
             "dropped before the end"
         );
         assert_eq!(run(&[usage, error], true).0, UsageStatus::Error);
@@ -540,7 +575,7 @@ mod tests {
         let stop = "event: message_stop\ndata: {\"type\":\"message_stop\"}\n\n";
         assert_eq!(
             run(&[usage, stop], false),
-            (UsageStatus::Ok, counted),
+            (UsageStatus::Ok, counted, None),
             "the agent may hang up after the last event"
         );
         let mut chat = meter(Family::ChatCompletions, "text/event-stream");

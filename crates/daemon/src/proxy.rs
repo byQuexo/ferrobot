@@ -432,7 +432,7 @@ async fn forward(
         &path,
     );
     let refuse = |call: Call, status: StatusCode, message: &str| {
-        call.record(UsageStatus::Refused, Tokens::default());
+        call.record(UsageStatus::Refused, Tokens::default(), None);
         error(status, message)
     };
     let provider = match provider.transpose() {
@@ -503,7 +503,7 @@ async fn forward(
         Err(e) => {
             tracing::warn!(agent = %agent.name, error = %e, "model upstream unreachable");
             if family.is_some() {
-                call.record(UsageStatus::Error, Tokens::default());
+                call.record(UsageStatus::Error, Tokens::default(), None);
             }
             return error(StatusCode::BAD_GATEWAY, "model upstream unreachable");
         }

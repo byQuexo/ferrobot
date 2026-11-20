@@ -6762,7 +6762,7 @@
       },
       "UsageTotals": {
         "type": "object",
-        "description": "Sums for a time range or group. Costs are estimates from the price table.",
+        "description": "Sums for a time range or group. Costs are what `OpenRouter` reported it charged, else\nestimates from the price table.",
         "required": [
           "calls",
           "input_tokens",
@@ -6800,7 +6800,7 @@
               "null"
             ],
             "format": "double",
-            "description": "Estimated USD; `null` when no call here could be priced."
+            "description": "USD: `OpenRouter`'s reported charge where given, else estimated from prices; `null` when\nno call here could be priced."
           },
           "unknown_cost_calls": {
             "type": "integer",

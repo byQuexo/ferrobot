@@ -50,6 +50,8 @@ pub struct UsageRecord {
     pub provider_kind: String,
     pub model: String,
     pub tokens: Tokens,
+    /// USD the upstream said it charged (`OpenRouter`); `None`: estimate from prices.
+    pub cost_usd: Option<f64>,
     pub latency_ms: i64,
     pub status: UsageStatus,
 }
@@ -96,6 +98,8 @@ pub struct UsageSlice {
     pub last_id: i64,
     /// UTC minute, `YYYY-MM-DDTHH:MM`, when asked to split by minute.
     pub minute: Option<String>,
+    /// Sum of the upstream-reported costs; a slice holds either only such rows or none.
+    pub reported_cost_usd: Option<f64>,
 }
 
 /// Whole seconds keep the stored RFC 3339 strings the same width, so they sort as times.
@@ -113,8 +117,8 @@ impl Store {
             c.execute(
                 "INSERT INTO usage (at, agent_id, agent_name, provider_id, provider_kind, model,
                                     input_tokens, output_tokens, cache_read_tokens,
-                                    cache_write_tokens, latency_ms, status)
-                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12)",
+                                    cache_write_tokens, latency_ms, status, cost_usd)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13)",
                 params![
                     ts(r.at),
                     r.agent_id.to_string(),
@@ -127,7 +131,8 @@ impl Store {
                     r.tokens.cache_read,
                     r.tokens.cache_write,
                     r.latency_ms,
-                    r.status.as_str()
+                    r.status.as_str(),
+                    r.cost_usd
                 ],
             )?;
             Ok(())
@@ -168,14 +173,14 @@ impl Store {
                     COALESCE(SUM(u.cache_read_tokens), 0), COALESCE(SUM(u.cache_write_tokens), 0),
                     SUM(u.input_tokens IS NOT NULL OR u.output_tokens IS NOT NULL),
                     SUM(u.status = 'ok' AND u.input_tokens IS NULL AND u.output_tokens IS NULL),
-                    MAX(u.id), {minute} AS bucket
+                    MAX(u.id), {minute} AS bucket, SUM(u.cost_usd)
              FROM usage u LEFT JOIN providers p ON p.id = u.provider_id
              WHERE (?1 IS NULL OR u.at >= ?1) AND (?2 IS NULL OR u.at < ?2)
                AND (?3 IS NULL OR u.agent_id = ?3)
                AND (?4 IS NULL OR COALESCE(u.provider_id, 'default') = ?4)
                AND (?5 IS NULL OR u.model = ?5)
-             GROUP BY 1, bucket, u.provider_kind, u.model, {cache}
-             ORDER BY 1, bucket, u.provider_kind, u.model, {cache}"
+             GROUP BY 1, bucket, u.provider_kind, u.model, {cache}, u.cost_usd IS NULL
+             ORDER BY 1, bucket, u.provider_kind, u.model, {cache}, u.cost_usd IS NULL"
         );
         self.with(move |c| {
             let mut stmt = c.prepare(&sql)?;
@@ -202,6 +207,7 @@ impl Store {
                         not_tracked_calls: r.get(10)?,
                         last_id: r.get(11)?,
                         minute: r.get(12)?,
+                        reported_cost_usd: r.get(13)?,
                     })
                 },
             )?;
@@ -230,9 +236,32 @@ mod tests {
                 cache_read: Some(7),
                 cache_write: None,
             },
+            cost_usd: None,
             latency_ms: 12,
             status: UsageStatus::Ok,
         }
+    }
+
+    #[tokio::test]
+    async fn reported_costs_are_summed_apart_from_estimates() {
+        let store = Store::open_in_memory().unwrap();
+        let (a, at) = (AgentId::new(), parse_ts("2026-11-20T08:00:00Z").unwrap());
+        for cost in [None, Some(0.25), Some(0.5)] {
+            let row = UsageRecord {
+                cost_usd: cost,
+                ..record(at, a, "m1", Some(10))
+            };
+            store.insert_usage(row).await.unwrap();
+        }
+        let slices = store
+            .usage_slices(UsageFilter::default(), UsageGroupBy::Model, false)
+            .await
+            .unwrap();
+        let split: Vec<_> = slices
+            .iter()
+            .map(|s| (s.calls, s.reported_cost_usd))
+            .collect();
+        assert_eq!(split, [(2, Some(0.75)), (1, None)]);
     }
 
     #[tokio::test]

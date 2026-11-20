@@ -850,7 +850,6 @@ store used for the run) or the daemon's own env.
   the real OpenRouter (no key used): whether cached tokens show up in its
   usage as documented.
 
-
 ## Release prep 0, second part: desktop and deferred files (`chore/desktop-lint`)
 
 **Done**
@@ -1014,6 +1013,25 @@ store used for the run) or the daemon's own env.
   `secret_fields_stay_out_of_agent_cards_and_answers`.
 - Not tested: a real model calling `add_connector`; the Vault and the card in
   the Tauri window.
+
+## OpenRouter's reported cost (`feat/openrouter-cost`)
+
+**Done**
+
+- Migration v14: `usage.cost_usd` (nullable; old rows keep their estimate).
+- The proxy's meter reads `usage.cost` from OpenRouter responses (streamed or
+  not) and stores it with the call; `/v1/usage` adds reported costs as they are
+  and prices only the other rows. The Usage header says so.
+
+**Tested**
+
+- Rust: `openrouter_calls_cost_what_openrouter_reports` (an unlisted model on
+  OpenRouter costs what the upstream reported; the same body through an
+  `openai` provider stays unknown), the store test
+  `reported_costs_are_summed_apart_from_estimates`, the migration test
+  `v13_usage_rows_keep_their_estimate` and the unit test
+  `only_a_plausible_reported_cost_counts`.
+- Not tested: against the real OpenRouter API.
 
 ## MCP catalog (`feat/mcp-catalog`)
 

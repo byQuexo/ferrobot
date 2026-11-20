@@ -1841,7 +1841,10 @@ export interface components {
              */
             timezone?: string | null;
         };
-        /** @description Sums for a time range or group. Costs are estimates from the price table. */
+        /**
+         * @description Sums for a time range or group. Costs are what `OpenRouter` reported it charged, else
+         *     estimates from the price table.
+         */
         UsageTotals: {
             /** Format: int64 */
             calls: number;
@@ -1858,7 +1861,8 @@ export interface components {
             cache_write_tokens: number;
             /**
              * Format: double
-             * @description Estimated USD; `null` when no call here could be priced.
+             * @description USD: `OpenRouter`'s reported charge where given, else estimated from prices; `null` when
+             *     no call here could be priced.
              */
             cost_usd?: number | null;
             /**
