@@ -101,6 +101,8 @@ for (let msg = await read(); msg; msg = await read()) {
       const count = readFileSync(logFile, "utf8").split("\n").filter((l) => l.includes('"method":"turn/start"')).length;
       const turn = `turn-${String(count)}`;
       send({ id: msg.id, result: { turn: { id: turn, status: "inProgress", items: [], error: null } } });
+      // Like Codex; items can arrive before the driver has read the response above.
+      send({ method: "turn/started", params: { threadId: thread, turn: { id: turn, status: "inProgress" } } });
       await play(scenario.turns[count - 1] ?? [], turn);
       break;
     }
