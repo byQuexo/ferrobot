@@ -144,12 +144,18 @@ fn filter(q: &UsageQuery) -> Result<UsageFilter, ApiError> {
                 .map_err(|_| bad("agent must be an agent id"))
         })
         .transpose()?;
-    if let Some(p) = q.provider.as_deref()
-        && p != "default"
-        && p.parse::<uuid::Uuid>().is_err()
-    {
-        return Err(bad("provider must be a provider id or default"));
-    }
+    // Stored ids are lowercase and hyphenated; the query may spell them otherwise.
+    let provider = q
+        .provider
+        .as_deref()
+        .map(|p| match p {
+            "default" => Ok(p.to_owned()),
+            _ => p
+                .parse::<uuid::Uuid>()
+                .map(|id| id.to_string())
+                .map_err(|_| bad("provider must be a provider id or default")),
+        })
+        .transpose()?;
     if q.model.as_deref().is_some_and(|m| m.len() > MAX_MODEL) {
         return Err(bad("model is too long"));
     }
@@ -157,7 +163,7 @@ fn filter(q: &UsageQuery) -> Result<UsageFilter, ApiError> {
         from,
         to,
         agent,
-        provider: q.provider.clone(),
+        provider,
         model: q.model.clone(),
     })
 }

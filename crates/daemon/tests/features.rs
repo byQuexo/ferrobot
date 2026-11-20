@@ -3753,15 +3753,26 @@ async fn voice_calls_pass_lines_on_without_agents_waking_each_other() {
 }
 
 /// Fake model API that streams usage like Anthropic and `OpenAI`, split mid-line as networks do.
+/// Model `claude-hang` stalls after its first event; `claude-overloaded` ends in an error event.
 async fn usage_upstream() -> String {
-    fn sse(chunks: &'static [&'static str]) -> axum::response::Response {
-        let stream = futures_util::stream::iter(chunks.iter().map(|c| Ok::<_, std::io::Error>(*c)));
-        (
-            [("content-type", "text/event-stream")],
-            Body::from_stream(stream),
-        )
-            .into_response()
+    fn sse(chunks: &'static [&'static str], hang: bool) -> axum::response::Response {
+        let stream =
+            futures_util::stream::iter(chunks.iter().copied().map(Ok::<_, std::io::Error>));
+        let pings = futures_util::stream::unfold((), |()| async {
+            tokio::time::sleep(Duration::from_millis(10)).await;
+            Some((Ok(": ping\n\n"), ()))
+        });
+        let body = if hang {
+            Body::from_stream(stream.chain(pings))
+        } else {
+            Body::from_stream(stream)
+        };
+        ([("content-type", "text/event-stream")], body).into_response()
     }
+    const BROKEN: &[&str] = &[
+        "event: message_start\ndata: {\"type\":\"message_start\",\"message\":{\"usage\":{\"input_tokens\":12}}}\n\n",
+        "event: error\ndata: {\"type\":\"error\",\"error\":{\"type\":\"overloaded_error\",\"message\":\"Overloaded\"}}\n\n",
+    ];
     const ANTHROPIC: &[&str] = &[
         r#"event: message_start
 data: {"type":"message_start","message":{"usage":{"input_tokens":12,"cache_read_input_tokens":1000,"cache_creation_input_tokens":200,"output_tokens":1}}}
@@ -3786,11 +3797,19 @@ data: {"type":"message_"#,
     let app = axum::Router::new()
         .route(
             "/v1/messages",
-            axum::routing::post(|| async { sse(ANTHROPIC) }),
+            axum::routing::post(|body: String| async move {
+                if body.contains("claude-hang") {
+                    sse(&BROKEN[..1], true)
+                } else if body.contains("claude-overloaded") {
+                    sse(BROKEN, false)
+                } else {
+                    sse(ANTHROPIC, false)
+                }
+            }),
         )
         .route(
             "/v1/chat/completions",
-            axum::routing::post(|| async { sse(OPENAI) }),
+            axum::routing::post(|| async { sse(OPENAI, false) }),
         );
     tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });
     format!("http://{addr}")
@@ -3853,13 +3872,13 @@ async fn the_proxy_records_usage_per_call() {
     assert_eq!(status, 200);
     let (status, _, _) = http_raw(
         &d.agents,
-        "GET",
-        "/model/v1/files",
+        "POST",
+        "/model/v1beta/models/sneaky:generateContent",
         &[("x-api-key", &backend.token("ann"))],
         b"",
     )
     .await;
-    assert_eq!(status, 404);
+    assert_eq!(status, 404, "a refused call keeps no model from its path");
 
     let conn = rusqlite::Connection::open(&db).unwrap();
     let rows = eventually("three usage rows", Duration::from_secs(5), || {
@@ -3917,6 +3936,81 @@ async fn the_proxy_records_usage_per_call() {
     );
     assert_eq!(report["totals"]["calls"], 3);
     assert_eq!(report["totals"]["not_tracked_calls"], 0);
+}
+
+#[tokio::test]
+async fn usage_of_a_broken_stream_is_an_error() {
+    use tokio::io::{AsyncReadExt, AsyncWriteExt};
+    let upstream = usage_upstream().await;
+    let dir = tempfile::tempdir().unwrap();
+    let db = dir.path().join("ferrobot.db");
+    let backend = Arc::new(StatefulBackend::default());
+    let d = start_on(
+        ferrobot_store::Store::open(&db).unwrap(),
+        backend.clone(),
+        None,
+        "127.0.0.1:0",
+        |s| {
+            s.driver = "claude".into();
+            s.anthropic_api_key = Some("sk-real-secret".into());
+            s.anthropic_upstream.clone_from(&upstream);
+        },
+    )
+    .await;
+    create(&d, json!({"name": "ann"})).await;
+    let key = backend.token("ann");
+
+    let (status, _, _) = http_raw(
+        &d.agents,
+        "POST",
+        "/model/v1/messages",
+        &[("x-api-key", &key)],
+        br#"{"model":"claude-overloaded","stream":true}"#,
+    )
+    .await;
+    assert_eq!(status, 200);
+
+    // The agent hangs up after the first event while the upstream keeps streaming.
+    let body = br#"{"model":"claude-hang","stream":true}"#;
+    let mut s = tokio::net::TcpStream::connect(&d.agents).await.unwrap();
+    let head = format!(
+        "POST /model/v1/messages HTTP/1.1\r\nHost: x\r\nx-api-key: {key}\r\nContent-Length: {}\r\n\r\n",
+        body.len()
+    );
+    s.write_all(head.as_bytes()).await.unwrap();
+    s.write_all(body).await.unwrap();
+    let mut seen = Vec::new();
+    tokio::time::timeout(Duration::from_secs(5), async {
+        while !String::from_utf8_lossy(&seen).contains("message_start") {
+            let mut buf = [0; 1024];
+            let n = s.read(&mut buf).await.unwrap();
+            assert!(n > 0, "stream closed early");
+            seen.extend_from_slice(&buf[..n]);
+        }
+    })
+    .await
+    .unwrap();
+    drop(s);
+
+    let conn = rusqlite::Connection::open(&db).unwrap();
+    let rows = eventually("two usage rows", Duration::from_secs(5), || {
+        let mut stmt = conn
+            .prepare("SELECT model, status, input_tokens FROM usage ORDER BY model")
+            .unwrap();
+        let rows: Vec<(String, String, Option<i64>)> = stmt
+            .query_map([], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)))
+            .unwrap()
+            .map(Result::unwrap)
+            .collect();
+        std::future::ready((rows.len() == 2).then_some(rows))
+    })
+    .await;
+    let row = |m: &str| (m.to_owned(), "error".to_owned(), Some(12));
+    assert_eq!(
+        rows,
+        [row("claude-hang"), row("claude-overloaded")],
+        "counts seen before the break are kept"
+    );
 }
 
 #[tokio::test]
@@ -4044,4 +4138,16 @@ async fn usage_filters_groups_and_price_overrides() {
         json!([{"provider_kind": "anthropic", "model": "m", "input": -1.0, "output": 1.0}]);
     let (status, _) = http(&d.ui, "PUT", "/v1/usage/prices", Some(negative)).await;
     assert_eq!(status, 400);
+
+    let pid = uuid::Uuid::new_v4();
+    let mut keyed = row("2026-11-17T10:00:00Z", amy, "openai", "gpt-5", Some(1));
+    keyed.provider_id = Some(pid);
+    d.state.store.insert_usage(keyed).await.unwrap();
+    let braced = format!(
+        "/v1/usage?provider=%7B{}%7D",
+        pid.to_string().to_uppercase()
+    );
+    let (status, by_provider) = http(&d.ui, "GET", &braced, None).await;
+    assert_eq!(status, 200, "{by_provider}");
+    assert_eq!(by_provider["totals"]["calls"], 1, "{by_provider}");
 }

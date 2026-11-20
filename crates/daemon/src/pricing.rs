@@ -117,21 +117,12 @@ pub fn effective(overrides: Vec<PriceEntry>) -> Vec<PriceEntry> {
     all
 }
 
-/// A model id without a trailing snapshot date (`-20250929`, `@20250929`, `-2024-08-06`).
+/// A model id without a trailing Anthropic snapshot date (`-20250929`, `@20250929`).
 fn undated(model: &str) -> &str {
     let b = model.as_bytes();
     let n = b.len();
-    let digits = |r: std::ops::Range<usize>| b[r].iter().all(u8::is_ascii_digit);
-    if n > 9 && matches!(b[n - 9], b'-' | b'@') && digits(n - 8..n) {
+    if n > 9 && matches!(b[n - 9], b'-' | b'@') && b[n - 8..].iter().all(u8::is_ascii_digit) {
         return &model[..n - 9];
-    }
-    if n > 11
-        && [n - 11, n - 6, n - 3].iter().all(|&i| b[i] == b'-')
-        && digits(n - 10..n - 6)
-        && digits(n - 5..n - 3)
-        && digits(n - 2..n)
-    {
-        return &model[..n - 11];
     }
     model
 }
@@ -158,11 +149,17 @@ impl Prices {
             ProviderKind::GeminiCli => ProviderKind::Gemini,
             other => other,
         };
+        // Anthropic prices a snapshot like its alias; OpenAI snapshots can differ from theirs.
+        let dated = matches!(
+            kind,
+            ProviderKind::Anthropic | ProviderKind::Bedrock | ProviderKind::Vertex
+        );
         [kind, fallback]
             .into_iter()
             .find_map(|k| {
-                [model, undated(model)]
+                [Some(model), dated.then(|| undated(model))]
                     .into_iter()
+                    .flatten()
                     .find_map(|m| self.0.get(&(k.as_str(), m.to_owned())).copied())
             })
             .or((kind == ProviderKind::Ollama).then_some(Price::FREE))
@@ -262,6 +259,7 @@ mod tests {
         let prices = Prices::new(vec![
             own(ProviderKind::Openai, "gpt-5", Price::FREE),
             own(ProviderKind::Ollama, "llama-paid", paid),
+            own(ProviderKind::Vertex, "claude-haiku-4-5", paid),
         ]);
         assert_eq!(
             prices.get("ollama", "llama-paid"),
@@ -285,8 +283,16 @@ mod tests {
         assert_eq!(prices.get("anthropic", "claude-unknown-9"), None);
         assert_eq!(prices.get("bedrock", "anthropic.claude-opus-5"), None);
         assert_eq!(prices.get("nonsense", "gpt-5"), None);
-        assert_eq!(undated("gpt-4o-2024-08-06"), "gpt-4o");
-        assert_eq!(undated("claude-haiku-4-5@20251001"), "claude-haiku-4-5");
+        assert_eq!(
+            prices.get("vertex", "claude-haiku-4-5@20251001"),
+            Some(paid)
+        );
+        assert!(prices.get("openai", "gpt-4o").is_some());
+        assert_eq!(
+            prices.get("openai", "gpt-4o-2024-05-13"),
+            None,
+            "an OpenAI snapshot is not priced as its alias"
+        );
         assert_eq!(undated("gpt-5"), "gpt-5");
     }
 }

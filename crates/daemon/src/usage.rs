@@ -13,7 +13,7 @@ use crate::AppState;
 
 /// Largest SSE line or JSON body kept for reading usage; bytes pass on regardless.
 const MAX_KEPT: usize = 2 * 1024 * 1024;
-/// Longest model id taken from a request.
+/// Longest model id stored.
 const MAX_MODEL: usize = 200;
 
 /// Where an API reports usage.
@@ -48,7 +48,23 @@ fn model_in_path(path: &str) -> Option<&str> {
             path.rsplit_once("models/")
                 .and_then(|(_, r)| r.split(':').next())
         })
-        .filter(|m| !m.is_empty() && m.len() <= MAX_MODEL)
+        .filter(|m| !m.is_empty())
+}
+
+/// The model id as stored: agent-written text, so no control characters and at most [`MAX_MODEL`] bytes.
+fn stored_model(model: &str, status: UsageStatus) -> String {
+    let mut m = String::new();
+    for c in model.chars().filter(|c| !c.is_control()) {
+        if m.len() + c.len_utf8() > MAX_MODEL {
+            break;
+        }
+        m.push(c);
+    }
+    if status == UsageStatus::Refused || m.is_empty() {
+        "unknown".into()
+    } else {
+        m
+    }
 }
 
 impl Call {
@@ -84,7 +100,6 @@ impl Call {
         }
         if let Ok(Named { model: Some(m) }) = serde_json::from_slice(body)
             && !m.is_empty()
-            && m.len() <= MAX_MODEL
         {
             self.model = m;
         }
@@ -98,7 +113,7 @@ impl Call {
             agent_name: self.agent_name,
             provider_id: self.provider_id,
             provider_kind: self.provider_kind,
-            model: self.model,
+            model: stored_model(&self.model, status),
             tokens,
             latency_ms: i64::try_from(self.started.elapsed().as_millis()).unwrap_or(i64::MAX),
             status,
@@ -123,8 +138,7 @@ enum Mode {
 }
 
 /// Watches a response body and records the call when the body is dropped:
-/// at its end, or early when the agent goes away.
-#[derive(Debug)]
+/// at its end, or early when the agent goes away. `Debug` never shows response bytes.
 pub(crate) struct Meter {
     call: Option<Call>,
     family: Family,
@@ -136,6 +150,17 @@ pub(crate) struct Meter {
     /// Usage may have been in an oversized line: counts are not trusted.
     lost: bool,
     tokens: Tokens,
+    /// The upstream body reached its end.
+    ended: bool,
+}
+
+impl std::fmt::Debug for Meter {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Meter")
+            .field("status", &self.status)
+            .field("tokens", &self.tokens)
+            .finish_non_exhaustive()
+    }
 }
 
 impl Meter {
@@ -163,10 +188,16 @@ impl Meter {
             overflow: false,
             lost: false,
             tokens: Tokens::default(),
+            ended: false,
         }
     }
 
-    pub fn feed(&mut self, chunk: &Result<Bytes, reqwest::Error>) {
+    /// One poll result of the upstream body; `None` is its end.
+    pub fn feed(&mut self, chunk: Option<&Result<Bytes, reqwest::Error>>) {
+        let Some(chunk) = chunk else {
+            self.ended = true;
+            return;
+        };
         let Ok(mut bytes) = chunk.as_deref() else {
             self.status = UsageStatus::Error;
             return;
@@ -196,20 +227,40 @@ impl Meter {
 
     fn end_line(&mut self) {
         let line = std::mem::take(&mut self.kept);
+        let has = |data: &[u8], needle: &[u8]| data.windows(needle.len()).any(|w| w == needle);
         if std::mem::take(&mut self.overflow) {
             // shortcut: an SSE line over 2 MiB (e.g. a huge Codex `response.completed`) drops the call's counts; stream-parse JSON if that happens.
             self.lost = true;
-        } else if let Some(data) = line.strip_prefix(b"data:")
-            && data.windows(6).any(|w| w == b"\"usage")
-            && let Ok(v) = serde_json::from_slice::<Value>(data)
+        } else if line
+            .strip_prefix(b"event:")
+            .is_some_and(|e| e.trim_ascii() == b"error")
         {
-            read(self.family, &v, &mut self.tokens);
+            self.status = UsageStatus::Error;
+        } else if let Some(data) = line.strip_prefix(b"data:") {
+            let json = || serde_json::from_slice::<Value>(data).ok();
+            // Drivers stop reading at the protocol's last event, often before the upstream closes.
+            if data.trim_ascii() == b"[DONE]"
+                || ((has(data, b"message_stop") || has(data, b"response.completed"))
+                    && json().is_some_and(|v| {
+                        v["type"] == "message_stop" || v["type"] == "response.completed"
+                    }))
+            {
+                self.ended = true;
+            }
+            if has(data, b"\"error\"")
+                && json().is_some_and(|v| v["type"] == "error" || v["error"].is_object())
+            {
+                self.status = UsageStatus::Error;
+            } else if has(data, b"\"usage")
+                && let Some(v) = json()
+            {
+                read(self.family, &v, &mut self.tokens);
+            }
         }
     }
-}
 
-impl Drop for Meter {
-    fn drop(&mut self) {
+    /// Status and counts once the body is gone; a body that never reached its end is an error.
+    fn finish(&mut self) -> (UsageStatus, Tokens) {
         match self.mode {
             Mode::Sse if !self.kept.is_empty() || self.overflow => self.end_line(),
             Mode::Json if self.overflow => self.lost = true,
@@ -223,19 +274,32 @@ impl Drop for Meter {
             }
             _ => {}
         }
+        if !self.ended {
+            self.status = UsageStatus::Error;
+        }
         let tokens = if self.lost {
             Tokens::default()
         } else {
             self.tokens
         };
+        (self.status, tokens)
+    }
+}
+
+impl Drop for Meter {
+    fn drop(&mut self) {
         if let Some(call) = self.call.take() {
-            call.record(self.status, tokens);
+            let (status, tokens) = self.finish();
+            call.record(status, tokens);
         }
     }
 }
 
+/// A reported count, clamped so no sum or cost can overflow or go negative.
 fn count(v: &Value, pointer: &str) -> Option<i64> {
-    v.pointer(pointer).and_then(Value::as_i64)
+    v.pointer(pointer)
+        .and_then(Value::as_i64)
+        .map(|n| n.clamp(0, i64::from(u32::MAX)))
 }
 
 /// Overwrites `slot` only when the field is reported (streams repeat cumulative counts).
@@ -248,7 +312,7 @@ fn set(slot: &mut Option<i64>, v: &Value, pointer: &str) {
 /// `OpenAI`-style counts include cached tokens in the input; split them out.
 fn split_cached(t: &mut Tokens, input: Option<i64>, output: Option<i64>, cached: Option<i64>) {
     if let Some(input) = input {
-        t.input = Some(input.saturating_sub(cached.unwrap_or(0)));
+        t.input = Some(input.saturating_sub(cached.unwrap_or(0)).max(0));
         t.cache_read = cached;
     }
     if output.is_some() {
@@ -274,13 +338,14 @@ fn read(family: Family, v: &Value, t: &mut Tokens) {
         }
         Family::ChatCompletions => {
             if let Some(u) = object("/usage") {
+                let prompt = count(u, "/prompt_tokens");
+                let mut output = count(u, "/completion_tokens");
+                // Gemini's OpenAI endpoint leaves thinking tokens out of completion_tokens, not out of the total.
+                if let (Some(total), Some(prompt)) = (count(u, "/total_tokens"), prompt) {
+                    output = Some(output.unwrap_or(0).max(total - prompt));
+                }
                 let cached = count(u, "/prompt_tokens_details/cached_tokens");
-                split_cached(
-                    t,
-                    count(u, "/prompt_tokens"),
-                    count(u, "/completion_tokens"),
-                    cached,
-                );
+                split_cached(t, prompt, output, cached);
             }
         }
         Family::Responses => {
@@ -379,6 +444,109 @@ mod tests {
             ],
         );
         assert_eq!(gemini, of(20, 13, Some(50), None));
+
+        let gemini_openai = tokens(
+            Family::ChatCompletions,
+            &[json!({"usage": {"prompt_tokens": 10, "completion_tokens": 5, "total_tokens": 40}})],
+        );
+        assert_eq!(
+            gemini_openai,
+            of(10, 30, None, None),
+            "thinking tokens count"
+        );
+    }
+
+    #[test]
+    fn counts_are_clamped() {
+        let huge = tokens(
+            Family::ChatCompletions,
+            &[
+                json!({"usage": {"prompt_tokens": i64::MAX, "completion_tokens": -5,
+                "total_tokens": -1, "prompt_tokens_details": {"cached_tokens": i64::MAX}}}),
+            ],
+        );
+        assert_eq!(huge, of(0, 0, Some(u32::MAX.into()), None));
+        let negative = tokens(
+            Family::Anthropic,
+            &[json!({"usage": {"input_tokens": -3, "output_tokens": i64::MAX}})],
+        );
+        assert_eq!(negative.input, Some(0));
+        assert_eq!(negative.output, Some(u32::MAX.into()));
+        let cached_over_prompt = tokens(
+            Family::Responses,
+            &[json!({"usage": {"input_tokens": 5, "output_tokens": 1,
+                "input_tokens_details": {"cached_tokens": 9}}})],
+        );
+        assert_eq!(cached_over_prompt, of(0, 1, Some(9), None));
+    }
+
+    #[test]
+    fn stored_models_are_plain_and_short() {
+        assert_eq!(stored_model("gpt-5", UsageStatus::Ok), "gpt-5");
+        assert_eq!(stored_model("gpt-5", UsageStatus::Refused), "unknown");
+        assert_eq!(stored_model("a\nb\u{7}c", UsageStatus::Error), "abc");
+        assert_eq!(stored_model("\r\n", UsageStatus::Ok), "unknown");
+        let long = format!("{}é", "x".repeat(199));
+        assert_eq!(stored_model(&long, UsageStatus::Ok), "x".repeat(199));
+    }
+
+    /// A meter for a 200 response that records nothing when dropped.
+    fn meter(family: Family, content_type: &str) -> Meter {
+        let call = Call {
+            store: Store::open_in_memory().unwrap(),
+            started: Instant::now(),
+            agent_id: AgentId::new(),
+            agent_name: "ann".into(),
+            provider_id: None,
+            provider_kind: "anthropic".into(),
+            model: "m".into(),
+        };
+        let mut m = Meter::new(call, family, true, content_type);
+        m.call = None;
+        m
+    }
+
+    #[test]
+    fn only_a_stream_that_ends_cleanly_is_ok() {
+        let usage = "event: message_start\ndata: {\"type\":\"message_start\",\
+            \"message\":{\"usage\":{\"input_tokens\":12,\"output_tokens\":1}}}\n\n";
+        let error = "event: error\ndata: {\"type\":\"error\",\"error\":{\"type\":\"overloaded_error\"}}\n\n";
+        let run = |chunks: &[&'static str], end: bool| {
+            let mut m = meter(Family::Anthropic, "text/event-stream");
+            for &c in chunks {
+                m.feed(Some(&Ok(Bytes::from_static(c.as_bytes()))));
+            }
+            if end {
+                m.feed(None);
+            }
+            m.finish()
+        };
+        let counted = Tokens {
+            input: Some(12),
+            output: Some(1),
+            ..Tokens::default()
+        };
+        assert_eq!(run(&[usage], true), (UsageStatus::Ok, counted));
+        assert_eq!(
+            run(&[usage], false),
+            (UsageStatus::Error, counted),
+            "dropped before the end"
+        );
+        assert_eq!(run(&[usage, error], true).0, UsageStatus::Error);
+        let chat_error = "data: {\"error\":{\"message\":\"upstream failed\"}}\n\n";
+        assert_eq!(run(&[chat_error], true).0, UsageStatus::Error);
+        let mentions_error =
+            "data: {\"choices\":[{\"delta\":{\"content\":\"\\\"error\\\"\"}}]}\n\n";
+        assert_eq!(run(&[mentions_error], true).0, UsageStatus::Ok);
+        let stop = "event: message_stop\ndata: {\"type\":\"message_stop\"}\n\n";
+        assert_eq!(
+            run(&[usage, stop], false),
+            (UsageStatus::Ok, counted),
+            "the agent may hang up after the last event"
+        );
+        let mut chat = meter(Family::ChatCompletions, "text/event-stream");
+        chat.feed(Some(&Ok(Bytes::from_static(b"data: [DONE]\n\n"))));
+        assert_eq!(chat.finish().0, UsageStatus::Ok);
     }
 
     #[test]

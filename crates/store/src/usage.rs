@@ -11,11 +11,12 @@ use crate::{Store, StoreError};
 /// How a proxied call ended.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum UsageStatus {
-    /// The upstream answered with 2xx.
+    /// The upstream answered with 2xx and its body ended normally.
     Ok,
     /// The proxy refused the call before it reached the upstream.
     Refused,
-    /// The upstream answered with an error, or could not be reached.
+    /// The upstream answered with an error, could not be reached, or its
+    /// body broke off, carried an error event or was dropped by the agent.
     Error,
 }
 

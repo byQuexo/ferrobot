@@ -1,6 +1,7 @@
 //! Model proxy at `<agent API>/model`: checks the agent token, picks the upstream from the agent's
 //! provider and swaps in the real credential, which never leaves the daemon; each call leaves a usage row.
 
+use std::task::Poll;
 use std::time::{Duration, Instant};
 
 use axum::Router;
@@ -149,6 +150,11 @@ fn generation(api: &Api, path: &str) -> Option<Family> {
             verb(&["generateContent", "streamGenerateContent"]).then_some(Family::Gemini)
         }
     }
+}
+
+/// Bedrock, Vertex and Gemini run (and bill) the model in the path, whatever the body says.
+fn body_names_model(api: &Api) -> bool {
+    !matches!(api, Api::Bedrock | Api::Vertex { .. } | Api::GeminiNative)
 }
 
 /// Plain characters only, so nothing is decoded twice: no `%`, no control
@@ -419,7 +425,7 @@ async fn forward(
         return refuse(call, StatusCode::NOT_FOUND, "invalid path");
     }
     let family = generation(&route.api, &path);
-    if family.is_some() {
+    if family.is_some() && body_names_model(&route.api) {
         call.model_from_body(&body);
     }
     if let Some(q) = parts.uri.query() {
@@ -478,7 +484,14 @@ fn respond(response: reqwest::Response, metered: Option<(Family, Call)>) -> Resp
                 .and_then(|v| v.to_str().ok())
                 .unwrap_or_default();
             let mut meter = Meter::new(call, family, status.is_success(), content_type);
-            Body::from_stream(stream.inspect(move |chunk| meter.feed(chunk)))
+            let mut stream = Box::pin(stream);
+            Body::from_stream(futures_util::stream::poll_fn(move |cx| {
+                let next = stream.poll_next_unpin(cx);
+                if let Poll::Ready(chunk) = &next {
+                    meter.feed(chunk.as_ref());
+                }
+                next
+            }))
         }
         None => Body::from_stream(stream),
     };
@@ -598,6 +611,10 @@ mod tests {
             ),
         ] {
             assert_eq!(generation(api, path), family, "{path}");
+        }
+        assert!(body_names_model(&Api::Anthropic) && body_names_model(&Api::ChatCompletions));
+        for api in [&Api::Bedrock, &vertex, &Api::GeminiNative] {
+            assert!(!body_names_model(api), "the path names the model");
         }
     }
 }
