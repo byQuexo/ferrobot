@@ -197,6 +197,7 @@ Status per phase: `docs/progress.md`; assumptions: `docs/decisions.md`.
 2. Firecracker spike on a KVM host (API client, boot sequence, init and
    rootfs script exist; never booted).
 3. Firecracker backend behind the `SandboxBackend` trait (written, `TODO(kvm)`:
-   process spawn, TAP, guest agent for exec/files, snapshots).
+   process spawn, TAP, snapshots; exec/files via the vsock guest agent,
+   tested only against a mock).
 4. Jailer for isolation.
 5. ~~Warm/cold sleep with a `SleepLevel` enum~~ (done for Docker: pause/stop).

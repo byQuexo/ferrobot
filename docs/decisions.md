@@ -194,3 +194,11 @@ the code and this file together.
   decision: OS keychain like provider keys is the obvious place).
 - **Old token retired on archive** instead of stripping env from the image:
   `docker commit` copies the container env into the image config.
+
+## F2: guest agent
+
+- **socat + a Node script** instead of a guest binary: Node has no AF_VSOCK,
+  socat (in Debian) does; one process per connection keeps the agent tiny.
+  The agent runs as `node`, like `docker exec` runs as the image user.
+- **JSON with base64 payloads, one request per connection**; answers up to
+  64 MiB (files ~48 MiB), exec output capped at 1 MiB per stream in the guest.

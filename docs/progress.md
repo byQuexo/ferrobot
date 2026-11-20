@@ -287,3 +287,28 @@ store used for the run) or the daemon's own env.
   target was used. The archived image still holds the (retired) agent token.
 - Each archive saves the whole image (~1.3 GB); see the `shortcut:` comment.
 - Firecracker archive (snapshot + disk) is part of F4b/F4c on KVM.
+
+## F2: guest agent over vsock (`feature/guest-agent`)
+
+**Done**
+
+- Host: `crates/sandbox/src/firecracker/guest.rs` connects to the VM's vsock
+  socket, does the `CONNECT 52` handshake, sends one JSON request and reads
+  one answer; `exec`, `read_file`, `write_file` of the Firecracker backend use
+  it. Boot sequence adds `PUT /vsock` (cid 3, `<vm dir>/vsock.sock`).
+- Guest: `runner/src/guest-agent.ts` (built into the runner image as
+  `dist/guest-agent.js`): exec with cwd/env and 1 MiB output caps, binary
+  file read/write, `not_found` errors. The init starts
+  `socat VSOCK-LISTEN:52,fork` as `node`; the rootfs build adds `socat`.
+
+**Tested**
+
+- Host side against a Unix-socket mock of Firecracker's vsock (handshake,
+  exec, binary read/write, not found, refused port, missing socket).
+- Guest side as functions and as a stdio program, the way socat runs it.
+- Debian bookworm's socat 1.7.4.4 has the `VSOCK-LISTEN` address.
+
+**Open (`TODO(kvm)`)**
+
+- Never ran inside a microVM: vsock device, socat in the guest, runner image
+  in the rootfs.
