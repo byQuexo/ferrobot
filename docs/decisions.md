@@ -665,3 +665,13 @@ the code and this file together.
 - **Follow-up:** streaming playback; a remove button per call participant
   (today: end the call); telling the host agent that the operator is
   listening (it does not know until someone joins).
+
+## Agent list: order and delete
+
+- **The order lives in the app** (`localStorage`, `ferrobot.agent-order`),
+  not in the daemon: there is one desktop per daemon today, and a column
+  would need a migration while v12/v13 are taken by open branches. Pinned
+  agents stay first; dragging only reorders within the pinned strip or the
+  list. New agents go after the ordered ones, by name.
+- **Right-click on an agent** opens Move up / Move down (the keyboard way to
+  reorder) and Delete…, which asks for confirmation first.
