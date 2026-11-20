@@ -178,7 +178,8 @@ daemon, `docker ps -a` must be empty of ferrobot containers.
   No Claude subscription (OAuth) logins (connector OAuth is fine).
 - **Operator token on `/v1`.** Every UI route requires
   `Authorization: Bearer <token>` (`FERROBOT_API_TOKEN` or
-  `<data dir>/api-token`); only `/v1/health` is open. Keep the UI listener on
+  `<data dir>/api-token`); only `/v1/health` and `/v1/oauth/callback` (single-use
+  `state`) are open, and `/artifacts/` takes signed links. Keep the UI listener on
   loopback by default.
 - **Per-agent tokens** on `/runner/ws`, `/mcp`, `/model`. An agent can only act
   as itself (MCP tools read the caller from the token). Only hashes are stored.
@@ -197,7 +198,8 @@ daemon, `docker ps -a` must be empty of ferrobot containers.
 - Docker e2e, `smoke-docker.sh` and the Docker sandbox test passed on
   `feature/firecracker-client` (macOS, Docker Desktop); runner image rebuilt.
 - Firecracker: no microVM has booted; every `TODO(kvm)` needs a KVM host.
-- No provider has been run against its real upstream (no keys used).
+- Only Anthropic (Claude driver) and Ollama have run against a real
+  upstream; OpenAI, Gemini, OpenRouter, Bedrock and Vertex never have.
 - Codex 0.166.0 is in the runner image; a live Codex turn ran against Ollama's
   Responses API, not against OpenAI (no key in the environment).
 - A live Claude turn passed (`scripts/smoke-live.sh`, 2026-11-20, macOS): an
