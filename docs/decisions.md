@@ -411,8 +411,10 @@ the code and this file together.
   reordered or appended chunk, or an archive moved to another agent's path,
   fails to open. Images stream through it (about 1.3 GB, never in memory).
   The key is `archive-key` in the secret store, made on first start and
-  never replaced: a stored value that is not a key stops the daemon instead
-  of orphaning every archive.
+  never replaced: with a stored value that is not a key, a remote store
+  stops the daemon, and the local store warns and writes new archives
+  unencrypted (old ones fail to open until the key is fixed); nothing is
+  orphaned.
 - **Remote storage needs the key.** With an `s3://` (or any non-local)
   `--storage-url` the daemon refuses to start without the key; with the
   local data dir it warns and writes plaintext (the disk is the daemon's
