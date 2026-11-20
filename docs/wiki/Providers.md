@@ -80,8 +80,7 @@ Notes per kind:
 Voice (calls and dictation) uses its own providers, separate from the model
 providers: ElevenLabs (speech and live transcription) or OpenRouter (speech
 and transcription models). Their keys are set under Settings → Voice and
-stay in the daemon's secret store like model keys. Neither has run against
-a real account in testing beyond the daemon's own checks.
+stay in the daemon's secret store like model keys.
 
 ## Not supported
 
