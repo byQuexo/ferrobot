@@ -1052,3 +1052,20 @@ store used for the run) or the daemon's own env.
 - Not tested: a real OAuth sign-in with any catalog server (dynamic
   registration with a loopback redirect is advertised but unproven per
   server); the Tauri window.
+
+## Routines made by agents (`feat/agent-routines`)
+
+**Done**
+
+- MCP tool `create_routine` (`name`, `schedule`, `prompt`): in Auto mode the
+  routine is created at once (`created`); otherwise an approval card shows the
+  schedule in words and the message (`pending`), and approving creates it. The
+  agent gets a message either way. The Claude driver prompt lists the tool.
+
+**Tested**
+
+- Rust: `agents_create_routines_with_approval_or_in_auto_mode` (card, nothing
+  before the answer, approve creates it and messages the agent, 409 on a second
+  answer, a taken name and an invalid schedule refused, decline creates
+  nothing, Auto mode creates at once); the MCP tool list test.
+- Not tested: a real model calling `create_routine`.

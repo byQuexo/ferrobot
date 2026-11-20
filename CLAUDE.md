@@ -210,6 +210,7 @@ daemon, `docker ps -a` must be empty of ferrobot containers.
   Approve/Decline card, the tool waits; decline or `FERROBOT_APPROVAL_TIMEOUT`
   (300 s) creates nothing. Auto mode (`PUT /v1/settings`, operator opt-in)
   skips the card and leaves an `agent_created` notice; the agent limit applies either way.
+  `create_routine` (an agent's own routine) follows the same rule, without waiting.
 - **`FERROBOT_MAX_AGENTS`** (default 10) applies to `POST /v1/agents` and to
   `create_agent` (both through `daemon::agents::create`).
 - Question cards are answered at most once (`409` after).
