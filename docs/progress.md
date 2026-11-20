@@ -176,3 +176,35 @@ Status per roadmap phase (`docs/roadmap.md`). Decisions are in
 - No microVM has booted: process spawn, TAP setup, guest kernel `ip=`,
   init, MMDS from the guest, runner reaching the daemon.
 - Guest agent for exec/files (F2), jailer (F3), snapshot sleep (F4b).
+
+## Live smoke test (`feature/live-smoke`)
+
+Real `ferrobotd` with the Docker backend on macOS (Docker Desktop), one
+tool-using turn per driver, runner image built from this tree.
+
+| Driver | Model | Result |
+|---|---|---|
+| `openai` | Ollama 0.12.6 in a container, `qwen2.5:3b`, provider `openai_compatible` | `bash` tool ran in the container, answer streamed back |
+| `codex` (Codex 0.166.0 in the image) | Ollama 0.40.16 `/v1/responses`, `qwen2.5:3b`, provider `codex` with base URL override | shell tool ran, answer streamed back |
+| `claude` (Agent SDK in the image) | fake Anthropic upstream (`--anthropic-upstream`), canary key in the daemon env | `Bash` tool ran, answer streamed back; the upstream saw the daemon key, never the agent token |
+
+Leak check for each run: a canary key on the provider (or in the daemon env)
+was searched in the container env (`docker inspect` and `/proc/*/environ`),
+every file in the container, the container logs, the daemon log and the
+SQLite files: never found. It is only in `secrets.json` (the file secret
+store used for the run) or the daemon's own env.
+
+**Fixed because of it**
+
+- Codex 0.166 rejects `approval_policy = "untrusted"`; now `on-request`.
+- `/v1/health` reported `model_proxy: false` while the proxy served providers.
+
+**Not done**
+
+- No call to the real Anthropic API: `ANTHROPIC_API_KEY` is not in this
+  session's environment (launchd has the name with an empty value). Put the
+  key in `~/.config/ferrobot/anthropic.key` (mode 0600) and the same run takes
+  a minute.
+- No real OpenAI key either (`OPENAI_API_KEY` unset), so the L3 turn ran
+  against Ollama's Responses API instead of OpenAI; a ChatGPT sign-in was not
+  tried.

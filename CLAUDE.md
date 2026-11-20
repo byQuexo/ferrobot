@@ -179,8 +179,10 @@ daemon, `docker ps -a` must be empty of ferrobot containers.
   `feature/firecracker-client` (macOS, Docker Desktop); runner image rebuilt.
 - Firecracker: no microVM has booted; every `TODO(kvm)` needs a KVM host.
 - No provider has been run against its real upstream (no keys used).
-- The Codex driver has only run against a fake app-server; the runner image
-  has no `codex` binary yet (adding `@openai/codex` needs Tim's OK).
+- Codex 0.166.0 is in the runner image; a live Codex turn ran against Ollama's
+  Responses API, not against OpenAI (no key in the environment).
+- The Claude driver ran in Docker against a fake Anthropic upstream only; a
+  real Anthropic call still needs a key.
 - The provider dialogs were checked in a browser against a real daemon, not in
   the Tauri window; the real OS keychain path has never run.
 - A live Claude run (`--driver claude`) has never been tested.

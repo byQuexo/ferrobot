@@ -154,3 +154,13 @@ the code and this file together.
   kills all VMs (`kill_on_drop`); aarch64 has no `SendCtrlAltDel`, so `stop`
   there is a hard kill; `destroy(false)` leaves the VM `Stopped`, not
   `Missing`; the guest has no DNS yet.
+
+## Live smoke follow-ups
+
+- **Codex is in the runner image, pinned to 0.166.0** (`@openai/codex`,
+  Apache-2.0, ~27M weekly downloads; Tim asked for it). Pinned to a release
+  about two weeks old rather than the newest one.
+- **Codex approvals: `on-request`.** 0.166 refuses `untrusted`. With
+  `danger-full-access` Codex rarely asks, so the runner's `decide()` guard
+  rails mostly do not apply to Codex's own commands; the container stays the
+  boundary. Requests Codex does send are still answered with `decide()`.
