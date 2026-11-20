@@ -436,6 +436,10 @@ textarea { resize: vertical; min-height: 40px; line-height: 1.5; }
 .kv { display: grid; grid-template-columns: auto 1fr; gap: 6px 14px; font-size: 13px; margin: 10px 0; width: 100%; }
 .kv > :nth-child(odd) { color: var(--muted); }
 .kv > * { min-width: 0; }
+.model-line { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 6px; }
+.text-link { padding: 0; border: none; background: none; color: var(--accent); font: inherit; cursor: pointer; }
+.text-link:hover { text-decoration: underline; }
+.form label.check { flex-direction: row; align-items: center; gap: 8px; font-weight: 500; }
 .kv .status-chip { justify-self: start; }
 .created-by { display: inline-flex; align-items: center; gap: 6px; }
 .created-by b { font-weight: 650; }
