@@ -912,3 +912,21 @@ slop, so polish mode: palette, accent, logo, layout and features stay.
 - **Given to the requester.** Approving assigns the new connector to the agent
   that asked (the same path as `PUT /v1/agents/{id}/connectors`). OAuth
   connectors are created signed out; the operator signs in under Connectors.
+
+## MCP catalog
+
+- **A static list in the UI** (`apps/desktop/src/lib/catalog.ts`), no API: an
+  entry is a name, URL and sign-in kind, and "Add" uses the existing
+  `POST /v1/connectors` and OAuth routes. Only vendor-run servers with
+  Streamable HTTP; generic lucide icons, no vendor logos.
+- **Zero-setup entries first:** OAuth servers that advertise dynamic client
+  registration (Linear, Notion, Atlassian, Sentry, Supabase, Neon, Cloudflare,
+  Stripe, GitLab, Hugging Face, Zapier) and keyless ones (Context7, DeepWiki,
+  Microsoft Learn, Cloudflare docs, Exa). GitHub has no dynamic registration,
+  so its entry takes a token in Vault. Left out: Slack (HTTPS-only redirects),
+  Vercel and Figma (approved clients only), Google Workspace (developer
+  preview), HubSpot and Asana (own app; loopback redirects unclear).
+- **Agents and CLIs:** logged-in services reach agents through connectors, where
+  the daemon holds the token; CLIs in the sandbox will be keyless (Tim,
+  2026-11-20). A credential-swapping proxy for OAuth CLIs is a later option,
+  only for CLIs without an MCP server.
