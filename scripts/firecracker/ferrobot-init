@@ -83,6 +83,9 @@ unset token keys key value
 
 export HOME="$HOME_DIR" USER=node NODE_ENV=production
 cd "$HOME_DIR" || fail "no $HOME_DIR"
+# Guest agent for the host's exec/file calls: one node process per vsock connection.
+setpriv --reuid=node --regid=node --init-groups \
+  socat VSOCK-LISTEN:52,fork,reuseaddr EXEC:"node /opt/ferrobot-runner/dist/guest-agent.js" &
 setpriv --reuid=node --regid=node --init-groups node /opt/ferrobot-runner/dist/index.js &
 runner=$!
 # SendCtrlAltDel from the host arrives here as SIGINT.

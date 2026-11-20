@@ -12,6 +12,7 @@
 //! guest agent (roadmap F2) and snapshot sleep (F4b).
 
 mod client;
+mod guest;
 
 use std::collections::{BTreeMap, HashMap, HashSet};
 use std::net::Ipv4Addr;
@@ -31,6 +32,10 @@ use crate::{
 };
 
 const KIND: &str = "firecracker";
+/// The VM's vsock Unix socket, through which the guest agent is reached.
+const VSOCK: &str = "vsock.sock";
+/// Guest context id; each VM has its own vsock device, so it can be fixed.
+const GUEST_CID: u32 = 3;
 const IFACE: &str = "eth0";
 const SOCKET: &str = "api.sock";
 const HOME_DISK: &str = "home.ext4";
@@ -146,6 +151,7 @@ impl FirecrackerConfig {
             Request::network_interface(IFACE, &vm.tap, &vm.mac()),
             Request::mmds_config(&[IFACE]),
             Request::mmds(json!({ "ferrobot": { "env": env } })),
+            Request::vsock(GUEST_CID, &vm.dir.join(VSOCK)),
             Request::action(Action::InstanceStart),
         ]
     }
@@ -281,6 +287,10 @@ impl FirecrackerBackend {
         Ok(&handle.id)
     }
 
+    fn vsock(&self, name: &str) -> PathBuf {
+        self.config.state_dir.join(name).join(VSOCK)
+    }
+
     fn client(&self, name: &str) -> Client {
         Client::new(self.config.state_dir.join(name).join(SOCKET))
     }
@@ -393,41 +403,33 @@ impl SandboxBackend for FirecrackerBackend {
         Ok(handle)
     }
 
+    // TODO(kvm): the guest side (socat on vsock + guest-agent.js) has not run in a VM.
     async fn exec(
         &self,
-        _sandbox: &SandboxHandle,
-        _req: &ExecRequest,
+        sandbox: &SandboxHandle,
+        req: &ExecRequest,
     ) -> Result<ExecOutput, SandboxError> {
-        // TODO(kvm): needs the guest agent over vsock (roadmap F2).
-        Err(SandboxError::NotImplemented {
-            backend: KIND,
-            operation: "exec",
-        })
+        let name = Self::name(sandbox)?;
+        guest::exec(&self.vsock(name), name, req).await
     }
 
     async fn read_file(
         &self,
-        _sandbox: &SandboxHandle,
-        _path: &SandboxPath,
+        sandbox: &SandboxHandle,
+        path: &SandboxPath,
     ) -> Result<Vec<u8>, SandboxError> {
-        // TODO(kvm): needs the guest agent over vsock (roadmap F2).
-        Err(SandboxError::NotImplemented {
-            backend: KIND,
-            operation: "read_file",
-        })
+        let name = Self::name(sandbox)?;
+        guest::read_file(&self.vsock(name), name, &path.to_string()).await
     }
 
     async fn write_file(
         &self,
-        _sandbox: &SandboxHandle,
-        _path: &SandboxPath,
-        _contents: &[u8],
+        sandbox: &SandboxHandle,
+        path: &SandboxPath,
+        contents: &[u8],
     ) -> Result<(), SandboxError> {
-        // TODO(kvm): needs the guest agent over vsock (roadmap F2).
-        Err(SandboxError::NotImplemented {
-            backend: KIND,
-            operation: "write_file",
-        })
+        let name = Self::name(sandbox)?;
+        guest::write_file(&self.vsock(name), name, &path.to_string(), contents).await
     }
 
     async fn snapshot(
@@ -660,6 +662,12 @@ mod tests {
                         "FERROBOT_AGENT_TOKEN": "s3cret-token",
                         "FERROBOT_DAEMON_URL": "http://172.16.0.1:7879"}}})
                 ),
+                (
+                    "PUT",
+                    "/vsock",
+                    json!({"guest_cid": 3,
+                        "uds_path": tmp.path().join("vms/alice/vsock.sock").to_str().unwrap()})
+                ),
                 ("PUT", "/actions", json!({"action_type": "InstanceStart"})),
             ]
         );
@@ -838,13 +846,10 @@ mod tests {
             .exec(&handle("alice"), &ExecRequest::new(["true"]))
             .await
             .unwrap_err();
-        assert!(matches!(
-            err,
-            SandboxError::NotImplemented {
-                operation: "exec",
-                ..
-            }
-        ));
+        assert!(
+            matches!(err, SandboxError::NotFound(ref n) if n == "alice"),
+            "no VM, no vsock socket: {err}"
+        );
         let foreign = SandboxHandle {
             backend: "docker".into(),
             id: "alice".into(),

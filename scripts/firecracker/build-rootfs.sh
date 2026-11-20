@@ -31,7 +31,7 @@ docker build -q -t "$image-firecracker" - >/dev/null <<EOF
 FROM $image
 USER root
 RUN apt-get update \\
-    && apt-get install -y --no-install-recommends iproute2 \\
+    && apt-get install -y --no-install-recommends iproute2 socat \\
     && rm -rf /var/lib/apt/lists/*
 EOF
 

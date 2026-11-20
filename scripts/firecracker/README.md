@@ -67,7 +67,10 @@ VM state lives in `<data dir>/vms/<agent>/`.
 
 - Nothing was run on KVM: boot, TAP setup, MMDS, home disk, graceful stop.
 - No jailer (roadmap F3); firecracker runs as the daemon's user.
-- `exec`, file access and snapshots need the guest agent (F2) and snapshot
-  sleep (F4b); they return "not implemented". Cold sleep is a plain stop.
+- `exec` and file access go through the guest agent: the host connects to
+  `<vm dir>/vsock.sock` (`CONNECT 52`), socat in the guest runs
+  `dist/guest-agent.js` per connection as `node`. Tested against a socket mock
+  and as a stdio program; never inside a VM. Snapshots (F4b) return "not
+  implemented"; cold sleep is a plain stop.
 - No DNS in the guest (`/etc/resolv.conf` is empty).
 - Stopping the daemon kills its VMs without a guest shutdown.
