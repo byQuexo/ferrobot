@@ -98,7 +98,7 @@ export function Sidebar(props: {
         <span class="brand-name">ferrobot</span>
         <span class="spacer" />
         <IconButton label="Usage" onClick={props.onUsage} pressed={props.usageOpen}>
-          <ChartColumn size={17} />
+          <ChartColumn size={18} />
         </IconButton>
         <IconButton label="Settings" onClick={props.onSettings} pressed={props.settingsOpen}>
           <Settings size={18} />

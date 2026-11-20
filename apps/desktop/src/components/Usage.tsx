@@ -110,14 +110,14 @@ export function Usage(props: { onClose: () => void }): JSX.Element {
         {!span ? (
           <p class="hint bad">Pick a start day on or before the end day.</p>
         ) : error ? (
-          <Empty icon={<ChartColumn size={36} />} title="Usage could not be loaded">
+          <Empty icon={<ChartColumn size={28} />} title="Usage could not be loaded">
             <p>{error}</p>
             <Button small onClick={() => { setReload((n) => n + 1); }}>Retry</Button>
           </Empty>
         ) : !reports ? (
           <Skeleton lines={8} />
         ) : reports.day.totals.calls === 0 ? (
-          <Empty icon={<ChartColumn size={36} />} title="No model calls in this range" />
+          <Empty icon={<ChartColumn size={28} />} title="No model calls in this range" />
         ) : (
           <>
             <Totals report={reports.day} />
@@ -132,7 +132,7 @@ export function Usage(props: { onClose: () => void }): JSX.Element {
               </div>
               <span class="spacer" />
               <Button small onClick={exportCsv}>
-                <Download size={14} /> Export CSV
+                <Download size={16} /> Export CSV
               </Button>
             </div>
             <table class="usage-table">
@@ -267,7 +267,7 @@ function Row(props: {
         {props.editable && (
           <td>
             <IconButton label={`Edit the price of ${g.label}`} pressed={props.editing} onClick={props.onEdit}>
-              <Pencil size={14} />
+              <Pencil size={16} />
             </IconButton>
           </td>
         )}
