@@ -17,8 +17,51 @@ fn is_name_byte(b: u8) -> bool {
 
 /// Replaces `@name` with `<@id>` where `lookup` (given the lower-cased name)
 /// knows the agent. A mention must not follow a word character (so e-mail
-/// addresses are left alone).
+/// addresses are left alone). `**name**` and `` `name` `` become mentions
+/// too, markers dropped: models emphasise names instead of writing `@`.
 pub fn normalize(text: &str, lookup: impl Fn(&str) -> Option<AgentId>) -> String {
+    let text = wrapped(text, "**", &lookup);
+    let text = wrapped(&text, "`", &lookup);
+    at_mentions(&text, lookup)
+}
+
+/// Replaces `<marker>name<marker>` of a known agent with its token.
+fn wrapped(text: &str, marker: &str, lookup: &impl Fn(&str) -> Option<AgentId>) -> String {
+    let mut out = String::with_capacity(text.len());
+    let mut rest = text;
+    while let Some(open) = rest.find(marker) {
+        let inner_start = open + marker.len();
+        let Some(len) = rest[inner_start..].find(marker) else {
+            break;
+        };
+        let inner = &rest[inner_start..inner_start + len];
+        let close = inner_start + len + marker.len();
+        // Not part of a longer run like ``` or ***.
+        let alone = !rest[..open].ends_with(marker) && !rest[close..].starts_with(marker);
+        let id = (alone && is_name(inner))
+            .then(|| lookup(&inner.to_ascii_lowercase()))
+            .flatten();
+        if let Some(id) = id {
+            out.push_str(&rest[..open]);
+            out.push_str(TOKEN_OPEN);
+            out.push_str(&id.to_string());
+            out.push('>');
+            rest = &rest[close..];
+        } else {
+            out.push_str(&rest[..inner_start]);
+            rest = &rest[inner_start..];
+        }
+    }
+    out.push_str(rest);
+    out
+}
+
+fn is_name(s: &str) -> bool {
+    let b = s.as_bytes();
+    b.first().is_some_and(u8::is_ascii_alphabetic) && b.iter().copied().all(is_name_byte)
+}
+
+fn at_mentions(text: &str, lookup: impl Fn(&str) -> Option<AgentId>) -> String {
     let bytes = text.as_bytes();
     let mut out = String::with_capacity(text.len());
     let mut copied = 0;
@@ -120,6 +163,30 @@ mod tests {
         // Already normalized text is left alone.
         assert_eq!(normalize(&got, lookup), got);
         assert_eq!(normalize("ä @ @1x @", lookup), "ä @ @1x @");
+    }
+
+    #[test]
+    fn emphasised_names_become_mentions() {
+        let bob = AgentId::new();
+        let lookup = |n: &str| (n == "bob" || n == "bar-2").then_some(bob);
+        assert_eq!(
+            normalize("- **Bob** (`bob`) and **nobody**, `ls`", lookup),
+            format!("- <@{bob}> (<@{bob}>) and **nobody**, `ls`")
+        );
+        assert_eq!(
+            normalize("**bar-2** then **x** **bob**", lookup),
+            format!("<@{bob}> then **x** <@{bob}>")
+        );
+        // Code fences, bold runs and spans with more than a name stay as they are.
+        for text in [
+            "```bob```",
+            "***bob***",
+            "`bob --help`",
+            "**bob and me**",
+            "`bob",
+        ] {
+            assert_eq!(normalize(text, lookup), text);
+        }
     }
 
     #[test]
