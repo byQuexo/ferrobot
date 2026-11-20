@@ -4356,6 +4356,208 @@ async fn usage_filters_groups_and_price_overrides() {
 }
 
 #[tokio::test]
+async fn usage_days_follow_the_daemon_time_zone() {
+    use ferrobot_store::{Tokens, UsageRecord, UsageStatus};
+    let d = start_with(
+        Arc::new(StatefulBackend::default()),
+        None,
+        "127.0.0.1:0",
+        |s| s.default_timezone = "Europe/Berlin".into(),
+    )
+    .await;
+    let (amy, bob) = (AgentId::new(), AgentId::new());
+    let row = |at: &str, agent: AgentId, kind: &str, model: &str, tokens: i64| UsageRecord {
+        at: time::OffsetDateTime::parse(at, &time::format_description::well_known::Rfc3339)
+            .unwrap(),
+        agent_id: agent,
+        agent_name: if agent == amy { "amy" } else { "bob" }.into(),
+        provider_id: None,
+        provider_kind: kind.into(),
+        model: model.into(),
+        tokens: Tokens {
+            input: Some(tokens),
+            output: Some(tokens),
+            cache_read: None,
+            cache_write: None,
+        },
+        latency_ms: 5,
+        status: UsageStatus::Ok,
+    };
+    // 23:30 and 00:30 in Berlin: one UTC day, two local days.
+    for r in [
+        row(
+            "2026-11-18T22:30:00Z",
+            amy,
+            "anthropic",
+            "claude-opus-5",
+            1_000_000,
+        ),
+        row(
+            "2026-11-18T23:30:00Z",
+            amy,
+            "anthropic",
+            "claude-opus-5",
+            1_000_000,
+        ),
+        row("2026-11-19T10:00:00Z", bob, "ollama", "llama9", 50),
+    ] {
+        d.state.store.insert_usage(r).await.unwrap();
+    }
+
+    let (status, report) = http(&d.ui, "GET", "/v1/usage?group_by=agent&daily=true", None).await;
+    assert_eq!(status, 200, "{report}");
+    assert_eq!(report["timezone"], "Europe/Berlin");
+    let days = |label: &str| -> Vec<(String, f64)> {
+        let group = report["groups"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|g| g["label"] == label)
+            .unwrap();
+        group["days"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|d| {
+                (
+                    d["date"].as_str().unwrap().to_owned(),
+                    d["cost_usd"].as_f64().unwrap(),
+                )
+            })
+            .collect()
+    };
+    assert_eq!(
+        days("amy"),
+        [
+            ("2026-11-18".to_owned(), 30.0),
+            ("2026-11-19".to_owned(), 30.0)
+        ]
+    );
+    assert_eq!(days("bob"), [("2026-11-19".to_owned(), 0.0)]);
+
+    let (_, plain) = http(&d.ui, "GET", "/v1/usage?group_by=agent", None).await;
+    assert!(plain.get("timezone").is_none(), "{plain}");
+    assert!(plain["groups"][0].get("days").is_none(), "{plain}");
+    let (_, utc) = http(&d.ui, "GET", "/v1/usage", None).await;
+    assert_eq!(utc["groups"][0]["key"], "2026-11-18", "{utc}");
+    assert_eq!(utc["groups"][0]["calls"], 2, "group_by=day stays UTC");
+}
+
+#[tokio::test]
+async fn usage_totals_add_up_in_every_grouping() {
+    use ferrobot_store::{Tokens, UsageRecord, UsageStatus};
+    let d = start(Arc::new(StatefulBackend::default()), None, "127.0.0.1:0").await;
+    let (amy, bob) = (AgentId::new(), AgentId::new());
+    let row =
+        |at: &str, agent: AgentId, model: &str, output: i64, cache_read: Option<i64>| UsageRecord {
+            at: time::OffsetDateTime::parse(at, &time::format_description::well_known::Rfc3339)
+                .unwrap(),
+            agent_id: agent,
+            agent_name: if agent == amy { "amy" } else { "bob" }.into(),
+            provider_id: None,
+            provider_kind: "anthropic".into(),
+            model: model.into(),
+            tokens: Tokens {
+                input: Some(1_000_000),
+                output: Some(output),
+                cache_read,
+                cache_write: None,
+            },
+            latency_ms: 5,
+            status: UsageStatus::Ok,
+        };
+    for r in [
+        row("2026-11-19T10:00:00Z", amy, "house-model", 1_000_000, None),
+        // Cache reads, but the house price has no cache rate: only this call is unknown.
+        row("2026-11-19T10:05:00Z", amy, "house-model", 0, Some(500)),
+        row("2026-11-19T11:00:00Z", bob, "house-model", 1_000_000, None),
+        row(
+            "2026-11-20T09:00:00Z",
+            bob,
+            "claude-opus-5",
+            1_000_000,
+            Some(1_000_000),
+        ),
+    ] {
+        d.state.store.insert_usage(r).await.unwrap();
+    }
+    let house = json!([{"provider_kind": "anthropic", "model": "house-model", "input": 1.0, "output": 1.0}]);
+    let (status, _) = http(&d.ui, "PUT", "/v1/usage/prices", Some(house)).await;
+    assert_eq!(status, 200);
+
+    let sum = |items: &Value| -> (f64, i64) {
+        items
+            .as_array()
+            .unwrap()
+            .iter()
+            .fold((0.0, 0), |(c, u), g| {
+                (
+                    c + g["cost_usd"].as_f64().unwrap_or(0.0),
+                    u + g["unknown_cost_calls"].as_i64().unwrap(),
+                )
+            })
+    };
+    let (_, card) = http(&d.ui, "GET", "/v1/usage", None).await;
+    let card = (
+        card["totals"]["cost_usd"].as_f64().unwrap(),
+        card["totals"]["unknown_cost_calls"].as_i64().unwrap(),
+    );
+    assert_eq!(card.1, 1, "only the cache-reading call is unknown");
+    let close = |a: (f64, i64), b: (f64, i64), what: &str| {
+        assert!(
+            (a.0 - b.0).abs() < 1e-9 && a.1 == b.1,
+            "{what}: {a:?} vs {b:?}"
+        );
+    };
+    for by in ["day", "agent", "provider", "model"] {
+        for daily in ["", "&daily=true"] {
+            let path = format!("/v1/usage?group_by={by}{daily}");
+            let (status, report) = http(&d.ui, "GET", &path, None).await;
+            assert_eq!(status, 200, "{report}");
+            let totals = &report["totals"];
+            let totals = (
+                totals["cost_usd"].as_f64().unwrap(),
+                totals["unknown_cost_calls"].as_i64().unwrap(),
+            );
+            close(totals, card, &format!("{path} totals vs the card"));
+            close(
+                sum(&report["groups"]),
+                card,
+                &format!("{path} rows vs the card"),
+            );
+            for g in report["groups"].as_array().unwrap() {
+                if !daily.is_empty() {
+                    let own = (
+                        g["cost_usd"].as_f64().unwrap_or(0.0),
+                        g["unknown_cost_calls"].as_i64().unwrap(),
+                    );
+                    close(
+                        sum(&g["days"]),
+                        own,
+                        &format!("{path} days of {}", g["key"]),
+                    );
+                }
+            }
+        }
+    }
+    let (_, models) = http(&d.ui, "GET", "/v1/usage?group_by=model", None).await;
+    let house = models["groups"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|g| g["label"] == "house-model")
+        .unwrap();
+    close(
+        (
+            house["cost_usd"].as_f64().unwrap(),
+            house["unknown_cost_calls"].as_i64().unwrap(),
+        ),
+        (4.0, 1),
+        "two priced house calls at 1 + 1 per 1M",
+    );
+}
+
+#[tokio::test]
 async fn agents_get_connectors_through_a_card_whose_token_they_never_see() {
     use rmcp::model::CallToolRequestParams;
     const TOKEN: &str = "tok-zebra-4471";

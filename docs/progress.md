@@ -806,6 +806,12 @@ store used for the run) or the daemon's own env.
 - Desktop: a Usage view (chart icon next to Settings) with ranges, totals,
   a cost-per-day chart, sortable tables by provider, model and agent, CSV
   export and a price edit per model row.
+- Follow-up (`feat/usage-chart`): the chart stacks each day by the chosen
+  breakdown (the biggest five, or four plus "Other"), falls back to tokens
+  when no cost is known, and counts days in the daemon's `--timezone`
+  (`GET /v1/usage?daily=true`, new `days` and `timezone` fields). A price
+  without cache rates now leaves only the calls with cache tokens unknown,
+  so totals add up in every grouping, daily or not.
 
 **Tested**
 
