@@ -4,7 +4,7 @@ import { KeyRound, LogIn, LogOut, Settings2, Trash2 } from "lucide-preact";
 
 import type { Connector } from "../api.ts";
 import { useApp } from "../context.ts";
-import { Button, Dialog, IconButton } from "./ui.tsx";
+import { Button, IconButton } from "./ui.tsx";
 
 const STATUS: Record<Connector["sign_in"], string> = {
   signed_in: "signed in",
@@ -52,7 +52,7 @@ function AppFields(props: { draft: AppDraft; onChange: (d: AppDraft) => void; se
 const scopesOf = (text: string): string[] => text.split(/\s+/).filter(Boolean);
 
 /** Add, re-token, sign in and remove connectors. Tokens and secrets go to the daemon’s keychain and never come back. */
-export function ConnectorsDialog(props: { onClose: () => void }): JSX.Element {
+export function ConnectorsSettings(): JSX.Element {
   const { client, toast } = useApp();
   const [connectors, setConnectors] = useState<Connector[]>([]);
   const [name, setName] = useState("");
@@ -123,7 +123,6 @@ export function ConnectorsDialog(props: { onClose: () => void }): JSX.Element {
     });
 
   return (
-    <Dialog title="Connectors" onClose={props.onClose} footer={<Button onClick={props.onClose}>Done</Button>}>
       <div class="form">
         {connectors.length === 0 && (
           <p class="muted small">No connectors yet. A connector is a remote MCP server; agents you give it to can use its tools.</p>
@@ -240,6 +239,5 @@ export function ConnectorsDialog(props: { onClose: () => void }): JSX.Element {
           </Button>
         </div>
       </div>
-    </Dialog>
   );
 }

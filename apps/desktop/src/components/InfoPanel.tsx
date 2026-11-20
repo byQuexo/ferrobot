@@ -23,7 +23,7 @@ import { dateTime, duration, presenceLabel, relativeTime } from "../lib/format.t
 import { buildTimeline, type TimelineItem } from "../lib/timeline.ts";
 import { Avatar } from "./Avatar.tsx";
 import { ToolCard } from "./Chat.tsx";
-import { KIND_LABELS } from "./ProvidersDialog.tsx";
+import { KIND_LABELS } from "./ProvidersSettings.tsx";
 import { Button, Empty, IconButton, Skeleton, Switch } from "./ui.tsx";
 
 type Tab = "profile" | "computer" | "routines" | "memory" | "activities";

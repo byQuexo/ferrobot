@@ -621,3 +621,18 @@ textarea { resize: vertical; min-height: 40px; line-height: 1.5; }
 .qcard-summary { display: flex; flex-direction: column; gap: 6px; margin: 0; font-size: 13px; }
 .qcard-summary dt { color: var(--muted); }
 .qcard-summary dd { margin: 0; font-weight: 600; }
+
+/* Settings page */
+.settings { display: grid; grid-template-columns: 220px minmax(0, 1fr); height: 100%; min-height: 0; overflow: hidden; }
+.settings-nav { display: flex; flex-direction: column; gap: 2px; padding: 22px 12px; border-right: 1px solid var(--border); }
+.settings-nav h1 { margin: 0 10px 12px; font-size: 18px; font-weight: 650; }
+.settings-tab { display: flex; align-items: center; gap: 10px; padding: 9px 10px; border: none; border-radius: 10px; background: none; color: var(--text-2); font: inherit; text-align: left; cursor: pointer; }
+.settings-tab:hover { background: var(--surface-2); color: var(--text); }
+.settings-tab.active { background: var(--surface); color: var(--text); box-shadow: var(--shadow); font-weight: 600; }
+.settings-body { overflow-y: auto; padding: 22px 32px 40px; }
+.settings-body > :not(.settings-head) { max-width: 720px; }
+.settings-head { display: flex; align-items: flex-start; gap: 12px; margin-bottom: 18px; max-width: 720px; }
+.settings-head > div { flex: 1; }
+.settings-head h2 { margin: 0 0 4px; font-size: 20px; font-weight: 650; }
+.settings-head p { margin: 0; }
+@media (max-width: 720px) { .settings { grid-template-columns: 1fr; } .settings-nav { flex-direction: row; flex-wrap: wrap; border-right: none; border-bottom: 1px solid var(--border); } }
