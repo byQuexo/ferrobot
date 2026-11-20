@@ -795,16 +795,24 @@ slop, so polish mode: palette, accent, logo, layout and features stay.
   A call is "not tracked" when it succeeded without input and output counts.
 - **Not tracked:** Bedrock's streaming event stream (binary, not decoded);
   an SSE line over 2 MiB drops that call's counts; OpenAI-compatible servers
-  that ignore `include_usage`. Model lists and token counts are not logged.
+  that ignore `include_usage`, or reject it with a 400 (the OpenAI driver
+  then retries without it, so each call also leaves a 400 `error` row).
+  Model lists and token counts are not logged.
   Unknown or missing agent tokens leave no row.
-- **Status:** `ok` (2xx), `error` (upstream non-2xx, unreachable, or a stream
-  that broke), `refused` (the proxy said no to a known agent: not allowed,
-  too large, bad path, no key).
+- **Status:** `ok` (2xx and the body reached its end), `error` (upstream
+  non-2xx, unreachable, a stream that broke, carried an SSE error event or
+  was dropped by the agent before its end; counts seen so far are kept),
+  `refused` (the proxy said no to a known agent: not allowed, too large, bad
+  path, no key; stored with model `unknown`).
+- **Model ids are agent text:** control characters are dropped and ids are
+  cut at 200 bytes. Bedrock, Vertex and Gemini take the model from the path
+  (what the upstream runs), never from the body.
 - **Prices:** `config/pricing.toml`, compiled in, USD per 1M tokens per
   provider kind and model id, each with its source page and check date.
   Only what was read on the official pages; anything else is "unknown",
   never guessed. Ollama is free. Codex and Gemini CLI use the OpenAI and
-  Gemini entries; a dated id falls back to its undated entry. The operator's
+  Gemini entries; a dated Anthropic id (also on Bedrock and Vertex) falls back
+  to its undated entry, an OpenAI snapshot does not. The operator's
   prices (`PUT /v1/usage/prices`, setting `pricing`) replace the file's.
   Costs are computed when asked, so a price change also reprices the past.
 - **Known gaps in the estimate:** one rate per token kind: Anthropic cache
@@ -816,4 +824,10 @@ slop, so polish mode: palette, accent, logo, layout and features stay.
 - **CSV export is a Blob download.** It works in a browser; in the Tauri
   window the shell's `on_download` handler saves blob URLs to the Downloads
   folder and refuses other downloads (untried in the window so far).
+- **Known limits:**
+  - The Usage view's aggregate queries share the store's single SQLite
+    connection with the proxy, so a large range on a busy daemon delays model calls.
+  - The price form says "no price yet" when only a fallback price applies.
+  - Whether a cost is "unknown" can differ between group_by views when an
+    override leaves out a cache price.
 

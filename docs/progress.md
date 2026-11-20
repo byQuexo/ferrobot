@@ -823,8 +823,10 @@ store used for the run) or the daemon's own env.
 **Not tested**
 
 - No cloud upstream: no Anthropic, OpenAI, Gemini or Codex response has
-  been metered. The live smoke test (`scripts/smoke-live.sh`, needs Tim's key
-  and the keychain) must be re-run, since the proxy and runner changed.
+  been metered. `scripts/smoke-live.sh` was not re-run after the usage/proxy
+  changes (Tim's call, 2026-11-20).
+- After the review fixes, the same Ollama run recorded four `ok` rows (the
+  runner stops reading at `[DONE]`, which now counts as the end).
 - Gemini native and Codex Responses only against unit fixtures; whether
   strict OpenAI-compatible servers accept `stream_options`.
 - CSV export in the Tauri window: the shell's download handler saves blob
