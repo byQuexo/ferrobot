@@ -2111,7 +2111,7 @@ async fn connectors_lend_upstream_tools_to_assigned_agents_only() {
     let (status, _) = http(&d.ui, "POST", "/v1/connectors", Some(bad)).await;
     assert_eq!(status, 400);
     let (_, all) = http(&d.ui, "GET", "/v1/connectors", None).await;
-    assert!(!all.to_string().contains("secret"), "{all}");
+    assert!(!all.to_string().contains("\"secret\""), "{all}");
     let assign = format!("/v1/agents/{ann}/connectors");
     let (status, ids) = http(&d.ui, "PUT", &assign, Some(json!([conn["id"]]))).await;
     assert_eq!((status, &ids), (200, &json!([conn["id"]])));
@@ -2540,4 +2540,223 @@ async fn agents_share_files_that_open_from_storage() {
     }
     let left = d.state.settings.storage.list(None).count().await;
     assert_eq!(left, 0);
+}
+
+/// What the fake provider with its own OAuth app saw and should do.
+#[derive(Default)]
+struct AppServer {
+    challenge: Option<String>,
+    reject_refresh: bool,
+    /// `grant_type` of each token request, with whether the client
+    /// authenticated with the app's secret.
+    grants: Vec<(String, bool)>,
+    revoked: Vec<(String, bool)>,
+}
+
+/// An authorization server like Google's: no dynamic registration, a
+/// pre-registered client (`client-app` / `app-secret`), short-lived access
+/// tokens, refresh, and RFC 7009 revocation.
+fn fake_app_server(base: &str, log: Arc<Mutex<AppServer>>) -> axum::Router {
+    use axum::routing::{get, post};
+    use base64::Engine as _;
+    use sha2::Digest as _;
+    let json = |v: Value| {
+        move || {
+            let v = v.clone();
+            async move { axum::Json(v) }
+        }
+    };
+    let prm = json!({"resource": format!("{base}/mcp"), "authorization_servers": [base]});
+    let meta = json!({
+        "issuer": base,
+        "authorization_endpoint": format!("{base}/authorize"),
+        "token_endpoint": format!("{base}/token"),
+        "revocation_endpoint": format!("{base}/revoke"),
+        "response_types_supported": ["code"],
+        "grant_types_supported": ["authorization_code", "refresh_token"],
+        "code_challenge_methods_supported": ["S256"],
+        "token_endpoint_auth_methods_supported": ["client_secret_basic", "client_secret_post"],
+    });
+    let authed = |headers: &HeaderMap, form: &HashMap<String, String>| {
+        let basic = base64::engine::general_purpose::STANDARD.encode("client-app:app-secret");
+        let header = headers
+            .get("authorization")
+            .and_then(|v| v.to_str().ok())
+            .is_some_and(|v| v == format!("Basic {basic}"));
+        header || form.get("client_secret").map(String::as_str) == Some("app-secret")
+    };
+    let token_log = log.clone();
+    let token = move |headers: HeaderMap, body: String| {
+        let log = token_log.clone();
+        async move {
+            let form: HashMap<String, String> = url::form_urlencoded::parse(body.as_bytes())
+                .into_owned()
+                .collect();
+            let grant = form.get("grant_type").cloned().unwrap_or_default();
+            let ok_client = authed(&headers, &form);
+            let mut log = log.lock().unwrap();
+            log.grants.push((grant.clone(), ok_client));
+            let bad = |e: &str| {
+                (
+                    axum::http::StatusCode::BAD_REQUEST,
+                    axum::Json(json!({"error": e})),
+                )
+            };
+            if !ok_client {
+                return bad("invalid_client");
+            }
+            let tokens = json!({"access_token": "at-1", "token_type": "Bearer",
+                                "expires_in": 1, "refresh_token": "rt-1"});
+            match grant.as_str() {
+                "authorization_code" => {
+                    let verifier = form.get("code_verifier").cloned().unwrap_or_default();
+                    let derived = base64::engine::general_purpose::URL_SAFE_NO_PAD
+                        .encode(sha2::Sha256::digest(verifier.as_bytes()));
+                    if log.challenge.as_deref() != Some(derived.as_str()) {
+                        return bad("invalid_grant");
+                    }
+                    (axum::http::StatusCode::OK, axum::Json(tokens))
+                }
+                "refresh_token"
+                    if !log.reject_refresh
+                        && form.get("refresh_token").map(String::as_str) == Some("rt-1") =>
+                {
+                    (axum::http::StatusCode::OK, axum::Json(tokens))
+                }
+                _ => bad("invalid_grant"),
+            }
+        }
+    };
+    let revoke_log = log;
+    let revoke = move |headers: HeaderMap, body: String| {
+        let log = revoke_log.clone();
+        async move {
+            let form: HashMap<String, String> = url::form_urlencoded::parse(body.as_bytes())
+                .into_owned()
+                .collect();
+            let ok_client = authed(&headers, &form);
+            let token = form.get("token").cloned().unwrap_or_default();
+            log.lock().unwrap().revoked.push((token, ok_client));
+            axum::http::StatusCode::OK
+        }
+    };
+    axum::Router::new()
+        .route("/.well-known/oauth-protected-resource/mcp", get(json(prm)))
+        .route("/.well-known/oauth-authorization-server", get(json(meta)))
+        .route("/token", post(token))
+        .route("/revoke", post(revoke))
+}
+
+#[tokio::test]
+async fn connectors_use_an_own_oauth_app_refresh_and_revoke() {
+    use rmcp::model::CallToolRequestParams;
+    let log = Arc::new(Mutex::new(AppServer::default()));
+    let server_log = log.clone();
+    let (url, _) = upstream_with("at-1", move |base| fake_app_server(base, server_log)).await;
+    let backend = Arc::new(StatefulBackend::default());
+    let d = start(backend.clone(), None, "127.0.0.1:0").await;
+    let ann = create(&d, json!({"name": "ann"})).await["id"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    let body = json!({"name": "app", "url": url, "client_id": "client-app",
+                      "client_secret": "app-secret", "scopes": ["mail.read mail.read", "mail.compose"]});
+    let (status, conn) = http(&d.ui, "POST", "/v1/connectors", Some(body)).await;
+    assert_eq!(status, 201, "{conn}");
+    assert_eq!(conn["client_id"], "client-app");
+    assert_eq!(conn["has_client_secret"], true);
+    assert_eq!(conn["scopes"], json!(["mail.read", "mail.compose"]));
+    assert_eq!(
+        conn["redirect_uri"],
+        format!("http://{}/v1/oauth/callback", d.ui)
+    );
+    assert!(!conn.to_string().contains("app-secret"), "{conn}");
+    let id = conn["id"].as_str().unwrap().to_owned();
+    http(
+        &d.ui,
+        "PUT",
+        &format!("/v1/agents/{ann}/connectors"),
+        Some(json!([id])),
+    )
+    .await;
+
+    // Sign in with the app's client id; no dynamic registration happens.
+    let (status, started) = http(&d.ui, "POST", &format!("/v1/connectors/{id}/oauth"), None).await;
+    assert_eq!(status, 200, "{started}");
+    let auth = url::Url::parse(started["authorization_url"].as_str().unwrap()).unwrap();
+    let q: HashMap<String, String> = auth.query_pairs().into_owned().collect();
+    assert_eq!(q["client_id"], "client-app");
+    assert_eq!(q["scope"], "mail.read mail.compose");
+    log.lock().unwrap().challenge = Some(q["code_challenge"].clone());
+    let back = format!("/v1/oauth/callback?code=code-1&state={}", q["state"]);
+    let (status, _, _) = http_raw(&d.ui, "GET", &back, &[("Authorization", "")], b"").await;
+    assert_eq!(status, 200);
+    let (_, all) = http(&d.ui, "GET", "/v1/connectors", None).await;
+    assert_eq!(all[0]["sign_in"], "signed_in");
+
+    // The access token lives a second: the next call refreshes, with the secret.
+    tokio::time::sleep(Duration::from_millis(1500)).await;
+    let as_ann = mcp_as(&d, backend.token("ann")).await;
+    let r = as_ann
+        .call_tool(CallToolRequestParams::new("app__list_agents"))
+        .await
+        .unwrap();
+    assert_eq!(r.structured_content.unwrap()["agents"][0]["name"], "up");
+    let grants = log.lock().unwrap().grants.clone();
+    assert!(grants.iter().all(|(_, ok)| *ok), "{grants:?}");
+    assert!(
+        grants.iter().any(|(g, _)| g == "refresh_token"),
+        "{grants:?}"
+    );
+    as_ann.cancel().await.unwrap();
+
+    // The server rejects the refresh token: the connector says so.
+    log.lock().unwrap().reject_refresh = true;
+    tokio::time::sleep(Duration::from_millis(1500)).await;
+    d.state
+        .connectors
+        .evict_connector(id.parse().unwrap())
+        .await;
+    let as_ann = mcp_as(&d, backend.token("ann")).await;
+    let _ = as_ann
+        .call_tool(CallToolRequestParams::new("app__list_agents"))
+        .await;
+    as_ann.cancel().await.unwrap();
+    let (_, all) = http(&d.ui, "GET", "/v1/connectors", None).await;
+    assert_eq!(all[0]["sign_in"], "expired", "{all}");
+
+    // Sign in again, then sign out. Revocation needs https (this fake server is
+    // http), so the tokens are only forgotten here; unit tests cover the rule.
+    let (_, started) = http(&d.ui, "POST", &format!("/v1/connectors/{id}/oauth"), None).await;
+    let auth = url::Url::parse(started["authorization_url"].as_str().unwrap()).unwrap();
+    let q: HashMap<String, String> = auth.query_pairs().into_owned().collect();
+    log.lock().unwrap().challenge = Some(q["code_challenge"].clone());
+    let back = format!("/v1/oauth/callback?code=code-1&state={}", q["state"]);
+    let (status, _, _) = http_raw(&d.ui, "GET", &back, &[("Authorization", "")], b"").await;
+    assert_eq!(status, 200);
+    let (status, _) = http(&d.ui, "DELETE", &format!("/v1/connectors/{id}/oauth"), None).await;
+    assert_eq!(status, 204);
+    assert!(
+        log.lock().unwrap().revoked.is_empty(),
+        "no token over plain http"
+    );
+    let (_, all) = http(&d.ui, "GET", "/v1/connectors", None).await;
+    assert_eq!(all[0]["sign_in"], "signed_out");
+
+    // A secret without a client id is refused; a new app signs the connector out.
+    let bad = json!({"name": "x", "url": url, "client_secret": "s"});
+    let (status, _) = http(&d.ui, "POST", "/v1/connectors", Some(bad)).await;
+    assert_eq!(status, 400);
+    let (status, conn) = http(
+        &d.ui,
+        "PATCH",
+        &format!("/v1/connectors/{id}"),
+        Some(json!({"client_id": null})),
+    )
+    .await;
+    assert_eq!(status, 200);
+    assert_eq!(
+        (conn["client_id"].clone(), conn["has_client_secret"].clone()),
+        (Value::Null, json!(false))
+    );
 }

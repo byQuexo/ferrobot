@@ -24,6 +24,16 @@ pub(crate) struct ConnectorView {
     has_token: bool,
     /// Whether the connector is signed in with OAuth.
     signed_in: bool,
+    sign_in: oauth::SignIn,
+    /// Client id of the operator's own OAuth app, if set (else dynamic
+    /// client registration is used).
+    client_id: Option<String>,
+    /// Whether that app's client secret is stored. Never returned.
+    has_client_secret: bool,
+    /// Scopes asked for at sign-in; empty: the server's choice.
+    scopes: Vec<String>,
+    /// Register this redirect URI with the provider for an own OAuth app.
+    redirect_uri: String,
 }
 
 async fn view(state: &AppState, connector: Connector) -> Result<ConnectorView, ApiError> {
@@ -33,12 +43,55 @@ async fn view(state: &AppState, connector: Connector) -> Result<ConnectorView, A
         .get(&secret_key(connector.id))
         .await?
         .is_some();
-    let signed_in = oauth::signed_in(state, connector.id).await;
+    let sign_in = oauth::sign_in(state, connector.id).await;
+    let client = oauth::client_config(state, connector.id)
+        .await
+        .map_err(|e| ApiError::Internal(format!("secret store: {e}")))?;
     Ok(ConnectorView {
         connector,
         has_token,
-        signed_in,
+        signed_in: sign_in == oauth::SignIn::SignedIn,
+        sign_in,
+        client_id: client.client_id,
+        has_client_secret: client.client_secret.is_some(),
+        scopes: client.scopes,
+        redirect_uri: oauth::redirect_uri(state),
     })
+}
+
+fn printable(value: &str, what: &str, max: usize) -> Result<(), ApiError> {
+    if value.is_empty() || value.len() > max || value.chars().any(char::is_control) {
+        return Err(ApiError::BadRequest(format!(
+            "{what} must be 1-{max} printable characters"
+        )));
+    }
+    Ok(())
+}
+
+fn clean_scopes(scopes: &[String]) -> Result<Vec<String>, ApiError> {
+    let mut out: Vec<String> = Vec::new();
+    for scope in scopes.iter().flat_map(|s| s.split_whitespace()) {
+        printable(scope, "a scope", 256)?;
+        if !out.iter().any(|s| s == scope) {
+            out.push(scope.to_owned());
+        }
+    }
+    if out.len() > 32 {
+        return Err(ApiError::BadRequest("at most 32 scopes".into()));
+    }
+    Ok(out)
+}
+
+/// Trimmed, `None` when empty, checked.
+fn clean_field(value: Option<String>, what: &str, max: usize) -> Result<Option<String>, ApiError> {
+    let value = value.map(|v| v.trim().to_owned()).filter(|v| !v.is_empty());
+    if let Some(v) = &value {
+        printable(v, what, max)?;
+        if v.contains(char::is_whitespace) && what == "client_id" {
+            return Err(ApiError::BadRequest("client_id has no spaces".into()));
+        }
+    }
+    Ok(value)
 }
 
 fn parse_cid(raw: &str) -> Result<Uuid, ApiError> {
@@ -84,6 +137,16 @@ pub(crate) struct CreateConnector {
     /// never returned.
     #[serde(default)]
     token: Option<String>,
+    /// Client id of your own OAuth app, for servers without dynamic client
+    /// registration (e.g. Google). Register `redirect_uri` with it.
+    #[serde(default)]
+    client_id: Option<String>,
+    /// That app's client secret. Stored in the OS keychain; never returned.
+    #[serde(default)]
+    client_secret: Option<String>,
+    /// Scopes to ask for at sign-in (space-separated entries are split).
+    #[serde(default)]
+    scopes: Vec<String>,
 }
 
 /// Adds a connector. Agents get its tools once they are assigned it.
@@ -104,6 +167,16 @@ pub(crate) async fn create_connector(
     };
     connector.validate().map_err(ApiError::BadRequest)?;
     let token = clean_token(req.token)?;
+    let client = oauth::ClientConfig {
+        client_id: clean_field(req.client_id, "client_id", 512)?,
+        client_secret: clean_field(req.client_secret, "client_secret", 4096)?,
+        scopes: clean_scopes(&req.scopes)?,
+    };
+    if client.client_secret.is_some() && client.client_id.is_none() {
+        return Err(ApiError::BadRequest(
+            "a client_secret needs a client_id".into(),
+        ));
+    }
     let connector = state.store.create_connector(connector).await?;
     if let Some(token) = token {
         state
@@ -112,6 +185,7 @@ pub(crate) async fn create_connector(
             .set(&secret_key(connector.id), &token)
             .await?;
     }
+    oauth::set_client_config(&state, connector.id, &client).await?;
     Ok((StatusCode::CREATED, Json(view(&state, connector).await?)))
 }
 
@@ -127,6 +201,16 @@ pub(crate) struct UpdateConnector {
     #[serde(default, deserialize_with = "explicit")]
     #[schema(value_type = Option<String>)]
     token: Option<Option<String>>,
+    /// Own OAuth app; `null` goes back to dynamic client registration.
+    /// Changing the app signs the connector out.
+    #[serde(default, deserialize_with = "explicit")]
+    #[schema(value_type = Option<String>)]
+    client_id: Option<Option<String>>,
+    /// `null` removes the stored client secret.
+    #[serde(default, deserialize_with = "explicit")]
+    #[schema(value_type = Option<String>)]
+    client_secret: Option<Option<String>>,
+    scopes: Option<Vec<String>>,
 }
 
 /// Edits a connector. Open sessions with it are closed.
@@ -153,8 +237,28 @@ pub(crate) async fn update_connector(
     }
     c.validate().map_err(ApiError::BadRequest)?;
     let token = req.token.map(clean_token).transpose()?;
+    let old_client = oauth::client_config(&state, id)
+        .await
+        .map_err(|e| ApiError::Internal(format!("secret store: {e}")))?;
+    let mut client = old_client.clone();
+    if let Some(v) = req.client_id {
+        client.client_id = clean_field(v, "client_id", 512)?;
+    }
+    if let Some(v) = req.client_secret {
+        client.client_secret = clean_field(v, "client_secret", 4096)?;
+    }
+    if client.client_id.is_none() {
+        client.client_secret = None;
+    }
+    if let Some(scopes) = req.scopes {
+        client.scopes = clean_scopes(&scopes)?;
+    }
     state.store.update_connector(c.clone()).await?;
-    if c.url != old_url {
+    if client != old_client {
+        oauth::set_client_config(&state, id, &client).await?;
+    }
+    // OAuth tokens belong to the old server or OAuth app.
+    if c.url != old_url || client.client_id != old_client.client_id {
         // OAuth tokens belong to the old server.
         state
             .settings
@@ -184,6 +288,11 @@ pub(crate) async fn delete_connector(
     let id = parse_cid(&id)?;
     state.store.delete_connector(id).await?;
     state.settings.secrets.delete(&secret_key(id)).await?;
+    state
+        .settings
+        .secrets
+        .delete(&oauth::client_key(id))
+        .await?;
     state
         .settings
         .secrets
@@ -265,7 +374,8 @@ pub(crate) async fn start_oauth(
     Ok(Json(OAuthStart { authorization_url }))
 }
 
-/// Signs a connector out: forgets its OAuth tokens and client.
+/// Signs a connector out: asks the server to revoke its tokens (RFC 7009)
+/// when it offers that, then forgets them here either way.
 #[utoipa::path(delete, path = "/v1/connectors/{id}/oauth", tag = "connectors",
     params(("id" = String, Path, description = "Connector id (UUID)")),
     responses((status = 204, description = "Signed out"),
@@ -274,14 +384,8 @@ pub(crate) async fn sign_out(
     State(state): State<AppState>,
     Path(id): Path<String>,
 ) -> Result<StatusCode, ApiError> {
-    let id = state.store.get_connector(parse_cid(&id)?).await?.id;
-    state
-        .settings
-        .secrets
-        .delete(&oauth::secret_key(id))
-        .await?;
-    state.oauth.forget(id).await;
-    state.connectors.evict_connector(id).await;
+    let c = state.store.get_connector(parse_cid(&id)?).await?;
+    oauth::sign_out(&state, &c).await?;
     Ok(StatusCode::NO_CONTENT)
 }
 

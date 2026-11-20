@@ -1,6 +1,8 @@
 //! OAuth sign-in for connectors, as the MCP authorization spec describes it:
-//! metadata discovery, dynamic client registration, PKCE, refresh. The daemon
-//! is the OAuth client; tokens live in the secret store, never in a sandbox.
+//! metadata discovery, client registration (dynamic, or the operator's own
+//! OAuth app), PKCE, refresh, and RFC 7009 revocation on sign-out. Built on
+//! rmcp's OAuth client and the `oauth2` crate. The daemon is the OAuth client;
+//! tokens live in the secret store, never in a sandbox.
 
 use std::collections::HashMap;
 use std::sync::{Arc, PoisonError};
@@ -8,10 +10,13 @@ use std::time::{Duration, Instant};
 
 use async_trait::async_trait;
 use ferrobot_core::Connector;
+use oauth2::TokenResponse as _;
 use rmcp::transport::auth::{
-    AuthClient, AuthError, AuthorizationManager, AuthorizationRequest, AuthorizationSession,
-    CredentialRefreshGuard, CredentialStore, StoredCredentials,
+    AuthClient, AuthError, AuthorizationManager, AuthorizationMetadata, AuthorizationRequest,
+    AuthorizationSession, CredentialRefreshGuard, CredentialStore, OAuthClientConfig,
+    StoredCredentials,
 };
+use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
 use crate::AppState;
@@ -19,10 +24,71 @@ use crate::secrets::SecretStore;
 
 /// How long a started sign-in waits for the browser to come back.
 const PENDING_TTL: Duration = Duration::from_secs(600);
+/// Revocation is best effort; signing out never waits long for it.
+const REVOKE_TIMEOUT: Duration = Duration::from_secs(10);
 
-/// Where a connector's OAuth client and tokens live in the secret store.
+/// Where a connector's OAuth tokens (and dynamic registration) live.
 pub fn secret_key(connector: Uuid) -> String {
     format!("connector-oauth:{connector}")
+}
+
+/// Where a connector's own OAuth app (client id, secret, scopes) lives.
+pub fn client_key(connector: Uuid) -> String {
+    format!("connector-client:{connector}")
+}
+
+/// The operator's own OAuth app for a connector, for servers without dynamic
+/// client registration (Google, GitHub, Slack, ...), and scopes to ask for.
+#[derive(Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ClientConfig {
+    #[serde(default)]
+    pub client_id: Option<String>,
+    #[serde(default)]
+    pub client_secret: Option<String>,
+    #[serde(default)]
+    pub scopes: Vec<String>,
+}
+
+impl std::fmt::Debug for ClientConfig {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("ClientConfig")
+            .field("client_id", &self.client_id)
+            .field(
+                "client_secret",
+                &self.client_secret.as_ref().map(|_| "[REDACTED]"),
+            )
+            .field("scopes", &self.scopes)
+            .finish()
+    }
+}
+
+/// The connector's own OAuth app, if the operator set one.
+pub async fn client_config(state: &AppState, id: Uuid) -> Result<ClientConfig, String> {
+    match state
+        .settings
+        .secrets
+        .get(&client_key(id))
+        .await
+        .map_err(|e| e.to_string())?
+    {
+        Some(json) => serde_json::from_str(&json).map_err(|e| e.to_string()),
+        None => Ok(ClientConfig::default()),
+    }
+}
+
+/// Stores the connector's own OAuth app (or removes it when empty).
+pub async fn set_client_config(
+    state: &AppState,
+    id: Uuid,
+    config: &ClientConfig,
+) -> Result<(), crate::error::ApiError> {
+    let secrets = &state.settings.secrets;
+    if *config == ClientConfig::default() {
+        return secrets.delete(&client_key(id)).await;
+    }
+    let json = serde_json::to_string(config)
+        .map_err(|e| crate::error::ApiError::Internal(e.to_string()))?;
+    secrets.set(&client_key(id), &json).await
 }
 
 /// rmcp's credential store, backed by the daemon's secret store.
@@ -60,17 +126,59 @@ impl CredentialStore for Keychain {
         Ok(Some(CredentialRefreshGuard::new(guard)))
     }
 
-    /// The server revoked the tokens: show the connector as signed out.
+    /// The server revoked the tokens: keep the client, mark the sign-in expired.
     async fn on_refresh_token_rejected(
         &self,
         rejected: &StoredCredentials,
     ) -> Result<(), AuthError> {
         let tokens = |c: &StoredCredentials| serde_json::to_value(&c.token_response).ok();
-        match self.load().await? {
-            Some(current) if tokens(&current) == tokens(rejected) => self.clear().await,
-            _ => Ok(()),
+        let Some(current) = self.load().await? else {
+            return Ok(());
+        };
+        if tokens(&current) != tokens(rejected) {
+            return Ok(());
         }
+        let kept = StoredCredentials::new(current.client_id.clone(), None, Vec::new(), None)
+            .with_issuer(current.issuer.clone());
+        let mut json = serde_json::to_value(kept).map_err(store_err)?;
+        json["expired"] = true.into();
+        self.secrets
+            .set(&self.key, &json.to_string())
+            .await
+            .map_err(store_err)
     }
+}
+
+/// Where a connector stands with OAuth.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, utoipa::ToSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum SignIn {
+    SignedOut,
+    SignedIn,
+    /// The server rejected the refresh token; sign in again.
+    Expired,
+}
+
+/// Where the connector stands with OAuth.
+pub async fn sign_in(state: &AppState, id: Uuid) -> SignIn {
+    let Ok(Some(json)) = state.settings.secrets.get(&secret_key(id)).await else {
+        return SignIn::SignedOut;
+    };
+    let Ok(value) = serde_json::from_str::<serde_json::Value>(&json) else {
+        return SignIn::SignedOut;
+    };
+    if value["expired"] == true {
+        return SignIn::Expired;
+    }
+    match serde_json::from_value::<StoredCredentials>(value) {
+        Ok(c) if c.token_response.is_some() => SignIn::SignedIn,
+        _ => SignIn::SignedOut,
+    }
+}
+
+/// Whether the connector holds OAuth tokens.
+pub async fn signed_in(state: &AppState, id: Uuid) -> bool {
+    sign_in(state, id).await == SignIn::SignedIn
 }
 
 type Waiting = (Uuid, AuthorizationSession, Instant);
@@ -133,15 +241,32 @@ async fn manager(state: &AppState, c: &Connector) -> Result<AuthorizationManager
 
 /// Published OAuth metadata only. rmcp's fallback guesses endpoints on the
 /// MCP server itself, with no issuer to check stored tokens against.
-async fn discover(manager: &mut AuthorizationManager) -> Result<(), AuthError> {
+async fn discover(manager: &mut AuthorizationManager) -> Result<AuthorizationMetadata, AuthError> {
     let resolution = manager.resolve_metadata().await?;
     if !resolution.source.is_discovered() {
         return Err(AuthError::InternalError(
             "the server publishes no OAuth metadata".into(),
         ));
     }
-    manager.set_metadata(resolution.metadata);
-    Ok(())
+    manager.set_metadata(resolution.metadata.clone());
+    Ok(resolution.metadata)
+}
+
+/// Where the browser comes back after signing in (register this with the
+/// provider when using an own OAuth app).
+pub fn redirect_uri(state: &AppState) -> String {
+    format!("{}/v1/oauth/callback", state.settings.ui_url)
+}
+
+/// Google issues a refresh token only for offline access, and only with
+/// fresh consent; without it every sign-in would last an hour.
+fn with_provider_params(mut url: url::Url) -> url::Url {
+    if url.host_str() == Some("accounts.google.com") {
+        url.query_pairs_mut()
+            .append_pair("access_type", "offline")
+            .append_pair("prompt", "consent");
+    }
+    url
 }
 
 /// Starts a sign-in and returns the URL to open in the operator's browser.
@@ -153,16 +278,27 @@ pub async fn start(state: &AppState, c: &Connector) -> Result<String, String> {
             c.name
         )
     };
+    let config = client_config(state, c.id).await.map_err(|e| {
+        tracing::error!(connector = %c.name, error = %e, "cannot read the OAuth app");
+        "the secret store is unavailable".to_owned()
+    })?;
     let mut manager = manager(state, c).await.map_err(fail)?;
     discover(&mut manager).await.map_err(fail)?;
-    let redirect = format!("{}/v1/oauth/callback", state.settings.ui_url);
-    let request = AuthorizationRequest::new(redirect).with_client_name("ferrobot");
+    let mut request = AuthorizationRequest::new(redirect_uri(state)).with_client_name("ferrobot");
+    if let Some(id) = &config.client_id {
+        request = request.with_preregistered_client(id.clone());
+        if let Some(secret) = &config.client_secret {
+            request = request.with_client_secret(secret.clone());
+        }
+    }
+    if !config.scopes.is_empty() {
+        request = request.with_scopes(config.scopes.clone());
+    }
     let session = AuthorizationSession::new(manager, request)
         .await
         .map_err(|(_, e)| fail(e))?;
-    let url = session.auth_url.clone();
-    let parsed =
-        url::Url::parse(&url).map_err(|_| "the authorization URL is invalid".to_owned())?;
+    let parsed = url::Url::parse(&session.auth_url)
+        .map_err(|_| "the authorization URL is invalid".to_owned())?;
     // Opened in the operator's browser: no javascript:, data: or file: links.
     if !matches!(parsed.scheme(), "https" | "http") {
         return Err(format!(
@@ -178,6 +314,7 @@ pub async fn start(state: &AppState, c: &Connector) -> Result<String, String> {
         .collect();
     let [csrf] = <[String; 1]>::try_from(states)
         .map_err(|_| "the authorization URL needs exactly one state".to_owned())?;
+    let url = with_provider_params(parsed).to_string();
     let mut pending = state.oauth.pending.lock().await;
     pending.retain(|_, (_, _, at)| at.elapsed() < PENDING_TTL);
     pending.insert(csrf, (c.id, session, Instant::now()));
@@ -219,14 +356,6 @@ pub async fn finish(
     Ok(id)
 }
 
-/// Whether the connector holds OAuth tokens.
-pub async fn signed_in(state: &AppState, id: Uuid) -> bool {
-    let Ok(Some(json)) = state.settings.secrets.get(&secret_key(id)).await else {
-        return false;
-    };
-    serde_json::from_str::<StoredCredentials>(&json).is_ok_and(|c| c.token_response.is_some())
-}
-
 /// An HTTP client that sends the connector's OAuth token and refreshes it,
 /// or `None` when the connector is not signed in.
 pub async fn client(
@@ -236,12 +365,114 @@ pub async fn client(
     if !signed_in(state, c.id).await {
         return Ok(None);
     }
+    let config = client_config(state, c.id).await.map_err(store_err)?;
     let mut manager = manager(state, c).await?;
     discover(&mut manager).await?;
     if !manager.initialize_from_store().await? {
         return Ok(None);
     }
+    // rmcp stores no client secret; a confidential client needs it to refresh.
+    if let (Some(id), Some(secret)) = (&config.client_id, &config.client_secret) {
+        let mut client = OAuthClientConfig::new(id.clone(), redirect_uri(state))
+            .with_client_secret(secret.clone());
+        if !config.scopes.is_empty() {
+            client = client.with_scopes(config.scopes.clone());
+        }
+        manager.configure_client(client)?;
+    }
     Ok(Some(AuthClient::new(reqwest::Client::new(), manager)))
+}
+
+/// Signs the connector out: asks the server to revoke its tokens (RFC 7009)
+/// when it offers that, then forgets them here either way.
+pub async fn sign_out(state: &AppState, c: &Connector) -> Result<(), crate::error::ApiError> {
+    if let Err(e) = revoke(state, c).await {
+        tracing::warn!(connector = %c.name, error = %e, "could not revoke OAuth tokens");
+    }
+    state.settings.secrets.delete(&secret_key(c.id)).await?;
+    state.oauth.forget(c.id).await;
+    state.connectors.evict_connector(c.id).await;
+    Ok(())
+}
+
+/// The token goes only to the token endpoint's own origin, over https
+/// (`oauth2` refuses anything else as well).
+fn revocation_allowed(revocation: &url::Url, token_endpoint: &str) -> bool {
+    let Ok(token) = url::Url::parse(token_endpoint) else {
+        return false;
+    };
+    revocation.scheme() == "https" && revocation.origin() == token.origin()
+}
+
+async fn revoke(state: &AppState, c: &Connector) -> Result<(), String> {
+    let Some(json) = state
+        .settings
+        .secrets
+        .get(&secret_key(c.id))
+        .await
+        .map_err(|e| e.to_string())?
+    else {
+        return Ok(());
+    };
+    let stored: StoredCredentials = serde_json::from_str(&json).map_err(|e| e.to_string())?;
+    let Some(tokens) = stored.token_response else {
+        return Ok(());
+    };
+    let mut manager = manager(state, c).await.map_err(|e| e.to_string())?;
+    let metadata = discover(&mut manager).await.map_err(|e| e.to_string())?;
+    let Some(endpoint) = metadata
+        .additional_fields
+        .get("revocation_endpoint")
+        .and_then(|v| v.as_str())
+    else {
+        return Ok(());
+    };
+    let revocation = url::Url::parse(endpoint).map_err(|e| e.to_string())?;
+    if !revocation_allowed(&revocation, &metadata.token_endpoint) {
+        return Err(format!("refusing revocation endpoint {endpoint}"));
+    }
+    let config = client_config(state, c.id).await?;
+    let client_id = config.client_id.unwrap_or(stored.client_id);
+    let mut client = oauth2::basic::BasicClient::new(oauth2::ClientId::new(client_id))
+        .set_revocation_url(oauth2::RevocationUrl::from_url(revocation));
+    if let Some(secret) = config.client_secret {
+        client = client.set_client_secret(oauth2::ClientSecret::new(secret));
+    }
+    // Revoking the refresh token ends the whole grant; else the access token.
+    let token = match tokens.refresh_token() {
+        Some(refresh) => oauth2::StandardRevocableToken::RefreshToken(refresh.clone()),
+        None => oauth2::StandardRevocableToken::AccessToken(tokens.access_token().clone()),
+    };
+    let http = reqwest::Client::builder()
+        .redirect(reqwest::redirect::Policy::none())
+        .timeout(REVOKE_TIMEOUT)
+        .build()
+        .map_err(|e| e.to_string())?;
+    let send = move |request: oauth2::HttpRequest| {
+        let http = http.clone();
+        async move {
+            let (parts, body) = request.into_parts();
+            let response = http
+                .request(parts.method, parts.uri.to_string())
+                .headers(parts.headers)
+                .body(body)
+                .send()
+                .await
+                .map_err(std::io::Error::other)?;
+            let status = response.status();
+            let bytes = response.bytes().await.map_err(std::io::Error::other)?;
+            oauth2::http::Response::builder()
+                .status(status)
+                .body(bytes.to_vec())
+                .map_err(std::io::Error::other)
+        }
+    };
+    client
+        .revoke_token(token)
+        .map_err(|e| e.to_string())?
+        .request_async(&send)
+        .await
+        .map_err(|e| e.to_string())
 }
 
 #[cfg(test)]
@@ -249,7 +480,7 @@ mod tests {
     use super::*;
 
     #[tokio::test]
-    async fn refreshes_take_turns_and_a_revoked_token_signs_out() {
+    async fn refreshes_take_turns_and_a_revoked_token_expires_the_sign_in() {
         let lock = Arc::new(tokio::sync::Mutex::new(()));
         let store = |lock: &Arc<tokio::sync::Mutex<()>>| Keychain {
             secrets: SecretStore::default(),
@@ -269,7 +500,13 @@ mod tests {
         let creds = StoredCredentials::new("client".into(), None, vec![], None);
         a.save(creds.clone()).await.unwrap();
         a.on_refresh_token_rejected(&creds).await.unwrap();
-        assert!(a.load().await.unwrap().is_none());
+        let SecretStore::Memory(map) = &a.secrets else {
+            unreachable!()
+        };
+        let json = map.lock().unwrap()["k"].clone();
+        assert!(json.contains("\"expired\":true"), "{json}");
+        let kept = a.load().await.unwrap().unwrap();
+        assert_eq!(kept.client_id, "client", "the client registration is kept");
     }
 
     #[test]
@@ -282,5 +519,43 @@ mod tests {
         assert!(!is_private("https://mcp.linear.app/mcp"));
         assert!(!is_private("https://8.8.8.8/mcp"));
         assert!(!is_private("not a url"));
+    }
+
+    #[test]
+    fn google_sign_ins_ask_for_offline_access() {
+        let google =
+            url::Url::parse("https://accounts.google.com/o/oauth2/v2/auth?state=s").unwrap();
+        let q: HashMap<_, _> = with_provider_params(google)
+            .query_pairs()
+            .into_owned()
+            .collect();
+        assert_eq!(
+            (q["access_type"].as_str(), q["prompt"].as_str()),
+            ("offline", "consent")
+        );
+        let other = url::Url::parse("https://auth.example.com/authorize?state=s").unwrap();
+        assert_eq!(with_provider_params(other.clone()), other);
+    }
+
+    #[test]
+    fn tokens_are_revoked_only_at_the_token_endpoints_origin() {
+        let url = |s: &str| url::Url::parse(s).unwrap();
+        let token = "https://oauth2.googleapis.com/token";
+        assert!(revocation_allowed(
+            &url("https://oauth2.googleapis.com/revoke"),
+            token
+        ));
+        assert!(!revocation_allowed(
+            &url("https://evil.example/revoke"),
+            token
+        ));
+        assert!(!revocation_allowed(
+            &url("http://oauth2.googleapis.com/revoke"),
+            "http://oauth2.googleapis.com/token"
+        ));
+        assert!(!revocation_allowed(
+            &url("http://127.0.0.1:9/revoke"),
+            "http://127.0.0.1:9/token"
+        ));
     }
 }

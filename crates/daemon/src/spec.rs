@@ -100,7 +100,13 @@ pub const QUESTION_CARD_FILE: &str = "question-card.v1.schema.json";
         api::files::page,
         api::ws::ui_ws,
     ),
-    components(schemas(UiEvent, QuestionEvent, QuestionAnswered, ferrobot_sandbox::SleepLevel)),
+    components(schemas(
+        UiEvent,
+        QuestionEvent,
+        QuestionAnswered,
+        ferrobot_sandbox::SleepLevel,
+        crate::oauth::SignIn
+    )),
     tags(
         (name = "system", description = "Daemon status"),
         (name = "agents", description = "Agent registry and profiles"),

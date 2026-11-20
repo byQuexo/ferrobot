@@ -419,3 +419,26 @@ the code and this file together.
   over on first use; deleting the provider deletes its sign-in. Not done:
   locking runs per provider; two runs refreshing at once could each use the
   refresh token (the old shared file had the same race).
+
+
+## Connector OAuth: own apps, scopes, expiry, revocation
+
+- **Own OAuth app per connector** (client id, optional secret, scopes) for
+  providers without dynamic client registration (Google, GitHub, Slack). It
+  is stored as one Keychain entry (`connector-client:<id>`), so no migration.
+  rmcp's `with_preregistered_client` / `with_client_secret` / `with_scopes`
+  build the request; rmcp stores no client secret, so the daemon re-applies
+  it (`configure_client`) before every session, which makes refreshes of
+  confidential clients work. Changing the client id signs the connector out.
+- **Google:** sign-in URLs to `accounts.google.com` get
+  `access_type=offline&prompt=consent`, else Google issues no refresh token.
+- **Expired sign-ins** are kept as the client registration plus an `expired`
+  flag when the server rejects a refresh token, so the UI can say "sign in
+  again" instead of silently showing "not signed in".
+- **Sign-out revokes at the server** (RFC 7009) through the `oauth2` crate
+  (already a dependency of rmcp, same version): the refresh token, else the
+  access token, only to an https endpoint on the token endpoint's origin
+  (`oauth2` itself refuses non-https). Best effort: sign-out always forgets
+  the tokens locally.
+- Sign in opens the system browser directly; the connector list shows the
+  redirect URI to register with an own app.
