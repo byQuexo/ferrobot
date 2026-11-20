@@ -63,6 +63,10 @@
           "$ref": "#/$defs/AgentName",
           "description": "Display and addressing name; unique, can be changed (rename)."
         },
+        "pinned": {
+          "description": "Pinned to the top of the operator's agent list.",
+          "type": "boolean"
+        },
         "provider_id": {
           "description": "Model provider (`GET /v1/providers`); `null` uses the daemon's\n`ANTHROPIC_API_KEY`.",
           "format": "uuid",
