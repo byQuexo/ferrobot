@@ -1351,21 +1351,29 @@ async fn agent_limit_applies_to_api_and_agents() {
 /// Fake upstream for any provider: echoes the method, path and credentials it saw.
 async fn echo_upstream() -> String {
     async fn handler(request: axum::extract::Request) -> axum::Json<Value> {
+        let (parts, body) = request.into_parts();
         let header = |name: &str| {
-            request
-                .headers()
+            parts
+                .headers
                 .get(name)
                 .and_then(|v| v.to_str().ok())
                 .map(str::to_owned)
         };
+        let body: Value = axum::body::to_bytes(body, usize::MAX)
+            .await
+            .ok()
+            .and_then(|b| serde_json::from_slice(&b).ok())
+            .unwrap_or(Value::Null);
         axum::Json(json!({
-            "method": request.method().as_str(),
-            "path": request.uri().path(),
+            "method": parts.method.as_str(),
+            "path": parts.uri.path(),
             "authorization": header("authorization"),
             "x_api_key": header("x-api-key"),
             "goog_key": header("x-goog-api-key"),
-            "query": request.uri().query(),
-            "accounts": request.headers().get_all("chatgpt-account-id").iter()
+            "session": header("x-session-id"),
+            "cache_control": body.get("cache_control"),
+            "query": parts.uri.query(),
+            "accounts": parts.headers.get_all("chatgpt-account-id").iter()
                 .filter_map(|v| v.to_str().ok()).collect::<Vec<_>>(),
         }))
     }
@@ -1379,6 +1387,60 @@ async fn echo_upstream() -> String {
 async fn model_call(d: &Daemon, path: &str, auth: (&str, &str)) -> (u16, Value) {
     let (status, _, out) = http_raw(&d.agents, "POST", path, &[auth], b"{}").await;
     (status, serde_json::from_slice(&out).unwrap_or(Value::Null))
+}
+
+#[tokio::test]
+async fn openrouter_calls_cache_claude_and_stick_to_one_provider() {
+    let upstream = echo_upstream().await;
+    let backend = Arc::new(StatefulBackend::default());
+    let d = start(backend.clone(), None, "127.0.0.1:0").await;
+    let mut ids = Vec::new();
+    for (name, kind) in [("or", "openrouter"), ("oai", "openai")] {
+        let body = json!({"name": name, "kind": kind, "base_url": format!("{upstream}/v1"),
+                          "api_key": "k", "default_model": "m"});
+        let (status, p) = http(&d.ui, "POST", "/v1/providers", Some(body)).await;
+        assert_eq!(status, 201, "{p}");
+        ids.push(p["id"].clone());
+    }
+    let ann = create(&d, json!({"name": "ann", "provider_id": ids[0]})).await;
+    let bob = create(&d, json!({"name": "bob", "provider_id": ids[1]})).await;
+    let call = |agent: &'static str, model: &str| {
+        let bearer = format!("Bearer {}", backend.token(agent));
+        let body = json!({"model": model, "messages": []}).to_string();
+        let ui = d.agents.clone();
+        async move {
+            let (_, _, out) = http_raw(
+                &ui,
+                "POST",
+                "/model/chat/completions",
+                &[
+                    ("authorization", bearer.as_str()),
+                    ("content-type", "application/json"),
+                ],
+                body.as_bytes(),
+            )
+            .await;
+            serde_json::from_slice::<Value>(&out).unwrap()
+        }
+    };
+
+    let seen = call("ann", "anthropic/claude-sonnet-5.5").await;
+    assert_eq!(seen["cache_control"], json!({"type": "ephemeral"}));
+    assert_eq!(seen["session"], ann["id"], "one session per agent");
+    let seen = call("ann", "openai/gpt-6").await;
+    assert_eq!(
+        seen["cache_control"],
+        Value::Null,
+        "other models cache on their own"
+    );
+    assert_eq!(seen["session"], ann["id"]);
+    let seen = call("bob", "anthropic/claude-sonnet-5.5").await;
+    assert_eq!(
+        (&seen["cache_control"], &seen["session"]),
+        (&Value::Null, &Value::Null),
+        "only OpenRouter"
+    );
+    let _ = bob;
 }
 
 #[tokio::test]

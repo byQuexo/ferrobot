@@ -831,3 +831,31 @@ slop, so polish mode: palette, accent, logo, layout and features stay.
   - Whether a cost is "unknown" can differ between group_by views when an
     override leaves out a cache price.
 
+
+## Provider prompt caching
+
+- **The proxy keeps caching intact:** it forwards request bodies unchanged
+  (it only reads the model name) and passes the caching headers through
+  (`anthropic-*`, `openai-beta`, Codex' `session_id`/`originator`).
+- **Who caches already:** the Claude driver (the Agent SDK sets cache
+  breakpoints on system prompt, tools and history; ours stays stable per
+  agent), Codex and Gemini CLI on their own, and the OpenAI-compatible
+  driver through automatic prefix caching (OpenAI from 1024 tokens,
+  DeepSeek, Gemini 2.5+): it resends system prompt, tools (rmcp lists them
+  sorted by name) and history in the same order. The Usage tab records cache
+  read and write tokens, so hit rates are measurable.
+- **OpenRouter gets two additions in the proxy** (checked against
+  openrouter.ai/docs/features/prompt-caching, 2026-11-20): Claude models
+  (`anthropic/…`) on chat completions get a top-level
+  `cache_control: {"type": "ephemeral"}`, which turns on Anthropic's
+  automatic caching there (it is off without it), unless the request set its
+  own; and every OpenRouter call carries `x-session-id` = the agent's id, so
+  sticky routing keeps an agent on the provider that holds its cache. Other
+  providers' requests are untouched.
+- **No `prompt_cache_key` for OpenAI:** OpenAI routes caches itself from
+  GPT-5.6 on and says the key is not needed for caching there; Chat
+  Completions support for it is not confirmed by its docs, so sending it
+  risks errors for no gain.
+- **Not changed:** Anthropic's 5-minute cache lifetime. Agents with turns
+  further apart pay the cache write without a hit; the 1-hour option costs
+  more per write (2x instead of 1.25x). Decide after measuring real turns.

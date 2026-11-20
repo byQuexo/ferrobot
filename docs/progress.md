@@ -832,3 +832,13 @@ store used for the run) or the daemon's own env.
 - CSV export in the Tauri window: the shell's download handler saves blob
   downloads to Downloads (release prep 7), never tried in the window.
 
+## Provider prompt caching (`feat/openrouter-cache`)
+
+- OpenRouter: top-level `cache_control` for Claude chat calls and
+  `x-session-id` per agent, added in the proxy. Tested with a fake
+  upstream (Claude gets the marker and the session, other models only the
+  session, other providers neither) and a unit test (an existing
+  `cache_control` and non-JSON bodies stay untouched). Not tested against
+  the real OpenRouter (no key used): whether cached tokens show up in its
+  usage as documented.
+
