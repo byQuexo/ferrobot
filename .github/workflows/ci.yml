@@ -1,9 +1,13 @@
 name: CI
 
+# Actions minutes are scarce: PRs only, no docs-only runs, every job capped.
+# Full gates run locally (CLAUDE.md); E2E only by hand ("Run workflow").
 on:
-  push:
-    branches: [main]
   pull_request:
+    paths-ignore:
+      - "docs/**"
+      - "**/*.md"
+  workflow_dispatch:
 
 permissions:
   contents: read
@@ -20,6 +24,7 @@ jobs:
   rust:
     name: Rust (fmt, clippy, tests, API spec drift)
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
@@ -33,29 +38,31 @@ jobs:
       # Includes tests/specs.rs: fails if protocol/*.json is stale.
       - run: cargo test --workspace
 
-  runner:
-    name: Runner (TypeScript)
+  ts:
+    name: Runner and desktop (TypeScript)
     runs-on: ubuntu-latest
-    defaults:
-      run:
-        working-directory: runner
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
           node-version: 24
           cache: npm
-          cache-dependency-path: runner/package-lock.json
-      - run: npm ci
-      - run: npm run lint
-      - run: npm run typecheck
-      - run: npm test
-      - run: npm run build
+          cache-dependency-path: |
+            runner/package-lock.json
+            apps/desktop/package-lock.json
+      - run: npm ci && npm run lint && npm run typecheck && npm test && npm run build
+        working-directory: runner
+      # Generated TS types must match protocol/openapi.json. The Tauri shell
+      # (no logic, needs the WebKit packages) is checked locally only.
+      - run: npm ci && npm run check:api && npm run typecheck && npm test && npm run build
+        working-directory: apps/desktop
 
-  e2e:
-    name: E2E (local-process backend, real runner)
-    needs: [rust, runner]
+  docker:
+    name: E2E (Docker backend)
+    if: github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
@@ -68,47 +75,7 @@ jobs:
       - run: npm ci && npm run build
         working-directory: runner
       - run: cargo test -p ferrobot-daemon --test e2e -- --ignored
-
-  docker:
-    name: E2E (Docker backend)
-    needs: [rust, runner]
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@stable
-      - uses: Swatinem/rust-cache@v2
       - run: docker build -f runner/Dockerfile -t ferrobot-runner:dev .
       - run: cargo test -p ferrobot-sandbox --features docker-tests --test docker
       - run: cargo test -p ferrobot-daemon --features docker-tests --test e2e docker_backend -- --ignored
       - run: ./scripts/smoke-docker.sh
-
-  desktop:
-    name: Desktop (thin Tauri UI)
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@stable
-        with:
-          components: rustfmt, clippy
-      - uses: Swatinem/rust-cache@v2
-        with:
-          workspaces: apps/desktop/src-tauri
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 24
-          cache: npm
-          cache-dependency-path: apps/desktop/package-lock.json
-      - name: System libraries for Tauri
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y libwebkit2gtk-4.1-dev libsoup-3.0-dev \
-            libjavascriptcoregtk-4.1-dev libayatana-appindicator3-dev librsvg2-dev
-      - run: npm ci
-        working-directory: apps/desktop
-      # Generated TS types must match protocol/openapi.json.
-      - run: npm run check:api
-        working-directory: apps/desktop
-      - run: npm run typecheck && npm test && npm run build
-        working-directory: apps/desktop
-      - run: cargo fmt --check && cargo clippy --all-targets -- -D warnings
-        working-directory: apps/desktop/src-tauri

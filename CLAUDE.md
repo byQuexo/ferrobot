@@ -104,6 +104,10 @@ Principles:
 
 ## Commands
 
+GitHub Actions minutes are limited: run these gates locally before a merge
+(including the Tauri shell's clippy when `src-tauri` changed). CI runs only
+the Rust and TypeScript checks on PRs; E2E runs by hand ("Run workflow").
+
 Rust (repo root):
 ```
 cargo build --workspace
