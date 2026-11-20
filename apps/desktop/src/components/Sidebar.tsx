@@ -96,14 +96,14 @@ export function Sidebar(props: {
         <span class="brand-name">ferrobot</span>
         <span class="spacer" />
         <IconButton label="Settings" onClick={props.onSettings} pressed={props.settingsOpen}>
-          <Settings size={17} />
+          <Settings size={18} />
         </IconButton>
         <IconButton label="New agent" onClick={props.onCreate} tone="accent">
           <Plus size={18} />
         </IconButton>
       </header>
       <label class="search">
-        <Search size={15} aria-hidden="true" />
+        <Search size={16} aria-hidden="true" />
         <input
           type="search"
           placeholder="Find an agent"
@@ -180,7 +180,7 @@ function PinToggle(props: { agent: Agent }): JSX.Element {
       title={a.pinned ? "Unpin" : "Pin to the top"}
       onClick={() => void run(() => client.updateAgent(a.id, { pinned: !a.pinned }))}
     >
-      <Pin size={14} />
+      <Pin size={16} />
     </button>
   );
 }
@@ -228,9 +228,9 @@ function AgentMenu(props: {
   const top = Math.min(props.y, window.innerHeight - 130);
   return (
     <div class="context-menu" role="menu" aria-label={props.agent.name} ref={box} style={{ left: `${String(left)}px`, top: `${String(top)}px` }}>
-      {item("Move up", <ArrowUp size={14} />, () => { props.onStep(-1); })}
-      {item("Move down", <ArrowDown size={14} />, () => { props.onStep(1); })}
-      {item(`Delete ${props.agent.name}…`, <Trash2 size={14} />, props.onDelete, true)}
+      {item("Move up", <ArrowUp size={16} />, () => { props.onStep(-1); })}
+      {item("Move down", <ArrowDown size={16} />, () => { props.onStep(1); })}
+      {item(`Delete ${props.agent.name}…`, <Trash2 size={16} />, props.onDelete, true)}
     </div>
   );
 }

@@ -7,7 +7,7 @@ import { characterOf, deriveCharacter, moodOf, rerollCharacter } from "../src/li
 import { relativeTime, stepLabel, toolLabel } from "../src/lib/format.ts";
 import { buildTimeline, sharedFiles } from "../src/lib/timeline.ts";
 import { parseBlocks, parseInline } from "../src/lib/markdown.ts";
-import { modelOptions } from "../src/lib/models.ts";
+import { modelOptions, withSaved } from "../src/lib/models.ts";
 import { moveId, orderAgents } from "../src/lib/order.ts";
 import { liveEvent, pcm16Base64, speakable } from "../src/lib/voice.ts";
 
@@ -333,5 +333,13 @@ describe("modelOptions", () => {
 
   it("has no options without a list, so the field is typed", () => {
     assert.deepEqual(modelOptions([], "my-finetune"), []);
+  });
+
+  it("keeps a saved voice id the list lacks", () => {
+    const voices: [string, string][] = [["v1", "Rachel"]];
+    assert.deepEqual(withSaved(voices, "v9"), [["v9", "v9"], ["v1", "Rachel"]]);
+    assert.equal(withSaved(voices, "v1"), voices);
+    assert.equal(withSaved(voices, ""), voices);
+    assert.deepEqual(withSaved([], "v9"), [], "no list: the field is typed");
   });
 });

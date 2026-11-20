@@ -231,7 +231,7 @@ export function Chat(props: {
   return (
     <section class="chat" aria-label={`Chat with ${agent.name}`}>
       <header class="chat-head">
-        <Avatar agent={agent} size={38} presence={agent.presence} />
+        <Avatar agent={agent} size={40} presence={agent.presence} />
         <div class="chat-title">
           <h1>{agent.name}</h1>
           <span class={`chat-sub p-${agent.presence}`}>
@@ -243,7 +243,7 @@ export function Chat(props: {
         <span class="spacer" />
         {working && (
           <Button variant="secondary" small onClick={() => void run(() => client.interrupt(id))}>
-            <CircleStop size={15} /> Stop turn
+            <CircleStop size={16} /> Stop turn
           </Button>
         )}
         {voice && call.length > 1 && (
@@ -257,7 +257,7 @@ export function Chat(props: {
         {voiceEnabled && (
           <span class="voice-tools">
             <IconButton label="Voice, language and speed" onClick={() => { setQuick(!quick); }} pressed={quick}>
-              <SlidersHorizontal size={17} />
+              <SlidersHorizontal size={18} />
             </IconButton>
             {quick && voiceView && (
               <VoiceQuick agent={agent} view={voiceView} onView={setVoiceView} onClose={() => { setQuick(false); }} />
@@ -268,7 +268,7 @@ export function Chat(props: {
           </span>
         )}
         <IconButton label="Edit agent" onClick={props.onEdit}>
-          <Pencil size={17} />
+          <Pencil size={18} />
         </IconButton>
         <IconButton label={props.infoOpen ? "Hide details" : "Show details"} onClick={props.onToggleInfo} pressed={props.infoOpen}>
           <Info size={18} />
@@ -305,7 +305,7 @@ export function Chat(props: {
 
       {voice && hearing && (
         <div class="call-caption" role="status">
-          <Mic size={14} /> {caption || "Listening…"}
+          <Mic size={16} /> {caption || "Listening…"}
         </div>
       )}
       <Composer agent={agent} send={send} voice={voiceEnabled ? voiceView : null} onTalk={() => { speaker.stop(); }} />
@@ -329,7 +329,7 @@ function ExchangeHint(props: { item: Exchange; agent: Agent }): JSX.Element {
           </span>
           {peer && <Avatar agent={peer} size={18} />}
           <strong>{peer?.name ?? item.peerName}</strong>
-          <ChevronRight size={14} class="chev" />
+          <ChevronRight size={16} class="chev" />
         </button>
         {peer && (
           <button
@@ -339,7 +339,7 @@ function ExchangeHint(props: { item: Exchange; agent: Agent }): JSX.Element {
             aria-label="Open thread"
             onClick={() => { openConversation(agent.id, peer.id); }}
           >
-            <MessagesSquare size={14} />
+            <MessagesSquare size={16} />
           </button>
         )}
       </div>
@@ -381,7 +381,7 @@ function Item(props: { item: DisplayItem; agent: Agent; files?: ChatFiles }): JS
       return (
         <div class="row row-agent">
           <button type="button" class="file-card" onClick={() => { openFile(agent.id, item.id); }}>
-            <FileText size={18} />
+            <FileText size={16} />
             <span class="file-name">{item.name}</span>
             <span class="meta">{fileSize(item.size)} · {clockTime(item.at)}</span>
           </button>
@@ -395,7 +395,7 @@ function Item(props: { item: DisplayItem; agent: Agent; files?: ChatFiles }): JS
         <div class={`row row-a2a ${item.type}`}>
           <div class="a2a">
             <div class="a2a-head">
-              {item.type === "incoming" ? <ArrowDownLeft size={14} /> : <ArrowUpRight size={14} />}
+              {item.type === "incoming" ? <ArrowDownLeft size={16} /> : <ArrowUpRight size={16} />}
               {peer ? <Avatar agent={peer} size={18} /> : null}
               <span>
                 {item.type === "incoming" ? (
@@ -421,7 +421,7 @@ function Item(props: { item: DisplayItem; agent: Agent; files?: ChatFiles }): JS
         <div class="row row-routine">
           <div class="routine-msg">
             <div class="a2a-head">
-              <CalendarClock size={14} />
+              <CalendarClock size={16} />
               <span>
                 Routine <strong>{item.routine}</strong>
               </span>
@@ -440,7 +440,7 @@ function Item(props: { item: DisplayItem; agent: Agent; files?: ChatFiles }): JS
       return (
         <div class="row row-center">
           <div class="notice notice-error">
-            <AlertTriangle size={14} /> {item.text}
+            <AlertTriangle size={16} /> {item.text}
           </div>
         </div>
       );
@@ -493,13 +493,13 @@ export function ToolCard(props: { item: Extract<TimelineItem, { type: "tool" }> 
     <div class="row row-tool">
       <div class={`tool-card t-${state}${open ? " open" : ""}`}>
         <button type="button" class="tool-head" aria-expanded={open} onClick={() => { setOpen(!open); }}>
-          <ChevronRight size={14} class="chev" />
-          {state === "denied" ? <ShieldAlert size={14} /> : <Wrench size={14} />}
+          <ChevronRight size={16} class="chev" />
+          {state === "denied" ? <ShieldAlert size={16} /> : <Wrench size={16} />}
           <span class="tool-name">{label.tool}</span>
           {label.server && <span class="tool-server">{label.server}</span>}
           <span class="tool-summary">{state === "denied" ? `Blocked: ${item.denied ?? ""}` : summary(item.input)}</span>
           <span class={`tool-state s-${state}`}>
-            {state === "running" ? "running" : state === "ok" ? "done" : state === "error" ? "error" : "blocked"}
+            {state === "running" ? "Running" : state === "ok" ? "Done" : state === "error" ? "Error" : "Blocked"}
           </span>
         </button>
         {open && (
@@ -639,7 +639,7 @@ function MicButton(props: {
         if (e.detail === 0) void (active() ? finish() : start());
       }}
     >
-      {recording ? <Square size={16} /> : <Mic size={18} />}
+      {recording ? <Square size={18} /> : <Mic size={18} />}
     </button>
   );
 }

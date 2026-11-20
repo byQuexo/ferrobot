@@ -6,3 +6,8 @@ export function modelOptions(models: readonly ModelInfo[], current: string): [st
   const options = models.map((m): [string, string] => [m.id, m.name && m.name !== m.id ? `${m.name} (${m.id})` : m.id]);
   return current && !models.some((m) => m.id === current) ? [[current, current], ...options] : options;
 }
+
+/** `options` with a saved id the list lacks kept selectable, like `modelOptions` does for models. */
+export function withSaved(options: [string, string][], saved: string): [string, string][] {
+  return options.length > 0 && saved && !options.some(([v]) => v === saved) ? [[saved, saved], ...options] : options;
+}

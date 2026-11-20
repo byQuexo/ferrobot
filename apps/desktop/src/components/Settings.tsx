@@ -14,7 +14,7 @@ const SECTIONS: [SettingsSection, string, string, typeof KeyRound][] = [
   ["providers", "Model providers", "The models your agents run on. Keys stay in the keychain of the daemon’s computer.", KeyRound],
   ["connectors", "Connectors", "Remote MCP servers whose tools you can give to agents, with a token or an OAuth sign-in.", Plug],
   ["memory", "Global memory", "Facts every agent can recall. Agents add to it; you can edit and remove entries.", Brain],
-  ["voice", "Voice", "Agents’ replies read aloud and spoken messages. Switch it on with the speaker button in a chat.", AudioLines],
+  ["voice", "Voice", "Agents’ replies read aloud and spoken messages. Start a call with the phone button in a chat.", AudioLines],
   ["appearance", "Appearance", "How ferrobot looks on this computer.", Palette],
 ];
 
@@ -76,7 +76,7 @@ export function Settings(props: {
                     aria-checked={props.theme === value}
                     onClick={() => { props.onTheme(value); }}
                   >
-                    <Icon size={14} /> {label}
+                    <Icon size={16} /> {label}
                   </button>
                 ))}
               </div>

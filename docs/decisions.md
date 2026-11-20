@@ -739,3 +739,43 @@ the code and this file together.
   (`.choice` is the connector chips), and a current id the list lacks stays
   as an extra option, so editing an agent never drops its model while the
   list loads.
+
+## UI polish (unslop)
+
+A polish pass with the unslop skill by Damir Sokolovsky
+([@heydamir](https://x.com/heydamir)), CC BY 4.0. The audit found light
+slop, so polish mode: palette, accent, logo, layout and features stay.
+
+- **Direction:** a self-hosted desktop app where one operator runs a small
+  team of AI agents, each with its own sandboxed computer. Calm, exact, a
+  little warm; an operator's desk on the night shift (instruments, a
+  terminal, a workbench). The moments are the animated avatars and the live
+  chat (step line, streaming); Settings stays quiet.
+- **Signature:** the presence dot. Settings uses the same `.dot` and `p-*`
+  classes for providers and connectors: green for a stored key, a sign-in or
+  no key needed, amber for an expired sign-in, grey for no key or not signed
+  in. The row's text says the same, so colour is not the only cue. A Codex
+  provider signed in with ChatGPT but without a key stays grey (only the
+  sign-in line knows that state).
+- **Type:** 12 (meta, labels, counts, hints), 13 (secondary text, form
+  labels, tool cards), 14 (body), 16 (brand, chat and dialog titles), 20
+  (settings page and profile titles). Weights 400 and 500; 600 only for bold
+  and headings inside messages. Sentence case and no tracking: the uppercase
+  tool and section labels went, and so did negative tracking on headings.
+- **Grid:** spacing, gaps and fixed heights are multiples of 4 (1 to 2 px
+  nudges allowed). Buttons, inputs and selects are 36 tall, small buttons
+  28, icon buttons 32, settings nav rows 36. The presence dot keeps a 10 px
+  minimum so its 2 px ring leaves a visible centre.
+- **Icons:** lucide at 16 with a 1.5 stroke (one `.lucide` rule), 18 for
+  header icon buttons and the composer; 12 only inside a 12 px text run or a
+  16 px check box; empty-state glyphs 28.
+- **Settings:** a 640 px column, left-aligned; providers and connectors as
+  rows in one hairline box; sections split by hairlines; add forms open from
+  an "Add provider" / "Add connector" button and close after adding. The
+  switch uses the accent instead of the semantic green.
+- **Motion kept:** the working dot's `pulse`, the step line's `breathe`, the
+  streaming caret and the recording mic's pulse show live state, so they
+  stay. The unused `.typing` bounce went.
+- **Voice settings** use the shared `Choice`; `withSaved` keeps a saved
+  voice or model id the list lacks selectable, as `modelOptions` does for
+  models.

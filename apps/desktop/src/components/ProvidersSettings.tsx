@@ -1,6 +1,6 @@
 import type { JSX } from "preact";
 import { useEffect, useState } from "preact/hooks";
-import { KeyRound, LogIn, Trash2 } from "lucide-preact";
+import { KeyRound, LogIn, Plus, Trash2 } from "lucide-preact";
 
 import type { DeviceCode, LoginStatus, Provider, ProviderKind } from "../api.ts";
 import { useApp } from "../context.ts";
@@ -69,7 +69,7 @@ function ChatgptLogin(props: { provider: Provider }): JSX.Element {
         </span>
       ) : (
         <Button small onClick={() => void start()}>
-          <LogIn size={14} /> Sign in with ChatGPT
+          <LogIn size={16} /> Sign in with ChatGPT
         </Button>
       )}
       {status?.state === "failed" && <span class="hint bad">{status.error}</span>}
@@ -87,6 +87,8 @@ function fieldsOf(kind: ProviderKind): { key: boolean; baseUrl: boolean; region:
   };
 }
 
+const dotOf = (p: Provider): string => (!fieldsOf(p.kind).key || p.has_key ? "p-awake" : "p-sleeping");
+
 /** Add, re-key and remove model providers (a settings section). Keys go to the daemon’s keychain and never come back. */
 export function ProvidersSettings(): JSX.Element {
   const { client, toast } = useApp();
@@ -99,6 +101,7 @@ export function ProvidersSettings(): JSX.Element {
   const [model, setModel] = useState("");
   const [key, setKey] = useState("");
   const [rekey, setRekey] = useState<{ id: string; key: string } | null>(null);
+  const [adding, setAdding] = useState(false);
   const [busy, setBusy] = useState(false);
   const fields = fieldsOf(kind);
 
@@ -131,27 +134,30 @@ export function ProvidersSettings(): JSX.Element {
       setName("");
       setKey("");
       setModel("");
+      setAdding(false);
     });
 
   return (
-      <div class="form">
+      <div>
+        <section class="settings-section form">
         {providers.length === 0 && (
           <p class="muted small">No providers yet. Without one, agents use the daemon’s ANTHROPIC_API_KEY.</p>
         )}
         <ul class="provider-list">
           {providers.map((p) => (
             <li key={p.id} class="provider-row">
+              <span class={`dot ${dotOf(p)}`} aria-hidden="true" />
               <div class="provider-main">
                 <b>{p.name}</b>
                 <span class="muted small">
                   {KIND_LABELS[p.kind]}
                   {p.default_model ? ` · ${p.default_model}` : ""}
-                  {fieldsOf(p.kind).key ? (p.has_key ? " · key stored" : " · no key") : ""}
+                  {fieldsOf(p.kind).key ? (p.has_key ? " · key stored" : " · no key") : " · no key needed"}
                 </span>
               </div>
               {fieldsOf(p.kind).key && (
                 <IconButton label={`Replace the key of ${p.name}`} onClick={() => { setRekey({ id: p.id, key: "" }); }}>
-                  <KeyRound size={15} />
+                  <KeyRound size={16} />
                 </IconButton>
               )}
               <IconButton
@@ -160,7 +166,7 @@ export function ProvidersSettings(): JSX.Element {
                 disabled={busy}
                 onClick={() => void run(() => client.deleteProvider(p.id))}
               >
-                <Trash2 size={15} />
+                <Trash2 size={16} />
               </IconButton>
               {p.kind === "codex" && !p.has_key && <ChatgptLogin provider={p} />}
               {rekey?.id === p.id && (
@@ -186,58 +192,70 @@ export function ProvidersSettings(): JSX.Element {
             </li>
           ))}
         </ul>
-        <h3 class="form-head">Add a provider</h3>
-        <label>
-          Kind
-          <select value={kind} onChange={(e) => { setKind(e.currentTarget.value as ProviderKind); }}>
-            {(Object.keys(KIND_LABELS) as ProviderKind[]).map((k) => (
-              <option key={k} value={k}>{KIND_LABELS[k]}</option>
-            ))}
-          </select>
-          {KIND_HINTS[kind] && <span class="hint">{KIND_HINTS[kind]}</span>}
-        </label>
-        <label>
-          Name
-          <input value={name} maxLength={64} placeholder="e.g. openai-work" onInput={(e) => { setName(e.currentTarget.value); }} />
-        </label>
-        {fields.baseUrl && (
-          <label>
-            Base URL
-            <input value={baseUrl} placeholder="https://host/v1" onInput={(e) => { setBaseUrl(e.currentTarget.value); }} />
-          </label>
-        )}
-        {fields.region && (
-          <label>
-            Region
-            <input
-              value={region}
-              placeholder={kind === "vertex" ? "e.g. us-east5 or global" : "e.g. eu-central-1"}
-              onInput={(e) => { setRegion(e.currentTarget.value); }}
-            />
-          </label>
-        )}
-        {fields.project && (
-          <label>
-            Google Cloud project
-            <input value={project} onInput={(e) => { setProject(e.currentTarget.value); }} />
-          </label>
-        )}
-        <label>
-          Default model
-          <ModelPicker kind={kind} value={model} placeholder="None" onChange={setModel} />
-        </label>
-        {fields.key && (
-          <label>
-            API key{optionalKey(kind) ? " (optional)" : ""}
-            <input type="password" autoComplete="off" value={key} onInput={(e) => { setKey(e.currentTarget.value); }} />
-            <span class="hint">Stored in the keychain of the daemon’s computer. Agents never see it.</span>
-          </label>
-        )}
-        <div>
-          <Button variant="primary" disabled={busy || !name.trim()} onClick={() => void add()}>
-            Add provider
-          </Button>
-        </div>
+        </section>
+        <section class="settings-section">
+          {adding ? (
+            <div class="form">
+              <h3 class="form-head">Add a provider</h3>
+              <label>
+                Kind
+                <select value={kind} onChange={(e) => { setKind(e.currentTarget.value as ProviderKind); }}>
+                  {(Object.keys(KIND_LABELS) as ProviderKind[]).map((k) => (
+                    <option key={k} value={k}>{KIND_LABELS[k]}</option>
+                  ))}
+                </select>
+                {KIND_HINTS[kind] && <span class="hint">{KIND_HINTS[kind]}</span>}
+              </label>
+              <label>
+                Name
+                <input value={name} maxLength={64} placeholder="e.g. openai-work" onInput={(e) => { setName(e.currentTarget.value); }} />
+              </label>
+              {fields.baseUrl && (
+                <label>
+                  Base URL
+                  <input value={baseUrl} placeholder="https://host/v1" onInput={(e) => { setBaseUrl(e.currentTarget.value); }} />
+                </label>
+              )}
+              {fields.region && (
+                <label>
+                  Region
+                  <input
+                    value={region}
+                    placeholder={kind === "vertex" ? "e.g. us-east5 or global" : "e.g. eu-central-1"}
+                    onInput={(e) => { setRegion(e.currentTarget.value); }}
+                  />
+                </label>
+              )}
+              {fields.project && (
+                <label>
+                  Google Cloud project
+                  <input value={project} onInput={(e) => { setProject(e.currentTarget.value); }} />
+                </label>
+              )}
+              <label>
+                Default model
+                <ModelPicker kind={kind} value={model} placeholder="None" onChange={setModel} />
+              </label>
+              {fields.key && (
+                <label>
+                  API key{optionalKey(kind) ? " (optional)" : ""}
+                  <input type="password" autoComplete="off" value={key} onInput={(e) => { setKey(e.currentTarget.value); }} />
+                  <span class="hint">Stored in the keychain of the daemon’s computer. Agents never see it.</span>
+                </label>
+              )}
+              <div class="form-actions">
+                <Button variant="primary" disabled={busy || !name.trim()} onClick={() => void add()}>
+                  Add provider
+                </Button>
+                <Button variant="ghost" onClick={() => { setAdding(false); }}>Cancel</Button>
+              </div>
+            </div>
+          ) : (
+            <Button onClick={() => { setAdding(true); }}>
+              <Plus size={16} /> Add provider
+            </Button>
+          )}
+        </section>
       </div>
   );
 }

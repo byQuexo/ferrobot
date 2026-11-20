@@ -52,7 +52,7 @@ export function QuestionCardView(props: {
       <span class="qcard-title">{card.title ?? (total === 1 ? "A question for you" : "A few questions for you")}</span>
       <span class="spacer" />
       {answered ? (
-        <span class="qcard-done"><Check size={13} /> Answered</span>
+        <span class="qcard-done"><Check size={16} /> Answered</span>
       ) : (
         total > 1 && <span class="qcard-step">{step + 1} of {total}</span>
       )}
@@ -113,7 +113,7 @@ export function QuestionCardView(props: {
       >
         {head}
         <p class="qcard-prompt">
-          <CircleHelp size={15} /> {q.prompt}
+          <CircleHelp size={16} /> {q.prompt}
         </p>
         {q.kind !== "text" && (
           <div class="qcard-choices" role={q.kind === "single" ? "radiogroup" : "group"}>
@@ -149,7 +149,7 @@ export function QuestionCardView(props: {
           <span class="spacer" />
           {step > 0 && (
             <Button variant="ghost" small onClick={() => { setStep(step - 1); }}>
-              <ChevronLeft size={15} /> Back
+              <ChevronLeft size={16} /> Back
             </Button>
           )}
           <Button variant="primary" small type="submit" disabled={!ready || sending}>
