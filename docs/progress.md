@@ -486,8 +486,18 @@ store used for the run) or the daemon's own env.
 - **Real Claude turn: not run.** `ANTHROPIC_API_KEY` is not in this
   session's environment, and the key must not go through the transcript.
   `scripts/smoke-live.sh` runs it from Tim's own terminal.
-- **Ollama turn: not run.** Ollama is installed but was not running and has
-  no model pulled; the script needs `OLLAMA_MODEL` (default `qwen2.5:3b`).
+- **Ollama turn: run twice on Tim's Mac (2026-11-20, M2 Air, 16 GB, Ollama
+  0.40.16, `OLLAMA_CONTEXT_LENGTH=32768`), Claude part skipped (no key yet).**
+  The path works: a Docker sandbox, the OpenAI-compatible driver, the
+  daemon's model proxy to local Ollama, a shell tool call, the nonce file in
+  the sandbox, clean-up (no containers or volumes left). Both runs still FAIL
+  the script's answer check, which is the models' limit, not ferrobot's:
+  - `qwen2.5:3b`: turn `completed`, but it called `send_message` to an agent
+    "user" (`agent not found: user`) and answered without the file's content.
+  - `qwen3:4b`: wrote the file, then thought at about 23 tokens/s for longer
+    than the script's 180 s, so no `turn_done` arrived in time.
+  For real agent work on this machine use a cloud model (see the Ollama
+  notes); a local model this size is only good for checking the plumbing.
 - **Key leak check: written, not yet run live.** `smoke-live.sh` counts
   matches of the real key over the whole stream of: container config and
   env, runtime env, root filesystem, home volume, container logs, daemon log
