@@ -5,6 +5,8 @@ use std::fmt::Write as _;
 
 use serde::{Deserialize, Serialize};
 
+use crate::{AgentId, ConnectorAuth};
+
 /// Version of the question card format (`QuestionEvent.version`).
 pub const QUESTION_CARD_VERSION: u32 = 1;
 /// Upper bounds that keep a card readable.
@@ -25,6 +27,10 @@ pub enum QuestionKind {
     Multi,
     /// Free text only (A2UI `TextField`).
     Text,
+    /// Hidden text the agent never sees (A2UI `TextField`, `obscured`). Only on cards the
+    /// daemon raises; `ask_user` refuses it.
+    #[cfg_attr(feature = "mcp", schemars(skip))]
+    Secret,
 }
 
 /// One selectable option.
@@ -96,6 +102,15 @@ pub enum Approval {
         /// Requested one-line description (role).
         description: String,
     },
+    /// An agent wants to add a connector (`add_connector` tool). Approving creates it with the
+    /// token typed into the card and gives it to the agent; the token only ever goes to `url`.
+    AddConnector {
+        name: String,
+        url: String,
+        auth: ConnectorAuth,
+        /// The agent that asked: it gets the connector and a message with the outcome.
+        requester: AgentId,
+    },
 }
 
 /// Choice value that approves an approval card; anything else declines.
@@ -141,6 +156,30 @@ impl QuestionEvent {
             },
             approval: Some(approval),
         }
+    }
+}
+
+impl QuestionEvent {
+    /// An Approve/Decline card for a connector, with a hidden token field when it takes one.
+    pub fn add_connector(title: String, prompt: String, approval: Approval) -> Self {
+        let token = matches!(
+            approval,
+            Approval::AddConnector {
+                auth: ConnectorAuth::Token,
+                ..
+            }
+        );
+        let mut event = Self::approval(title, prompt, approval);
+        if token {
+            event.card.questions.push(Question {
+                id: "token".into(),
+                prompt: "Token".into(),
+                kind: QuestionKind::Secret,
+                choices: vec![],
+                allow_custom: false,
+            });
+        }
+        event
     }
 }
 
@@ -198,6 +237,12 @@ impl QuestionCard {
             ids.push(q.id.clone());
             check_text("prompt", &q.prompt, MAX_TEXT)?;
             match q.kind {
+                QuestionKind::Secret => {
+                    return Err(format!(
+                        "{}: secret fields are only on cards ferrobot shows",
+                        q.id
+                    ));
+                }
                 QuestionKind::Text => {
                     if !q.choices.is_empty() {
                         return Err(format!("{}: text questions take no choices", q.id));
@@ -237,6 +282,13 @@ impl QuestionCard {
                 return Err(format!("answer {:?} exactly once", q.id));
             };
             let custom = a.custom.as_deref().map(str::trim).filter(|c| !c.is_empty());
+            // Optional here: whoever raised the card decides when a secret is needed.
+            if q.kind == QuestionKind::Secret {
+                if !a.values.is_empty() {
+                    return Err(format!("{}: takes no choices", q.id));
+                }
+                continue;
+            }
             if let Some(c) = custom {
                 check_text("answer", c, MAX_ANSWER)?;
             }
@@ -272,7 +324,10 @@ impl QuestionCard {
             None => "Answers to your questions:".to_owned(),
         };
         for q in &self.questions {
-            let Some(a) = answers.iter().find(|a| a.question_id == q.id) else {
+            let Some(a) = answers
+                .iter()
+                .find(|a| a.question_id == q.id && q.kind != QuestionKind::Secret)
+            else {
                 continue;
             };
             let mut parts: Vec<String> = a
@@ -292,6 +347,24 @@ impl QuestionCard {
         }
         out
     }
+}
+
+/// Takes the typed secret out of `answers`, so what is stored or broadcast holds none.
+pub fn take_secret(card: &QuestionCard, answers: &mut [QuestionAnswer]) -> Option<String> {
+    let mut secret = None;
+    for a in answers {
+        let hidden = card
+            .questions
+            .iter()
+            .any(|q| q.id == a.question_id && q.kind == QuestionKind::Secret);
+        if let (true, Some(value)) = (hidden, a.custom.take()) {
+            let value = value.trim();
+            if secret.is_none() && !value.is_empty() {
+                secret = Some(value.to_owned());
+            }
+        }
+    }
+    secret
 }
 
 /// Upper bound for one free-text answer (bytes).
@@ -361,5 +434,48 @@ mod tests {
         ];
         assert!(c.check_answers(&custom).is_err());
         assert!(c.check_answers(&[ans("q1", &["Thursday"], None)]).is_err());
+    }
+
+    #[test]
+    fn secret_fields_stay_out_of_agent_cards_and_answers() {
+        let mut c = card();
+        c.questions[2].kind = QuestionKind::Secret;
+        assert!(c.normalize().unwrap_err().contains("secret"));
+
+        let event = QuestionEvent::add_connector(
+            "scout wants to add a connector".into(),
+            "Add github?".into(),
+            Approval::AddConnector {
+                name: "github".into(),
+                url: "https://api.example.com/mcp".into(),
+                auth: ConnectorAuth::Token,
+                requester: AgentId::new(),
+            },
+        );
+        let card = &event.card;
+        assert_eq!(card.questions[1].kind, QuestionKind::Secret);
+        let declined = [ans("q1", &[DECLINE], None), ans("token", &[], None)];
+        card.check_answers(&declined).unwrap();
+        let mut approved = [
+            ans("q1", &[APPROVE], None),
+            ans("token", &[], Some(" sk-1 ")),
+        ];
+        card.check_answers(&approved).unwrap();
+        assert!(!card.answer_text(&approved).contains("sk-1"));
+        assert_eq!(take_secret(card, &mut approved).as_deref(), Some("sk-1"));
+        assert_eq!(approved[1].custom, None);
+        assert_eq!(approved[0].values, [APPROVE]);
+
+        let open = QuestionEvent::add_connector(
+            "t".into(),
+            "p".into(),
+            Approval::AddConnector {
+                name: "docs".into(),
+                url: "https://docs.example.com/mcp".into(),
+                auth: ConnectorAuth::None,
+                requester: AgentId::new(),
+            },
+        );
+        assert_eq!(open.card.questions.len(), 1);
     }
 }

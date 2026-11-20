@@ -20,6 +20,20 @@ pub struct Connector {
     pub created_at: OffsetDateTime,
 }
 
+/// How a connector an agent proposes signs in (`add_connector` tool).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(utoipa::ToSchema))]
+#[cfg_attr(feature = "mcp", derive(schemars::JsonSchema))]
+#[serde(rename_all = "snake_case")]
+pub enum ConnectorAuth {
+    /// A Bearer token the operator types into the approval card.
+    Token,
+    /// An OAuth sign-in the operator does in Settings after adding it.
+    Oauth,
+    /// No sign-in.
+    None,
+}
+
 /// Longest connector name; keeps `mcp__ferrobot__<name>__<tool>` short.
 pub const MAX_CONNECTOR_NAME: usize = 16;
 

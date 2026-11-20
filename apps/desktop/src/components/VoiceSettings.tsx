@@ -6,7 +6,7 @@ import { useApp } from "../context.ts";
 import { withSaved } from "../lib/models.ts";
 import { Button, Choice, Switch } from "./ui.tsx";
 
-const LABELS: Record<VoiceProvider, string> = {
+export const VOICE_LABELS: Record<VoiceProvider, string> = {
   elevenlabs: "ElevenLabs",
   openrouter: "OpenRouter",
 };
@@ -51,8 +51,8 @@ export function languagesOf(
   return listed?.length ? listed.map((l) => [l.code, l.name || l.code]) : COMMON_LANGUAGES;
 }
 
-/** Speech provider, key, voice, models, language and speed. The key goes to the daemon’s keychain and never comes back. */
-export function VoiceSettings(): JSX.Element {
+/** Speech provider, voice, models, language and speed; the provider's key lives in Vault. */
+export function VoiceSettings(props: { onVault: () => void }): JSX.Element {
   const { client, toast, agents } = useApp();
   const [view, setView] = useState<VoiceView | null>(null);
   const [catalog, setCatalog] = useState<VoiceCatalog | null>(null);
@@ -64,7 +64,6 @@ export function VoiceSettings(): JSX.Element {
   const [sttModel, setSttModel] = useState("");
   const [language, setLanguage] = useState("");
   const [speed, setSpeed] = useState(1);
-  const [key, setKey] = useState("");
   const [busy, setBusy] = useState(false);
   const info = view?.providers.find((p) => p.kind === provider);
 
@@ -106,12 +105,12 @@ export function VoiceSettings(): JSX.Element {
     });
   }, [ready]);
 
-  const save = async (apiKey?: string | null): Promise<void> => {
+  const save = async (): Promise<void> => {
     if (!view) return;
     setBusy(true);
     try {
-      const v = await client.updateVoice({
-        ...voiceUpdate(view, {
+      const v = await client.updateVoice(
+        voiceUpdate(view, {
           enabled,
           provider,
           voice: voice.trim() || null,
@@ -123,10 +122,8 @@ export function VoiceSettings(): JSX.Element {
           language: language || null,
           speed: speed === 1 ? null : speed,
         }),
-        ...(apiKey !== undefined && { api_key: apiKey }),
-      });
+      );
       show(v, provider);
-      setKey("");
       toast("Voice saved", "info");
     } catch (err) {
       toast(err instanceof Error ? err.message : String(err));
@@ -165,35 +162,20 @@ export function VoiceSettings(): JSX.Element {
               if (view) show(view, e.currentTarget.value as VoiceProvider);
             }}
           >
-            {(Object.keys(LABELS) as VoiceProvider[]).map((k) => (
+            {(Object.keys(VOICE_LABELS) as VoiceProvider[]).map((k) => (
               <option key={k} value={k}>
-                {LABELS[k]}
+                {VOICE_LABELS[k]}
               </option>
             ))}
           </select>
         </label>
-        <label>
-          API key
-          <input
-            type="password"
-            autoComplete="off"
-            value={key}
-            placeholder={info?.has_key ? "Stored. Type to replace it" : ""}
-            onInput={(e) => {
-              setKey(e.currentTarget.value);
-            }}
-          />
-          <span class="hint">
-            Stored in the keychain of the daemon’s computer. Agents never see it.
-          </span>
-        </label>
-        {info?.has_key && (
-          <div>
-            <Button small variant="ghost" disabled={busy} onClick={() => void save(null)}>
-              Remove key
-            </Button>
-          </div>
-        )}
+        <span class="hint">
+          {info?.has_key ? "Its key is in " : "Add its key in "}
+          <button type="button" class="text-link" onClick={props.onVault}>
+            Vault
+          </button>
+          .
+        </span>
       </section>
       <section class="settings-section form">
         <label>
@@ -285,11 +267,7 @@ export function VoiceSettings(): JSX.Element {
         </section>
       )}
       <div class="settings-actions">
-        <Button
-          variant="primary"
-          disabled={busy || !view}
-          onClick={() => void save(key.trim() || undefined)}
-        >
+        <Button variant="primary" disabled={busy || !view} onClick={() => void save()}>
           Save
         </Button>
       </div>

@@ -1,5 +1,6 @@
 // A question card an agent showed with `ask_user`: one question at a time,
-// answers sent together as one message. Locked once answered.
+// answers sent together as one message. Locked once answered. A daemon card's
+// secret field sits on the last step and is never shown again.
 import type { JSX } from "preact";
 import { useState } from "preact/hooks";
 import { Check, ChevronLeft, CircleHelp } from "lucide-preact";
@@ -47,7 +48,10 @@ export function QuestionCardView(props: {
   const [step, setStep] = useState(0);
   const [draft, setDraft] = useState<Map<number, Draft>>(new Map());
   const [sending, setSending] = useState(false);
-  const total = card.questions.length;
+  const [secretValue, setSecretValue] = useState("");
+  const secret = card.questions.find((x) => x.kind === "secret");
+  const steps = card.questions.filter((x) => x.kind !== "secret");
+  const total = steps.length;
 
   const head = (
     <div class="qcard-head">
@@ -75,7 +79,7 @@ export function QuestionCardView(props: {
         <div class="qcard locked">
           {head}
           <dl class="qcard-summary">
-            {card.questions.map((q) => (
+            {steps.map((q) => (
               <div key={q.id}>
                 <dt>{q.prompt}</dt>
                 <dd>
@@ -86,13 +90,19 @@ export function QuestionCardView(props: {
                 </dd>
               </div>
             ))}
+            {secret && answered.answers[0]?.values?.includes("approve") && (
+              <div>
+                <dt>{secret.prompt}</dt>
+                <dd>Saved in Vault</dd>
+              </div>
+            )}
           </dl>
         </div>
       </div>
     );
   }
 
-  const q = card.questions[step] as Question;
+  const q = steps[step] as Question;
   const choices = q.choices ?? [];
   const cur = draft.get(step) ?? EMPTY;
   const update = (next: Draft): void => {
@@ -111,12 +121,15 @@ export function QuestionCardView(props: {
   const setCustom = (text: string): void => {
     update({ ...cur, custom: text, values: q.kind === "single" && text.trim() ? [] : cur.values });
   };
-  const ready = isAnswered(q, cur);
   const last = step === total - 1;
+  const approving = (draft.get(0) ?? EMPTY).values.includes("approve");
+  const ready = isAnswered(q, cur) && !(last && secret && approving && !secretValue.trim());
   const submit = async (): Promise<void> => {
     setSending(true);
     const answers: QuestionAnswer[] = card.questions.map((x, i) => {
-      const a = draft.get(i) ?? EMPTY;
+      if (x === secret)
+        return { question_id: x.id ?? "", values: [], custom: secretValue.trim() || null };
+      const a = draft.get(steps.indexOf(x)) ?? EMPTY;
       return {
         question_id: x.id ?? `q${String(i + 1)}`,
         values: a.values,
@@ -174,6 +187,22 @@ export function QuestionCardView(props: {
               setCustom(e.currentTarget.value);
             }}
           />
+        )}
+        {last && secret && (
+          <label class="qcard-secret">
+            {secret.prompt}
+            <input
+              class="qcard-custom"
+              type="password"
+              autoComplete="off"
+              spellcheck={false}
+              value={secretValue}
+              onInput={(e) => {
+                setSecretValue(e.currentTarget.value);
+              }}
+            />
+            <span class="hint">Goes straight to Vault. The agent never sees it.</span>
+          </label>
         )}
         <div class="qcard-foot">
           {q.kind === "multi" && <span class="muted small">Pick any</span>}

@@ -35,6 +35,16 @@ pub struct AgentRequest {
     pub character: Option<AvatarCharacter>,
 }
 
+/// An agent's request to add a connector (`add_connector` tool).
+#[derive(Debug, Clone)]
+pub struct ConnectorRequest {
+    pub name: String,
+    pub url: String,
+    pub auth: ferrobot_core::ConnectorAuth,
+    /// Why the agent wants it, shown on the card.
+    pub reason: String,
+}
+
 /// A file an agent shared with the operator (`share_file` tool).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SharedFile {
@@ -98,6 +108,16 @@ pub trait MailboxNotifier: Send + Sync + 'static {
     ) -> BoxFuture<Result<AgentRequestOutcome, String>> {
         let _ = (requester, request);
         Box::pin(async { Err("creating agents is not supported here".to_owned()) })
+    }
+    /// Shows the operator a card to add a connector, with a hidden token field when it takes
+    /// one; returns the card's event id at once. `Err` carries a message for the agent.
+    fn request_connector(
+        &self,
+        requester: AgentId,
+        request: ConnectorRequest,
+    ) -> BoxFuture<Result<i64, String>> {
+        let _ = (requester, request);
+        Box::pin(async { Err("adding connectors is not supported here".to_owned()) })
     }
     /// Brings `guest` into the operator's voice call that `host` is in
     /// and sends it `topic`. `Err` carries a message for the agent.

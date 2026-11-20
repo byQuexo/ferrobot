@@ -3,7 +3,7 @@
 use axum::Json;
 use axum::extract::{Path, Query, State};
 use axum::http::StatusCode;
-use ferrobot_core::question::{QuestionAnswer, QuestionAnswered, QuestionEvent};
+use ferrobot_core::question::{Approval, QuestionAnswer, QuestionAnswered, QuestionEvent};
 use ferrobot_core::{MailMessage, Sender};
 use ferrobot_store::StoredEvent;
 use serde::{Deserialize, Serialize};
@@ -189,6 +189,18 @@ pub(crate) async fn answer_question(
         return Err(ApiError::Conflict(format!(
             "question {qid} is already answered"
         )));
+    }
+    if let Some(approval @ Approval::AddConnector { .. }) = &question.approval {
+        let answered = crate::api::connectors::answer_card(
+            &state,
+            id,
+            qid,
+            &question.card,
+            approval,
+            req.answers,
+        )
+        .await?;
+        return Ok((StatusCode::ACCEPTED, Json(answered)));
     }
     if question.approval.is_some() {
         let answered = QuestionAnswered {

@@ -855,6 +855,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/voice/keys/{provider}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /** Stores or removes one speech provider's key without changing which provider is used. */
+        put: operations["put_voice_key"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/voice/live": {
         parameters: {
             query?: never;
@@ -1024,6 +1041,14 @@ export interface components {
             description: string;
             /** @enum {string} */
             kind: "create_agent";
+        } | {
+            name: string;
+            url: string;
+            auth: components["schemas"]["ConnectorAuth"];
+            /** @description The agent that asked: it gets the connector and a message with the outcome. */
+            requester: components["schemas"]["AgentId"];
+            /** @enum {string} */
+            kind: "add_connector";
         };
         /**
          * @description A chosen character avatar look; without one, clients derive a look from the agent id.
@@ -1081,6 +1106,11 @@ export interface components {
             /** Format: date-time */
             created_at: string;
         };
+        /**
+         * @description How a connector an agent proposes signs in (`add_connector` tool).
+         * @enum {string}
+         */
+        ConnectorAuth: "token" | "oauth" | "none";
         ConnectorView: components["schemas"]["Connector"] & {
             /** @description Whether a token is stored. The token itself is never returned. */
             has_token: boolean;
@@ -1509,7 +1539,7 @@ export interface components {
          * @description How a question is answered.
          * @enum {string}
          */
-        QuestionKind: "single" | "multi" | "text";
+        QuestionKind: "single" | "multi" | "text" | "secret";
         /** @description A prompt an agent receives on a cron schedule. */
         Routine: {
             /** Format: int64 */
@@ -1836,6 +1866,10 @@ export interface components {
             voices: components["schemas"]["VoiceOption"][];
             /** @description Text-to-speech models of the account (`ElevenLabs`); empty otherwise. */
             tts_models: components["schemas"]["ModelOption"][];
+        };
+        VoiceKey: {
+            /** @description The new key; `null` removes it. Kept in the daemon's secret store; never returned. */
+            api_key?: string | null;
         };
         /** @description An `ElevenLabs` voice the operator can pick. */
         VoiceOption: {
@@ -4986,6 +5020,58 @@ export interface operations {
             };
             /** @description The provider failed */
             502: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+        };
+    };
+    put_voice_key: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Speech provider */
+                provider: components["schemas"]["VoiceProvider"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["VoiceKey"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["VoiceView"];
+                };
+            };
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Missing or wrong API token */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Unknown provider */
+            404: {
                 headers: {
                     [name: string]: unknown;
                 };
