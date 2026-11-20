@@ -398,6 +398,48 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/call": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Who is in the operator's voice call. */
+        get: operations["get_call"];
+        /**
+         * Starts, changes or (with no agents) ends the voice call. Agents in it
+         *     can invite others with their `invite_to_call` tool.
+         */
+        put: operations["put_call"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/call/messages": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Sends the operator's message to every agent in the call. Each one also
+         *     gets what the others said since its own last turn; agents' replies never
+         *     start each other's turns.
+         */
+        post: operations["post_call_message"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/connectors": {
         parameters: {
             query?: never;
@@ -867,6 +909,17 @@ export interface components {
              * @description Color hue in degrees, 0..=359.
              */
             hue: number;
+        };
+        CallMessage: {
+            /**
+             * @description 1..20224 bytes after trimming (the rest of a message is left for
+             *     what the others said).
+             */
+            body: string;
+        };
+        CallView: {
+            /** @description Agents in the operator's voice call (at most 4); empty: no call. */
+            agents: components["schemas"]["AgentId"][];
         };
         /**
          * @description Body shape of the generated character avatar.
@@ -1350,6 +1403,7 @@ export interface components {
         SpeechRequest: {
             /** @description What to say: 1-4096 characters. */
             text: string;
+            agent_id?: components["schemas"]["AgentId"] | null;
         };
         StoredEvent: {
             /** Format: int64 */
@@ -1400,6 +1454,10 @@ export interface components {
             agent_id: components["schemas"]["AgentId"];
             /** @enum {string} */
             type: "routines_changed";
+        } | {
+            agents: components["schemas"]["AgentId"][];
+            /** @enum {string} */
+            type: "call";
         };
         /** @description Partial profile update. Omitted fields stay unchanged. */
         UpdateAgent: {
@@ -1478,6 +1536,13 @@ export interface components {
             voice?: string | null;
             /** @description Speech-to-text model; `null`: the provider's default. */
             stt_model?: string | null;
+            /**
+             * @description Voices by agent id, so agents in a call sound different; the others
+             *     speak with `voice`.
+             */
+            agent_voices?: {
+                [key: string]: string;
+            };
         };
         VoiceView: components["schemas"]["VoiceSettings"] & {
             /** @description Every provider with its defaults and whether its key is stored. */
@@ -3078,6 +3143,134 @@ export interface operations {
             };
             /** @description Sandbox backend error */
             502: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+        };
+    };
+    get_call: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CallView"];
+                };
+            };
+            /** @description Missing or wrong API token */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+        };
+    };
+    put_call: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CallView"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CallView"];
+                };
+            };
+            /** @description More than 4 agents */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Missing or wrong API token */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Unknown agent */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+        };
+    };
+    post_call_message: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CallMessage"];
+            };
+        };
+        responses: {
+            /** @description Queued, one message per agent */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MailMessage"][];
+                };
+            };
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Missing or wrong API token */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description No voice call */
+            409: {
                 headers: {
                     [name: string]: unknown;
                 };

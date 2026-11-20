@@ -2103,6 +2103,157 @@
         }
       }
     },
+    "/v1/call": {
+      "get": {
+        "tags": [
+          "voice"
+        ],
+        "summary": "Who is in the operator's voice call.",
+        "operationId": "get_call",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CallView"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or wrong API token",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        }
+      },
+      "put": {
+        "tags": [
+          "voice"
+        ],
+        "summary": "Starts, changes or (with no agents) ends the voice call. Agents in it\ncan invite others with their `invite_to_call` tool.",
+        "operationId": "put_call",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CallView"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CallView"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "More than 4 agents",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or wrong API token",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Unknown agent",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/call/messages": {
+      "post": {
+        "tags": [
+          "voice"
+        ],
+        "summary": "Sends the operator's message to every agent in the call. Each one also\ngets what the others said since its own last turn; agents' replies never\nstart each other's turns.",
+        "operationId": "post_call_message",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CallMessage"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "202": {
+            "description": "Queued, one message per agent",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/MailMessage"
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or wrong API token",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "No voice call",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/v1/connectors": {
       "get": {
         "tags": [
@@ -3852,6 +4003,33 @@
           }
         }
       },
+      "CallMessage": {
+        "type": "object",
+        "required": [
+          "body"
+        ],
+        "properties": {
+          "body": {
+            "type": "string",
+            "description": "1..20224 bytes after trimming (the rest of a message is left for\nwhat the others said)."
+          }
+        }
+      },
+      "CallView": {
+        "type": "object",
+        "required": [
+          "agents"
+        ],
+        "properties": {
+          "agents": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AgentId"
+            },
+            "description": "Agents in the operator's voice call (at most 4); empty: no call."
+          }
+        }
+      },
       "CharacterBody": {
         "type": "string",
         "description": "Body shape of the generated character avatar.",
@@ -5101,6 +5279,17 @@
           "text": {
             "type": "string",
             "description": "What to say: 1-4096 characters."
+          },
+          "agent_id": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/AgentId",
+                "description": "Speak with this agent's voice, if it has one."
+              },
+              {
+                "type": "null"
+              }
+            ]
           }
         }
       },
@@ -5306,6 +5495,28 @@
                 "type": "string",
                 "enum": [
                   "routines_changed"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "description": "Who is in the operator's voice call changed (empty: it ended).",
+            "required": [
+              "agents",
+              "type"
+            ],
+            "properties": {
+              "agents": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/components/schemas/AgentId"
+                }
+              },
+              "type": {
+                "type": "string",
+                "enum": [
+                  "call"
                 ]
               }
             }
@@ -5568,6 +5779,16 @@
               "null"
             ],
             "description": "Speech-to-text model; `null`: the provider's default."
+          },
+          "agent_voices": {
+            "type": "object",
+            "description": "Voices by agent id, so agents in a call sound different; the others\nspeak with `voice`.",
+            "additionalProperties": {
+              "type": "string"
+            },
+            "propertyNames": {
+              "type": "string"
+            }
           }
         }
       },

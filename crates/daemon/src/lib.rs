@@ -12,6 +12,7 @@
 pub mod agents;
 pub mod api;
 pub mod auth;
+pub mod call;
 pub mod codex;
 pub mod connectors;
 pub mod error;

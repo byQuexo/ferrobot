@@ -545,6 +545,28 @@
             "type"
           ],
           "type": "object"
+        },
+        {
+          "description": "Who is in the operator's voice call changed (empty: it ended).",
+          "properties": {
+            "agents": {
+              "items": {
+                "$ref": "#/$defs/AgentId"
+              },
+              "type": "array"
+            },
+            "type": {
+              "enum": [
+                "call"
+              ],
+              "type": "string"
+            }
+          },
+          "required": [
+            "agents",
+            "type"
+          ],
+          "type": "object"
         }
       ]
     }

@@ -2592,4 +2592,181 @@ async fn voice_speaks_and_listens_with_keys_kept_in_the_daemon() {
         "null removes the key"
     );
     assert_eq!(voice["providers"][0]["has_key"], true);
+
+    // Agents in a call can speak with their own voice.
+    let agent = "00000000-0000-4000-8000-000000000001";
+    let (status, _) = put_voice(
+        &d,
+        json!({"provider": "elevenlabs", "voice": "voice123", "agent_voices": {agent: "bobvoice"}}),
+    )
+    .await;
+    assert_eq!(status, 200);
+    let body = json!({ "text": "Hi", "agent_id": agent }).to_string();
+    let (status, _, _) = http_raw(
+        &d.ui,
+        "POST",
+        "/v1/voice/speech",
+        &[("content-type", "application/json")],
+        body.as_bytes(),
+    )
+    .await;
+    assert_eq!(status, 200);
+    assert_eq!(last()["path"], "/v1/text-to-speech/bobvoice/stream");
+}
+
+/// Messages queued for `agent` (not the ones it sent).
+async fn received(d: &Daemon, agent: AgentId) -> Vec<Value> {
+    let (_, msgs) = http(&d.ui, "GET", &format!("/v1/agents/{agent}/messages"), None).await;
+    msgs.as_array()
+        .unwrap()
+        .iter()
+        .filter(|m| m["recipient"] == agent.to_string())
+        .cloned()
+        .collect()
+}
+
+#[tokio::test]
+async fn voice_calls_pass_lines_on_without_agents_waking_each_other() {
+    use ferrobot_core::protocol::{TurnEvent, TurnOutcome};
+    use rmcp::model::CallToolRequestParams;
+    let backend = Arc::new(StatefulBackend::default());
+    let d = start(backend.clone(), None, "127.0.0.1:0").await;
+    let mut ids = Vec::new();
+    for name in ["ann", "bob", "cy", "dot", "eve"] {
+        let agent = create(&d, json!({ "name": name })).await;
+        ids.push(agent["id"].as_str().unwrap().parse::<AgentId>().unwrap());
+    }
+    let [ann, bob, cy, dot, eve] = ids[..] else {
+        unreachable!()
+    };
+
+    // Voice on in ann's chat, then ann brings bob in with its tool.
+    let (status, call) = http(&d.ui, "PUT", "/v1/call", Some(json!({"agents": [ann]}))).await;
+    assert_eq!(status, 200);
+    assert_eq!(call["agents"], json!([ann.to_string()]));
+    let mcp = mcp_as(&d, backend.token("ann")).await;
+    let args = json!({"agent": "@bob", "topic": "Is the deploy done?"});
+    let result = mcp
+        .call_tool(
+            CallToolRequestParams::new("invite_to_call")
+                .with_arguments(args.as_object().unwrap().clone()),
+        )
+        .await
+        .unwrap();
+    assert_ne!(result.is_error, Some(true), "{result:?}");
+    assert_eq!(d.state.call_agents(), [ann, bob]);
+    let invite = received(&d, bob).await;
+    assert_eq!(invite.len(), 1);
+    assert_eq!(invite[0]["sender"], json!({"kind": "agent", "id": ann}));
+    assert!(
+        invite[0]["body"]
+            .as_str()
+            .unwrap()
+            .starts_with("Is the deploy done?")
+    );
+    assert!(
+        d.state.invite_to_call(cy, dot, "x").await.is_err(),
+        "cy is not in the call"
+    );
+
+    // bob answers in its turn: spoken, and kept for ann without mail or a turn.
+    let mut ws = connect_runner(&d.agents, &backend.token("bob")).await;
+    let DaemonFrame::Turn { turn_id, .. } = next_frame(&mut ws).await else {
+        panic!("expected the invite as a turn");
+    };
+    for frame in [
+        RunnerFrame::Event {
+            turn_id: turn_id.clone(),
+            event: TurnEvent::AssistantText {
+                text: "Deploy is green.".into(),
+            },
+        },
+        RunnerFrame::TurnDone {
+            turn_id,
+            outcome: TurnOutcome::Completed,
+            session_id: None,
+            result: None,
+            error: None,
+            steered: vec![],
+        },
+    ] {
+        ws.send(Message::text(serde_json::to_string(&frame).unwrap()))
+            .await
+            .unwrap();
+    }
+    let bob_id = bob.to_string();
+    eventually(
+        "bob's reply is recorded",
+        Duration::from_secs(5),
+        || async {
+            events(&d, &bob_id)
+                .await
+                .iter()
+                .any(|e| e["kind"] == "turn_done")
+                .then_some(())
+        },
+    )
+    .await;
+    assert!(received(&d, ann).await.is_empty(), "no mail to ann");
+    assert!(!d.state.store.has_queued_messages(ann).await.unwrap());
+
+    // The operator speaks: everyone hears it, ann also hears bob, once.
+    let say = |body: &'static str| {
+        let ui = d.ui.clone();
+        async move {
+            let (status, sent) = http(
+                &ui,
+                "POST",
+                "/v1/call/messages",
+                Some(json!({ "body": body })),
+            )
+            .await;
+            assert_eq!(status, 202, "{sent}");
+            sent.as_array()
+                .unwrap()
+                .iter()
+                .map(|m| {
+                    (
+                        m["recipient"].as_str().unwrap().to_owned(),
+                        m["body"].clone(),
+                    )
+                })
+                .collect::<BTreeMap<_, _>>()
+        }
+    };
+    let sent = say("Thanks. What's next?").await;
+    assert_eq!(
+        sent[&ann.to_string()],
+        format!(
+            "In the call since your last turn:\n<@{bob}>: Deploy is green.\n\nThe operator: Thanks. What's next?"
+        )
+    );
+    assert_eq!(sent[&bob.to_string()], "Thanks. What's next?");
+    let sent = say("Bye").await;
+    assert_eq!(sent[&ann.to_string()], "Bye", "passed on once");
+
+    // At most four agents; an empty call ends it.
+    let put = |agents: Vec<AgentId>| {
+        let ui = d.ui.clone();
+        async move {
+            http(&ui, "PUT", "/v1/call", Some(json!({ "agents": agents })))
+                .await
+                .0
+        }
+    };
+    assert_eq!(put(vec![ann, bob, cy, dot, eve]).await, 400);
+    assert_eq!(put(vec![ann, bob, cy, dot]).await, 200);
+    assert!(
+        d.state.invite_to_call(ann, eve, "x").await.is_err(),
+        "call is full"
+    );
+    assert_eq!(put(vec![]).await, 200);
+    let (status, _) = http(
+        &d.ui,
+        "POST",
+        "/v1/call/messages",
+        Some(json!({"body": "hi"})),
+    )
+    .await;
+    assert_eq!(status, 409);
 }

@@ -124,6 +124,8 @@ pub enum UiEvent {
     GlobalMemoryChanged,
     /// The agent's routines or their runs changed; refetch them.
     RoutinesChanged { agent_id: AgentId },
+    /// Who is in the operator's voice call changed (empty: it ended).
+    Call { agents: Vec<AgentId> },
 }
 
 /// Shared daemon state. Cheap to clone.
@@ -154,6 +156,8 @@ pub struct AppState {
     pub oauth: Arc<crate::oauth::OAuth>,
     /// What speech and transcription may still spend this minute.
     pub voice: Arc<Mutex<crate::voice::Budget>>,
+    /// The operator's voice call (in memory: a restart ends it).
+    pub call: Arc<Mutex<crate::call::Call>>,
 }
 
 impl AppState {
@@ -182,6 +186,7 @@ impl AppState {
             connectors: Arc::default(),
             oauth: Arc::default(),
             voice: Arc::default(),
+            call: Arc::default(),
         }
     }
 
@@ -310,6 +315,16 @@ impl ferrobot_mcp::MailboxNotifier for AppState {
                 .await
                 .map_err(|e| e.to_string())
         })
+    }
+
+    fn invite_to_call(
+        &self,
+        host: AgentId,
+        guest: AgentId,
+        topic: String,
+    ) -> ferrobot_mcp::BoxFuture<Result<(), String>> {
+        let state = self.clone();
+        Box::pin(async move { state.invite_to_call(host, guest, &topic).await })
     }
 
     fn share_file(

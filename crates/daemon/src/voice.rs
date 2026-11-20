@@ -2,8 +2,10 @@
 //! `ElevenLabs` or `OpenRouter`. The daemon holds the key (secret store,
 //! `voice:<provider>`); neither the key, the text nor the audio is logged.
 
+use std::collections::BTreeMap;
 use std::time::{Duration, Instant};
 
+use ferrobot_core::AgentId;
 use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;
 
@@ -81,6 +83,11 @@ pub struct VoiceSettings {
     /// Speech-to-text model; `null`: the provider's default.
     #[serde(default)]
     pub stt_model: Option<String>,
+    /// Voices by agent id, so agents in a call sound different; the others
+    /// speak with `voice`.
+    #[serde(default)]
+    #[schema(value_type = BTreeMap<String, String>)]
+    pub agent_voices: BTreeMap<AgentId, String>,
 }
 
 impl VoiceSettings {
@@ -90,10 +97,19 @@ impl VoiceSettings {
                 return Err("models must be at most 200 printable characters".into());
             }
         }
-        if let Some(voice) = &self.voice {
+        for voice in self.voice.iter().chain(self.agent_voices.values()) {
             check_voice(voice)?;
         }
         Ok(())
+    }
+
+    /// The voice `agent` speaks with, if any is set or the provider has one.
+    pub fn voice_of(&self, provider: VoiceProvider, agent: Option<AgentId>) -> Option<&str> {
+        agent
+            .and_then(|a| self.agent_voices.get(&a))
+            .or(self.voice.as_ref())
+            .map(String::as_str)
+            .or(provider.default_voice())
     }
 }
 

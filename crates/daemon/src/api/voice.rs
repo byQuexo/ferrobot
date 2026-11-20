@@ -1,21 +1,23 @@
-//! Voice for the operator's chat: settings, speech and transcription. Keys
-//! stay in the daemon's secret store and are never returned; neither text
-//! nor audio is logged.
+//! Voice for the operator's chat: settings, speech, transcription and the
+//! voice call. Keys stay in the daemon's secret store and are never
+//! returned; neither text nor audio is logged.
 
 use axum::Json;
 use axum::body::{Body, Bytes};
 use axum::extract::State;
-use axum::http::{HeaderMap, HeaderValue, header};
+use axum::http::{HeaderMap, HeaderValue, StatusCode, header};
 use axum::response::Response;
+use ferrobot_core::{AgentId, MailMessage, Sender};
 use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;
 
 use super::ApiResult;
 use super::agents::explicit;
 use super::providers::{check_key, clean};
-use crate::AppState;
+use crate::call::MAX_CALL_TEXT_BYTES;
 use crate::error::{ApiError, ErrorBody};
 use crate::voice::{self, MAX_SPEECH_CHARS, Transcript, VoiceProvider, VoiceSettings};
+use crate::{AppState, UiEvent};
 
 const SETTING: &str = "voice";
 
@@ -106,6 +108,12 @@ pub(crate) async fn put_voice(
         tts_model: clean(req.settings.tts_model),
         voice: clean(req.settings.voice),
         stt_model: clean(req.settings.stt_model),
+        agent_voices: req
+            .settings
+            .agent_voices
+            .into_iter()
+            .filter_map(|(agent, voice)| Some((agent, clean(Some(voice))?)))
+            .collect(),
     };
     settings.validate().map_err(ApiError::BadRequest)?;
     let key = req.api_key.map(clean);
@@ -201,6 +209,9 @@ async fn send(request: reqwest::RequestBuilder) -> Result<reqwest::Response, Api
 pub(crate) struct SpeechRequest {
     /// What to say: 1-4096 characters.
     text: String,
+    /// Speak with this agent's voice, if it has one.
+    #[serde(default)]
+    agent_id: Option<AgentId>,
 }
 
 /// Speaks `text` with the configured provider and voice. The audio
@@ -227,9 +238,7 @@ pub(crate) async fn speech(
     let r = ready(&state).await?;
     let voice = r
         .settings
-        .voice
-        .as_deref()
-        .or(r.provider.default_voice())
+        .voice_of(r.provider, req.agent_id)
         .ok_or_else(|| ApiError::Conflict("pick a voice in the voice settings".into()))?;
     let model = r
         .settings
@@ -292,4 +301,91 @@ pub(crate) async fn transcription(
     Ok(Json(Transcript {
         text: transcript.text.trim().to_owned(),
     }))
+}
+
+#[derive(Debug, Serialize, Deserialize, ToSchema)]
+pub(crate) struct CallView {
+    /// Agents in the operator's voice call (at most 4); empty: no call.
+    agents: Vec<AgentId>,
+}
+
+/// Who is in the operator's voice call.
+#[utoipa::path(get, path = "/v1/call", tag = "voice",
+    responses((status = 200, body = CallView)))]
+pub(crate) async fn get_call(State(state): State<AppState>) -> Json<CallView> {
+    Json(CallView {
+        agents: state.call_agents(),
+    })
+}
+
+/// Starts, changes or (with no agents) ends the voice call. Agents in it
+/// can invite others with their `invite_to_call` tool.
+#[utoipa::path(put, path = "/v1/call", tag = "voice",
+    request_body = CallView,
+    responses((status = 200, body = CallView),
+        (status = 400, description = "More than 4 agents", body = ErrorBody),
+        (status = 404, description = "Unknown agent", body = ErrorBody)))]
+pub(crate) async fn put_call(
+    State(state): State<AppState>,
+    Json(req): Json<CallView>,
+) -> ApiResult<CallView> {
+    for agent in &req.agents {
+        state.store.get_agent(*agent).await?;
+    }
+    state.set_call(req.agents).map_err(ApiError::BadRequest)?;
+    Ok(Json(CallView {
+        agents: state.call_agents(),
+    }))
+}
+
+#[derive(Debug, Deserialize, ToSchema)]
+pub(crate) struct CallMessage {
+    /// 1..20224 bytes after trimming (the rest of a message is left for
+    /// what the others said).
+    body: String,
+}
+
+/// Sends the operator's message to every agent in the call. Each one also
+/// gets what the others said since its own last turn; agents' replies never
+/// start each other's turns.
+#[utoipa::path(post, path = "/v1/call/messages", tag = "voice",
+    request_body = CallMessage,
+    responses(
+        (status = 202, description = "Queued, one message per agent", body = Vec<MailMessage>),
+        (status = 400, body = ErrorBody),
+        (status = 409, description = "No voice call", body = ErrorBody)))]
+pub(crate) async fn post_call_message(
+    State(state): State<AppState>,
+    Json(req): Json<CallMessage>,
+) -> Result<(StatusCode, Json<Vec<MailMessage>>), ApiError> {
+    let body = req.body.trim();
+    if body.is_empty() || body.len() > MAX_CALL_TEXT_BYTES {
+        return Err(ApiError::BadRequest(format!(
+            "body must be 1..{MAX_CALL_TEXT_BYTES} bytes"
+        )));
+    }
+    let body = state.normalize_mentions(body).await;
+    let parts = state.call_messages(&body);
+    if parts.is_empty() {
+        return Err(ApiError::Conflict("there is no voice call".into()));
+    }
+    let mut sent = Vec::new();
+    for (agent, text) in parts {
+        match state
+            .store
+            .enqueue_message(Sender::User, agent, text, None)
+            .await
+        {
+            Ok(message) => {
+                state.message_arrived(agent);
+                state.publish(UiEvent::Message {
+                    message: message.clone(),
+                });
+                sent.push(message);
+            }
+            // E.g. deleted mid-call; the others still get it.
+            Err(e) => tracing::warn!(%agent, error = %e, "call message not queued"),
+        }
+    }
+    Ok((StatusCode::ACCEPTED, Json(sent)))
 }

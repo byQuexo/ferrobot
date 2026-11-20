@@ -105,6 +105,7 @@ async fn tools_act_as_the_authenticated_agent() {
             "ask_user",
             "create_agent",
             "forget",
+            "invite_to_call",
             "list_agents",
             "read_mailbox",
             "recall",

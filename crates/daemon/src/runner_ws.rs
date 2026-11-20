@@ -171,9 +171,11 @@ async fn handle_frame(state: &AppState, agent: &Agent, done_tx: &mpsc::Sender<Do
         Ok(RunnerFrame::Event { turn_id, event }) => {
             state.hub.touch(agent.id);
             let event = match event {
-                TurnEvent::AssistantText { text } => TurnEvent::AssistantText {
-                    text: state.normalize_mentions(&text).await,
-                },
+                TurnEvent::AssistantText { text } => {
+                    let text = state.normalize_mentions(&text).await;
+                    state.heard_in_call(agent.id, &text);
+                    TurnEvent::AssistantText { text }
+                }
                 other => other,
             };
             let payload = serde_json::to_value(&event).unwrap_or_default();

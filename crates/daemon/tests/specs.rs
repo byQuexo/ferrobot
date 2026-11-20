@@ -85,12 +85,14 @@ fn every_routed_path_is_documented() {
         "/v1/voice",
         "/v1/voice/speech",
         "/v1/voice/transcription",
+        "/v1/call",
+        "/v1/call/messages",
     ] {
         assert!(documented.contains(&path), "{path} missing from OpenAPI");
     }
     assert_eq!(
         documented.len(),
-        40,
+        42,
         "undocumented extra paths: {documented:?}"
     );
 }

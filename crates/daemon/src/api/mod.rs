@@ -145,6 +145,8 @@ fn integrations() -> Router<AppState> {
         .route("/v1/oauth/callback", get(connectors::oauth_callback))
         .route("/v1/voice", get(voice::get_voice).put(voice::put_voice))
         .route("/v1/voice/speech", post(voice::speech))
+        .route("/v1/call", get(voice::get_call).put(voice::put_call))
+        .route("/v1/call/messages", post(voice::post_call_message))
         .route(
             "/v1/voice/transcription",
             post(voice::transcription).layer(axum::extract::DefaultBodyLimit::max(
