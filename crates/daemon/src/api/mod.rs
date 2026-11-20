@@ -172,6 +172,10 @@ pub(crate) struct Health {
     idle_timeout_s: Option<u64>,
     /// Default time zone for new routines.
     timezone: String,
+    /// Whether the sandbox backend can start agents now (Docker: the engine answers).
+    sandbox_ready: bool,
+    /// Why the backend is not ready, for the operator; null when ready.
+    sandbox_error: Option<String>,
 }
 
 /// Daemon identity and configuration summary.
@@ -179,6 +183,16 @@ pub(crate) struct Health {
     responses((status = 200, body = Health)))]
 pub(crate) async fn health(State(state): State<AppState>) -> Json<Health> {
     let s = &state.settings;
+    let sandbox_error = match tokio::time::timeout(
+        std::time::Duration::from_secs(2),
+        state.backend.ready(),
+    )
+    .await
+    {
+        Ok(Ok(())) => None,
+        Ok(Err(e)) => Some(e.to_string()),
+        Err(_) => Some("the sandbox backend did not answer within 2 s".to_owned()),
+    };
     Json(Health {
         name: ferrobot_core::PROJECT_NAME,
         version: env!("CARGO_PKG_VERSION"),
@@ -187,5 +201,7 @@ pub(crate) async fn health(State(state): State<AppState>) -> Json<Health> {
         model_proxy: s.driver != "mock",
         idle_timeout_s: s.idle_timeout.map(|d| d.as_secs()),
         timezone: s.default_timezone.clone(),
+        sandbox_ready: sandbox_error.is_none(),
+        sandbox_error,
     })
 }

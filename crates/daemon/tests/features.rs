@@ -733,8 +733,12 @@ async fn operator_api_requires_the_token() {
             (status, headers)
         }
     };
-    // Health stays open.
+    // Health stays open and says whether agents can start (the desktop app checks it for Docker).
     assert_eq!(get("/v1/health", "").await.0, 200);
+    let (status, health) = http(&d.ui, "GET", "/v1/health", None).await;
+    assert_eq!(status, 200);
+    assert_eq!(health["sandbox_ready"], true);
+    assert_eq!(health["sandbox_error"], Value::Null);
     let (status, headers) = get("/v1/agents", "").await;
     assert_eq!(status, 401);
     assert!(headers.contains(&("www-authenticate".into(), "Bearer".into())));
