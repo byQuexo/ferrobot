@@ -133,7 +133,7 @@ docker build -f runner/Dockerfile -t ferrobot-runner:dev .           # runner im
 cargo test -p ferrobot-sandbox --features docker-tests --test docker
 cargo test -p ferrobot-daemon --features docker-tests --test e2e -- --ignored
 ./scripts/smoke-docker.sh            # real ferrobotd + Docker + mock driver
-ANTHROPIC_API_KEY=... ./scripts/smoke-live.sh   # real Claude + Ollama turns, key-leak check
+./scripts/smoke-live.sh              # real Claude + Ollama turns, key-leak check (asks for the key, hidden)
 sudo scripts/firecracker/build-rootfs.sh   # Linux only; see scripts/firecracker/README.md
 ```
 

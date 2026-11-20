@@ -1,9 +1,17 @@
 #!/usr/bin/env bash
 # Live smoke test: real models, real Docker sandboxes, a throwaway daemon.
 #
-#   ANTHROPIC_API_KEY=... scripts/smoke-live.sh      # in your own terminal
+#   scripts/smoke-live.sh      # in your own terminal
 #
-# 1. A Claude agent (driver claude, key from ANTHROPIC_API_KEY) runs one
+# It asks for the Anthropic API key without echoing it, so the key stays out
+# of the terminal and the shell history (Enter skips the Claude part); an
+# ANTHROPIC_API_KEY already in the environment is used as is. The key goes the
+# way a key from Settings goes: into an Anthropic provider, stored by the
+# daemon in the OS keychain (macOS Keychain, Windows Credential Manager,
+# Secret Service). The daemon itself gets no ANTHROPIC_API_KEY. The provider
+# and its keychain entry are deleted at the end.
+#
+# 1. A Claude agent (on that provider) runs one
 #    tool-using turn: it writes a file with its shell tool and reports it.
 # 2. An agent on local Ollama (OpenAI-compatible driver) does the same, if
 #    Ollama runs and has OLLAMA_MODEL (default qwen2.5:3b; `ollama pull` it).
@@ -23,17 +31,30 @@ BIN=target/debug/ferrobotd
 OLLAMA_MODEL=${OLLAMA_MODEL:-qwen2.5:3b}
 TOKEN=smoke-live-operator-token-0123456789
 FAILED=0
+KEY=${ANTHROPIC_API_KEY:-}
+if [ -z "$KEY" ] && [ -t 0 ]; then
+  read -rsp "Anthropic API key (hidden; Enter skips Claude): " KEY
+  echo
+fi
 cargo build -q -p ferrobot-daemon
 [ -n "${SKIP_BUILD:-}" ] || docker build -q -f runner/Dockerfile -t ferrobot-runner:dev . >/dev/null
 
-"$BIN" --data-dir "$DATA" --backend docker --driver claude --idle-timeout 0 \
-  --secret-store file --listen 127.0.0.1:17878 --agent-listen 0.0.0.0:17879 \
+# No key in the daemon's environment: Claude works only through the keychain.
+env -u ANTHROPIC_API_KEY "$BIN" --data-dir "$DATA" --backend docker --driver claude --idle-timeout 0 \
+  --secret-store keyring --listen 127.0.0.1:17878 --agent-listen 0.0.0.0:17879 \
   --api-token "$TOKEN" >>"$DATA/daemon.log" 2>&1 &
 PID=$!
 stop_daemon() {
   for id in ${CLAUDE:-} ${OLLAMA:-}; do acurl -s -o /dev/null -X DELETE "$API/v1/agents/$id" || true; done
-  CLAUDE= OLLAMA=
+  # Deleting the provider deletes its keychain entry.
+  [ -z "${ANTHROPIC:-}" ] || acurl -s -o /dev/null -X DELETE "$API/v1/providers/$ANTHROPIC" || true
+  CLAUDE= OLLAMA= ANTHROPIC=
   kill -TERM "$PID" 2>/dev/null || true; wait "$PID" 2>/dev/null || true
+}
+# Whether the keychain holds a provider's key (macOS; elsewhere unknown).
+in_keychain() {
+  command -v security >/dev/null || return 2
+  security find-generic-password -s ferrobot -a "provider:$1" >/dev/null 2>&1
 }
 cleanup() {
   stop_daemon
@@ -72,10 +93,11 @@ turn() { # turn <agent-id> <label>
 
 # The real key must be nowhere the agent or a log could see it. grep -c reads
 # the whole stream (no early exit, no SIGPIPE under pipefail); a source that
-# cannot be read counts as a failure, not as clean.
+# cannot be read counts as a failure, not as clean. The pattern comes from a
+# pipe, not argv, so the key never shows up in `ps`.
 leak_check() { # leak_check <what> <command...>
   local what=$1 count; shift
-  if ! count=$("$@" 2>/dev/null | grep -acF -- "$KEY"; exit "${PIPESTATUS[0]}"); then
+  if ! count=$("$@" 2>/dev/null | grep -acFf <(printf '%s\n' "$KEY"); exit "${PIPESTATUS[0]}"); then
     fail "could not read $what"
   elif [ "$count" = 0 ]; then ok "key not in $what"
   else fail "key in $what"
@@ -90,13 +112,22 @@ no_key() { # no_key <container> <label>
   leak_check "$2: container logs" docker logs "$1"
 }
 
-KEY=${ANTHROPIC_API_KEY:-}
 if [ -n "$KEY" ]; then
-  CLAUDE=$(post /v1/agents '{"name":"live-claude"}' | json "d['id']")
+  # The key reaches the daemon on stdin, never in an argument list (`ps`).
+  ANTHROPIC=$(printf '%s' "$KEY" \
+    | python3 -c 'import json,sys; print(json.dumps({"name": "live-anthropic", "kind": "anthropic", "api_key": sys.stdin.read()}))' \
+    | acurl -sf -X POST "$API/v1/providers" -H 'content-type: application/json' --data-binary @- | json "d['id']")
+  get "/v1/providers" | json "[p for p in d if p['id']=='$ANTHROPIC'][0]['has_key']" | grep -qx True \
+    && ok "provider reports a stored key" || fail "provider has no key"
+  if in_keychain "$ANTHROPIC"; then ok "key is in the OS keychain"
+  elif [ $? = 2 ]; then echo "  (keychain entry not checked on this OS)"
+  else fail "key not found in the OS keychain"
+  fi
+  CLAUDE=$(post /v1/agents "{\"name\":\"live-claude\",\"provider_id\":\"$ANTHROPIC\"}" | json "d['id']")
   turn "$CLAUDE" claude
   no_key ferrobot-live-claude claude
 else
-  echo "skipped: Claude (no ANTHROPIC_API_KEY in this shell)"
+  echo "skipped: Claude (no Anthropic API key given)"
 fi
 
 if curl -sf -m 3 http://127.0.0.1:11434/api/tags | json "any(m['name']=='$OLLAMA_MODEL' for m in d['models'])" | grep -q True; then
@@ -109,7 +140,13 @@ else
 fi
 
 # The daemon stops first, so nothing writes to the data dir while it is read.
+GONE=${ANTHROPIC:-}
 stop_daemon
+if [ -n "$GONE" ]; then
+  if in_keychain "$GONE"; then fail "keychain entry left after deleting the provider"
+  elif [ $? = 1 ]; then ok "deleting the provider removed its keychain entry"
+  fi
+fi
 if [ -n "$KEY" ]; then
   leak_check "the daemon log" cat "$DATA/daemon.log"
   leak_check "the data dir (database, secrets, logs)" tar -C "$DATA" -cf - .
