@@ -758,3 +758,29 @@ store used for the run) or the daemon's own env.
   whether the runner's Codex and Gemini CLI accept the suggested GPT-6 and
   Gemini 4 ids.
 - The Tauri window (browser only); the Tauri shell gate (no change there).
+
+## UI polish (`feat/ui-polish`)
+
+- An unslop polish pass over the desktop UI (direction and tokens in
+  `decisions.md`): 4 px grid, type 12/13/14/16/20 at 400/500, lucide at
+  16/18 with a 1.5 stroke, sentence-case labels. Settings: a 640 px column,
+  status-dot rows, add forms behind a button, hairline sections, 36 px nav
+  rows, the switch in the accent. Voice copy names the phone button. The
+  five info tabs fit on one row, and the theme control no longer overlaps.
+
+**Checked visually**
+
+- Chat, agent list and Settings (providers, connectors, voice, appearance)
+  in light and dark, in Chrome against a throwaway `ferrobotd` (local
+  backend, mock driver, file secret store); before and after shots in
+  `docs/assets/ui-polish/`.
+- Gates: desktop `check:api`, typecheck, test, build.
+
+**Not checked**
+
+- The Tauri window (browser only).
+- Tool cards, question cards, agent-to-agent mail and the dialogs (agent,
+  file viewer): the mock driver produces none, so they were not rendered.
+- The model list in the add-provider form: the daemon binary was built from
+  `feature/voice`, before the model routes, so the field fell back to text.
+- A stored voice key with a real catalog.
