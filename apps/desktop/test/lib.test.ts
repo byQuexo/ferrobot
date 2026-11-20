@@ -4,7 +4,7 @@ import { describe, it } from "node:test";
 import { DaemonClient, type MailMessage, type StoredEvent } from "../src/api.ts";
 import { hash } from "../src/lib/avatar.ts";
 import { characterOf, deriveCharacter, moodOf, rerollCharacter } from "../src/lib/character.ts";
-import { relativeTime, stepLabel, toolLabel } from "../src/lib/format.ts";
+import { linkLabel, relativeTime, stepLabel, toolLabel } from "../src/lib/format.ts";
 import { buildTimeline, sharedFiles } from "../src/lib/timeline.ts";
 import { parseBlocks, parseInline } from "../src/lib/markdown.ts";
 import { modelOptions, withSaved } from "../src/lib/models.ts";
@@ -106,6 +106,32 @@ describe("format", () => {
       tool: "send_message",
     });
     assert.deepEqual(toolLabel("Bash"), { server: null, tool: "Bash" });
+  });
+
+  it("shortens links for chips", () => {
+    const cases: [string, string][] = [
+      [
+        "https://www.amazon.de/dp/B0XXXX/ref=...?ref_=abc&social_share=xyz&foo=1&bar=2",
+        "amazon.de/dp/…?ref_=…&social_share=…&…",
+      ],
+      ["https://github.com/byQuexo", "github.com/byQuexo"],
+      ["https://www.example.com/", "example.com"],
+      ["https://github.com/byQuexo/ferrobot/pull/38", "github.com/byQuexo/ferrobot/pull/38"],
+      ["https://de.wikipedia.org/wiki/Straße", "de.wikipedia.org/wiki/Straße"],
+      [
+        "http://127.0.0.1:7878/artifacts/abc/report.html?sig=abcdef&exp=1",
+        "127.0.0.1:7878/artifacts/…?sig=…&exp=…",
+      ],
+      [
+        "https://docs.example.com/guide/install/linux#before-you-start",
+        "docs.example.com/guide/…#…",
+      ],
+      [
+        "https://example.com/a-very-long-single-path-segment?flag",
+        "example.com/a-very-long-single-path-segment?flag",
+      ],
+    ];
+    for (const [url, label] of cases) assert.equal(linkLabel(url), label, url);
   });
 });
 

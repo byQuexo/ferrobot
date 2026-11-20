@@ -113,3 +113,18 @@ export function stepLabel(
       return `Using ${tool}`;
   }
 }
+
+/** A URL without scheme or `www.`; a long one keeps host, first path segment and two query keys. */
+export function linkLabel(url: string): string {
+  // Split by hand: `URL` would show punycode hosts and percent-encoded paths.
+  const full = url.replace(/^https?:\/\/(www\.)?/i, "").replace(/\/$/, "");
+  if (full.length <= 40) return full;
+  const [rest = "", hash] = full.split(/#(.*)/s);
+  const [address = "", search = ""] = rest.split(/\?(.*)/s);
+  const [host = "", first, ...more] = address.split("/").filter(Boolean);
+  const params = search.split("&").filter(Boolean);
+  const path = first === undefined ? "" : `/${first}${more.length ? "/…" : ""}`;
+  const keys = params.slice(0, 2).map((p) => p.replace(/=.*/s, "=…"));
+  const query = keys.length ? `?${keys.join("&")}${params.length > 2 ? "&…" : ""}` : "";
+  return `${host}${path}${query}${hash === undefined ? "" : "#…"}`;
+}

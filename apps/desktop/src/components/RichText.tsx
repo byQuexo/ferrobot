@@ -1,9 +1,10 @@
 // Markdown for chat messages, rendered as elements: no HTML is ever
 // interpreted, and links are http(s) only.
 import type { JSX } from "preact";
-import { FileText } from "lucide-preact";
+import { FileText, Link } from "lucide-preact";
 
 import { useApp } from "../context.ts";
+import { linkLabel } from "../lib/format.ts";
 import { parseBlocks, parseInline, type Block, type Inline } from "../lib/markdown.ts";
 import { mentionsAsText, splitMentions } from "../lib/mentions.ts";
 import { Avatar } from "./Avatar.tsx";
@@ -118,6 +119,23 @@ function Inlines(props: {
             </em>
           );
         if ("link" in n) {
+          const [only, ...others] = n.children;
+          if (only && !others.length && "text" in only && only.text === n.link) {
+            return (
+              <a
+                key={i}
+                class="link-chip"
+                href={n.link}
+                target="_blank"
+                rel="noreferrer noopener"
+                title={n.link}
+                aria-label={n.link}
+              >
+                <Link size={12} />
+                <span>{linkLabel(n.link)}</span>
+              </a>
+            );
+          }
           return (
             <a key={i} href={n.link} target="_blank" rel="noreferrer noopener">
               <Inlines nodes={n.children} plain={plain} />
