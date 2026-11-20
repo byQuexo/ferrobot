@@ -63,6 +63,8 @@ pub struct Settings {
     pub ui_url: String,
     /// Object storage for files agents share (`--storage-url`).
     pub storage: Arc<dyn object_store::ObjectStore>,
+    /// Base URL for every voice provider instead of its public API (tests).
+    pub voice_upstream: Option<String>,
 }
 
 impl Settings {
@@ -92,6 +94,7 @@ impl Settings {
             chatgpt_upstream: crate::codex::CHATGPT_CODEX_UPSTREAM.into(),
             ui_url: "http://127.0.0.1:7878".into(),
             storage: Arc::new(object_store::memory::InMemory::new()),
+            voice_upstream: None,
         }
     }
 }
@@ -149,6 +152,8 @@ pub struct AppState {
     pub connectors: Arc<crate::connectors::Sessions>,
     /// Connector OAuth sign-ins waiting for the browser, refresh locks.
     pub oauth: Arc<crate::oauth::OAuth>,
+    /// What speech and transcription may still spend this minute.
+    pub voice: Arc<Mutex<crate::voice::Budget>>,
 }
 
 impl AppState {
@@ -176,6 +181,7 @@ impl AppState {
             codex: Arc::default(),
             connectors: Arc::default(),
             oauth: Arc::default(),
+            voice: Arc::default(),
         }
     }
 

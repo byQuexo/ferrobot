@@ -28,6 +28,7 @@ pub mod state;
 pub mod storage;
 pub mod supervisor;
 pub mod views;
+pub mod voice;
 
 use axum::Router;
 use axum::http::{HeaderValue, Method, header};

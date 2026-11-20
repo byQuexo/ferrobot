@@ -2398,3 +2398,198 @@ async fn agents_share_files_that_open_from_storage() {
     let left = d.state.settings.storage.list(None).count().await;
     assert_eq!(left, 0);
 }
+
+/// A fake `ElevenLabs` + `OpenRouter` that records what reached it.
+async fn voice_upstream() -> (String, Arc<Mutex<Vec<Value>>>) {
+    let seen: Arc<Mutex<Vec<Value>>> = Arc::default();
+    let log = seen.clone();
+    let handler = move |request: axum::extract::Request| {
+        let log = log.clone();
+        async move {
+            let (parts, body) = request.into_parts();
+            let body = axum::body::to_bytes(body, usize::MAX).await.unwrap();
+            let body = String::from_utf8_lossy(&body).into_owned();
+            let header = |name: &str| parts.headers.get(name).and_then(|v| v.to_str().ok());
+            let path = parts.uri.path().to_owned();
+            log.lock().unwrap().push(json!({
+                "path": path,
+                "query": parts.uri.query(),
+                "xi_api_key": header("xi-api-key"),
+                "authorization": header("authorization"),
+                "content_type": header("content-type"),
+                "body": body,
+            }));
+            if body.contains("fail") {
+                (
+                    axum::http::StatusCode::UNPROCESSABLE_ENTITY,
+                    "voice_not_found",
+                )
+                    .into_response()
+            } else if path.ends_with("speech-to-text") || path.ends_with("transcriptions") {
+                axum::Json(json!({"text": " hello there ", "language_code": "en"})).into_response()
+            } else {
+                ([("content-type", "audio/mpeg")], &b"ID3-fake-mp3"[..]).into_response()
+            }
+        }
+    };
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let addr = listener.local_addr().unwrap();
+    let app = axum::Router::new().fallback(handler);
+    tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });
+    (format!("http://{addr}"), seen)
+}
+
+async fn speak(d: &Daemon, text: &str) -> (u16, Vec<(String, String)>, Vec<u8>) {
+    let body = json!({ "text": text }).to_string();
+    http_raw(
+        &d.ui,
+        "POST",
+        "/v1/voice/speech",
+        &[("content-type", "application/json")],
+        body.as_bytes(),
+    )
+    .await
+}
+
+async fn put_voice(d: &Daemon, body: Value) -> (u16, Value) {
+    http(&d.ui, "PUT", "/v1/voice", Some(body)).await
+}
+
+#[tokio::test]
+async fn voice_speaks_and_listens_with_keys_kept_in_the_daemon() {
+    let (upstream, seen) = voice_upstream().await;
+    let d = start_with(
+        Arc::new(StatefulBackend::default()),
+        None,
+        "127.0.0.1:0",
+        |s| s.voice_upstream = Some(upstream),
+    )
+    .await;
+    let last = || seen.lock().unwrap().last().cloned().unwrap();
+
+    let (status, voice) = http(&d.ui, "GET", "/v1/voice", None).await;
+    assert_eq!(status, 200);
+    assert_eq!(voice["provider"], Value::Null);
+    assert_eq!(voice["providers"][0]["has_key"], false);
+    assert_eq!(speak(&d, "Hallo").await.0, 409, "not set up yet");
+
+    let (status, voice) = put_voice(
+        &d,
+        json!({"provider": "elevenlabs", "api_key": "xi-secret"}),
+    )
+    .await;
+    assert_eq!(status, 200, "{voice}");
+    assert_eq!(voice["providers"][0]["kind"], "elevenlabs");
+    assert_eq!(voice["providers"][0]["has_key"], true);
+    assert!(!voice.to_string().contains("xi-secret"));
+    assert_eq!(speak(&d, "Hallo").await.0, 409, "ElevenLabs needs a voice");
+    let (status, _) = put_voice(
+        &d,
+        json!({"provider": "elevenlabs", "voice": "../v1/history"}),
+    )
+    .await;
+    assert_eq!(status, 400, "voices stay out of other paths");
+    let (status, voice) =
+        put_voice(&d, json!({"provider": "elevenlabs", "voice": "voice123"})).await;
+    assert_eq!(status, 200);
+    assert_eq!(
+        voice["providers"][0]["has_key"], true,
+        "omitted key is kept"
+    );
+
+    let (status, headers, audio) = speak(&d, "Hallo").await;
+    assert_eq!(status, 200);
+    assert!(headers.contains(&("content-type".into(), "audio/mpeg".into())));
+    assert_eq!(audio, b"ID3-fake-mp3");
+    let call = last();
+    assert_eq!(call["path"], "/v1/text-to-speech/voice123/stream");
+    assert_eq!(call["query"], "output_format=mp3_44100_128");
+    assert_eq!(call["xi_api_key"], "xi-secret");
+    let sent: Value = serde_json::from_str(call["body"].as_str().unwrap()).unwrap();
+    assert_eq!(
+        sent,
+        json!({"text": "Hallo", "model_id": "eleven_flash_v2_5"})
+    );
+
+    let (status, _, out) = http_raw(
+        &d.ui,
+        "POST",
+        "/v1/voice/transcription",
+        &[("content-type", "audio/webm;codecs=opus")],
+        b"webm-bytes",
+    )
+    .await;
+    assert_eq!(status, 200);
+    let out: Value = serde_json::from_slice(&out).unwrap();
+    assert_eq!(out, json!({"text": "hello there"}));
+    let call = last();
+    assert_eq!(call["path"], "/v1/speech-to-text");
+    assert!(
+        call["content_type"]
+            .as_str()
+            .unwrap()
+            .starts_with("multipart/form-data; boundary=")
+    );
+    let form = call["body"].as_str().unwrap();
+    assert!(
+        form.contains("scribe_v3") && form.contains("webm-bytes"),
+        "{form}"
+    );
+
+    // Limits: text length, audio type and size; provider errors pass on.
+    assert_eq!(speak(&d, &"a".repeat(4097)).await.0, 400);
+    let transcribe = |mime: &'static str, audio: Vec<u8>| {
+        let ui = d.ui.clone();
+        async move {
+            http_raw(
+                &ui,
+                "POST",
+                "/v1/voice/transcription",
+                &[("content-type", mime)],
+                &audio,
+            )
+            .await
+            .0
+        }
+    };
+    assert_eq!(transcribe("video/mp4", b"x".to_vec()).await, 400);
+    assert_eq!(
+        transcribe("audio/webm", vec![0; 10 * 1024 * 1024 + 1]).await,
+        413
+    );
+    let (status, _, out) = speak(&d, "fail").await;
+    assert_eq!(status, 502);
+    assert!(
+        String::from_utf8_lossy(&out).contains("voice_not_found"),
+        "the provider's reason reaches the operator"
+    );
+
+    // OpenRouter: bearer key, its default voice, mp3.
+    let (status, voice) = put_voice(
+        &d,
+        json!({"provider": "openrouter", "api_key": "sk-or-secret"}),
+    )
+    .await;
+    assert_eq!(status, 200);
+    assert_eq!(voice["providers"][1]["has_key"], true);
+    assert_eq!(speak(&d, "Hi").await.0, 200);
+    let call = last();
+    assert_eq!(call["path"], "/audio/speech");
+    assert_eq!(call["authorization"], "Bearer sk-or-secret");
+    let sent: Value = serde_json::from_str(call["body"].as_str().unwrap()).unwrap();
+    assert_eq!(sent["voice"], "en_paul_neutral");
+    assert_eq!(sent["response_format"], "mp3");
+
+    // A stuck UI cannot keep spending: about a minute's budget, then 429.
+    assert_eq!(speak(&d, &"b".repeat(4096)).await.0, 200);
+    let (status, _, out) = speak(&d, &"c".repeat(4096)).await;
+    assert_eq!(status, 429, "{}", String::from_utf8_lossy(&out));
+
+    let (status, voice) = put_voice(&d, json!({"provider": "openrouter", "api_key": null})).await;
+    assert_eq!(status, 200);
+    assert_eq!(
+        voice["providers"][1]["has_key"], false,
+        "null removes the key"
+    );
+    assert_eq!(voice["providers"][0]["has_key"], true);
+}
