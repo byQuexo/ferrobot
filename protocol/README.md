@@ -117,6 +117,9 @@ decision to that call instead of messaging the agent (`message_id` is
 the tool returns `{"status": "created", "agent_id": ...}`, decline returns
 `{"status": "declined"}`. Without an answer within `FERROBOT_APPROVAL_TIMEOUT`
 (default 300 s) the card is locked as declined; answering it later gives `409`.
+With Auto mode on (`GET`/`PUT /v1/settings`, `auto_mode`) there is no card: the
+agent is created at once and an `agent_created` event (`{name, id, by, auto: true}`,
+`by` the requester's name) is recorded where the card would have gone.
 
 **Relation to A2UI.** We checked Google's open
 [A2UI](https://github.com/a2ui-project/a2ui) (Apache-2.0) as a base: the

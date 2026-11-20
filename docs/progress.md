@@ -949,3 +949,27 @@ store used for the run) or the daemon's own env.
   one-letter lines) failed with the old cap.
 - Not tested: the form, live-socket and sign-in timeout changes (no component
   tests; not run in a browser or the Tauri window).
+
+## Auto mode (`feat/auto-mode`)
+
+**Done**
+
+- `GET`/`PUT /v1/settings` with `auto_mode` (default off), stored as the
+  `general` setting; no migration (the `settings` table exists since v12).
+- With Auto mode on, `create_agent` creates the agent without an approval
+  card and records an `agent_created` notice in the creator's top chat; the
+  agent limit, name and task length checks still apply.
+- `create_agent` description and the Claude driver prompt say the operator
+  approves unless Auto mode is on.
+- Desktop: Settings, Agents with an "Auto mode" switch (saved on toggle);
+  the timeline shows the notice. `protocol/` and the desktop types are
+  regenerated.
+
+**Tested**
+
+- Rust: `auto_mode_creates_agents_without_a_card` (setting round-trip, no
+  `question` event, notices in the top chat for a direct and a sub-agent
+  creation, nothing created over the limit). The approval tests stay green.
+- Desktop unit test: the `agent_created` notice in `buildTimeline`.
+- Not tested: the Settings switch in a browser or the Tauri window; Auto mode
+  with a real model calling `create_agent`.

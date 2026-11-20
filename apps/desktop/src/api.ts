@@ -47,6 +47,7 @@ export type UsageGroup = Schemas["UsageGroup"];
 export type UsageTotals = Schemas["UsageTotals"];
 export type PriceEntry = Schemas["PriceEntry"];
 export type SetPrice = Schemas["SetPrice"];
+export type GeneralSettings = Schemas["GeneralSettings"];
 export type UsageGroupBy = "day" | "agent" | "provider" | "model";
 
 export class ApiError extends Error {
@@ -257,6 +258,9 @@ export class DaemonClient {
   /** Replaces all of the operator's own prices. */
   setPrices = (prices: SetPrice[]): Promise<PriceEntry[]> =>
     this.#request("PUT", "/v1/usage/prices", prices);
+  settings = (): Promise<GeneralSettings> => this.#request("GET", "/v1/settings");
+  updateSettings = (s: GeneralSettings): Promise<GeneralSettings> =>
+    this.#request("PUT", "/v1/settings", s);
 
   listConversations = (): Promise<Conversation[]> => this.#request("GET", "/v1/conversations");
   conversation = (a: string, b: string): Promise<MailMessage[]> =>

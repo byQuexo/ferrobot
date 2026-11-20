@@ -8,6 +8,7 @@ pub(crate) mod memory;
 pub(crate) mod providers;
 pub(crate) mod routines;
 pub(crate) mod sandbox;
+pub(crate) mod settings;
 pub(crate) mod usage;
 pub(crate) mod voice;
 pub(crate) mod ws;
@@ -87,6 +88,10 @@ pub fn router() -> Router<AppState> {
         .route(
             "/v1/routines/{rid}",
             axum::routing::patch(routines::update_routine).delete(routines::delete_routine),
+        )
+        .route(
+            "/v1/settings",
+            get(settings::get_settings).put(settings::put_settings),
         )
         .route("/v1/usage", get(usage::get_usage))
         .route(

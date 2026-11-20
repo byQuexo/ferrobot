@@ -44,7 +44,7 @@ export function systemAppend(agentName: string, instructions: string): string {
     "Coordinate with teammates through the ferrobot MCP tools: list_agents, send_message,",
     "assign_task, list_tasks, read_mailbox, remember, recall, forget, ask_user (a question",
     "card for your operator) and create_agent (a new teammate; waits for your operator's",
-    "approval).",
+    "approval unless Auto mode is on).",
     "Messages and answers are asynchronous: after sending a message or asking,",
     "finish your turn; the answer arrives later as a new message. A message wakes a",
     "sleeping teammate, so you can always reach one. In send_message.to use",

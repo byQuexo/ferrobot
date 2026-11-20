@@ -3608,6 +3608,74 @@
         }
       }
     },
+    "/v1/settings": {
+      "get": {
+        "tags": [
+          "settings"
+        ],
+        "summary": "The daemon-wide settings.",
+        "operationId": "get_settings",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GeneralSettings"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or wrong API token",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        }
+      },
+      "put": {
+        "tags": [
+          "settings"
+        ],
+        "summary": "Replaces the daemon-wide settings.",
+        "operationId": "put_settings",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/GeneralSettings"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GeneralSettings"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or wrong API token",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/v1/usage": {
       "get": {
         "tags": [
@@ -4892,6 +4960,17 @@
               "string",
               "null"
             ]
+          }
+        }
+      },
+      "GeneralSettings": {
+        "type": "object",
+        "description": "Daemon-wide settings. Omitted fields take their defaults.",
+        "properties": {
+          "auto_mode": {
+            "type": "boolean",
+            "description": "Agents create agents without an approval card. The agent limit still applies.",
+            "default": false
           }
         }
       },
@@ -6841,6 +6920,10 @@
     {
       "name": "usage",
       "description": "Model calls, tokens and estimated cost"
+    },
+    {
+      "name": "settings",
+      "description": "Daemon-wide operator settings"
     }
   ]
 }

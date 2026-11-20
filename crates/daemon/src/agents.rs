@@ -1,5 +1,5 @@
 //! Creating agents. Shared by `POST /v1/agents` (the operator) and the
-//! `create_agent` MCP tool (an agent, after the operator approved).
+//! `create_agent` MCP tool (an agent, after the operator approved or with Auto mode on).
 
 use std::fmt::Write as _;
 use std::time::Duration;
@@ -195,6 +195,7 @@ async fn chat_of(state: &AppState, id: AgentId) -> Result<AgentId, ApiError> {
 /// Shows the operator an approval card in the chat they use for the
 /// requester (its top creator's), waits for the decision (or
 /// [`crate::Settings::approval_timeout`]) and creates the agent if approved.
+/// With Auto mode on it creates the agent at once and leaves a notice there.
 pub async fn request(
     state: &AppState,
     requester: AgentId,
@@ -202,6 +203,22 @@ pub async fn request(
 ) -> Result<AgentRequestOutcome, ApiError> {
     let (name, description) = check(state, &spec).await?;
     let chat = chat_of(state, requester).await?;
+    // Unreadable settings fail closed: the operator gets the card.
+    if crate::api::settings::load(state)
+        .await
+        .is_ok_and(|s| s.auto_mode)
+    {
+        let by = state.store.get_agent(requester).await?.name;
+        let agent = create(state, spec, Some(requester)).await?;
+        let notice =
+            serde_json::json!({ "name": agent.name, "id": agent.id, "by": by, "auto": true });
+        state.record(chat, None, "agent_created", notice).await;
+        state.publish_agent(agent.id).await;
+        return Ok(AgentRequestOutcome::Created {
+            id: agent.id,
+            name: agent.name.to_string(),
+        });
+    }
     let mut prompt = format!("Create the agent \"{name}\"?");
     if !description.is_empty() {
         let _ = write!(prompt, "\nRole: {description}");
