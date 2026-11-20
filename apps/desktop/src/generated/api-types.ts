@@ -4,7 +4,7 @@
  */
 
 export interface paths {
-    "/artifacts/{id}/{file_id}/{view}": {
+    "/artifacts/{id}/{file_id}": {
         parameters: {
             query?: never;
             header?: never;
@@ -12,10 +12,11 @@ export interface paths {
             cookie?: never;
         };
         /**
-         * A file an agent shared. Needs no operator token: frames and the system
-         *     browser cannot send one, and the random `view` key is the capability.
-         *     .html opens as a sandboxed page (opaque origin, no network requests),
-         *     a real PDF opens inline, anything else (or `?download`) downloads.
+         * A file an agent shared. Needs no operator token (frames and the system
+         *     browser cannot send one); the link is a signed capability that expires
+         *     (HMAC-SHA256 with a keychain key over agent, file and expiry).
+         *     .html opens as a sandboxed page (opaque origin, inline code only, no
+         *     network requests), a real PDF opens inline, anything else downloads.
          */
         get: operations["page"];
         put?: never;
@@ -1257,8 +1258,9 @@ export interface components {
              */
             page_url?: string | null;
             /**
-             * @description The file itself (relative to the daemon): pages and PDFs open inline,
-             *     other files download. Add `?download=1` to always download.
+             * @description The file itself (relative to the daemon), a signed link that works for
+             *     30 minutes: pages and PDFs open inline, other files download. Add
+             *     `&download=1` to always download.
              */
             url: string;
         };
@@ -1390,6 +1392,10 @@ export interface operations {
     page: {
         parameters: {
             query?: {
+                /** @description Expiry of the link (unix seconds), from `url`. */
+                exp?: number;
+                /** @description Signature of the link, from `url`. */
+                sig?: string;
                 /** @description Any value: send the file as a download. */
                 download?: string;
             };
@@ -1399,8 +1405,6 @@ export interface operations {
                 id: string;
                 /** @description Id of the `file` event */
                 file_id: number;
-                /** @description The file's view key (from `url`) */
-                view: string;
             };
             cookie?: never;
         };

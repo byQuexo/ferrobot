@@ -2,6 +2,8 @@
 //! storage (`artifacts/<agent>/<uuid>`) and shown in the chat as a `file`
 //! event, so they outlive the sandbox and stay the version that was shared.
 
+use std::time::Duration;
+
 use ferrobot_core::AgentId;
 use ferrobot_mcp::SharedFile;
 use ferrobot_sandbox::{SandboxError, SandboxPath};
@@ -14,6 +16,12 @@ use crate::{AppState, UiEvent, lifecycle};
 
 /// Largest file an agent can share.
 pub const MAX_SHARE_BYTES: usize = 10 * 1024 * 1024;
+
+/// How long a file link works; the app asks for a fresh one when opening.
+pub const LINK_TTL: Duration = Duration::from_secs(30 * 60);
+
+/// Where the key that signs file links lives in the secret store.
+const LINK_KEY: &str = "artifact-link-key";
 
 /// A file named by an agent: absolute, below its home (`~/x`) or, like its
 /// tools see it, relative to its workspace.
@@ -66,9 +74,7 @@ pub async fn share(state: &AppState, agent: AgentId, raw: &str) -> Result<Shared
             "the file could not be stored".to_owned()
         })?;
     let name = path.file_name().to_owned();
-    // An unguessable address for opening an .html file as a page (no token).
-    let view = uuid::Uuid::new_v4().simple().to_string();
-    let payload = json!({ "name": name, "size": size, "path": path.as_str(), "key": key.as_ref(), "view": view });
+    let payload = json!({ "name": name, "size": size, "path": path.as_str(), "key": key.as_ref() });
     let event = state
         .store
         .append_event(agent, None, "file".into(), payload)
@@ -83,8 +89,19 @@ pub async fn share(state: &AppState, agent: AgentId, raw: &str) -> Result<Shared
     })
 }
 
-/// The stored copy of a shared file.
-pub async fn read(state: &AppState, key: &str) -> object_store::Result<Vec<u8>> {
+/// The stored copy of a file `agent` shared. The key must be one this module
+/// wrote for that agent (`artifacts/<agent>/<uuid>`): no other agent's
+/// files, no other part of the store.
+pub async fn read(state: &AppState, agent: AgentId, key: &str) -> object_store::Result<Vec<u8>> {
+    let own = key
+        .strip_prefix(&format!("artifacts/{agent}/"))
+        .is_some_and(|rest| uuid::Uuid::try_parse(rest).is_ok_and(|u| u.to_string() == rest));
+    if !own {
+        return Err(object_store::Error::NotFound {
+            path: key.to_owned(),
+            source: "not a file of this agent".into(),
+        });
+    }
     let bytes = state
         .settings
         .storage
@@ -93,6 +110,72 @@ pub async fn read(state: &AppState, key: &str) -> object_store::Result<Vec<u8>> 
         .bytes()
         .await?;
     Ok(bytes.to_vec())
+}
+
+/// The key signing file links, created on first use and kept in the
+/// keychain (so links survive a daemon restart until they expire).
+async fn link_key(state: &AppState) -> Result<ring::hmac::Key, String> {
+    state
+        .link_key
+        .get_or_try_init(|| async {
+            let secrets = &state.settings.secrets;
+            let stored = secrets.get(LINK_KEY).await.map_err(|e| e.to_string())?;
+            let bytes = match stored.and_then(|hex| hex::decode(hex).ok()) {
+                Some(bytes) if bytes.len() == 32 => bytes,
+                _ => {
+                    let mut bytes = vec![0; 32];
+                    ring::rand::SecureRandom::fill(&ring::rand::SystemRandom::new(), &mut bytes)
+                        .map_err(|_| "no system randomness".to_owned())?;
+                    secrets
+                        .set(LINK_KEY, &hex::encode(&bytes))
+                        .await
+                        .map_err(|e| e.to_string())?;
+                    bytes
+                }
+            };
+            Ok::<_, String>(ring::hmac::Key::new(ring::hmac::HMAC_SHA256, &bytes))
+        })
+        .await
+        .cloned()
+}
+
+fn unix_now() -> u64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map_or(0, |d| d.as_secs())
+}
+
+/// A link to a shared file that works until `expires` (unix seconds).
+pub async fn signed_link(
+    state: &AppState,
+    agent: AgentId,
+    file: i64,
+    expires: u64,
+) -> Result<String, String> {
+    let key = link_key(state).await?;
+    let tag = ring::hmac::sign(&key, format!("{agent}/{file}/{expires}").as_bytes());
+    let sig = hex::encode(tag.as_ref());
+    Ok(format!("/artifacts/{agent}/{file}?exp={expires}&sig={sig}"))
+}
+
+/// A link to a shared file that works for [`LINK_TTL`].
+pub async fn fresh_link(state: &AppState, agent: AgentId, file: i64) -> Result<String, String> {
+    signed_link(state, agent, file, unix_now() + LINK_TTL.as_secs()).await
+}
+
+/// Whether a link's signature is ours and it has not expired.
+pub async fn link_valid(
+    state: &AppState,
+    agent: AgentId,
+    file: i64,
+    expires: u64,
+    sig: &str,
+) -> bool {
+    let (Ok(key), Ok(sig)) = (link_key(state).await, hex::decode(sig)) else {
+        return false;
+    };
+    expires >= unix_now()
+        && ring::hmac::verify(&key, format!("{agent}/{file}/{expires}").as_bytes(), &sig).is_ok()
 }
 
 /// Whether a shared file is a PDF by name (the content is checked too).

@@ -19,12 +19,12 @@
     }
   ],
   "paths": {
-    "/artifacts/{id}/{file_id}/{view}": {
+    "/artifacts/{id}/{file_id}": {
       "get": {
         "tags": [
           "chat"
         ],
-        "summary": "A file an agent shared. Needs no operator token: frames and the system\nbrowser cannot send one, and the random `view` key is the capability.\n.html opens as a sandboxed page (opaque origin, no network requests),\na real PDF opens inline, anything else (or `?download`) downloads.",
+        "summary": "A file an agent shared. Needs no operator token (frames and the system\nbrowser cannot send one); the link is a signed capability that expires\n(HMAC-SHA256 with a keychain key over agent, file and expiry).\n.html opens as a sandboxed page (opaque origin, inline code only, no\nnetwork requests), a real PDF opens inline, anything else downloads.",
         "operationId": "page",
         "parameters": [
           {
@@ -47,10 +47,21 @@
             }
           },
           {
-            "name": "view",
-            "in": "path",
-            "description": "The file's view key (from `url`)",
-            "required": true,
+            "name": "exp",
+            "in": "query",
+            "description": "Expiry of the link (unix seconds), from `url`.",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "format": "int64",
+              "minimum": 0
+            }
+          },
+          {
+            "name": "sig",
+            "in": "query",
+            "description": "Signature of the link, from `url`.",
+            "required": false,
             "schema": {
               "type": "string"
             }
@@ -4778,7 +4789,7 @@
           },
           "url": {
             "type": "string",
-            "description": "The file itself (relative to the daemon): pages and PDFs open inline,\nother files download. Add `?download=1` to always download."
+            "description": "The file itself (relative to the daemon), a signed link that works for\n30 minutes: pages and PDFs open inline, other files download. Add\n`&download=1` to always download."
           }
         }
       },

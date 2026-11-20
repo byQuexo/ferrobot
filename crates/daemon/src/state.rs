@@ -200,6 +200,8 @@ pub struct AppState {
     pub codex: Arc<tokio::sync::Mutex<crate::codex::CodexState>>,
     /// Open sessions with connector MCP servers.
     pub connectors: Arc<crate::connectors::Sessions>,
+    /// Signs links to shared files; loaded from the keychain once.
+    pub link_key: Arc<tokio::sync::OnceCell<ring::hmac::Key>>,
     /// Connector OAuth sign-ins waiting for the browser, refresh locks.
     pub oauth: Arc<crate::oauth::OAuth>,
 }
@@ -228,6 +230,7 @@ impl AppState {
             gcloud_token: Arc::default(),
             codex: Arc::default(),
             connectors: Arc::default(),
+            link_key: Arc::default(),
             oauth: Arc::default(),
         }
     }

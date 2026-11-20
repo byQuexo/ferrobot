@@ -473,8 +473,8 @@ impl FerrobotTools {
     #[tool(
         description = "Give your operator a file you made, up to 10 MB: it is copied and shown in your \
         chat as a file they can open. Markdown and text are shown as text; an .html file opens as a \
-        page inside ferrobot (scripts and styles inline or from https:, no network requests from the \
-        page). Mention the file by name in your reply."
+        page inside ferrobot (everything inline: scripts, styles, images as data: URLs; the page \
+        cannot load or send anything). Mention the file by name in your reply."
     )]
     async fn share_file(
         &self,
