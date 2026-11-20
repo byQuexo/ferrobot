@@ -17,14 +17,13 @@ import {
 
 import type { Agent, MailMessage, Routine, StoredEvent } from "../api.ts";
 import { useApp } from "../context.ts";
-import { clockTime, presenceLabel, toolLabel } from "../lib/format.ts";
+import { clockTime, presenceLabel, stepLabel, toolLabel } from "../lib/format.ts";
 import { buildTimeline, groupExchanges, type DisplayItem, type Exchange, type TimelineItem } from "../lib/timeline.ts";
 import { Avatar } from "./Avatar.tsx";
 import { QuestionCardView } from "./QuestionCard.tsx";
 import { RichText } from "./RichText.tsx";
 import { Button, IconButton } from "./ui.tsx";
 
-const PAGE = 500;
 
 export function Chat(props: {
   agent: Agent;
@@ -49,13 +48,7 @@ export function Chat(props: {
     setEvents([]);
     setLive(new Map());
     const load = async (): Promise<void> => {
-      const all: StoredEvent[] = [];
-      for (let page = 0, after = 0; page < 10; page++) {
-        const batch = await client.events(id, after);
-        all.push(...batch);
-        if (batch.length < PAGE) break;
-        after = batch[batch.length - 1]?.id ?? after;
-      }
+      const all = await client.allEvents(id);
       const [msgs, rts] = await Promise.all([client.messages(id), client.routines(id)]);
       if (cancelled) return;
       setMessages(msgs);
@@ -110,7 +103,13 @@ export function Chat(props: {
       agents: new Map([...agents.values()].map((a) => [a.id, a.name])),
       routines: new Map(routines.map((r) => [r.id, r.name])),
     };
-    return groupExchanges(buildTimeline(id, messages, events, live, names));
+    const all = buildTimeline(id, messages, events, live, names);
+    // Tool calls and turn errors live on the Activities tab; the chat shows the conversation.
+    const shown = groupExchanges(all.filter((i) => i.type !== "tool" && i.type !== "error"));
+    const last = all.filter((i) => i.type === "tool").pop();
+    const running = last?.type === "tool" && last.output === null && last.denied === null;
+    const nameOf = (agentId: string): string | undefined => agents.get(agentId)?.name;
+    return { shown, step: running ? stepLabel(last.name, last.input, nameOf) : "Thinking" };
   }, [id, messages, events, live, agents, routines]);
 
   // Keep the view pinned to the bottom unless the user scrolled up.
@@ -119,7 +118,7 @@ export function Chat(props: {
   useLayoutEffect(() => {
     const el = scroller.current;
     if (el && pinned.current) el.scrollTop = el.scrollHeight;
-  }, [items]);
+  }, [items.shown, items.step]);
 
   const working = agent.presence === "working";
 
@@ -157,7 +156,7 @@ export function Chat(props: {
           pinned.current = el.scrollHeight - el.scrollTop - el.clientHeight < 80;
         }}
       >
-        {loaded && items.length === 0 && (
+        {loaded && items.shown.length === 0 && (
           <div class="chat-empty">
             <Avatar agent={agent} size={64} />
             <p class="empty-title">Say hello to {agent.name}</p>
@@ -166,17 +165,13 @@ export function Chat(props: {
             </p>
           </div>
         )}
-        {items.map((item) => (
+        {items.shown.map((item) => (
           <Item key={item.key} item={item} agent={agent} />
         ))}
-        {working && !items.some((i) => i.type === "assistant" && i.streaming) && (
+        {working && !items.shown.some((i) => i.type === "assistant" && i.streaming) && (
           <div class="row row-agent">
             <Avatar agent={agent} size={28} mood="working" />
-            <div class="typing" aria-label={`${agent.name} is working`}>
-              <span />
-              <span />
-              <span />
-            </div>
+            <div class="step-now" role="status">{items.step}…</div>
           </div>
         )}
       </div>
@@ -351,7 +346,7 @@ function summary(input: unknown): string {
     .join(", ");
 }
 
-function ToolCard(props: { item: Extract<TimelineItem, { type: "tool" }> }): JSX.Element {
+export function ToolCard(props: { item: Extract<TimelineItem, { type: "tool" }> }): JSX.Element {
   const { item } = props;
   const [open, setOpen] = useState(false);
   const label = toolLabel(item.name);

@@ -4,7 +4,7 @@ import { describe, it } from "node:test";
 import { DaemonClient, type MailMessage, type StoredEvent } from "../src/api.ts";
 import { hash } from "../src/lib/avatar.ts";
 import { characterOf, deriveCharacter, moodOf, rerollCharacter } from "../src/lib/character.ts";
-import { relativeTime, toolLabel } from "../src/lib/format.ts";
+import { relativeTime, stepLabel, toolLabel } from "../src/lib/format.ts";
 import { buildTimeline } from "../src/lib/timeline.ts";
 
 const ME = "11111111-1111-4111-8111-111111111111";
@@ -50,6 +50,16 @@ describe("format", () => {
     assert.equal(relativeTime("2026-01-01T11:55:00Z", now), "5 min ago");
     assert.equal(relativeTime("2026-01-01T15:00:00Z", now), "in 3 h");
   });
+  it("says what a running tool is doing", () => {
+    const nameOf = (id: string): string | undefined => (id === "b-1" ? "bob" : undefined);
+    assert.equal(stepLabel("mcp__ferrobot__send_message", { to: "b-1" }, nameOf), "Messaging @bob");
+    assert.equal(stepLabel("mcp__ferrobot__github__create_issue", {}, nameOf), "Using github");
+    assert.equal(stepLabel("Bash", { command: "ls -la" }, nameOf), "Running ls -la");
+    assert.equal(stepLabel("Read", { file_path: "/w/notes/plan.md" }, nameOf), "Reading plan.md");
+    assert.equal(stepLabel("WebFetch", { url: "https://example.com/x" }, nameOf), "Reading example.com");
+    assert.equal(stepLabel("mcp__other__thing", {}, nameOf), "Using other");
+  });
+
   it("splits MCP tool names", () => {
     assert.deepEqual(toolLabel("mcp__ferrobot__send_message"), { server: "ferrobot", tool: "send_message" });
     assert.deepEqual(toolLabel("Bash"), { server: null, tool: "Bash" });

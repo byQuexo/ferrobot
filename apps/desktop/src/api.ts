@@ -131,6 +131,17 @@ export class DaemonClient {
   messages = (id: string): Promise<MailMessage[]> => this.#request("GET", `/v1/agents/${id}/messages`);
   events = (id: string, after = 0): Promise<StoredEvent[]> =>
     this.#request("GET", `/v1/agents/${id}/events?after=${String(after)}`);
+  /** Up to `pages` pages (500 each) of an agent's events, oldest first. */
+  allEvents = async (id: string, pages = 10): Promise<StoredEvent[]> => {
+    const all: StoredEvent[] = [];
+    for (let page = 0, after = 0; page < pages; page++) {
+      const batch = await this.events(id, after);
+      all.push(...batch);
+      if (batch.length < 500) break;
+      after = batch[batch.length - 1]?.id ?? after;
+    }
+    return all;
+  };
   send = (id: string, body: string): Promise<MailMessage> =>
     this.#request("POST", `/v1/agents/${id}/messages`, { body });
   markRead = (id: string): Promise<void> => this.#request("POST", `/v1/agents/${id}/read`);
