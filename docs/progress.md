@@ -240,7 +240,11 @@ store used for the run) or the daemon's own env.
 - Gemini CLI dropped every ferrobot tool: after `tools/list` it opens the
   standalone GET stream, rmcp answered with an empty body, the client
   disconnected. The MCP server now runs stateless (no sessions, no GET
-  stream); Claude SDK, Codex and the runner's own client work the same.
+  stream). Re-checked after the switch: the runner's own client (e2e,
+  smoke test), rmcp's client incl. `create_agent` (`mcp_e2e.rs`), and the
+  Claude SDK in Docker calling `mcp__ferrobot__remember` against a fake
+  Anthropic upstream. Not re-run: Codex's MCP client, and a long (300 s)
+  `create_agent` approval wait.
 
 **Open**
 
