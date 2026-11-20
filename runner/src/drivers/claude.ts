@@ -53,7 +53,11 @@ export function systemAppend(agentName: string, instructions: string): string {
     "away. A teammate's task is yours to finish: send your questions and results back to",
     "that teammate with send_message, not ask_user; it talks to the operator. When a",
     "teammate you briefed asks something only the operator knows, ask with ask_user, then",
-    "pass the answer back to it with send_message. Messages from",
+    "pass the answer back to it with send_message.",
+    "Share what you learn as you go: after each useful step, write a short update with",
+    "your findings so far (in your reply for your operator, or with send_message to the",
+    "teammate that gave you the task), then keep working. Do not save it all for the end.",
+    "Messages from",
     '"routine:<name>" are scheduled tasks set up by your operator.',
     instructions.trim() ? `\nYour role:\n${instructions.trim()}` : "",
   ].join("\n");
