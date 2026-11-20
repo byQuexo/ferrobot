@@ -870,7 +870,7 @@ export interface components {
          *     URL and how the daemon's model proxy adds the credential.
          * @enum {string}
          */
-        ProviderKind: "anthropic" | "openai" | "gemini" | "bedrock" | "vertex" | "openrouter" | "ollama" | "openai_compatible" | "codex";
+        ProviderKind: "anthropic" | "openai" | "gemini" | "bedrock" | "vertex" | "openrouter" | "ollama" | "openai_compatible" | "codex" | "gemini_cli";
         ProviderView: components["schemas"]["Provider"] & {
             /** @description Whether an API key is stored. The key itself is never returned. */
             has_key: boolean;

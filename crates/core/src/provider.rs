@@ -34,6 +34,8 @@ pub enum ProviderKind {
     /// `OpenAI` models through the Codex harness, with an API key or the
     /// daemon host's `ChatGPT` sign-in.
     Codex,
+    /// Google Gemini through the Gemini CLI harness, spoken to over ACP.
+    GeminiCli,
 }
 
 /// How the model proxy authenticates upstream.
@@ -45,10 +47,12 @@ pub enum UpstreamAuth {
     Bearer,
     /// `Authorization: Bearer <gcloud access token>`
     GcloudToken,
+    /// `x-goog-api-key: <key>` (Gemini API)
+    GoogApiKey,
 }
 
 impl ProviderKind {
-    pub const ALL: [Self; 9] = [
+    pub const ALL: [Self; 10] = [
         Self::Anthropic,
         Self::Openai,
         Self::Gemini,
@@ -58,6 +62,7 @@ impl ProviderKind {
         Self::Ollama,
         Self::OpenaiCompatible,
         Self::Codex,
+        Self::GeminiCli,
     ];
 
     pub fn as_str(self) -> &'static str {
@@ -71,6 +76,7 @@ impl ProviderKind {
             Self::Ollama => "ollama",
             Self::OpenaiCompatible => "openai_compatible",
             Self::Codex => "codex",
+            Self::GeminiCli => "gemini_cli",
         }
     }
 
@@ -79,6 +85,7 @@ impl ProviderKind {
         match self {
             Self::Anthropic | Self::Bedrock | Self::Vertex => "claude",
             Self::Codex => "codex",
+            Self::GeminiCli => "acp",
             _ => "openai",
         }
     }
@@ -87,6 +94,7 @@ impl ProviderKind {
         match self {
             Self::Anthropic => UpstreamAuth::ApiKeyHeader,
             Self::Vertex => UpstreamAuth::GcloudToken,
+            Self::GeminiCli => UpstreamAuth::GoogApiKey,
             _ => UpstreamAuth::Bearer,
         }
     }
@@ -108,6 +116,7 @@ impl ProviderKind {
             Self::Gemini => "https://generativelanguage.googleapis.com/v1beta/openai",
             Self::Openrouter => "https://openrouter.ai/api/v1",
             Self::Ollama => "http://127.0.0.1:11434/v1",
+            Self::GeminiCli => "https://generativelanguage.googleapis.com",
             Self::Bedrock => {
                 return region.map(|r| format!("https://bedrock-runtime.{r}.amazonaws.com"));
             }

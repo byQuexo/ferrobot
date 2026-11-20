@@ -93,6 +93,12 @@ async fn fresh_spec(state: &AppState, agent: &Agent) -> Result<SandboxSpec, ApiE
         "codex" => {
             set("FERROBOT_CODEX_BASE_URL", &proxy);
         }
+        "acp" => {
+            set("FERROBOT_ACP_AGENT", "gemini");
+            // The agent token, sent as `x-goog-api-key`; the proxy swaps in the real key.
+            set("GEMINI_API_KEY", &token);
+            set("GOOGLE_GEMINI_BASE_URL", &proxy);
+        }
         _ => {}
     }
     let model = agent

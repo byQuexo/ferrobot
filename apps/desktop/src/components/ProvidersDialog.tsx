@@ -16,6 +16,7 @@ export const KIND_LABELS: Record<ProviderKind, string> = {
   ollama: "Ollama (local)",
   openai_compatible: "OpenAI-compatible",
   codex: "OpenAI Codex",
+  gemini_cli: "Gemini CLI",
 };
 
 const KIND_HINTS: Partial<Record<ProviderKind, string>> = {
@@ -24,6 +25,7 @@ const KIND_HINTS: Partial<Record<ProviderKind, string>> = {
   ollama: "Talks to Ollama on the daemon’s computer (127.0.0.1:11434).",
   openai_compatible: "Any server with an OpenAI-style /chat/completions endpoint.",
   codex: "Runs OpenAI’s Codex harness. Add an API key, or leave it empty and sign in with ChatGPT.",
+  gemini_cli: "Runs Google’s Gemini CLI harness (over ACP) with a Gemini API key.",
 };
 
 const optionalKey = (kind: ProviderKind): boolean => kind === "openai_compatible" || kind === "codex";

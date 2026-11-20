@@ -31,6 +31,7 @@ const DROP_REQUEST: &[&str] = &[
     "authorization",
     "chatgpt-account-id",
     "x-api-key",
+    "x-goog-api-key",
     "content-length",
     "connection",
     "accept-encoding",
@@ -53,6 +54,7 @@ pub fn router() -> Router<AppState> {
 fn agent_token(headers: &HeaderMap) -> Option<&str> {
     headers
         .get("x-api-key")
+        .or_else(|| headers.get("x-goog-api-key"))
         .and_then(|v| v.to_str().ok())
         .or_else(|| {
             headers
@@ -257,6 +259,7 @@ async fn forward(
     if let Some(secret) = route.secret {
         upstream = match route.auth {
             UpstreamAuth::ApiKeyHeader => upstream.header("x-api-key", secret),
+            UpstreamAuth::GoogApiKey => upstream.header("x-goog-api-key", secret),
             UpstreamAuth::Bearer | UpstreamAuth::GcloudToken => {
                 upstream.header(header::AUTHORIZATION, format!("Bearer {secret}"))
             }

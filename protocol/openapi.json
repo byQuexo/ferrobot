@@ -3384,7 +3384,8 @@
           "openrouter",
           "ollama",
           "openai_compatible",
-          "codex"
+          "codex",
+          "gemini_cli"
         ]
       },
       "ProviderView": {

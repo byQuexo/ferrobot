@@ -1272,6 +1272,8 @@ async fn echo_upstream() -> String {
             "path": request.uri().path(),
             "authorization": header("authorization"),
             "x_api_key": header("x-api-key"),
+            "goog_key": header("x-goog-api-key"),
+            "query": request.uri().query(),
             "accounts": request.headers().get_all("chatgpt-account-id").iter()
                 .filter_map(|v| v.to_str().ok()).collect::<Vec<_>>(),
         }))
@@ -1684,4 +1686,48 @@ async fn backends_without_pause_stay_awake_until_the_cold_timeout() {
     .await;
     assert_eq!(status, 501);
     http(&d.ui, "DELETE", &format!("/v1/agents/{id}"), None).await;
+}
+
+#[tokio::test]
+async fn gemini_cli_agents_reach_the_gemini_api_through_the_proxy() {
+    let upstream = echo_upstream().await;
+    let backend = Arc::new(StatefulBackend::default());
+    let d = start_with(backend.clone(), None, "127.0.0.1:0", |s| {
+        s.driver = "claude".into();
+    })
+    .await;
+    let (status, provider) = http(
+        &d.ui,
+        "POST",
+        "/v1/providers",
+        Some(
+            json!({"name": "gem", "kind": "gemini_cli", "base_url": upstream,
+                    "api_key": "AIza-real-gemini-key", "default_model": "gemini-2.5-flash"}),
+        ),
+    )
+    .await;
+    assert_eq!(status, 201, "{provider}");
+    create(&d, json!({"name": "gina", "provider_id": provider["id"]})).await;
+    let env = backend.envs.lock().unwrap()["gina"].clone();
+    let token = env["FERROBOT_AGENT_TOKEN"].clone();
+    assert_eq!(env["FERROBOT_DRIVER"], "acp");
+    assert_eq!(env["FERROBOT_ACP_AGENT"], "gemini");
+    assert_eq!(env["GEMINI_API_KEY"], token, "only the agent's own token");
+    assert!(env["GOOGLE_GEMINI_BASE_URL"].ends_with("/model"));
+    assert!(!env.values().any(|v| v.contains("AIza-real-gemini-key")));
+    let (status, seen) = model_call(
+        &d,
+        "/model/v1beta/models/gemini-2.5-flash:streamGenerateContent?alt=sse",
+        ("x-goog-api-key", &token),
+    )
+    .await;
+    assert_eq!(status, 200, "{seen}");
+    assert_eq!(
+        seen["path"],
+        "/v1beta/models/gemini-2.5-flash:streamGenerateContent"
+    );
+    assert_eq!(seen["query"], "alt=sse");
+    assert_eq!(seen["goog_key"], "AIza-real-gemini-key");
+    let (status, _) = model_call(&d, "/model/v1beta/models", ("x-goog-api-key", "wrong")).await;
+    assert_eq!(status, 401);
 }
