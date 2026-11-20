@@ -827,6 +827,16 @@ async fn model_proxy_swaps_key_and_streams() {
     )
     .await;
     assert_eq!(status, 404);
+    // The key's other powers and paths outside the base stay out of reach.
+    for (method, path) in [
+        ("GET", "/model/v1/files"),
+        ("DELETE", "/model/v1/messages"),
+        ("GET", "/model/v1/%252e%252e/%252e%252e/escape"),
+        ("GET", "/model/v1/.%09./x"),
+    ] {
+        let (status, _, _) = http_raw(&d.agents, method, path, &[("x-api-key", &token)], b"").await;
+        assert_eq!(status, 404, "{method} {path}");
+    }
 
     // Without a configured key the proxy tells the (authenticated) agent so.
     let backend2 = Arc::new(StatefulBackend::default());

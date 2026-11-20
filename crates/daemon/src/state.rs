@@ -149,6 +149,9 @@ pub struct AppState {
 }
 
 impl AppState {
+    /// # Panics
+    ///
+    /// If the TLS backend of the HTTP client cannot start.
     pub fn new(store: Store, backend: Arc<dyn SandboxBackend>, settings: Settings) -> Self {
         let (ui, _) = broadcast::channel(4096);
         Self {
@@ -158,7 +161,11 @@ impl AppState {
             ui,
             settings: Arc::new(settings),
             scheduler: Arc::new(Notify::new()),
-            http: reqwest::Client::new(),
+            // A redirect would carry the provider key to another host.
+            http: reqwest::Client::builder()
+                .redirect(reqwest::redirect::Policy::none())
+                .build()
+                .unwrap_or_else(|e| panic!("cannot build the HTTP client: {e}")),
             answers: Arc::default(),
             creating: Arc::default(),
             approvals: Arc::default(),

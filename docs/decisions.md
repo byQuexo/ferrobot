@@ -287,3 +287,22 @@ the code and this file together.
   private IPv4 address (the operator chose it) skip the guard.
 - rmcp logs the authorization code at `debug` level; the daemon's default
   filter (`info,ferrobot=debug`) does not include it.
+
+## Model proxy hardening (security review)
+
+- **Allowlist of calls per API family:** Anthropic `POST v1/messages`
+  (+ `count_tokens`), `GET v1/models`; Bedrock `model/<id>/invoke*` and
+  `count-tokens`, control plane `GET inference-profiles`; Vertex only
+  `:rawPredict`/`:streamRawPredict` below the provider's own project and
+  region; OpenAI-style `chat/completions`, `GET models`; Codex `responses`
+  (+ `compact`), `GET models`; Gemini CLI `v1beta/models/<m>:{generate,
+  streamGenerate,count}*`. Anything else is 404, so a hostile sandbox cannot
+  use the key for files, batches, fine-tunes or other GCP projects.
+- **Paths are plain** (`A-Za-z0-9-._~:@/`, no empty or dot segments) and the
+  final URL must keep the upstream's origin and base path: double-encoded
+  `..` and tab/CR/LF tricks no longer leave the base.
+- **No redirects** (a redirect carried `x-api-key` to another host), and
+  **header allowlists** both ways (no `cookie`, `openai-organization`,
+  `x-goog-user-project` out; no `set-cookie` back).
+- Risk: an SDK update that calls a new endpoint gets a 404 until it is added
+  here.
