@@ -896,21 +896,21 @@ store used for the run) or the daemon's own env.
   `<@uuid>`, so mentions can no longer push a stored body past the limit
   (still 400 / invalid params). The `PostMessage` and `CallMessage` docs say
   so; `protocol/` and the desktop types are regenerated.
+- Daemon: `create_agent` checks its task as stored (mentions of the new
+  agent included) before the approval card, so a too-long task creates no
+  agent.
+- Daemon: a call's heard lines are capped with their joining newlines and
+  the intro texts counted, so an assembled call body stays within 32 KiB.
 
 **Tested**
 
 - Desktop unit tests: an unknown routine in `buildTimeline`, the ascending
   cost sort. Rust: `message_limits_count_mentions_as_stored` (chat, call,
   `send_message`, `assign_task` with a body at the limit that grows through a
-  mention). The chat, call and `send_message` legs each failed with their
-  fix reverted; `assign_task` goes through the same check in `enqueue`.
+  mention, and a `create_agent` task that mentions the new agent). The chat,
+  call, `send_message` and `create_agent` legs each failed with their fix
+  reverted; `assign_task` goes through the same check in `enqueue`.
+  `call::tests::many_tiny_lines_keep_the_call_body_within_the_limit` (1000
+  one-letter lines) failed with the old cap.
 - Not tested: the form, live-socket and sign-in timeout changes (no component
   tests; not run in a browser or the Tauri window).
-
-**Found, not fixed (reported)**
-
-- `create_agent`'s task is checked after approval, so a task that grows past
-  the limit through mentions leaves the agent created and the tool failing.
-- Call messages: `hear()` caps the heard lines' summed length, but the
-  newlines joining them and the framing are not counted, so ~300 very short
-  lines could push a call body ~90 bytes past 32 KiB.
