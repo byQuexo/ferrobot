@@ -32,6 +32,9 @@ export type Provider = Schemas["ProviderView"];
 export type ProviderKind = Schemas["ProviderKind"];
 export type CreateProvider = Schemas["CreateProvider"];
 export type UpdateProvider = Schemas["UpdateProvider"];
+export type Connector = Schemas["ConnectorView"];
+export type CreateConnector = Schemas["CreateConnector"];
+export type UpdateConnector = Schemas["UpdateConnector"];
 export type DeviceCode = Schemas["DeviceCode"];
 export type LoginStatus = Schemas["LoginStatus"];
 
@@ -45,6 +48,7 @@ export class ApiError extends Error {
 }
 
 const enc = encodeURIComponent;
+const memoryPath = (agent: string | null): string => (agent ? `/v1/agents/${agent}/memory` : "/v1/memory");
 
 export class DaemonClient {
   readonly base: string;
@@ -107,6 +111,16 @@ export class DaemonClient {
   deleteProvider = (id: string): Promise<void> => this.#request("DELETE", `/v1/providers/${id}`);
   startChatgptLogin = (id: string): Promise<DeviceCode> => this.#request("POST", `/v1/providers/${id}/chatgpt-login`);
   chatgptLoginStatus = (id: string): Promise<LoginStatus> => this.#request("GET", `/v1/providers/${id}/chatgpt-login`);
+
+  // connectors
+  listConnectors = (): Promise<Connector[]> => this.#request("GET", "/v1/connectors");
+  createConnector = (req: CreateConnector): Promise<Connector> => this.#request("POST", "/v1/connectors", req);
+  updateConnector = (id: string, req: UpdateConnector): Promise<Connector> =>
+    this.#request("PATCH", `/v1/connectors/${id}`, req);
+  deleteConnector = (id: string): Promise<void> => this.#request("DELETE", `/v1/connectors/${id}`);
+  agentConnectors = (id: string): Promise<string[]> => this.#request("GET", `/v1/agents/${id}/connectors`);
+  setAgentConnectors = (id: string, ids: string[]): Promise<string[]> =>
+    this.#request("PUT", `/v1/agents/${id}/connectors`, ids);
   setAvatar = (id: string, image: Blob): Promise<Agent> => this.#request("PUT", `/v1/agents/${id}/avatar`, image);
   removeAvatar = (id: string): Promise<Agent> => this.#request("DELETE", `/v1/agents/${id}/avatar`);
 
@@ -121,13 +135,13 @@ export class DaemonClient {
   answerQuestion = (id: string, question: number, answers: QuestionAnswer[]): Promise<QuestionAnswered> =>
     this.#request("POST", `/v1/agents/${id}/questions/${String(question)}/answer`, { answers });
 
-  // memory
-  memory = (id: string, q = ""): Promise<MemoryEntry[]> =>
-    this.#request("GET", `/v1/agents/${id}/memory?q=${enc(q)}`);
-  remember = (id: string, key: string, content: string): Promise<void> =>
-    this.#request("POST", `/v1/agents/${id}/memory`, { key, content });
-  forget = (id: string, key: string): Promise<void> =>
-    this.#request("DELETE", `/v1/agents/${id}/memory/${enc(key)}`);
+  // memory; agent `null` is the global memory all agents share
+  memory = (id: string | null, q = ""): Promise<MemoryEntry[]> =>
+    this.#request("GET", `${memoryPath(id)}?q=${enc(q)}`);
+  remember = (id: string | null, key: string, content: string): Promise<void> =>
+    this.#request("POST", memoryPath(id), { key, content });
+  forget = (id: string | null, key: string): Promise<void> =>
+    this.#request("DELETE", `${memoryPath(id)}/${enc(key)}`);
 
   // routines
   routines = (id: string): Promise<Routine[]> => this.#request("GET", `/v1/agents/${id}/routines`);

@@ -4,12 +4,14 @@ import { Bot, KeyRound, Plus, WifiOff } from "lucide-preact";
 
 import { ApiError, DEFAULT_DAEMON, DaemonClient, type Agent, type Health, type UiEvent } from "./api.ts";
 import { AgentDialog } from "./components/AgentDialog.tsx";
+import { ConnectorsDialog } from "./components/ConnectorsDialog.tsx";
+import { Memory } from "./components/InfoPanel.tsx";
 import { ProvidersDialog } from "./components/ProvidersDialog.tsx";
 import { Chat } from "./components/Chat.tsx";
 import { ConversationView, type Pair } from "./components/Conversations.tsx";
 import { InfoPanel, type InfoTab } from "./components/InfoPanel.tsx";
 import { Sidebar } from "./components/Sidebar.tsx";
-import { Button, Empty } from "./components/ui.tsx";
+import { Button, Dialog, Empty } from "./components/ui.tsx";
 import { AppContext, type AppContextValue } from "./context.ts";
 import { applyTheme, followSystem, loadTheme, type ThemePref } from "./lib/theme.ts";
 
@@ -43,7 +45,7 @@ export function App(): JSX.Element {
   const [online, setOnline] = useState(false);
   const [selected, setSelected] = useState<string | null>(() => localStorage.getItem("ferrobot.selected"));
   const [pair, setPair] = useState<Pair | null>(null);
-  const [dialog, setDialog] = useState<"create" | "edit" | "providers" | null>(null);
+  const [dialog, setDialog] = useState<"create" | "edit" | "providers" | "memory" | "connectors" | null>(null);
   const [infoOpen, setInfoOpen] = useState(() => localStorage.getItem("ferrobot.info") !== "closed");
   const [tab, setTab] = useState<InfoTab>("profile");
   const [theme, setTheme] = useState<ThemePref>(loadTheme);
@@ -144,6 +146,8 @@ export function App(): JSX.Element {
           onOpenPair={setPair}
           onCreate={() => { setDialog("create"); }}
           onProviders={() => { setDialog("providers"); }}
+          onMemory={() => { setDialog("memory"); }}
+          onConnectors={() => { setDialog("connectors"); }}
           online={online}
           theme={theme}
           onTheme={setTheme}
@@ -190,6 +194,12 @@ export function App(): JSX.Element {
         )}
       </div>
       {dialog === "providers" && <ProvidersDialog onClose={() => { setDialog(null); }} />}
+      {dialog === "connectors" && <ConnectorsDialog onClose={() => { setDialog(null); }} />}
+      {dialog === "memory" && (
+        <Dialog title="Global memory" onClose={() => { setDialog(null); }} footer={<Button onClick={() => { setDialog(null); }}>Done</Button>}>
+          <Memory agent={null} />
+        </Dialog>
+      )}
       {(dialog === "create" || dialog === "edit") && (
         <AgentDialog
           agent={dialog === "edit" ? agent : undefined}

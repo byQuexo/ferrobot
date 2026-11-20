@@ -509,6 +509,21 @@
           "type": "object"
         },
         {
+          "description": "The global memory changed; refetch it.",
+          "properties": {
+            "type": {
+              "enum": [
+                "global_memory_changed"
+              ],
+              "type": "string"
+            }
+          },
+          "required": [
+            "type"
+          ],
+          "type": "object"
+        },
+        {
           "description": "The agent's routines or their runs changed; refetch them.",
           "properties": {
             "agent_id": {

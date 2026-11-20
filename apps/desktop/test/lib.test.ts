@@ -90,6 +90,30 @@ describe("buildTimeline", () => {
     assert.ok(routine?.type === "routine" && routine.routine === "digest");
   });
 
+  it("shows one notice when sleep deepens", () => {
+    const items = buildTimeline(
+      ME,
+      [],
+      [
+        ev(1, "sleeping", { reason: "idle", level: "warm" }, "2026-01-01T12:27:00Z", ""),
+        ev(2, "runner_disconnected", {}, "2026-01-01T12:37:00Z", ""),
+        ev(3, "sleeping", { reason: "idle", level: "cold" }, "2026-01-01T12:37:00Z", ""),
+        ev(4, "awake", {}, "2026-01-01T13:00:00Z", ""),
+        ev(5, "sleeping", { reason: "idle", level: "warm" }, "2026-01-01T13:05:00Z", ""),
+      ],
+      new Map(),
+      names,
+    );
+    assert.deepEqual(
+      items.map((i) => (i.type === "system" ? [i.text, i.at] : null)),
+      [
+        ["Went to sleep after being idle", "2026-01-01T12:27:00Z"],
+        ["Woke up", "2026-01-01T13:00:00Z"],
+        ["Went to sleep after being idle", "2026-01-01T13:05:00Z"],
+      ],
+    );
+  });
+
   it("shows live text until the final text arrives", () => {
     const live = new Map([["t1", "Hel"], ["t2", "Wor"]]);
     const items = buildTimeline(ME, [], [ev(1, "assistant_text", { text: "Hello" }, "2026-01-01T10:00:00Z", "t1")], live, names);

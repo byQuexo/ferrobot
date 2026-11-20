@@ -162,6 +162,11 @@ pub async fn create(
         agent.provider_id = provider_id;
         agent.model = model;
     }
+    if let Some(creator) = created_by {
+        let inherited = state.store.agent_connectors(creator).await?;
+        let ids = inherited.into_iter().map(|c| c.id).collect();
+        state.store.set_agent_connectors(agent.id, ids).await?;
+    }
     lifecycle::provision(state, &agent).await?;
     Ok(agent)
 }

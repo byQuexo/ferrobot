@@ -60,6 +60,24 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/agents/{id}/connectors": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Ids of the connectors the agent may use. */
+        get: operations["agent_connectors"];
+        /** Replaces the connectors the agent may use. Takes effect on its next turn. */
+        put: operations["set_agent_connectors"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/agents/{id}/events": {
         parameters: {
             query?: never;
@@ -341,6 +359,42 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/connectors": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Configured connectors, by name. */
+        get: operations["list_connectors"];
+        put?: never;
+        /** Adds a connector. Agents get its tools once they are assigned it. */
+        post: operations["create_connector"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/connectors/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /** Deletes a connector, its token and its assignments. */
+        delete: operations["delete_connector"];
+        options?: never;
+        head?: never;
+        /** Edits a connector. Open sessions with it are closed. */
+        patch: operations["update_connector"];
+        trace?: never;
+    };
     "/v1/conversations": {
         parameters: {
             query?: never;
@@ -390,6 +444,41 @@ export interface paths {
         put?: never;
         post?: never;
         delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/memory": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Lists or searches the global memory all agents share. */
+        get: operations["list_global_memory"];
+        put?: never;
+        /** Creates or replaces a global memory. */
+        post: operations["put_global_memory"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/memory/{key}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /** Deletes one global memory by key (URL-encoded). */
+        delete: operations["delete_global_memory"];
         options?: never;
         head?: never;
         patch?: never;
@@ -652,6 +741,23 @@ export interface components {
             /** @description Stable value reported in the answer; defaults to the label. */
             value?: string;
         };
+        Connector: {
+            /** Format: uuid */
+            id: string;
+            /**
+             * @description 1-16 chars, `a-z0-9-`, starts with a letter. Prefixes its tools
+             *     (`<name>__<tool>`).
+             */
+            name: string;
+            /** @description Streamable HTTP endpoint of the MCP server. */
+            url: string;
+            /** Format: date-time */
+            created_at: string;
+        };
+        ConnectorView: components["schemas"]["Connector"] & {
+            /** @description Whether a token is stored. The token itself is never returned. */
+            has_token: boolean;
+        };
         /** @description Messages two agents exchanged. */
         Conversation: {
             /** @description The two agents, ordered by id. */
@@ -685,6 +791,23 @@ export interface components {
             provider_id?: string | null;
             /** @description Model id; omitted: the provider's default model. */
             model?: string | null;
+        };
+        CreateConnector: {
+            /**
+             * @description 1-16 chars, `a-z0-9-`, starts with a letter; prefixes the tools.
+             * @example github
+             */
+            name: string;
+            /**
+             * @description Streamable HTTP endpoint of the MCP server.
+             * @example https://api.githubcopilot.com/mcp/
+             */
+            url: string;
+            /**
+             * @description Sent as `Authorization: Bearer <token>`. Stored in the OS keychain;
+             *     never returned.
+             */
+            token?: string | null;
         };
         CreateProvider: {
             /**
@@ -1093,6 +1216,9 @@ export interface components {
             /** @enum {string} */
             type: "memory_changed";
         } | {
+            /** @enum {string} */
+            type: "global_memory_changed";
+        } | {
             agent_id: components["schemas"]["AgentId"];
             /** @enum {string} */
             type: "routines_changed";
@@ -1117,6 +1243,12 @@ export interface components {
             provider_id?: string | null;
             /** @description New model id; `null` goes back to the provider's default model. */
             model?: string | null;
+        };
+        UpdateConnector: {
+            name?: string | null;
+            url?: string | null;
+            /** @description New token; `null` removes the stored one. */
+            token?: string | null;
         };
         UpdateProvider: {
             name?: string | null;
@@ -1512,6 +1644,90 @@ export interface operations {
                 };
             };
             /** @description Unknown agent */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+        };
+    };
+    agent_connectors: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Agent id (UUID) */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": string[];
+                };
+            };
+            /** @description Missing or wrong API token */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Unknown agent */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+        };
+    };
+    set_agent_connectors: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Agent id (UUID) */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": string[];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": string[];
+                };
+            };
+            /** @description Missing or wrong API token */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Unknown agent or connector */
             404: {
                 headers: {
                     [name: string]: unknown;
@@ -2566,6 +2782,183 @@ export interface operations {
             };
         };
     };
+    list_connectors: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ConnectorView"][];
+                };
+            };
+            /** @description Missing or wrong API token */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+        };
+    };
+    create_connector: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CreateConnector"];
+            };
+        };
+        responses: {
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ConnectorView"];
+                };
+            };
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Missing or wrong API token */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Name already taken */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+        };
+    };
+    delete_connector: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Connector id (UUID) */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Deleted */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Missing or wrong API token */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Unknown connector */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+        };
+    };
+    update_connector: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Connector id (UUID) */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["UpdateConnector"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ConnectorView"];
+                };
+            };
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Missing or wrong API token */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Unknown connector */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Name already taken */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+        };
+    };
     list_conversations: {
         parameters: {
             query?: never;
@@ -2651,6 +3044,117 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["Health"];
+                };
+            };
+        };
+    };
+    list_global_memory: {
+        parameters: {
+            query?: {
+                /** @description Full-text search; empty lists the most recently updated entries. */
+                q?: string;
+                /** @description 1-200, default 100. */
+                limit?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MemoryEntry"][];
+                };
+            };
+            /** @description Missing or wrong API token */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+        };
+    };
+    put_global_memory: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PutMemory"];
+            };
+        };
+        responses: {
+            /** @description Stored */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Missing or wrong API token */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+        };
+    };
+    delete_global_memory: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Memory key */
+                key: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Deleted */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Missing or wrong API token */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Unknown key */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
                 };
             };
         };

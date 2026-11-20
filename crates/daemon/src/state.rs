@@ -110,6 +110,8 @@ pub enum UiEvent {
     Message { message: MailMessage },
     /// The agent's memory changed; refetch it.
     MemoryChanged { agent_id: AgentId },
+    /// The global memory changed; refetch it.
+    GlobalMemoryChanged,
     /// The agent's routines or their runs changed; refetch them.
     RoutinesChanged { agent_id: AgentId },
 }
@@ -136,6 +138,8 @@ pub struct AppState {
     pub gcloud_token: Arc<tokio::sync::Mutex<crate::proxy::CachedToken>>,
     /// `ChatGPT` sign-ins and cached tokens of Codex providers.
     pub codex: Arc<tokio::sync::Mutex<crate::codex::CodexState>>,
+    /// Open sessions with connector MCP servers.
+    pub connectors: Arc<crate::connectors::Sessions>,
 }
 
 impl AppState {
@@ -154,6 +158,7 @@ impl AppState {
             approvals: Arc::default(),
             gcloud_token: Arc::default(),
             codex: Arc::default(),
+            connectors: Arc::default(),
         }
     }
 
@@ -261,6 +266,10 @@ impl ferrobot_mcp::MailboxNotifier for AppState {
         self.publish(UiEvent::MemoryChanged { agent_id: agent });
     }
 
+    fn global_memory_changed(&self) {
+        self.publish(UiEvent::GlobalMemoryChanged);
+    }
+
     fn event_recorded(&self, event: &StoredEvent) {
         self.publish(UiEvent::Event {
             event: event.clone(),
@@ -278,5 +287,20 @@ impl ferrobot_mcp::MailboxNotifier for AppState {
                 .await
                 .map_err(|e| e.to_string())
         })
+    }
+
+    fn connector_tools(&self, agent: AgentId) -> ferrobot_mcp::BoxFuture<Vec<rmcp::model::Tool>> {
+        let state = self.clone();
+        Box::pin(async move { crate::connectors::tools(&state, agent).await })
+    }
+
+    fn call_connector_tool(
+        &self,
+        agent: AgentId,
+        name: String,
+        arguments: Option<rmcp::model::JsonObject>,
+    ) -> ferrobot_mcp::BoxFuture<Result<rmcp::model::CallToolResult, String>> {
+        let state = self.clone();
+        Box::pin(async move { crate::connectors::call(&state, agent, &name, arguments).await })
     }
 }

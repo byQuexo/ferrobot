@@ -1,4 +1,5 @@
-//! Per-agent key/value memory with FTS5 full-text recall.
+//! Key/value memory with FTS5 full-text recall: per agent, plus one global
+//! memory every agent shares.
 
 use ferrobot_core::AgentId;
 use rusqlite::{Row, params};
@@ -81,32 +82,86 @@ impl Store {
     ) -> Result<Vec<MemoryEntry>, StoreError> {
         self.with(move |c| {
             let id = agent.to_string();
-            let mut out = Vec::new();
-            if let Some(q) = fts_query(&query) {
-                let mut stmt = c.prepare(
+            match fts_query(&query) {
+                Some(q) => collect(
+                    c,
                     "SELECT m.key, m.content, m.updated_at FROM memories_fts f
                      JOIN memories m ON m.id = f.rowid
                      WHERE memories_fts MATCH ?1 AND m.agent_id = ?2
                      ORDER BY bm25(memories_fts) LIMIT ?3",
-                )?;
-                let mut rows = stmt.query(params![q, id, limit])?;
-                while let Some(row) = rows.next()? {
-                    out.push(from_row(row)?);
-                }
-            } else {
-                let mut stmt = c.prepare(
+                    params![q, id, limit],
+                ),
+                None => collect(
+                    c,
                     "SELECT key, content, updated_at FROM memories WHERE agent_id = ?1
                      ORDER BY updated_at DESC LIMIT ?2",
-                )?;
-                let mut rows = stmt.query(params![id, limit])?;
-                while let Some(row) = rows.next()? {
-                    out.push(from_row(row)?);
-                }
+                    params![id, limit],
+                ),
             }
-            Ok(out)
         })
         .await
     }
+
+    /// [`Store::remember`] for the global memory.
+    pub async fn remember_global(&self, key: String, content: String) -> Result<(), StoreError> {
+        self.with(move |c| {
+            let ts = fmt_ts(now());
+            c.execute(
+                "INSERT INTO global_memories (key, content, created_at, updated_at)
+                 VALUES (?1, ?2, ?3, ?3)
+                 ON CONFLICT (key) DO UPDATE SET content = excluded.content,
+                                                 updated_at = excluded.updated_at",
+                params![key, content, ts],
+            )?;
+            Ok(())
+        })
+        .await
+    }
+
+    /// [`Store::forget`] for the global memory.
+    pub async fn forget_global(&self, key: String) -> Result<bool, StoreError> {
+        self.with(move |c| Ok(c.execute("DELETE FROM global_memories WHERE key = ?1", [key])? > 0))
+            .await
+    }
+
+    /// [`Store::recall`] for the global memory.
+    pub async fn recall_global(
+        &self,
+        query: String,
+        limit: u32,
+    ) -> Result<Vec<MemoryEntry>, StoreError> {
+        self.with(move |c| match fts_query(&query) {
+            Some(q) => collect(
+                c,
+                "SELECT m.key, m.content, m.updated_at FROM global_memories_fts f
+                 JOIN global_memories m ON m.id = f.rowid
+                 WHERE global_memories_fts MATCH ?1
+                 ORDER BY bm25(global_memories_fts) LIMIT ?2",
+                params![q, limit],
+            ),
+            None => collect(
+                c,
+                "SELECT key, content, updated_at FROM global_memories
+                 ORDER BY updated_at DESC LIMIT ?1",
+                params![limit],
+            ),
+        })
+        .await
+    }
+}
+
+fn collect(
+    c: &rusqlite::Connection,
+    sql: &str,
+    params: impl rusqlite::Params,
+) -> Result<Vec<MemoryEntry>, StoreError> {
+    let mut stmt = c.prepare(sql)?;
+    let mut rows = stmt.query(params)?;
+    let mut out = Vec::new();
+    while let Some(row) = rows.next()? {
+        out.push(from_row(row)?);
+    }
+    Ok(out)
 }
 
 #[cfg(test)]
@@ -172,5 +227,35 @@ mod tests {
         assert!(store.forget(a, "lunch".into()).await.unwrap());
         assert!(!store.forget(a, "lunch".into()).await.unwrap());
         assert_eq!(store.recall(a, "pizza".into(), 5).await.unwrap(), []);
+    }
+
+    #[tokio::test]
+    async fn global_memory_is_separate_from_agents() {
+        let store = Store::open_in_memory().unwrap();
+        let a = agent(&store, "alice").await;
+        store
+            .remember(a, "home".into(), "alice's own note".into())
+            .await
+            .unwrap();
+        store
+            .remember_global("home".into(), "Tim lives in Berlin".into())
+            .await
+            .unwrap();
+        store
+            .remember_global("home".into(), "Tim lives in Hamburg".into())
+            .await
+            .unwrap();
+        let hits = store.recall_global("hamburg".into(), 5).await.unwrap();
+        assert_eq!(hits.len(), 1);
+        assert_eq!(hits[0].content, "Tim lives in Hamburg");
+        assert_eq!(store.recall_global("berlin".into(), 5).await.unwrap(), []);
+        assert_eq!(store.recall(a, "hamburg".into(), 5).await.unwrap(), []);
+        assert_eq!(
+            store.recall_global(String::new(), 5).await.unwrap().len(),
+            1
+        );
+        assert!(store.forget_global("home".into()).await.unwrap());
+        assert!(!store.forget_global("home".into()).await.unwrap());
+        assert_eq!(store.recall(a, String::new(), 5).await.unwrap().len(), 1);
     }
 }

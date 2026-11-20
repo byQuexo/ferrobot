@@ -312,3 +312,35 @@ store used for the run) or the daemon's own env.
 
 - Never ran inside a microVM: vsock device, socat in the guest, runner image
   in the rootfs.
+
+## Agent briefing, mentions, global memory, connectors (`feature/briefing-memory-connectors`)
+
+**Done**
+
+- `create_agent` takes a `task`, sent as the creator's first message to the
+  new agent; the shared prompt sends a briefed agent's questions and results
+  back to its creator, who relays operator questions with `ask_user`.
+- Agents are told to mention teammates as `@name` (rendered as chips); code
+  spans show tokens as `@name`, a lone mention in backticks is still a chip.
+- Global memory (migration v8): `remember`/`forget` with `global: true`,
+  `recall` searches both scopes; `/v1/memory`; Global memory dialog.
+- Connectors (migration v9): `/v1/connectors`, `/v1/agents/{id}/connectors`,
+  daemon-side MCP gateway, Connectors dialog, per-agent checkboxes.
+
+**Tested**
+
+- MCP e2e: the task arrives as a message from the creator with mentions as
+  tokens; global memory across two agents, scopes alternate, limit holds.
+- Daemon: a real upstream MCP server that accepts only `Bearer secret`;
+  the assigned agent lists and calls its tools, the upstream saw only
+  `Bearer secret`, the unassigned agent neither sees nor can call them,
+  created agents inherit, deleting removes token and tools.
+- Store: v8/v9 upgrade, global memory, connector CRUD and assignment.
+
+**Not tested**
+
+- No live model turn with the new prompt (whether models now pass `task` and
+  write `@name`).
+- No real third-party connector (GitHub, Linear, ...); OAuth-only servers
+  cannot be added yet.
+- Connector tool lists in Codex and Gemini CLI after an assignment change.

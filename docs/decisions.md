@@ -202,3 +202,66 @@ the code and this file together.
   The agent runs as `node`, like `docker exec` runs as the image user.
 - **JSON with base64 payloads, one request per connection**; answers up to
   64 MiB (files ~48 MiB), exec output capped at 1 MiB per stream in the guest.
+
+## Agent briefing, mentions, global memory
+
+- **`create_agent` takes an optional `task`.** After approval the daemon sends
+  it as the creator's first message to the new agent, so it starts at once and
+  its replies thread back to the creator. Without a task the result says the
+  agent stays idle. Seen live: a creator put the task in `instructions` only,
+  and both new agents slept without ever getting a turn.
+- **Questions go up the chain by prompt, not by force.** The shared system
+  prompt tells briefed agents to send questions and results to the teammate
+  that briefed them, and creators to relay operator questions with `ask_user`.
+  `ask_user` itself stays open to every agent (the operator may chat with a
+  sub-agent directly).
+- **Mentions:** agents were told to address teammates by id, so they wrote
+  ids and bold names. The prompt now asks for `@name` in prose (ids only in
+  `send_message.to`); the daemon already stored `@name` as a chip token.
+  Streaming text shows plain `@name` until the turn's final text arrives.
+- **Global memory is a separate table** (`global_memories`, v8, own FTS) rather
+  than a nullable `memories.agent_id`, which would need a table rebuild.
+  `remember`/`forget` take `global: true`; `recall` searches both scopes,
+  alternating hits so neither crowds out the other, and marks global ones.
+- **Agents may write global memory.** That is what makes it useful (one agent
+  learns where the operator flies from, all know). Risk: a hijacked agent can
+  plant text every agent reads. Mitigations: the operator sees and deletes
+  entries in the Global memory dialog, and `recall` describes global entries
+  as notes, not instructions. No per-entry author yet.
+
+## Connectors
+
+- **The daemon is the MCP gateway.** It connects to each connector as an MCP
+  client (`rmcp` client + reqwest transport, already in `Cargo.lock` for the
+  tests) and offers its tools through ferrobot's own MCP server as
+  `<connector>__<tool>`. No driver, protocol frame or runner change, and the
+  token never leaves the daemon. A reverse proxy per connector would have
+  needed MCP config in all four drivers.
+- **Static Bearer tokens only, remote Streamable HTTP only.** OAuth-only
+  services (Notion, Linear, Google, most of Claude Desktop's catalog) need an
+  OAuth flow that is not built. Local stdio servers are not supported (they
+  would run in the sandbox and need new packages there). Put a secret in the
+  token field, not in the URL: URLs are stored in SQLite and may show up in
+  daemon logs.
+- **Per-agent assignment** (`agent_connectors`, v9), least privilege: an agent
+  only gets connectors the operator ticked. The assignment is checked again
+  on every call, not just when listing. Agents created by an agent inherit its
+  connectors, like the provider.
+- **One upstream session per agent and connector,** so stateful servers never
+  share state between agents. Sessions are dropped when a connector's URL or
+  token changes, when it is deleted and when an agent's assignment changes.
+- **Failure handling:** listing waits at most 5 s per connector (Claude lists
+  tools every turn), slow or broken connectors are skipped, and the agent's
+  own tools always work. Calls time out after 120 s and are never retried
+  (tools have side effects). Upstream tool names that a driver cannot use
+  (characters outside `A-Za-z0-9_-`, or longer than 64 with
+  `mcp__ferrobot__`) are skipped with a warning.
+- **Connector tools are auto-approved,** like every ferrobot tool
+  (`permissions.ts` allows `mcp__ferrobot__*`, Codex runs with
+  `default_tools_approval_mode = "approve"`). The operator decides per agent
+  instead.
+- **Codex and Gemini CLI may keep their first tool list** until the runner
+  restarts, so assignment changes reach them later than Claude and the
+  OpenAI-compatible driver (both re-list per turn). Gemini CLI tool calls of
+  connectors show only the connector name in the chat (its call ids are
+  parsed up to the first `__`).

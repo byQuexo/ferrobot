@@ -492,6 +492,128 @@
         }
       }
     },
+    "/v1/agents/{id}/connectors": {
+      "get": {
+        "tags": [
+          "connectors"
+        ],
+        "summary": "Ids of the connectors the agent may use.",
+        "operationId": "agent_connectors",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "Agent id (UUID)",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "type": "string",
+                    "format": "uuid"
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or wrong API token",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Unknown agent",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        }
+      },
+      "put": {
+        "tags": [
+          "connectors"
+        ],
+        "summary": "Replaces the connectors the agent may use. Takes effect on its next turn.",
+        "operationId": "set_agent_connectors",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "Agent id (UUID)",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "format": "uuid"
+                }
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "type": "string",
+                    "format": "uuid"
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or wrong API token",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Unknown agent or connector",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/v1/agents/{id}/events": {
       "get": {
         "tags": [
@@ -1835,6 +1957,219 @@
         }
       }
     },
+    "/v1/connectors": {
+      "get": {
+        "tags": [
+          "connectors"
+        ],
+        "summary": "Configured connectors, by name.",
+        "operationId": "list_connectors",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/ConnectorView"
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or wrong API token",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "connectors"
+        ],
+        "summary": "Adds a connector. Agents get its tools once they are assigned it.",
+        "operationId": "create_connector",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateConnector"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ConnectorView"
+                }
+              }
+            }
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or wrong API token",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Name already taken",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/connectors/{id}": {
+      "delete": {
+        "tags": [
+          "connectors"
+        ],
+        "summary": "Deletes a connector, its token and its assignments.",
+        "operationId": "delete_connector",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "Connector id (UUID)",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Deleted"
+          },
+          "401": {
+            "description": "Missing or wrong API token",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Unknown connector",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        }
+      },
+      "patch": {
+        "tags": [
+          "connectors"
+        ],
+        "summary": "Edits a connector. Open sessions with it are closed.",
+        "operationId": "update_connector",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "Connector id (UUID)",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateConnector"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ConnectorView"
+                }
+              }
+            }
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or wrong API token",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Unknown connector",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Name already taken",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/v1/conversations": {
       "get": {
         "tags": [
@@ -1952,6 +2287,147 @@
         "security": [
           {}
         ]
+      }
+    },
+    "/v1/memory": {
+      "get": {
+        "tags": [
+          "memory"
+        ],
+        "summary": "Lists or searches the global memory all agents share.",
+        "operationId": "list_global_memory",
+        "parameters": [
+          {
+            "name": "q",
+            "in": "query",
+            "description": "Full-text search; empty lists the most recently updated entries.",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "description": "1-200, default 100.",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "format": "int32",
+              "minimum": 0
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/MemoryEntry"
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or wrong API token",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "memory"
+        ],
+        "summary": "Creates or replaces a global memory.",
+        "operationId": "put_global_memory",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PutMemory"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "204": {
+            "description": "Stored"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or wrong API token",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/memory/{key}": {
+      "delete": {
+        "tags": [
+          "memory"
+        ],
+        "summary": "Deletes one global memory by key (URL-encoded).",
+        "operationId": "delete_global_memory",
+        "parameters": [
+          {
+            "name": "key",
+            "in": "path",
+            "description": "Memory key",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Deleted"
+          },
+          "401": {
+            "description": "Missing or wrong API token",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Unknown key",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        }
       }
     },
     "/v1/providers": {
@@ -2839,6 +3315,52 @@
           }
         }
       },
+      "Connector": {
+        "type": "object",
+        "required": [
+          "id",
+          "name",
+          "url",
+          "created_at"
+        ],
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "name": {
+            "type": "string",
+            "description": "1-16 chars, `a-z0-9-`, starts with a letter. Prefixes its tools\n(`<name>__<tool>`)."
+          },
+          "url": {
+            "type": "string",
+            "description": "Streamable HTTP endpoint of the MCP server."
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      },
+      "ConnectorView": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/Connector"
+          },
+          {
+            "type": "object",
+            "required": [
+              "has_token"
+            ],
+            "properties": {
+              "has_token": {
+                "type": "boolean",
+                "description": "Whether a token is stored. The token itself is never returned."
+              }
+            }
+          }
+        ]
+      },
       "Conversation": {
         "type": "object",
         "description": "Messages two agents exchanged.",
@@ -2912,6 +3434,32 @@
               "null"
             ],
             "description": "Model id; omitted: the provider's default model."
+          }
+        }
+      },
+      "CreateConnector": {
+        "type": "object",
+        "required": [
+          "name",
+          "url"
+        ],
+        "properties": {
+          "name": {
+            "type": "string",
+            "description": "1-16 chars, `a-z0-9-`, starts with a letter; prefixes the tools.",
+            "example": "github"
+          },
+          "url": {
+            "type": "string",
+            "description": "Streamable HTTP endpoint of the MCP server.",
+            "example": "https://api.githubcopilot.com/mcp/"
+          },
+          "token": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Sent as `Authorization: Bearer <token>`. Stored in the OS keychain;\nnever returned."
           }
         }
       },
@@ -4072,6 +4620,21 @@
           },
           {
             "type": "object",
+            "description": "The global memory changed; refetch it.",
+            "required": [
+              "type"
+            ],
+            "properties": {
+              "type": {
+                "type": "string",
+                "enum": [
+                  "global_memory_changed"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
             "description": "The agent's routines or their runs changed; refetch them.",
             "required": [
               "agent_id",
@@ -4142,6 +4705,30 @@
               "null"
             ],
             "description": "New model id; `null` goes back to the provider's default model."
+          }
+        }
+      },
+      "UpdateConnector": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "url": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "token": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "New token; `null` removes the stored one."
           }
         }
       },
@@ -4262,7 +4849,7 @@
     },
     {
       "name": "memory",
-      "description": "Per-agent long-term memory"
+      "description": "Per-agent and global long-term memory"
     },
     {
       "name": "routines",
@@ -4275,6 +4862,10 @@
     {
       "name": "providers",
       "description": "Model providers and their API keys"
+    },
+    {
+      "name": "connectors",
+      "description": "Remote MCP servers whose tools agents can use"
     }
   ]
 }

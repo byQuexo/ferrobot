@@ -3,6 +3,7 @@
 
 pub(crate) mod agents;
 pub(crate) mod chat;
+pub(crate) mod connectors;
 pub(crate) mod memory;
 pub(crate) mod providers;
 pub(crate) mod routines;
@@ -27,6 +28,7 @@ pub(crate) const MAX_TEXT_BYTES: usize = 32 * 1024;
 
 pub fn router() -> Router<AppState> {
     Router::new()
+        .merge(integrations())
         .route("/v1/health", get(health))
         .route("/v1/ws", get(ws::ui_ws))
         .route(
@@ -67,24 +69,20 @@ pub fn router() -> Router<AppState> {
             axum::routing::delete(memory::delete_memory),
         )
         .route(
+            "/v1/memory",
+            get(memory::list_global_memory).post(memory::put_global_memory),
+        )
+        .route(
+            "/v1/memory/{key}",
+            axum::routing::delete(memory::delete_global_memory),
+        )
+        .route(
             "/v1/agents/{id}/routines",
             get(routines::list_routines).post(routines::create_routine),
         )
         .route(
             "/v1/routines/{rid}",
             axum::routing::patch(routines::update_routine).delete(routines::delete_routine),
-        )
-        .route(
-            "/v1/providers",
-            get(providers::list_providers).post(providers::create_provider),
-        )
-        .route(
-            "/v1/providers/{id}",
-            axum::routing::patch(providers::update_provider).delete(providers::delete_provider),
-        )
-        .route(
-            "/v1/providers/{id}/chatgpt-login",
-            get(providers::chatgpt_login_status).post(providers::start_chatgpt_login),
         )
         .route("/v1/routines/{rid}/run", post(routines::run_routine))
         .route("/v1/routines/{rid}/runs", get(routines::list_runs))
@@ -106,6 +104,35 @@ pub fn router() -> Router<AppState> {
         .route(
             "/v1/agents/{id}/snapshots/{sid}/restore",
             post(sandbox::restore_snapshot),
+        )
+}
+
+/// Model providers and connectors.
+fn integrations() -> Router<AppState> {
+    Router::new()
+        .route(
+            "/v1/providers",
+            get(providers::list_providers).post(providers::create_provider),
+        )
+        .route(
+            "/v1/providers/{id}",
+            axum::routing::patch(providers::update_provider).delete(providers::delete_provider),
+        )
+        .route(
+            "/v1/providers/{id}/chatgpt-login",
+            get(providers::chatgpt_login_status).post(providers::start_chatgpt_login),
+        )
+        .route(
+            "/v1/connectors",
+            get(connectors::list_connectors).post(connectors::create_connector),
+        )
+        .route(
+            "/v1/connectors/{id}",
+            axum::routing::patch(connectors::update_connector).delete(connectors::delete_connector),
+        )
+        .route(
+            "/v1/agents/{id}/connectors",
+            get(connectors::agent_connectors).put(connectors::set_agent_connectors),
         )
 }
 

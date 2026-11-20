@@ -408,6 +408,19 @@ async fn profile_avatar_unread_and_memory() {
     assert_eq!(status, 204);
     let (status, _) = http(&d.ui, "DELETE", &format!("{mem}/db"), None).await;
     assert_eq!(status, 404);
+
+    // Global memory: same shape, not tied to an agent.
+    let body = json!({"key": "home", "content": "Operator lives in Hamburg"});
+    let (status, _) = http(&d.ui, "POST", "/v1/memory", Some(body)).await;
+    assert_eq!(status, 204);
+    let (_, hits) = http(&d.ui, "GET", "/v1/memory?q=hamburg", None).await;
+    assert_eq!(hits[0]["key"], "home", "{hits}");
+    let (_, own) = http(&d.ui, "GET", &format!("{mem}?q=hamburg"), None).await;
+    assert_eq!(own, json!([]));
+    let (status, _) = http(&d.ui, "DELETE", "/v1/memory/home", None).await;
+    assert_eq!(status, 204);
+    let (status, _) = http(&d.ui, "DELETE", "/v1/memory/home", None).await;
+    assert_eq!(status, 404);
 }
 
 #[tokio::test]
@@ -1806,4 +1819,146 @@ async fn idle_sleeping_agents_are_archived_and_restored_on_wake() {
 
     http(&d.ui, "DELETE", &format!("/v1/agents/{id}"), None).await;
     assert!(backend.calls().contains(&"delete_archive arlo".to_owned()));
+}
+
+struct Quiet;
+
+impl MailboxNotifier for Quiet {
+    fn message_enqueued(&self, _: &ferrobot_core::MailMessage) {}
+}
+
+/// Serves ferrobot's own MCP server as a connector upstream that only accepts
+/// `Bearer secret`. Returns its URL and every `Authorization` header it saw.
+async fn upstream_mcp() -> (String, Arc<Mutex<Vec<String>>>) {
+    let store = ferrobot_store::Store::open_in_memory().unwrap();
+    let up = store
+        .create_agent(ferrobot_store::NewAgent {
+            created_by: None,
+            name: ferrobot_core::AgentName::parse("up").unwrap(),
+            description: String::new(),
+            instructions: String::new(),
+        })
+        .await
+        .unwrap();
+    store.set_agent_token(up.id, "secret").await.unwrap();
+    let seen = Arc::new(Mutex::new(Vec::new()));
+    let record = seen.clone();
+    let app = axum::Router::new()
+        .nest(
+            "/mcp",
+            ferrobot_mcp::router(ferrobot_mcp::McpState {
+                store,
+                notifier: Arc::new(Quiet),
+            }),
+        )
+        .layer(axum::middleware::from_fn(
+            move |req: axum::extract::Request, next: axum::middleware::Next| {
+                let record = record.clone();
+                async move {
+                    if let Some(v) = req.headers().get("authorization") {
+                        record.lock().unwrap().push(v.to_str().unwrap().to_owned());
+                    }
+                    next.run(req).await
+                }
+            },
+        ));
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let url = format!("http://{}/mcp", listener.local_addr().unwrap());
+    tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });
+    (url, seen)
+}
+
+async fn mcp_as(d: &Daemon, token: String) -> rmcp::service::RunningService<rmcp::RoleClient, ()> {
+    use rmcp::ServiceExt;
+    use rmcp::transport::StreamableHttpClientTransport;
+    use rmcp::transport::streamable_http_client::StreamableHttpClientTransportConfig;
+    let config = StreamableHttpClientTransportConfig::with_uri(format!("http://{}/mcp", d.agents))
+        .auth_header(token);
+    ().serve(StreamableHttpClientTransport::from_config(config))
+        .await
+        .unwrap()
+}
+
+#[tokio::test]
+async fn connectors_lend_upstream_tools_to_assigned_agents_only() {
+    use rmcp::model::CallToolRequestParams;
+    let (url, seen) = upstream_mcp().await;
+    let backend = Arc::new(StatefulBackend::default());
+    let d = start(backend.clone(), None, "127.0.0.1:0").await;
+    let ann = create(&d, json!({"name": "ann"})).await["id"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    create(&d, json!({"name": "ben"})).await;
+
+    let body = json!({"name": "up", "url": url, "token": "secret"});
+    let (status, conn) = http(&d.ui, "POST", "/v1/connectors", Some(body)).await;
+    assert_eq!(status, 201, "{conn}");
+    assert_eq!(conn["has_token"], true);
+    let bad = json!({"name": "Up!", "url": url});
+    let (status, _) = http(&d.ui, "POST", "/v1/connectors", Some(bad)).await;
+    assert_eq!(status, 400);
+    let (_, all) = http(&d.ui, "GET", "/v1/connectors", None).await;
+    assert!(!all.to_string().contains("secret"), "{all}");
+    let assign = format!("/v1/agents/{ann}/connectors");
+    let (status, ids) = http(&d.ui, "PUT", &assign, Some(json!([conn["id"]]))).await;
+    assert_eq!((status, &ids), (200, &json!([conn["id"]])));
+    let (status, _) = http(&d.ui, "PUT", &assign, Some(json!([AgentId::new()]))).await;
+    assert_eq!(status, 404, "unknown connector");
+
+    // ann sees and calls the upstream's tools, authenticated with the token.
+    let as_ann = mcp_as(&d, backend.token("ann")).await;
+    let tools = as_ann.list_all_tools().await.unwrap();
+    assert!(
+        tools.iter().any(|t| t.name == "up__list_agents"),
+        "{tools:?}"
+    );
+    assert!(tools.iter().any(|t| t.name == "send_message"));
+    let r = as_ann
+        .call_tool(CallToolRequestParams::new("up__list_agents"))
+        .await
+        .unwrap();
+    let listed = r.structured_content.unwrap();
+    assert_eq!(listed["agents"][0]["name"], "up", "{listed}");
+    let headers = seen.lock().unwrap().clone();
+    assert_ne!(headers, Vec::<String>::new());
+    assert!(headers.iter().all(|h| h == "Bearer secret"), "{headers:?}");
+
+    // ben was not given the connector: not listed, and calling it fails.
+    let as_ben = mcp_as(&d, backend.token("ben")).await;
+    let tools = as_ben.list_all_tools().await.unwrap();
+    assert!(!tools.iter().any(|t| t.name.starts_with("up__")));
+    assert!(
+        as_ben
+            .call_tool(CallToolRequestParams::new("up__list_agents"))
+            .await
+            .is_err()
+    );
+
+    // Agents created by ann inherit its connectors.
+    let spec = ferrobot_daemon::agents::AgentSpec {
+        name: "cal".into(),
+        description: String::new(),
+        instructions: String::new(),
+        character: None,
+        provider_id: None,
+        model: None,
+    };
+    let cal = ferrobot_daemon::agents::create(&d.state, spec, Some(ann.parse().unwrap()))
+        .await
+        .unwrap();
+    let path = format!("/v1/agents/{}/connectors", cal.id);
+    let (_, ids) = http(&d.ui, "GET", &path, None).await;
+    assert_eq!(ids, json!([conn["id"]]));
+
+    // Deleting removes the token and the tools.
+    let id = conn["id"].as_str().unwrap();
+    let (status, _) = http(&d.ui, "DELETE", &format!("/v1/connectors/{id}"), None).await;
+    assert_eq!(status, 204);
+    let key = ferrobot_daemon::connectors::secret_key(id.parse().unwrap());
+    assert_eq!(d.state.settings.secrets.get(&key).await.unwrap(), None);
+    let tools = as_ann.list_all_tools().await.unwrap();
+    assert!(!tools.iter().any(|t| t.name.starts_with("up__")));
+    as_ann.cancel().await.unwrap();
+    as_ben.cancel().await.unwrap();
 }
