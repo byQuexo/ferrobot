@@ -1,4 +1,10 @@
 //! Drives the MCP server with the official rmcp client over real HTTP.
+#![allow(
+    clippy::unwrap_used,
+    clippy::expect_used,
+    clippy::panic,
+    reason = "test code"
+)]
 
 use std::sync::{Arc, Mutex};
 

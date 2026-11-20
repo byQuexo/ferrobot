@@ -2,7 +2,13 @@
 //! memory, routines and the scheduler, idle sleep and auto-wake, snapshots,
 //! and the model proxy. No Node, no Docker.
 
-#![allow(clippy::too_many_lines)]
+#![allow(
+    clippy::too_many_lines,
+    clippy::unwrap_used,
+    clippy::expect_used,
+    clippy::panic,
+    reason = "test code"
+)]
 
 mod common;
 
