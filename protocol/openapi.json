@@ -4047,7 +4047,8 @@
           "backend",
           "driver",
           "model_proxy",
-          "timezone"
+          "timezone",
+          "sandbox_ready"
         ],
         "properties": {
           "name": {
@@ -4078,6 +4079,17 @@
           "timezone": {
             "type": "string",
             "description": "Default time zone for new routines."
+          },
+          "sandbox_ready": {
+            "type": "boolean",
+            "description": "Whether the sandbox backend can start agents now (Docker: the engine answers)."
+          },
+          "sandbox_error": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Why the backend is not ready, for the operator; null when ready."
           }
         }
       },

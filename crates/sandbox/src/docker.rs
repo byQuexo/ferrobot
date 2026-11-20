@@ -9,7 +9,7 @@ use bollard::Docker;
 use bollard::exec::{StartExecOptions, StartExecResults};
 use bollard::models::{ContainerCreateBody, ExecConfig, HostConfig};
 use bollard::query_parameters::{
-    CommitContainerOptionsBuilder, CreateContainerOptionsBuilder,
+    CommitContainerOptionsBuilder, CreateContainerOptionsBuilder, CreateImageOptionsBuilder,
     DownloadFromContainerOptionsBuilder, ImportImageOptionsBuilder, InspectContainerOptions,
     RemoveContainerOptionsBuilder, RemoveImageOptionsBuilder, RemoveVolumeOptions,
     StopContainerOptionsBuilder, UploadToContainerOptionsBuilder,
@@ -108,6 +108,28 @@ impl DockerBackend {
     /// Fails fast if the engine is unreachable.
     pub async fn ping(&self) -> Result<(), SandboxError> {
         self.docker.ping().await?;
+        Ok(())
+    }
+
+    /// Pulls `image` unless the engine has it (a release build names a registry image).
+    async fn pull_if_missing(&self, image: &str) -> Result<(), SandboxError> {
+        match self.docker.inspect_image(image).await {
+            Ok(_) => return Ok(()),
+            Err(bollard::errors::Error::DockerResponseServerError {
+                status_code: 404, ..
+            }) => {}
+            Err(e) => return Err(e.into()),
+        }
+        tracing::info!(%image, "pulling the runner image; the first start takes a while");
+        let options = CreateImageOptionsBuilder::default()
+            .from_image(image)
+            .build();
+        let mut pull = self.docker.create_image(Some(options), None, None);
+        while let Some(step) = pull.next().await {
+            if let Some(error) = step?.error_detail.and_then(|d| d.message) {
+                return Err(SandboxError::Other(format!("pulling {image}: {error}")));
+            }
+        }
         Ok(())
     }
 
@@ -480,10 +502,15 @@ impl SandboxBackend for DockerBackend {
         self.config.home_dir.clone()
     }
 
+    async fn ready(&self) -> Result<(), SandboxError> {
+        self.ping().await
+    }
+
     async fn create(&self, spec: &SandboxSpec) -> Result<SandboxHandle, SandboxError> {
         let id = if let Some(id) = self.unarchive(spec).await? {
             id
         } else {
+            self.pull_if_missing(&self.config.image).await?;
             let id = self.create_container(spec, &self.config.image).await?;
             self.ensure_started(&id).await?;
             id

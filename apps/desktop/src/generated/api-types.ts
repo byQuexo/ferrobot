@@ -1017,6 +1017,10 @@ export interface components {
             idle_timeout_s?: number | null;
             /** @description Default time zone for new routines. */
             timezone: string;
+            /** @description Whether the sandbox backend can start agents now (Docker: the engine answers). */
+            sandbox_ready: boolean;
+            /** @description Why the backend is not ready, for the operator; null when ready. */
+            sandbox_error?: string | null;
         };
         Interrupted: {
             /** @description The interrupted turn, or null if the agent was idle. */
