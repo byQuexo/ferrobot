@@ -126,6 +126,11 @@ pub trait SandboxBackend: Send + Sync + std::fmt::Debug {
         "/home/node".into()
     }
 
+    /// Whether the backend can run sandboxes right now (e.g. the Docker engine answers).
+    async fn ready(&self) -> Result<(), SandboxError> {
+        Ok(())
+    }
+
     /// Creates (or adopts) and starts the sandbox. A sandbox archived with
     /// `sleep(Archived)` comes back from its archive.
     async fn create(&self, spec: &SandboxSpec) -> Result<SandboxHandle, SandboxError>;

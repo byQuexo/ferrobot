@@ -52,8 +52,10 @@ Principles:
   utoipa, `core`: `mcp` for schemars). CI checks
   `cargo check -p ferrobot-core -p ferrobot-store -p ferrobot-sandbox`.
 - **Desktop is thin**: no business logic in Tauri (there are no Tauri
-  commands); the UI does everything through the `/v1` API and the `/v1/ws`
-  event stream. Generated API types live in `apps/desktop/src/generated/`.
+  commands); the shell only starts the bundled `ferrobotd` (release builds,
+  when nothing answers on 127.0.0.1:7878) and injects the operator token. The
+  UI does everything through the `/v1` API and the `/v1/ws` event stream.
+  Generated API types live in `apps/desktop/src/generated/`.
 - **The API is versioned** (`/v1`). Additive changes only; breaking changes
   need a new version. `protocol/` is generated from the code, never by hand.
 - Two listeners with different trust: UI API on loopback (operator token),
@@ -152,6 +154,15 @@ Desktop (`apps/desktop/`): `npm ci && npm run check:api && npm run typecheck && 
 Tauri shell: `cd src-tauri && cargo fmt --check && cargo clippy --all-targets -- -D warnings`.
 The built `dist/` is embedded at compile time: run `npm run build` before
 `cargo build` in `src-tauri`.
+
+Release bundle (local, host arch; CI builds universal macOS and Windows on a
+`v*` tag, `.github/workflows/release.yml`):
+```
+cargo build --release -p ferrobot-daemon
+mkdir -p apps/desktop/src-tauri/binaries
+cp target/release/ferrobotd apps/desktop/src-tauri/binaries/ferrobotd-$(rustc -vV | sed -n 's/^host: //p')
+cd apps/desktop && npm run tauri build -- --bundles dmg --config src-tauri/tauri.release.conf.json
+```
 
 Demo data:
 ```

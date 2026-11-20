@@ -2,14 +2,14 @@
 
 use std::collections::HashMap;
 use std::io::Read;
-use std::sync::Arc;
+use std::sync::{Arc, PoisonError, RwLock};
 
 use async_trait::async_trait;
 use bollard::Docker;
 use bollard::exec::{StartExecOptions, StartExecResults};
 use bollard::models::{ContainerCreateBody, ExecConfig, HostConfig};
 use bollard::query_parameters::{
-    CommitContainerOptionsBuilder, CreateContainerOptionsBuilder,
+    CommitContainerOptionsBuilder, CreateContainerOptionsBuilder, CreateImageOptionsBuilder,
     DownloadFromContainerOptionsBuilder, ImportImageOptionsBuilder, InspectContainerOptions,
     RemoveContainerOptionsBuilder, RemoveImageOptionsBuilder, RemoveVolumeOptions,
     StopContainerOptionsBuilder, UploadToContainerOptionsBuilder,
@@ -92,22 +92,66 @@ impl Default for DockerConfig {
 /// the image's non-root user, and `$HOME` on a named volume that `stop`/`destroy` keep.
 #[derive(Debug, Clone)]
 pub struct DockerBackend {
-    docker: Docker,
+    /// Swapped by [`ping`](Self::ping) when an engine that was missing comes up.
+    docker: Arc<RwLock<Docker>>,
     config: DockerConfig,
 }
 
 impl DockerBackend {
-    /// Connects using `DOCKER_HOST` or the platform default socket.
+    /// Connects using `DOCKER_HOST` or the platform default socket. No socket yet (Docker not
+    /// installed or not started) is not an error: [`ping`](Self::ping) connects once it exists.
     pub fn connect(config: DockerConfig) -> Result<Self, SandboxError> {
+        let docker = match Docker::connect_with_local_defaults() {
+            Err(bollard::errors::Error::SocketNotFoundError(socket)) => {
+                tracing::warn!(%socket, "no Docker socket yet");
+                // Port 9 (discard) never answers, so every call fails until `ping` reconnects.
+                Docker::connect_with_http("http://127.0.0.1:9", 5, bollard::API_DEFAULT_VERSION)?
+            }
+            connected => connected?,
+        };
         Ok(Self {
-            docker: Docker::connect_with_local_defaults()?,
+            docker: Arc::new(RwLock::new(docker)),
             config,
         })
     }
 
-    /// Fails fast if the engine is unreachable.
+    fn docker(&self) -> Docker {
+        self.docker
+            .read()
+            .unwrap_or_else(PoisonError::into_inner)
+            .clone()
+    }
+
+    /// Fails fast if the engine is unreachable; reconnects when it has come up since.
     pub async fn ping(&self) -> Result<(), SandboxError> {
-        self.docker.ping().await?;
+        if self.docker().ping().await.is_ok() {
+            return Ok(());
+        }
+        let fresh = Docker::connect_with_local_defaults()?;
+        fresh.ping().await?;
+        *self.docker.write().unwrap_or_else(PoisonError::into_inner) = fresh;
+        Ok(())
+    }
+
+    /// Pulls `image` unless the engine has it (a release build names a registry image).
+    async fn pull_if_missing(&self, image: &str) -> Result<(), SandboxError> {
+        match self.docker().inspect_image(image).await {
+            Ok(_) => return Ok(()),
+            Err(bollard::errors::Error::DockerResponseServerError {
+                status_code: 404, ..
+            }) => {}
+            Err(e) => return Err(e.into()),
+        }
+        tracing::info!(%image, "pulling the runner image; the first start takes a while");
+        let options = CreateImageOptionsBuilder::default()
+            .from_image(image)
+            .build();
+        let mut pull = self.docker().create_image(Some(options), None, None);
+        while let Some(step) = pull.next().await {
+            if let Some(error) = step?.error_detail.and_then(|d| d.message) {
+                return Err(SandboxError::Other(format!("pulling {image}: {error}")));
+            }
+        }
         Ok(())
     }
 
@@ -162,7 +206,7 @@ impl DockerBackend {
             .path(parent)
             .copy_uidgid("true")
             .build();
-        self.docker
+        self.docker()
             .upload_to_container(id, Some(options), bollard::body_full(archive))
             .await?;
         Ok(())
@@ -217,7 +261,7 @@ impl DockerBackend {
                 operation: "archive (no object store configured)",
             })?;
         let info = self
-            .docker
+            .docker()
             .inspect_container(id, None::<InspectContainerOptions>)
             .await
             .map_err(|e| not_found_or(e, id))?;
@@ -234,7 +278,7 @@ impl DockerBackend {
         put_stream(
             store,
             &home_key,
-            self.docker.download_from_container(id, Some(home)),
+            self.docker().download_from_container(id, Some(home)),
             self.sealer(&home_key)?,
         )
         .await?;
@@ -251,7 +295,7 @@ impl DockerBackend {
             .comment("ferrobot archive")
             .changes(&blank)
             .build();
-        self.docker
+        self.docker()
             .commit_container(options, bollard::models::ContainerConfig::default())
             .await?;
         let image = format!("{ARCHIVE_REPO}:{name}");
@@ -260,13 +304,15 @@ impl DockerBackend {
         put_stream(
             store,
             &image_key,
-            self.docker.export_image(&image),
+            self.docker().export_image(&image),
             self.sealer(&image_key)?,
         )
         .await?;
         self.destroy(sandbox, true).await?;
         let force = RemoveImageOptionsBuilder::default().force(true).build();
-        self.docker.remove_image(&image, Some(force), None).await?;
+        self.docker()
+            .remove_image(&image, Some(force), None)
+            .await?;
         Ok(())
     }
 
@@ -281,7 +327,7 @@ impl DockerBackend {
             Err(object_store::Error::NotFound { .. }) => return Ok(None),
             Err(e) => return Err(e.into()),
         };
-        let mut load = self.docker.import_image_stream(
+        let mut load = self.docker().import_image_stream(
             ImportImageOptionsBuilder::default().quiet(true).build(),
             image_tar,
             None,
@@ -335,14 +381,14 @@ impl DockerBackend {
         };
 
         let options = CreateContainerOptionsBuilder::default().name(&name).build();
-        match self.docker.create_container(Some(options), body).await {
+        match self.docker().create_container(Some(options), body).await {
             Ok(created) => Ok(created.id),
             // Adopt an existing container with the same name (idempotent create).
             Err(bollard::errors::Error::DockerResponseServerError {
                 status_code: 409, ..
             }) => {
                 tracing::info!(container = %name, "adopting existing container");
-                self.docker
+                self.docker()
                     .inspect_container(&name, None::<InspectContainerOptions>)
                     .await?
                     .id
@@ -354,15 +400,15 @@ impl DockerBackend {
 
     async fn ensure_started(&self, id: &str) -> Result<(), SandboxError> {
         let info = self
-            .docker
+            .docker()
             .inspect_container(id, None::<InspectContainerOptions>)
             .await
             .map_err(|e| not_found_or(e, id))?;
         let state = info.state.unwrap_or_default();
         if state.paused == Some(true) {
-            self.docker.unpause_container(id).await?;
+            self.docker().unpause_container(id).await?;
         } else if state.running != Some(true) {
-            self.docker.start_container(id, None).await?;
+            self.docker().start_container(id, None).await?;
         }
         Ok(())
     }
@@ -480,10 +526,15 @@ impl SandboxBackend for DockerBackend {
         self.config.home_dir.clone()
     }
 
+    async fn ready(&self) -> Result<(), SandboxError> {
+        self.ping().await
+    }
+
     async fn create(&self, spec: &SandboxSpec) -> Result<SandboxHandle, SandboxError> {
         let id = if let Some(id) = self.unarchive(spec).await? {
             id
         } else {
+            self.pull_if_missing(&self.config.image).await?;
             let id = self.create_container(spec, &self.config.image).await?;
             self.ensure_started(&id).await?;
             id
@@ -501,7 +552,7 @@ impl SandboxBackend for DockerBackend {
     ) -> Result<ExecOutput, SandboxError> {
         let id = Self::check(sandbox)?;
         let exec = self
-            .docker
+            .docker()
             .create_exec(
                 id,
                 ExecConfig {
@@ -519,7 +570,7 @@ impl SandboxBackend for DockerBackend {
         let mut stdout = Vec::new();
         let mut stderr = Vec::new();
         if let StartExecResults::Attached { mut output, .. } = self
-            .docker
+            .docker()
             .start_exec(&exec.id, None::<StartExecOptions>)
             .await?
         {
@@ -539,7 +590,7 @@ impl SandboxBackend for DockerBackend {
             }
         }
         let exit_code = self
-            .docker
+            .docker()
             .inspect_exec(&exec.id)
             .await?
             .exit_code
@@ -563,7 +614,7 @@ impl SandboxBackend for DockerBackend {
         let options = DownloadFromContainerOptionsBuilder::default()
             .path(path.as_str())
             .build();
-        let mut stream = self.docker.download_from_container(id, Some(options));
+        let mut stream = self.docker().download_from_container(id, Some(options));
         let mut tar = Vec::new();
         while let Some(chunk) = stream
             .try_next()
@@ -590,7 +641,7 @@ impl SandboxBackend for DockerBackend {
         let options = UploadToContainerOptionsBuilder::default()
             .path(path.parent())
             .build();
-        self.docker
+        self.docker()
             .upload_to_container(id, Some(options), bollard::body_full(archive.into()))
             .await
             .map_err(|e| not_found_or(e, path.parent()))?;
@@ -622,7 +673,7 @@ impl SandboxBackend for DockerBackend {
                 .path(&self.config.home_dir)
                 .build();
             let chunks: Vec<Bytes> = self
-                .docker
+                .docker()
                 .download_from_container(id, Some(options))
                 .try_collect()
                 .await
@@ -638,7 +689,7 @@ impl SandboxBackend for DockerBackend {
             store.put(key, tar.into()).await?;
         }
         let env = self
-            .docker
+            .docker()
             .inspect_container(id, None::<InspectContainerOptions>)
             .await
             .map_err(|e| not_found_or(e, id))?
@@ -653,7 +704,7 @@ impl SandboxBackend for DockerBackend {
             .comment("ferrobot snapshot")
             .changes(&blank)
             .build();
-        self.docker
+        self.docker()
             .commit_container(options, bollard::models::ContainerConfig::default())
             .await
             .map_err(|e| not_found_or(e, id))?;
@@ -676,7 +727,7 @@ impl SandboxBackend for DockerBackend {
     ) -> Result<SandboxHandle, SandboxError> {
         let image = self.check_snapshot(snapshot)?;
         Self::check(sandbox)?;
-        self.docker
+        self.docker()
             .inspect_image(image)
             .await
             .map_err(|e| not_found_or(e, image))?;
@@ -705,7 +756,7 @@ impl SandboxBackend for DockerBackend {
     async fn delete_archive(&self, name: &str) -> Result<(), SandboxError> {
         // 409: a restored container still uses the image; it goes with a later purge.
         match self
-            .docker
+            .docker()
             .remove_image(
                 &format!("{ARCHIVE_REPO}:{name}"),
                 None::<bollard::query_parameters::RemoveImageOptions>,
@@ -736,7 +787,7 @@ impl SandboxBackend for DockerBackend {
     async fn delete_snapshot(&self, snapshot: &str) -> Result<(), SandboxError> {
         let image = self.check_snapshot(snapshot)?;
         let options = RemoveImageOptionsBuilder::default().force(true).build();
-        match self.docker.remove_image(image, Some(options), None).await {
+        match self.docker().remove_image(image, Some(options), None).await {
             Ok(_)
             | Err(bollard::errors::Error::DockerResponseServerError {
                 status_code: 404, ..
@@ -773,7 +824,7 @@ impl SandboxBackend for DockerBackend {
             SleepLevel::Warm => {}
         }
         let id = Self::check(sandbox)?;
-        match self.docker.pause_container(id).await {
+        match self.docker().pause_container(id).await {
             Ok(()) => Ok(level),
             // 409: already paused, or not running (then it already sleeps cold).
             Err(bollard::errors::Error::DockerResponseServerError {
@@ -790,10 +841,10 @@ impl SandboxBackend for DockerBackend {
         let id = Self::check(sandbox)?;
         // A paused container cannot handle SIGTERM; resume it so it stops cleanly.
         if self.state(sandbox).await? == SandboxState::Paused {
-            self.docker.unpause_container(id).await?;
+            self.docker().unpause_container(id).await?;
         }
         let options = StopContainerOptionsBuilder::default().t(10).build();
-        match self.docker.stop_container(id, Some(options)).await {
+        match self.docker().stop_container(id, Some(options)).await {
             // 304: already stopped
             Ok(())
             | Err(bollard::errors::Error::DockerResponseServerError {
@@ -807,7 +858,7 @@ impl SandboxBackend for DockerBackend {
         let id = Self::check(sandbox)?;
         // Resolve the volume before the container disappears.
         let volume = if purge_disk {
-            self.docker
+            self.docker()
                 .inspect_container(id, None::<InspectContainerOptions>)
                 .await
                 .ok()
@@ -817,7 +868,7 @@ impl SandboxBackend for DockerBackend {
             None
         };
         let options = RemoveContainerOptionsBuilder::default().force(true).build();
-        match self.docker.remove_container(id, Some(options)).await {
+        match self.docker().remove_container(id, Some(options)).await {
             Ok(())
             | Err(bollard::errors::Error::DockerResponseServerError {
                 status_code: 404, ..
@@ -825,7 +876,7 @@ impl SandboxBackend for DockerBackend {
             Err(e) => return Err(e.into()),
         }
         if let Some(volume) = volume {
-            self.docker
+            self.docker()
                 .remove_volume(&volume, None::<RemoveVolumeOptions>)
                 .await?;
         }
@@ -835,7 +886,7 @@ impl SandboxBackend for DockerBackend {
     async fn state(&self, sandbox: &SandboxHandle) -> Result<SandboxState, SandboxError> {
         let id = Self::check(sandbox)?;
         match self
-            .docker
+            .docker()
             .inspect_container(id, None::<InspectContainerOptions>)
             .await
         {
