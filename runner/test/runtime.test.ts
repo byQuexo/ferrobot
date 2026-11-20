@@ -146,12 +146,14 @@ async function waitFor(cond: () => boolean, timeoutMs = 2000): Promise<void> {
 describe("Runner configure", () => {
   it("applies a new name and instructions from the next turn", async () => {
     const seen: string[] = [];
+    let reconfigured = 0;
     const driver: ModelDriver = {
       name: "fake",
       runTurn: (ctx) => {
         seen.push(`${ctx.agentName}:${ctx.instructions}`);
         return Promise.resolve({ result: null, sessionId: null });
       },
+      reconfigure: () => { reconfigured += 1; },
       close: () => Promise.resolve(),
     };
     const dir = mkdtempSync(join(tmpdir(), "ferrobot-"));
@@ -174,6 +176,7 @@ describe("Runner configure", () => {
     runner.handle(turn("t2"));
     await new Promise((r) => setTimeout(r, 10));
     assert.deepEqual(seen, ["a:old", "b:new"]);
+    assert.equal(reconfigured, 1, "the driver hears about it");
   });
 });
 

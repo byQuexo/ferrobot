@@ -382,6 +382,15 @@ pub(crate) async fn set_agent_connectors(
     state.store.get_agent(id).await?;
     state.store.set_agent_connectors(id, ids).await?;
     state.connectors.evict_agent(id).await;
+    // Codex and Gemini list tools once per process: tell the runner.
+    let agent = state.store.get_agent(id).await?;
+    state.hub.send(
+        id,
+        ferrobot_core::protocol::DaemonFrame::Configure {
+            agent_name: agent.name,
+            instructions: agent.instructions,
+        },
+    );
     let connectors = state.store.agent_connectors(id).await?;
     Ok(Json(connectors.into_iter().map(|c| c.id).collect()))
 }

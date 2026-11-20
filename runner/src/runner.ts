@@ -37,6 +37,7 @@ export class Runner {
       case "welcome":
         this.#instructions = frame.instructions;
         this.#agentName = frame.agent_name;
+        this.#deps.driver.reconfigure?.();
         this.#sessionId ??= frame.resume_session_id;
         log.info("welcome", { agent: frame.agent_name, resume: this.#sessionId });
         break;

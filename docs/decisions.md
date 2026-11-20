@@ -317,9 +317,10 @@ the code and this file together.
 - **The runner reports what the model saw** (`turn_done.steered`); everything
   else goes back to the queue without counting a delivery attempt, so old
   runners, drivers without steering and failed turns keep the old behaviour.
-- **Only the OpenAI-compatible driver steers so far.** It adds late messages
-  before its next model call, and after a final answer it makes one more call
-  so the reply covers them. Claude, Codex and Gemini CLI queue as before.
+- **The OpenAI-compatible driver** adds late messages before its next model
+  call, and after a final answer it makes one more call so the reply covers
+  them. **Claude** steers too since hardening item 6; Codex and Gemini CLI
+  queue as before (see item 6).
 - **After the OAuth review:** sign-in and token use need published metadata
   (no rmcp endpoint fallback, which has no issuer to check), refreshes of one
   connector take turns and a revoked refresh token signs it out, sign-in
@@ -383,6 +384,25 @@ the code and this file together.
   `[REDACTED]` for `anthropic_api_key` and `api_token`. It destructures every
   field, so a new field does not compile until someone decides whether it is
   secret. `AppState`'s derived `Debug` goes through it.
+- **Item 6: the Claude driver steers** through the Agent SDK's streaming
+  input: the turn's prompt and every late message go in as user messages
+  with a uuid, `priority: "next"` (folded into the running turn between tool
+  rounds) and `client_composed` (the text is not read as a slash command or
+  `@`-mention, whoever wrote it). The query ends once every uuid shows up in
+  a result's `user_message_uuids`, so a message that lands after the final
+  answer gets its own answer in the same runner turn. A CLI that does not
+  report `user_message_uuids` ends after the first result.
+- **Codex and Gemini CLI do not steer;** their messages wait for the next
+  turn as before. ACP's `session/prompt` takes no further input once sent
+  (only `session/cancel`). Whether Codex 0.166.0's app-server can add input
+  to a running turn was not checked (the Docker engine was down; `codex
+  app-server generate-json-schema` in the runner image would tell).
+- **Connector tools refresh after an assignment change:** the daemon sends
+  `configure` again, and the Codex and Gemini drivers start a fresh process
+  for the next turn (the thread or session resumes by id), which lists the
+  tools anew. Claude and the OpenAI-compatible driver list tools every turn.
+  Changes on the connector's side (its server adds a tool) still show up only
+  with a fresh process.
 - **Item 3: archives and snapshot home tars are encrypted** before they
   reach `--storage-url` (`ferrobot_sandbox::seal`): AES-256-GCM (ring) over
   64 KiB chunks, STREAM-style nonces (random 7-byte prefix per write,

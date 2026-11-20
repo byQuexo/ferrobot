@@ -2113,8 +2113,14 @@ async fn connectors_lend_upstream_tools_to_assigned_agents_only() {
     let (_, all) = http(&d.ui, "GET", "/v1/connectors", None).await;
     assert!(!all.to_string().contains("\"secret\""), "{all}");
     let assign = format!("/v1/agents/{ann}/connectors");
+    let mut runner = connect_runner(&d.agents, &backend.token("ann")).await;
     let (status, ids) = http(&d.ui, "PUT", &assign, Some(json!([conn["id"]]))).await;
     assert_eq!((status, &ids), (200, &json!([conn["id"]])));
+    // Runners whose model lists tools once per process start a fresh one.
+    assert!(matches!(
+        next_frame(&mut runner).await,
+        DaemonFrame::Configure { .. }
+    ));
     let (status, _) = http(&d.ui, "PUT", &assign, Some(json!([AgentId::new()]))).await;
     assert_eq!(status, 404, "unknown connector");
 

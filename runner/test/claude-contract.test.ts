@@ -25,7 +25,7 @@ import {
 } from "../src/drivers/claude.ts";
 import type { TurnContext } from "../src/drivers/types.ts";
 import { TurnAbortedError } from "../src/drivers/types.ts";
-import type { TurnEvent } from "../src/protocol.ts";
+import type { SteerFrame, TurnEvent } from "../src/protocol.ts";
 import { SessionStore } from "../src/session.ts";
 
 const SESSION = "5f1a6a3e-2c51-4b51-9a4e-0f2b8c7d1e01";
@@ -196,6 +196,11 @@ function ctx(overrides: Partial<TurnContext> = {}): { ctx: TurnContext; events: 
   };
 }
 
+function textOf(m: SDKUserMessage | undefined): string {
+  const content = m?.message.content;
+  return typeof content === "string" ? content : "";
+}
+
 function driver(query: QueryFn): ClaudeDriver {
   return new ClaudeDriver({
     mcpUrl: new URL("http://daemon/mcp"),
@@ -211,8 +216,8 @@ describe("ClaudeDriver with a fake query()", () => {
   it("emits events in order and returns result and session", async () => {
     const prompts: string[] = [];
     const d = driver(async function* ({ prompt, options }) {
-      await Promise.resolve();
-      prompts.push(prompt);
+      const first: IteratorResult<SDKUserMessage> = await prompt[Symbol.asyncIterator]().next();
+      prompts.push(textOf(first.done ? undefined : first.value));
       assert.equal(options.includePartialMessages, true);
       yield delta;
       yield assistant;
@@ -261,6 +266,53 @@ describe("ClaudeDriver with a fake query()", () => {
     const out = await d.runTurn(c);
     assert.deepEqual(resumes, ["old-session", undefined]);
     assert.equal(out.sessionId, SESSION);
+  });
+
+  it("folds messages that arrive mid-turn into the running query", async () => {
+    const seen: SDKUserMessage[] = [];
+    let ended = false;
+    const d = driver(async function* ({ prompt }) {
+      const input = prompt[Symbol.asyncIterator]();
+      seen.push((await input.next()).value as SDKUserMessage);
+      yield assistant;
+      seen.push((await input.next()).value as SDKUserMessage);
+      yield toolResult;
+      yield { ...result, user_message_uuids: seen.map((m) => m.uuid) } as unknown as SDKMessage;
+      ended = (await input.next()).done === true;
+    });
+    const late: SteerFrame[] = [
+      { type: "steer", turn_id: "t1", message_id: 4, sender: { kind: "user" }, sender_name: "user", body: "also book a hotel" },
+    ];
+    let calls = 0;
+    const takeMessages = (): SteerFrame[] => (calls++ === 0 ? [...late] : []);
+    const out = await d.runTurn(ctx({ takeMessages }).ctx);
+    assert.equal(out.result, "Asked bob.");
+    assert.match(textOf(seen[1]), /^Message #4 from user, sent while you were working:\n\nalso book a hotel$/);
+    assert.equal(seen[1]?.priority, "next");
+    assert.equal(seen[1].client_composed, true, "no slash commands from message text");
+    assert.ok(ended, "the input ends once every message is answered");
+  });
+
+  it("keeps the query open until a late message is answered", async () => {
+    const seen: SDKUserMessage[] = [];
+    const d = driver(async function* ({ prompt }) {
+      const input = prompt[Symbol.asyncIterator]();
+      seen.push((await input.next()).value as SDKUserMessage);
+      yield { ...result, user_message_uuids: [seen[0]?.uuid] } as unknown as SDKMessage;
+      // The late message came after the first answer and runs as its own turn.
+      const next = await input.next();
+      assert.equal(next.done, false, "input must stay open for the queued message");
+      seen.push(next.value);
+      yield { ...result, result: "Hotel booked.", user_message_uuids: [seen[1]?.uuid] } as unknown as SDKMessage;
+    });
+    let calls = 0;
+    const late: SteerFrame = {
+      type: "steer", turn_id: "t1", message_id: 5, sender: { kind: "user" }, sender_name: "user", body: "hotel too",
+    };
+    const takeMessages = (): SteerFrame[] => (calls++ === 0 ? [late] : []);
+    const out = await d.runTurn(ctx({ takeMessages }).ctx);
+    assert.equal(out.result, "Hotel booked.");
+    assert.equal(seen.length, 2);
   });
 
   it("reports SDK error results as failures", async () => {

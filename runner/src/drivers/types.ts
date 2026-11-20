@@ -26,6 +26,9 @@ export interface ModelDriver {
   /** Can add messages that arrive mid-turn (`TurnContext.takeMessages`). */
   readonly steering?: boolean;
   runTurn(ctx: TurnContext): Promise<TurnResult>;
+  /** The agent's profile or connectors changed: drivers that keep a model
+   * process across turns start a fresh one (and list tools anew) next turn. */
+  reconfigure?(): void;
   close(): Promise<void>;
 }
 

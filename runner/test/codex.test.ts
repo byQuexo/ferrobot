@@ -297,6 +297,16 @@ describe("CodexDriver", () => {
     assert.equal(sent("initialize").length, 2);
   });
 
+  it("starts a fresh app-server after a reconfigure (new tools)", async () => {
+    const { driver, script, sent } = setup();
+    script({ turns: [[completed(message("one")), turnDone()], [completed(message("two")), turnDone()]] });
+    await driver.runTurn(context().ctx);
+    driver.reconfigure();
+    const out = await driver.runTurn(context({ sessionId: "thread-new" }).ctx);
+    assert.equal(out.result, "two");
+    assert.equal(sent("initialize").length, 2);
+  });
+
   it("says so when codex is not installed", async () => {
     const { driver } = setup(join(tmpdir(), "no-such-dir", "codex"));
     await assert.rejects(driver.runTurn(context().ctx), /codex is not installed in this sandbox image/);
