@@ -494,3 +494,7 @@ store used for the run) or the daemon's own env.
   and data dir; a source that cannot be read fails the check. Self-tested
   against known inputs (found, absent, unreadable, key at the end of a large
   stream).
+- **What the script asserts per agent:** a completed `turn_done` whose result
+  contains a fresh nonce, a `tool_use` event and the nonce in the sandbox
+  file; it rebuilds the runner image first and reads the data dir only
+  after the daemon stopped.

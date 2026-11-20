@@ -11,9 +11,9 @@
 #    filesystem and home volume), container logs, the daemon log or the data
 #    dir. The key is never printed.
 #
-# Needs Docker and the runner image (docker build -f runner/Dockerfile -t
-# ferrobot-runner:dev .). Uses ports 17878/17879, so a running ferrobot is
-# left alone. Cleans up after itself.
+# Needs Docker; rebuilds the runner image first (SKIP_BUILD=1 skips that).
+# Uses ports 17878/17879, so a running ferrobot is left alone. Cleans up
+# after itself.
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
@@ -24,14 +24,19 @@ OLLAMA_MODEL=${OLLAMA_MODEL:-qwen2.5:3b}
 TOKEN=smoke-live-operator-token-0123456789
 FAILED=0
 cargo build -q -p ferrobot-daemon
+[ -n "${SKIP_BUILD:-}" ] || docker build -q -f runner/Dockerfile -t ferrobot-runner:dev . >/dev/null
 
 "$BIN" --data-dir "$DATA" --backend docker --driver claude --idle-timeout 0 \
   --secret-store file --listen 127.0.0.1:17878 --agent-listen 0.0.0.0:17879 \
   --api-token "$TOKEN" >>"$DATA/daemon.log" 2>&1 &
 PID=$!
-cleanup() {
+stop_daemon() {
   for id in ${CLAUDE:-} ${OLLAMA:-}; do acurl -s -o /dev/null -X DELETE "$API/v1/agents/$id" || true; done
+  CLAUDE= OLLAMA=
   kill -TERM "$PID" 2>/dev/null || true; wait "$PID" 2>/dev/null || true
+}
+cleanup() {
+  stop_daemon
   rm -rf "$DATA"
   docker ps -a --format '{{.Names}}' | grep '^ferrobot-live-' && echo "WARNING: containers left" || true
 }
@@ -49,13 +54,16 @@ fail() { echo "FAILED: $1"; FAILED=1; }
 turn() { # turn <agent-id> <label>
   local id=$1 label=$2 nonce="smoke-$RANDOM$RANDOM"
   post "/v1/agents/$id/messages" "{\"body\":\"Use your shell tool to run: echo $nonce > ~/workspace/proof.txt -- then reply with the file's content.\"}" >/dev/null
-  for _ in $(seq 120); do
+  for _ in $(seq 180); do
     get "/v1/agents/$id/events" | json "any(e['kind']=='turn_done' for e in d)" | grep -q True && break
     sleep 1
   done
   local done_ev
-  done_ev=$(get "/v1/agents/$id/events" | json "[e['payload'] for e in d if e['kind']=='turn_done'][-1:]")
+  done_ev=$(get "/v1/agents/$id/events" | json "json.dumps([e['payload'] for e in d if e['kind']=='turn_done'][-1:])")
   echo "  turn: $done_ev" | cut -c1-300
+  # A turn that hangs, fails or answers without the file's content is a failure.
+  echo "$done_ev" | json "len(d) == 1 and d[0]['outcome'] == 'completed' and '$nonce' in (d[0]['result'] or '')" | grep -qx True \
+    && ok "$label finished the turn and reported the content" || fail "$label: no completed turn reporting $nonce"
   get "/v1/agents/$id/events" | json "any(e['kind']=='tool_use' for e in d)" | grep -q True \
     && ok "$label used a tool" || fail "$label used no tool"
   post "/v1/agents/$id/exec" '{"cmd":["cat","/home/node/workspace/proof.txt"]}' | json "d['stdout'].strip()" | grep -qx "$nonce" \
@@ -100,6 +108,8 @@ else
   echo "skipped: Ollama (not running on :11434, or $OLLAMA_MODEL not pulled)"
 fi
 
+# The daemon stops first, so nothing writes to the data dir while it is read.
+stop_daemon
 if [ -n "$KEY" ]; then
   leak_check "the daemon log" cat "$DATA/daemon.log"
   leak_check "the data dir (database, secrets, logs)" tar -C "$DATA" -cf - .
