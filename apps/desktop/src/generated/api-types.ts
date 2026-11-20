@@ -4,6 +4,28 @@
  */
 
 export interface paths {
+    "/artifacts/{id}/{file_id}/{view}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * An .html file an agent shared, as a page. Needs no operator token: a
+         *     frame cannot send one, and the random `view` key is the capability. The
+         *     page runs sandboxed (opaque origin: no app, cookies or token) and cannot
+         *     make network requests.
+         */
+        get: operations["page"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/agents": {
         parameters: {
             query?: never;
@@ -112,6 +134,23 @@ export interface paths {
          *     Wakes the computer if it sleeps.
          */
         post: operations["exec"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/agents/{id}/files/{file_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** A file the agent shared (`file` event id), from storage. */
+        get: operations["shared_file"];
+        put?: never;
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -395,6 +434,28 @@ export interface paths {
         patch: operations["update_connector"];
         trace?: never;
     };
+    "/v1/connectors/{id}/oauth": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Starts an OAuth sign-in for a connector without a token: discovers the
+         *     server's authorization server, registers ferrobot as a client and returns
+         *     the page to sign in on. The browser comes back to `/v1/oauth/callback`.
+         */
+        post: operations["start_oauth"];
+        /** Signs a connector out: forgets its OAuth tokens and client. */
+        delete: operations["sign_out"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/conversations": {
         parameters: {
             query?: never;
@@ -479,6 +540,26 @@ export interface paths {
         post?: never;
         /** Deletes one global memory by key (URL-encoded). */
         delete: operations["delete_global_memory"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/oauth/callback": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Where the authorization server sends the browser back. Needs no operator
+         *     token: the single-use `state` from the sign-in it started authorizes it.
+         */
+        get: operations["oauth_callback"];
+        put?: never;
+        post?: never;
+        delete?: never;
         options?: never;
         head?: never;
         patch?: never;
@@ -757,6 +838,8 @@ export interface components {
         ConnectorView: components["schemas"]["Connector"] & {
             /** @description Whether a token is stored. The token itself is never returned. */
             has_token: boolean;
+            /** @description Whether the connector is signed in with OAuth. */
+            signed_in: boolean;
         };
         /** @description Messages two agents exchanged. */
         Conversation: {
@@ -954,6 +1037,12 @@ export interface components {
             content: string;
             /** Format: date-time */
             updated_at: string;
+            /** @description Global memory only: the agent that wrote it; absent = the operator. */
+            author?: string | null;
+        };
+        OAuthStart: {
+            /** @description Open this in a browser on the daemon's computer to sign in. */
+            authorization_url: string;
         };
         PostMessage: {
             /**
@@ -1154,6 +1243,18 @@ export interface components {
             /** @enum {string} */
             kind: "routine";
         };
+        SharedFileView: {
+            name: string;
+            /** Format: int64 */
+            size: number;
+            /** @description The text, for UTF-8 files up to 2 MiB; otherwise `null`. */
+            content?: string | null;
+            /**
+             * @description For .html files: where the page opens (relative to the daemon), in a
+             *     sandboxed frame without access to the app or the operator token.
+             */
+            page_url?: string | null;
+        };
         /**
          * @description How deeply a sandbox sleeps.
          * @enum {string}
@@ -1277,6 +1378,51 @@ export interface components {
 }
 export type $defs = Record<string, never>;
 export interface operations {
+    page: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Agent id (UUID) */
+                id: string;
+                /** @description Id of the `file` event */
+                file_id: number;
+                /** @description The file's view key (from `page_url`) */
+                view: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The page */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "text/html": string;
+                };
+            };
+            /** @description Missing or wrong API token */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Unknown page */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+        };
+    };
     list_agents: {
         parameters: {
             query?: never;
@@ -1842,6 +1988,48 @@ export interface operations {
             };
             /** @description Sandbox backend error */
             502: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+        };
+    };
+    shared_file: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Agent id (UUID) */
+                id: string;
+                /** @description Id of the `file` event */
+                file_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SharedFileView"];
+                };
+            };
+            /** @description Missing or wrong API token */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Unknown agent or file */
+            404: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -2959,6 +3147,94 @@ export interface operations {
             };
         };
     };
+    start_oauth: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Connector id (UUID) */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OAuthStart"];
+                };
+            };
+            /** @description Uses a token, or the server offers no usable OAuth */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Missing or wrong API token */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Unknown connector */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+        };
+    };
+    sign_out: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Connector id (UUID) */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Signed out */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Missing or wrong API token */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Unknown connector */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+        };
+    };
     list_conversations: {
         parameters: {
             query?: never;
@@ -3150,6 +3426,49 @@ export interface operations {
             };
             /** @description Unknown key */
             404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+        };
+    };
+    oauth_callback: {
+        parameters: {
+            query?: {
+                state?: string;
+                code?: string;
+                /** @description RFC 9207 issuer, checked when present. */
+                iss?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Signed in (HTML page) */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "text/html": string;
+                };
+            };
+            /** @description Unknown, used, expired or failed sign-in (HTML page) */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "text/html": string;
+                };
+            };
+            /** @description Missing or wrong API token */
+            401: {
                 headers: {
                     [name: string]: unknown;
                 };

@@ -1,0 +1,9 @@
+{
+  "type": "turn_done",
+  "turn_id": "turn-1",
+  "outcome": "completed",
+  "session_id": "mock-session-1",
+  "result": "Flights found; hotels next.",
+  "error": null,
+  "steered": [8]
+}

@@ -30,6 +30,41 @@ fn token() -> Option<String> {
     ok.then_some(token)
 }
 
+/// The app's own pages (the bundled UI or the Vite dev server), and pages
+/// agents shared, which the viewer frames from the daemon. wry asks this for
+/// frames too; the token script only runs in the main frame.
+fn is_app(url: &tauri::Url) -> bool {
+    url.scheme() == "tauri"
+        || matches!(url.host_str(), Some("tauri.localhost" | "localhost"))
+        || (url.scheme() == "http"
+            && url.host_str() == Some("127.0.0.1")
+            && url.path().starts_with("/artifacts/"))
+}
+
+/// Links open in the system browser, never in this window (which holds the
+/// operator token).
+fn open_external(url: &tauri::Url) {
+    if !matches!(url.scheme(), "http" | "https") {
+        return;
+    }
+    let program = if cfg!(target_os = "macos") {
+        "open"
+    } else if cfg!(windows) {
+        "explorer"
+    } else {
+        "xdg-open"
+    };
+    match std::process::Command::new(program)
+        .arg(url.as_str())
+        .spawn()
+    {
+        Ok(mut child) => {
+            std::thread::spawn(move || child.wait());
+        }
+        Err(e) => eprintln!("cannot open {url}: {e}"),
+    }
+}
+
 fn main() {
     let script = token()
         .map(|t| format!("window.__FERROBOT_TOKEN__ = \"{t}\";"))
@@ -45,6 +80,17 @@ fn main() {
                 .ok_or("no window configured")?;
             tauri::WebviewWindowBuilder::from_config(app.handle(), &config)?
                 .initialization_script(&script)
+                .on_navigation(|url| {
+                    if is_app(url) {
+                        return true;
+                    }
+                    open_external(url);
+                    false
+                })
+                .on_new_window(|url, _| {
+                    open_external(&url);
+                    tauri::webview::NewWindowResponse::Deny
+                })
                 .build()?;
             Ok(())
         })

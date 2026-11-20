@@ -120,7 +120,7 @@ pub(crate) async fn put_global_memory(
     Json(req): Json<PutMemory>,
 ) -> Result<StatusCode, ApiError> {
     let key = check(&req)?.to_owned();
-    state.store.remember_global(key, req.content).await?;
+    state.store.remember_global(key, req.content, None).await?;
     state.publish(UiEvent::GlobalMemoryChanged);
     Ok(StatusCode::NO_CONTENT)
 }
@@ -134,7 +134,7 @@ pub(crate) async fn delete_global_memory(
     State(state): State<AppState>,
     Path(key): Path<String>,
 ) -> Result<StatusCode, ApiError> {
-    if !state.store.forget_global(key.clone()).await? {
+    if !state.store.forget_global(key.clone(), None).await? {
         return Err(ApiError::NotFound(format!("memory {key:?} not found")));
     }
     state.publish(UiEvent::GlobalMemoryChanged);

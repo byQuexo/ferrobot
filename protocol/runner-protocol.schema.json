@@ -92,6 +92,43 @@
           "type": "object"
         },
         {
+          "description": "A message that arrived while turn `turn_id` runs, for runners whose\ndriver takes messages mid-turn (`hello.steering`). Unless\n`turn_done.steered` lists it, it is queued again for the next turn.",
+          "properties": {
+            "body": {
+              "type": "string"
+            },
+            "message_id": {
+              "format": "int64",
+              "type": "integer"
+            },
+            "sender": {
+              "$ref": "#/$defs/Sender"
+            },
+            "sender_name": {
+              "description": "Display name of the sender (`user` or the agent name).",
+              "type": "string"
+            },
+            "turn_id": {
+              "type": "string"
+            },
+            "type": {
+              "enum": [
+                "steer"
+              ],
+              "type": "string"
+            }
+          },
+          "required": [
+            "turn_id",
+            "message_id",
+            "sender",
+            "sender_name",
+            "body",
+            "type"
+          ],
+          "type": "object"
+        },
+        {
           "description": "Abort the running turn, if it matches.",
           "properties": {
             "turn_id": {
@@ -160,6 +197,10 @@
                 "null"
               ]
             },
+            "steering": {
+              "description": "The driver can take messages during a turn (`steer`).",
+              "type": "boolean"
+            },
             "type": {
               "enum": [
                 "hello"
@@ -222,6 +263,14 @@
                 "string",
                 "null"
               ]
+            },
+            "steered": {
+              "description": "Ids of `steer` messages the model saw during this turn.",
+              "items": {
+                "format": "int64",
+                "type": "integer"
+              },
+              "type": "array"
             },
             "turn_id": {
               "type": "string"

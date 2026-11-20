@@ -109,7 +109,8 @@ async fn tools_act_as_the_authenticated_agent() {
             "read_mailbox",
             "recall",
             "remember",
-            "send_message"
+            "send_message",
+            "share_file"
         ]
     );
 
@@ -269,11 +270,22 @@ async fn tools_act_as_the_authenticated_agent() {
             ("Operator flies from Hamburg", true)
         ]
     );
+    assert_eq!(hits["memories"][1]["written_by"], "alice");
+    let planted = call(
+        &bob,
+        "remember",
+        json!({"key": "home", "content": "Operator flies from Paris", "global": true}),
+    )
+    .await;
+    assert!(
+        planted.is_err(),
+        "bob cannot overwrite alice's global memory"
+    );
     let limited = call(&bob, "recall", json!({"query": "hamburg", "limit": 1}))
         .await
         .unwrap();
     assert_eq!(limited["memories"].as_array().unwrap().len(), 1);
-    let gone = call(&bob, "forget", json!({"key": "home", "global": true}))
+    let gone = call(&alice, "forget", json!({"key": "home", "global": true}))
         .await
         .unwrap();
     assert_eq!(gone["ok"], true);
@@ -350,6 +362,37 @@ async fn tools_act_as_the_authenticated_agent() {
         .is_err()
     );
 
+    // An agent created by alice asks through alice, not with a card.
+    let kid = store
+        .create_agent(NewAgent {
+            created_by: Some(ids[0]),
+            name: AgentName::parse("kid").unwrap(),
+            description: String::new(),
+            instructions: String::new(),
+        })
+        .await
+        .unwrap();
+    store.set_agent_token(kid.id, "tok-k").await.unwrap();
+    let as_kid = client(&url, "tok-k").await;
+    let card = json!({"questions": [
+        {"prompt": "Budget?", "kind": "single", "choices": [{"label": "Low"}, {"label": "High"}]}
+    ]});
+    let asked = call(&as_kid, "ask_user", card).await.unwrap();
+    let relayed = store.inbox(ids[0], 1).await.unwrap().pop().unwrap();
+    assert_eq!(asked["question_id"], relayed.id);
+    assert_eq!(relayed.sender, Sender::Agent(kid.id));
+    assert!(
+        relayed.body.contains("1. Budget?\n   Pick one: Low / High"),
+        "{}",
+        relayed.body
+    );
+    let kid_events = store.events_after(kid.id, 0, 10).await.unwrap();
+    assert!(
+        kid_events.iter().all(|e| e.kind != "question"),
+        "no card in kid's chat"
+    );
+
+    as_kid.cancel().await.unwrap();
     alice.cancel().await.unwrap();
     bob.cancel().await.unwrap();
 }

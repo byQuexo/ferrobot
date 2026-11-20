@@ -120,6 +120,21 @@ pub struct CreateAgentResult {
 }
 
 #[derive(Debug, Deserialize, JsonSchema)]
+pub struct ShareFileArgs {
+    /// The file on your computer: relative to your workspace (`plan.md`),
+    /// below your home (`~/out/report.html`) or absolute.
+    pub path: String,
+}
+
+#[derive(Debug, Serialize, JsonSchema)]
+pub struct ShareFileResult {
+    pub file_id: i64,
+    pub name: String,
+    pub size: u64,
+    pub note: String,
+}
+
+#[derive(Debug, Deserialize, JsonSchema)]
 pub struct ReadMailboxArgs {
     /// How many recent messages to return (default 20, max 100).
     pub limit: Option<u32>,
@@ -172,6 +187,9 @@ pub struct MemoryItem {
     pub updated_at: String,
     /// From the global memory every agent shares.
     pub global: bool,
+    /// Global memories only: who wrote it, an agent's name or `operator`.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub written_by: Option<String>,
 }
 
 #[derive(Debug, Serialize, JsonSchema)]
@@ -181,7 +199,7 @@ pub struct Memories {
 
 #[derive(Debug, Serialize, JsonSchema)]
 pub struct AskUserResult {
-    /// Id of the card in your chat.
+    /// Id of the card in your chat, or of the message to your creator.
     pub question_id: i64,
     pub note: String,
 }
@@ -189,6 +207,35 @@ pub struct AskUserResult {
 #[derive(Debug, Serialize, JsonSchema)]
 pub struct Ack {
     pub ok: bool,
+}
+
+/// A question card as a message for the agent that relays it to the operator.
+fn card_text(card: &QuestionCard) -> String {
+    use ferrobot_core::question::QuestionKind;
+    use std::fmt::Write as _;
+    let mut out = String::from(
+        "Questions for our operator. Please ask them with ask_user and send me the answers.\n",
+    );
+    if let Some(title) = &card.title {
+        let _ = write!(out, "\n{title}\n");
+    }
+    for (n, q) in card.questions.iter().enumerate() {
+        let _ = write!(out, "\n{}. {}", n + 1, q.prompt);
+        let labels: Vec<&str> = q.choices.iter().map(|c| c.label.as_str()).collect();
+        match q.kind {
+            QuestionKind::Text => {}
+            QuestionKind::Single => {
+                let _ = write!(out, "\n   Pick one: {}", labels.join(" / "));
+            }
+            QuestionKind::Multi => {
+                let _ = write!(out, "\n   Pick any: {}", labels.join(" / "));
+            }
+        }
+        if q.allow_custom {
+            out.push_str(" (or their own answer)");
+        }
+    }
+    out
 }
 
 fn check_body(body: &str) -> Result<&str, ErrorData> {
@@ -318,7 +365,9 @@ impl FerrobotTools {
     #[tool(
         description = "Show your operator a question card in your chat: one or more questions, \
         each single choice, multiple choice or free text (choices can allow a custom answer). \
-        Does not wait: the answers arrive later as one user message, so finish your turn after asking."
+        Does not wait: the answers arrive later as one user message, so finish your turn after asking. \
+        If a teammate created you, the questions go to it as a message instead; it asks the operator \
+        and sends you the answers."
     )]
     async fn ask_user(
         &self,
@@ -328,6 +377,22 @@ impl FerrobotTools {
         let me = caller(&parts)?.0.id;
         card.normalize()
             .map_err(|e| ErrorData::invalid_params(e, None))?;
+        let store = &self.state.store;
+        let creator = store.get_agent(me).await.map_err(store_err)?.created_by;
+        // The operator talks to the creator; it decides what reaches them.
+        if let Some(creator) = creator
+            && store.get_agent(creator).await.is_ok()
+        {
+            let msg = self
+                .enqueue(me, creator, &card_text(&card), None, None)
+                .await?;
+            return Ok(Json(AskUserResult {
+                question_id: msg.id,
+                note: "Sent to the teammate that created you as a message; it asks the operator \
+                       and sends you the answers. Finish your turn now."
+                    .into(),
+            }));
+        }
         let payload = serde_json::to_value(QuestionEvent {
             version: QUESTION_CARD_VERSION,
             card,
@@ -405,6 +470,35 @@ impl FerrobotTools {
         }))
     }
 
+    #[tool(
+        description = "Give your operator a file you made, up to 10 MB: it is copied and shown in your \
+        chat as a file they can open. Markdown and text are shown as text; an .html file opens as a \
+        page inside ferrobot (scripts and styles inline or from https:, no network requests from the \
+        page). Mention the file by name in your reply."
+    )]
+    async fn share_file(
+        &self,
+        Extension(parts): Extension<http::request::Parts>,
+        Parameters(args): Parameters<ShareFileArgs>,
+    ) -> ToolResult<ShareFileResult> {
+        let me = caller(&parts)?.0.id;
+        let shared = self
+            .state
+            .notifier
+            .share_file(me, args.path)
+            .await
+            .map_err(|e| ErrorData::invalid_params(e, None))?;
+        Ok(Json(ShareFileResult {
+            file_id: shared.id,
+            note: format!(
+                "Shared {}; your operator sees it in your chat.",
+                shared.name
+            ),
+            name: shared.name,
+            size: shared.size,
+        }))
+    }
+
     #[tool(description = "Read the most recent messages addressed to you (newest last).")]
     async fn read_mailbox(
         &self,
@@ -446,7 +540,8 @@ impl FerrobotTools {
 
     #[tool(
         description = "Store a long-term memory under a key (overwrites an existing key). \
-        `global: true` stores it in the global memory all agents share."
+        `global: true` stores it in the global memory all agents share; you can only overwrite \
+        global memories you wrote."
     )]
     async fn remember(
         &self,
@@ -466,7 +561,9 @@ impl FerrobotTools {
         }
         let store = &self.state.store;
         if args.global == Some(true) {
-            store.remember_global(key.to_owned(), args.content).await
+            store
+                .remember_global(key.to_owned(), args.content, Some(me))
+                .await
         } else {
             store.remember(me, key.to_owned(), args.content).await
         }
@@ -491,8 +588,17 @@ impl FerrobotTools {
         let store = &self.state.store;
         let own = store.recall(me, query.clone(), limit).await;
         let global = store.recall_global(query, limit).await;
+        let agents = store.list_agents().await.map_err(store_err)?;
+        let author = |id: Option<AgentId>| match id {
+            None => "operator".to_owned(),
+            Some(id) => agents
+                .iter()
+                .find(|a| a.id == id)
+                .map_or_else(|| "a deleted agent".to_owned(), |a| a.name.to_string()),
+        };
         let item = |global: bool| {
             move |m: ferrobot_store::MemoryEntry| MemoryItem {
+                written_by: global.then(|| author(m.author)),
                 key: m.key,
                 content: m.content,
                 updated_at: m.updated_at.to_string(),
@@ -526,7 +632,7 @@ impl FerrobotTools {
         let me = caller(&parts)?.0.id;
         let store = &self.state.store;
         let existed = if args.global == Some(true) {
-            store.forget_global(args.key).await
+            store.forget_global(args.key, Some(me)).await
         } else {
             store.forget(me, args.key).await
         }

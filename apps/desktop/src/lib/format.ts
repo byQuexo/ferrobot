@@ -52,3 +52,57 @@ export function duration(seconds: number): string {
   if (seconds < 3600) return `${String(Math.floor(seconds / 60))} min`;
   return `${String(Math.floor(seconds / 3600))} h ${String(Math.floor((seconds % 3600) / 60))} min`;
 }
+
+/** What a running tool call is doing, in a few words, for the chat. */
+export function stepLabel(name: string, input: unknown, nameOf: (id: string) => string | undefined): string {
+  const { server, tool } = toolLabel(name);
+  const args = typeof input === "object" && input !== null ? (input as Record<string, unknown>) : {};
+  const str = (key: string): string => (typeof args[key] === "string" ? args[key] : "");
+  const short = (s: string): string => (s.length > 48 ? `${s.slice(0, 47)}…` : s);
+  const file = (s: string): string => s.split("/").filter(Boolean).pop() ?? "a file";
+  if (server === "ferrobot") {
+    const connector = tool.split("__");
+    if (connector.length > 1) return `Using ${connector[0] ?? tool}`;
+    const to = str("to").replace(/^@/, "");
+    const labels: Record<string, string> = {
+      send_message: `Messaging @${nameOf(to) ?? (to || "a teammate")}`,
+      create_agent: `Creating ${str("name") ? `@${str("name")}` : "an agent"}`,
+      ask_user: "Writing you a question",
+      list_agents: "Checking the team",
+      read_mailbox: "Reading messages",
+      remember: "Taking notes",
+      recall: "Looking through notes",
+      forget: "Tidying up notes",
+    };
+    return labels[tool] ?? `Using ${tool}`;
+  }
+  if (server) return `Using ${server}`;
+  // The model's own words for what the step does (Claude's Bash, our bash tool).
+  const said = str("description").trim();
+  if (said) return short(said.charAt(0).toUpperCase() + said.slice(1));
+  switch (tool) {
+    case "Bash":
+    case "bash":
+      return "Working on its computer";
+    case "Read":
+    case "read_file":
+      return `Reading ${file(str("file_path") || str("path"))}`;
+    case "Write":
+    case "Edit":
+    case "MultiEdit":
+    case "write_file":
+    case "apply_patch":
+      return `Editing ${file(str("file_path") || str("path"))}`;
+    case "Grep":
+    case "Glob":
+      return "Searching files";
+    case "WebSearch":
+      return str("query") ? `Searching the web for ${short(str("query"))}` : "Searching the web";
+    case "WebFetch":
+      return `Reading ${URL.canParse(str("url")) ? new URL(str("url")).host : "a web page"}`;
+    case "TodoWrite":
+      return "Planning the next steps";
+    default:
+      return `Using ${tool}`;
+  }
+}

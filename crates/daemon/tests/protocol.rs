@@ -99,6 +99,7 @@ async fn connect_runner(agents: &str, token: &str) -> Ws {
         runner_version: "test".into(),
         driver: "fake".into(),
         session_id: Some("sess-1".into()),
+        steering: false,
     };
     ws.send(Message::text(serde_json::to_string(&hello).unwrap()))
         .await
@@ -220,6 +221,7 @@ async fn user_message_turn_roundtrip_and_redelivery() {
             session_id: Some("sess-2".into()),
             result: Some("hi!".into()),
             error: None,
+            steered: vec![],
         },
     )
     .await;
@@ -300,6 +302,7 @@ async fn interrupt_reaches_runner() {
             session_id: None,
             result: None,
             error: None,
+            steered: vec![],
         },
     )
     .await;

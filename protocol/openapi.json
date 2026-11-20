@@ -19,6 +19,77 @@
     }
   ],
   "paths": {
+    "/artifacts/{id}/{file_id}/{view}": {
+      "get": {
+        "tags": [
+          "chat"
+        ],
+        "summary": "An .html file an agent shared, as a page. Needs no operator token: a\nframe cannot send one, and the random `view` key is the capability. The\npage runs sandboxed (opaque origin: no app, cookies or token) and cannot\nmake network requests.",
+        "operationId": "page",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "Agent id (UUID)",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "file_id",
+            "in": "path",
+            "description": "Id of the `file` event",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          },
+          {
+            "name": "view",
+            "in": "path",
+            "description": "The file's view key (from `page_url`)",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The page",
+            "content": {
+              "text/html": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or wrong API token",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Unknown page",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/v1/agents": {
       "get": {
         "tags": [
@@ -757,6 +828,67 @@
           },
           "502": {
             "description": "Sandbox backend error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/agents/{id}/files/{file_id}": {
+      "get": {
+        "tags": [
+          "chat"
+        ],
+        "summary": "A file the agent shared (`file` event id), from storage.",
+        "operationId": "shared_file",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "Agent id (UUID)",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "file_id",
+            "in": "path",
+            "description": "Id of the `file` event",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SharedFileView"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or wrong API token",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Unknown agent or file",
             "content": {
               "application/json": {
                 "schema": {
@@ -2170,6 +2302,110 @@
         }
       }
     },
+    "/v1/connectors/{id}/oauth": {
+      "post": {
+        "tags": [
+          "connectors"
+        ],
+        "summary": "Starts an OAuth sign-in for a connector without a token: discovers the\nserver's authorization server, registers ferrobot as a client and returns\nthe page to sign in on. The browser comes back to `/v1/oauth/callback`.",
+        "operationId": "start_oauth",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "Connector id (UUID)",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OAuthStart"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Uses a token, or the server offers no usable OAuth",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or wrong API token",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Unknown connector",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "connectors"
+        ],
+        "summary": "Signs a connector out: forgets its OAuth tokens and client.",
+        "operationId": "sign_out",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "Connector id (UUID)",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Signed out"
+          },
+          "401": {
+            "description": "Missing or wrong API token",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Unknown connector",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/v1/conversations": {
       "get": {
         "tags": [
@@ -2419,6 +2655,74 @@
           },
           "404": {
             "description": "Unknown key",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/oauth/callback": {
+      "get": {
+        "tags": [
+          "connectors"
+        ],
+        "summary": "Where the authorization server sends the browser back. Needs no operator\ntoken: the single-use `state` from the sign-in it started authorizes it.",
+        "operationId": "oauth_callback",
+        "parameters": [
+          {
+            "name": "state",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "code",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "iss",
+            "in": "query",
+            "description": "RFC 9207 issuer, checked when present.",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Signed in (HTML page)",
+            "content": {
+              "text/html": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Unknown, used, expired or failed sign-in (HTML page)",
+            "content": {
+              "text/html": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or wrong API token",
             "content": {
               "application/json": {
                 "schema": {
@@ -3350,12 +3654,17 @@
           {
             "type": "object",
             "required": [
-              "has_token"
+              "has_token",
+              "signed_in"
             ],
             "properties": {
               "has_token": {
                 "type": "boolean",
                 "description": "Whether a token is stored. The token itself is never returned."
+              },
+              "signed_in": {
+                "type": "boolean",
+                "description": "Whether the connector is signed in with OAuth."
               }
             }
           }
@@ -3840,6 +4149,25 @@
           "updated_at": {
             "type": "string",
             "format": "date-time"
+          },
+          "author": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Global memory only: the agent that wrote it; absent = the operator."
+          }
+        }
+      },
+      "OAuthStart": {
+        "type": "object",
+        "required": [
+          "authorization_url"
+        ],
+        "properties": {
+          "authorization_url": {
+            "type": "string",
+            "description": "Open this in a browser on the daemon's computer to sign in."
           }
         }
       },
@@ -4399,6 +4727,37 @@
           }
         ],
         "description": "Who sent a mailbox message."
+      },
+      "SharedFileView": {
+        "type": "object",
+        "required": [
+          "name",
+          "size"
+        ],
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "size": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0
+          },
+          "content": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "The text, for UTF-8 files up to 2 MiB; otherwise `null`."
+          },
+          "page_url": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "For .html files: where the page opens (relative to the daemon), in a\nsandboxed frame without access to the app or the operator token."
+          }
+        }
       },
       "SleepLevel": {
         "type": "string",

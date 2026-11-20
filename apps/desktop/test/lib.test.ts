@@ -4,8 +4,9 @@ import { describe, it } from "node:test";
 import { DaemonClient, type MailMessage, type StoredEvent } from "../src/api.ts";
 import { hash } from "../src/lib/avatar.ts";
 import { characterOf, deriveCharacter, moodOf, rerollCharacter } from "../src/lib/character.ts";
-import { relativeTime, toolLabel } from "../src/lib/format.ts";
-import { buildTimeline } from "../src/lib/timeline.ts";
+import { relativeTime, stepLabel, toolLabel } from "../src/lib/format.ts";
+import { buildTimeline, sharedFiles } from "../src/lib/timeline.ts";
+import { parseBlocks, parseInline } from "../src/lib/markdown.ts";
 
 const ME = "11111111-1111-4111-8111-111111111111";
 const BOB = "22222222-2222-4222-8222-222222222222";
@@ -50,6 +51,17 @@ describe("format", () => {
     assert.equal(relativeTime("2026-01-01T11:55:00Z", now), "5 min ago");
     assert.equal(relativeTime("2026-01-01T15:00:00Z", now), "in 3 h");
   });
+  it("says what a running tool is doing", () => {
+    const nameOf = (id: string): string | undefined => (id === "b-1" ? "bob" : undefined);
+    assert.equal(stepLabel("mcp__ferrobot__send_message", { to: "b-1" }, nameOf), "Messaging @bob");
+    assert.equal(stepLabel("mcp__ferrobot__github__create_issue", {}, nameOf), "Using github");
+    assert.equal(stepLabel("Bash", { command: "ls -la" }, nameOf), "Working on its computer");
+    assert.equal(stepLabel("bash", { command: "curl x", description: "checking flight prices" }, nameOf), "Checking flight prices");
+    assert.equal(stepLabel("Read", { file_path: "/w/notes/plan.md" }, nameOf), "Reading plan.md");
+    assert.equal(stepLabel("WebFetch", { url: "https://example.com/x" }, nameOf), "Reading example.com");
+    assert.equal(stepLabel("mcp__other__thing", {}, nameOf), "Using other");
+  });
+
   it("splits MCP tool names", () => {
     assert.deepEqual(toolLabel("mcp__ferrobot__send_message"), { server: "ferrobot", tool: "send_message" });
     assert.deepEqual(toolLabel("Bash"), { server: null, tool: "Bash" });
@@ -88,6 +100,16 @@ describe("buildTimeline", () => {
     assert.ok(incoming?.type === "incoming" && incoming.from === "bob");
     const routine = items[6];
     assert.ok(routine?.type === "routine" && routine.routine === "digest");
+  });
+
+  it("shows shared files and finds them by name", () => {
+    const events = [
+      ev(1, "file", { name: "plan.md", size: 2048 }, "2026-01-01T12:00:00Z", "t1"),
+      ev(2, "file", { name: "plan.md", size: 4096 }, "2026-01-01T12:05:00Z", "t2"),
+    ];
+    const items = buildTimeline(ME, [], events, new Map(), names);
+    assert.deepEqual(items.map((i) => (i.type === "file" ? [i.id, i.name, i.size] : null)), [[1, "plan.md", 2048], [2, "plan.md", 4096]]);
+    assert.equal(sharedFiles(events).get("plan.md"), 2, "the latest version wins");
   });
 
   it("shows one notice when sleep deepens", () => {
@@ -206,5 +228,38 @@ describe("question cards", () => {
     assert.deepEqual(items.map((i) => i.type), ["question"]);
     const q = items[0];
     assert.ok(q?.type === "question" && q.answered?.message_id === 5);
+  });
+});
+
+describe("markdown", () => {
+  it("splits blocks", () => {
+    const md = "## Plan\n\n- **Day 1**: Gothic Quarter\n  - Boqueria\n1. one\n\n> note\n\n| a | b |\n|---|---|\n| 1 | 2 |\n\n```\nx = 1\n```\n---\nend\nline 2";
+    assert.deepEqual(parseBlocks(md), [
+      { kind: "heading", level: 2, text: "Plan" },
+      { kind: "list", ordered: false, items: [{ text: "**Day 1**: Gothic Quarter", depth: 0 }, { text: "Boqueria", depth: 1 }] },
+      { kind: "list", ordered: true, items: [{ text: "one", depth: 0 }] },
+      { kind: "quote", text: "note" },
+      { kind: "table", head: ["a", "b"], rows: [["1", "2"]] },
+      { kind: "code", text: "x = 1" },
+      { kind: "hr" },
+      { kind: "para", text: "end\nline 2" },
+    ]);
+  });
+
+  it("parses inline marks, links and mentions without touching code", () => {
+    const id = "11111111-2222-4333-8444-555555555555";
+    assert.deepEqual(parseInline(`**bold _it_** see [docs](https://x.dev/a) or https://y.dev. <@${id}> \`**no**\` snake_case_name`), [
+      { strong: [{ text: "bold " }, { em: [{ text: "it" }] }] },
+      { text: " see " },
+      { link: "https://x.dev/a", children: [{ text: "docs" }] },
+      { text: " or " },
+      { link: "https://y.dev", children: [{ text: "https://y.dev" }] },
+      { text: ". " },
+      { mention: id },
+      { text: " " },
+      { code: "**no**" },
+      { text: " snake_case_name" },
+    ]);
+    assert.deepEqual(parseInline("[x](javascript:alert(1))"), [{ text: "[x](javascript:alert(1))" }]);
   });
 });

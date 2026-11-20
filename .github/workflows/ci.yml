@@ -79,7 +79,7 @@ jobs:
       - uses: Swatinem/rust-cache@v2
       - run: docker build -f runner/Dockerfile -t ferrobot-runner:dev .
       - run: cargo test -p ferrobot-sandbox --features docker-tests --test docker
-      - run: cargo test -p ferrobot-daemon --features docker-tests --test e2e -- --ignored
+      - run: cargo test -p ferrobot-daemon --features docker-tests --test e2e docker_backend -- --ignored
       - run: ./scripts/smoke-docker.sh
 
   desktop:

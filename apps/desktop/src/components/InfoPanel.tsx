@@ -1,6 +1,7 @@
 import type { JSX } from "preact";
 import { useEffect, useState } from "preact/hooks";
 import {
+  Activity,
   Brain,
   CalendarClock,
   Camera,
@@ -16,19 +17,22 @@ import {
   UserRound,
 } from "lucide-preact";
 
-import type { Agent, MemoryEntry, Routine, RoutineRun, SandboxInfo, Snapshot } from "../api.ts";
+import type { Agent, MemoryEntry, Routine, RoutineRun, SandboxInfo, Snapshot, StoredEvent } from "../api.ts";
 import { useApp } from "../context.ts";
 import { dateTime, duration, presenceLabel, relativeTime } from "../lib/format.ts";
+import { buildTimeline, type TimelineItem } from "../lib/timeline.ts";
 import { Avatar } from "./Avatar.tsx";
+import { ToolCard } from "./Chat.tsx";
 import { Button, Empty, IconButton, Switch } from "./ui.tsx";
 
-type Tab = "profile" | "computer" | "routines" | "memory";
+type Tab = "profile" | "computer" | "routines" | "memory" | "activities";
 
 const TABS: [Tab, string, typeof UserRound][] = [
   ["profile", "Profile", UserRound],
   ["computer", "Computer", Cpu],
   ["routines", "Routines", CalendarClock],
   ["memory", "Memory", Brain],
+  ["activities", "Activities", Activity],
 ];
 
 export function InfoPanel(props: {
@@ -60,6 +64,7 @@ export function InfoPanel(props: {
         {props.tab === "computer" && <Computer agent={props.agent} />}
         {props.tab === "routines" && <Routines agent={props.agent} />}
         {props.tab === "memory" && <Memory agent={props.agent} />}
+        {props.tab === "activities" && <Activities agent={props.agent} />}
       </div>
     </aside>
   );
@@ -408,7 +413,7 @@ function RoutineForm(props: {
 
 /** An agent's memory, or the global memory when `agent` is null. */
 export function Memory(props: { agent: Agent | null }): JSX.Element {
-  const { client, run, listen } = useApp();
+  const { client, run, listen, agents } = useApp();
   const id = props.agent?.id ?? null;
   const [q, setQ] = useState("");
   const [entries, setEntries] = useState<MemoryEntry[] | null>(null);
@@ -483,6 +488,7 @@ export function Memory(props: { agent: Agent | null }): JSX.Element {
           <li key={m.key} class="card memory">
             <div class="memory-head">
               <strong class="mono">{m.key}</strong>
+              {!props.agent && <span class="muted small">by {m.author ? `@${agents.get(m.author)?.name ?? "a deleted agent"}` : "you"}</span>}
               <span class="spacer" />
               <span class="muted small">{relativeTime(m.updated_at)}</span>
               <IconButton label={`Forget ${m.key}`} tone="danger" onClick={() => void run(async () => { await client.forget(id, m.key); await refresh(); })}>
@@ -493,6 +499,49 @@ export function Memory(props: { agent: Agent | null }): JSX.Element {
           </li>
         ))}
       </ul>
+    </div>
+  );
+}
+
+/** Tool calls and turn errors: what the agent did, newest first. */
+function Activities(props: { agent: Agent }): JSX.Element {
+  const { client, run, listen, agents } = useApp();
+  const id = props.agent.id;
+  const [events, setEvents] = useState<StoredEvent[] | null>(null);
+
+  useEffect(() => {
+    setEvents(null);
+    void run(async () => { setEvents(await client.allEvents(id)); });
+    return listen((e) => {
+      if (e.type === "event" && e.event.agent_id === id) {
+        setEvents((prev) => (prev && !prev.some((x) => x.id === e.event.id) ? [...prev, e.event] : prev));
+      }
+    });
+  }, [id]);
+
+  const names = { agents: new Map([...agents.values()].map((a) => [a.id, a.name])), routines: new Map<number, string>() };
+  const items = buildTimeline(id, [], events ?? [], new Map(), names)
+    .filter((i): i is Extract<TimelineItem, { type: "tool" | "error" }> => i.type === "tool" || i.type === "error")
+    .reverse();
+
+  if (events && items.length === 0) {
+    return (
+      <Empty icon={<Activity size={28} />} title="No activity yet">
+        Commands, file edits, messages and other tool calls of {props.agent.name} show up here.
+      </Empty>
+    );
+  }
+  return (
+    <div class="stack activities">
+      {items.map((i) =>
+        i.type === "tool" ? (
+          <ToolCard key={i.key} item={i} />
+        ) : (
+          <div key={i.key} class="notice notice-error">
+            {i.text} · {relativeTime(i.at)}
+          </div>
+        ),
+      )}
     </div>
   );
 }

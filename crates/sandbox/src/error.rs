@@ -26,6 +26,11 @@ pub enum SandboxError {
     Storage(#[from] object_store::Error),
     #[error("io: {0}")]
     Io(#[from] std::io::Error),
+    #[error("file {0} is larger than {MAX_FILE_BYTES} bytes")]
+    TooLarge(String),
     #[error("{0}")]
     Other(String),
 }
+
+/// Largest file [`crate::SandboxBackend::read_file`] reads into memory.
+pub const MAX_FILE_BYTES: usize = 32 * 1024 * 1024;

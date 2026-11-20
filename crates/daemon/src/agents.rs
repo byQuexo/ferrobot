@@ -179,27 +179,54 @@ fn shorten(s: &str, max: usize) -> String {
     }
 }
 
-/// Shows the operator an approval card in the requester's chat, waits for
-/// the decision (or [`crate::Settings::approval_timeout`]) and creates the
-/// agent if approved.
+/// The agent at the top of `id`'s creation chain, created by the operator:
+/// its chat is where the operator talks.
+async fn chat_of(state: &AppState, id: AgentId) -> Result<AgentId, ApiError> {
+    let mut current = id;
+    for _ in 0..16 {
+        match state.store.get_agent(current).await?.created_by {
+            Some(parent) if state.store.get_agent(parent).await.is_ok() => current = parent,
+            _ => break,
+        }
+    }
+    Ok(current)
+}
+
+/// Shows the operator an approval card in the chat they use for the
+/// requester (its top creator's), waits for the decision (or
+/// [`crate::Settings::approval_timeout`]) and creates the agent if approved.
 pub async fn request(
     state: &AppState,
     requester: AgentId,
     spec: AgentSpec,
 ) -> Result<AgentRequestOutcome, ApiError> {
     let (name, description) = check(state, &spec).await?;
-    let who = state.store.get_agent(requester).await?.name;
-    let role = if description.is_empty() {
-        shorten(&spec.instructions, 300)
-    } else {
-        description.clone()
-    };
+    let chat = chat_of(state, requester).await?;
     let mut prompt = format!("Create the agent \"{name}\"?");
-    if !role.is_empty() {
-        let _ = write!(prompt, "\nRole: {role}");
+    if !description.is_empty() {
+        let _ = write!(prompt, "\nRole: {description}");
     }
+    // Everything the new agent gets, so nothing is approved unseen.
+    if !spec.instructions.trim().is_empty() {
+        let _ = write!(
+            prompt,
+            "\nInstructions: {}",
+            shorten(&spec.instructions, 600)
+        );
+    }
+    let inherited = state.store.agent_connectors(requester).await?;
+    if !inherited.is_empty() {
+        let names: Vec<&str> = inherited.iter().map(|c| c.name.as_str()).collect();
+        let _ = write!(prompt, "\nConnectors: {}", names.join(", "));
+    }
+    let title = if chat == requester {
+        "Approval needed".to_owned()
+    } else {
+        let who = state.store.get_agent(requester).await?.name;
+        format!("{who} wants to create an agent")
+    };
     let card = QuestionEvent::approval(
-        format!("{who} wants to create an agent"),
+        title,
         prompt,
         Approval::CreateAgent {
             name: name.to_string(),
@@ -209,7 +236,7 @@ pub async fn request(
     let payload = serde_json::to_value(&card).map_err(|e| ApiError::Internal(e.to_string()))?;
     let event = state
         .store
-        .append_event(requester, None, "question".into(), payload)
+        .append_event(chat, None, "question".into(), payload)
         .await?;
     let qid = event.id;
     let (tx, mut rx) = tokio::sync::oneshot::channel();
@@ -234,9 +261,7 @@ pub async fn request(
                 };
                 let payload = serde_json::to_value(&answered)
                     .map_err(|e| ApiError::Internal(e.to_string()))?;
-                state
-                    .record(requester, None, "question_answered", payload)
-                    .await;
+                state.record(chat, None, "question_answered", payload).await;
                 return Ok(AgentRequestOutcome::Declined {
                     reason: "the operator did not answer in time".into(),
                 });

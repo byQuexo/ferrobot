@@ -291,6 +291,7 @@ textarea { resize: vertical; min-height: 40px; line-height: 1.5; }
 /* Agent replies: plain text next to the avatar, no bubble. */
 .bubble-agent { flex: 1; max-width: 640px; padding: 0; border-radius: 0; background: none; }
 .agent-msg-head { display: flex; align-items: baseline; gap: 8px; margin: 1px 0 2px; }
+.bubble-agent > .meta { display: block; margin-top: 2px; }
 .agent-msg-head strong { font-size: 13.5px; font-weight: 600; }
 .agent-msg-head .meta { display: inline; margin: 0; }
 /* In read-only threads the second agent's messages sit on the right in a soft bubble. */
@@ -306,6 +307,26 @@ textarea { resize: vertical; min-height: 40px; line-height: 1.5; }
 .rich p { margin: 0 0 6px; white-space: pre-wrap; }
 .rich p:last-child { margin-bottom: 0; }
 .rich code { background: var(--surface-2); padding: 1px 5px; border-radius: 5px; }
+.rich h3, .rich h4, .rich h5 { margin: 10px 0 4px; font-size: 14.5px; font-weight: 650; }
+.rich h3 { font-size: 16px; }
+.rich > :first-child { margin-top: 0; }
+.rich ul, .rich ol { margin: 0 0 6px; padding-left: 22px; }
+.rich li { margin: 2px 0; }
+.rich blockquote { margin: 0 0 6px; padding: 1px 10px; border-left: 3px solid var(--border-strong); color: var(--text-2); }
+.rich hr { border: none; border-top: 1px solid var(--border); margin: 10px 0; }
+.rich a { color: var(--accent); text-decoration: underline; text-underline-offset: 2px; }
+.md-table { overflow-x: auto; margin: 0 0 6px; }
+.file-link { display: inline-flex; align-items: center; gap: 4px; padding: 1px 6px; border: none; border-radius: 5px; background: var(--accent-soft); color: var(--accent); font: inherit; font-family: var(--mono, ui-monospace, monospace); font-size: 0.92em; cursor: pointer; }
+.file-link:hover { text-decoration: underline; }
+.file-card { display: inline-flex; align-items: center; gap: 10px; padding: 10px 14px; border: 1px solid var(--border); border-radius: 12px; background: var(--surface); color: var(--text); font: inherit; cursor: pointer; text-align: left; }
+.file-card:hover { border-color: var(--accent); }
+.file-card .file-name { font-weight: 600; }
+.file-view { max-height: 70vh; overflow: auto; }
+.dialog-wide { width: min(1040px, 100%); }
+.file-frame { display: block; width: 100%; height: 72vh; border: 1px solid var(--border); border-radius: 8px; background: #fff; }
+.rich table { border-collapse: collapse; font-size: 13.5px; }
+.rich th, .rich td { border: 1px solid var(--border); padding: 4px 8px; text-align: left; vertical-align: top; }
+.rich th { background: var(--surface-2); font-weight: 600; }
 .bubble-user .rich code { background: var(--surface); }
 .code-block {
   margin: 6px 0; padding: 10px 12px; border-radius: 9px; background: var(--surface-2);
@@ -352,6 +373,9 @@ textarea { resize: vertical; min-height: 40px; line-height: 1.5; }
 .notice { font-size: 12px; color: var(--muted); padding: 3px 10px; border-radius: 999px; background: var(--surface-2); display: inline-flex; align-items: center; gap: 6px; }
 .notice-error { color: var(--err); background: var(--err-soft); }
 
+.step-now { padding: 6px 2px; color: var(--muted); font-size: 13.5px; animation: breathe 1.8s ease-in-out infinite; }
+@keyframes breathe { 50% { opacity: 0.45; } }
+.activities .row-tool { padding: 0; }
 .typing { display: inline-flex; gap: 4px; padding: 10px 2px; }
 .typing span { width: 6px; height: 6px; border-radius: 50%; background: var(--muted); animation: bounce 1.2s infinite; }
 .typing span:nth-child(2) { animation-delay: 0.15s; }

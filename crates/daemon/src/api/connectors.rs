@@ -2,8 +2,9 @@
 //! and are never returned, logged or handed to a sandbox.
 
 use axum::Json;
-use axum::extract::{Path, State};
-use axum::http::StatusCode;
+use axum::extract::{Path, Query, State};
+use axum::http::{StatusCode, header};
+use axum::response::{Html, IntoResponse, Response};
 use ferrobot_core::Connector;
 use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;
@@ -11,9 +12,9 @@ use uuid::Uuid;
 
 use super::agents::explicit;
 use super::{ApiResult, parse_id};
-use crate::AppState;
 use crate::connectors::secret_key;
 use crate::error::{ApiError, ErrorBody};
+use crate::{AppState, oauth};
 
 #[derive(Debug, Serialize, ToSchema)]
 pub(crate) struct ConnectorView {
@@ -21,6 +22,8 @@ pub(crate) struct ConnectorView {
     connector: Connector,
     /// Whether a token is stored. The token itself is never returned.
     has_token: bool,
+    /// Whether the connector is signed in with OAuth.
+    signed_in: bool,
 }
 
 async fn view(state: &AppState, connector: Connector) -> Result<ConnectorView, ApiError> {
@@ -30,9 +33,11 @@ async fn view(state: &AppState, connector: Connector) -> Result<ConnectorView, A
         .get(&secret_key(connector.id))
         .await?
         .is_some();
+    let signed_in = oauth::signed_in(state, connector.id).await;
     Ok(ConnectorView {
         connector,
         has_token,
+        signed_in,
     })
 }
 
@@ -139,6 +144,7 @@ pub(crate) async fn update_connector(
 ) -> ApiResult<ConnectorView> {
     let id = parse_cid(&id)?;
     let mut c = state.store.get_connector(id).await?;
+    let old_url = c.url.clone();
     if let Some(name) = req.name {
         name.trim().clone_into(&mut c.name);
     }
@@ -148,6 +154,15 @@ pub(crate) async fn update_connector(
     c.validate().map_err(ApiError::BadRequest)?;
     let token = req.token.map(clean_token).transpose()?;
     state.store.update_connector(c.clone()).await?;
+    if c.url != old_url {
+        // OAuth tokens belong to the old server.
+        state
+            .settings
+            .secrets
+            .delete(&oauth::secret_key(id))
+            .await?;
+        state.oauth.forget(id).await;
+    }
     match token {
         Some(Some(token)) => state.settings.secrets.set(&secret_key(id), &token).await?,
         Some(None) => state.settings.secrets.delete(&secret_key(id)).await?,
@@ -169,6 +184,12 @@ pub(crate) async fn delete_connector(
     let id = parse_cid(&id)?;
     state.store.delete_connector(id).await?;
     state.settings.secrets.delete(&secret_key(id)).await?;
+    state
+        .settings
+        .secrets
+        .delete(&oauth::secret_key(id))
+        .await?;
+    state.oauth.forget(id).await;
     state.connectors.evict_connector(id).await;
     Ok(StatusCode::NO_CONTENT)
 }
@@ -205,4 +226,111 @@ pub(crate) async fn set_agent_connectors(
     state.connectors.evict_agent(id).await;
     let connectors = state.store.agent_connectors(id).await?;
     Ok(Json(connectors.into_iter().map(|c| c.id).collect()))
+}
+
+#[derive(Debug, Serialize, ToSchema)]
+pub(crate) struct OAuthStart {
+    /// Open this in a browser on the daemon's computer to sign in.
+    authorization_url: String,
+}
+
+/// Starts an OAuth sign-in for a connector without a token: discovers the
+/// server's authorization server, registers ferrobot as a client and returns
+/// the page to sign in on. The browser comes back to `/v1/oauth/callback`.
+#[utoipa::path(post, path = "/v1/connectors/{id}/oauth", tag = "connectors",
+    params(("id" = String, Path, description = "Connector id (UUID)")),
+    responses((status = 200, body = OAuthStart),
+        (status = 400, description = "Uses a token, or the server offers no usable OAuth", body = ErrorBody),
+        (status = 404, description = "Unknown connector", body = ErrorBody)))]
+pub(crate) async fn start_oauth(
+    State(state): State<AppState>,
+    Path(id): Path<String>,
+) -> ApiResult<OAuthStart> {
+    let c = state.store.get_connector(parse_cid(&id)?).await?;
+    if state
+        .settings
+        .secrets
+        .get(&secret_key(c.id))
+        .await?
+        .is_some()
+    {
+        return Err(ApiError::BadRequest(format!(
+            "{} uses a token; remove it to sign in with OAuth",
+            c.name
+        )));
+    }
+    let authorization_url = oauth::start(&state, &c)
+        .await
+        .map_err(ApiError::BadRequest)?;
+    Ok(Json(OAuthStart { authorization_url }))
+}
+
+/// Signs a connector out: forgets its OAuth tokens and client.
+#[utoipa::path(delete, path = "/v1/connectors/{id}/oauth", tag = "connectors",
+    params(("id" = String, Path, description = "Connector id (UUID)")),
+    responses((status = 204, description = "Signed out"),
+        (status = 404, description = "Unknown connector", body = ErrorBody)))]
+pub(crate) async fn sign_out(
+    State(state): State<AppState>,
+    Path(id): Path<String>,
+) -> Result<StatusCode, ApiError> {
+    let id = state.store.get_connector(parse_cid(&id)?).await?.id;
+    state
+        .settings
+        .secrets
+        .delete(&oauth::secret_key(id))
+        .await?;
+    state.oauth.forget(id).await;
+    state.connectors.evict_connector(id).await;
+    Ok(StatusCode::NO_CONTENT)
+}
+
+#[derive(Debug, Deserialize, utoipa::IntoParams)]
+#[into_params(parameter_in = Query)]
+pub(crate) struct OAuthCallback {
+    state: Option<String>,
+    code: Option<String>,
+    /// RFC 9207 issuer, checked when present.
+    iss: Option<String>,
+}
+
+/// Where the authorization server sends the browser back. Needs no operator
+/// token: the single-use `state` from the sign-in it started authorizes it.
+#[utoipa::path(get, path = "/v1/oauth/callback", tag = "connectors",
+    params(OAuthCallback),
+    responses((status = 200, description = "Signed in (HTML page)", content_type = "text/html", body = String),
+        (status = 400, description = "Unknown, used, expired or failed sign-in (HTML page)", content_type = "text/html", body = String)))]
+pub(crate) async fn oauth_callback(
+    State(state): State<AppState>,
+    Query(q): Query<OAuthCallback>,
+) -> Response {
+    let outcome = match q.state.as_deref() {
+        Some(csrf) => oauth::finish(&state, csrf, q.code.as_deref(), q.iss.as_deref()).await,
+        None => Err("This page needs a sign-in to finish."),
+    };
+    let (status, text) = match outcome {
+        Ok(_) => (
+            StatusCode::OK,
+            "Signed in. You can close this tab and go back to ferrobot.",
+        ),
+        Err(reason) => (StatusCode::BAD_REQUEST, reason),
+    };
+    // Static text only: nothing from the request is echoed.
+    let page = format!(
+        "<!doctype html><meta charset=utf-8><title>ferrobot</title>\
+         <body style=\"font:16px system-ui;margin:3em\"><p>{text}</p>"
+    );
+    (
+        status,
+        [
+            (header::CACHE_CONTROL, "no-store"),
+            (
+                header::CONTENT_SECURITY_POLICY,
+                "default-src 'none'; style-src 'unsafe-inline'",
+            ),
+            (header::REFERRER_POLICY, "no-referrer"),
+        ],
+        Html(page),
+    )
+        .into_response()
 }

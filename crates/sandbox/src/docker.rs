@@ -20,8 +20,8 @@ use object_store::path::Path as ObjectPath;
 use object_store::{ObjectStore, ObjectStoreExt};
 
 use crate::{
-    ExecOutput, ExecRequest, SandboxBackend, SandboxError, SandboxHandle, SandboxPath, SandboxSpec,
-    SandboxState, SleepLevel, SnapshotRef, capture,
+    ExecOutput, ExecRequest, MAX_FILE_BYTES, SandboxBackend, SandboxError, SandboxHandle,
+    SandboxPath, SandboxSpec, SandboxState, SleepLevel, SnapshotRef, capture,
 };
 
 const KIND: &str = "docker";
@@ -377,6 +377,10 @@ impl SandboxBackend for DockerBackend {
         true
     }
 
+    fn home(&self) -> String {
+        self.config.home_dir.clone()
+    }
+
     async fn create(&self, spec: &SandboxSpec) -> Result<SandboxHandle, SandboxError> {
         let id = if let Some(id) = self.unarchive(spec).await? {
             id
@@ -460,13 +464,20 @@ impl SandboxBackend for DockerBackend {
         let options = DownloadFromContainerOptionsBuilder::default()
             .path(path.as_str())
             .build();
-        let chunks: Vec<Bytes> = self
-            .docker
-            .download_from_container(id, Some(options))
-            .try_collect()
+        let mut stream = self.docker.download_from_container(id, Some(options));
+        let mut tar = Vec::new();
+        while let Some(chunk) = stream
+            .try_next()
             .await
-            .map_err(|e| not_found_or(e, path.as_str()))?;
-        first_file_from_tar(&chunks.concat(), path.as_str())
+            .map_err(|e| not_found_or(e, path.as_str()))?
+        {
+            // The tar adds headers; stop well before a huge file fills memory.
+            if tar.len() + chunk.len() > MAX_FILE_BYTES + 64 * 1024 {
+                return Err(SandboxError::TooLarge(path.to_string()));
+            }
+            tar.extend_from_slice(&chunk);
+        }
+        first_file_from_tar(&tar, path.as_str())
     }
 
     async fn write_file(

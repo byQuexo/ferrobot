@@ -5,6 +5,7 @@ import { Bot, KeyRound, Plus, WifiOff } from "lucide-preact";
 import { ApiError, DEFAULT_DAEMON, DaemonClient, type Agent, type Health, type UiEvent } from "./api.ts";
 import { AgentDialog } from "./components/AgentDialog.tsx";
 import { ConnectorsDialog } from "./components/ConnectorsDialog.tsx";
+import { FileViewer } from "./components/FileViewer.tsx";
 import { Memory } from "./components/InfoPanel.tsx";
 import { ProvidersDialog } from "./components/ProvidersDialog.tsx";
 import { Chat } from "./components/Chat.tsx";
@@ -133,7 +134,9 @@ export function App(): JSX.Element {
   const openConversation = useCallback((a: string, b: string) => {
     setPair(a < b ? [a, b] : [b, a]);
   }, []);
-  const ctx: AppContextValue = { client, health, agents, listen, toast, run, openAgent, openConversation };
+  const [file, setFile] = useState<{ agent: string; file: number } | null>(null);
+  const openFile = useCallback((agent: string, id: number) => { setFile({ agent, file: id }); }, []);
+  const ctx: AppContextValue = { client, health, agents, listen, toast, run, openAgent, openConversation, openFile };
   const agent = selected ? agents.get(selected) : undefined;
 
   return (
@@ -195,6 +198,7 @@ export function App(): JSX.Element {
       </div>
       {dialog === "providers" && <ProvidersDialog onClose={() => { setDialog(null); }} />}
       {dialog === "connectors" && <ConnectorsDialog onClose={() => { setDialog(null); }} />}
+      {file && <FileViewer agent={file.agent} file={file.file} onClose={() => { setFile(null); }} />}
       {dialog === "memory" && (
         <Dialog title="Global memory" onClose={() => { setDialog(null); }} footer={<Button onClick={() => { setDialog(null); }}>Done</Button>}>
           <Memory agent={null} />

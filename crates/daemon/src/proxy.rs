@@ -25,27 +25,128 @@ const GCLOUD_TOKEN_TTL: Duration = Duration::from_secs(45 * 60);
 /// Largest request body forwarded (prompts with images can be big).
 const MAX_REQUEST_BYTES: usize = 32 * 1024 * 1024;
 
-/// Request headers that must not be forwarded.
-const DROP_REQUEST: &[&str] = &[
-    "host",
-    "authorization",
-    "chatgpt-account-id",
-    "x-api-key",
-    "x-goog-api-key",
-    "content-length",
-    "connection",
-    "accept-encoding",
-    "transfer-encoding",
-    "upgrade",
+/// Request headers the model SDKs need; nothing else is forwarded (e.g. no
+/// `cookie`, `openai-organization` or `x-goog-user-project`).
+const FORWARD_REQUEST: &[&str] = &[
+    "accept",
+    "content-type",
+    "user-agent",
+    "openai-beta",
+    "x-request-id",
+    "idempotency-key",
+    "originator",
+    "session_id",
+    "conversation_id",
+    "version",
+    "x-app",
+    "x-goog-api-client",
 ];
+const FORWARD_REQUEST_PREFIXES: &[&str] = &["anthropic-", "x-stainless-", "x-amzn-bedrock-"];
 
-/// Response headers that must not be copied back.
-const DROP_RESPONSE: &[&str] = &[
-    "content-length",
-    "connection",
-    "transfer-encoding",
-    "content-encoding",
+/// Response headers copied back to the agent (no `set-cookie` and the like).
+const FORWARD_RESPONSE: &[&str] = &[
+    "content-type",
+    "cache-control",
+    "retry-after",
+    "date",
+    "request-id",
+    "x-request-id",
 ];
+const FORWARD_RESPONSE_PREFIXES: &[&str] = &["anthropic-", "openai-", "x-ratelimit-", "x-amzn-"];
+
+fn listed(name: &str, exact: &[&str], prefixes: &[&str]) -> bool {
+    exact.contains(&name) || prefixes.iter().any(|p| name.starts_with(p))
+}
+
+/// The API family behind a route, for the method and path allowlist.
+enum Api {
+    Anthropic,
+    Bedrock,
+    BedrockControl,
+    Vertex { project: String, region: String },
+    ChatCompletions,
+    Responses,
+    GeminiNative,
+}
+
+/// One path segment: no slash, not `.` or `..`.
+fn segment(s: &str) -> bool {
+    !s.is_empty() && !s.contains('/') && s != "." && s != ".."
+}
+
+/// The calls the drivers make, and nothing else: a key's other powers
+/// (files, batches, fine-tunes, other projects) stay with the operator.
+fn permitted(api: &Api, method: &axum::http::Method, path: &str) -> bool {
+    use axum::http::Method;
+    let (get, post) = (method == Method::GET, method == Method::POST);
+    let action = |rest: Option<&str>, verbs: &[&str]| {
+        rest.and_then(|r| r.rsplit_once(':'))
+            .is_some_and(|(model, verb)| segment(model) && verbs.contains(&verb))
+    };
+    match api {
+        Api::Anthropic => {
+            (post && matches!(path, "v1/messages" | "v1/messages/count_tokens"))
+                || (get
+                    && (path == "v1/models"
+                        || path.strip_prefix("v1/models/").is_some_and(segment)))
+        }
+        Api::Bedrock => {
+            post && path
+                .strip_prefix("model/")
+                .and_then(|r| r.split_once('/'))
+                .is_some_and(|(id, verb)| {
+                    segment(id)
+                        && matches!(
+                            verb,
+                            "invoke" | "invoke-with-response-stream" | "count-tokens"
+                        )
+                })
+        }
+        Api::BedrockControl => {
+            get && (path == "inference-profiles"
+                || path
+                    .strip_prefix("inference-profiles/")
+                    .is_some_and(segment))
+        }
+        Api::Vertex { project, region } => {
+            let models =
+                format!("projects/{project}/locations/{region}/publishers/anthropic/models/");
+            post && action(
+                path.strip_prefix(&models),
+                &["rawPredict", "streamRawPredict"],
+            )
+        }
+        Api::ChatCompletions => (post && path == "chat/completions") || (get && path == "models"),
+        Api::Responses => {
+            (post && matches!(path, "responses" | "responses/compact")) || (get && path == "models")
+        }
+        Api::GeminiNative => {
+            (get && path == "v1beta/models")
+                || (post
+                    && action(
+                        path.strip_prefix("v1beta/models/"),
+                        &["generateContent", "streamGenerateContent", "countTokens"],
+                    ))
+        }
+    }
+}
+
+/// Plain characters only, so nothing is decoded twice: no `%`, no control
+/// characters, no empty or dot segments.
+fn clean(path: &str) -> bool {
+    path.bytes()
+        .all(|b| b.is_ascii_alphanumeric() || b"-._~:@/".contains(&b))
+        && path.split('/').all(segment)
+}
+
+/// The final URL stays on the upstream's origin and below its base path.
+fn below(base: &str, url: &str) -> bool {
+    let (Ok(base), Ok(url)) = (url::Url::parse(base), url::Url::parse(url)) else {
+        return false;
+    };
+    let prefix = format!("{}/", base.path().trim_end_matches('/'));
+    url.origin() == base.origin() && url.path().starts_with(&prefix)
+}
 
 pub fn router() -> Router<AppState> {
     Router::new().route("/model/{*path}", any(forward))
@@ -75,6 +176,7 @@ fn error(status: StatusCode, message: &str) -> Response {
 
 /// Where one agent's model requests go and with which credential.
 struct Route {
+    api: Api,
     upstream: String,
     auth: UpstreamAuth,
     secret: Option<String>,
@@ -104,6 +206,7 @@ async fn route(state: &AppState, agent: &Agent, path: &str) -> Result<Route, Fai
             ));
         };
         return Ok(Route {
+            api: Api::Anthropic,
             upstream: state.settings.anthropic_upstream.clone(),
             auth: UpstreamAuth::ApiKeyHeader,
             secret: Some(key),
@@ -133,6 +236,22 @@ async fn route(state: &AppState, agent: &Agent, path: &str) -> Result<Route, Fai
     };
     let upstream = upstream
         .ok_or_else(|| unavailable(format!("provider {} has no upstream", provider.name)))?;
+    let api = match provider.kind {
+        ProviderKind::Anthropic => Api::Anthropic,
+        ProviderKind::Bedrock if path.starts_with("model/") => Api::Bedrock,
+        ProviderKind::Bedrock => Api::BedrockControl,
+        ProviderKind::Vertex => Api::Vertex {
+            project: provider.project.clone().unwrap_or_default(),
+            region: provider.region.clone().unwrap_or_default(),
+        },
+        ProviderKind::Codex => Api::Responses,
+        ProviderKind::GeminiCli => Api::GeminiNative,
+        ProviderKind::Openai
+        | ProviderKind::Gemini
+        | ProviderKind::Openrouter
+        | ProviderKind::Ollama
+        | ProviderKind::OpenaiCompatible => Api::ChatCompletions,
+    };
     let auth = provider.kind.upstream_auth();
     let secret = match auth {
         UpstreamAuth::GcloudToken => Some(gcloud_token(state).await?),
@@ -148,6 +267,7 @@ async fn route(state: &AppState, agent: &Agent, path: &str) -> Result<Route, Fai
             .await
             .map_err(unavailable)?;
         return Ok(Route {
+            api,
             upstream: state.settings.chatgpt_upstream.clone(),
             auth: UpstreamAuth::Bearer,
             secret: Some(token),
@@ -161,6 +281,7 @@ async fn route(state: &AppState, agent: &Agent, path: &str) -> Result<Route, Fai
         )));
     }
     Ok(Route {
+        api,
         upstream,
         auth,
         secret,
@@ -233,26 +354,35 @@ async fn forward(
             return error(StatusCode::INTERNAL_SERVER_ERROR, "token lookup failed");
         }
     };
-    if path.contains("..") {
+    if !clean(&path) {
+        tracing::warn!(agent = %agent.name, "model call with an invalid path refused");
         return error(StatusCode::NOT_FOUND, "invalid path");
     }
     let route = match route(&state, &agent, &path).await {
         Ok(route) => route,
         Err((status, message)) => return error(status, &message),
     };
+    if !permitted(&route.api, request.method(), &path) {
+        // Visible on the host: an SDK update may call an endpoint not listed yet.
+        tracing::warn!(agent = %agent.name, method = %request.method(), %path, "model call not proxied");
+        return error(StatusCode::NOT_FOUND, "this API call is not proxied");
+    }
 
     let (parts, body) = request.into_parts();
     let Ok(body) = axum::body::to_bytes(body, MAX_REQUEST_BYTES).await else {
         return error(StatusCode::PAYLOAD_TOO_LARGE, "request body too large");
     };
     let mut url = format!("{}/{path}", route.upstream.trim_end_matches('/'));
+    if !below(&route.upstream, &url) {
+        return error(StatusCode::NOT_FOUND, "invalid path");
+    }
     if let Some(q) = parts.uri.query() {
         url.push('?');
         url.push_str(q);
     }
     let mut upstream = state.http.request(parts.method.clone(), &url);
     for (name, value) in &parts.headers {
-        if !DROP_REQUEST.contains(&name.as_str()) {
+        if listed(name.as_str(), FORWARD_REQUEST, FORWARD_REQUEST_PREFIXES) {
             upstream = upstream.header(name, value);
         }
     }
@@ -281,10 +411,90 @@ async fn forward(
     let status = response.status();
     let mut out = Response::builder().status(status.as_u16());
     for (name, value) in response.headers() {
-        if !DROP_RESPONSE.contains(&name.as_str()) {
+        if listed(name.as_str(), FORWARD_RESPONSE, FORWARD_RESPONSE_PREFIXES) {
             out = out.header(name.clone(), value.clone());
         }
     }
     out.body(Body::from_stream(response.bytes_stream()))
         .unwrap_or_else(|_| error(StatusCode::BAD_GATEWAY, "invalid upstream response"))
+}
+
+#[cfg(test)]
+mod tests {
+    use axum::http::Method;
+
+    use super::*;
+
+    #[test]
+    fn paths_stay_plain_and_below_the_base() {
+        for bad in [
+            "%2e%2e/x", "a/../x", "a/./x", "a//x", "/x", "a\tb", "a b", "a\\b", "a?b", "a#b",
+        ] {
+            assert!(!clean(bad), "{bad:?}");
+        }
+        assert!(clean("model/eu.anthropic.claude-x:0/invoke"));
+        assert!(clean(
+            "projects/p/locations/r/publishers/anthropic/models/m@2025:rawPredict"
+        ));
+        assert!(below(
+            "https://h/base/v1",
+            "https://h/base/v1/chat/completions"
+        ));
+        assert!(!below("https://h/base/v1", "https://h/base/v1x"));
+        assert!(!below("https://h/base/v1", "https://h/escape"));
+        assert!(!below("https://h/base", "https://other/base/x"));
+        assert!(below(
+            "https://api.anthropic.com",
+            "https://api.anthropic.com/v1/messages"
+        ));
+    }
+
+    #[test]
+    fn only_the_drivers_calls_are_permitted() {
+        let (get, post, delete) = (Method::GET, Method::POST, Method::DELETE);
+        let ok = |api: &Api, m: &Method, p: &str| permitted(api, m, p);
+        assert!(ok(&Api::Anthropic, &post, "v1/messages"));
+        assert!(ok(&Api::Anthropic, &get, "v1/models/claude-x"));
+        assert!(!ok(&Api::Anthropic, &get, "v1/files"));
+        assert!(!ok(&Api::Anthropic, &delete, "v1/messages"));
+        assert!(!ok(&Api::Anthropic, &get, "v1/messages/batches/x/results"));
+        assert!(ok(&Api::ChatCompletions, &post, "chat/completions"));
+        assert!(!ok(&Api::ChatCompletions, &post, "fine_tuning/jobs"));
+        assert!(ok(&Api::Responses, &post, "responses"));
+        assert!(ok(
+            &Api::Bedrock,
+            &post,
+            "model/eu.anthropic.claude-x/invoke"
+        ));
+        assert!(!ok(&Api::Bedrock, &post, "model/x/converse/extra"));
+        assert!(ok(&Api::BedrockControl, &get, "inference-profiles"));
+        assert!(!ok(&Api::BedrockControl, &post, "inference-profiles"));
+        let vertex = Api::Vertex {
+            project: "p1".into(),
+            region: "us-east5".into(),
+        };
+        let base = "projects/p1/locations/us-east5/publishers/anthropic/models";
+        assert!(ok(&vertex, &post, &format!("{base}/m:streamRawPredict")));
+        assert!(ok(
+            &vertex,
+            &post,
+            &format!("{base}/count-tokens:rawPredict")
+        ));
+        assert!(!ok(
+            &vertex,
+            &post,
+            "projects/other/locations/us-east5/publishers/anthropic/models/m:rawPredict"
+        ));
+        assert!(!ok(
+            &vertex,
+            &post,
+            "projects/p1/locations/us-east5/endpoints/1:predict"
+        ));
+        assert!(ok(
+            &Api::GeminiNative,
+            &post,
+            "v1beta/models/gemini-2.5-flash:streamGenerateContent"
+        ));
+        assert!(!ok(&Api::GeminiNative, &post, "v1beta/files"));
+    }
 }

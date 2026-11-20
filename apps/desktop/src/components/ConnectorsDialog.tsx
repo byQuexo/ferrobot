@@ -1,6 +1,6 @@
 import type { JSX } from "preact";
 import { useEffect, useState } from "preact/hooks";
-import { KeyRound, Trash2 } from "lucide-preact";
+import { KeyRound, LogIn, LogOut, Trash2 } from "lucide-preact";
 
 import type { Connector } from "../api.ts";
 import { useApp } from "../context.ts";
@@ -14,6 +14,7 @@ export function ConnectorsDialog(props: { onClose: () => void }): JSX.Element {
   const [url, setUrl] = useState("");
   const [token, setToken] = useState("");
   const [retoken, setRetoken] = useState<{ id: string; token: string } | null>(null);
+  const [signIn, setSignIn] = useState<{ id: string; url: string } | null>(null);
   const [busy, setBusy] = useState(false);
 
   const run = async (action: () => Promise<unknown>): Promise<void> => {
@@ -29,6 +30,23 @@ export function ConnectorsDialog(props: { onClose: () => void }): JSX.Element {
   };
 
   useEffect(() => { void run(() => Promise.resolve()); }, []);
+
+  // While a browser sign-in is open, refresh until the daemon reports it done.
+  useEffect(() => {
+    if (!signIn) return;
+    let live = true;
+    const started = Date.now();
+    const poll = (): void => {
+      client.listConnectors().then((all) => {
+        if (!live) return;
+        setConnectors(all);
+        if (all.find((c) => c.id === signIn.id)?.signed_in) setSignIn(null);
+        else if (Date.now() - started < 600_000) setTimeout(poll, 2000);
+      }, () => undefined);
+    };
+    poll();
+    return () => { live = false; };
+  }, [signIn]);
 
   const add = (): Promise<void> =>
     run(async () => {
@@ -51,15 +69,37 @@ export function ConnectorsDialog(props: { onClose: () => void }): JSX.Element {
                 <b>{c.name}</b>
                 <span class="muted small">
                   {c.url}
-                  {c.has_token ? " · token stored" : " · no token"}
+                  {c.has_token ? " · token stored" : c.signed_in ? " · signed in" : " · not signed in"}
                 </span>
               </div>
+              {!c.has_token && !c.signed_in && (
+                <IconButton
+                  label={`Sign in to ${c.name}`}
+                  disabled={busy}
+                  onClick={() => void run(async () => {
+                    const { authorization_url } = await client.startConnectorOAuth(c.id);
+                    setSignIn({ id: c.id, url: authorization_url });
+                  })}
+                >
+                  <LogIn size={15} />
+                </IconButton>
+              )}
+              {c.signed_in && (
+                <IconButton label={`Sign out of ${c.name}`} disabled={busy} onClick={() => void run(() => client.signOutConnector(c.id))}>
+                  <LogOut size={15} />
+                </IconButton>
+              )}
               <IconButton label={`Replace the token of ${c.name}`} onClick={() => { setRetoken({ id: c.id, token: "" }); }}>
                 <KeyRound size={15} />
               </IconButton>
               <IconButton label={`Delete ${c.name}`} tone="danger" disabled={busy} onClick={() => void run(() => client.deleteConnector(c.id))}>
                 <Trash2 size={15} />
               </IconButton>
+              {signIn?.id === c.id && (
+                <span class="small provider-login">
+                  <a href={signIn.url} target="_blank" rel="noreferrer">Open the sign-in page</a> and come back here.
+                </span>
+              )}
               {retoken?.id === c.id && (
                 <form
                   class="provider-rekey"
@@ -96,7 +136,7 @@ export function ConnectorsDialog(props: { onClose: () => void }): JSX.Element {
         <label>
           Token (optional)
           <input type="password" autoComplete="off" value={token} onInput={(e) => { setToken(e.currentTarget.value); }} />
-          <span class="hint">Sent as a Bearer token. Stored in the keychain of the daemon’s computer; agents never see it.</span>
+          <span class="hint">Sent as a Bearer token. Leave it empty to sign in with OAuth after adding. Stored in the keychain of the daemon’s computer; agents never see it.</span>
         </label>
         <div>
           <Button variant="primary" disabled={busy || !name.trim() || !url.trim()} onClick={() => void add()}>

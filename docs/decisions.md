@@ -223,11 +223,13 @@ the code and this file together.
   than a nullable `memories.agent_id`, which would need a table rebuild.
   `remember`/`forget` take `global: true`; `recall` searches both scopes,
   alternating hits so neither crowds out the other, and marks global ones.
-- **Agents may write global memory.** That is what makes it useful (one agent
-  learns where the operator flies from, all know). Risk: a hijacked agent can
-  plant text every agent reads. Mitigations: the operator sees and deletes
-  entries in the Global memory dialog, and `recall` describes global entries
-  as notes, not instructions. No per-entry author yet.
+- **Agents may write global memory, but only change their own entries.**
+  That is what makes it useful (one agent learns where the operator flies
+  from, all know). Each entry records its author (v10; `NULL` = the
+  operator); agents cannot overwrite or delete entries of other agents or of
+  the operator, `recall` says who wrote each one, and the Global memory dialog
+  shows it. Remaining risk: a hijacked agent can still add new entries every
+  agent reads; `recall` calls them notes, not instructions.
 
 ## Connectors
 
@@ -237,12 +239,10 @@ the code and this file together.
   `<connector>__<tool>`. No driver, protocol frame or runner change, and the
   token never leaves the daemon. A reverse proxy per connector would have
   needed MCP config in all four drivers.
-- **Static Bearer tokens only, remote Streamable HTTP only.** OAuth-only
-  services (Notion, Linear, Google, most of Claude Desktop's catalog) need an
-  OAuth flow that is not built. Local stdio servers are not supported (they
-  would run in the sandbox and need new packages there). Put a secret in the
-  token field, not in the URL: URLs are stored in SQLite and may show up in
-  daemon logs.
+- **A static Bearer token or an OAuth sign-in; remote Streamable HTTP only.**
+  Local stdio servers are not supported (they would run in the sandbox and
+  need new packages there). Put a secret in the token field, not in the URL:
+  URLs are stored in SQLite and may show up in daemon logs.
 - **Per-agent assignment** (`agent_connectors`, v9), least privilege: an agent
   only gets connectors the operator ticked. The assignment is checked again
   on every call, not just when listing. Agents created by an agent inherit its
@@ -265,3 +265,94 @@ the code and this file together.
   OpenAI-compatible driver (both re-list per turn). Gemini CLI tool calls of
   connectors show only the connector name in the chat (its call ids are
   parsed up to the first `__`).
+
+## Connector OAuth
+
+- **rmcp's own OAuth client** (`auth` feature): discovery (RFC 9728 protected
+  resource metadata, RFC 8414), dynamic client registration, PKCE S256, the
+  RFC 8707 `resource` parameter, RFC 9207 issuer checks and token refresh.
+  New crates: `oauth2` 5.0 (MIT/Apache-2.0) plus older majors of `rand` and
+  `thiserror` it needs. Hand-rolling the flow would have been more code and
+  more ways to get it wrong.
+- **The daemon is the OAuth client.** Tokens and the registered client live in
+  the secret store under `connector-oauth:<id>`; the gateway sends them, so
+  they never reach a sandbox. A static token wins over a sign-in.
+- **Redirect to the daemon's own loopback UI listener**
+  (`http://127.0.0.1:<port>/v1/oauth/callback`, RFC 8252). It needs no
+  operator token (a browser redirect cannot carry one); the single-use
+  `state` of a sign-in the operator started authorizes it, valid for 10
+  minutes and only in memory, so a daemon restart cancels open sign-ins. The
+  page is static text with `default-src 'none'`. A daemon on another machine
+  cannot be signed in this way (the browser must run where the daemon does).
+- **SSRF guard stays on** for public connectors: rmcp refuses metadata that
+  points at private addresses. Connectors whose own URL is loopback or a
+  private IPv4 address (the operator chose it) skip the guard.
+- rmcp logs the authorization code at `debug` level; the daemon's default
+  filter (`info,ferrobot=debug`) does not include it.
+
+## Model proxy hardening (security review)
+
+- **Allowlist of calls per API family:** Anthropic `POST v1/messages`
+  (+ `count_tokens`), `GET v1/models`; Bedrock `model/<id>/invoke*` and
+  `count-tokens`, control plane `GET inference-profiles`; Vertex only
+  `:rawPredict`/`:streamRawPredict` below the provider's own project and
+  region; OpenAI-style `chat/completions`, `GET models`; Codex `responses`
+  (+ `compact`), `GET models`; Gemini CLI `v1beta/models/<m>:{generate,
+  streamGenerate,count}*`. Anything else is 404, so a hostile sandbox cannot
+  use the key for files, batches, fine-tunes or other GCP projects.
+- **Paths are plain** (`A-Za-z0-9-._~:@/`, no empty or dot segments) and the
+  final URL must keep the upstream's origin and base path: double-encoded
+  `..` and tab/CR/LF tricks no longer leave the base.
+- **No redirects** (a redirect carried `x-api-key` to another host), and
+  **header allowlists** both ways (no `cookie`, `openai-organization`,
+  `x-goog-user-project` out; no `set-cookie` back).
+- Risk: an SDK update that calls a new endpoint gets a 404 until it is added
+  here.
+
+## Messages during a turn (steering)
+
+- **A message from the operator that arrives while the agent works is handed
+  to the running turn** (`steer` frame) when the runner says it can take it
+  (`hello.steering`). The model sees it as "sent while you were working" and
+  is told to acknowledge it in one line and act on it. Messages from other
+  agents and routines still wait for the next turn.
+- **The runner reports what the model saw** (`turn_done.steered`); everything
+  else goes back to the queue without counting a delivery attempt, so old
+  runners, drivers without steering and failed turns keep the old behaviour.
+- **Only the OpenAI-compatible driver steers so far.** It adds late messages
+  before its next model call, and after a final answer it makes one more call
+  so the reply covers them. Claude, Codex and Gemini CLI queue as before.
+- **After the OAuth review:** sign-in and token use need published metadata
+  (no rmcp endpoint fallback, which has no issuer to check), refreshes of one
+  connector take turns and a revoked refresh token signs it out, sign-in
+  links must be http(s), a URL change drops the tokens, a duplicate `state` is
+  refused, and loopback connectors keep rmcp's private-address guard.
+- **Not fixed:** a client secret from dynamic registration is used once and
+  not stored (rmcp has no field for it), so servers that issue one fail at
+  the first refresh; sign-out does not revoke tokens at the server.
+- **Desktop links** (Markdown, sign-in pages) open in the system browser; the
+  window itself only navigates within the app, so the injected operator
+  token never reaches another page.
+
+## Shared files and HTML pages
+
+- **Agents hand files over with `share_file`.** The daemon copies the file
+  (up to 10 MB) from the sandbox into object storage
+  (`artifacts/<agent>/<uuid>`, the same store as snapshots; local FS by
+  default) and records a `file` event, shown as a file card in the chat.
+  The copy outlives sleep, archive and the sandbox; deleting the agent
+  (without keeping data) deletes its files. Bare names resolve like the
+  agent's tools see them (`<home>/workspace/<name>`); the backend reports its
+  home (`SandboxBackend::home`).
+- **Reads are capped** at 32 MiB in every backend (`read_file`), so a file an
+  agent names cannot exhaust the daemon.
+- **Markdown and text open inline; `.html` opens as a page** at
+  `/artifacts/<agent>/<file>/<view>`: outside `/v1` (a frame cannot send the
+  operator token), authorized by a random 128-bit view key, served with
+  `Content-Security-Policy: sandbox allow-scripts` (opaque origin), inline and
+  https scripts/styles allowed, `connect-src 'none'`, no forms. The app frames
+  it with `sandbox="allow-scripts"` and no same-origin, so the page cannot
+  reach the app, its storage or the token. Risk left: a page can still show
+  misleading content (phishing-like UI) inside ferrobot.
+- File names in an agent's message (in backticks) open the shared file of
+  that name in the chat; the latest share wins.

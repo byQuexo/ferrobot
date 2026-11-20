@@ -33,6 +33,7 @@ export type ProviderKind = Schemas["ProviderKind"];
 export type CreateProvider = Schemas["CreateProvider"];
 export type UpdateProvider = Schemas["UpdateProvider"];
 export type Connector = Schemas["ConnectorView"];
+export type SharedFile = Schemas["SharedFileView"];
 export type CreateConnector = Schemas["CreateConnector"];
 export type UpdateConnector = Schemas["UpdateConnector"];
 export type DeviceCode = Schemas["DeviceCode"];
@@ -118,6 +119,9 @@ export class DaemonClient {
   updateConnector = (id: string, req: UpdateConnector): Promise<Connector> =>
     this.#request("PATCH", `/v1/connectors/${id}`, req);
   deleteConnector = (id: string): Promise<void> => this.#request("DELETE", `/v1/connectors/${id}`);
+  startConnectorOAuth = (id: string): Promise<{ authorization_url: string }> =>
+    this.#request("POST", `/v1/connectors/${id}/oauth`);
+  signOutConnector = (id: string): Promise<void> => this.#request("DELETE", `/v1/connectors/${id}/oauth`);
   agentConnectors = (id: string): Promise<string[]> => this.#request("GET", `/v1/agents/${id}/connectors`);
   setAgentConnectors = (id: string, ids: string[]): Promise<string[]> =>
     this.#request("PUT", `/v1/agents/${id}/connectors`, ids);
@@ -128,9 +132,22 @@ export class DaemonClient {
   messages = (id: string): Promise<MailMessage[]> => this.#request("GET", `/v1/agents/${id}/messages`);
   events = (id: string, after = 0): Promise<StoredEvent[]> =>
     this.#request("GET", `/v1/agents/${id}/events?after=${String(after)}`);
+  /** Up to `pages` pages (500 each) of an agent's events, oldest first. */
+  allEvents = async (id: string, pages = 10): Promise<StoredEvent[]> => {
+    const all: StoredEvent[] = [];
+    for (let page = 0, after = 0; page < pages; page++) {
+      const batch = await this.events(id, after);
+      all.push(...batch);
+      if (batch.length < 500) break;
+      after = batch[batch.length - 1]?.id ?? after;
+    }
+    return all;
+  };
   send = (id: string, body: string): Promise<MailMessage> =>
     this.#request("POST", `/v1/agents/${id}/messages`, { body });
   markRead = (id: string): Promise<void> => this.#request("POST", `/v1/agents/${id}/read`);
+  sharedFile = (agent: string, file: number): Promise<SharedFile> =>
+    this.#request("GET", `/v1/agents/${agent}/files/${String(file)}`);
   interrupt = (id: string): Promise<unknown> => this.#request("POST", `/v1/agents/${id}/interrupt`);
   answerQuestion = (id: string, question: number, answers: QuestionAnswer[]): Promise<QuestionAnswered> =>
     this.#request("POST", `/v1/agents/${id}/questions/${String(question)}/answer`, { answers });

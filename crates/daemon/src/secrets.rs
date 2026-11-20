@@ -142,8 +142,13 @@ fn read_file(path: &PathBuf) -> FileResult<BTreeMap<String, String>> {
 
 fn write_file(path: &PathBuf, all: &BTreeMap<String, String>) -> FileResult<()> {
     let tmp = path.with_extension("tmp");
+    // A planted tmp file (or symlink) would keep its own mode; start fresh.
+    match std::fs::remove_file(&tmp) {
+        Err(e) if e.kind() != std::io::ErrorKind::NotFound => return Err(e.into()),
+        _ => {}
+    }
     let mut options = std::fs::OpenOptions::new();
-    options.write(true).create(true).truncate(true);
+    options.write(true).create_new(true);
     #[cfg(unix)]
     std::os::unix::fs::OpenOptionsExt::mode(&mut options, 0o600);
     std::io::Write::write_all(&mut options.open(&tmp)?, &serde_json::to_vec(all)?)?;
@@ -177,6 +182,14 @@ mod tests {
         roundtrip(&SecretStore::default()).await;
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("secrets.json");
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            // A world-readable leftover tmp file must not pass its mode on.
+            let tmp = path.with_extension("tmp");
+            std::fs::write(&tmp, b"{}").unwrap();
+            std::fs::set_permissions(&tmp, std::fs::Permissions::from_mode(0o644)).unwrap();
+        }
         roundtrip(&SecretStore::file(path.clone())).await;
         #[cfg(unix)]
         {

@@ -1,6 +1,6 @@
 // Turn orchestration: one turn at a time, interrupts, session persistence.
 import { errorMessage, log } from "./log.ts";
-import type { DaemonFrame, RunnerFrame, TurnFrame } from "./protocol.ts";
+import type { DaemonFrame, RunnerFrame, SteerFrame, TurnFrame } from "./protocol.ts";
 import type { SessionStore } from "./session.ts";
 import { TurnAbortedError, type ModelDriver } from "./drivers/types.ts";
 
@@ -16,7 +16,7 @@ export class Runner {
   #instructions = "";
   #agentName: string;
   #sessionId: string | null = null;
-  #current: { turnId: string; abort: AbortController } | null = null;
+  #current: { turnId: string; abort: AbortController; late: SteerFrame[]; seen: number[] } | null = null;
 
   constructor(deps: RunnerDeps, sessionId: string | null) {
     this.#deps = deps;
@@ -53,6 +53,10 @@ export class Runner {
         this.#agentName = frame.agent_name;
         log.info("profile updated", { agent: frame.agent_name });
         break;
+      case "steer":
+        // Unless the driver takes it, the daemon queues it for the next turn.
+        if (this.#current?.turnId === frame.turn_id) this.#current.late.push(frame);
+        break;
       case "interrupt":
         if (this.#current?.turnId === frame.turn_id) {
           log.info("interrupting turn", { turn: frame.turn_id });
@@ -69,7 +73,13 @@ export class Runner {
 
   async #runTurn(turn: TurnFrame): Promise<void> {
     const abort = new AbortController();
-    this.#current = { turnId: turn.turn_id, abort };
+    const current = { turnId: turn.turn_id, abort, late: [] as SteerFrame[], seen: [] as number[] };
+    this.#current = current;
+    const takeMessages = (): SteerFrame[] => {
+      const taken = current.late.splice(0);
+      current.seen.push(...taken.map((m) => m.message_id));
+      return taken;
+    };
     const send = (frame: RunnerFrame): void => {
       if (!this.#deps.send(frame)) log.debug("frame dropped (offline)", { type: frame.type });
     };
@@ -82,6 +92,7 @@ export class Runner {
         sessionId: this.#sessionId,
         signal: abort.signal,
         emit: (event) => { send({ type: "event", turn_id: turn.turn_id, event }); },
+        ...(this.#deps.driver.steering ? { takeMessages } : {}),
       });
       if (out.sessionId && out.sessionId !== this.#sessionId) {
         this.#sessionId = out.sessionId;
@@ -94,6 +105,7 @@ export class Runner {
         session_id: this.#sessionId,
         result: out.result,
         error: null,
+        steered: current.seen,
       };
     } catch (err) {
       const interrupted = err instanceof TurnAbortedError || abort.signal.aborted;
@@ -105,6 +117,7 @@ export class Runner {
         session_id: this.#sessionId,
         result: null,
         error: interrupted ? null : errorMessage(err),
+        steered: current.seen,
       };
     } finally {
       this.#current = null;

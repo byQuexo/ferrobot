@@ -201,6 +201,10 @@ const MIGRATIONS: &[&str] = &[
         PRIMARY KEY (agent_id, connector_id)
     );
     ",
+    // v10: who wrote a global memory (an agent id); NULL = the operator
+    r"
+    ALTER TABLE global_memories ADD COLUMN author TEXT;
+    ",
 ];
 
 pub(crate) fn run(conn: &mut Connection) -> Result<(), StoreError> {
@@ -279,6 +283,19 @@ mod tests {
             .query_row("SELECT COUNT(*) FROM agent_connectors", [], |r| r.get(0))
             .unwrap();
         assert_eq!(assigned, 0, "existing agents get no connectors");
+        conn.execute(
+            "INSERT INTO global_memories (key, content, created_at, updated_at)
+             VALUES ('k', 'v', '2026-01-01T00:00:00Z', '2026-01-01T00:00:00Z')",
+            [],
+        )
+        .unwrap();
+        let author: Option<String> = conn
+            .query_row("SELECT author FROM global_memories", [], |r| r.get(0))
+            .unwrap();
+        assert_eq!(
+            author, None,
+            "rows without an author count as the operator's"
+        );
         let version: i64 = conn
             .query_row("PRAGMA user_version", [], |r| r.get(0))
             .unwrap();

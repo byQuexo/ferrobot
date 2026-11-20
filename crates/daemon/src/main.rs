@@ -202,6 +202,9 @@ async fn main() -> Result<()> {
     scheduler::Schedule::parse("@daily", &default_timezone)
         .map_err(|e| anyhow::anyhow!("--timezone: {e}"))?;
     let mut settings = Settings::new(sandbox_daemon_url);
+    settings.ui_url = browser_url(cli.listen);
+    settings.storage =
+        storage::open(cli.storage_url.as_deref(), &cli.data_dir).context("--storage-url")?;
     settings.driver = cli.driver.as_str().into();
     settings.anthropic_api_key = anthropic_api_key;
     settings.anthropic_upstream = cli.anthropic_upstream.trim_end_matches('/').to_owned();
@@ -383,4 +386,14 @@ async fn shutdown() {
     #[cfg(not(unix))]
     let term = std::future::pending::<()>();
     tokio::select! { () = ctrl_c => {}, () = term => {} }
+}
+
+/// How a browser on this computer reaches a listener (OAuth redirects).
+fn browser_url(listen: SocketAddr) -> String {
+    let ip = if listen.ip().is_unspecified() {
+        Ipv4Addr::LOCALHOST.into()
+    } else {
+        listen.ip()
+    };
+    format!("http://{}", SocketAddr::new(ip, listen.port()))
 }

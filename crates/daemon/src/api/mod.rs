@@ -4,6 +4,7 @@
 pub(crate) mod agents;
 pub(crate) mod chat;
 pub(crate) mod connectors;
+pub(crate) mod files;
 pub(crate) mod memory;
 pub(crate) mod providers;
 pub(crate) mod routines;
@@ -30,6 +31,8 @@ pub fn router() -> Router<AppState> {
     Router::new()
         .merge(integrations())
         .route("/v1/health", get(health))
+        .route("/v1/agents/{id}/files/{file_id}", get(files::shared_file))
+        .route("/artifacts/{id}/{file_id}/{view}", get(files::page))
         .route("/v1/ws", get(ws::ui_ws))
         .route(
             "/v1/agents",
@@ -134,6 +137,11 @@ fn integrations() -> Router<AppState> {
             "/v1/agents/{id}/connectors",
             get(connectors::agent_connectors).put(connectors::set_agent_connectors),
         )
+        .route(
+            "/v1/connectors/{id}/oauth",
+            post(connectors::start_oauth).delete(connectors::sign_out),
+        )
+        .route("/v1/oauth/callback", get(connectors::oauth_callback))
 }
 
 pub(crate) fn parse_id(raw: &str) -> Result<AgentId, ApiError> {

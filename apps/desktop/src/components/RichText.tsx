@@ -1,44 +1,108 @@
-// Minimal, safe text rendering: fenced code blocks, inline `code` and
-// agent mentions. Everything else is plain text (no HTML is ever interpreted).
+// Markdown for chat messages, rendered as elements: no HTML is ever
+// interpreted, and links are http(s) only.
 import type { JSX } from "preact";
+import { FileText } from "lucide-preact";
 
 import { useApp } from "../context.ts";
+import { parseBlocks, parseInline, type Block, type Inline } from "../lib/markdown.ts";
 import { mentionsAsText, splitMentions } from "../lib/mentions.ts";
 import { Avatar } from "./Avatar.tsx";
 
-export function RichText(props: { text: string }): JSX.Element {
-  const { agents } = useApp();
-  // Code shows mention tokens as plain `@name`, not as chips.
-  const plain = (t: string): string => mentionsAsText(t, (id) => agents.get(id)?.name);
-  const parts: JSX.Element[] = [];
-  const fence = /```[\w-]*\n?([\s\S]*?)```/g;
-  let last = 0;
-  let i = 0;
-  for (const m of props.text.matchAll(fence)) {
-    if (m.index > last) parts.push(<Inline key={i++} text={props.text.slice(last, m.index)} plain={plain} />);
-    parts.push(<pre key={i++} class="code-block"><code>{plain(m[1]?.replace(/\n$/, "") ?? "")}</code></pre>);
-    last = m.index + m[0].length;
-  }
-  if (last < props.text.length) parts.push(<Inline key={i++} text={props.text.slice(last)} plain={plain} />);
-  return <div class="rich">{parts}</div>;
+type Plain = (text: string) => string;
+
+/** Files shared in this chat by name, so a mentioned file name opens it. */
+export interface ChatFiles {
+  agent: string;
+  byName: ReadonlyMap<string, number>;
 }
 
-function Inline(props: { text: string; plain: (t: string) => string }): JSX.Element {
-  const text = props.text.replace(/^\n+|\n+$/g, "");
-  if (!text) return <></>;
-  const bits = text.split(/(`[^`\n]+`)/g);
+export function RichText(props: { text: string; files?: ChatFiles }): JSX.Element {
+  const { agents } = useApp();
+  // Code shows mention tokens as plain `@name`, not as chips.
+  const plain: Plain = (t) => mentionsAsText(t, (id) => agents.get(id)?.name);
   return (
-    <p>
-      {bits.map((b, i) => {
-        const code = b.length > 2 && b.startsWith("`") && b.endsWith("`");
-        const parts = splitMentions(code ? b.slice(1, -1) : b);
-        // A lone mention in backticks is still a mention.
-        if (code && !(parts.length === 1 && parts[0] && "mention" in parts[0])) {
-          return <code key={i}>{props.plain(b.slice(1, -1))}</code>;
+    <div class="rich">
+      {parseBlocks(props.text).map((b, i) => (
+        <BlockView key={i} block={b} plain={plain} files={props.files} />
+      ))}
+    </div>
+  );
+}
+
+function BlockView(props: { block: Block; plain: Plain; files: ChatFiles | undefined }): JSX.Element {
+  const { block, plain } = props;
+  const inline = (text: string): JSX.Element => <Inlines nodes={parseInline(text)} plain={plain} files={props.files} />;
+  switch (block.kind) {
+    case "heading": {
+      const Tag = (["h3", "h4", "h5"] as const)[block.level - 1] ?? "h5";
+      return <Tag>{inline(block.text)}</Tag>;
+    }
+    case "para":
+      return <p>{inline(block.text)}</p>;
+    case "list": {
+      const items = block.items.map((item, i) => (
+        <li key={i} style={item.depth ? { marginLeft: `${String(item.depth * 16)}px` } : undefined}>
+          {inline(item.text)}
+        </li>
+      ));
+      return block.ordered ? <ol>{items}</ol> : <ul>{items}</ul>;
+    }
+    case "quote":
+      return <blockquote><p>{inline(block.text)}</p></blockquote>;
+    case "code":
+      return <pre class="code-block"><code>{plain(block.text)}</code></pre>;
+    case "hr":
+      return <hr />;
+    case "table":
+      return (
+        <div class="md-table">
+          <table>
+            <thead>
+              <tr>{block.head.map((c, i) => <th key={i}>{inline(c)}</th>)}</tr>
+            </thead>
+            <tbody>
+              {block.rows.map((row, r) => (
+                <tr key={r}>{row.map((c, i) => <td key={i}>{inline(c)}</td>)}</tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      );
+  }
+}
+
+function Inlines(props: { nodes: Inline[]; plain: Plain; files?: ChatFiles | undefined }): JSX.Element {
+  const { plain, files } = props;
+  const { openFile } = useApp();
+  return (
+    <>
+      {props.nodes.map((n, i) => {
+        if ("text" in n) return n.text;
+        if ("mention" in n) return <Mention key={i} id={n.mention} />;
+        if ("strong" in n) return <strong key={i}><Inlines nodes={n.strong} plain={plain} files={files} /></strong>;
+        if ("em" in n) return <em key={i}><Inlines nodes={n.em} plain={plain} files={files} /></em>;
+        if ("link" in n) {
+          return (
+            <a key={i} href={n.link} target="_blank" rel="noreferrer noopener">
+              <Inlines nodes={n.children} plain={plain} />
+            </a>
+          );
         }
-        return parts.map((p, j) => ("text" in p ? p.text : <Mention key={`${String(i)}-${String(j)}`} id={p.mention} />));
+        const shared = files?.byName.get(n.code.split("/").pop() ?? n.code);
+        if (files && shared !== undefined) {
+          return (
+            <button key={i} type="button" class="file-link" title={`Open ${n.code}`} onClick={() => { openFile(files.agent, shared); }}>
+              <FileText size={13} />
+              {n.code}
+            </button>
+          );
+        }
+        // A lone mention in backticks is still a mention.
+        const parts = splitMentions(n.code);
+        if (parts.length === 1 && parts[0] && "mention" in parts[0]) return <Mention key={i} id={parts[0].mention} />;
+        return <code key={i}>{plain(n.code)}</code>;
       })}
-    </p>
+    </>
   );
 }
 

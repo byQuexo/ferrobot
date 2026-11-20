@@ -1,6 +1,7 @@
 import type { JSX } from "preact";
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "preact/hooks";
 import {
+  FileText,
   AlertTriangle,
   ArrowDownLeft,
   ArrowUpRight,
@@ -17,14 +18,14 @@ import {
 
 import type { Agent, MailMessage, Routine, StoredEvent } from "../api.ts";
 import { useApp } from "../context.ts";
-import { clockTime, presenceLabel, toolLabel } from "../lib/format.ts";
-import { buildTimeline, groupExchanges, type DisplayItem, type Exchange, type TimelineItem } from "../lib/timeline.ts";
+import { clockTime, presenceLabel, stepLabel, toolLabel } from "../lib/format.ts";
+import { buildTimeline, groupExchanges, sharedFiles, type DisplayItem, type Exchange, type TimelineItem } from "../lib/timeline.ts";
+import { fileSize } from "./FileViewer.tsx";
 import { Avatar } from "./Avatar.tsx";
 import { QuestionCardView } from "./QuestionCard.tsx";
-import { RichText } from "./RichText.tsx";
+import { RichText, type ChatFiles } from "./RichText.tsx";
 import { Button, IconButton } from "./ui.tsx";
 
-const PAGE = 500;
 
 export function Chat(props: {
   agent: Agent;
@@ -49,13 +50,7 @@ export function Chat(props: {
     setEvents([]);
     setLive(new Map());
     const load = async (): Promise<void> => {
-      const all: StoredEvent[] = [];
-      for (let page = 0, after = 0; page < 10; page++) {
-        const batch = await client.events(id, after);
-        all.push(...batch);
-        if (batch.length < PAGE) break;
-        after = batch[batch.length - 1]?.id ?? after;
-      }
+      const all = await client.allEvents(id);
       const [msgs, rts] = await Promise.all([client.messages(id), client.routines(id)]);
       if (cancelled) return;
       setMessages(msgs);
@@ -110,7 +105,16 @@ export function Chat(props: {
       agents: new Map([...agents.values()].map((a) => [a.id, a.name])),
       routines: new Map(routines.map((r) => [r.id, r.name])),
     };
-    return groupExchanges(buildTimeline(id, messages, events, live, names));
+    const all = buildTimeline(id, messages, events, live, names);
+    // Tool calls and turn errors live on the Activities tab; the chat shows the conversation.
+    const shown = groupExchanges(all.filter((i) => i.type !== "tool" && i.type !== "error"));
+    // The current activity: the newest step since the message being worked on.
+    let start = all.length - 1;
+    while (start >= 0 && !["user", "incoming", "routine"].includes(all[start]?.type ?? "")) start--;
+    const last = all.slice(start + 1).filter((i) => i.type === "tool").pop();
+    const nameOf = (agentId: string): string | undefined => agents.get(agentId)?.name;
+    const files: ChatFiles = { agent: id, byName: sharedFiles(events) };
+    return { shown, files, step: last?.type === "tool" ? stepLabel(last.name, last.input, nameOf) : "Getting started" };
   }, [id, messages, events, live, agents, routines]);
 
   // Keep the view pinned to the bottom unless the user scrolled up.
@@ -119,7 +123,7 @@ export function Chat(props: {
   useLayoutEffect(() => {
     const el = scroller.current;
     if (el && pinned.current) el.scrollTop = el.scrollHeight;
-  }, [items]);
+  }, [items.shown, items.step]);
 
   const working = agent.presence === "working";
 
@@ -157,7 +161,7 @@ export function Chat(props: {
           pinned.current = el.scrollHeight - el.scrollTop - el.clientHeight < 80;
         }}
       >
-        {loaded && items.length === 0 && (
+        {loaded && items.shown.length === 0 && (
           <div class="chat-empty">
             <Avatar agent={agent} size={64} />
             <p class="empty-title">Say hello to {agent.name}</p>
@@ -166,17 +170,13 @@ export function Chat(props: {
             </p>
           </div>
         )}
-        {items.map((item) => (
-          <Item key={item.key} item={item} agent={agent} />
+        {items.shown.map((item) => (
+          <Item key={item.key} item={item} agent={agent} files={items.files} />
         ))}
-        {working && !items.some((i) => i.type === "assistant" && i.streaming) && (
+        {working && !items.shown.some((i) => i.type === "assistant" && i.streaming) && (
           <div class="row row-agent">
             <Avatar agent={agent} size={28} mood="working" />
-            <div class="typing" aria-label={`${agent.name} is working`}>
-              <span />
-              <span />
-              <span />
-            </div>
+            <div class="step-now" role="status">{items.step}…</div>
           </div>
         )}
       </div>
@@ -223,9 +223,9 @@ function ExchangeHint(props: { item: Exchange; agent: Agent }): JSX.Element {
   );
 }
 
-function Item(props: { item: DisplayItem; agent: Agent }): JSX.Element {
+function Item(props: { item: DisplayItem; agent: Agent; files?: ChatFiles }): JSX.Element {
   const { item, agent } = props;
-  const { agents } = useApp();
+  const { agents, openFile } = useApp();
   switch (item.type) {
     case "exchange":
       return <ExchangeHint item={item} agent={agent} />;
@@ -244,14 +244,20 @@ function Item(props: { item: DisplayItem; agent: Agent }): JSX.Element {
     case "assistant":
       return (
         <div class="row row-agent">
-          <Avatar agent={agent} size={28} />
           <div class={`bubble-agent${item.streaming ? " streaming" : ""}`}>
-            <span class="agent-msg-head">
-              <strong>{agent.name}</strong>
-              {!item.streaming && <span class="meta">{clockTime(item.at)}</span>}
-            </span>
-            <RichText text={item.text} />
+            <RichText text={item.text} files={props.files} />
+            {!item.streaming && <span class="meta">{clockTime(item.at)}</span>}
           </div>
+        </div>
+      );
+    case "file":
+      return (
+        <div class="row row-agent">
+          <button type="button" class="file-card" onClick={() => { openFile(agent.id, item.id); }}>
+            <FileText size={18} />
+            <span class="file-name">{item.name}</span>
+            <span class="meta">{fileSize(item.size)} · {clockTime(item.at)}</span>
+          </button>
         </div>
       );
     case "incoming":
@@ -351,7 +357,7 @@ function summary(input: unknown): string {
     .join(", ");
 }
 
-function ToolCard(props: { item: Extract<TimelineItem, { type: "tool" }> }): JSX.Element {
+export function ToolCard(props: { item: Extract<TimelineItem, { type: "tool" }> }): JSX.Element {
   const { item } = props;
   const [open, setOpen] = useState(false);
   const label = toolLabel(item.name);

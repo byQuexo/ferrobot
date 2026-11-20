@@ -169,6 +169,22 @@ impl Store {
         &self,
         agent: AgentId,
     ) -> Result<Option<MailMessage>, StoreError> {
+        self.claim(agent, "").await
+    }
+
+    /// [`Store::claim_next_message`] for messages from the operator only.
+    pub async fn claim_next_user_message(
+        &self,
+        agent: AgentId,
+    ) -> Result<Option<MailMessage>, StoreError> {
+        self.claim(agent, "AND sender = 'user'").await
+    }
+
+    async fn claim(
+        &self,
+        agent: AgentId,
+        filter: &'static str,
+    ) -> Result<Option<MailMessage>, StoreError> {
         self.with(move |c| {
             let tx = c.transaction()?;
             let claimed = tx
@@ -176,7 +192,7 @@ impl Store {
                     &format!(
                         "UPDATE messages SET status = 'in_flight', attempts = attempts + 1, updated_at = ?2
                          WHERE id = (SELECT id FROM messages WHERE recipient = ?1 AND status = 'pending'
-                                     ORDER BY priority > 0 DESC, id LIMIT 1)
+                                     {filter} ORDER BY priority > 0 DESC, id LIMIT 1)
                          RETURNING {COLUMNS}"
                     ),
                     params![agent.to_string(), fmt_ts(now())],
@@ -186,6 +202,20 @@ impl Store {
                 .transpose()?;
             tx.commit()?;
             Ok(claimed)
+        })
+        .await
+    }
+
+    /// Puts a claimed message back in the queue without counting the attempt.
+    pub async fn requeue_message(&self, id: i64) -> Result<(), StoreError> {
+        self.with(move |c| {
+            c.execute(
+                "UPDATE messages SET status = 'pending', attempts = MAX(attempts - 1, 0),
+                                     updated_at = ?2
+                 WHERE id = ?1 AND status = 'in_flight'",
+                params![id, fmt_ts(now())],
+            )?;
+            Ok(())
         })
         .await
     }

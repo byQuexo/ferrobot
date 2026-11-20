@@ -75,7 +75,8 @@ Principles:
   sign-in and tokens for `codex` providers (tokens never enter a sandbox).
 - `crates/daemon/src/connectors.rs`, `api/connectors.rs` — connectors: the daemon
   is the MCP client of remote MCP servers and lends their tools to assigned
-  agents through `/mcp` (tokens in the keychain, never in a sandbox).
+  agents through `/mcp` (tokens in the keychain, never in a sandbox);
+  `oauth.rs` — their OAuth sign-in (rmcp's client, loopback callback).
 - `crates/daemon/src/storage.rs` — object storage (`object_store`) for snapshot
   archives, `--storage-url` (default: the data dir; `s3://` for S3/R2).
 - `crates/daemon/src/lifecycle.rs`, `supervisor.rs`, `scheduler.rs`, `runner_ws.rs`.
@@ -146,8 +147,9 @@ daemon, `docker ps -a` must be empty of ferrobot containers.
 ## Migrations
 
 - `crates/store/src/migrations.rs`, tracked with `PRAGMA user_version`.
-- Forward-only, numbered v1..v9 (v7: `providers`, `agents.provider_id`/`model`; v8:
-  `global_memories`; v9: `connectors`, `agent_connectors`). Append a new entry
+- Forward-only, numbered v1..v10 (v7: `providers`, `agents.provider_id`/`model`; v8:
+  `global_memories`; v9: `connectors`, `agent_connectors`; v10:
+  `global_memories.author`). Append a new entry
   with a `// vN: ...` comment; **never edit or reorder existing ones**.
 - Every migration gets a test (upgrade an old DB, check defaults of existing
   rows). New columns on existing tables need a default.
@@ -162,7 +164,7 @@ daemon, `docker ps -a` must be empty of ferrobot containers.
   proxy picks the upstream from the agent's provider and swaps in the real
   key. Never pass a key into a sandbox, env, log, event or API response.
   Connector tokens follow the same rule: only the daemon talks to connectors.
-  No subscription (OAuth) logins.
+  No Claude subscription (OAuth) logins (connector OAuth is fine).
 - **Operator token on `/v1`.** Every UI route requires
   `Authorization: Bearer <token>` (`FERROBOT_API_TOKEN` or
   `<data dir>/api-token`); only `/v1/health` is open. Keep the UI listener on

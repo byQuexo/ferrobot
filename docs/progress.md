@@ -344,3 +344,60 @@ store used for the run) or the daemon's own env.
 - No real third-party connector (GitHub, Linear, ...); OAuth-only servers
   cannot be added yet.
 - Connector tool lists in Codex and Gemini CLI after an assignment change.
+
+## Connector OAuth, CI fix (`feature/connector-oauth`)
+
+**Done**
+
+- OAuth sign-in for connectors: `POST/DELETE /v1/connectors/{id}/oauth`,
+  `GET /v1/oauth/callback`, Sign in / Sign out in the Connectors dialog.
+- Bold or backticked agent names become mention chips (models ignore `@`).
+- Runner tests no longer hang in CI: the fake Codex sends `turn/started`
+  like Codex does; `node --test` has a 30 s per-test timeout.
+
+**Tested**
+
+- Daemon against a fake authorization server and MCP server: discovery,
+  registration, PKCE checked at the token endpoint, callback without the
+  operator token, single-use `state`, nothing echoed, access token used
+  upstream, tokens never in API responses, sign-out removes the tools.
+- Runner suite 3x on Linux with `--cpus=0.5` (failed every run before).
+
+**Not tested**
+
+- A real OAuth provider (Linear, Notion, ...), token refresh against one, and
+  the sign-in link in the Tauri window.
+
+## Chat and safety follow-ups (`feature/connector-oauth`, continued)
+
+**Done**
+
+- Security review (three subagents) and fixes: model proxy allowlist per API
+  family, plain paths below the base, no redirects, header allowlists;
+  global memory authors (v10); connector connect timeout; secrets tmp file;
+  clean `exec` env on the local backend; OAuth fixes (see decisions).
+- Sub-agent questions go to the creator as a message; sub-agent approval
+  cards appear in the operator's chat (top creator); approval cards show
+  instructions and inherited connectors and no redundant agent name.
+- Chat: Markdown, current step instead of typing dots, tool calls and turn
+  errors moved to the agent's Activities tab, bold/backticked names as chips.
+- Steering: operator messages sent during a turn reach that turn (OpenAI-
+  compatible driver), agents are told to acknowledge them at once.
+- Agents are told to share findings as they go.
+- Desktop links open in the system browser.
+
+**Tested**
+
+- Daemon: proxy escape requests 404 through the real router; steering with a
+  fake runner (seen message delivered, unseen one requeued as next turn);
+  sub-agent approval card in the creator's chat; OAuth without metadata
+  refused. MCP: sub-agent `ask_user` becomes a message to the creator; agents
+  cannot overwrite others' global memories. Runner: late messages in the
+  OpenAI driver, `steered` reported by the runner. Desktop: Markdown parser,
+  step labels.
+
+**Not tested**
+
+- None of the UI changes in the Tauri window (Activities tab, step line,
+  Markdown, link opening); steering and the new prompt lines with a real
+  model; Claude, Codex and Gemini CLI do not steer yet.

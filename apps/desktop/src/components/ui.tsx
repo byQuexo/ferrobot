@@ -66,6 +66,7 @@ export function Dialog(props: {
   onClose: () => void;
   children: ComponentChildren;
   footer?: ComponentChildren;
+  wide?: boolean;
 }): JSX.Element {
   const ref = useRef<HTMLDivElement>(null);
   useEffect(() => {
@@ -78,7 +79,7 @@ export function Dialog(props: {
   }, []);
   return (
     <div class="overlay" onMouseDown={(e) => { if (e.target === e.currentTarget) props.onClose(); }}>
-      <div class="dialog" role="dialog" aria-modal="true" aria-label={props.title} ref={ref}>
+      <div class={props.wide ? "dialog dialog-wide" : "dialog"} role="dialog" aria-modal="true" aria-label={props.title} ref={ref}>
         <header class="dialog-head">
           <h2>{props.title}</h2>
           <IconButton label="Close" onClick={props.onClose}>
