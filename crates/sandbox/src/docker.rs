@@ -54,6 +54,13 @@ fn cli_tag(base_id: &str, packages: &[String]) -> String {
         })
 }
 
+/// Whether a container from `current` must move to `wanted` (`None`: `base`). Only base and
+/// CLI images count: snapshot and archive containers keep their root filesystem.
+fn stale(current: &str, wanted: Option<&str>, base: &str) -> bool {
+    let built = current == base || current.starts_with(CLI_TAG_PREFIX);
+    built && current != wanted.unwrap_or(base)
+}
+
 /// Dockerfile installing validated `packages` as root, then back to the base image's user.
 fn dockerfile(base_id: &str, user: &str, packages: &[String]) -> Result<String, SandboxError> {
     let token = |s: &str| {
@@ -681,9 +688,7 @@ impl SandboxBackend for DockerBackend {
             }) => return Ok(false),
             Err(e) => return Err(e.into()),
         };
-        let base = &self.config.image;
-        let built = current == *base || current.starts_with(CLI_TAG_PREFIX);
-        Ok(built && current != image.unwrap_or(base))
+        Ok(stale(&current, image, &self.config.image))
     }
 
     async fn ready(&self) -> Result<(), SandboxError> {
@@ -1113,6 +1118,28 @@ mod tests {
         assert_eq!(tag, cli_tag("sha256:ab12", &packages));
         assert_ne!(tag, cli_tag("sha256:cd34", &packages));
         assert_ne!(tag, cli_tag("sha256:ab12", &packages[..1]));
+    }
+
+    #[test]
+    fn only_base_and_cli_containers_go_stale() {
+        let base = "ferrobot-runner:dev";
+        let (old, new) = ("ferrobot-runner:clis-aa", "ferrobot-runner:clis-bb");
+        for (current, wanted, expected) in [
+            ("ferrobot-snapshot:x-1", Some(new), false),
+            ("ferrobot-archive:ada", Some(new), false),
+            ("ferrobot-runner:0.1", Some(new), false),
+            (base, Some(new), true),
+            (old, Some(new), true),
+            (old, None, true),
+            (new, Some(new), false),
+            (base, None, false),
+        ] {
+            assert_eq!(
+                stale(current, wanted, base),
+                expected,
+                "{current} -> {wanted:?}"
+            );
+        }
     }
 
     #[test]

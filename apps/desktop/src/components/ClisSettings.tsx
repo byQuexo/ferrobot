@@ -134,7 +134,11 @@ export function ClisSettings(): JSX.Element | null {
         </span>
       </span>
       <div class="row-actions">
-        <Button variant="primary" disabled={building || unchanged} onClick={() => void apply()}>
+        <Button
+          variant="primary"
+          disabled={building || (unchanged && view.status !== "failed")}
+          onClick={() => void apply()}
+        >
           Build image
         </Button>
         <span class={`hint${view.status === "failed" ? " bad" : ""}`} role="status">

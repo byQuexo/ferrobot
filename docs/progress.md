@@ -1071,7 +1071,8 @@ store used for the run) or the daemon's own env.
 **Tested**
 
 - Rust: `package_names_follow_debian_policy`,
-  `cli_image_passes_packages_as_arguments` and the daemon test
+  `cli_image_passes_packages_as_arguments`,
+  `only_base_and_cli_containers_go_stale` and the daemon test
   `cli_image_reaches_new_and_woken_sandboxes` (validation, one build at a
   time, running agents untouched, new and woken sandboxes on the new image,
   back to the base on an empty list, never a purged volume).
@@ -1083,4 +1084,5 @@ store used for the run) or the daemon's own env.
   a woken agent back to the base image; the sweep kept the in-use image and
   removed it once its agents were gone. The 12 catalog packages install on the
   runner image (`apt-get install -s`).
-- Not tested: building all 12 at once (disk), Podman, the Tauri window.
+- Not tested: building all 12 at once (disk), Podman; the CLIs page was not
+  viewed in a browser or the Tauri window.
