@@ -767,6 +767,8 @@ store used for the run) or the daemon's own env.
   status-dot rows, add forms behind a button, hairline sections, 36 px nav
   rows, the switch in the accent. Voice copy names the phone button. The
   five info tabs fit on one row, and the theme control no longer overlaps.
+- Bare URLs in chat show as a link chip with a shortened label
+  (`feat/link-chips`); the full URL is in the tooltip and accessible name.
 
 **Checked visually**
 
