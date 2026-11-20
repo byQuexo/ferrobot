@@ -2165,6 +2165,15 @@ async fn connectors_sign_in_with_oauth() {
     let tools = as_ann.list_all_tools().await.unwrap();
     assert!(!tools.iter().any(|t| t.name.starts_with("up__")));
     as_ann.cancel().await.unwrap();
+
+    // A server without published OAuth metadata gets no sign-in (no issuer to
+    // check tokens against).
+    let (bare, _) = upstream_mcp().await;
+    let body = json!({"name": "bare", "url": bare});
+    let (_, conn) = http(&d.ui, "POST", "/v1/connectors", Some(body)).await;
+    let path = format!("/v1/connectors/{}/oauth", conn["id"].as_str().unwrap());
+    let (status, body) = http(&d.ui, "POST", &path, None).await;
+    assert_eq!(status, 400, "{body}");
 }
 
 #[tokio::test]

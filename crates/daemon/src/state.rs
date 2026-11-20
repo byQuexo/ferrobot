@@ -144,8 +144,8 @@ pub struct AppState {
     pub codex: Arc<tokio::sync::Mutex<crate::codex::CodexState>>,
     /// Open sessions with connector MCP servers.
     pub connectors: Arc<crate::connectors::Sessions>,
-    /// Connector OAuth sign-ins waiting for the browser.
-    pub oauth: Arc<crate::oauth::Pending>,
+    /// Connector OAuth sign-ins waiting for the browser, refresh locks.
+    pub oauth: Arc<crate::oauth::OAuth>,
 }
 
 impl AppState {

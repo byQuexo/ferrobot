@@ -322,3 +322,14 @@ the code and this file together.
 - **Only the OpenAI-compatible driver steers so far.** It adds late messages
   before its next model call, and after a final answer it makes one more call
   so the reply covers them. Claude, Codex and Gemini CLI queue as before.
+- **After the OAuth review:** sign-in and token use need published metadata
+  (no rmcp endpoint fallback, which has no issuer to check), refreshes of one
+  connector take turns and a revoked refresh token signs it out, sign-in
+  links must be http(s), a URL change drops the tokens, a duplicate `state` is
+  refused, and loopback connectors keep rmcp's private-address guard.
+- **Not fixed:** a client secret from dynamic registration is used once and
+  not stored (rmcp has no field for it), so servers that issue one fail at
+  the first refresh; sign-out does not revoke tokens at the server.
+- **Desktop links** (Markdown, sign-in pages) open in the system browser; the
+  window itself only navigates within the app, so the injected operator
+  token never reaches another page.

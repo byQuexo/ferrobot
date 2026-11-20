@@ -164,7 +164,7 @@ daemon, `docker ps -a` must be empty of ferrobot containers.
   proxy picks the upstream from the agent's provider and swaps in the real
   key. Never pass a key into a sandbox, env, log, event or API response.
   Connector tokens follow the same rule: only the daemon talks to connectors.
-  No subscription (OAuth) logins.
+  No Claude subscription (OAuth) logins (connector OAuth is fine).
 - **Operator token on `/v1`.** Every UI route requires
   `Authorization: Bearer <token>` (`FERROBOT_API_TOKEN` or
   `<data dir>/api-token`); only `/v1/health` is open. Keep the UI listener on

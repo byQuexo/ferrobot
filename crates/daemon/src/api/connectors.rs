@@ -144,6 +144,7 @@ pub(crate) async fn update_connector(
 ) -> ApiResult<ConnectorView> {
     let id = parse_cid(&id)?;
     let mut c = state.store.get_connector(id).await?;
+    let old_url = c.url.clone();
     if let Some(name) = req.name {
         name.trim().clone_into(&mut c.name);
     }
@@ -153,6 +154,15 @@ pub(crate) async fn update_connector(
     c.validate().map_err(ApiError::BadRequest)?;
     let token = req.token.map(clean_token).transpose()?;
     state.store.update_connector(c.clone()).await?;
+    if c.url != old_url {
+        // OAuth tokens belong to the old server.
+        state
+            .settings
+            .secrets
+            .delete(&oauth::secret_key(id))
+            .await?;
+        state.oauth.forget(id).await;
+    }
     match token {
         Some(Some(token)) => state.settings.secrets.set(&secret_key(id), &token).await?,
         Some(None) => state.settings.secrets.delete(&secret_key(id)).await?,
@@ -179,6 +189,7 @@ pub(crate) async fn delete_connector(
         .secrets
         .delete(&oauth::secret_key(id))
         .await?;
+    state.oauth.forget(id).await;
     state.connectors.evict_connector(id).await;
     Ok(StatusCode::NO_CONTENT)
 }
@@ -269,6 +280,7 @@ pub(crate) async fn sign_out(
         .secrets
         .delete(&oauth::secret_key(id))
         .await?;
+    state.oauth.forget(id).await;
     state.connectors.evict_connector(id).await;
     Ok(StatusCode::NO_CONTENT)
 }
