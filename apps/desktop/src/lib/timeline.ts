@@ -179,7 +179,12 @@ export function buildTimeline(
   });
   // A successful ask_user call is shown as its card instead of a tool card.
   const isCardCall = (i: TimelineItem): boolean => i.type === "tool" && /(^|__)ask_user$/.test(i.name) && !i.isError;
-  return items.map((x) => x.item).filter((i) => !isCardCall(i));
+  const shown = items.map((x) => x.item).filter((i) => !isCardCall(i));
+  // Sleep deepens in steps (paused, then stopped); the chat shows the first one.
+  return shown.filter((i, n) => {
+    const prev = shown[n - 1];
+    return !(i.type === "system" && prev?.type === "system" && prev.text === i.text);
+  });
 }
 
 export type A2aItem = Extract<TimelineItem, { type: "incoming" | "outgoing" }>;

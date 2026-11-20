@@ -261,5 +261,7 @@ the code and this file together.
   `default_tools_approval_mode = "approve"`). The operator decides per agent
   instead.
 - **Codex and Gemini CLI may keep their first tool list** until the runner
-  restarts, so assignment changes reach them later than Claude (which
-  re-lists per turn).
+  restarts, so assignment changes reach them later than Claude and the
+  OpenAI-compatible driver (both re-list per turn). Gemini CLI tool calls of
+  connectors show only the connector name in the chat (its call ids are
+  parsed up to the first `__`).

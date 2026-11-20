@@ -229,7 +229,9 @@ pub(crate) async fn delete_agent(
     Path(id): Path<String>,
     Query(q): Query<DeleteQuery>,
 ) -> Result<StatusCode, ApiError> {
-    lifecycle::delete(&state, parse_id(&id)?, !q.keep_data).await?;
+    let id = parse_id(&id)?;
+    lifecycle::delete(&state, id, !q.keep_data).await?;
+    state.connectors.evict_agent(id).await;
     Ok(StatusCode::NO_CONTENT)
 }
 
