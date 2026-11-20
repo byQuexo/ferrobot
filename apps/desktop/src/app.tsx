@@ -154,7 +154,7 @@ export function App(): JSX.Element {
           selected={selected}
           onSelect={openAgent}
           pair={pair}
-          onOpenPair={setPair}
+          onOpenPair={(p) => { setUsage(false); setPair(p); }}
           onCreate={() => { setDialog("create"); }}
           onSettings={() => { setUsage(false); setSettings(settings ? null : "providers"); }}
           settingsOpen={settings !== null}
