@@ -27,6 +27,7 @@ pub mod spec;
 pub mod state;
 pub mod storage;
 pub mod supervisor;
+pub mod tasks;
 pub mod views;
 
 use axum::Router;

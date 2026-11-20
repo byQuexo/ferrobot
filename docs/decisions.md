@@ -488,3 +488,52 @@ the code and this file together.
   before such a change is discarded when the browser comes back.
 - **Deleting a connector revokes its tokens** (like sign-out) and removes
   its secrets before the row, so a keychain error leaves it to retry.
+
+## Agent collaboration: wake, tasks, names, greeting
+
+- **Mail from an agent wakes a sleeping one** (paused, stopped or archived)
+  unless it is sent with `priority: false`. That already held; it is now
+  tested through the real `send_message` tool and said in the shared prompt
+  and the tool description. No new tool.
+- **Tracked tasks instead of trusting the model to report back.**
+  `assign_task` (and `create_agent` with `task`) queue the task message
+  together with a `task` event on the delegate, in one transaction. A
+  separate tool rather than a flag on `send_message`: a name the model can
+  pick for "hand this over" is clearer than a boolean.
+- **No migration:** the marker is an event, and a task's state is derived
+  from the mailbox: `queued`/`working`/`failed` from the message, `done` when
+  the delegate sent the assigner a message threaded to the task (directly or
+  to a follow-up threaded to it), `open` otherwise. The events have no index
+  on `kind`, so listing tasks scans the events table; fine at this size, an
+  index (a migration) if it grows.
+- **Automatic report at the end of the turn.** When the delegate's turn on
+  the task (or on a follow-up the assigner threaded to it) ends, the daemon
+  sends its final answer to the assigner as a normal message from the
+  delegate, `reply_to` the task, so it wakes a sleeping assigner or waits
+  behind its running turn. Stopped by the operator and failed for good are
+  reported too (short); a failed turn that is retried is not. No report when
+  the delegate already answered in the thread, so nothing arrives twice; the
+  prompt says to use `reply_to` only for the final answer, since an interim
+  update with `reply_to` would replace the report. The report is queued
+  before the task message is marked delivered, so the supervisor never sees
+  a finished task without an answer in between.
+- **No loops:** a report is a plain message, never a task, and the
+  assigner's turn on it is not threaded to a task it received.
+- **One reminder:** a delegate whose turn ended without an answer (empty
+  result, no reply) gets one message from the supervisor, sent as from the
+  assigner and threaded to the task, once it is idle (no turn, nothing
+  queued); its turn then reports like the task's. A `task_nudged` event
+  keeps it to one. Not for interrupted tasks: that would restart work the
+  operator stopped.
+- **Names:** the prompt and `create_agent` ask for short, memorable,
+  lowercase names that fit the role (`scout`, `forge`, `ledger`, `echo`).
+- **Greeting:** a new agent's first turn opens with a `[ferrobot]` line
+  asking for a one- or two-line greeting to the operator (who it is, what it
+  will do now), so the task turn of an agent created with a task starts with
+  it. An operator-created agent with nothing queued when its runner first
+  connects gets a turn of its own for it: a `turn` frame with
+  `message_id: 0` and no mailbox message, so the operator sees only the
+  agent's greeting in its chat (a trigger message would show as a bubble
+  the operator never wrote). It costs one model call per creation and is not
+  retried. `Settings::greet_new_agents` turns it off; the in-process test
+  harness does, because fake runners expect the operator's message first.

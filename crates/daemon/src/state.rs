@@ -48,6 +48,9 @@ pub struct Settings {
     pub max_agents: usize,
     /// How long a `create_agent` approval card waits for the operator.
     pub approval_timeout: Duration,
+    /// A new agent's first turn opens with a greeting to the operator; one
+    /// created by the operator greets in a turn of its own.
+    pub greet_new_agents: bool,
     /// Where provider API keys live.
     pub secrets: crate::secrets::SecretStore,
     /// Prints a Google access token for Vertex providers.
@@ -83,6 +86,7 @@ impl std::fmt::Debug for Settings {
             api_token,
             max_agents,
             approval_timeout,
+            greet_new_agents,
             secrets,
             gcloud_token_cmd,
             codex_bin,
@@ -107,6 +111,7 @@ impl std::fmt::Debug for Settings {
             .field("api_token", &redacted(api_token))
             .field("max_agents", max_agents)
             .field("approval_timeout", approval_timeout)
+            .field("greet_new_agents", greet_new_agents)
             .field("secrets", secrets)
             .field("gcloud_token_cmd", gcloud_token_cmd)
             .field("codex_bin", codex_bin)
@@ -136,6 +141,7 @@ impl Settings {
             api_token: None,
             max_agents: crate::agents::DEFAULT_MAX_AGENTS,
             approval_timeout: crate::agents::DEFAULT_APPROVAL_TIMEOUT,
+            greet_new_agents: true,
             secrets: crate::secrets::SecretStore::default(),
             gcloud_token_cmd: ["gcloud", "auth", "print-access-token"]
                 .map(String::from)
