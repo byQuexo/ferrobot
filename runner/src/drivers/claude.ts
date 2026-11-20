@@ -306,14 +306,17 @@ export class ClaudeDriver implements ModelDriver {
     let result: string | null = null;
     let emitted = 0;
     const inbox = new Inbox();
+    const first = inbox.push(turnPrompt(ctx));
     // Every message pushed must be answered before the query may end.
-    const open = new Set([inbox.push(turnPrompt(ctx))]);
+    const open = new Set([first]);
     const steer = (): void => {
       for (const m of ctx.takeMessages?.() ?? []) open.add(inbox.push(latePrompt(m)));
     };
     try {
       for await (const message of this.#query({ prompt: inbox, options })) {
         if (message.type === "result") {
+          // Any result answers the turn's prompt; only late messages can hold the query open.
+          open.delete(first);
           const consumed = message.user_message_uuids;
           if (consumed) for (const id of consumed) open.delete(id);
           // An older CLI does not say what it consumed: take it as all.

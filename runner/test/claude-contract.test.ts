@@ -315,6 +315,19 @@ describe("ClaudeDriver with a fake query()", () => {
     assert.equal(seen.length, 2);
   });
 
+  it("ends even when the result does not list the turn's own prompt", async () => {
+    let ended = false;
+    const d = driver(async function* ({ prompt }) {
+      const input = prompt[Symbol.asyncIterator]();
+      await input.next();
+      yield { ...result, user_message_uuids: [] } as unknown as SDKMessage;
+      ended = (await input.next()).done === true;
+    });
+    const out = await d.runTurn(ctx().ctx);
+    assert.equal(out.result, "Asked bob.");
+    assert.ok(ended);
+  });
+
   it("reports SDK error results as failures", async () => {
     const d = driver(async function* () {
       await Promise.resolve();
