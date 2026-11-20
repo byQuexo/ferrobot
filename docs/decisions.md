@@ -356,3 +356,12 @@ the code and this file together.
   misleading content (phishing-like UI) inside ferrobot.
 - File names in an agent's message (in backticks) open the shared file of
   that name in the chat; the latest share wins.
+- **Every shared file has a capability URL** (`url`): pages open sandboxed,
+  a file named `.pdf` that starts with `%PDF-` opens inline (no CSP sandbox,
+  which would stop browsers' PDF viewers; `nosniff` keeps it a PDF), anything
+  else or `?download` is an attachment under `sandbox; default-src 'none'`.
+  The desktop opens pages and downloads in the system browser (the window
+  cannot save downloads) and PDFs in a full-screen viewer.
+- **`ferrobot-pdf`** in the runner image renders HTML to PDF with Debian's
+  Chromium (`--no-sandbox`: the container is the sandbox). The image grows
+  from about 1.3 GB to about 2 GB.

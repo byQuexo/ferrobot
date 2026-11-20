@@ -24,7 +24,7 @@
         "tags": [
           "chat"
         ],
-        "summary": "An .html file an agent shared, as a page. Needs no operator token: a\nframe cannot send one, and the random `view` key is the capability. The\npage runs sandboxed (opaque origin: no app, cookies or token) and cannot\nmake network requests.",
+        "summary": "A file an agent shared. Needs no operator token: frames and the system\nbrowser cannot send one, and the random `view` key is the capability.\n.html opens as a sandboxed page (opaque origin, no network requests),\na real PDF opens inline, anything else (or `?download`) downloads.",
         "operationId": "page",
         "parameters": [
           {
@@ -49,8 +49,17 @@
           {
             "name": "view",
             "in": "path",
-            "description": "The file's view key (from `page_url`)",
+            "description": "The file's view key (from `url`)",
             "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "download",
+            "in": "query",
+            "description": "Any value: send the file as a download.",
+            "required": false,
             "schema": {
               "type": "string"
             }
@@ -58,11 +67,16 @@
         ],
         "responses": {
           "200": {
-            "description": "The page",
+            "description": "The file",
             "content": {
-              "text/html": {
+              "application/octet-stream": {
                 "schema": {
-                  "type": "string"
+                  "type": "array",
+                  "items": {
+                    "type": "integer",
+                    "format": "int32",
+                    "minimum": 0
+                  }
                 }
               }
             }
@@ -78,7 +92,7 @@
             }
           },
           "404": {
-            "description": "Unknown page",
+            "description": "Unknown file",
             "content": {
               "application/json": {
                 "schema": {
@@ -4736,7 +4750,8 @@
         "type": "object",
         "required": [
           "name",
-          "size"
+          "size",
+          "url"
         ],
         "properties": {
           "name": {
@@ -4759,7 +4774,11 @@
               "string",
               "null"
             ],
-            "description": "For .html files: where the page opens (relative to the daemon), in a\nsandboxed frame without access to the app or the operator token."
+            "description": "For .html files: the page (relative to the daemon), sandboxed, with\nno access to the app or the operator token."
+          },
+          "url": {
+            "type": "string",
+            "description": "The file itself (relative to the daemon): pages and PDFs open inline,\nother files download. Add `?download=1` to always download."
           }
         }
       },

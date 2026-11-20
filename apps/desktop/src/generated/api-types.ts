@@ -12,10 +12,10 @@ export interface paths {
             cookie?: never;
         };
         /**
-         * An .html file an agent shared, as a page. Needs no operator token: a
-         *     frame cannot send one, and the random `view` key is the capability. The
-         *     page runs sandboxed (opaque origin: no app, cookies or token) and cannot
-         *     make network requests.
+         * A file an agent shared. Needs no operator token: frames and the system
+         *     browser cannot send one, and the random `view` key is the capability.
+         *     .html opens as a sandboxed page (opaque origin, no network requests),
+         *     a real PDF opens inline, anything else (or `?download`) downloads.
          */
         get: operations["page"];
         put?: never;
@@ -1252,10 +1252,15 @@ export interface components {
             /** @description The text, for UTF-8 files up to 2 MiB; otherwise `null`. */
             content?: string | null;
             /**
-             * @description For .html files: where the page opens (relative to the daemon), in a
-             *     sandboxed frame without access to the app or the operator token.
+             * @description For .html files: the page (relative to the daemon), sandboxed, with
+             *     no access to the app or the operator token.
              */
             page_url?: string | null;
+            /**
+             * @description The file itself (relative to the daemon): pages and PDFs open inline,
+             *     other files download. Add `?download=1` to always download.
+             */
+            url: string;
         };
         /**
          * @description How deeply a sandbox sleeps.
@@ -1384,27 +1389,30 @@ export type $defs = Record<string, never>;
 export interface operations {
     page: {
         parameters: {
-            query?: never;
+            query?: {
+                /** @description Any value: send the file as a download. */
+                download?: string;
+            };
             header?: never;
             path: {
                 /** @description Agent id (UUID) */
                 id: string;
                 /** @description Id of the `file` event */
                 file_id: number;
-                /** @description The file's view key (from `page_url`) */
+                /** @description The file's view key (from `url`) */
                 view: string;
             };
             cookie?: never;
         };
         requestBody?: never;
         responses: {
-            /** @description The page */
+            /** @description The file */
             200: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "text/html": string;
+                    "application/octet-stream": number[];
                 };
             };
             /** @description Missing or wrong API token */
@@ -1416,7 +1424,7 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorBody"];
                 };
             };
-            /** @description Unknown page */
+            /** @description Unknown file */
             404: {
                 headers: {
                     [name: string]: unknown;
