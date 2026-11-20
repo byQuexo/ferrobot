@@ -217,6 +217,8 @@ pub struct AppState {
     pub voice: Arc<Mutex<crate::voice::Budget>>,
     /// The operator's voice call (in memory: a restart ends it).
     pub call: Arc<Mutex<crate::call::Call>>,
+    /// Where the CLI image build stands.
+    pub clis: Arc<crate::clis::Builds>,
 }
 
 impl AppState {
@@ -249,6 +251,7 @@ impl AppState {
             model_lists: Arc::default(),
             voice: Arc::default(),
             call: Arc::default(),
+            clis: Arc::default(),
         }
     }
 

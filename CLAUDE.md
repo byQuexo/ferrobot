@@ -84,6 +84,9 @@ Principles:
   agents through `/mcp` (tokens in the keychain, never in a sandbox), and the
   `add_connector` approval card with its hidden token field;
   `oauth.rs` — their OAuth sign-in (rmcp's client, loopback callback).
+- `crates/daemon/src/clis.rs`, `api/clis.rs` — CLIs: keyless Debian packages
+  built into one shared sandbox image (Docker, `build_image` in
+  `crates/sandbox`); `lifecycle::wake` recreates outdated sandboxes, home kept.
 - `crates/daemon/src/voice.rs`, `api/voice.rs` — voice: speech and
   transcription for the operator's chat via ElevenLabs or OpenRouter (keys
   in the keychain as `voice:<provider>`); `call.rs` — the operator's voice

@@ -299,6 +299,7 @@ mod tests {
             name: name.into(),
             env: BTreeMap::from([("FOO".into(), "bar".into())]),
             labels: BTreeMap::new(),
+            image: None,
         }
     }
 

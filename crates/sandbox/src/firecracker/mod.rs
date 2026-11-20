@@ -727,6 +727,7 @@ mod tests {
             name: "alice".into(),
             env: BTreeMap::new(),
             labels: BTreeMap::new(),
+            image: None,
         };
         let err = b.create(&spec).await.unwrap_err().to_string();
         assert!(err.contains("needs read/write access to"), "{err}");

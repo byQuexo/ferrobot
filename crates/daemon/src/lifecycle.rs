@@ -111,6 +111,7 @@ async fn fresh_spec(state: &AppState, agent: &Agent) -> Result<SandboxSpec, ApiE
         name: agent.sandbox_name.clone(),
         env,
         labels: BTreeMap::from([("dev.ferrobot.agent-id".to_owned(), agent.id.to_string())]),
+        image: crate::clis::image(state).await?,
     })
 }
 
@@ -151,7 +152,8 @@ async fn provision_locked(state: &AppState, agent: &Agent) -> Result<SandboxHand
     }
 }
 
-/// Starts the agent's sandbox, provisioning it if it does not exist (anymore).
+/// Starts the agent's sandbox, provisioning it if it does not exist (anymore) or runs an
+/// outdated CLI image (the disk is kept).
 pub async fn wake(state: &AppState, id: AgentId) -> Result<(), ApiError> {
     let lock = state.hub.lifecycle_lock(id);
     let _guard = lock.lock().await;
@@ -160,6 +162,12 @@ pub async fn wake(state: &AppState, id: AgentId) -> Result<(), ApiError> {
         provision_locked(state, &agent).await?;
         return Ok(());
     };
+    let image = crate::clis::image(state).await?;
+    if state.backend.is_stale(&handle, image.as_deref()).await? {
+        tracing::info!(agent = %agent.name, "new CLI image, recreating the sandbox");
+        state.backend.destroy(&handle, false).await?;
+        return provision_locked(state, &agent).await.map(|_| ());
+    }
     match state.backend.wake(&handle).await {
         Ok(()) => {
             if agent.status != AgentStatus::Running {
@@ -358,9 +366,10 @@ async fn owned_snapshot(
     }
 }
 
-/// Brings sandboxes of `running` agents back after a daemon restart and
-/// aligns stored status with what the backend reports.
+/// Brings sandboxes of `running` agents back after a daemon restart, aligns
+/// stored status with what the backend reports and rebuilds the CLI image.
 pub async fn reconcile(state: &AppState) {
+    crate::clis::resume(state);
     let agents = match state.store.list_agents().await {
         Ok(a) => a,
         Err(e) => {
