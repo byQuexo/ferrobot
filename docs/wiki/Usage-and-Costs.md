@@ -1,0 +1,64 @@
+The daemon counts what every model call uses and shows it in the **Usage**
+view (chart icon at the top of the sidebar), with cost estimates.
+
+## What is recorded
+
+The [[model proxy|Architecture]] writes one row per model call:
+
+- time, agent, provider, model
+- input tokens (without cache reads and writes), output tokens
+- cache read and cache write tokens, where the provider reports them
+- latency
+- status: `ok`, `refused` (the proxy turned the call away) or `error`
+
+Only metadata and counts are stored, never prompts or completions. Model
+lists and token-count calls are not logged. Rows outlive deleted agents.
+
+## Where the counts come from
+
+- Counts come from the usage fields in the provider's response. They are
+  never estimated or computed from text.
+- When a response carries no usage, the row is **not tracked** instead of a
+  number. Today that is Bedrock's binary streaming format and
+  OpenAI-compatible servers that ignore `stream_options.include_usage`.
+- Every driver reaches its model through the proxy, including Codex with a
+  ChatGPT sign-in and Gemini CLI.
+
+| API | Counted from |
+| --- | --- |
+| Anthropic, Vertex, Bedrock (JSON) | `usage` (stream: `message_start` and `message_delta`) |
+| OpenAI chat and compatible servers | `usage` in the last stream chunk |
+| Codex (Responses API) | `response.completed` |
+| Gemini | `usageMetadata`; output includes thinking tokens |
+
+## Prices
+
+- Prices live in `config/pricing.toml`: USD per 1M input, output, cache-read
+  and cache-write tokens. Each entry has a `checked` date and the source URL
+  it was taken from.
+- You can set your own price per model from the Usage view; your prices win
+  over the file.
+- Local models (Ollama) cost 0 unless you set a price.
+- A model with no price shows its tokens, and its cost as **unknown**.
+- Not modelled: long-prompt price tiers, batch discounts, 1-hour cache writes.
+  A ChatGPT sign-in is not billed per token, so its estimate overstates it.
+- **All costs are estimates.** Your provider's bill is what counts.
+
+## The Usage view
+
+- Ranges: today, 7 days, 30 days or a custom range (days are UTC).
+- Totals for cost, tokens and calls.
+- Cost per day.
+- A sortable breakdown by provider, model or agent.
+- CSV export of the breakdown.
+
+## API
+
+All routes need the operator token; the shapes are in `protocol/openapi.json`.
+
+- `GET /v1/usage?from&to&agent&provider&model&group_by` returns totals and
+  groups (`group_by` is `day`, `agent`, `provider` or `model`). Each has the
+  call count, the four token counts, `cost_usd` (`null` when nothing could be
+  priced), `unknown_cost_calls` and `not_tracked_calls`.
+- `GET /v1/usage/prices` returns the prices in effect, with source and date.
+- `PUT /v1/usage/prices` replaces your price overrides.

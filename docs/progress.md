@@ -639,3 +639,20 @@ store used for the run) or the daemon's own env.
   daemon, Docker check, runner image on ghcr.io); true once that lands.
 - The Code of Conduct points reporters to the email on the maintainer's
   GitHub profile; GitHub has no private messages.
+
+## Release prep 5: wiki (`chore/wiki`)
+
+**Done**
+
+- `docs/wiki/` as GitHub-wiki pages: Home, sidebar, Architecture (mermaid),
+  Roadmap (M1, L0–L5, F0–F5 with status, no dates), Getting Started (desktop
+  and source paths), Providers, Sandbox Backends, Usage and Costs,
+  Conventions, FAQ.
+- `scripts/publish-wiki.sh` copies the pages into the `.wiki.git` repository
+  over SSH; dry run unless `--yes`.
+
+**Not verified**
+
+- The script never ran (the wiki needs a public repo or a paid plan, and a
+  first page created on GitHub before its git repository exists); checked
+  with `bash -n` only.
