@@ -1,6 +1,6 @@
 # Progress
 
-Status per roadmap phase (`docs/roadmap.md`). Decisions are in
+Status per roadmap phase (the [roadmap page](https://cursor.com/canvas/store-0b9dda1f-693e-4629-9899-c87852755bdc/ad9f72df-2257-4c5f-ba31-48368896c60a)). Decisions are in
 `docs/decisions.md`.
 
 ## M1 Storage layer — done (`feature/m1-storage`)
@@ -404,4 +404,11 @@ store used for the run) or the daemon's own env.
 
 ## Hardening after the external review
 
+- **Item 1 (shared files):** done. Links are HMAC-signed and expire after
+  30 minutes (key in the keychain); the page CSP allows no remote origin;
+  `files::read` only reads the event's own agent's `artifacts/<agent>/<uuid>`.
+  Tested in `agents_share_files_that_open_from_storage`: unsigned, tampered,
+  expired and other-file links 404; forged events with another agent's key
+  or a `../` key 404 on both routes. Not checked: the Tauri window with the
+  new links (the URL shape changed; FileViewer appends `&download=1`).
 - **Item 2 (Settings Debug):** done; test `debug_never_shows_the_api_key_or_token`.

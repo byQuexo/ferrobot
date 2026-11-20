@@ -17,6 +17,7 @@ use axum::response::IntoResponse;
 use common::{Daemon, events, eventually, http, http_raw, start, start_on, start_with};
 use ferrobot_core::protocol::{DaemonFrame, RunnerFrame};
 use ferrobot_core::{AgentId, Sender};
+use ferrobot_daemon::files;
 use ferrobot_mcp::MailboxNotifier;
 use ferrobot_sandbox::{
     ExecOutput, ExecRequest, SandboxBackend, SandboxError, SandboxHandle, SandboxPath, SandboxSpec,
@@ -2339,13 +2340,65 @@ async fn agents_share_files_that_open_from_storage() {
         csp.starts_with("sandbox allow-scripts;") && csp.contains("connect-src 'none'"),
         "{csp}"
     );
+    assert!(!csp.contains("https:"), "no remote origins: {csp}");
+    let get = |url: String| {
+        let ui = d.ui.clone();
+        async move { http_raw(&ui, "GET", &url, &no_token, b"").await.0 }
+    };
     let last = if url.ends_with('0') { '1' } else { '0' };
-    let guessed = format!("{}{last}", &url[..url.len() - 1]);
-    let (status, _, _) = http_raw(&d.ui, "GET", &guessed, &no_token, b"").await;
-    assert_eq!(status, 404, "the view key is the capability");
-    let wrong_key = format!("/artifacts/{ann}/{}/x", plan.id);
-    let (status, _, _) = http_raw(&d.ui, "GET", &wrong_key, &no_token, b"").await;
-    assert_eq!(status, 404);
+    let tampered = format!("{}{last}", &url[..url.len() - 1]);
+    assert_eq!(get(tampered).await, 404, "the signature is the capability");
+    let unsigned = format!("/artifacts/{ann}/{}", page.id);
+    assert_eq!(get(unsigned).await, 404);
+    let other_file = url.replacen(&format!("/{}?", page.id), &format!("/{}?", plan.id), 1);
+    assert_eq!(get(other_file).await, 404, "a link is bound to its file");
+    let expired = files::signed_link(&d.state, ann_id, page.id, 1)
+        .await
+        .unwrap();
+    assert_eq!(get(expired).await, 404, "links expire");
+
+    // A file event pointing outside the agent's own files is never served.
+    let bob: AgentId = create(&d, json!({"name": "bob"})).await["id"]
+        .as_str()
+        .unwrap()
+        .parse()
+        .unwrap();
+    let bob_file = d.state.share_file(bob, "secret.md".into()).await.unwrap();
+    let bob_key = d
+        .state
+        .store
+        .get_event(bob, bob_file.id)
+        .await
+        .unwrap()
+        .payload["key"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    for key in [bob_key, format!("artifacts/{ann}/../{bob}/x")] {
+        let forged = d
+            .state
+            .store
+            .append_event(
+                ann_id,
+                None,
+                "file".into(),
+                json!({"name": "x.md", "size": 1, "path": "x", "key": key}),
+            )
+            .await
+            .unwrap();
+        let (status, _) = http(
+            &d.ui,
+            "GET",
+            &format!("/v1/agents/{ann}/files/{}", forged.id),
+            None,
+        )
+        .await;
+        assert_eq!(status, 404, "{key}");
+        let link = files::fresh_link(&d.state, ann_id, forged.id)
+            .await
+            .unwrap();
+        assert_eq!(get(link).await, 404, "{key}");
+    }
 
     // Any shared file downloads from its url; .html too with ?download.
     let (_, md) = http(
@@ -2372,7 +2425,7 @@ async fn agents_share_files_that_open_from_storage() {
     );
     assert!(header("content-security-policy").starts_with("sandbox"));
     let (_, headers, _) =
-        http_raw(&d.ui, "GET", &format!("{url}?download=1"), &no_token, b"").await;
+        http_raw(&d.ui, "GET", &format!("{url}&download=1"), &no_token, b"").await;
     assert!(
         headers
             .iter()
@@ -2393,8 +2446,10 @@ async fn agents_share_files_that_open_from_storage() {
     assert!(headers.iter().any(|(k, v)| k.eq_ignore_ascii_case("content-type") && v == "application/octet-stream"));
 
     // Deleting the agent deletes its files.
-    let (status, _) = http(&d.ui, "DELETE", &format!("/v1/agents/{ann}"), None).await;
-    assert_eq!(status, 204);
+    for id in [ann_id, bob] {
+        let (status, _) = http(&d.ui, "DELETE", &format!("/v1/agents/{id}"), None).await;
+        assert_eq!(status, 204);
+    }
     let left = d.state.settings.storage.list(None).count().await;
     assert_eq!(left, 0);
 }

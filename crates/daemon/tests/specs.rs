@@ -81,7 +81,7 @@ fn every_routed_path_is_documented() {
         "/v1/connectors/{id}/oauth",
         "/v1/oauth/callback",
         "/v1/agents/{id}/files/{file_id}",
-        "/artifacts/{id}/{file_id}/{view}",
+        "/artifacts/{id}/{file_id}",
     ] {
         assert!(documented.contains(&path), "{path} missing from OpenAPI");
     }

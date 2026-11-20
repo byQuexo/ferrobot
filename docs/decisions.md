@@ -1,6 +1,6 @@
 # Decisions
 
-Open questions from `docs/roadmap.md` that were settled during implementation,
+Open questions from the roadmap that were settled during implementation,
 with the assumption made. Newest phase last. Revisit any of them by editing
 the code and this file together.
 
@@ -347,19 +347,28 @@ the code and this file together.
 - **Reads are capped** at 32 MiB in every backend (`read_file`), so a file an
   agent names cannot exhaust the daemon.
 - **Markdown and text open inline; `.html` opens as a page** at
-  `/artifacts/<agent>/<file>/<view>`: outside `/v1` (a frame cannot send the
-  operator token), authorized by a random 128-bit view key, served with
-  `Content-Security-Policy: sandbox allow-scripts` (opaque origin), inline and
-  https scripts/styles allowed, `connect-src 'none'`, no forms. The app frames
-  it with `sandbox="allow-scripts"` and no same-origin, so the page cannot
-  reach the app, its storage or the token. Risk left: a page can still show
-  misleading content (phishing-like UI) inside ferrobot.
+  `/artifacts/<agent>/<file>?exp=<unix>&sig=<hex>`: outside `/v1` (a frame
+  or the system browser cannot send the operator token), authorized by a
+  signed capability: HMAC-SHA256 over `<agent>/<file>/<exp>` with a 256-bit
+  key from the keychain (`artifact-link-key`, made on first use), valid for
+  30 minutes. `GET /v1/agents/{id}/files/{file}` (operator token) hands out a
+  fresh link each time. A stolen link stops working after its expiry; the
+  key never leaves the daemon. Served with `Content-Security-Policy: sandbox
+  allow-scripts` (opaque origin, no same-origin), inline scripts, styles and
+  `data:`/`blob:` media only, `connect-src 'none'`, no forms. The allowlist
+  of remote origins is empty on purpose: any allowed origin is a channel out
+  of the page and a script supply chain. Risk left: a page can still show
+  misleading content (phishing-like UI).
+- **Storage keys are checked on read.** `files::read` only reads
+  `artifacts/<agent>/<uuid>` of the agent the event belongs to, so a forged
+  or corrupted `file` event cannot point at another agent's files, a
+  snapshot or `../`.
 - File names in an agent's message (in backticks) open the shared file of
   that name in the chat; the latest share wins.
 - **Every shared file has a capability URL** (`url`): pages open sandboxed,
   a file named `.pdf` that starts with `%PDF-` opens inline (no CSP sandbox,
   which would stop browsers' PDF viewers; `nosniff` keeps it a PDF), anything
-  else or `?download` is an attachment under `sandbox; default-src 'none'`.
+  else or `&download=1` is an attachment under `sandbox; default-src 'none'`.
   The desktop opens pages and downloads in the system browser (the window
   cannot save downloads) and PDFs in a full-screen viewer.
 - **`ferrobot-pdf`** in the runner image renders HTML to PDF with Debian's
@@ -368,6 +377,11 @@ the code and this file together.
 
 ## Hardening after the external review (Nov 2026)
 
+- **Item 1: shared-file links are signed and expire** (see "Shared files and
+  HTML pages"). 30 minutes is long enough to read a page and short enough
+  that a link copied out of a log or history is dead by then. No
+  per-link revocation: rotating `artifact-link-key` in the keychain kills
+  every link.
 - **Item 2: `Settings` has a hand-written `Debug`** that prints
   `[REDACTED]` for `anthropic_api_key` and `api_token`. It destructures every
   field, so a new field does not compile until someone decides whether it is
