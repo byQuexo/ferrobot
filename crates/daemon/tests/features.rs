@@ -2328,7 +2328,8 @@ async fn agents_share_files_that_open_from_storage() {
         csp.starts_with("sandbox allow-scripts;") && csp.contains("connect-src 'none'"),
         "{csp}"
     );
-    let guessed = format!("{}0", &url[..url.len() - 1]);
+    let last = if url.ends_with('0') { '1' } else { '0' };
+    let guessed = format!("{}{last}", &url[..url.len() - 1]);
     let (status, _, _) = http_raw(&d.ui, "GET", &guessed, &no_token, b"").await;
     assert_eq!(status, 404, "the view key is the capability");
     let md_page = format!("/artifacts/{ann}/{}/x", plan.id);
