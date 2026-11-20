@@ -62,7 +62,8 @@ export class ApiError extends Error {
 }
 
 const enc = encodeURIComponent;
-const memoryPath = (agent: string | null): string => (agent ? `/v1/agents/${agent}/memory` : "/v1/memory");
+const memoryPath = (agent: string | null): string =>
+  agent ? `/v1/agents/${agent}/memory` : "/v1/memory";
 
 export class DaemonClient {
   readonly base: string;
@@ -74,12 +75,22 @@ export class DaemonClient {
     this.#token = token;
   }
 
-  async #request<T>(method: string, path: string, body?: unknown, contentType?: string): Promise<T> {
+  async #request<T>(
+    method: string,
+    path: string,
+    body?: unknown,
+    contentType?: string,
+  ): Promise<T> {
     const res = await this.#fetch(method, path, body, contentType);
     return (res.status === 204 ? undefined : await res.json()) as T;
   }
 
-  async #fetch(method: string, path: string, body?: unknown, contentType?: string): Promise<Response> {
+  async #fetch(
+    method: string,
+    path: string,
+    body?: unknown,
+    contentType?: string,
+  ): Promise<Response> {
     const headers: Record<string, string> = {};
     if (this.#token) headers["Authorization"] = `Bearer ${this.#token}`;
     const init: RequestInit = { method, headers };
@@ -124,32 +135,42 @@ export class DaemonClient {
     this.#request("PATCH", `/v1/agents/${id}`, req);
   deleteAgent = (id: string): Promise<void> => this.#request("DELETE", `/v1/agents/${id}`);
   listProviders = (): Promise<Provider[]> => this.#request("GET", "/v1/providers");
-  createProvider = (req: CreateProvider): Promise<Provider> => this.#request("POST", "/v1/providers", req);
+  createProvider = (req: CreateProvider): Promise<Provider> =>
+    this.#request("POST", "/v1/providers", req);
   updateProvider = (id: string, req: UpdateProvider): Promise<Provider> =>
     this.#request("PATCH", `/v1/providers/${id}`, req);
   deleteProvider = (id: string): Promise<void> => this.#request("DELETE", `/v1/providers/${id}`);
-  startChatgptLogin = (id: string): Promise<DeviceCode> => this.#request("POST", `/v1/providers/${id}/chatgpt-login`);
-  chatgptLoginStatus = (id: string): Promise<LoginStatus> => this.#request("GET", `/v1/providers/${id}/chatgpt-login`);
-  providerModels = (id: string): Promise<ModelList> => this.#request("GET", `/v1/providers/${id}/models`);
-  kindModels = (kind: ProviderKind): Promise<ModelList> => this.#request("GET", `/v1/provider-kinds/${kind}/models`);
+  startChatgptLogin = (id: string): Promise<DeviceCode> =>
+    this.#request("POST", `/v1/providers/${id}/chatgpt-login`);
+  chatgptLoginStatus = (id: string): Promise<LoginStatus> =>
+    this.#request("GET", `/v1/providers/${id}/chatgpt-login`);
+  providerModels = (id: string): Promise<ModelList> =>
+    this.#request("GET", `/v1/providers/${id}/models`);
+  kindModels = (kind: ProviderKind): Promise<ModelList> =>
+    this.#request("GET", `/v1/provider-kinds/${kind}/models`);
 
   // connectors
   listConnectors = (): Promise<Connector[]> => this.#request("GET", "/v1/connectors");
-  createConnector = (req: CreateConnector): Promise<Connector> => this.#request("POST", "/v1/connectors", req);
+  createConnector = (req: CreateConnector): Promise<Connector> =>
+    this.#request("POST", "/v1/connectors", req);
   updateConnector = (id: string, req: UpdateConnector): Promise<Connector> =>
     this.#request("PATCH", `/v1/connectors/${id}`, req);
   deleteConnector = (id: string): Promise<void> => this.#request("DELETE", `/v1/connectors/${id}`);
   startConnectorOAuth = (id: string): Promise<{ authorization_url: string }> =>
     this.#request("POST", `/v1/connectors/${id}/oauth`);
-  signOutConnector = (id: string): Promise<void> => this.#request("DELETE", `/v1/connectors/${id}/oauth`);
-  agentConnectors = (id: string): Promise<string[]> => this.#request("GET", `/v1/agents/${id}/connectors`);
+  signOutConnector = (id: string): Promise<void> =>
+    this.#request("DELETE", `/v1/connectors/${id}/oauth`);
+  agentConnectors = (id: string): Promise<string[]> =>
+    this.#request("GET", `/v1/agents/${id}/connectors`);
   setAgentConnectors = (id: string, ids: string[]): Promise<string[]> =>
     this.#request("PUT", `/v1/agents/${id}/connectors`, ids);
-  setAvatar = (id: string, image: Blob): Promise<Agent> => this.#request("PUT", `/v1/agents/${id}/avatar`, image);
+  setAvatar = (id: string, image: Blob): Promise<Agent> =>
+    this.#request("PUT", `/v1/agents/${id}/avatar`, image);
   removeAvatar = (id: string): Promise<Agent> => this.#request("DELETE", `/v1/agents/${id}/avatar`);
 
   // chat
-  messages = (id: string): Promise<MailMessage[]> => this.#request("GET", `/v1/agents/${id}/messages`);
+  messages = (id: string): Promise<MailMessage[]> =>
+    this.#request("GET", `/v1/agents/${id}/messages`);
   events = (id: string, after = 0): Promise<StoredEvent[]> =>
     this.#request("GET", `/v1/agents/${id}/events?after=${String(after)}`);
   /** Up to `pages` pages (500 each) of an agent's events, oldest first. */
@@ -169,7 +190,11 @@ export class DaemonClient {
   sharedFile = (agent: string, file: number): Promise<SharedFile> =>
     this.#request("GET", `/v1/agents/${agent}/files/${String(file)}`);
   interrupt = (id: string): Promise<unknown> => this.#request("POST", `/v1/agents/${id}/interrupt`);
-  answerQuestion = (id: string, question: number, answers: QuestionAnswer[]): Promise<QuestionAnswered> =>
+  answerQuestion = (
+    id: string,
+    question: number,
+    answers: QuestionAnswer[],
+  ): Promise<QuestionAnswered> =>
     this.#request("POST", `/v1/agents/${id}/questions/${String(question)}/answer`, { answers });
 
   // memory; agent `null` is the global memory all agents share
@@ -186,15 +211,19 @@ export class DaemonClient {
     this.#request("POST", `/v1/agents/${id}/routines`, req);
   updateRoutine = (rid: number, req: UpdateRoutine): Promise<Routine> =>
     this.#request("PATCH", `/v1/routines/${String(rid)}`, req);
-  deleteRoutine = (rid: number): Promise<void> => this.#request("DELETE", `/v1/routines/${String(rid)}`);
-  runRoutine = (rid: number): Promise<MailMessage> => this.#request("POST", `/v1/routines/${String(rid)}/run`);
-  routineRuns = (rid: number): Promise<RoutineRun[]> => this.#request("GET", `/v1/routines/${String(rid)}/runs`);
+  deleteRoutine = (rid: number): Promise<void> =>
+    this.#request("DELETE", `/v1/routines/${String(rid)}`);
+  runRoutine = (rid: number): Promise<MailMessage> =>
+    this.#request("POST", `/v1/routines/${String(rid)}/run`);
+  routineRuns = (rid: number): Promise<RoutineRun[]> =>
+    this.#request("GET", `/v1/routines/${String(rid)}/runs`);
 
   // sandbox
   sandbox = (id: string): Promise<SandboxInfo> => this.#request("GET", `/v1/agents/${id}/sandbox`);
   sleep = (id: string): Promise<void> => this.#request("POST", `/v1/agents/${id}/stop`);
   wake = (id: string): Promise<void> => this.#request("POST", `/v1/agents/${id}/wake`);
-  snapshots = (id: string): Promise<Snapshot[]> => this.#request("GET", `/v1/agents/${id}/snapshots`);
+  snapshots = (id: string): Promise<Snapshot[]> =>
+    this.#request("GET", `/v1/agents/${id}/snapshots`);
   snapshot = (id: string, label: string): Promise<Snapshot> =>
     this.#request("POST", `/v1/agents/${id}/snapshots`, { label });
   restore = (id: string, sid: number): Promise<void> =>
@@ -214,19 +243,29 @@ export class DaemonClient {
   voiceCatalog = (): Promise<VoiceCatalog> => this.#request("GET", "/v1/voice/catalog");
   /** A provider WebSocket URL with a single-use token for live transcription. */
   voiceLive = async (mode: LiveMode, sampleRate: number): Promise<string> =>
-    (await this.#request<{ url: string }>("POST", "/v1/voice/live", { mode, sample_rate: sampleRate })).url;
+    (
+      await this.#request<{ url: string }>("POST", "/v1/voice/live", {
+        mode,
+        sample_rate: sampleRate,
+      })
+    ).url;
   /** Starts, changes or (empty) ends the voice call; returns who is in it. */
   setCall = async (agents: string[]): Promise<string[]> =>
     (await this.#request<{ agents: string[] }>("PUT", "/v1/call", { agents })).agents;
   /** The operator's message to everyone in the call. */
-  sayInCall = (body: string): Promise<MailMessage[]> => this.#request("POST", "/v1/call/messages", { body });
+  sayInCall = (body: string): Promise<MailMessage[]> =>
+    this.#request("POST", "/v1/call/messages", { body });
 
   // model usage; `to` null means until now
   usage = (groupBy: UsageGroupBy, from: string, to: string | null): Promise<UsageReport> =>
-    this.#request("GET", `/v1/usage?group_by=${groupBy}&from=${enc(from)}${to ? `&to=${enc(to)}` : ""}`);
+    this.#request(
+      "GET",
+      `/v1/usage?group_by=${groupBy}&from=${enc(from)}${to ? `&to=${enc(to)}` : ""}`,
+    );
   prices = (): Promise<PriceEntry[]> => this.#request("GET", "/v1/usage/prices");
   /** Replaces all of the operator's own prices. */
-  setPrices = (prices: SetPrice[]): Promise<PriceEntry[]> => this.#request("PUT", "/v1/usage/prices", prices);
+  setPrices = (prices: SetPrice[]): Promise<PriceEntry[]> =>
+    this.#request("PUT", "/v1/usage/prices", prices);
 
   // agent-to-agent conversations (read-only)
   listConversations = (): Promise<Conversation[]> => this.#request("GET", "/v1/conversations");

@@ -11,10 +11,30 @@ import { IconButton } from "./ui.tsx";
 export type SettingsSection = "providers" | "connectors" | "memory" | "voice" | "appearance";
 
 const SECTIONS: [SettingsSection, string, string, typeof KeyRound][] = [
-  ["providers", "Model providers", "The models your agents run on. Keys stay in the keychain of the daemon’s computer.", KeyRound],
-  ["connectors", "Connectors", "Remote MCP servers whose tools you can give to agents, with a token or an OAuth sign-in.", Plug],
-  ["memory", "Global memory", "Facts every agent can recall. Agents add to it; you can edit and remove entries.", Brain],
-  ["voice", "Voice", "Agents’ replies read aloud and spoken messages. Start a call with the phone button in a chat.", AudioLines],
+  [
+    "providers",
+    "Model providers",
+    "The models your agents run on. Keys stay in the keychain of the daemon’s computer.",
+    KeyRound,
+  ],
+  [
+    "connectors",
+    "Connectors",
+    "Remote MCP servers whose tools you can give to agents, with a token or an OAuth sign-in.",
+    Plug,
+  ],
+  [
+    "memory",
+    "Global memory",
+    "Facts every agent can recall. Agents add to it; you can edit and remove entries.",
+    Brain,
+  ],
+  [
+    "voice",
+    "Voice",
+    "Agents’ replies read aloud and spoken messages. Start a call with the phone button in a chat.",
+    AudioLines,
+  ],
   ["appearance", "Appearance", "How ferrobot looks on this computer.", Palette],
 ];
 
@@ -26,7 +46,12 @@ export function Settings(props: {
   theme: ThemePref;
   onTheme: (t: ThemePref) => void;
 }): JSX.Element {
-  const [, title, about] = SECTIONS.find(([id]) => id === props.section) ?? ["providers", "Settings", "", KeyRound];
+  const [, title, about] = SECTIONS.find(([id]) => id === props.section) ?? [
+    "providers",
+    "Settings",
+    "",
+    KeyRound,
+  ];
   return (
     <main class="settings" aria-label="Settings">
       <nav class="settings-nav" aria-label="Settings sections">
@@ -37,7 +62,9 @@ export function Settings(props: {
             type="button"
             class={`settings-tab${props.section === id ? " active" : ""}`}
             aria-current={props.section === id ? "page" : undefined}
-            onClick={() => { props.onSection(id); }}
+            onClick={() => {
+              props.onSection(id);
+            }}
           >
             <Icon size={16} /> {label}
           </button>
@@ -74,7 +101,9 @@ export function Settings(props: {
                     type="button"
                     role="radio"
                     aria-checked={props.theme === value}
-                    onClick={() => { props.onTheme(value); }}
+                    onClick={() => {
+                      props.onTheme(value);
+                    }}
                   >
                     <Icon size={16} /> {label}
                   </button>

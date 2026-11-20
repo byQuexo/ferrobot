@@ -27,7 +27,10 @@ export async function toAvatarPng(file: Blob): Promise<Blob> {
       SIZE,
     );
     return await new Promise<Blob>((resolve, reject) => {
-      canvas.toBlob((b) => { if (b) resolve(b); else reject(new Error("could not encode image")); }, "image/png");
+      canvas.toBlob((b) => {
+        if (b) resolve(b);
+        else reject(new Error("could not encode image"));
+      }, "image/png");
     });
   } finally {
     URL.revokeObjectURL(url);

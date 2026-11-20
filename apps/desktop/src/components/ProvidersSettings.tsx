@@ -29,7 +29,8 @@ const KIND_HINTS: Partial<Record<ProviderKind, string>> = {
   gemini_cli: "Runs Google’s Gemini CLI harness (over ACP) with a Gemini API key.",
 };
 
-const optionalKey = (kind: ProviderKind): boolean => kind === "openai_compatible" || kind === "codex";
+const optionalKey = (kind: ProviderKind): boolean =>
+  kind === "openai_compatible" || kind === "codex";
 
 /** Device-code sign-in with ChatGPT, done by the daemon host’s Codex. */
 function ChatgptLogin(props: { provider: Provider }): JSX.Element {
@@ -41,14 +42,19 @@ function ChatgptLogin(props: { provider: Provider }): JSX.Element {
   useEffect(() => {
     let live = true;
     const poll = (): void => {
-      client.chatgptLoginStatus(id).then((s) => {
-        if (!live) return;
-        setStatus(s);
-        if (s.state === "pending") setTimeout(poll, 2000);
-      }, () => undefined);
+      client.chatgptLoginStatus(id).then(
+        (s) => {
+          if (!live) return;
+          setStatus(s);
+          if (s.state === "pending") setTimeout(poll, 2000);
+        },
+        () => undefined,
+      );
     };
     poll();
-    return () => { live = false; };
+    return () => {
+      live = false;
+    };
   }, [code]);
 
   const start = async (): Promise<void> => {
@@ -59,13 +65,17 @@ function ChatgptLogin(props: { provider: Provider }): JSX.Element {
     }
   };
 
-  if (status?.state === "signed_in") return <span class="muted small provider-login">Signed in with ChatGPT</span>;
+  if (status?.state === "signed_in")
+    return <span class="muted small provider-login">Signed in with ChatGPT</span>;
   return (
     <div class="provider-login">
       {code && status?.state === "pending" ? (
         <span class="small">
-          Open <a href={code.verification_url} target="_blank" rel="noreferrer">{code.verification_url}</a> and enter{" "}
-          <b class="mono">{code.user_code}</b>
+          Open{" "}
+          <a href={code.verification_url} target="_blank" rel="noreferrer">
+            {code.verification_url}
+          </a>{" "}
+          and enter <b class="mono">{code.user_code}</b>
         </span>
       ) : (
         <Button small onClick={() => void start()}>
@@ -78,7 +88,12 @@ function ChatgptLogin(props: { provider: Provider }): JSX.Element {
 }
 
 /** Fields a kind asks for. */
-function fieldsOf(kind: ProviderKind): { key: boolean; baseUrl: boolean; region: boolean; project: boolean } {
+function fieldsOf(kind: ProviderKind): {
+  key: boolean;
+  baseUrl: boolean;
+  region: boolean;
+  project: boolean;
+} {
   return {
     key: kind !== "vertex" && kind !== "ollama",
     baseUrl: kind === "openai_compatible",
@@ -87,7 +102,8 @@ function fieldsOf(kind: ProviderKind): { key: boolean; baseUrl: boolean; region:
   };
 }
 
-const dotOf = (p: Provider): string => (!fieldsOf(p.kind).key || p.has_key ? "p-awake" : "p-sleeping");
+const dotOf = (p: Provider): string =>
+  !fieldsOf(p.kind).key || p.has_key ? "p-awake" : "p-sleeping";
 
 /** Add, re-key and remove model providers (a settings section). Keys go to the daemon’s keychain and never come back. */
 export function ProvidersSettings(): JSX.Element {
@@ -117,7 +133,9 @@ export function ProvidersSettings(): JSX.Element {
     }
   };
 
-  useEffect(() => { void run(() => Promise.resolve()); }, []);
+  useEffect(() => {
+    void run(() => Promise.resolve());
+  }, []);
 
   const add = (): Promise<void> =>
     run(async () => {
@@ -138,10 +156,12 @@ export function ProvidersSettings(): JSX.Element {
     });
 
   return (
-      <div>
-        <section class="settings-section form">
+    <div>
+      <section class="settings-section form">
         {providers.length === 0 && (
-          <p class="muted small">No providers yet. Without one, agents use the daemon’s ANTHROPIC_API_KEY.</p>
+          <p class="muted small">
+            No providers yet. Without one, agents use the daemon’s ANTHROPIC_API_KEY.
+          </p>
         )}
         <ul class="provider-list">
           {providers.map((p) => (
@@ -152,11 +172,20 @@ export function ProvidersSettings(): JSX.Element {
                 <span class="muted small">
                   {KIND_LABELS[p.kind]}
                   {p.default_model ? ` · ${p.default_model}` : ""}
-                  {fieldsOf(p.kind).key ? (p.has_key ? " · key stored" : " · no key") : " · no key needed"}
+                  {fieldsOf(p.kind).key
+                    ? p.has_key
+                      ? " · key stored"
+                      : " · no key"
+                    : " · no key needed"}
                 </span>
               </div>
               {fieldsOf(p.kind).key && (
-                <IconButton label={`Replace the key of ${p.name}`} onClick={() => { setRekey({ id: p.id, key: "" }); }}>
+                <IconButton
+                  label={`Replace the key of ${p.name}`}
+                  onClick={() => {
+                    setRekey({ id: p.id, key: "" });
+                  }}
+                >
                   <KeyRound size={16} />
                 </IconButton>
               )}
@@ -174,7 +203,9 @@ export function ProvidersSettings(): JSX.Element {
                   class="provider-rekey"
                   onSubmit={(e) => {
                     e.preventDefault();
-                    void run(() => client.updateProvider(p.id, { api_key: rekey.key.trim() || null })).then(() => {
+                    void run(() =>
+                      client.updateProvider(p.id, { api_key: rekey.key.trim() || null }),
+                    ).then(() => {
                       setRekey(null);
                     });
                   }}
@@ -184,78 +215,129 @@ export function ProvidersSettings(): JSX.Element {
                     autoComplete="off"
                     placeholder="New API key (empty removes it)"
                     value={rekey.key}
-                    onInput={(e) => { setRekey({ id: p.id, key: e.currentTarget.value }); }}
+                    onInput={(e) => {
+                      setRekey({ id: p.id, key: e.currentTarget.value });
+                    }}
                   />
-                  <Button small type="submit" disabled={busy}>Save key</Button>
+                  <Button small type="submit" disabled={busy}>
+                    Save key
+                  </Button>
                 </form>
               )}
             </li>
           ))}
         </ul>
-        </section>
-        <section class="settings-section">
-          {adding ? (
-            <div class="form">
-              <h3 class="form-head">Add a provider</h3>
+      </section>
+      <section class="settings-section">
+        {adding ? (
+          <div class="form">
+            <h3 class="form-head">Add a provider</h3>
+            <label>
+              Kind
+              <select
+                value={kind}
+                onChange={(e) => {
+                  setKind(e.currentTarget.value as ProviderKind);
+                }}
+              >
+                {(Object.keys(KIND_LABELS) as ProviderKind[]).map((k) => (
+                  <option key={k} value={k}>
+                    {KIND_LABELS[k]}
+                  </option>
+                ))}
+              </select>
+              {KIND_HINTS[kind] && <span class="hint">{KIND_HINTS[kind]}</span>}
+            </label>
+            <label>
+              Name
+              <input
+                value={name}
+                maxLength={64}
+                placeholder="e.g. openai-work"
+                onInput={(e) => {
+                  setName(e.currentTarget.value);
+                }}
+              />
+            </label>
+            {fields.baseUrl && (
               <label>
-                Kind
-                <select value={kind} onChange={(e) => { setKind(e.currentTarget.value as ProviderKind); }}>
-                  {(Object.keys(KIND_LABELS) as ProviderKind[]).map((k) => (
-                    <option key={k} value={k}>{KIND_LABELS[k]}</option>
-                  ))}
-                </select>
-                {KIND_HINTS[kind] && <span class="hint">{KIND_HINTS[kind]}</span>}
+                Base URL
+                <input
+                  value={baseUrl}
+                  placeholder="https://host/v1"
+                  onInput={(e) => {
+                    setBaseUrl(e.currentTarget.value);
+                  }}
+                />
               </label>
+            )}
+            {fields.region && (
               <label>
-                Name
-                <input value={name} maxLength={64} placeholder="e.g. openai-work" onInput={(e) => { setName(e.currentTarget.value); }} />
+                Region
+                <input
+                  value={region}
+                  placeholder={kind === "vertex" ? "e.g. us-east5 or global" : "e.g. eu-central-1"}
+                  onInput={(e) => {
+                    setRegion(e.currentTarget.value);
+                  }}
+                />
               </label>
-              {fields.baseUrl && (
-                <label>
-                  Base URL
-                  <input value={baseUrl} placeholder="https://host/v1" onInput={(e) => { setBaseUrl(e.currentTarget.value); }} />
-                </label>
-              )}
-              {fields.region && (
-                <label>
-                  Region
-                  <input
-                    value={region}
-                    placeholder={kind === "vertex" ? "e.g. us-east5 or global" : "e.g. eu-central-1"}
-                    onInput={(e) => { setRegion(e.currentTarget.value); }}
-                  />
-                </label>
-              )}
-              {fields.project && (
-                <label>
-                  Google Cloud project
-                  <input value={project} onInput={(e) => { setProject(e.currentTarget.value); }} />
-                </label>
-              )}
+            )}
+            {fields.project && (
               <label>
-                Default model
-                <ModelPicker kind={kind} value={model} placeholder="None" onChange={setModel} />
+                Google Cloud project
+                <input
+                  value={project}
+                  onInput={(e) => {
+                    setProject(e.currentTarget.value);
+                  }}
+                />
               </label>
-              {fields.key && (
-                <label>
-                  API key{optionalKey(kind) ? " (optional)" : ""}
-                  <input type="password" autoComplete="off" value={key} onInput={(e) => { setKey(e.currentTarget.value); }} />
-                  <span class="hint">Stored in the keychain of the daemon’s computer. Agents never see it.</span>
-                </label>
-              )}
-              <div class="form-actions">
-                <Button variant="primary" disabled={busy || !name.trim()} onClick={() => void add()}>
-                  Add provider
-                </Button>
-                <Button variant="ghost" onClick={() => { setAdding(false); }}>Cancel</Button>
-              </div>
+            )}
+            <label>
+              Default model
+              <ModelPicker kind={kind} value={model} placeholder="None" onChange={setModel} />
+            </label>
+            {fields.key && (
+              <label>
+                API key{optionalKey(kind) ? " (optional)" : ""}
+                <input
+                  type="password"
+                  autoComplete="off"
+                  value={key}
+                  onInput={(e) => {
+                    setKey(e.currentTarget.value);
+                  }}
+                />
+                <span class="hint">
+                  Stored in the keychain of the daemon’s computer. Agents never see it.
+                </span>
+              </label>
+            )}
+            <div class="form-actions">
+              <Button variant="primary" disabled={busy || !name.trim()} onClick={() => void add()}>
+                Add provider
+              </Button>
+              <Button
+                variant="ghost"
+                onClick={() => {
+                  setAdding(false);
+                }}
+              >
+                Cancel
+              </Button>
             </div>
-          ) : (
-            <Button onClick={() => { setAdding(true); }}>
-              <Plus size={16} /> Add provider
-            </Button>
-          )}
-        </section>
-      </div>
+          </div>
+        ) : (
+          <Button
+            onClick={() => {
+              setAdding(true);
+            }}
+          >
+            <Plus size={16} /> Add provider
+          </Button>
+        )}
+      </section>
+    </div>
   );
 }

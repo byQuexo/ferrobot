@@ -17,7 +17,16 @@ import {
   UserRound,
 } from "lucide-preact";
 
-import type { Agent, MemoryEntry, Provider, Routine, RoutineRun, SandboxInfo, Snapshot, StoredEvent } from "../api.ts";
+import type {
+  Agent,
+  MemoryEntry,
+  Provider,
+  Routine,
+  RoutineRun,
+  SandboxInfo,
+  Snapshot,
+  StoredEvent,
+} from "../api.ts";
 import { useApp } from "../context.ts";
 import { dateTime, duration, presenceLabel, relativeTime } from "../lib/format.ts";
 import { buildTimeline, type TimelineItem } from "../lib/timeline.ts";
@@ -53,7 +62,9 @@ export function InfoPanel(props: {
             role="tab"
             aria-selected={props.tab === t}
             class={props.tab === t ? "active" : ""}
-            onClick={() => { props.onTab(t); }}
+            onClick={() => {
+              props.onTab(t);
+            }}
           >
             <Icon size={16} />
             <span>{label}</span>
@@ -61,7 +72,9 @@ export function InfoPanel(props: {
         ))}
       </div>
       <div class="info-body">
-        {props.tab === "profile" && <Profile agent={props.agent} onEdit={props.onEdit} onDeleted={props.onDeleted} />}
+        {props.tab === "profile" && (
+          <Profile agent={props.agent} onEdit={props.onEdit} onDeleted={props.onDeleted} />
+        )}
         {props.tab === "computer" && <Computer agent={props.agent} />}
         {props.tab === "routines" && <Routines agent={props.agent} />}
         {props.tab === "memory" && <Memory agent={props.agent} />}
@@ -78,7 +91,11 @@ function Profile(props: { agent: Agent; onEdit: () => void; onDeleted: () => voi
   const creator = a.created_by ? agents.get(a.created_by) : undefined;
   const [confirm, setConfirm] = useState(false);
   const [providers, setProviders] = useState<Provider[] | null>(null);
-  useEffect(() => { client.listProviders().then(setProviders, () => { setProviders([]); }); }, [a.provider_id]);
+  useEffect(() => {
+    client.listProviders().then(setProviders, () => {
+      setProviders([]);
+    });
+  }, [a.provider_id]);
   const provider = providers?.find((p) => p.id === a.provider_id);
   const model = a.model ?? provider?.default_model ?? (provider ? "provider default" : "default");
   return (
@@ -92,8 +109,17 @@ function Profile(props: { agent: Agent; onEdit: () => void; onDeleted: () => voi
         <span>Model</span>
         <span class="model-line">
           <span class="mono">{model}</span>
-          <span class="muted">· {a.provider_id ? (provider ? `${provider.name} (${KIND_LABELS[provider.kind]})` : "…") : "Anthropic (daemon key)"}</span>
-          <button type="button" class="text-link" onClick={props.onEdit}>Change</button>
+          <span class="muted">
+            ·{" "}
+            {a.provider_id
+              ? provider
+                ? `${provider.name} (${KIND_LABELS[provider.kind]})`
+                : "…"
+              : "Anthropic (daemon key)"}
+          </span>
+          <button type="button" class="text-link" onClick={props.onEdit}>
+            Change
+          </button>
         </span>
         <span>Created</span>
         <span>{dateTime(a.created_at)}</span>
@@ -113,10 +139,16 @@ function Profile(props: { agent: Agent; onEdit: () => void; onDeleted: () => voi
       </div>
       <section class="card">
         <h3>Instructions</h3>
-        {a.instructions.trim() ? <p class="prewrap">{a.instructions}</p> : <p class="muted">None. The agent uses its defaults.</p>}
+        {a.instructions.trim() ? (
+          <p class="prewrap">{a.instructions}</p>
+        ) : (
+          <p class="muted">None. The agent uses its defaults.</p>
+        )}
       </section>
       <div class="row-actions">
-        <Button variant="primary" onClick={props.onEdit}>Edit profile</Button>
+        <Button variant="primary" onClick={props.onEdit}>
+          Edit profile
+        </Button>
         {confirm ? (
           <Button
             variant="danger"
@@ -130,12 +162,19 @@ function Profile(props: { agent: Agent; onEdit: () => void; onDeleted: () => voi
             Delete for good
           </Button>
         ) : (
-          <Button variant="ghost" onClick={() => { setConfirm(true); }}>
+          <Button
+            variant="ghost"
+            onClick={() => {
+              setConfirm(true);
+            }}
+          >
             <Trash2 size={16} /> Delete agent
           </Button>
         )}
       </div>
-      {confirm && <p class="muted small">This removes the agent, its computer, chat, memory and routines.</p>}
+      {confirm && (
+        <p class="muted small">This removes the agent, its computer, chat, memory and routines.</p>
+      )}
     </div>
   );
 }
@@ -195,18 +234,34 @@ function Computer(props: { agent: Agent }): JSX.Element {
           <span>Backend</span>
           <span>{info.backend ?? "—"}</span>
           <span>Sandbox</span>
-          <span class="mono ellipsis" title={info.sandbox_id ?? ""}>{info.sandbox_id ?? "—"}</span>
+          <span class="mono ellipsis" title={info.sandbox_id ?? ""}>
+            {info.sandbox_id ?? "—"}
+          </span>
           <span>Idle</span>
           <span>
-            {paused ? "paused, resumes quickly" : archived ? "archived, restores on wake" : asleep ? "asleep" : duration(info.idle_s)}
+            {paused
+              ? "paused, resumes quickly"
+              : archived
+                ? "archived, restores on wake"
+                : asleep
+                  ? "asleep"
+                  : duration(info.idle_s)}
             {!asleep && info.warm_after_s ? ` · pauses after ${duration(info.warm_after_s)}` : ""}
-            {!paused && !asleep && info.idle_timeout_s ? ` · sleeps after ${duration(info.idle_timeout_s)}` : ""}
-            {paused && info.idle_timeout_s ? ` · sleeps after ${duration(info.idle_timeout_s)} idle` : ""}
+            {!paused && !asleep && info.idle_timeout_s
+              ? ` · sleeps after ${duration(info.idle_timeout_s)}`
+              : ""}
+            {paused && info.idle_timeout_s
+              ? ` · sleeps after ${duration(info.idle_timeout_s)} idle`
+              : ""}
           </span>
         </div>
         <div class="row-actions">
           {asleep ? (
-            <Button variant="primary" disabled={busy} onClick={() => void act(() => client.wake(id))}>
+            <Button
+              variant="primary"
+              disabled={busy}
+              onClick={() => void act(() => client.wake(id))}
+            >
               <Power size={16} /> Wake up
             </Button>
           ) : (
@@ -227,15 +282,28 @@ function Computer(props: { agent: Agent }): JSX.Element {
               class="inline-form"
               onSubmit={(e) => {
                 e.preventDefault();
-                void act(() => client.snapshot(id, label.trim() || "manual")).then(() => { setLabel(""); });
+                void act(() => client.snapshot(id, label.trim() || "manual")).then(() => {
+                  setLabel("");
+                });
               }}
             >
-              <input placeholder="Label (optional)" value={label} maxLength={64} onInput={(e) => { setLabel(e.currentTarget.value); }} />
+              <input
+                placeholder="Label (optional)"
+                value={label}
+                maxLength={64}
+                onInput={(e) => {
+                  setLabel(e.currentTarget.value);
+                }}
+              />
               <Button type="submit" small disabled={busy}>
                 <Camera size={16} /> Take
               </Button>
             </form>
-            {snaps.length === 0 && <p class="muted small">No snapshots yet. A snapshot saves the whole computer, including files.</p>}
+            {snaps.length === 0 && (
+              <p class="muted small">
+                No snapshots yet. A snapshot saves the whole computer, including files.
+              </p>
+            )}
             <ul class="list">
               {snaps.map((s) => (
                 <li key={s.id}>
@@ -243,10 +311,19 @@ function Computer(props: { agent: Agent }): JSX.Element {
                     <strong>{s.label}</strong>
                     <span class="muted small">{dateTime(s.created_at)}</span>
                   </div>
-                  <IconButton label="Restore this snapshot" disabled={busy} onClick={() => void act(() => client.restore(id, s.id))}>
+                  <IconButton
+                    label="Restore this snapshot"
+                    disabled={busy}
+                    onClick={() => void act(() => client.restore(id, s.id))}
+                  >
                     <RotateCcw size={16} />
                   </IconButton>
-                  <IconButton label="Delete snapshot" tone="danger" disabled={busy} onClick={() => void act(() => client.deleteSnapshot(id, s.id))}>
+                  <IconButton
+                    label="Delete snapshot"
+                    tone="danger"
+                    disabled={busy}
+                    onClick={() => void act(() => client.deleteSnapshot(id, s.id))}
+                  >
                     <Trash2 size={16} />
                   </IconButton>
                 </li>
@@ -275,7 +352,9 @@ function Routines(props: { agent: Agent }): JSX.Element {
   const [adding, setAdding] = useState(false);
   const [open, setOpen] = useState<number | null>(null);
 
-  const refresh = async (): Promise<void> => { setRoutines(await client.routines(id)); };
+  const refresh = async (): Promise<void> => {
+    setRoutines(await client.routines(id));
+  };
   useEffect(() => {
     void run(refresh);
     return listen((e) => {
@@ -294,7 +373,13 @@ function Routines(props: { agent: Agent }): JSX.Element {
       {routines.map((r) => (
         <section key={r.id} class={`card routine${r.enabled ? "" : " disabled"}`}>
           <div class="routine-head">
-            <button type="button" class="link grow" onClick={() => { setOpen(open === r.id ? null : r.id); }}>
+            <button
+              type="button"
+              class="link grow"
+              onClick={() => {
+                setOpen(open === r.id ? null : r.id);
+              }}
+            >
               <strong>{r.name}</strong>
               <span class="muted small">{r.schedule_text || r.schedule}</span>
             </button>
@@ -315,7 +400,11 @@ function Routines(props: { agent: Agent }): JSX.Element {
               <Play size={16} /> Run now
             </Button>
             <span class="spacer" />
-            <IconButton label="Delete routine" tone="danger" onClick={() => void run(() => client.deleteRoutine(r.id))}>
+            <IconButton
+              label="Delete routine"
+              tone="danger"
+              onClick={() => void run(() => client.deleteRoutine(r.id))}
+            >
               <Trash2 size={16} />
             </IconButton>
           </div>
@@ -324,14 +413,20 @@ function Routines(props: { agent: Agent }): JSX.Element {
       {adding ? (
         <RoutineForm
           timezone={health?.timezone ?? "UTC"}
-          onCancel={() => { setAdding(false); }}
+          onCancel={() => {
+            setAdding(false);
+          }}
           onSave={async (req) => {
             const ok = await run(() => client.createRoutine(id, req));
             if (ok) setAdding(false);
           }}
         />
       ) : (
-        <Button onClick={() => { setAdding(true); }}>
+        <Button
+          onClick={() => {
+            setAdding(true);
+          }}
+        >
           <Plus size={16} /> New routine
         </Button>
       )}
@@ -343,7 +438,10 @@ function RoutineDetail(props: { routine: Routine }): JSX.Element {
   const { client } = useApp();
   const [runs, setRuns] = useState<RoutineRun[]>([]);
   useEffect(() => {
-    void client.routineRuns(props.routine.id).then(setRuns).catch(() => undefined);
+    void client
+      .routineRuns(props.routine.id)
+      .then(setRuns)
+      .catch(() => undefined);
   }, [props.routine.id, props.routine.last_run_at]);
   return (
     <div class="routine-detail">
@@ -373,7 +471,12 @@ function RoutineDetail(props: { routine: Routine }): JSX.Element {
 function RoutineForm(props: {
   timezone: string;
   onCancel: () => void;
-  onSave: (req: { name: string; schedule: string; prompt: string; timezone: string }) => Promise<void>;
+  onSave: (req: {
+    name: string;
+    schedule: string;
+    prompt: string;
+    timezone: string;
+  }) => Promise<void>;
 }): JSX.Element {
   const [name, setName] = useState("");
   const [schedule, setSchedule] = useState(PRESETS[0]?.[0] ?? "@daily");
@@ -386,37 +489,84 @@ function RoutineForm(props: {
       onSubmit={(e) => {
         e.preventDefault();
         setSaving(true);
-        void props.onSave({ name: name.trim(), schedule: schedule.trim(), prompt, timezone: timezone.trim() }).finally(() => {
-          setSaving(false);
-        });
+        void props
+          .onSave({
+            name: name.trim(),
+            schedule: schedule.trim(),
+            prompt,
+            timezone: timezone.trim(),
+          })
+          .finally(() => {
+            setSaving(false);
+          });
       }}
     >
       <label>
         Name
-        <input required maxLength={64} placeholder="morning-digest" value={name} onInput={(e) => { setName(e.currentTarget.value); }} />
+        <input
+          required
+          maxLength={64}
+          placeholder="morning-digest"
+          value={name}
+          onInput={(e) => {
+            setName(e.currentTarget.value);
+          }}
+        />
       </label>
       <label>
         Schedule
-        <input required class="mono" value={schedule} onInput={(e) => { setSchedule(e.currentTarget.value); }} />
+        <input
+          required
+          class="mono"
+          value={schedule}
+          onInput={(e) => {
+            setSchedule(e.currentTarget.value);
+          }}
+        />
       </label>
       <div class="chips">
         {PRESETS.map(([expr, text]) => (
-          <button key={expr} type="button" class={`chip${schedule === expr ? " on" : ""}`} onClick={() => { setSchedule(expr); }}>
+          <button
+            key={expr}
+            type="button"
+            class={`chip${schedule === expr ? " on" : ""}`}
+            onClick={() => {
+              setSchedule(expr);
+            }}
+          >
             {text}
           </button>
         ))}
       </div>
       <label>
         Time zone
-        <input required value={timezone} onInput={(e) => { setTimezone(e.currentTarget.value); }} />
+        <input
+          required
+          value={timezone}
+          onInput={(e) => {
+            setTimezone(e.currentTarget.value);
+          }}
+        />
       </label>
       <label>
         Prompt
-        <textarea required rows={3} placeholder="Summarize what changed since yesterday." value={prompt} onInput={(e) => { setPrompt(e.currentTarget.value); }} />
+        <textarea
+          required
+          rows={3}
+          placeholder="Summarize what changed since yesterday."
+          value={prompt}
+          onInput={(e) => {
+            setPrompt(e.currentTarget.value);
+          }}
+        />
       </label>
       <div class="row-actions">
-        <Button variant="ghost" onClick={props.onCancel}>Cancel</Button>
-        <Button variant="primary" type="submit" disabled={saving}>Create routine</Button>
+        <Button variant="ghost" onClick={props.onCancel}>
+          Cancel
+        </Button>
+        <Button variant="primary" type="submit" disabled={saving}>
+          Create routine
+        </Button>
       </div>
     </form>
   );
@@ -432,18 +582,24 @@ export function Memory(props: { agent: Agent | null }): JSX.Element {
   const [key, setKey] = useState("");
   const [content, setContent] = useState("");
 
-  const refresh = async (query = q): Promise<void> => { setEntries(await client.memory(id, query)); };
+  const refresh = async (query = q): Promise<void> => {
+    setEntries(await client.memory(id, query));
+  };
   useEffect(() => {
     void run(() => refresh(""));
     setQ("");
     return listen((e) => {
-      const changed = id ? e.type === "memory_changed" && e.agent_id === id : e.type === "global_memory_changed";
+      const changed = id
+        ? e.type === "memory_changed" && e.agent_id === id
+        : e.type === "global_memory_changed";
       if (changed) void refresh().catch(() => undefined);
     });
   }, [id]);
   useEffect(() => {
     const t = setTimeout(() => void refresh(q).catch(() => undefined), 200);
-    return () => { clearTimeout(t); };
+    return () => {
+      clearTimeout(t);
+    };
   }, [q]);
 
   return (
@@ -451,9 +607,22 @@ export function Memory(props: { agent: Agent | null }): JSX.Element {
       <div class="inline-form">
         <label class="search grow">
           <Search size={16} aria-hidden="true" />
-          <input type="search" placeholder="Search memory" value={q} onInput={(e) => { setQ(e.currentTarget.value); }} />
+          <input
+            type="search"
+            placeholder="Search memory"
+            value={q}
+            onInput={(e) => {
+              setQ(e.currentTarget.value);
+            }}
+          />
         </label>
-        <IconButton label="Add memory" tone="accent" onClick={() => { setAdding(!adding); }}>
+        <IconButton
+          label="Add memory"
+          tone="accent"
+          onClick={() => {
+            setAdding(!adding);
+          }}
+        >
           <Plus size={16} />
         </IconButton>
       </div>
@@ -473,15 +642,39 @@ export function Memory(props: { agent: Agent | null }): JSX.Element {
         >
           <label>
             Key
-            <input required maxLength={128} placeholder="deploy-day" value={key} onInput={(e) => { setKey(e.currentTarget.value); }} />
+            <input
+              required
+              maxLength={128}
+              placeholder="deploy-day"
+              value={key}
+              onInput={(e) => {
+                setKey(e.currentTarget.value);
+              }}
+            />
           </label>
           <label>
             Content
-            <textarea required rows={3} value={content} onInput={(e) => { setContent(e.currentTarget.value); }} />
+            <textarea
+              required
+              rows={3}
+              value={content}
+              onInput={(e) => {
+                setContent(e.currentTarget.value);
+              }}
+            />
           </label>
           <div class="row-actions">
-            <Button variant="ghost" onClick={() => { setAdding(false); }}>Cancel</Button>
-            <Button variant="primary" type="submit">Save</Button>
+            <Button
+              variant="ghost"
+              onClick={() => {
+                setAdding(false);
+              }}
+            >
+              Cancel
+            </Button>
+            <Button variant="primary" type="submit">
+              Save
+            </Button>
           </div>
         </form>
       )}
@@ -500,10 +693,23 @@ export function Memory(props: { agent: Agent | null }): JSX.Element {
           <li key={m.key} class="card memory">
             <div class="memory-head">
               <strong class="mono">{m.key}</strong>
-              {!props.agent && <span class="muted small">by {m.author ? `@${agents.get(m.author)?.name ?? "a deleted agent"}` : "you"}</span>}
+              {!props.agent && (
+                <span class="muted small">
+                  by {m.author ? `@${agents.get(m.author)?.name ?? "a deleted agent"}` : "you"}
+                </span>
+              )}
               <span class="spacer" />
               <span class="muted small">{relativeTime(m.updated_at)}</span>
-              <IconButton label={`Forget ${m.key}`} tone="danger" onClick={() => void run(async () => { await client.forget(id, m.key); await refresh(); })}>
+              <IconButton
+                label={`Forget ${m.key}`}
+                tone="danger"
+                onClick={() =>
+                  void run(async () => {
+                    await client.forget(id, m.key);
+                    await refresh();
+                  })
+                }
+              >
                 <Trash2 size={16} />
               </IconButton>
             </div>
@@ -523,17 +729,27 @@ function Activities(props: { agent: Agent }): JSX.Element {
 
   useEffect(() => {
     setEvents(null);
-    void run(async () => { setEvents(await client.allEvents(id)); });
+    void run(async () => {
+      setEvents(await client.allEvents(id));
+    });
     return listen((e) => {
       if (e.type === "event" && e.event.agent_id === id) {
-        setEvents((prev) => (prev && !prev.some((x) => x.id === e.event.id) ? [...prev, e.event] : prev));
+        setEvents((prev) =>
+          prev && !prev.some((x) => x.id === e.event.id) ? [...prev, e.event] : prev,
+        );
       }
     });
   }, [id]);
 
-  const names = { agents: new Map([...agents.values()].map((a) => [a.id, a.name])), routines: new Map<number, string>() };
+  const names = {
+    agents: new Map([...agents.values()].map((a) => [a.id, a.name])),
+    routines: new Map<number, string>(),
+  };
   const items = buildTimeline(id, [], events ?? [], new Map(), names)
-    .filter((i): i is Extract<TimelineItem, { type: "tool" | "error" }> => i.type === "tool" || i.type === "error")
+    .filter(
+      (i): i is Extract<TimelineItem, { type: "tool" | "error" }> =>
+        i.type === "tool" || i.type === "error",
+    )
     .reverse();
 
   if (!events) return <Skeleton lines={4} />;

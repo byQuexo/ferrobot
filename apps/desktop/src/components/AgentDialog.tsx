@@ -4,7 +4,15 @@ import { Check, Dices, ImageUp, RotateCcw, X } from "lucide-preact";
 
 import type { Agent, Connector, Provider } from "../api.ts";
 import { useApp } from "../context.ts";
-import { BODIES, EYES, HUES, characterOf, deriveCharacter, rerollCharacter, type Character } from "../lib/character.ts";
+import {
+  BODIES,
+  EYES,
+  HUES,
+  characterOf,
+  deriveCharacter,
+  rerollCharacter,
+  type Character,
+} from "../lib/character.ts";
 import { toAvatarPng } from "../lib/image.ts";
 import { CharacterFace } from "./Character.tsx";
 import { Avatar } from "./Avatar.tsx";
@@ -15,7 +23,11 @@ import { Button, Dialog } from "./ui.tsx";
 const NAME = /^[a-z][a-z0-9-]{0,31}$/;
 
 /** Create (no `agent`) or edit an agent's profile. */
-export function AgentDialog(props: { agent?: Agent; onClose: () => void; onSaved: (a: Agent) => void }): JSX.Element {
+export function AgentDialog(props: {
+  agent?: Agent;
+  onClose: () => void;
+  onSaved: (a: Agent) => void;
+}): JSX.Element {
   const { client, toast } = useApp();
   const editing = props.agent;
   const [name, setName] = useState(editing?.name ?? "");
@@ -33,21 +45,37 @@ export function AgentDialog(props: { agent?: Agent; onClose: () => void; onSaved
   const [picked, setPicked] = useState<string[]>([]);
   const chosen = providers.find((p) => p.id === providerId);
   const modelChanged =
-    !editing || providerId !== (editing.provider_id ?? null) || model.trim() !== (editing.model ?? "");
+    !editing ||
+    providerId !== (editing.provider_id ?? null) ||
+    model.trim() !== (editing.model ?? "");
   const file = useRef<HTMLInputElement>(null);
   // New agents get a random starting look (saved with the agent); existing
   // ones start from their stored or id-derived look.
   const [seed] = useState(() => crypto.randomUUID());
-  const [look, setLook] = useState<Character>(() => (editing ? characterOf(editing) : deriveCharacter(seed)));
-  const same = (a: Character, b: Character): boolean => a.body === b.body && a.eyes === b.eyes && a.hue === b.hue;
+  const [look, setLook] = useState<Character>(() =>
+    editing ? characterOf(editing) : deriveCharacter(seed),
+  );
+  const same = (a: Character, b: Character): boolean =>
+    a.body === b.body && a.eyes === b.eyes && a.hue === b.hue;
   const lookChanged = !editing || !same(look, characterOf(editing));
 
-  useEffect(() => () => { if (preview) URL.revokeObjectURL(preview); }, [preview]);
+  useEffect(
+    () => () => {
+      if (preview) URL.revokeObjectURL(preview);
+    },
+    [preview],
+  );
   useEffect(() => {
     client.listProviders().then(setProviders, () => undefined);
     client.listConnectors().then(setConnectors, () => undefined);
     if (editing) {
-      client.agentConnectors(editing.id).then((ids) => { setGiven(ids); setPicked(ids); }, () => undefined);
+      client.agentConnectors(editing.id).then(
+        (ids) => {
+          setGiven(ids);
+          setPicked(ids);
+        },
+        () => undefined,
+      );
     }
   }, []);
   const togglePick = (id: string): void => {
@@ -55,7 +83,7 @@ export function AgentDialog(props: { agent?: Agent; onClose: () => void; onSaved
   };
 
   const nameOk = NAME.test(name);
-  const imageUrl = avatar === null ? null : editing?.avatar_url ?? null;
+  const imageUrl = avatar === null ? null : (editing?.avatar_url ?? null);
   const shown = { name: name || "?", avatar_url: imageUrl, character: look };
   const hasImage = Boolean(preview ?? imageUrl);
 
@@ -79,7 +107,9 @@ export function AgentDialog(props: { agent?: Agent; onClose: () => void; onSaved
             ...(name !== editing.name ? { name } : {}),
             description,
             instructions,
-            ...(lookChanged ? { character: same(look, deriveCharacter(editing.id)) ? null : look } : {}),
+            ...(lookChanged
+              ? { character: same(look, deriveCharacter(editing.id)) ? null : look }
+              : {}),
             ...(modelChanged ? { provider_id: providerId, model: model.trim() || null } : {}),
           })
         : await client.createAgent({
@@ -109,7 +139,9 @@ export function AgentDialog(props: { agent?: Agent; onClose: () => void; onSaved
       onClose={props.onClose}
       footer={
         <>
-          <Button variant="ghost" onClick={props.onClose}>Cancel</Button>
+          <Button variant="ghost" onClick={props.onClose}>
+            Cancel
+          </Button>
           <Button variant="primary" disabled={!nameOk || saving} onClick={() => void save()}>
             {saving ? "Saving…" : editing ? "Save changes" : "Create agent"}
           </Button>
@@ -139,7 +171,9 @@ export function AgentDialog(props: { agent?: Agent; onClose: () => void; onSaved
                       class={`char-option${look.body === body ? " on" : ""}`}
                       aria-pressed={look.body === body}
                       title={`Body: ${body}`}
-                      onClick={() => { setLook({ ...look, body }); }}
+                      onClick={() => {
+                        setLook({ ...look, body });
+                      }}
                     >
                       <CharacterFace look={{ ...look, body }} mood="idle" blinkDelay={0} />
                     </button>
@@ -154,7 +188,9 @@ export function AgentDialog(props: { agent?: Agent; onClose: () => void; onSaved
                       class={`char-option${look.eyes === eyes ? " on" : ""}`}
                       aria-pressed={look.eyes === eyes}
                       title={`Eyes: ${eyes}`}
-                      onClick={() => { setLook({ ...look, eyes }); }}
+                      onClick={() => {
+                        setLook({ ...look, eyes });
+                      }}
                     >
                       <CharacterFace look={{ ...look, eyes }} mood="idle" blinkDelay={0} />
                     </button>
@@ -170,7 +206,9 @@ export function AgentDialog(props: { agent?: Agent; onClose: () => void; onSaved
                       style={{ "--char-hue": String(hue) }}
                       aria-label={`Color ${String(hue)}`}
                       aria-pressed={look.hue === hue}
-                      onClick={() => { setLook({ ...look, hue }); }}
+                      onClick={() => {
+                        setLook({ ...look, hue });
+                      }}
                     />
                   ))}
                 </div>
@@ -178,12 +216,23 @@ export function AgentDialog(props: { agent?: Agent; onClose: () => void; onSaved
             )}
             <div class="avatar-actions">
               {!hasImage && (
-                <Button small onClick={() => { setLook(rerollCharacter(look)); }}>
+                <Button
+                  small
+                  onClick={() => {
+                    setLook(rerollCharacter(look));
+                  }}
+                >
                   <Dices size={16} /> Re-roll
                 </Button>
               )}
               {!hasImage && editing && !same(look, deriveCharacter(editing.id)) && (
-                <Button small variant="ghost" onClick={() => { setLook(deriveCharacter(editing.id)); }}>
+                <Button
+                  small
+                  variant="ghost"
+                  onClick={() => {
+                    setLook(deriveCharacter(editing.id));
+                  }}
+                >
                   <RotateCcw size={16} /> Default
                 </Button>
               )}
@@ -220,10 +269,13 @@ export function AgentDialog(props: { agent?: Agent; onClose: () => void; onSaved
             maxLength={32}
             autoComplete="off"
             spellcheck={false}
-            onInput={(e) => { setName(e.currentTarget.value.toLowerCase()); }}
+            onInput={(e) => {
+              setName(e.currentTarget.value.toLowerCase());
+            }}
           />
           <span class={`hint${name && !nameOk ? " bad" : ""}`}>
-            Lowercase letters, digits and dashes; starts with a letter. Other agents can use it to message this one.
+            Lowercase letters, digits and dashes; starts with a letter. Other agents can use it to
+            message this one.
             {editing && " Renaming keeps the agent’s computer, memory and history."}
           </span>
         </label>
@@ -233,7 +285,9 @@ export function AgentDialog(props: { agent?: Agent; onClose: () => void; onSaved
             value={description}
             maxLength={280}
             placeholder="One line shown in the agent list"
-            onInput={(e) => { setDescription(e.currentTarget.value); }}
+            onInput={(e) => {
+              setDescription(e.currentTarget.value);
+            }}
           />
         </label>
         <label>
@@ -242,16 +296,27 @@ export function AgentDialog(props: { agent?: Agent; onClose: () => void; onSaved
             rows={6}
             value={instructions}
             placeholder="Who is this agent and how should it work? For example: You keep the team’s release notes up to date."
-            onInput={(e) => { setInstructions(e.currentTarget.value); }}
+            onInput={(e) => {
+              setInstructions(e.currentTarget.value);
+            }}
           />
-          <span class="hint">Becomes part of the agent’s system prompt. Changes apply from its next turn.</span>
+          <span class="hint">
+            Becomes part of the agent’s system prompt. Changes apply from its next turn.
+          </span>
         </label>
         <label>
           Model provider
-          <select value={providerId ?? ""} onChange={(e) => { setProviderId(e.currentTarget.value || null); }}>
+          <select
+            value={providerId ?? ""}
+            onChange={(e) => {
+              setProviderId(e.currentTarget.value || null);
+            }}
+          >
             <option value="">Default (the daemon’s Anthropic key)</option>
             {providers.map((p) => (
-              <option key={p.id} value={p.id}>{p.name} · {KIND_LABELS[p.kind]}</option>
+              <option key={p.id} value={p.id}>
+                {p.name} · {KIND_LABELS[p.kind]}
+              </option>
             ))}
           </select>
         </label>
@@ -261,11 +326,15 @@ export function AgentDialog(props: { agent?: Agent; onClose: () => void; onSaved
             provider={providerId ?? undefined}
             kind={chosen?.kind ?? "anthropic"}
             value={model}
-            placeholder={chosen?.default_model ? `Default (${chosen.default_model})` : "The provider’s default"}
+            placeholder={
+              chosen?.default_model ? `Default (${chosen.default_model})` : "The provider’s default"
+            }
             onChange={setModel}
           />
           {editing && modelChanged && (
-            <span class="hint">Saving restarts the agent’s computer with the new model. Its files are kept.</span>
+            <span class="hint">
+              Saving restarts the agent’s computer with the new model. Its files are kept.
+            </span>
           )}
         </label>
         {connectors.length > 0 && given && (
@@ -281,7 +350,9 @@ export function AgentDialog(props: { agent?: Agent; onClose: () => void; onSaved
                     class={`choice multi${on ? " on" : ""}`}
                     role="checkbox"
                     aria-checked={on}
-                    onClick={() => { togglePick(c.id); }}
+                    onClick={() => {
+                      togglePick(c.id);
+                    }}
                   >
                     <span class="choice-mark">{on && <Check size={12} />}</span>
                     {c.name}

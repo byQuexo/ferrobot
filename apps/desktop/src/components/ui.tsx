@@ -56,7 +56,9 @@ export function Choice(props: {
 }): JSX.Element {
   const [custom, setCustom] = useState(false);
   const input = useRef<HTMLInputElement>(null);
-  useEffect(() => { if (custom) input.current?.focus(); }, [custom]);
+  useEffect(() => {
+    if (custom) input.current?.focus();
+  }, [custom]);
   if (custom || props.options.length === 0) {
     return (
       <span class="choice-custom">
@@ -67,10 +69,20 @@ export function Choice(props: {
           spellcheck={false}
           autoComplete="off"
           placeholder={props.placeholder}
-          onInput={(e) => { props.onChange(e.currentTarget.value); }}
+          onInput={(e) => {
+            props.onChange(e.currentTarget.value);
+          }}
         />
         {props.options.length > 0 && (
-          <Button small variant="ghost" onClick={() => { setCustom(false); }}>List</Button>
+          <Button
+            small
+            variant="ghost"
+            onClick={() => {
+              setCustom(false);
+            }}
+          >
+            List
+          </Button>
         )}
       </span>
     );
@@ -85,13 +97,21 @@ export function Choice(props: {
       }}
     >
       <option value="">{props.placeholder}</option>
-      {props.options.map(([v, label]) => <option key={v} value={v}>{label}</option>)}
+      {props.options.map(([v, label]) => (
+        <option key={v} value={v}>
+          {label}
+        </option>
+      ))}
       <option value={CUSTOM}>Custom…</option>
     </select>
   );
 }
 
-export function Switch(props: { checked: boolean; onChange: (v: boolean) => void; label: string }): JSX.Element {
+export function Switch(props: {
+  checked: boolean;
+  onChange: (v: boolean) => void;
+  label: string;
+}): JSX.Element {
   return (
     <button
       type="button"
@@ -100,7 +120,9 @@ export function Switch(props: { checked: boolean; onChange: (v: boolean) => void
       aria-checked={props.checked}
       aria-label={props.label}
       title={props.label}
-      onClick={() => { props.onChange(!props.checked); }}
+      onClick={() => {
+        props.onChange(!props.checked);
+      }}
     >
       <span class="switch-knob" />
     </button>
@@ -122,11 +144,20 @@ export function Dialog(props: {
       if (e.key === "Escape") props.onClose();
     };
     document.addEventListener("keydown", onKey);
-    ref.current?.querySelector<HTMLElement>("input:not([disabled]):not([hidden]), textarea")?.focus();
-    return () => { document.removeEventListener("keydown", onKey); };
+    ref.current
+      ?.querySelector<HTMLElement>("input:not([disabled]):not([hidden]), textarea")
+      ?.focus();
+    return () => {
+      document.removeEventListener("keydown", onKey);
+    };
   }, []);
   return (
-    <div class="overlay" onMouseDown={(e) => { if (e.target === e.currentTarget) props.onClose(); }}>
+    <div
+      class="overlay"
+      onMouseDown={(e) => {
+        if (e.target === e.currentTarget) props.onClose();
+      }}
+    >
       <div
         class={`dialog${props.wide ? " dialog-wide" : ""}${props.full ? " dialog-full" : ""}`}
         role="dialog"
@@ -151,12 +182,18 @@ export function Dialog(props: {
 export function Skeleton(props: { lines?: number }): JSX.Element {
   return (
     <div class="skeleton" aria-busy="true" aria-label="Loading">
-      {Array.from({ length: props.lines ?? 3 }, (_, i) => <span key={i} class="skeleton-line" />)}
+      {Array.from({ length: props.lines ?? 3 }, (_, i) => (
+        <span key={i} class="skeleton-line" />
+      ))}
     </div>
   );
 }
 
-export function Empty(props: { icon: ComponentChildren; title: string; children?: ComponentChildren }): JSX.Element {
+export function Empty(props: {
+  icon: ComponentChildren;
+  title: string;
+  children?: ComponentChildren;
+}): JSX.Element {
   return (
     <div class="empty">
       <div class="empty-icon">{props.icon}</div>

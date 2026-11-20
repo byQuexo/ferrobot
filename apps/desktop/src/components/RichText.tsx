@@ -29,9 +29,15 @@ export function RichText(props: { text: string; files?: ChatFiles }): JSX.Elemen
   );
 }
 
-function BlockView(props: { block: Block; plain: Plain; files: ChatFiles | undefined }): JSX.Element {
+function BlockView(props: {
+  block: Block;
+  plain: Plain;
+  files: ChatFiles | undefined;
+}): JSX.Element {
   const { block, plain } = props;
-  const inline = (text: string): JSX.Element => <Inlines nodes={parseInline(text)} plain={plain} files={props.files} />;
+  const inline = (text: string): JSX.Element => (
+    <Inlines nodes={parseInline(text)} plain={plain} files={props.files} />
+  );
   switch (block.kind) {
     case "heading": {
       const Tag = (["h3", "h4", "h5"] as const)[block.level - 1] ?? "h5";
@@ -48,9 +54,17 @@ function BlockView(props: { block: Block; plain: Plain; files: ChatFiles | undef
       return block.ordered ? <ol>{items}</ol> : <ul>{items}</ul>;
     }
     case "quote":
-      return <blockquote><p>{inline(block.text)}</p></blockquote>;
+      return (
+        <blockquote>
+          <p>{inline(block.text)}</p>
+        </blockquote>
+      );
     case "code":
-      return <pre class="code-block"><code>{plain(block.text)}</code></pre>;
+      return (
+        <pre class="code-block">
+          <code>{plain(block.text)}</code>
+        </pre>
+      );
     case "hr":
       return <hr />;
     case "table":
@@ -58,11 +72,19 @@ function BlockView(props: { block: Block; plain: Plain; files: ChatFiles | undef
         <div class="md-table">
           <table>
             <thead>
-              <tr>{block.head.map((c, i) => <th key={i}>{inline(c)}</th>)}</tr>
+              <tr>
+                {block.head.map((c, i) => (
+                  <th key={i}>{inline(c)}</th>
+                ))}
+              </tr>
             </thead>
             <tbody>
               {block.rows.map((row, r) => (
-                <tr key={r}>{row.map((c, i) => <td key={i}>{inline(c)}</td>)}</tr>
+                <tr key={r}>
+                  {row.map((c, i) => (
+                    <td key={i}>{inline(c)}</td>
+                  ))}
+                </tr>
               ))}
             </tbody>
           </table>
@@ -71,7 +93,11 @@ function BlockView(props: { block: Block; plain: Plain; files: ChatFiles | undef
   }
 }
 
-function Inlines(props: { nodes: Inline[]; plain: Plain; files?: ChatFiles | undefined }): JSX.Element {
+function Inlines(props: {
+  nodes: Inline[];
+  plain: Plain;
+  files?: ChatFiles | undefined;
+}): JSX.Element {
   const { plain, files } = props;
   const { openFile } = useApp();
   return (
@@ -79,8 +105,18 @@ function Inlines(props: { nodes: Inline[]; plain: Plain; files?: ChatFiles | und
       {props.nodes.map((n, i) => {
         if ("text" in n) return n.text;
         if ("mention" in n) return <Mention key={i} id={n.mention} />;
-        if ("strong" in n) return <strong key={i}><Inlines nodes={n.strong} plain={plain} files={files} /></strong>;
-        if ("em" in n) return <em key={i}><Inlines nodes={n.em} plain={plain} files={files} /></em>;
+        if ("strong" in n)
+          return (
+            <strong key={i}>
+              <Inlines nodes={n.strong} plain={plain} files={files} />
+            </strong>
+          );
+        if ("em" in n)
+          return (
+            <em key={i}>
+              <Inlines nodes={n.em} plain={plain} files={files} />
+            </em>
+          );
         if ("link" in n) {
           return (
             <a key={i} href={n.link} target="_blank" rel="noreferrer noopener">
@@ -91,7 +127,15 @@ function Inlines(props: { nodes: Inline[]; plain: Plain; files?: ChatFiles | und
         const shared = files?.byName.get(n.code.split("/").pop() ?? n.code);
         if (files && shared !== undefined) {
           return (
-            <button key={i} type="button" class="file-link" title={`Open ${n.code}`} onClick={() => { openFile(files.agent, shared); }}>
+            <button
+              key={i}
+              type="button"
+              class="file-link"
+              title={`Open ${n.code}`}
+              onClick={() => {
+                openFile(files.agent, shared);
+              }}
+            >
               <FileText size={12} />
               {n.code}
             </button>
@@ -99,7 +143,8 @@ function Inlines(props: { nodes: Inline[]; plain: Plain; files?: ChatFiles | und
         }
         // A lone mention in backticks is still a mention.
         const parts = splitMentions(n.code);
-        if (parts.length === 1 && parts[0] && "mention" in parts[0]) return <Mention key={i} id={parts[0].mention} />;
+        if (parts.length === 1 && parts[0] && "mention" in parts[0])
+          return <Mention key={i} id={parts[0].mention} />;
         return <code key={i}>{plain(n.code)}</code>;
       })}
     </>
@@ -112,7 +157,14 @@ function Mention(props: { id: string }): JSX.Element {
   const agent = agents.get(props.id);
   if (!agent) return <span class="mention-gone">@unknown-agent</span>;
   return (
-    <button type="button" class="mention" title={`Open ${agent.name}`} onClick={() => { openAgent(agent.id); }}>
+    <button
+      type="button"
+      class="mention"
+      title={`Open ${agent.name}`}
+      onClick={() => {
+        openAgent(agent.id);
+      }}
+    >
       <Avatar agent={agent} size={16} />
       {agent.name}
     </button>

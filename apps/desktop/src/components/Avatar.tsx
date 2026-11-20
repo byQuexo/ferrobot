@@ -24,7 +24,11 @@ export function Avatar(props: {
       {src ? (
         <img src={src} alt="" draggable={false} />
       ) : (
-        <CharacterFace look={characterOf(props.agent)} mood={moodOf(props.mood ?? props.presence)} blinkDelay={blinkDelay(seed)} />
+        <CharacterFace
+          look={characterOf(props.agent)}
+          mood={moodOf(props.mood ?? props.presence)}
+          blinkDelay={blinkDelay(seed)}
+        />
       )}
       {props.presence && <span class={`presence-dot p-${props.presence}`} aria-hidden="true" />}
     </span>

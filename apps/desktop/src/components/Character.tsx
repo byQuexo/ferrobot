@@ -19,7 +19,14 @@ function BodyShape(props: { body: Character["body"] }): JSX.Element {
       return (
         <>
           <path class="char-stem" d="M24 20 C24 15 25 12 27 10" />
-          <ellipse class="char-leaf" cx="30.5" cy="9.5" rx="4.2" ry="2.3" transform="rotate(-28 30.5 9.5)" />
+          <ellipse
+            class="char-leaf"
+            cx="30.5"
+            cy="9.5"
+            rx="4.2"
+            ry="2.3"
+            transform="rotate(-28 30.5 9.5)"
+          />
           <path class="char-body" d="M8 52 C8 30 15 19 24 19 C33 19 40 30 40 52 Z" />
         </>
       );
@@ -31,7 +38,13 @@ function OpenEyes(props: { eyes: Character["eyes"]; y: number }): JSX.Element {
   const xs = [17.5, 30.5];
   switch (props.eyes) {
     case "dots":
-      return <>{xs.map((x) => <circle key={x} class="char-ink" cx={x} cy={y} r="2.7" />)}</>;
+      return (
+        <>
+          {xs.map((x) => (
+            <circle key={x} class="char-ink" cx={x} cy={y} r="2.7" />
+          ))}
+        </>
+      );
     case "ovals":
       return (
         <>
@@ -58,7 +71,9 @@ function OpenEyes(props: { eyes: Character["eyes"]; y: number }): JSX.Element {
       return (
         <>
           <rect class="char-ink" x="12" y={y - 4.2} width="24" height="8.4" rx="4.2" />
-          {xs.map((x) => <circle key={x} class="char-glow" cx={x} cy={y} r="1.8" />)}
+          {xs.map((x) => (
+            <circle key={x} class="char-glow" cx={x} cy={y} r="1.8" />
+          ))}
         </>
       );
   }
@@ -74,7 +89,12 @@ export function CharacterFace(props: {
   const y = EYE_Y[look.body];
   const style = { "--char-hue": String(look.hue), "--blink-delay": `${String(props.blinkDelay)}s` };
   return (
-    <svg class={`char m-${mood} b-${look.body}`} viewBox="0 0 48 48" style={style} aria-hidden="true">
+    <svg
+      class={`char m-${mood} b-${look.body}`}
+      viewBox="0 0 48 48"
+      style={style}
+      aria-hidden="true"
+    >
       <rect class="char-bg" width="48" height="48" />
       <g class="char-figure">
         <BodyShape body={look.body} />

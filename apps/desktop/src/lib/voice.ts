@@ -38,7 +38,10 @@ export class Speaker {
   #round = 0;
   #playing = false;
 
-  constructor(fetchAudio: (text: string, agent?: string) => Promise<Blob>, onError: (err: unknown) => void) {
+  constructor(
+    fetchAudio: (text: string, agent?: string) => Promise<Blob>,
+    onError: (err: unknown) => void,
+  ) {
     this.#fetch = fetchAudio;
     this.#onError = onError;
   }
@@ -46,10 +49,12 @@ export class Speaker {
   /** Queues `text`, spoken with `agent`'s voice if it has one. */
   say(text: string, agent?: string): void {
     if (!text) return;
-    this.#queue.push(this.#fetch(text, agent).catch((err: unknown) => {
-      this.#onError(err);
-      return null;
-    }));
+    this.#queue.push(
+      this.#fetch(text, agent).catch((err: unknown) => {
+        this.#onError(err);
+        return null;
+      }),
+    );
     if (!this.#playing) void this.#play();
   }
 
@@ -75,8 +80,15 @@ export class Speaker {
       const audio = new Audio(url);
       this.#audio = audio;
       await new Promise<void>((resolve) => {
-        audio.onended = audio.onerror = audio.onpause = () => { resolve(); };
-        audio.play().catch(() => { resolve(); });
+        audio.onended =
+          audio.onerror =
+          audio.onpause =
+            () => {
+              resolve();
+            };
+        audio.play().catch(() => {
+          resolve();
+        });
       });
       URL.revokeObjectURL(url);
     }
@@ -95,7 +107,10 @@ export interface Recording {
 
 /** Starts recording the microphone (asks for permission the first time). */
 export async function record(): Promise<Recording> {
-  if (!(navigator.mediaDevices as MediaDevices | undefined) || typeof MediaRecorder === "undefined") {
+  if (
+    !(navigator.mediaDevices as MediaDevices | undefined) ||
+    typeof MediaRecorder === "undefined"
+  ) {
     throw new Error("The microphone is not available here");
   }
   const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
@@ -147,7 +162,8 @@ export function pcm16Base64(samples: Float32Array): string {
     view.setInt16(i * 2, Math.max(-1, Math.min(1, s)) * 0x7fff, true);
   });
   let bin = "";
-  for (let i = 0; i < bytes.length; i += 0x8000) bin += String.fromCharCode(...bytes.subarray(i, i + 0x8000));
+  for (let i = 0; i < bytes.length; i += 0x8000)
+    bin += String.fromCharCode(...bytes.subarray(i, i + 0x8000));
   return btoa(bin);
 }
 
@@ -166,10 +182,17 @@ export interface LiveSession {
  */
 export async function startLive(
   open: (sampleRate: number) => Promise<string>,
-  on: { partial: (text: string) => void; committed: (text: string) => void; error: (message: string) => void },
+  on: {
+    partial: (text: string) => void;
+    committed: (text: string) => void;
+    error: (message: string) => void;
+  },
 ): Promise<LiveSession> {
-  if (!(navigator.mediaDevices as MediaDevices | undefined)) throw new Error("The microphone is not available here");
-  const stream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true } });
+  if (!(navigator.mediaDevices as MediaDevices | undefined))
+    throw new Error("The microphone is not available here");
+  const stream = await navigator.mediaDevices.getUserMedia({
+    audio: { echoCancellation: true, noiseSuppression: true },
+  });
   const release = (): void => {
     for (const track of stream.getTracks()) track.stop();
   };
@@ -189,8 +212,12 @@ export async function startLive(
   try {
     ws = new WebSocket(await open(rate));
     await new Promise<void>((resolve, reject) => {
-      ws.onopen = () => { resolve(); };
-      ws.onerror = () => { reject(new Error("Live transcription could not connect")); };
+      ws.onopen = () => {
+        resolve();
+      };
+      ws.onerror = () => {
+        reject(new Error("Live transcription could not connect"));
+      };
     });
   } catch (err) {
     release();
@@ -206,12 +233,21 @@ export async function startLive(
       lastCommit?.();
     } else if (ev.kind === "error") on.error(ev.message);
   };
-  ws.onclose = () => { lastCommit?.(); };
+  ws.onclose = () => {
+    lastCommit?.();
+  };
 
   let muted = false;
   const send = (samples: Float32Array, commit: boolean): void => {
     if (ws.readyState !== WebSocket.OPEN) return;
-    ws.send(JSON.stringify({ message_type: "input_audio_chunk", audio_base_64: pcm16Base64(samples), commit, sample_rate: rate }));
+    ws.send(
+      JSON.stringify({
+        message_type: "input_audio_chunk",
+        audio_base_64: pcm16Base64(samples),
+        commit,
+        sample_rate: rate,
+      }),
+    );
   };
   // ScriptProcessor needs no module file, which the app's CSP would block for an AudioWorklet.
   const source = ctx.createMediaStreamSource(stream);
@@ -224,7 +260,9 @@ export async function startLive(
   proc.connect(ctx.destination);
 
   return {
-    mute: (on) => { muted = on; },
+    mute: (on) => {
+      muted = on;
+    },
     stop: async (commit) => {
       proc.onaudioprocess = null;
       source.disconnect();

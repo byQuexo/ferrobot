@@ -6,12 +6,23 @@ import { useApp } from "../context.ts";
 import { withSaved } from "../lib/models.ts";
 import { Button, Choice, Switch } from "./ui.tsx";
 
-const LABELS: Record<VoiceProvider, string> = { elevenlabs: "ElevenLabs", openrouter: "OpenRouter" };
+const LABELS: Record<VoiceProvider, string> = {
+  elevenlabs: "ElevenLabs",
+  openrouter: "OpenRouter",
+};
 const STT_MODELS = ["scribe_v3", "scribe_v2"];
 /** Shown when the provider lists no languages (OpenRouter). */
 const COMMON_LANGUAGES: [string, string][] = [
-  ["en", "English"], ["de", "German"], ["fr", "French"], ["es", "Spanish"], ["it", "Italian"],
-  ["nl", "Dutch"], ["pt", "Portuguese"], ["pl", "Polish"], ["ja", "Japanese"], ["zh", "Chinese"],
+  ["en", "English"],
+  ["de", "German"],
+  ["fr", "French"],
+  ["es", "Spanish"],
+  ["it", "Italian"],
+  ["nl", "Dutch"],
+  ["pt", "Portuguese"],
+  ["pl", "Polish"],
+  ["ja", "Japanese"],
+  ["zh", "Chinese"],
 ];
 
 /** The fields of `PUT /v1/voice` from what the daemon reported, with `changes` applied. */
@@ -30,11 +41,15 @@ export function voiceUpdate(view: VoiceView, changes: Partial<UpdateVoice>): Upd
 }
 
 /** Languages the chosen speech model speaks, else a common list. */
-export function languagesOf(catalog: VoiceCatalog | null, model: string | null | undefined): [string, string][] {
-  const listed = catalog?.tts_models.find((m) => m.model_id === model)?.languages ?? catalog?.tts_models[0]?.languages;
+export function languagesOf(
+  catalog: VoiceCatalog | null,
+  model: string | null | undefined,
+): [string, string][] {
+  const listed =
+    catalog?.tts_models.find((m) => m.model_id === model)?.languages ??
+    catalog?.tts_models[0]?.languages;
   return listed?.length ? listed.map((l) => [l.code, l.name || l.code]) : COMMON_LANGUAGES;
 }
-
 
 /** Speech provider, key, voice, models, language and speed. The key goes to the daemon’s keychain and never comes back. */
 export function VoiceSettings(): JSX.Element {
@@ -68,13 +83,22 @@ export function VoiceSettings(): JSX.Element {
   };
 
   useEffect(() => {
-    client.voice().then((v) => { show(v, v.provider ?? "elevenlabs"); }, (err: unknown) => {
-      toast(err instanceof Error ? err.message : String(err));
-    });
+    client.voice().then(
+      (v) => {
+        show(v, v.provider ?? "elevenlabs");
+      },
+      (err: unknown) => {
+        toast(err instanceof Error ? err.message : String(err));
+      },
+    );
   }, []);
 
   // The account's voices and models, once the provider with a key is saved and voice is on.
-  const ready = view?.provider === "elevenlabs" && provider === "elevenlabs" && info?.has_key && view.enabled !== false;
+  const ready =
+    view?.provider === "elevenlabs" &&
+    provider === "elevenlabs" &&
+    info?.has_key &&
+    view.enabled !== false;
   useEffect(() => {
     if (!ready) return;
     client.voiceCatalog().then(setCatalog, (err: unknown) => {
@@ -91,7 +115,9 @@ export function VoiceSettings(): JSX.Element {
           enabled,
           provider,
           voice: voice.trim() || null,
-          agent_voices: Object.fromEntries(Object.entries(agentVoices).filter(([, id]) => id.trim())),
+          agent_voices: Object.fromEntries(
+            Object.entries(agentVoices).filter(([, id]) => id.trim()),
+          ),
           tts_model: ttsModel.trim() || null,
           stt_model: sttModel.trim() || null,
           language: language || null,
@@ -110,8 +136,12 @@ export function VoiceSettings(): JSX.Element {
   };
 
   const voices: [string, string][] =
-    catalog?.voices.map((v) => [v.voice_id, `${v.name}${v.languages.length ? ` · ${v.languages.join(", ")}` : ""}`]) ?? [];
-  const models: [string, string][] = catalog?.tts_models.map((m) => [m.model_id, m.name || m.model_id]) ?? [];
+    catalog?.voices.map((v) => [
+      v.voice_id,
+      `${v.name}${v.languages.length ? ` · ${v.languages.join(", ")}` : ""}`,
+    ]) ?? [];
+  const models: [string, string][] =
+    catalog?.tts_models.map((m) => [m.model_id, m.name || m.model_id]) ?? [];
 
   return (
     <div>
@@ -121,15 +151,24 @@ export function VoiceSettings(): JSX.Element {
             Voice in chats
             <Switch checked={enabled} label="Voice in chats" onChange={setEnabled} />
           </span>
-          <span class="hint">Off hides the call and microphone buttons; settings and keys are kept.</span>
+          <span class="hint">
+            Off hides the call and microphone buttons; settings and keys are kept.
+          </span>
         </span>
       </section>
       <section class="settings-section form">
         <label>
           Provider
-          <select value={provider} onChange={(e) => { if (view) show(view, e.currentTarget.value as VoiceProvider); }}>
+          <select
+            value={provider}
+            onChange={(e) => {
+              if (view) show(view, e.currentTarget.value as VoiceProvider);
+            }}
+          >
             {(Object.keys(LABELS) as VoiceProvider[]).map((k) => (
-              <option key={k} value={k}>{LABELS[k]}</option>
+              <option key={k} value={k}>
+                {LABELS[k]}
+              </option>
             ))}
           </select>
         </label>
@@ -140,48 +179,89 @@ export function VoiceSettings(): JSX.Element {
             autoComplete="off"
             value={key}
             placeholder={info?.has_key ? "Stored. Type to replace it" : ""}
-            onInput={(e) => { setKey(e.currentTarget.value); }}
+            onInput={(e) => {
+              setKey(e.currentTarget.value);
+            }}
           />
-          <span class="hint">Stored in the keychain of the daemon’s computer. Agents never see it.</span>
+          <span class="hint">
+            Stored in the keychain of the daemon’s computer. Agents never see it.
+          </span>
         </label>
         {info?.has_key && (
           <div>
-            <Button small variant="ghost" disabled={busy} onClick={() => void save(null)}>Remove key</Button>
+            <Button small variant="ghost" disabled={busy} onClick={() => void save(null)}>
+              Remove key
+            </Button>
           </div>
         )}
       </section>
       <section class="settings-section form">
         <label>
           Voice
-          <Choice value={voice} options={withSaved(voices, voice)} placeholder={info?.default_voice ?? (ready ? "Pick a voice" : "Default")} onChange={setVoice} />
-          {provider === "elevenlabs" && !ready && <span class="hint">Save your key to pick from your ElevenLabs voices.</span>}
+          <Choice
+            value={voice}
+            options={withSaved(voices, voice)}
+            placeholder={info?.default_voice ?? (ready ? "Pick a voice" : "Default")}
+            onChange={setVoice}
+          />
+          {provider === "elevenlabs" && !ready && (
+            <span class="hint">Save your key to pick from your ElevenLabs voices.</span>
+          )}
         </label>
         <label>
           Speech model
-          <Choice value={ttsModel} options={withSaved(models, ttsModel)} placeholder={info?.default_tts_model ?? "Default"} onChange={setTtsModel} />
+          <Choice
+            value={ttsModel}
+            options={withSaved(models, ttsModel)}
+            placeholder={info?.default_tts_model ?? "Default"}
+            onChange={setTtsModel}
+          />
         </label>
         <label>
           Transcription model
           <Choice
             value={sttModel}
-            options={provider === "elevenlabs" ? withSaved(STT_MODELS.map((m) => [m, m]), sttModel) : []}
+            options={
+              provider === "elevenlabs"
+                ? withSaved(
+                    STT_MODELS.map((m) => [m, m]),
+                    sttModel,
+                  )
+                : []
+            }
             placeholder={info?.default_stt_model ?? "Default"}
             onChange={setSttModel}
           />
         </label>
         <label>
           Language
-          <select value={language} onChange={(e) => { setLanguage(e.currentTarget.value); }}>
+          <select
+            value={language}
+            onChange={(e) => {
+              setLanguage(e.currentTarget.value);
+            }}
+          >
             <option value="">Detect automatically</option>
             {languagesOf(catalog, ttsModel || info?.default_tts_model).map(([code, name]) => (
-              <option key={code} value={code}>{name}</option>
+              <option key={code} value={code}>
+                {name}
+              </option>
             ))}
           </select>
         </label>
         {provider === "elevenlabs" && (
           <label>
             Speed · {speed.toFixed(2)}×
-            <input type="range" min={0.7} max={1.2} step={0.05} value={speed} onInput={(e) => { setSpeed(Number(e.currentTarget.value)); }} />
+            <input
+              type="range"
+              min={0.7}
+              max={1.2}
+              step={0.05}
+              value={speed}
+              onInput={(e) => {
+                setSpeed(Number(e.currentTarget.value));
+              }}
+            />
           </label>
         )}
       </section>
@@ -196,14 +276,20 @@ export function VoiceSettings(): JSX.Element {
                 value={agentVoices[a.id] ?? ""}
                 options={withSaved(voices, agentVoices[a.id] ?? "")}
                 placeholder="Same as above"
-                onChange={(v) => { setAgentVoices({ ...agentVoices, [a.id]: v }); }}
+                onChange={(v) => {
+                  setAgentVoices({ ...agentVoices, [a.id]: v });
+                }}
               />
             </label>
           ))}
         </section>
       )}
       <div class="settings-actions">
-        <Button variant="primary" disabled={busy || !view} onClick={() => void save(key.trim() || undefined)}>
+        <Button
+          variant="primary"
+          disabled={busy || !view}
+          onClick={() => void save(key.trim() || undefined)}
+        >
           Save
         </Button>
       </div>

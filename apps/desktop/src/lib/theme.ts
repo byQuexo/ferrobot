@@ -10,7 +10,8 @@ export function loadTheme(): ThemePref {
 /** Applies the preference to <html data-theme> and remembers it. */
 export function applyTheme(pref: ThemePref): void {
   localStorage.setItem(KEY, pref);
-  const dark = pref === "dark" || (pref === "system" && matchMedia("(prefers-color-scheme: dark)").matches);
+  const dark =
+    pref === "dark" || (pref === "system" && matchMedia("(prefers-color-scheme: dark)").matches);
   document.documentElement.dataset["theme"] = dark ? "dark" : "light";
 }
 
@@ -21,5 +22,7 @@ export function followSystem(getPref: () => ThemePref): () => void {
     if (getPref() === "system") applyTheme("system");
   };
   mq.addEventListener("change", onChange);
-  return () => { mq.removeEventListener("change", onChange); };
+  return () => {
+    mq.removeEventListener("change", onChange);
+  };
 }

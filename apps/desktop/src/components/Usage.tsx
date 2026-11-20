@@ -4,7 +4,17 @@ import { ArrowDown, ArrowUp, ChartColumn, Download, Pencil, X } from "lucide-pre
 
 import type { PriceEntry, ProviderKind, UsageGroup, UsageGroupBy, UsageReport } from "../api.ts";
 import { useApp } from "../context.ts";
-import { costLabel, count, rangeOf, sortGroups, usageCsv, usd, utcDays, type RangeKind, type SortKey } from "../lib/usage.ts";
+import {
+  costLabel,
+  count,
+  rangeOf,
+  sortGroups,
+  usageCsv,
+  usd,
+  utcDays,
+  type RangeKind,
+  type SortKey,
+} from "../lib/usage.ts";
 import { Button, Empty, IconButton, Skeleton } from "./ui.tsx";
 
 const RANGES: [RangeKind, string][] = [
@@ -44,7 +54,10 @@ export function Usage(props: { onClose: () => void }): JSX.Element {
   const [error, setError] = useState<string | null>(null);
   const [prices, setPrices] = useState<PriceEntry[]>([]);
   const [by, setBy] = useState<Breakdown>("provider");
-  const [sort, setSort] = useState<{ key: SortKey; desc: boolean }>({ key: "cost_usd", desc: true });
+  const [sort, setSort] = useState<{ key: SortKey; desc: boolean }>({
+    key: "cost_usd",
+    desc: true,
+  });
   const [editing, setEditing] = useState<string | null>(null);
   const [reload, setReload] = useState(0);
   const span = rangeOf(range, new Date(), custom);
@@ -57,7 +70,13 @@ export function Usage(props: { onClose: () => void }): JSX.Element {
     const report = (g: UsageGroupBy): Promise<UsageReport> => client.usage(g, span.from, span.to);
     const load = async (): Promise<void> => {
       try {
-        const [day, provider, model, agent, p] = await Promise.all([report("day"), report("provider"), report("model"), report("agent"), client.prices()]);
+        const [day, provider, model, agent, p] = await Promise.all([
+          report("day"),
+          report("provider"),
+          report("model"),
+          report("agent"),
+          client.prices(),
+        ]);
         if (!live) return;
         setReports({ day, provider, model, agent });
         setPrices(p);
@@ -66,7 +85,9 @@ export function Usage(props: { onClose: () => void }): JSX.Element {
       }
     };
     void load();
-    return () => { live = false; };
+    return () => {
+      live = false;
+    };
   }, [span?.from, span?.to, reload]);
 
   const groups = reports ? sortGroups(reports[by].groups, sort.key, sort.desc) : [];
@@ -76,7 +97,9 @@ export function Usage(props: { onClose: () => void }): JSX.Element {
     a.href = url;
     a.download = `ferrobot-usage-by-${by}.csv`;
     a.click();
-    setTimeout(() => { URL.revokeObjectURL(url); }, 1000);
+    setTimeout(() => {
+      URL.revokeObjectURL(url);
+    }, 1000);
   };
 
   return (
@@ -85,7 +108,9 @@ export function Usage(props: { onClose: () => void }): JSX.Element {
         <header class="settings-head">
           <div>
             <h2>Usage</h2>
-            <p class="muted">Model calls your agents made through the daemon. Costs are estimates from list prices.</p>
+            <p class="muted">
+              Model calls your agents made through the daemon. Costs are estimates from list prices.
+            </p>
           </div>
           <IconButton label="Close usage" onClick={props.onClose}>
             <X size={18} />
@@ -94,16 +119,38 @@ export function Usage(props: { onClose: () => void }): JSX.Element {
         <div class="usage-bar">
           <div class="chips" role="group" aria-label="Time range">
             {RANGES.map(([id, label]) => (
-              <button key={id} type="button" class={`chip${range === id ? " on" : ""}`} aria-pressed={range === id} onClick={() => { setRange(id); }}>
+              <button
+                key={id}
+                type="button"
+                class={`chip${range === id ? " on" : ""}`}
+                aria-pressed={range === id}
+                onClick={() => {
+                  setRange(id);
+                }}
+              >
                 {label}
               </button>
             ))}
           </div>
           {range === "custom" && (
             <div class="usage-dates">
-              <input type="date" aria-label="From" value={custom.from} onInput={(e) => { setCustom({ ...custom, from: e.currentTarget.value }); }} />
+              <input
+                type="date"
+                aria-label="From"
+                value={custom.from}
+                onInput={(e) => {
+                  setCustom({ ...custom, from: e.currentTarget.value });
+                }}
+              />
               <span class="muted">to</span>
-              <input type="date" aria-label="To" value={custom.to} onInput={(e) => { setCustom({ ...custom, to: e.currentTarget.value }); }} />
+              <input
+                type="date"
+                aria-label="To"
+                value={custom.to}
+                onInput={(e) => {
+                  setCustom({ ...custom, to: e.currentTarget.value });
+                }}
+              />
             </div>
           )}
         </div>
@@ -112,7 +159,14 @@ export function Usage(props: { onClose: () => void }): JSX.Element {
         ) : error ? (
           <Empty icon={<ChartColumn size={28} />} title="Usage could not be loaded">
             <p>{error}</p>
-            <Button small onClick={() => { setReload((n) => n + 1); }}>Retry</Button>
+            <Button
+              small
+              onClick={() => {
+                setReload((n) => n + 1);
+              }}
+            >
+              Retry
+            </Button>
           </Empty>
         ) : !reports ? (
           <Skeleton lines={8} />
@@ -125,7 +179,16 @@ export function Usage(props: { onClose: () => void }): JSX.Element {
             <div class="usage-bar">
               <div class="chips" role="group" aria-label="Break down by">
                 {BREAKDOWNS.map(([id, label]) => (
-                  <button key={id} type="button" class={`chip${by === id ? " on" : ""}`} aria-pressed={by === id} onClick={() => { setBy(id); setEditing(null); }}>
+                  <button
+                    key={id}
+                    type="button"
+                    class={`chip${by === id ? " on" : ""}`}
+                    aria-pressed={by === id}
+                    onClick={() => {
+                      setBy(id);
+                      setEditing(null);
+                    }}
+                  >
                     By {label.toLowerCase()}
                   </button>
                 ))}
@@ -138,8 +201,15 @@ export function Usage(props: { onClose: () => void }): JSX.Element {
             <table class="usage-table">
               <thead>
                 <tr>
-                  <SortHeader label={BREAKDOWNS.find(([id]) => id === by)?.[1] ?? ""} column="label" sort={sort} onSort={setSort} />
-                  {COLUMNS.map(([key, label]) => <SortHeader key={key} label={label} column={key} sort={sort} onSort={setSort} />)}
+                  <SortHeader
+                    label={BREAKDOWNS.find(([id]) => id === by)?.[1] ?? ""}
+                    column="label"
+                    sort={sort}
+                    onSort={setSort}
+                  />
+                  {COLUMNS.map(([key, label]) => (
+                    <SortHeader key={key} label={label} column={key} sort={sort} onSort={setSort} />
+                  ))}
                   {by === "model" && <th aria-label="Price" />}
                 </tr>
               </thead>
@@ -150,16 +220,21 @@ export function Usage(props: { onClose: () => void }): JSX.Element {
                     group={g}
                     editable={by === "model"}
                     editing={editing === g.key}
-                    onEdit={() => { setEditing(editing === g.key ? null : g.key); }}
+                    onEdit={() => {
+                      setEditing(editing === g.key ? null : g.key);
+                    }}
                     prices={prices}
-                    onSaved={() => { setEditing(null); setReload(reload + 1); }}
+                    onSaved={() => {
+                      setEditing(null);
+                      setReload(reload + 1);
+                    }}
                   />
                 ))}
               </tbody>
             </table>
             <p class="muted small">
-              Unknown: no price for that model (set one with the pencil on the model list). Not tracked: the API
-              reported no tokens. Days are UTC.
+              Unknown: no price for that model (set one with the pencil on the model list). Not
+              tracked: the API reported no tokens. Days are UTC.
             </p>
           </>
         )}
@@ -176,8 +251,19 @@ function SortHeader(props: {
 }): JSX.Element {
   const active = props.sort.key === props.column;
   return (
-    <th class={props.column === "label" ? "" : "num"} aria-sort={active ? (props.sort.desc ? "descending" : "ascending") : "none"}>
-      <button type="button" onClick={() => { props.onSort({ key: props.column, desc: active ? !props.sort.desc : props.column !== "label" }); }}>
+    <th
+      class={props.column === "label" ? "" : "num"}
+      aria-sort={active ? (props.sort.desc ? "descending" : "ascending") : "none"}
+    >
+      <button
+        type="button"
+        onClick={() => {
+          props.onSort({
+            key: props.column,
+            desc: active ? !props.sort.desc : props.column !== "label",
+          });
+        }}
+      >
         {props.label}
         {active && (props.sort.desc ? <ArrowDown size={12} /> : <ArrowUp size={12} />)}
       </button>
@@ -193,20 +279,24 @@ function Totals(props: { report: UsageReport }): JSX.Element {
       <div class="card">
         <span class="muted small">Estimated cost</span>
         <b class="usage-big">{costLabel(t)}</b>
-        {t.unknown_cost_calls > 0 && <span class="muted small">{t.unknown_cost_calls} calls with an unknown price</span>}
+        {t.unknown_cost_calls > 0 && (
+          <span class="muted small">{t.unknown_cost_calls} calls with an unknown price</span>
+        )}
       </div>
       <div class="card">
         <span class="muted small">Tokens</span>
         <b class="usage-big">{count(tokens)}</b>
         <span class="muted small">
-          {count(t.input_tokens)} in · {count(t.output_tokens)} out · {count(t.cache_read_tokens)} cache read ·{" "}
-          {count(t.cache_write_tokens)} cache write
+          {count(t.input_tokens)} in · {count(t.output_tokens)} out · {count(t.cache_read_tokens)}{" "}
+          cache read · {count(t.cache_write_tokens)} cache write
         </span>
       </div>
       <div class="card">
         <span class="muted small">Calls</span>
         <b class="usage-big">{t.calls.toLocaleString("en")}</b>
-        {t.not_tracked_calls > 0 && <span class="muted small">{t.not_tracked_calls} not tracked</span>}
+        {t.not_tracked_calls > 0 && (
+          <span class="muted small">{t.not_tracked_calls} not tracked</span>
+        )}
       </div>
     </div>
   );
@@ -220,7 +310,12 @@ function DayChart(props: { report: UsageReport; days: string[] }): JSX.Element {
   return (
     <figure class="usage-chart">
       <figcaption class="muted small">Estimated cost per day · max {usd(max)}</figcaption>
-      <svg viewBox={`0 0 ${String(props.days.length * w)} ${String(h)}`} preserveAspectRatio="none" role="img" aria-label="Estimated cost per day">
+      <svg
+        viewBox={`0 0 ${String(props.days.length * w)} ${String(h)}`}
+        preserveAspectRatio="none"
+        role="img"
+        aria-label="Estimated cost per day"
+      >
         {props.days.map((d, i) => {
           const group = byDay.get(d);
           const bar = max > 0 ? Math.max((cost(d) / max) * (h - 4), cost(d) > 0 ? 2 : 0) : 0;
@@ -253,11 +348,15 @@ function Row(props: {
       <tr>
         <td class="usage-name" title={g.label}>
           {g.label}
-          {props.editable && <span class="muted small"> · {g.key.slice(0, g.key.indexOf("/"))}</span>}
+          {props.editable && (
+            <span class="muted small"> · {g.key.slice(0, g.key.indexOf("/"))}</span>
+          )}
         </td>
         <td class="num">
           {g.calls.toLocaleString("en")}
-          {g.not_tracked_calls > 0 && <span class="muted small"> · {g.not_tracked_calls} not tracked</span>}
+          {g.not_tracked_calls > 0 && (
+            <span class="muted small"> · {g.not_tracked_calls} not tracked</span>
+          )}
         </td>
         <td class="num">{count(g.input_tokens)}</td>
         <td class="num">{count(g.output_tokens)}</td>
@@ -266,7 +365,11 @@ function Row(props: {
         <td class={`num${g.cost_usd == null ? " muted" : ""}`}>{costLabel(g)}</td>
         {props.editable && (
           <td>
-            <IconButton label={`Edit the price of ${g.label}`} pressed={props.editing} onClick={props.onEdit}>
+            <IconButton
+              label={`Edit the price of ${g.label}`}
+              pressed={props.editing}
+              onClick={props.onEdit}
+            >
               <Pencil size={16} />
             </IconButton>
           </td>
@@ -284,7 +387,11 @@ function Row(props: {
 }
 
 /** The operator’s own price for one model; saved with the other overrides. */
-function PriceForm(props: { modelKey: string; prices: PriceEntry[]; onSaved: () => void }): JSX.Element {
+function PriceForm(props: {
+  modelKey: string;
+  prices: PriceEntry[];
+  onSaved: () => void;
+}): JSX.Element {
   const { client, run } = useApp();
   const slash = props.modelKey.indexOf("/");
   const kind = props.modelKey.slice(0, slash) as ProviderKind;
@@ -298,13 +405,21 @@ function PriceForm(props: { modelKey: string; prices: PriceEntry[]; onSaved: () 
     cache_write: text(current?.cache_write),
   });
   const number = (s: string): number | null => (s.trim() === "" ? null : Number(s));
-  const valid = [values.input, values.output].every((v) => v.trim() !== "" && Number(v) >= 0) &&
+  const valid =
+    [values.input, values.output].every((v) => v.trim() !== "" && Number(v) >= 0) &&
     [values.cache_read, values.cache_write].every((v) => v.trim() === "" || Number(v) >= 0);
 
   const save = async (): Promise<void> => {
     const others = props.prices
       .filter((p) => p.source == null && !(p.provider_kind === kind && p.model === model))
-      .map(({ provider_kind, model: m, input, output, cache_read, cache_write }) => ({ provider_kind, model: m, input, output, cache_read, cache_write }));
+      .map(({ provider_kind, model: m, input, output, cache_read, cache_write }) => ({
+        provider_kind,
+        model: m,
+        input,
+        output,
+        cache_read,
+        cache_write,
+      }));
     const saved = await run(() =>
       client.setPrices([
         ...others,
@@ -322,10 +437,20 @@ function PriceForm(props: { modelKey: string; prices: PriceEntry[]; onSaved: () 
   };
 
   return (
-    <form class="usage-price" onSubmit={(e) => { e.preventDefault(); if (valid) void save(); }}>
+    <form
+      class="usage-price"
+      onSubmit={(e) => {
+        e.preventDefault();
+        if (valid) void save();
+      }}
+    >
       <span class="muted small">
         USD per 1M tokens for {model}
-        {current?.source ? ` · now from ${new URL(current.source).host}, checked ${current.checked ?? "?"}` : current ? " · your price" : " · no price yet"}
+        {current?.source
+          ? ` · now from ${new URL(current.source).host}, checked ${current.checked ?? "?"}`
+          : current
+            ? " · your price"
+            : " · no price yet"}
       </span>
       {(["input", "output", "cache_read", "cache_write"] as const).map((field) => (
         <label key={field}>
@@ -343,7 +468,9 @@ function PriceForm(props: { modelKey: string; prices: PriceEntry[]; onSaved: () 
           />
         </label>
       ))}
-      <Button small type="submit" disabled={!valid}>Save price</Button>
+      <Button small type="submit" disabled={!valid}>
+        Save price
+      </Button>
     </form>
   );
 }

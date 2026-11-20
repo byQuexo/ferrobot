@@ -7,7 +7,12 @@ import { Button } from "./ui.tsx";
 import { languagesOf, voiceUpdate } from "./VoiceSettings.tsx";
 
 /** Voice, language and speed for this chat, changed on the fly; saved right away. */
-export function VoiceQuick(props: { agent: Agent; view: VoiceView; onView: (v: VoiceView) => void; onClose: () => void }): JSX.Element {
+export function VoiceQuick(props: {
+  agent: Agent;
+  view: VoiceView;
+  onView: (v: VoiceView) => void;
+  onClose: () => void;
+}): JSX.Element {
   const { client, toast } = useApp();
   const [catalog, setCatalog] = useState<VoiceCatalog | null>(null);
   const [speed, setSpeed] = useState(props.view.speed ?? 1);
@@ -22,7 +27,9 @@ export function VoiceQuick(props: { agent: Agent; view: VoiceView; onView: (v: V
       if (!box.current?.contains(e.target as Node)) props.onClose();
     };
     document.addEventListener("pointerdown", outside);
-    return () => { document.removeEventListener("pointerdown", outside); };
+    return () => {
+      document.removeEventListener("pointerdown", outside);
+    };
   }, []);
 
   const save = async (changes: Parameters<typeof voiceUpdate>[1]): Promise<void> => {
@@ -34,9 +41,13 @@ export function VoiceQuick(props: { agent: Agent; view: VoiceView; onView: (v: V
   };
   const test = async (): Promise<void> => {
     try {
-      const url = URL.createObjectURL(await client.speech(`Hi, I'm ${props.agent.name}. This is how I sound.`, id));
+      const url = URL.createObjectURL(
+        await client.speech(`Hi, I'm ${props.agent.name}. This is how I sound.`, id),
+      );
       const audio = new Audio(url);
-      audio.onended = () => { URL.revokeObjectURL(url); };
+      audio.onended = () => {
+        URL.revokeObjectURL(url);
+      };
       await audio.play();
     } catch (err) {
       toast(err instanceof Error ? err.message : String(err));
@@ -61,17 +72,29 @@ export function VoiceQuick(props: { agent: Agent; view: VoiceView; onView: (v: V
           >
             <option value="">Default voice</option>
             {catalog?.voices.map((v) => (
-              <option key={v.voice_id} value={v.voice_id}>{v.name}{v.languages.length ? ` · ${v.languages.join(", ")}` : ""}</option>
+              <option key={v.voice_id} value={v.voice_id}>
+                {v.name}
+                {v.languages.length ? ` · ${v.languages.join(", ")}` : ""}
+              </option>
             ))}
-            {mine && !catalog?.voices.some((v) => v.voice_id === mine) && <option value={mine}>{mine}</option>}
+            {mine && !catalog?.voices.some((v) => v.voice_id === mine) && (
+              <option value={mine}>{mine}</option>
+            )}
           </select>
         </label>
       )}
       <label>
         Language
-        <select value={view.language ?? ""} onChange={(e) => void save({ language: e.currentTarget.value || null })}>
+        <select
+          value={view.language ?? ""}
+          onChange={(e) => void save({ language: e.currentTarget.value || null })}
+        >
           <option value="">Detect automatically</option>
-          {languagesOf(catalog, view.tts_model).map(([code, name]) => <option key={code} value={code}>{name}</option>)}
+          {languagesOf(catalog, view.tts_model).map(([code, name]) => (
+            <option key={code} value={code}>
+              {name}
+            </option>
+          ))}
         </select>
       </label>
       {elevenlabs && (
@@ -83,12 +106,16 @@ export function VoiceQuick(props: { agent: Agent; view: VoiceView; onView: (v: V
             max={1.2}
             step={0.05}
             value={speed}
-            onInput={(e) => { setSpeed(Number(e.currentTarget.value)); }}
+            onInput={(e) => {
+              setSpeed(Number(e.currentTarget.value));
+            }}
             onChange={() => void save({ speed: speed === 1 ? null : speed })}
           />
         </label>
       )}
-      <Button small variant="secondary" onClick={() => void test()}>Test voice</Button>
+      <Button small variant="secondary" onClick={() => void test()}>
+        Test voice
+      </Button>
     </div>
   );
 }

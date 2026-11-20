@@ -31,7 +31,9 @@ export function relativeTime(iso: string, now: number = Date.now()): string {
 
 export function clockTime(iso: string): string {
   const d = new Date(iso);
-  return Number.isNaN(d.getTime()) ? "" : d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+  return Number.isNaN(d.getTime())
+    ? ""
+    : d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
 }
 
 export function dateTime(iso: string): string {
@@ -54,9 +56,14 @@ export function duration(seconds: number): string {
 }
 
 /** What a running tool call is doing, in a few words, for the chat. */
-export function stepLabel(name: string, input: unknown, nameOf: (id: string) => string | undefined): string {
+export function stepLabel(
+  name: string,
+  input: unknown,
+  nameOf: (id: string) => string | undefined,
+): string {
   const { server, tool } = toolLabel(name);
-  const args = typeof input === "object" && input !== null ? (input as Record<string, unknown>) : {};
+  const args =
+    typeof input === "object" && input !== null ? (input as Record<string, unknown>) : {};
   const str = (key: string): string => (typeof args[key] === "string" ? args[key] : "");
   const short = (s: string): string => (s.length > 48 ? `${s.slice(0, 47)}…` : s);
   const file = (s: string): string => s.split("/").filter(Boolean).pop() ?? "a file";

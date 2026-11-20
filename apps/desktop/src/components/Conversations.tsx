@@ -15,13 +15,20 @@ export type Pair = readonly [string, string];
 const isAgentMail = (m: MailMessage): boolean => m.sender.kind === "agent";
 
 /** Conversations between agents, newest first; refreshed on new agent mail. */
-export function ConversationList(props: { active: Pair | null; onOpen: (p: Pair) => void }): JSX.Element | null {
+export function ConversationList(props: {
+  active: Pair | null;
+  onOpen: (p: Pair) => void;
+}): JSX.Element | null {
   const { client, agents, listen } = useApp();
   const [list, setList] = useState<Conversation[]>([]);
   useEffect(() => {
-    const load = (): void => { void client.listConversations().then(setList, () => undefined); };
+    const load = (): void => {
+      void client.listConversations().then(setList, () => undefined);
+    };
     load();
-    return listen((e) => { if (e.type === "message" && isAgentMail(e.message)) load(); });
+    return listen((e) => {
+      if (e.type === "message" && isAgentMail(e.message)) load();
+    });
   }, [client, listen]);
   const known = list.filter((c) => agents.has(c.a) && agents.has(c.b));
   if (known.length === 0) return null;
@@ -38,7 +45,9 @@ export function ConversationList(props: { active: Pair | null; onOpen: (p: Pair)
             key={`${c.a}-${c.b}`}
             type="button"
             class={`convo-row${active ? " active" : ""}`}
-            onClick={() => { props.onOpen([c.a, c.b]); }}
+            onClick={() => {
+              props.onOpen([c.a, c.b]);
+            }}
           >
             <span class="pair-avatars">
               <Avatar agent={a} size={22} />
@@ -46,7 +55,9 @@ export function ConversationList(props: { active: Pair | null; onOpen: (p: Pair)
             </span>
             <span class="agent-row-text">
               <span class="agent-row-top">
-                <span class="agent-name">{a.name} · {b.name}</span>
+                <span class="agent-name">
+                  {a.name} · {b.name}
+                </span>
                 <span class="spacer" />
                 <span class="meta">{relativeTime(c.last.created_at)}</span>
               </span>
@@ -66,7 +77,11 @@ export function ConversationView(props: { pair: Pair }): JSX.Element {
   const [messages, setMessages] = useState<MailMessage[]>([]);
   const scroller = useRef<HTMLDivElement>(null);
   useEffect(() => {
-    const load = (): void => { void run(() => client.conversation(a, b)).then((m) => { if (m) setMessages(m); }); };
+    const load = (): void => {
+      void run(() => client.conversation(a, b)).then((m) => {
+        if (m) setMessages(m);
+      });
+    };
     load();
     return listen((e) => {
       if (e.type !== "message" || e.message.sender.kind !== "agent") return;
@@ -81,7 +96,12 @@ export function ConversationView(props: { pair: Pair }): JSX.Element {
 
   const left = agents.get(a);
   const right = agents.get(b);
-  if (!left || !right) return <section class="chat chat-none"><p class="muted">This conversation is no longer available.</p></section>;
+  if (!left || !right)
+    return (
+      <section class="chat chat-none">
+        <p class="muted">This conversation is no longer available.</p>
+      </section>
+    );
   const byId = new Map(messages.map((m) => [m.id, m]));
   return (
     <section class="chat" aria-label={`Conversation between ${left.name} and ${right.name}`}>
@@ -91,11 +111,15 @@ export function ConversationView(props: { pair: Pair }): JSX.Element {
           <Avatar agent={right} size={30} />
         </span>
         <div class="chat-title">
-          <h1>{left.name} · {right.name}</h1>
+          <h1>
+            {left.name} · {right.name}
+          </h1>
           <span class="chat-sub">{messages.length} messages between agents</span>
         </div>
         <span class="spacer" />
-        <span class="readonly-pill"><Eye size={16} /> Read-only</span>
+        <span class="readonly-pill">
+          <Eye size={16} /> Read-only
+        </span>
       </header>
       <div class="timeline" ref={scroller}>
         {messages.map((m) => {
@@ -108,15 +132,24 @@ export function ConversationView(props: { pair: Pair }): JSX.Element {
               <div class="bubble bubble-agent">
                 {parent && (
                   <span class="reply-ref">
-                    <CornerDownRight size={12} /> {mentionsAsText(parent.body, (id) => agents.get(id)?.name).slice(0, 80)}
+                    <CornerDownRight size={12} />{" "}
+                    {mentionsAsText(parent.body, (id) => agents.get(id)?.name).slice(0, 80)}
                   </span>
                 )}
                 <RichText text={m.body} />
                 <span class="meta">
-                  {m.priority === true && <span class="urgent"><Zap size={12} /> urgent · </span>}
+                  {m.priority === true && (
+                    <span class="urgent">
+                      <Zap size={12} /> urgent ·{" "}
+                    </span>
+                  )}
                   {m.priority === false && "when free · "}
                   {from?.name ?? "agent"} · {clockTime(m.created_at)}
-                  {m.status === "pending" ? " · queued" : m.status === "failed" ? " · not delivered" : ""}
+                  {m.status === "pending"
+                    ? " · queued"
+                    : m.status === "failed"
+                      ? " · not delivered"
+                      : ""}
                 </span>
               </div>
               {from && from.id === b && <Avatar agent={from} size={28} />}
