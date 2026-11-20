@@ -333,10 +333,18 @@ textarea { resize: vertical; min-height: 40px; line-height: 1.5; }
 .skeleton-line:nth-child(3n) { width: 58%; }
 @keyframes shimmer { from { background-position: 200% 0; } to { background-position: -200% 0; } }
 @media (prefers-reduced-motion: reduce) { .skeleton-line { animation: none; } }
-.agent-row-wrap { position: relative; }
+.agent-row-wrap, .pinned-agent-wrap { position: relative; }
+.pinned-strip { display: flex; flex-wrap: wrap; justify-content: center; gap: 6px; padding: 10px 4px 14px; margin: 0 4px 8px; border-bottom: 1px solid var(--border); }
+.pinned-agent { position: relative; display: flex; flex-direction: column; align-items: center; gap: 7px; width: 92px; padding: 10px 6px 8px; border: none; border-radius: 16px; background: none; color: var(--text); font: inherit; cursor: pointer; }
+.pinned-agent:hover { background: var(--surface-2); }
+.pinned-agent.active { background: var(--surface); box-shadow: var(--shadow); }
+.pinned-agent.active .presence-dot { border-color: var(--surface); }
+.pinned-name { max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 13px; font-weight: 600; }
+.pinned-agent .badge { position: absolute; top: 8px; right: 12px; }
+.pinned-agent-wrap:hover .pin-toggle, .pinned-agent-wrap .pin-toggle:focus-visible { opacity: 1; }
+.pinned-agent-wrap .pin-toggle { top: 2px; right: 2px; color: var(--accent); }
 .pin-toggle { position: absolute; top: 6px; right: 6px; display: grid; place-items: center; width: 24px; height: 24px; border: none; border-radius: 6px; background: transparent; color: var(--muted); opacity: 0; cursor: pointer; }
-.agent-row-wrap:hover .pin-toggle, .pin-toggle:focus-visible, .agent-row-wrap.pinned .pin-toggle { opacity: 1; }
-.agent-row-wrap.pinned .pin-toggle { color: var(--accent); }
+.agent-row-wrap:hover .pin-toggle, .pin-toggle:focus-visible { opacity: 1; }
 .pin-toggle:hover { background: var(--surface-2); }
 .file-frame { display: block; width: 100%; height: 72vh; border: 1px solid var(--border); border-radius: 8px; background: #fff; }
 .rich table { border-collapse: collapse; font-size: 13.5px; }
