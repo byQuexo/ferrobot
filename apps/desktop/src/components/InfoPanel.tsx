@@ -406,9 +406,10 @@ function RoutineForm(props: {
   );
 }
 
-function Memory(props: { agent: Agent }): JSX.Element {
+/** An agent's memory, or the global memory when `agent` is null. */
+export function Memory(props: { agent: Agent | null }): JSX.Element {
   const { client, run, listen } = useApp();
-  const id = props.agent.id;
+  const id = props.agent?.id ?? null;
   const [q, setQ] = useState("");
   const [entries, setEntries] = useState<MemoryEntry[] | null>(null);
   const [adding, setAdding] = useState(false);
@@ -420,7 +421,8 @@ function Memory(props: { agent: Agent }): JSX.Element {
     void run(() => refresh(""));
     setQ("");
     return listen((e) => {
-      if (e.type === "memory_changed" && e.agent_id === id) void refresh().catch(() => undefined);
+      const changed = id ? e.type === "memory_changed" && e.agent_id === id : e.type === "global_memory_changed";
+      if (changed) void refresh().catch(() => undefined);
     });
   }, [id]);
   useEffect(() => {
@@ -469,7 +471,11 @@ function Memory(props: { agent: Agent }): JSX.Element {
       )}
       {entries?.length === 0 && !adding && (
         <Empty icon={<Brain size={28} />} title={q ? "Nothing found" : "No memories yet"}>
-          {q ? "Try other words." : `${props.agent.name} saves notes here with its memory tools; you can add some too.`}
+          {q
+            ? "Try other words."
+            : props.agent
+              ? `${props.agent.name} saves notes here with its memory tools; you can add some too.`
+              : "Facts every agent can recall. Agents save them here with their memory tools; you can add some too."}
         </Empty>
       )}
       <ul class="memories">

@@ -59,6 +59,8 @@ fn every_routed_path_is_documented() {
         "/v1/agents/{id}/questions/{qid}/answer",
         "/v1/agents/{id}/memory",
         "/v1/agents/{id}/memory/{key}",
+        "/v1/memory",
+        "/v1/memory/{key}",
         "/v1/agents/{id}/routines",
         "/v1/routines/{rid}",
         "/v1/routines/{rid}/run",
@@ -78,7 +80,7 @@ fn every_routed_path_is_documented() {
     }
     assert_eq!(
         documented.len(),
-        28,
+        30,
         "undocumented extra paths: {documented:?}"
     );
 }

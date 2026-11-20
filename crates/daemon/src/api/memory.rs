@@ -1,4 +1,4 @@
-//! Per-agent long-term memory (the same store the MCP tools use).
+//! Per-agent and global long-term memory (the same store the MCP tools use).
 
 use axum::Json;
 use axum::extract::{Path, Query, State};
@@ -58,13 +58,7 @@ pub(crate) async fn put_memory(
     Json(req): Json<PutMemory>,
 ) -> Result<StatusCode, ApiError> {
     let id = parse_id(&id)?;
-    let key = req.key.trim();
-    if key.is_empty() || key.len() > MAX_MEMORY_KEY_BYTES {
-        return Err(ApiError::BadRequest(format!(
-            "key must be 1-{MAX_MEMORY_KEY_BYTES} bytes"
-        )));
-    }
-    check_len("content", &req.content)?;
+    let key = check(&req)?;
     state.store.get_agent(id).await?;
     state
         .store
@@ -90,5 +84,59 @@ pub(crate) async fn delete_memory(
         return Err(ApiError::NotFound(format!("memory {key:?} not found")));
     }
     state.publish(UiEvent::MemoryChanged { agent_id: id });
+    Ok(StatusCode::NO_CONTENT)
+}
+
+fn check(req: &PutMemory) -> Result<&str, ApiError> {
+    let key = req.key.trim();
+    if key.is_empty() || key.len() > MAX_MEMORY_KEY_BYTES {
+        return Err(ApiError::BadRequest(format!(
+            "key must be 1-{MAX_MEMORY_KEY_BYTES} bytes"
+        )));
+    }
+    check_len("content", &req.content)?;
+    Ok(key)
+}
+
+/// Lists or searches the global memory all agents share.
+#[utoipa::path(get, path = "/v1/memory", tag = "memory",
+    params(MemoryQuery),
+    responses((status = 200, body = Vec<MemoryEntry>)))]
+pub(crate) async fn list_global_memory(
+    State(state): State<AppState>,
+    Query(q): Query<MemoryQuery>,
+) -> ApiResult<Vec<MemoryEntry>> {
+    let limit = q.limit.unwrap_or(100).clamp(1, 200);
+    Ok(Json(state.store.recall_global(q.q, limit).await?))
+}
+
+/// Creates or replaces a global memory.
+#[utoipa::path(post, path = "/v1/memory", tag = "memory",
+    request_body = PutMemory,
+    responses((status = 204, description = "Stored"),
+        (status = 400, body = ErrorBody)))]
+pub(crate) async fn put_global_memory(
+    State(state): State<AppState>,
+    Json(req): Json<PutMemory>,
+) -> Result<StatusCode, ApiError> {
+    let key = check(&req)?.to_owned();
+    state.store.remember_global(key, req.content).await?;
+    state.publish(UiEvent::GlobalMemoryChanged);
+    Ok(StatusCode::NO_CONTENT)
+}
+
+/// Deletes one global memory by key (URL-encoded).
+#[utoipa::path(delete, path = "/v1/memory/{key}", tag = "memory",
+    params(("key" = String, Path, description = "Memory key")),
+    responses((status = 204, description = "Deleted"),
+        (status = 404, description = "Unknown key", body = ErrorBody)))]
+pub(crate) async fn delete_global_memory(
+    State(state): State<AppState>,
+    Path(key): Path<String>,
+) -> Result<StatusCode, ApiError> {
+    if !state.store.forget_global(key.clone()).await? {
+        return Err(ApiError::NotFound(format!("memory {key:?} not found")));
+    }
+    state.publish(UiEvent::GlobalMemoryChanged);
     Ok(StatusCode::NO_CONTENT)
 }

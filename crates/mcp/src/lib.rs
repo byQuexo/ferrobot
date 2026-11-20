@@ -57,6 +57,8 @@ pub trait MailboxNotifier: Send + Sync + 'static {
     fn memory_changed(&self, agent: AgentId) {
         let _ = agent;
     }
+    /// A tool changed the global memory.
+    fn global_memory_changed(&self) {}
     /// A tool recorded a chat event (e.g. a question card) for the UI.
     fn event_recorded(&self, event: &StoredEvent) {
         let _ = event;

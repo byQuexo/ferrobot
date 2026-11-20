@@ -202,3 +202,29 @@ the code and this file together.
   The agent runs as `node`, like `docker exec` runs as the image user.
 - **JSON with base64 payloads, one request per connection**; answers up to
   64 MiB (files ~48 MiB), exec output capped at 1 MiB per stream in the guest.
+
+## Agent briefing, mentions, global memory
+
+- **`create_agent` takes an optional `task`.** After approval the daemon sends
+  it as the creator's first message to the new agent, so it starts at once and
+  its replies thread back to the creator. Without a task the result says the
+  agent stays idle. Seen live: a creator put the task in `instructions` only,
+  and both new agents slept without ever getting a turn.
+- **Questions go up the chain by prompt, not by force.** The shared system
+  prompt tells briefed agents to send questions and results to the teammate
+  that briefed them, and creators to relay operator questions with `ask_user`.
+  `ask_user` itself stays open to every agent (the operator may chat with a
+  sub-agent directly).
+- **Mentions:** agents were told to address teammates by id, so they wrote
+  ids and bold names. The prompt now asks for `@name` in prose (ids only in
+  `send_message.to`); the daemon already stored `@name` as a chip token.
+  Streaming text shows plain `@name` until the turn's final text arrives.
+- **Global memory is a separate table** (`global_memories`, v8, own FTS) rather
+  than a nullable `memories.agent_id`, which would need a table rebuild.
+  `remember`/`forget` take `global: true`; `recall` searches both scopes,
+  alternating hits so neither crowds out the other, and marks global ones.
+- **Agents may write global memory.** That is what makes it useful (one agent
+  learns where the operator flies from, all know). Risk: a hijacked agent can
+  plant text every agent reads. Mitigations: the operator sees and deletes
+  entries in the Global memory dialog, and `recall` describes global entries
+  as notes, not instructions. No per-entry author yet.

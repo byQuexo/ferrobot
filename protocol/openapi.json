@@ -1954,6 +1954,147 @@
         ]
       }
     },
+    "/v1/memory": {
+      "get": {
+        "tags": [
+          "memory"
+        ],
+        "summary": "Lists or searches the global memory all agents share.",
+        "operationId": "list_global_memory",
+        "parameters": [
+          {
+            "name": "q",
+            "in": "query",
+            "description": "Full-text search; empty lists the most recently updated entries.",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "description": "1-200, default 100.",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "format": "int32",
+              "minimum": 0
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/MemoryEntry"
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or wrong API token",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "memory"
+        ],
+        "summary": "Creates or replaces a global memory.",
+        "operationId": "put_global_memory",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PutMemory"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "204": {
+            "description": "Stored"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or wrong API token",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/memory/{key}": {
+      "delete": {
+        "tags": [
+          "memory"
+        ],
+        "summary": "Deletes one global memory by key (URL-encoded).",
+        "operationId": "delete_global_memory",
+        "parameters": [
+          {
+            "name": "key",
+            "in": "path",
+            "description": "Memory key",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Deleted"
+          },
+          "401": {
+            "description": "Missing or wrong API token",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Unknown key",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/v1/providers": {
       "get": {
         "tags": [
@@ -4072,6 +4213,21 @@
           },
           {
             "type": "object",
+            "description": "The global memory changed; refetch it.",
+            "required": [
+              "type"
+            ],
+            "properties": {
+              "type": {
+                "type": "string",
+                "enum": [
+                  "global_memory_changed"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
             "description": "The agent's routines or their runs changed; refetch them.",
             "required": [
               "agent_id",
@@ -4262,7 +4418,7 @@
     },
     {
       "name": "memory",
-      "description": "Per-agent long-term memory"
+      "description": "Per-agent and global long-term memory"
     },
     {
       "name": "routines",

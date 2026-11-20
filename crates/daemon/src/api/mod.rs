@@ -67,6 +67,14 @@ pub fn router() -> Router<AppState> {
             axum::routing::delete(memory::delete_memory),
         )
         .route(
+            "/v1/memory",
+            get(memory::list_global_memory).post(memory::put_global_memory),
+        )
+        .route(
+            "/v1/memory/{key}",
+            axum::routing::delete(memory::delete_global_memory),
+        )
+        .route(
             "/v1/agents/{id}/routines",
             get(routines::list_routines).post(routines::create_routine),
         )

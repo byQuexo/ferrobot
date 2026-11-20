@@ -110,6 +110,8 @@ pub enum UiEvent {
     Message { message: MailMessage },
     /// The agent's memory changed; refetch it.
     MemoryChanged { agent_id: AgentId },
+    /// The global memory changed; refetch it.
+    GlobalMemoryChanged,
     /// The agent's routines or their runs changed; refetch them.
     RoutinesChanged { agent_id: AgentId },
 }
@@ -259,6 +261,10 @@ impl ferrobot_mcp::MailboxNotifier for AppState {
 
     fn memory_changed(&self, agent: AgentId) {
         self.publish(UiEvent::MemoryChanged { agent_id: agent });
+    }
+
+    fn global_memory_changed(&self) {
+        self.publish(UiEvent::GlobalMemoryChanged);
     }
 
     fn event_recorded(&self, event: &StoredEvent) {

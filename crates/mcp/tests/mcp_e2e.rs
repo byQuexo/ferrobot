@@ -233,6 +233,52 @@ async fn tools_act_as_the_authenticated_agent() {
     let gone = call(&alice, "forget", json!({"key": "k"})).await.unwrap();
     assert_eq!(gone["ok"], true);
 
+    // Global memory is shared, and recall says where a hit came from.
+    call(
+        &alice,
+        "remember",
+        json!({"key": "home", "content": "Operator flies from Hamburg", "global": true}),
+    )
+    .await
+    .unwrap();
+    call(
+        &bob,
+        "remember",
+        json!({"key": "home", "content": "bob's own Hamburg note"}),
+    )
+    .await
+    .unwrap();
+    let hits = call(&bob, "recall", json!({"query": "hamburg"}))
+        .await
+        .unwrap();
+    let scopes: Vec<_> = hits["memories"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|m| {
+            (
+                m["content"].as_str().unwrap(),
+                m["global"].as_bool().unwrap(),
+            )
+        })
+        .collect();
+    assert_eq!(
+        scopes,
+        [
+            ("bob's own Hamburg note", false),
+            ("Operator flies from Hamburg", true)
+        ]
+    );
+    let limited = call(&bob, "recall", json!({"query": "hamburg", "limit": 1}))
+        .await
+        .unwrap();
+    assert_eq!(limited["memories"].as_array().unwrap().len(), 1);
+    let gone = call(&bob, "forget", json!({"key": "home", "global": true}))
+        .await
+        .unwrap();
+    assert_eq!(gone["ok"], true);
+    assert_eq!(store.recall_global(String::new(), 5).await.unwrap(), []);
+
     // Question cards are validated and recorded in the caller's own chat.
     let card = json!({"questions": [
         {"prompt": "Ship it?", "kind": "single", "choices": [{"label": "Yes"}, {"label": "No"}]},

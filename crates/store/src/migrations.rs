@@ -162,6 +162,31 @@ const MIGRATIONS: &[&str] = &[
     ALTER TABLE agents ADD COLUMN provider_id TEXT REFERENCES providers(id);
     ALTER TABLE agents ADD COLUMN model TEXT;
     ",
+    // v8: global memory, shared by all agents
+    r"
+    CREATE TABLE global_memories (
+        id         INTEGER PRIMARY KEY AUTOINCREMENT,
+        key        TEXT NOT NULL UNIQUE,
+        content    TEXT NOT NULL,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL
+    );
+    CREATE VIRTUAL TABLE global_memories_fts USING fts5(
+        key, content, content='global_memories', content_rowid='id', tokenize='unicode61'
+    );
+    CREATE TRIGGER global_memories_ai AFTER INSERT ON global_memories BEGIN
+        INSERT INTO global_memories_fts(rowid, key, content) VALUES (new.id, new.key, new.content);
+    END;
+    CREATE TRIGGER global_memories_ad AFTER DELETE ON global_memories BEGIN
+        INSERT INTO global_memories_fts(global_memories_fts, rowid, key, content)
+        VALUES ('delete', old.id, old.key, old.content);
+    END;
+    CREATE TRIGGER global_memories_au AFTER UPDATE ON global_memories BEGIN
+        INSERT INTO global_memories_fts(global_memories_fts, rowid, key, content)
+        VALUES ('delete', old.id, old.key, old.content);
+        INSERT INTO global_memories_fts(rowid, key, content) VALUES (new.id, new.key, new.content);
+    END;
+    ",
 ];
 
 pub(crate) fn run(conn: &mut Connection) -> Result<(), StoreError> {
@@ -232,6 +257,10 @@ mod tests {
             .query_row("SELECT COUNT(*) FROM providers", [], |r| r.get(0))
             .unwrap();
         assert_eq!(providers, 0);
+        let global: i64 = conn
+            .query_row("SELECT COUNT(*) FROM global_memories", [], |r| r.get(0))
+            .unwrap();
+        assert_eq!(global, 0, "global memory starts empty");
         let version: i64 = conn
             .query_row("PRAGMA user_version", [], |r| r.get(0))
             .unwrap();

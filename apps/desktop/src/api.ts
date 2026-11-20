@@ -45,6 +45,7 @@ export class ApiError extends Error {
 }
 
 const enc = encodeURIComponent;
+const memoryPath = (agent: string | null): string => (agent ? `/v1/agents/${agent}/memory` : "/v1/memory");
 
 export class DaemonClient {
   readonly base: string;
@@ -121,13 +122,13 @@ export class DaemonClient {
   answerQuestion = (id: string, question: number, answers: QuestionAnswer[]): Promise<QuestionAnswered> =>
     this.#request("POST", `/v1/agents/${id}/questions/${String(question)}/answer`, { answers });
 
-  // memory
-  memory = (id: string, q = ""): Promise<MemoryEntry[]> =>
-    this.#request("GET", `/v1/agents/${id}/memory?q=${enc(q)}`);
-  remember = (id: string, key: string, content: string): Promise<void> =>
-    this.#request("POST", `/v1/agents/${id}/memory`, { key, content });
-  forget = (id: string, key: string): Promise<void> =>
-    this.#request("DELETE", `/v1/agents/${id}/memory/${enc(key)}`);
+  // memory; agent `null` is the global memory all agents share
+  memory = (id: string | null, q = ""): Promise<MemoryEntry[]> =>
+    this.#request("GET", `${memoryPath(id)}?q=${enc(q)}`);
+  remember = (id: string | null, key: string, content: string): Promise<void> =>
+    this.#request("POST", memoryPath(id), { key, content });
+  forget = (id: string | null, key: string): Promise<void> =>
+    this.#request("DELETE", `${memoryPath(id)}/${enc(key)}`);
 
   // routines
   routines = (id: string): Promise<Routine[]> => this.#request("GET", `/v1/agents/${id}/routines`);

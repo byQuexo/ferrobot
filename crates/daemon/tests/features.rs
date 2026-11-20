@@ -408,6 +408,19 @@ async fn profile_avatar_unread_and_memory() {
     assert_eq!(status, 204);
     let (status, _) = http(&d.ui, "DELETE", &format!("{mem}/db"), None).await;
     assert_eq!(status, 404);
+
+    // Global memory: same shape, not tied to an agent.
+    let body = json!({"key": "home", "content": "Operator lives in Hamburg"});
+    let (status, _) = http(&d.ui, "POST", "/v1/memory", Some(body)).await;
+    assert_eq!(status, 204);
+    let (_, hits) = http(&d.ui, "GET", "/v1/memory?q=hamburg", None).await;
+    assert_eq!(hits[0]["key"], "home", "{hits}");
+    let (_, own) = http(&d.ui, "GET", &format!("{mem}?q=hamburg"), None).await;
+    assert_eq!(own, json!([]));
+    let (status, _) = http(&d.ui, "DELETE", "/v1/memory/home", None).await;
+    assert_eq!(status, 204);
+    let (status, _) = http(&d.ui, "DELETE", "/v1/memory/home", None).await;
+    assert_eq!(status, 404);
 }
 
 #[tokio::test]

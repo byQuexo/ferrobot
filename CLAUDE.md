@@ -143,7 +143,8 @@ daemon, `docker ps -a` must be empty of ferrobot containers.
 ## Migrations
 
 - `crates/store/src/migrations.rs`, tracked with `PRAGMA user_version`.
-- Forward-only, numbered v1..v7 (v7: `providers`, `agents.provider_id`/`model`). Append a new entry
+- Forward-only, numbered v1..v8 (v7: `providers`, `agents.provider_id`/`model`; v8:
+  `global_memories`). Append a new entry
   with a `// vN: ...` comment; **never edit or reorder existing ones**.
 - Every migration gets a test (upgrade an old DB, check defaults of existing
   rows). New columns on existing tables need a default.
