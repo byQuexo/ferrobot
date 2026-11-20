@@ -34,7 +34,8 @@ pub(crate) struct UsageQuery {
     group_by: Option<String>,
 }
 
-/// Sums for a time range or group. Costs are estimates from the price table.
+/// Sums for a time range or group. Costs are what `OpenRouter` reported it charged, else
+/// estimates from the price table.
 #[derive(Debug, Default, Serialize, ToSchema)]
 pub(crate) struct UsageTotals {
     calls: i64,
@@ -43,7 +44,8 @@ pub(crate) struct UsageTotals {
     output_tokens: i64,
     cache_read_tokens: i64,
     cache_write_tokens: i64,
-    /// Estimated USD; `null` when no call here could be priced.
+    /// USD: `OpenRouter`'s reported charge where given, else estimated from prices; `null` when
+    /// no call here could be priced.
     cost_usd: Option<f64>,
     /// Calls with tokens but no known price (not in `cost_usd`).
     unknown_cost_calls: i64,
@@ -85,6 +87,11 @@ impl Sum {
         t.cache_read_tokens += s.cache_read_tokens;
         t.cache_write_tokens += s.cache_write_tokens;
         t.not_tracked_calls += s.not_tracked_calls;
+        if let Some(c) = s.reported_cost_usd {
+            self.cost += c;
+            self.priced = true;
+            return;
+        }
         if s.tracked_calls == 0 {
             return;
         }

@@ -109,7 +109,8 @@ export function Usage(props: { onClose: () => void }): JSX.Element {
           <div>
             <h2>Usage</h2>
             <p class="muted">
-              Model calls your agents made through the daemon. Costs are estimates from list prices.
+              Model calls your agents made through the daemon. OpenRouter costs are what it charged;
+              the rest are estimates from list prices.
             </p>
           </div>
           <IconButton label="Close usage" onClick={props.onClose}>

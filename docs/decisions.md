@@ -912,3 +912,17 @@ slop, so polish mode: palette, accent, logo, layout and features stay.
 - **Given to the requester.** Approving assigns the new connector to the agent
   that asked (the same path as `PUT /v1/agents/{id}/connectors`). OAuth
   connectors are created signed out; the operator signs in under Connectors.
+
+## OpenRouter's reported cost
+
+- **The charge beats the estimate.** OpenRouter puts what it billed into every
+  response's `usage.cost` (USD). The meter reads it on `openrouter` providers
+  only (another OpenAI-compatible server's number is not trusted) and keeps it
+  per call (`usage.cost_usd`, v14); reports add those as they are and estimate
+  only the other rows. It covers models missing from `pricing.toml` and the
+  long-context tiers `Price` cannot express.
+- **Sanity bounds:** a cost that is not a number in 0..=1000 USD is ignored and
+  the call falls back to the estimate.
+- **No price fetching.** Research (2026-11-20): only OpenRouter and the AWS bulk
+  price files publish machine-readable prices; Anthropic, OpenAI, Gemini and
+  ElevenLabs only have pricing pages. The table stays hand-checked.

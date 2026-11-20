@@ -3995,6 +3995,11 @@ data: {"type":"message_"#,
         "data: {\"choices\":[],\"usage\":{\"prompt_tokens\":100,\"completion_tokens\":7,",
         "\"prompt_tokens_details\":{\"cached_tokens\":60}}}\n\ndata: [DONE]\n\n",
     ];
+    const WITH_COST: &[&str] = &[
+        "data: {\"choices\":[{\"delta\":{\"content\":\"hi\"}}]}\n\n",
+        "data: {\"choices\":[],\"usage\":{\"prompt_tokens\":900,\"completion_tokens\":50,\"cost\":0.0042}}\n\n",
+        "data: [DONE]\n\n",
+    ];
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
     let addr = listener.local_addr().unwrap();
     let app = axum::Router::new()
@@ -4012,7 +4017,13 @@ data: {"type":"message_"#,
         )
         .route(
             "/v1/chat/completions",
-            axum::routing::post(|| async { sse(OPENAI, false) }),
+            axum::routing::post(|body: String| async move {
+                if body.contains("tencent/") {
+                    sse(WITH_COST, false)
+                } else {
+                    sse(OPENAI, false)
+                }
+            }),
         );
     tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });
     format!("http://{addr}")
@@ -4235,6 +4246,7 @@ async fn usage_filters_groups_and_price_overrides() {
             cache_read: None,
             cache_write: None,
         },
+        cost_usd: None,
         latency_ms: 5,
         status: UsageStatus::Ok,
     };
@@ -4487,4 +4499,60 @@ async fn voice_keys_change_without_switching_the_provider() {
     let (_, voice) = key("openrouter", Value::Null).await;
     assert_eq!(voice["providers"][1]["has_key"], false);
     assert_eq!(key("nope", json!("x")).await.0, 404);
+}
+
+#[tokio::test]
+async fn openrouter_calls_cost_what_openrouter_reports() {
+    let upstream = usage_upstream().await;
+    let backend = Arc::new(StatefulBackend::default());
+    let d = start(backend.clone(), None, "127.0.0.1:0").await;
+    for (name, kind) in [("or", "openrouter"), ("oai", "openai")] {
+        let body = json!({"name": name, "kind": kind, "base_url": format!("{upstream}/v1"),
+                          "api_key": "k", "default_model": "tencent/hy4-flash"});
+        let (status, p) = http(&d.ui, "POST", "/v1/providers", Some(body)).await;
+        assert_eq!(status, 201, "{p}");
+        let agent = if kind == "openrouter" { "ora" } else { "oli" };
+        create(&d, json!({"name": agent, "provider_id": p["id"]})).await;
+    }
+    for agent in ["ora", "oli"] {
+        let bearer = format!("Bearer {}", backend.token(agent));
+        let body = br#"{"model":"tencent/hy4-flash","stream":true}"#;
+        let (status, _, _) = http_raw(
+            &d.agents,
+            "POST",
+            "/model/chat/completions",
+            &[("authorization", &bearer)],
+            body,
+        )
+        .await;
+        assert_eq!(status, 200);
+    }
+    let report = eventually("two calls", Duration::from_secs(5), || async {
+        let (_, r) = http(&d.ui, "GET", "/v1/usage?group_by=agent", None).await;
+        (r["totals"]["calls"] == 2).then_some(r)
+    })
+    .await;
+    let group = |name: &str| {
+        report["groups"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|g| g["label"] == name)
+            .unwrap()
+            .clone()
+    };
+    let ora = group("ora");
+    assert_eq!(
+        ora["cost_usd"], 0.0042,
+        "the charge, though no price is listed"
+    );
+    assert_eq!(ora["unknown_cost_calls"], 0);
+    let oli = group("oli");
+    assert_eq!(
+        oli["cost_usd"],
+        Value::Null,
+        "only OpenRouter's word counts"
+    );
+    assert_eq!(oli["unknown_cost_calls"], 1);
+    assert_eq!(report["totals"]["cost_usd"], 0.0042);
 }
