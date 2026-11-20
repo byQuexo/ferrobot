@@ -427,6 +427,8 @@ textarea { resize: vertical; min-height: 40px; line-height: 1.5; }
 .mic.on { background: var(--err); color: #fff; animation: mic-pulse 1.2s ease-in-out infinite; }
 @keyframes mic-pulse { 50% { box-shadow: 0 0 0 6px var(--err-soft); } }
 @media (prefers-reduced-motion: reduce) { .mic.on { animation: none; } }
+.call-people { display: inline-flex; align-items: center; }
+.call-people > * + * { margin-left: -6px; }
 
 /* ---------- info panel ---------- */
 .info { display: flex; flex-direction: column; min-height: 0; background: var(--sidebar); border-left: 1px solid var(--border); }

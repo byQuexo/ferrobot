@@ -420,4 +420,29 @@ the code and this file together.
   page's microphone request itself. Not tried in the real window; a signed
   build with the hardened runtime also needs the
   `com.apple.security.device.audio-input` entitlement.
-- **Follow-up:** a voice per agent; cheaper streaming playback.
+- **Voice on is a call; agents bring teammates in.** Switching voice on in a
+  chat starts the operator's voice call with that agent (`PUT /v1/call`,
+  in memory, so a daemon restart ends it); switching it off or leaving the
+  chat ends it. Agents in the call have an `invite_to_call(agent, topic)`
+  tool: the teammate joins and gets the topic as mail from the inviter,
+  which starts its first turn. At most 4 agents per call. With more than one
+  agent, what the operator says or types goes to all of them
+  (`POST /v1/call/messages`), and every agent's replies are spoken, each with
+  its own voice if one is set (`agent_voices`, by agent id).
+- **Agents in a call never start each other's turns.** A deferred message
+  (`priority: false`) is no guard: an awake runner claims it at once, so two
+  agents forwarding replies to each other would loop and burn money. Instead
+  the daemon keeps what each agent said (its `assistant_text`, cut to 1500
+  characters, at most 12 KiB per listener, oldest dropped) and puts it in
+  front of the operator's next message to each other agent ("In the call
+  since your last turn: ..."). Only the operator's messages and invitations
+  start turns. The invitation tells the teammate to answer in its reply
+  (spoken), not with `send_message`.
+- **Costs and open questions:** each message in a call with N agents starts
+  N turns, and agents that were not addressed will probably still answer.
+  Options: route by spoken name, or let agents stay silent with an empty
+  reply. Agents also hear each other only with the operator's next message,
+  so the call is operator-driven, not a free discussion.
+- **Follow-up:** streaming playback; a remove button per call participant
+  (today: end the call); telling the host agent that the operator is
+  listening (it does not know until someone joins).

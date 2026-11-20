@@ -46,10 +46,14 @@ export function Chat(props: {
   const [routines, setRoutines] = useState<Routine[]>([]);
   const [live, setLive] = useState<Map<string, string>>(new Map());
   const [loaded, setLoaded] = useState(false);
+  // Voice on = a voice call with this agent; agents in it may invite others.
   const [voice, setVoice] = useState(false);
+  const [call, setCall] = useState<string[]>([]);
   // Read by the live-event listener, which outlives renders.
   const voiceOn = useRef(false);
   voiceOn.current = voice;
+  const inCall = useRef(call);
+  inCall.current = call;
   const names = useRef(agents);
   names.current = agents;
   const spoken = useRef(new Set<number>());
@@ -58,18 +62,32 @@ export function Chat(props: {
     [client],
   );
 
+  const endCall = (): void => {
+    speaker.stop();
+    setVoice(false);
+    setCall([]);
+  };
   const toggleVoice = async (): Promise<void> => {
     if (voice) {
-      speaker.stop();
-      setVoice(false);
+      endCall();
+      void run(() => client.setCall([]));
       return;
     }
     const settings = await run(() => client.voice());
     if (!settings) return;
-    const ready = settings.providers.find((p) => p.kind === settings.provider)?.has_key;
-    if (ready) setVoice(true);
-    else toast("Set up voice first (the sound wave button in the sidebar)", "info");
+    const provider = settings.providers.find((p) => p.kind === settings.provider);
+    if (!provider?.has_key || !(settings.voice ?? provider.default_voice)) {
+      toast("Set up voice first: a key and a voice (the sound wave button in the sidebar)", "info");
+      return;
+    }
+    const agents = await run(() => client.setCall([id]));
+    if (!agents) return;
+    setCall(agents);
+    setVoice(true);
   };
+  // Everyone in a call hears what the operator says; otherwise it goes to this agent only.
+  const send = (body: string): Promise<unknown> =>
+    voice && call.length > 1 ? client.sayInCall(body) : client.send(id, body);
 
   // Initial load + live updates for the selected agent.
   useEffect(() => {
@@ -91,14 +109,16 @@ export function Chat(props: {
     void run(load);
     const off = listen((e) => {
       switch (e.type) {
-        case "event":
-          if (e.event.agent_id !== id) return;
-          setEvents((prev) => (prev.some((x) => x.id === e.event.id) ? prev : [...prev, e.event]));
-          if (voiceOn.current && e.event.kind === "assistant_text" && !spoken.current.has(e.event.id)) {
-            spoken.current.add(e.event.id);
-            const text = (e.event.payload as { text?: unknown }).text;
-            if (typeof text === "string") speaker.say(speakable(text, (aid) => names.current.get(aid)?.name));
+        case "event": {
+          const ev = e.event;
+          const speaks = ev.agent_id === id || inCall.current.includes(ev.agent_id);
+          if (voiceOn.current && speaks && ev.kind === "assistant_text" && !spoken.current.has(ev.id)) {
+            spoken.current.add(ev.id);
+            const text = (ev.payload as { text?: unknown }).text;
+            if (typeof text === "string") speaker.say(speakable(text, (aid) => names.current.get(aid)?.name), ev.agent_id);
           }
+          if (ev.agent_id !== id) return;
+          setEvents((prev) => (prev.some((x) => x.id === e.event.id) ? prev : [...prev, e.event]));
           if (e.event.turn_id && (e.event.kind === "assistant_text" || e.event.kind === "turn_done")) {
             const turn = e.event.turn_id;
             setLive((prev) => {
@@ -109,6 +129,12 @@ export function Chat(props: {
             });
           }
           if (e.event.kind === "turn_done") void client.markRead(id).catch(() => undefined);
+          break;
+        }
+        case "call":
+          if (!voiceOn.current) return;
+          if (e.agents.includes(id)) setCall(e.agents);
+          else endCall();
           break;
         case "delta":
           if (e.agent_id !== id) return;
@@ -131,8 +157,9 @@ export function Chat(props: {
     return () => {
       cancelled = true;
       off();
-      speaker.stop();
-      setVoice(false);
+      // Leaving the chat hangs up.
+      if (voiceOn.current) void client.setCall([]).catch(() => undefined);
+      endCall();
     };
   }, [id]);
 
@@ -181,7 +208,15 @@ export function Chat(props: {
             <CircleStop size={15} /> Stop turn
           </Button>
         )}
-        <IconButton label={voice ? "Stop reading replies aloud" : "Read replies aloud"} onClick={() => void toggleVoice()} pressed={voice}>
+        {voice && call.length > 1 && (
+          <span class="call-people" title={`Also in the call: ${call.filter((a) => a !== id).map((a) => agents.get(a)?.name ?? "?").join(", ")}`}>
+            {call.filter((a) => a !== id).map((a) => {
+              const peer = agents.get(a);
+              return peer ? <Avatar key={a} agent={peer} size={24} /> : null;
+            })}
+          </span>
+        )}
+        <IconButton label={voice ? "End the voice call" : "Voice call: read replies aloud"} onClick={() => void toggleVoice()} pressed={voice}>
           {voice ? <Volume2 size={18} /> : <VolumeX size={18} />}
         </IconButton>
         <IconButton label="Edit agent" onClick={props.onEdit}>
@@ -220,7 +255,7 @@ export function Chat(props: {
         )}
       </div>
 
-      <Composer agent={agent} onTalk={() => { speaker.stop(); }} />
+      <Composer agent={agent} send={send} onTalk={() => { speaker.stop(); }} />
     </section>
   );
 }
@@ -436,7 +471,7 @@ export function ToolCard(props: { item: Extract<TimelineItem, { type: "tool" }> 
 }
 
 /** Hold to talk, or click to start and click again to send; the recording is transcribed and sent. */
-function MicButton(props: { agent: Agent; onTalk: () => void }): JSX.Element {
+function MicButton(props: { agent: Agent; send: (body: string) => Promise<unknown>; onTalk: () => void }): JSX.Element {
   const { client, run, toast } = useApp();
   const [recording, setRecording] = useState(false);
   const [transcribing, setTranscribing] = useState(false);
@@ -455,7 +490,7 @@ function MicButton(props: { agent: Agent; onTalk: () => void }): JSX.Element {
     setTranscribing(false);
     if (text === undefined) return;
     if (!text) toast("Nothing heard", "info");
-    else await run(() => client.send(props.agent.id, text));
+    else await run(() => props.send(text));
   };
   const start = async (): Promise<void> => {
     props.onTalk();
@@ -505,8 +540,8 @@ function MicButton(props: { agent: Agent; onTalk: () => void }): JSX.Element {
   );
 }
 
-function Composer(props: { agent: Agent; onTalk: () => void }): JSX.Element {
-  const { client, run } = useApp();
+function Composer(props: { agent: Agent; send: (body: string) => Promise<unknown>; onTalk: () => void }): JSX.Element {
+  const { run } = useApp();
   const [text, setText] = useState("");
   const [sending, setSending] = useState(false);
   const ref = useRef<HTMLTextAreaElement>(null);
@@ -522,7 +557,7 @@ function Composer(props: { agent: Agent; onTalk: () => void }): JSX.Element {
     const body = text.trim();
     if (!body || sending) return;
     setSending(true);
-    const ok = await run(() => client.send(props.agent.id, body));
+    const ok = await run(() => props.send(body));
     setSending(false);
     if (ok) setText("");
   };
@@ -549,7 +584,7 @@ function Composer(props: { agent: Agent; onTalk: () => void }): JSX.Element {
           }
         }}
       />
-      <MicButton agent={props.agent} onTalk={props.onTalk} />
+      <MicButton agent={props.agent} send={props.send} onTalk={props.onTalk} />
       <button type="submit" class="send" disabled={!text.trim() || sending} aria-label="Send" title="Send (Enter)">
         <SendHorizontal size={18} />
       </button>

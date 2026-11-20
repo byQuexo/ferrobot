@@ -193,10 +193,16 @@ export class DaemonClient {
   // voice
   voice = (): Promise<VoiceView> => this.#request("GET", "/v1/voice");
   updateVoice = (req: UpdateVoice): Promise<VoiceView> => this.#request("PUT", "/v1/voice", req);
-  /** `text` spoken by the configured voice (usually mp3). */
-  speech = async (text: string): Promise<Blob> => (await this.#fetch("POST", "/v1/voice/speech", { text })).blob();
+  /** `text` spoken by the configured voice, or by `agent`'s own one (usually mp3). */
+  speech = async (text: string, agent?: string): Promise<Blob> =>
+    (await this.#fetch("POST", "/v1/voice/speech", { text, agent_id: agent ?? null })).blob();
   transcribe = async (audio: Blob): Promise<string> =>
     (await this.#request<{ text: string }>("POST", "/v1/voice/transcription", audio)).text;
+  /** Starts, changes or (empty) ends the voice call; returns who is in it. */
+  setCall = async (agents: string[]): Promise<string[]> =>
+    (await this.#request<{ agents: string[] }>("PUT", "/v1/call", { agents })).agents;
+  /** The operator's message to everyone in the call. */
+  sayInCall = (body: string): Promise<MailMessage[]> => this.#request("POST", "/v1/call/messages", { body });
 
   // agent-to-agent conversations (read-only)
   listConversations = (): Promise<Conversation[]> => this.#request("GET", "/v1/conversations");

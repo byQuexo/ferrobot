@@ -29,21 +29,22 @@ export function speakable(text: string, nameOf: (id: string) => string | undefin
 
 /** Plays texts one after another; each one's audio is fetched as soon as it is queued. */
 export class Speaker {
-  readonly #fetch: (text: string) => Promise<Blob>;
+  readonly #fetch: (text: string, agent?: string) => Promise<Blob>;
   readonly #onError: (err: unknown) => void;
   #queue: Promise<Blob | null>[] = [];
   #audio: HTMLAudioElement | null = null;
   #round = 0;
   #playing = false;
 
-  constructor(fetchAudio: (text: string) => Promise<Blob>, onError: (err: unknown) => void) {
+  constructor(fetchAudio: (text: string, agent?: string) => Promise<Blob>, onError: (err: unknown) => void) {
     this.#fetch = fetchAudio;
     this.#onError = onError;
   }
 
-  say(text: string): void {
+  /** Queues `text`, spoken with `agent`'s voice if it has one. */
+  say(text: string, agent?: string): void {
     if (!text) return;
-    this.#queue.push(this.#fetch(text).catch((err: unknown) => {
+    this.#queue.push(this.#fetch(text, agent).catch((err: unknown) => {
       this.#onError(err);
       return null;
     }));
@@ -61,7 +62,9 @@ export class Speaker {
   async #play(): Promise<void> {
     const round = this.#round;
     this.#playing = true;
-    for (let next = this.#queue.shift(); next && round === this.#round; next = this.#queue.shift()) {
+    while (round === this.#round) {
+      const next = this.#queue.shift();
+      if (!next) break;
       const blob = await next;
       if (!blob || round !== this.#round) continue;
       const url = URL.createObjectURL(blob);
