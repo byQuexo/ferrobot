@@ -152,20 +152,20 @@ impl Prices {
 
     pub fn get(&self, kind: &str, model: &str) -> Option<Price> {
         let kind = kind.parse::<ProviderKind>().ok()?;
-        if kind == ProviderKind::Ollama {
-            return Some(Price::FREE);
-        }
         // Codex and Gemini CLI call the same models, at the same prices, as OpenAI and Gemini.
         let fallback = match kind {
             ProviderKind::Codex => ProviderKind::Openai,
             ProviderKind::GeminiCli => ProviderKind::Gemini,
             other => other,
         };
-        [kind, fallback].into_iter().find_map(|k| {
-            [model, undated(model)]
-                .into_iter()
-                .find_map(|m| self.0.get(&(k.as_str(), m.to_owned())).copied())
-        })
+        [kind, fallback]
+            .into_iter()
+            .find_map(|k| {
+                [model, undated(model)]
+                    .into_iter()
+                    .find_map(|m| self.0.get(&(k.as_str(), m.to_owned())).copied())
+            })
+            .or((kind == ProviderKind::Ollama).then_some(Price::FREE))
     }
 }
 
@@ -248,13 +248,26 @@ mod tests {
 
     #[test]
     fn lookup_falls_back_and_overrides_win() {
-        let prices = Prices::new(vec![PriceEntry {
-            provider_kind: ProviderKind::Openai,
-            model: "gpt-5".into(),
-            price: Price::FREE,
+        let own = |provider_kind, model: &str, price| PriceEntry {
+            provider_kind,
+            model: model.into(),
+            price,
             checked: None,
             source: None,
-        }]);
+        };
+        let paid = Price {
+            input: 1.0,
+            ..Price::FREE
+        };
+        let prices = Prices::new(vec![
+            own(ProviderKind::Openai, "gpt-5", Price::FREE),
+            own(ProviderKind::Ollama, "llama-paid", paid),
+        ]);
+        assert_eq!(
+            prices.get("ollama", "llama-paid"),
+            Some(paid),
+            "an override beats free"
+        );
         let sonnet = prices
             .get("anthropic", "claude-sonnet-4-5-20250929")
             .unwrap();
