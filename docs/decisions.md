@@ -164,3 +164,21 @@ the code and this file together.
   `danger-full-access` Codex rarely asks, so the runner's `decide()` guard
   rails mostly do not apply to Codex's own commands; the container stays the
   boundary. Requests Codex does send are still answered with `decide()`.
+
+## L4: ACP driver
+
+- **One generic ACP client, one agent for now** (`FERROBOT_ACP_AGENT=gemini`).
+  Gemini specifics: `--acp --model`, `GEMINI_CLI_TRUST_WORKSPACE=true`, and
+  `security.auth.selectedType = "gemini-api-key"` merged into
+  `~/.gemini/settings.json` (without it Gemini picks its gateway auth and
+  refuses headless). No secret is written there.
+- **New provider kind `gemini_cli`** instead of reusing `gemini`: `gemini`
+  stays the OpenAI-compatible API path, `gemini_cli` is the harness with its
+  own tools.
+- **Instructions are prepended to the first prompt** of a session: Gemini
+  does not offer ACP's system-prompt capability.
+- **`@google/gemini-cli` pinned to 0.67.0** (Apache-2.0, ~500k weekly
+  downloads), about two weeks old; Tim asked for Gemini CLI.
+- **MCP server stateless.** Nothing in ferrobot needs MCP sessions or
+  server-to-client notifications; stateless removes the GET stream that broke
+  Gemini CLI and the session-lost case after a daemon restart.

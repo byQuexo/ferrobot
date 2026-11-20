@@ -208,3 +208,43 @@ store used for the run) or the daemon's own env.
 - No real OpenAI key either (`OPENAI_API_KEY` unset), so the L3 turn ran
   against Ollama's Responses API instead of OpenAI; a ChatGPT sign-in was not
   tried.
+
+## L4: ACP driver, Gemini CLI first (`feature/acp-driver`)
+
+**Done**
+
+- Provider kind `gemini_cli` (driver `acp`): the sandbox gets the agent
+  token as `GEMINI_API_KEY` and the proxy as `GOOGLE_GEMINI_BASE_URL`; the
+  proxy accepts the token from `x-goog-api-key` and sends the real key the
+  same way to `https://generativelanguage.googleapis.com`.
+- Runner `drivers/acp.ts`: ACP client over stdio (`initialize`,
+  `authenticate`, `session/new` with the ferrobot MCP server over HTTP,
+  `session/load` for resume, `session/prompt`, `session/update` → turn
+  events, `session/request_permission` → `decide()`, `session/cancel`).
+- `@google/gemini-cli@0.67.0` in the runner image.
+- MCP server is now stateless (`legacy_session_mode = false`).
+
+**Tested**
+
+- Runner: 16 tests against a scripted fake ACP agent; the subagent also ran
+  the driver against the real `gemini --acp` 0.67.0 offline (fake Gemini API).
+- Daemon: `gemini_cli_agents_reach_the_gemini_api_through_the_proxy`.
+- Live in Docker through the real daemon proxy and a fake Gemini API: a
+  `run_shell_command` call ran in the container and the ferrobot `remember`
+  MCP tool stored a memory (the roadmap's "mailbox remains reachable").
+  The fake upstream saw only the provider's canary key; the canary is in no
+  container env, file or log, and the agent token is not written to disk.
+
+**Fixed because of it**
+
+- Gemini CLI dropped every ferrobot tool: after `tools/list` it opens the
+  standalone GET stream, rmcp answered with an empty body, the client
+  disconnected. The MCP server now runs stateless (no sessions, no GET
+  stream); Claude SDK, Codex and the runner's own client work the same.
+
+**Open**
+
+- No real Gemini model (no `GEMINI_API_KEY` in the environment).
+- Gemini 0.67 runs some commands without asking, so `decide()` only sees what
+  it asks about; its shell results reach the timeline as "completed" only.
+- The `session/load` replay drain is timing-based (200 ms quiet, max 5 s).

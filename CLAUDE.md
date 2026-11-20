@@ -38,7 +38,8 @@ crates/daemon    ferrobotd: axum UI API (/v1), agent API (/runner/ws, /mcp, /mod
 runner/          TypeScript runner inside each sandbox: drives the model
                  (drivers/claude.ts via Claude Agent SDK, drivers/openai.ts for
                  OpenAI-compatible providers, drivers/codex.ts via `codex
-                 app-server`, drivers/mock.ts)
+                 app-server`, drivers/acp.ts for ACP agents (Gemini CLI),
+                 drivers/mock.ts)
 apps/desktop/    Preact + Vite UI in a Tauri shell (own Cargo workspace)
 protocol/        generated OpenAPI + JSON Schemas, fixtures, README (the contract)
 scripts/         seed-demo.sh, smoke-docker.sh
