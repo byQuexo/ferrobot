@@ -203,9 +203,8 @@ export function ProvidersSettings(): JSX.Element {
                   class="provider-rekey"
                   onSubmit={(e) => {
                     e.preventDefault();
-                    void run(() =>
-                      client.updateProvider(p.id, { api_key: rekey.key.trim() || null }),
-                    ).then(() => {
+                    void run(async () => {
+                      await client.updateProvider(p.id, { api_key: rekey.key.trim() || null });
                       setRekey(null);
                     });
                   }}

@@ -269,16 +269,15 @@ export function ConnectorsSettings(): JSX.Element {
                   onSubmit={(e) => {
                     e.preventDefault();
                     const draft = editApp;
-                    void run(() =>
-                      client.updateConnector(c.id, {
+                    void run(async () => {
+                      await client.updateConnector(c.id, {
                         client_id: draft.clientId.trim() || null,
                         issuer: draft.issuer.trim() || null,
                         ...(draft.clientSecret.trim()
                           ? { client_secret: draft.clientSecret.trim() }
                           : {}),
                         scopes: scopesOf(draft.scopes),
-                      }),
-                    ).then(() => {
+                      });
                       setEditApp(null);
                     });
                   }}
@@ -307,9 +306,8 @@ export function ConnectorsSettings(): JSX.Element {
                   class="provider-rekey"
                   onSubmit={(e) => {
                     e.preventDefault();
-                    void run(() =>
-                      client.updateConnector(c.id, { token: retoken.token.trim() || null }),
-                    ).then(() => {
+                    void run(async () => {
+                      await client.updateConnector(c.id, { token: retoken.token.trim() || null });
                       setRetoken(null);
                     });
                   }}

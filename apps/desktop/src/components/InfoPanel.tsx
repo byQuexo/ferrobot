@@ -282,7 +282,8 @@ function Computer(props: { agent: Agent }): JSX.Element {
               class="inline-form"
               onSubmit={(e) => {
                 e.preventDefault();
-                void act(() => client.snapshot(id, label.trim() || "manual")).then(() => {
+                void act(async () => {
+                  await client.snapshot(id, label.trim() || "manual");
                   setLabel("");
                 });
               }}
