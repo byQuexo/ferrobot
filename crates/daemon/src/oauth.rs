@@ -37,6 +37,56 @@ pub fn client_key(connector: Uuid) -> String {
     format!("connector-client:{connector}")
 }
 
+/// Where the client a server registered for us (dynamic registration) is
+/// kept, when the server issued a secret with it.
+pub fn registration_key(connector: Uuid) -> String {
+    format!("connector-dcr:{connector}")
+}
+
+/// A dynamically registered confidential client. rmcp keeps only the id.
+#[derive(Serialize, Deserialize)]
+struct Registration {
+    client_id: String,
+    client_secret: String,
+}
+
+/// The secret of `client_id`: the own app's, else the one a server issued
+/// when it registered that client.
+async fn secret_for(
+    state: &AppState,
+    id: Uuid,
+    config: &ClientConfig,
+    client_id: &str,
+) -> Result<Option<String>, String> {
+    if config.client_id.as_deref() == Some(client_id) {
+        return Ok(config.client_secret.clone());
+    }
+    let Some(json) = state
+        .settings
+        .secrets
+        .get(&registration_key(id))
+        .await
+        .map_err(|e| e.to_string())?
+    else {
+        return Ok(None);
+    };
+    let reg: Registration = serde_json::from_str(&json).map_err(|e| e.to_string())?;
+    Ok((reg.client_id == client_id).then_some(reg.client_secret))
+}
+
+async fn stored_credentials(state: &AppState, id: Uuid) -> Option<StoredCredentials> {
+    let json = state.settings.secrets.get(&secret_key(id)).await.ok()??;
+    serde_json::from_str(&json).ok()
+}
+
+/// Forgets the connector's tokens, registration and open sign-ins.
+pub async fn forget_tokens(state: &AppState, id: Uuid) -> Result<(), crate::error::ApiError> {
+    state.settings.secrets.delete(&secret_key(id)).await?;
+    state.settings.secrets.delete(&registration_key(id)).await?;
+    state.oauth.forget(id).await;
+    Ok(())
+}
+
 /// The operator's own OAuth app for a connector, for servers without dynamic
 /// client registration (Google, GitHub, Slack, ...), and scopes to ask for.
 #[derive(Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
@@ -186,7 +236,15 @@ pub async fn signed_in(state: &AppState, id: Uuid) -> bool {
     sign_in(state, id).await == SignIn::SignedIn
 }
 
-type Waiting = (Uuid, AuthorizationSession, Instant, String);
+/// A sign-in waiting for the browser.
+struct Waiting {
+    connector: Uuid,
+    session: AuthorizationSession,
+    at: Instant,
+    /// [`fingerprint`] when it started.
+    started: String,
+    registration: Option<Registration>,
+}
 
 /// Sign-ins waiting for the browser (by their OAuth `state`) and one refresh
 /// lock per connector.
@@ -213,7 +271,7 @@ impl OAuth {
         self.pending
             .lock()
             .await
-            .retain(|_, (id, ..)| *id != connector);
+            .retain(|_, w| w.connector != connector);
     }
 }
 
@@ -325,10 +383,31 @@ pub async fn start(state: &AppState, c: &Connector) -> Result<String, String> {
         .await
         .ok_or("the connector is gone")?;
     let mut request = AuthorizationRequest::new(redirect_uri(state)).with_client_name("ferrobot");
+    let mut registration = None;
     if let Some(id) = &config.client_id {
         request = request.with_preregistered_client(id.clone());
         if let Some(secret) = &config.client_secret {
             request = request.with_client_secret(secret.clone());
+        }
+    } else {
+        // rmcp would register as well, but it drops a secret the server issues.
+        let scopes = if config.scopes.is_empty() {
+            manager.select_initial_scopes(&[]).await
+        } else {
+            config.scopes.clone()
+        };
+        let refs: Vec<&str> = scopes.iter().map(String::as_str).collect();
+        let registered = manager
+            .register_client("ferrobot", &redirect_uri(state), &refs)
+            .await
+            .map_err(fail)?;
+        request = request.with_preregistered_client(registered.client_id.clone());
+        if let Some(secret) = registered.client_secret {
+            request = request.with_client_secret(secret.clone());
+            registration = Some(Registration {
+                client_id: registered.client_id,
+                client_secret: secret,
+            });
         }
     }
     if !config.scopes.is_empty() {
@@ -356,8 +435,15 @@ pub async fn start(state: &AppState, c: &Connector) -> Result<String, String> {
         .map_err(|_| "the authorization URL needs exactly one state".to_owned())?;
     let url = with_provider_params(parsed).to_string();
     let mut pending = state.oauth.pending.lock().await;
-    pending.retain(|_, (_, _, at, _)| at.elapsed() < PENDING_TTL);
-    pending.insert(csrf, (c.id, session, Instant::now(), started));
+    pending.retain(|_, w| w.at.elapsed() < PENDING_TTL);
+    let waiting = Waiting {
+        connector: c.id,
+        session,
+        at: Instant::now(),
+        started,
+        registration,
+    };
+    pending.insert(csrf, waiting);
     Ok(url)
 }
 
@@ -369,12 +455,14 @@ pub async fn finish(
     issuer: Option<&str>,
 ) -> Result<Uuid, &'static str> {
     let entry = state.oauth.pending.lock().await.remove(csrf);
-    let (id, session, at, started) = entry.ok_or("This sign-in is unknown or was already used.")?;
-    if at.elapsed() > PENDING_TTL {
+    let waiting = entry.ok_or("This sign-in is unknown or was already used.")?;
+    let id = waiting.connector;
+    if waiting.at.elapsed() > PENDING_TTL {
         return Err("This sign-in expired. Start it again in ferrobot.");
     }
     let code = code.ok_or("The sign-in was cancelled.")?;
-    if let Err(e) = session
+    if let Err(e) = waiting
+        .session
         .handle_callback_with_issuer(code, csrf, issuer)
         .await
     {
@@ -385,12 +473,23 @@ pub async fn finish(
             .pending
             .lock()
             .await
-            .insert(csrf.to_owned(), (id, session, at, started));
+            .insert(csrf.to_owned(), waiting);
         return Err("The sign-in failed. Try again in ferrobot.");
     }
-    if fingerprint(state, id).await.as_ref() != Some(&started) {
+    if fingerprint(state, id).await.as_ref() != Some(&waiting.started) {
         let _ = state.settings.secrets.delete(&secret_key(id)).await;
         return Err("This connector changed or was deleted during the sign-in.");
+    }
+    // Stored only now: an abandoned sign-in must not replace the client the
+    // current tokens belong to.
+    let secrets = &state.settings.secrets;
+    let saved = match waiting.registration.as_ref().map(serde_json::to_string) {
+        Some(Ok(json)) => secrets.set(&registration_key(id), &json).await,
+        _ => secrets.delete(&registration_key(id)).await,
+    };
+    if saved.is_err() {
+        let _ = secrets.delete(&secret_key(id)).await;
+        return Err("The secret store is unavailable; the sign-in was not kept.");
     }
     state.connectors.evict_connector(id).await;
     Ok(id)
@@ -413,9 +512,15 @@ pub async fn client(
         return Ok(None);
     }
     // rmcp stores no client secret; a confidential client needs it to refresh.
-    if let (Some(id), Some(secret)) = (&config.client_id, &config.client_secret) {
-        let mut client = OAuthClientConfig::new(id.clone(), redirect_uri(state))
-            .with_client_secret(secret.clone());
+    let Some(stored) = stored_credentials(state, c.id).await else {
+        return Ok(None);
+    };
+    let secret = secret_for(state, c.id, &config, &stored.client_id)
+        .await
+        .map_err(store_err)?;
+    if let Some(secret) = secret {
+        let mut client = OAuthClientConfig::new(stored.client_id, redirect_uri(state))
+            .with_client_secret(secret);
         if !config.scopes.is_empty() {
             client = client.with_scopes(config.scopes.clone());
         }
@@ -430,8 +535,7 @@ pub async fn sign_out(state: &AppState, c: &Connector) -> Result<(), crate::erro
     if let Err(e) = revoke(state, c).await {
         tracing::warn!(connector = %c.name, error = %e, "could not revoke OAuth tokens");
     }
-    state.settings.secrets.delete(&secret_key(c.id)).await?;
-    state.oauth.forget(c.id).await;
+    forget_tokens(state, c.id).await?;
     state.connectors.evict_connector(c.id).await;
     Ok(())
 }
@@ -534,10 +638,10 @@ async fn revoke(state: &AppState, c: &Connector) -> Result<(), String> {
     }
     let host = revocation.host_str().unwrap_or_default().to_owned();
     let addr = checked_addr(&revocation, is_private(&c.url) || is_loopback(&c.url)).await?;
-    let client_id = config.client_id.unwrap_or(stored.client_id);
-    let mut client = oauth2::basic::BasicClient::new(oauth2::ClientId::new(client_id))
+    let secret = secret_for(state, c.id, &config, &stored.client_id).await?;
+    let mut client = oauth2::basic::BasicClient::new(oauth2::ClientId::new(stored.client_id))
         .set_revocation_url(oauth2::RevocationUrl::from_url(revocation));
-    if let Some(secret) = config.client_secret {
+    if let Some(secret) = secret {
         client = client.set_client_secret(oauth2::ClientSecret::new(secret));
     }
     // Revoking the refresh token ends the whole grant; else the access token.
