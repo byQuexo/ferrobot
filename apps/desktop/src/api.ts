@@ -38,6 +38,8 @@ export type CreateConnector = Schemas["CreateConnector"];
 export type UpdateConnector = Schemas["UpdateConnector"];
 export type DeviceCode = Schemas["DeviceCode"];
 export type LoginStatus = Schemas["LoginStatus"];
+export type ModelList = Schemas["ModelList"];
+export type ModelInfo = Schemas["ModelInfo"];
 
 export class ApiError extends Error {
   override name = "ApiError";
@@ -112,6 +114,8 @@ export class DaemonClient {
   deleteProvider = (id: string): Promise<void> => this.#request("DELETE", `/v1/providers/${id}`);
   startChatgptLogin = (id: string): Promise<DeviceCode> => this.#request("POST", `/v1/providers/${id}/chatgpt-login`);
   chatgptLoginStatus = (id: string): Promise<LoginStatus> => this.#request("GET", `/v1/providers/${id}/chatgpt-login`);
+  providerModels = (id: string): Promise<ModelList> => this.#request("GET", `/v1/providers/${id}/models`);
+  kindModels = (kind: ProviderKind): Promise<ModelList> => this.#request("GET", `/v1/provider-kinds/${kind}/models`);
 
   // connectors
   listConnectors = (): Promise<Connector[]> => this.#request("GET", "/v1/connectors");

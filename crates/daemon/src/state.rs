@@ -210,6 +210,8 @@ pub struct AppState {
     pub link_key: Arc<tokio::sync::OnceCell<ring::hmac::Key>>,
     /// Connector OAuth sign-ins waiting for the browser, refresh locks.
     pub oauth: Arc<crate::oauth::OAuth>,
+    /// Model lists recently fetched from providers.
+    pub model_lists: Arc<crate::models::ModelCache>,
 }
 
 impl AppState {
@@ -239,6 +241,7 @@ impl AppState {
             connectors: Arc::default(),
             link_key: Arc::default(),
             oauth: Arc::default(),
+            model_lists: Arc::default(),
         }
     }
 

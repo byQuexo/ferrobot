@@ -4,6 +4,7 @@ import { KeyRound, LogIn, Trash2 } from "lucide-preact";
 
 import type { DeviceCode, LoginStatus, Provider, ProviderKind } from "../api.ts";
 import { useApp } from "../context.ts";
+import { ModelPicker } from "./ModelPicker.tsx";
 import { Button, IconButton } from "./ui.tsx";
 
 export const KIND_LABELS: Record<ProviderKind, string> = {
@@ -223,7 +224,7 @@ export function ProvidersSettings(): JSX.Element {
         )}
         <label>
           Default model
-          <input value={model} placeholder="Used when an agent does not pick one" onInput={(e) => { setModel(e.currentTarget.value); }} />
+          <ModelPicker kind={kind} value={model} placeholder="None" onChange={setModel} />
         </label>
         {fields.key && (
           <label>

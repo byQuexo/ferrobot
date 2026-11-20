@@ -81,6 +81,8 @@ fn every_routed_path_is_documented() {
         "/v1/providers",
         "/v1/providers/{id}",
         "/v1/providers/{id}/chatgpt-login",
+        "/v1/providers/{id}/models",
+        "/v1/provider-kinds/{kind}/models",
         "/v1/connectors",
         "/v1/connectors/{id}",
         "/v1/agents/{id}/connectors",
@@ -93,7 +95,7 @@ fn every_routed_path_is_documented() {
     }
     assert_eq!(
         documented.len(),
-        37,
+        39,
         "undocumented extra paths: {documented:?}"
     );
 }

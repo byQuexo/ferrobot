@@ -7,6 +7,7 @@ import { characterOf, deriveCharacter, moodOf, rerollCharacter } from "../src/li
 import { relativeTime, stepLabel, toolLabel } from "../src/lib/format.ts";
 import { buildTimeline, sharedFiles } from "../src/lib/timeline.ts";
 import { parseBlocks, parseInline } from "../src/lib/markdown.ts";
+import { modelOptions } from "../src/lib/models.ts";
 
 const ME = "11111111-1111-4111-8111-111111111111";
 const BOB = "22222222-2222-4222-8222-222222222222";
@@ -261,5 +262,19 @@ describe("markdown", () => {
       { text: " snake_case_name" },
     ]);
     assert.deepEqual(parseInline("[x](javascript:alert(1))"), [{ text: "[x](javascript:alert(1))" }]);
+  });
+});
+
+describe("modelOptions", () => {
+  const models = [{ id: "claude-x", name: "Claude X" }, { id: "gpt-x", name: null }];
+
+  it("labels models and keeps a current id the list lacks", () => {
+    assert.deepEqual(modelOptions(models, ""), [["claude-x", "Claude X (claude-x)"], ["gpt-x", "gpt-x"]]);
+    assert.equal(modelOptions(models, "gpt-x").length, 2);
+    assert.deepEqual(modelOptions(models, "my-finetune")[0], ["my-finetune", "my-finetune"]);
+  });
+
+  it("has no options without a list, so the field is typed", () => {
+    assert.deepEqual(modelOptions([], "my-finetune"), []);
   });
 });

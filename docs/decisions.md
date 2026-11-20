@@ -539,3 +539,37 @@ the code and this file together.
   the operator never wrote). It costs one model call per creation and is not
   retried. `Settings::greet_new_agents` turns it off; the in-process test
   harness does, because fake runners expect the operator's message first.
+
+## Model picker
+
+- **Provider lists:** `GET /v1/providers/{id}/models` asks the provider's own
+  list endpoint below the same upstream the proxy uses, with the stored key:
+  Anthropic `/v1/models?limit=1000` (`x-api-key`, `anthropic-version`; the
+  default page is 20), the OpenAI family `{base}/models` with a bearer key
+  (Gemini through its OpenAI-compatible base; a leading `models/` is
+  stripped). They all answer `{"data": [{"id", ...}]}`, so one parser.
+- **Suggestions:** Bedrock, Vertex, Gemini CLI and a Codex provider on a
+  ChatGPT sign-in have no list we can reach with what the provider stores.
+  They, and every failed fetch (5 s timeout, 8 MB cap, non-2xx), get a short
+  built-in list (`source: "suggested"`) in `crates/daemon/src/models.rs`,
+  checked against the providers' docs on 2026-11-20 (URLs in the comment).
+  `openai_compatible` has none, so the UI shows a text field.
+- **Cache:** only fetched lists, 5 minutes, per provider, in memory. Editing
+  or deleting the provider drops its entry, so a fixed key shows at once.
+- **Key safety:** the upstream's error body is dropped (an OpenAI 401 echoes
+  part of the key) and only the status is logged; the shared HTTP client
+  follows no redirects.
+- **Kind route:** `GET /v1/provider-kinds/{kind}/models` returns the built-in
+  list without network or key, for the two fields that have no provider: the
+  add-provider form and agents on the daemon's own `ANTHROPIC_API_KEY`.
+- **Bedrock** suggestions are `global.` inference-profile ids because the
+  proxy talks to `bedrock-runtime`; the docs show that form only for Fable
+  5.2. **Vertex** suggestions need the `global` (or `us`/`eu`) region:
+  regional endpoints serve Claude Sonnet 4.6 and older only.
+- **Known limits:** OpenRouter's first page only (`shortcut:` comment);
+  OpenAI's list also has embedding and TTS models, not filtered.
+- **Desktop:** `Choice` in `ui.tsx` is a select with "Custom…" that turns
+  into a text field, after the voice branch's `Choice`. Its own class
+  (`.choice` is the connector chips), and a current id the list lacks stays
+  as an extra option, so editing an agent never drops its model while the
+  list loads.
