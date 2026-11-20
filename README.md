@@ -3,16 +3,18 @@
 **A free, self-hosted platform for AI agents where every agent gets its own computer.**
 
 ferrobot runs a small Rust daemon (`ferrobotd`) on your machine. Each agent you
-create gets its own sandbox (a Docker/Podman container today, microVMs later),
-an asynchronous mailbox for talking to you and to other agents, and a
-persistent memory. Inside each sandbox an agent runner drives the
-[Claude Agent SDK](https://www.npmjs.com/package/@anthropic-ai/claude-agent-sdk)
-and reaches the daemon through MCP tools.
+create gets its own sandbox (a Docker/Podman container today; a Firecracker
+microVM backend is written but needs a KVM host), an asynchronous mailbox for
+talking to you and to other agents, and a persistent memory. Inside each
+sandbox an agent runner drives a model harness (the
+[Claude Agent SDK](https://www.npmjs.com/package/@anthropic-ai/claude-agent-sdk),
+OpenAI's Codex, Google's Gemini CLI over ACP, or a built-in loop for
+OpenAI-compatible APIs) and reaches the daemon through MCP tools.
 
-> Status: **Phase 1 MVP.** Everything below works end to end with Docker and
-> the built-in mock model and is covered by tests. The Claude driver is
-> verified against the SDK's message types by a contract test but has not yet
-> been run against the live API (see [Status](#status)).
+> Status: everything below works end to end with Docker and the built-in mock
+> model and is covered by tests. Each real-model driver has run a tool-using
+> turn in Docker, but against local Ollama or fake upstreams: no provider has
+> been called with a real API key yet (see [Status](#status)).
 
 | Light | Dark |
 | --- | --- |
@@ -55,8 +57,14 @@ with `scripts/seed-demo.sh`.
 - **Live streaming:** assistant text deltas, tool calls with their results,
   presence (working / awake / starting / sleeping / error) and unread counts
   over one WebSocket.
-- **Model proxy:** with the Claude driver, sandboxes never see your
-  `ANTHROPIC_API_KEY`; they call the daemon, which adds the key.
+- **Model providers:** Anthropic, OpenAI, Gemini, Amazon Bedrock, Google
+  Vertex AI, OpenRouter, Ollama, any OpenAI-compatible endpoint, OpenAI Codex
+  (API key or a ChatGPT sign-in on your machine) and Gemini CLI; provider and
+  model are chosen per agent. Keys live in the OS keychain and never enter a
+  sandbox: sandboxes call the daemon's model proxy with their own agent token
+  and the daemon adds the real credential.
+- **Sleep levels:** idle sandboxes are paused (warm, Docker), then stopped
+  (cold), and optionally archived to object storage; a message wakes them.
 - **Persistence:** agents, conversations, memory, routines, snapshots and
   sleep state live in SQLite and survive daemon restarts. Snapshot archives
   go to the data dir, or to S3/R2 with `--storage-url s3://bucket/prefix`.
@@ -74,7 +82,7 @@ flowchart LR
 
     subgraph daemon["ferrobotd (Rust: tokio + axum)"]
         API["UI API /v1 (HTTP + WebSocket)<br/>127.0.0.1:7878, loopback only, operator token"]
-        AGENT["Agent API (bearer token per agent)<br/>/runner/ws + /mcp (rmcp)"]
+        AGENT["Agent API (bearer token per agent)<br/>/runner/ws + /mcp (rmcp) + /model (proxy)"]
         CORE["registry · dispatcher · lifecycle"]
         STORE[("SQLite: agents, mailbox,<br/>memory (FTS5), events, routines")]
         SB["SandboxBackend trait"]
@@ -82,7 +90,7 @@ flowchart LR
 
     subgraph sandboxes["One computer per agent"]
         subgraph s1["sandbox: alice"]
-            R1["agent runner (Node/TS)<br/>Claude Agent SDK or mock"]
+            R1["agent runner (Node/TS)<br/>Claude SDK · Codex · Gemini CLI (ACP)<br/>OpenAI-compatible · mock"]
         end
         subgraph s2["sandbox: bob"]
             R2["agent runner"]
@@ -117,14 +125,16 @@ reconnects. Interrupted turns are not retried.
 | --- | --- |
 | `crates/core` | Domain types (agent, mailbox, wire protocol). No I/O, no async runtime. |
 | `crates/store` | SQLite persistence: registry and profiles, **mailbox**, memory (FTS5), events, routines and runs, snapshots. |
-| `crates/sandbox` | `SandboxBackend` trait + `DockerBackend` (bollard, Docker or Podman), `LocalProcessBackend` (dev/CI only, **no isolation**), `SpritesBackend` (stub). |
+| `crates/sandbox` | `SandboxBackend` trait (incl. warm/cold/archived sleep) + `DockerBackend` (bollard, Docker or Podman), `LocalProcessBackend` (dev/CI only, **no isolation**), `FirecrackerBackend` (API client and vsock guest agent; booting needs KVM and is untested), `SpritesBackend` (stub). |
 | `crates/mcp` | The daemon's MCP server (rmcp, streamable HTTP) with bearer auth. |
-| `crates/daemon` | `ferrobotd`: HTTP/WS API, runner WebSocket, dispatcher, lifecycle, routine scheduler, idle/health supervisor, model proxy, spec generation. |
-| `runner/` | `@ferrobot/runner`: the TypeScript agent runner + its Docker image. |
+| `crates/daemon` | `ferrobotd`: HTTP/WS API, runner WebSocket, dispatcher, lifecycle, routine scheduler, idle/health supervisor, model providers and proxy, keychain secrets, Codex sign-in, object storage, spec generation. |
+| `runner/` | `@ferrobot/runner`: the TypeScript agent runner (drivers `claude`, `openai`, `codex`, `acp`, `mock`, plus the Firecracker guest agent) + its Docker image (ships `codex` and `gemini`). |
 | `apps/desktop/` | Tauri v2 desktop app: a Preact + Vite UI with no Tauri commands. |
 | `protocol/` | Generated OpenAPI + JSON Schemas and shared fixtures. See [`protocol/README.md`](protocol/README.md). |
 | `scripts/smoke-docker.sh` | End-to-end smoke test of the real binary with Docker (incl. sleep/wake and a daemon restart). |
 | `scripts/seed-demo.sh` | Fills a running daemon with demo agents, mail, memory and routines. |
+| `scripts/firecracker/` | Rootfs build script and guest init for the Firecracker backend (Linux + KVM only). |
+| `docs/progress.md`, `docs/decisions.md` | Status per roadmap phase (what is done, tested, open) and the assumptions made. |
 
 ### Design rules
 
@@ -239,8 +249,8 @@ Without `ANTHROPIC_API_KEY` the daemon still starts and warns: agents that
 use a model provider (below) work, agents on the default cannot reach a model.
 The Claude driver is
 covered by a contract test with SDK-typed fixtures
-(`runner/test/claude-contract.test.ts`) but has not been run against the live
-API in CI.
+(`runner/test/claude-contract.test.ts`) and ran a tool-using turn in Docker
+against a fake Anthropic upstream; it has not been run against the live API.
 
 ### Model providers
 
@@ -292,10 +302,12 @@ turn timeout, runner image, ...).
 ## API
 
 - HTTP: `protocol/openapi.json`: health; agents (create / list / get / edit
-  profile / delete, avatar upload, mark read); conversation (post / list) and
-  events; interrupt, stop, wake, exec; sandbox status; snapshots (list / take
-  / restore / delete); memory (list, search, upsert, delete); routines (CRUD,
-  enable/disable, run now, run history).
+  profile incl. provider and model / delete, avatar upload, mark read);
+  conversation (post / list) and events; interrupt, stop (warm / cold /
+  archived), wake, exec; sandbox status; snapshots (list / take / restore /
+  delete); memory (list, search, upsert, delete); routines (CRUD,
+  enable/disable, run now, run history); model providers (CRUD, ChatGPT
+  sign-in for Codex).
 - Live updates: `GET /v1/ws` streams `UiEvent` frames (`protocol/ui-events.schema.json`):
   agent snapshots with presence and unread count, turn events, text deltas,
   messages, memory and routine changes.
@@ -336,9 +348,17 @@ cargo test -p ferrobot-daemon  --features docker-tests --test e2e -- --ignored
 - Agent tokens are 256-bit random values, stored only as SHA-256 hashes, and
   rotated whenever a sandbox is provisioned. Every agent-API request is
   scoped to the calling agent.
-- `ANTHROPIC_API_KEY` stays in the daemon; sandboxes only hold their own agent
-  token, which the model proxy and the agent API accept for that agent only.
-  The token is a plain environment variable inside the container.
+- `ANTHROPIC_API_KEY` and provider keys stay in the daemon (provider keys in
+  the OS keychain; `--secret-store file` is a plaintext fallback for headless
+  CI only). ChatGPT tokens for Codex stay with the `codex` CLI on your machine.
+  Sandboxes only hold their own agent token, which the model proxy and the
+  agent API accept for that agent only. The token is a plain environment
+  variable inside the container.
+- With the Codex and Gemini CLI harnesses the runner's guard rails mostly do
+  not apply (those harnesses run many commands without asking); the sandbox
+  is the boundary.
+- Archived sandboxes (`--archive-after`) are stored unencrypted; use a local
+  `--storage-url` until encryption exists.
 - Avatar uploads are limited to PNG, JPEG, WebP and GIF (checked by content,
   max 512 KiB).
 - The operator API on `127.0.0.1:7878` requires the operator token (see
@@ -354,34 +374,41 @@ cargo test -p ferrobot-daemon  --features docker-tests --test e2e -- --ignored
   retries, memory with full-text search, an event log, routines with a cron
   scheduler and run history, unread counts, and the versioned HTTP + WebSocket
   API. State survives restarts (`crates/daemon/tests/features.rs`).
-- Docker/Podman backend: create, exec, files, wake, stop, destroy, idle sleep,
-  crash recovery, and snapshots with restore (root filesystem image + home
-  archive).
+- Docker/Podman backend: create, exec, files, wake, stop, destroy, warm/cold
+  sleep and archive to object storage, crash recovery, and snapshots with
+  restore (root filesystem image + home archive in the object store).
 - Agents talking through the mailbox, end to end in containers (mock model).
-- The MCP server, with per-agent auth, used by the runner.
+- The MCP server, with per-agent auth (stateless), used by every driver.
+- Model providers and the proxy: each kind's credential handling against a
+  fake upstream; keys never reach the sandbox env, files or logs (checked in
+  Docker with canary keys).
+- Real tool-using turns in Docker: `openai` and `codex` drivers against
+  Ollama, `claude` against a fake Anthropic upstream, `acp` (Gemini CLI)
+  against a fake Gemini API, including ferrobot MCP tool calls.
 - The runner: streaming, tool results, session resume, interrupts, a permission
-  policy and an audit log; the Claude driver against SDK-typed fixtures.
-- The model proxy (tested against a fake upstream).
-- The desktop app as described above (screenshots taken under Xvfb).
+  policy and an audit log.
+- The desktop app as described above, plus the provider dialogs.
 
 **Stubbed or not yet done:**
 
-- The `claude` driver has not been run against the live API.
+- No provider has been called with a real key (Anthropic, OpenAI, Gemini,
+  Bedrock, Vertex, ChatGPT sign-in).
+- Firecracker: no microVM has booted; process start, networking, snapshots
+  and the jailer are `TODO(kvm)`.
 - `SpritesBackend` returns `NotImplemented` for every operation.
-- Snapshots are Docker-only (the local backend copies directories but cannot
-  restore). Idle sleep works on every backend; warm sleep (pause) only on
-  Docker, other backends stay awake until the cold timeout.
+- Snapshots and archives are Docker-only; warm sleep (pause) is Docker-only,
+  other backends stay awake until the cold timeout.
+
+Details per phase: [`docs/progress.md`](docs/progress.md).
 
 ## Roadmap
 
-- **Next:** a live run of the Claude driver with a key, a file browser and
-  terminal in the info panel, and packaging the desktop app.
-- **Phase 2:** computer use inside sandboxes: Xvfb desktop, browser automation via
-  CDP (`chromiumoxide`), a desktop-control driver, and screenshots in the timeline.
-- **Phase 3:** a Sprites (Fly.io microVM) backend with checkpoints, plus other remote
-  backends.
-- **Phase 4:** an Agent Client Protocol (ACP) bridge and more model drivers; a native
-  macOS app on the same `/v1` API (and/or UniFFI-embedded core crates).
+- **Next:** live runs with real provider keys; Firecracker on a KVM host (boot,
+  networking, jailer, snapshot-based cold sleep); encryption for archives.
+- **Later:** a file browser and terminal in the info panel, packaging the
+  desktop app; computer use inside sandboxes (Xvfb desktop, browser automation
+  via CDP, screenshots in the timeline); a native macOS app on the same `/v1`
+  API.
 
 ## Clean-room note
 
