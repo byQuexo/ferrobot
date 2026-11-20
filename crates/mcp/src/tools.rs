@@ -167,6 +167,19 @@ pub struct ShareFileResult {
 }
 
 #[derive(Debug, Deserialize, JsonSchema)]
+pub struct InviteToCallArgs {
+    /// The teammate to bring in: its id or `@name`.
+    pub agent: String,
+    /// What the call is about and what you want from them.
+    pub topic: String,
+}
+
+#[derive(Debug, Serialize, JsonSchema)]
+pub struct InviteToCallResult {
+    pub note: String,
+}
+
+#[derive(Debug, Deserialize, JsonSchema)]
 pub struct ReadMailboxArgs {
     /// How many recent messages to return (default 20, max 100).
     pub limit: Option<u32>,
@@ -316,19 +329,24 @@ impl FerrobotTools {
         Ok(msg)
     }
 
-    /// Another agent, by id or current name.
-    async fn recipient(&self, me: AgentId, to: &str) -> Result<Agent, ErrorData> {
+    /// An agent by id or `@name`.
+    async fn agent(&self, to: &str) -> Result<Agent, ErrorData> {
         let to = to.trim().trim_start_matches('@');
         let store = &self.state.store;
         // Ids are stable; names are unique, so a name lookup is unambiguous.
-        let recipient = if let Ok(id) = to.parse::<AgentId>() {
+        if let Ok(id) = to.parse::<AgentId>() {
             store.get_agent(id).await
         } else {
             let name =
                 AgentName::parse(to).map_err(|e| ErrorData::invalid_params(e.to_string(), None))?;
             store.get_agent_by_name(name).await
         }
-        .map_err(store_err)?;
+        .map_err(store_err)
+    }
+
+    /// Another agent, by id or current name.
+    async fn recipient(&self, me: AgentId, to: &str) -> Result<Agent, ErrorData> {
+        let recipient = self.agent(to).await?;
         if recipient.id == me {
             return Err(ErrorData::invalid_params(
                 "cannot send a message to yourself",
@@ -619,6 +637,32 @@ impl FerrobotTools {
             ),
             name: shared.name,
             size: shared.size,
+        }))
+    }
+
+    #[tool(
+        description = "Bring a teammate into your voice call with the operator, e.g. one that works on \
+        or knows the topic. Only while the operator is in a voice call with you. Everyone in the call \
+        hears the operator; your replies there are read aloud, so answer in your reply, not with send_message."
+    )]
+    async fn invite_to_call(
+        &self,
+        Extension(parts): Extension<http::request::Parts>,
+        Parameters(args): Parameters<InviteToCallArgs>,
+    ) -> ToolResult<InviteToCallResult> {
+        let me = caller(&parts)?.0.id;
+        let topic = check_body(&args.topic)?;
+        let guest = self.agent(&args.agent).await?;
+        self.state
+            .notifier
+            .invite_to_call(me, guest.id, topic.to_owned())
+            .await
+            .map_err(|e| ErrorData::invalid_params(e, None))?;
+        Ok(Json(InviteToCallResult {
+            note: format!(
+                "@{} joins the call and gets your topic now. What they say reaches you with the operator's next message.",
+                guest.name
+            ),
         }))
     }
 

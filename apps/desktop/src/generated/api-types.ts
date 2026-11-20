@@ -399,6 +399,48 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/call": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Who is in the operator's voice call. */
+        get: operations["get_call"];
+        /**
+         * Starts, changes or (with no agents) ends the voice call. Agents in it
+         *     can invite others with their `invite_to_call` tool.
+         */
+        put: operations["put_call"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/call/messages": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Sends the operator's message to every agent in the call. Each one also
+         *     gets what the others said since its own last turn; agents' replies never
+         *     start each other's turns.
+         */
+        post: operations["post_call_message"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/connectors": {
         parameters: {
             query?: never;
@@ -685,6 +727,104 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/voice": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Voice settings and the speech providers. */
+        get: operations["get_voice"];
+        /**
+         * Replaces the voice settings; with `api_key`, also stores or removes the
+         *     key of `provider`.
+         */
+        put: operations["put_voice"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/voice/catalog": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** The voices and speech models of the configured provider, fetched live. */
+        get: operations["catalog"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/voice/live": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Opens live transcription for dictation or a hands-free call
+         *     (`ElevenLabs` only; other providers transcribe after recording).
+         */
+        post: operations["live"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/voice/speech": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Speaks `text` with the configured provider and voice. The audio
+         *     (usually `audio/mpeg`) streams while the provider makes it.
+         */
+        post: operations["speech"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/voice/transcription": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Transcribes a recording: the raw audio as the body, its type as
+         *     `Content-Type`.
+         */
+        post: operations["transcription"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/ws": {
         parameters: {
             query?: never;
@@ -813,6 +953,17 @@ export interface components {
              * @description Color hue in degrees, 0..=359.
              */
             hue: number;
+        };
+        CallMessage: {
+            /**
+             * @description 1..20224 bytes after trimming (the rest of a message is left for
+             *     what the others said).
+             */
+            body: string;
+        };
+        CallView: {
+            /** @description Agents in the operator's voice call (at most 4); empty: no call. */
+            agents: components["schemas"]["AgentId"][];
         };
         /**
          * @description Body shape of the generated character avatar.
@@ -974,7 +1125,8 @@ export interface components {
         ErrorBody: {
             /**
              * @description Stable machine-readable code: `bad_request`, `unauthorized`,
-             *     `not_found`, `conflict`, `not_implemented`, `sandbox_error` or `internal`.
+             *     `not_found`, `conflict`, `rate_limited`, `not_implemented`,
+             *     `sandbox_error`, `upstream_error` or `internal`.
              */
             error: string;
             /** @description Human-readable description. */
@@ -1025,6 +1177,32 @@ export interface components {
         Interrupted: {
             /** @description The interrupted turn, or null if the agent was idle. */
             turn_id?: string | null;
+        };
+        /** @description A language a model speaks. */
+        LanguageOption: {
+            code: string;
+            name: string;
+        };
+        /**
+         * @description How live speech is cut into messages.
+         * @enum {string}
+         */
+        LiveMode: "dictation" | "call";
+        LiveRequest: {
+            mode: components["schemas"]["LiveMode"];
+            /**
+             * Format: int32
+             * @description Sample rate of the 16-bit mono PCM the app sends: 8000, 16000,
+             *     22050, 24000, 44100 or 48000.
+             */
+            sample_rate: number;
+        };
+        LiveSession: {
+            /**
+             * @description The provider's WebSocket with a single-use token (valid 15 minutes,
+             *     one session of at most 10 minutes); the real key never leaves the daemon.
+             */
+            url: string;
         };
         /** @description Sign-in progress per provider (in memory; a restart forgets pending ones). */
         LoginStatus: {
@@ -1081,6 +1259,12 @@ export interface components {
             updated_at: string;
             /** @description Global memory only: the agent that wrote it; absent = the operator. */
             author?: string | null;
+        };
+        /** @description A text-to-speech model of the account. */
+        ModelOption: {
+            model_id: string;
+            name: string;
+            languages: components["schemas"]["LanguageOption"][];
         };
         OAuthStart: {
             /** @description Open this in a browser on the daemon's computer to sign in. */
@@ -1331,6 +1515,11 @@ export interface components {
             /** @description Free-form label (default `manual`, max 64 bytes). */
             label?: string;
         };
+        SpeechRequest: {
+            /** @description What to say: 1-4096 characters. */
+            text: string;
+            agent_id?: components["schemas"]["AgentId"] | null;
+        };
         StoredEvent: {
             /** Format: int64 */
             id: number;
@@ -1341,6 +1530,10 @@ export interface components {
             payload: Record<string, never>;
             /** Format: date-time */
             created_at: string;
+        };
+        /** @description What was said. Both providers answer `{"text": ...}` (plus fields we ignore). */
+        Transcript: {
+            text: string;
         };
         /** @description Pushed to every UI WebSocket client. */
         UiEvent: {
@@ -1376,6 +1569,10 @@ export interface components {
             agent_id: components["schemas"]["AgentId"];
             /** @enum {string} */
             type: "routines_changed";
+        } | {
+            agents: components["schemas"]["AgentId"][];
+            /** @enum {string} */
+            type: "call";
         };
         /** @description Partial profile update. Omitted fields stay unchanged. */
         UpdateAgent: {
@@ -1436,6 +1633,78 @@ export interface components {
             prompt?: string | null;
             timezone?: string | null;
             enabled?: boolean | null;
+        };
+        UpdateVoice: components["schemas"]["VoiceSettings"] & {
+            /**
+             * @description New API key for `provider`; `null` removes it, omitted keeps it.
+             *     Stored in the OS keychain; never returned.
+             */
+            api_key?: string | null;
+        };
+        VoiceCatalog: {
+            /** @description The account's voices (`ElevenLabs`); empty for other providers. */
+            voices: components["schemas"]["VoiceOption"][];
+            /** @description Text-to-speech models of the account (`ElevenLabs`); empty otherwise. */
+            tts_models: components["schemas"]["ModelOption"][];
+        };
+        /** @description An `ElevenLabs` voice the operator can pick. */
+        VoiceOption: {
+            voice_id: string;
+            name: string;
+            /** @description `premade`, `cloned`, `generated`, `professional`, ... */
+            category?: string | null;
+            /** @description Languages the voice is verified for (codes), else its `language` label. */
+            languages: string[];
+            accent?: string | null;
+            gender?: string | null;
+            preview_url?: string | null;
+        };
+        /** @enum {string} */
+        VoiceProvider: "elevenlabs" | "openrouter";
+        VoiceProviderView: {
+            kind: components["schemas"]["VoiceProvider"];
+            /** @description Whether an API key is stored. The key itself is never returned. */
+            has_key: boolean;
+            default_tts_model: string;
+            /** @description `null`: no default; pick a voice of your account. */
+            default_voice?: string | null;
+            default_stt_model: string;
+        };
+        /** @description Voice settings (no secrets), stored as JSON under the `voice` setting. */
+        VoiceSettings: {
+            /** @description `false`: voice is switched off; no speech, dictation or calls. */
+            enabled?: boolean;
+            provider?: components["schemas"]["VoiceProvider"] | null;
+            /** @description Text-to-speech model; `null`: the provider's default. */
+            tts_model?: string | null;
+            /**
+             * @description Voice id (`ElevenLabs`) or name (`OpenRouter`); `null`: the
+             *     provider's default. Letters, digits, `.`, `_` and `-`.
+             */
+            voice?: string | null;
+            /** @description Speech-to-text model; `null`: the provider's default. */
+            stt_model?: string | null;
+            /**
+             * @description Voices by agent id, so agents in a call sound different; the others
+             *     speak with `voice`.
+             */
+            agent_voices?: {
+                [key: string]: string;
+            };
+            /**
+             * Format: float
+             * @description Speaking speed, 0.7-1.2 (`ElevenLabs`); `null`: normal.
+             */
+            speed?: number | null;
+            /**
+             * @description Language of speech and dictation, ISO 639-1 or 639-3 (`de`, `fil`);
+             *     `null`: detected.
+             */
+            language?: string | null;
+        };
+        VoiceView: components["schemas"]["VoiceSettings"] & {
+            /** @description Every provider with its defaults and whether its key is stored. */
+            providers: components["schemas"]["VoiceProviderView"][];
         };
     };
     responses: never;
@@ -3043,6 +3312,143 @@ export interface operations {
             };
         };
     };
+    get_call: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CallView"];
+                };
+            };
+            /** @description Missing or wrong API token */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+        };
+    };
+    put_call: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CallView"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CallView"];
+                };
+            };
+            /** @description More than 4 agents */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Missing or wrong API token */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Unknown agent */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Voice is switched off */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+        };
+    };
+    post_call_message: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CallMessage"];
+            };
+        };
+        responses: {
+            /** @description Queued, one message per agent */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MailMessage"][];
+                };
+            };
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Missing or wrong API token */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description No voice call */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+        };
+    };
     list_connectors: {
         parameters: {
             query?: never;
@@ -4016,6 +4422,333 @@ export interface operations {
             };
             /** @description Unknown routine */
             404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+        };
+    };
+    get_voice: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["VoiceView"];
+                };
+            };
+            /** @description Missing or wrong API token */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+        };
+    };
+    put_voice: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["UpdateVoice"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["VoiceView"];
+                };
+            };
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Missing or wrong API token */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+        };
+    };
+    catalog: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["VoiceCatalog"];
+                };
+            };
+            /** @description Missing or wrong API token */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Voice off, not set up or no key */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description The provider failed */
+            502: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+        };
+    };
+    live: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["LiveRequest"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LiveSession"];
+                };
+            };
+            /** @description Unsupported sample rate */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Missing or wrong API token */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Voice off, not set up, no key, or not ElevenLabs */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Limit for this minute reached */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description The provider failed */
+            502: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+        };
+    };
+    speech: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SpeechRequest"];
+            };
+        };
+        responses: {
+            /** @description Audio, streamed */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "audio/mpeg": number[];
+                };
+            };
+            /** @description Empty or too long */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Missing or wrong API token */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Voice not set up, or no key or voice */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Limit for this minute reached */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description The provider failed */
+            502: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+        };
+    };
+    transcription: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description webm, ogg, mp4/m4a, mp3, wav or flac; at most 10 MiB */
+        requestBody: {
+            content: {
+                "audio/*": number[];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Transcript"];
+                };
+            };
+            /** @description Empty or unsupported audio */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Missing or wrong API token */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Voice not set up or no key */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Over 10 MiB */
+            413: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Limit for this minute reached */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description The provider failed */
+            502: {
                 headers: {
                     [name: string]: unknown;
                 };

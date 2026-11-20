@@ -80,6 +80,12 @@ Principles:
   is the MCP client of remote MCP servers and lends their tools to assigned
   agents through `/mcp` (tokens in the keychain, never in a sandbox);
   `oauth.rs` — their OAuth sign-in (rmcp's client, loopback callback).
+- `crates/daemon/src/voice.rs`, `api/voice.rs` — voice: speech and
+  transcription for the operator's chat via ElevenLabs or OpenRouter (keys
+  in the keychain as `voice:<provider>`); `call.rs` — the operator's voice
+  call (agents invite teammates; replies reach the others only with the
+  operator's next message); `apps/desktop/src/lib/voice.ts` — playback and
+  recording in the UI.
 - `crates/daemon/src/storage.rs` — object storage (`object_store`) for snapshot
   archives, `--storage-url` (default: the data dir; `s3://` for S3/R2).
 - `crates/daemon/src/lifecycle.rs`, `supervisor.rs`, `scheduler.rs`, `runner_ws.rs`.
@@ -169,9 +175,10 @@ daemon, `docker ps -a` must be empty of ferrobot containers.
 ## Migrations
 
 - `crates/store/src/migrations.rs`, tracked with `PRAGMA user_version`.
-- Forward-only, numbered v1..v11 (v7: `providers`, `agents.provider_id`/`model`; v8:
+- Forward-only, numbered v1..v12 (v7: `providers`, `agents.provider_id`/`model`; v8:
   `global_memories`; v9: `connectors`, `agent_connectors`; v10:
-  `global_memories.author`; v11: `agents.pinned`). Append a new entry
+  `global_memories.author`; v11: `agents.pinned`; v12: `settings`, JSON by
+  key, e.g. `voice`). Append a new entry
   with a `// vN: ...` comment; **never edit or reorder existing ones**.
 - Every migration gets a test (upgrade an old DB, check defaults of existing
   rows). New columns on existing tables need a default.
@@ -218,6 +225,8 @@ daemon, `docker ps -a` must be empty of ferrobot containers.
   Docker sandbox, no trace of the key in the sandbox, logs or data dir.
   Claude steering is still untested against the real API; the Windows
   Credential Manager path has never run.
+- Voice never called ElevenLabs or OpenRouter for real (fake upstream only),
+  and the microphone was never used in the Tauri window.
 
 ## Next up: Firecracker
 

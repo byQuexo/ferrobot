@@ -66,6 +66,8 @@ pub struct Settings {
     pub ui_url: String,
     /// Object storage for files agents share (`--storage-url`).
     pub storage: Arc<dyn object_store::ObjectStore>,
+    /// Base URL for every voice provider instead of its public API (tests).
+    pub voice_upstream: Option<String>,
 }
 
 impl std::fmt::Debug for Settings {
@@ -94,6 +96,7 @@ impl std::fmt::Debug for Settings {
             chatgpt_upstream,
             ui_url,
             storage,
+            voice_upstream,
         } = self;
         let redacted = |v: &Option<String>| v.as_ref().map(|_| "[REDACTED]");
         f.debug_struct("Settings")
@@ -119,6 +122,7 @@ impl std::fmt::Debug for Settings {
             .field("chatgpt_upstream", chatgpt_upstream)
             .field("ui_url", ui_url)
             .field("storage", storage)
+            .field("voice_upstream", voice_upstream)
             .finish()
     }
 }
@@ -151,6 +155,7 @@ impl Settings {
             chatgpt_upstream: crate::codex::CHATGPT_CODEX_UPSTREAM.into(),
             ui_url: "http://127.0.0.1:7878".into(),
             storage: Arc::new(object_store::memory::InMemory::new()),
+            voice_upstream: None,
         }
     }
 }
@@ -180,6 +185,8 @@ pub enum UiEvent {
     GlobalMemoryChanged,
     /// The agent's routines or their runs changed; refetch them.
     RoutinesChanged { agent_id: AgentId },
+    /// Who is in the operator's voice call changed (empty: it ended).
+    Call { agents: Vec<AgentId> },
 }
 
 /// Shared daemon state. Cheap to clone.
@@ -210,6 +217,10 @@ pub struct AppState {
     pub link_key: Arc<tokio::sync::OnceCell<ring::hmac::Key>>,
     /// Connector OAuth sign-ins waiting for the browser, refresh locks.
     pub oauth: Arc<crate::oauth::OAuth>,
+    /// What speech and transcription may still spend this minute.
+    pub voice: Arc<Mutex<crate::voice::Budget>>,
+    /// The operator's voice call (in memory: a restart ends it).
+    pub call: Arc<Mutex<crate::call::Call>>,
 }
 
 impl AppState {
@@ -239,6 +250,8 @@ impl AppState {
             connectors: Arc::default(),
             link_key: Arc::default(),
             oauth: Arc::default(),
+            voice: Arc::default(),
+            call: Arc::default(),
         }
     }
 
@@ -367,6 +380,16 @@ impl ferrobot_mcp::MailboxNotifier for AppState {
                 .await
                 .map_err(|e| e.to_string())
         })
+    }
+
+    fn invite_to_call(
+        &self,
+        host: AgentId,
+        guest: AgentId,
+        topic: String,
+    ) -> ferrobot_mcp::BoxFuture<Result<(), String>> {
+        let state = self.clone();
+        Box::pin(async move { state.invite_to_call(host, guest, &topic).await })
     }
 
     fn share_file(

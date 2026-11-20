@@ -9,6 +9,7 @@ pub(crate) mod memory;
 pub(crate) mod providers;
 pub(crate) mod routines;
 pub(crate) mod sandbox;
+pub(crate) mod voice;
 pub(crate) mod ws;
 
 use axum::Json;
@@ -110,7 +111,7 @@ pub fn router() -> Router<AppState> {
         )
 }
 
-/// Model providers and connectors.
+/// Model providers, connectors and voice.
 fn integrations() -> Router<AppState> {
     Router::new()
         .route(
@@ -142,6 +143,18 @@ fn integrations() -> Router<AppState> {
             post(connectors::start_oauth).delete(connectors::sign_out),
         )
         .route("/v1/oauth/callback", get(connectors::oauth_callback))
+        .route("/v1/voice", get(voice::get_voice).put(voice::put_voice))
+        .route("/v1/voice/speech", post(voice::speech))
+        .route("/v1/voice/catalog", get(voice::catalog))
+        .route("/v1/voice/live", post(voice::live))
+        .route("/v1/call", get(voice::get_call).put(voice::put_call))
+        .route("/v1/call/messages", post(voice::post_call_message))
+        .route(
+            "/v1/voice/transcription",
+            post(voice::transcription).layer(axum::extract::DefaultBodyLimit::max(
+                crate::voice::MAX_AUDIO_BYTES,
+            )),
+        )
 }
 
 pub(crate) fn parse_id(raw: &str) -> Result<AgentId, ApiError> {

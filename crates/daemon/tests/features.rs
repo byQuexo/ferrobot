@@ -3171,3 +3171,453 @@ async fn new_agents_greet_the_operator_first() {
     let (_, _, body) = next_turn(&mut ws).await;
     assert_eq!(body, format!("{GREETING}\n\nbook flights"));
 }
+
+/// A fake `ElevenLabs` + `OpenRouter` that records what reached it.
+async fn voice_upstream() -> (String, Arc<Mutex<Vec<Value>>>) {
+    let seen: Arc<Mutex<Vec<Value>>> = Arc::default();
+    let log = seen.clone();
+    let handler = move |request: axum::extract::Request| {
+        let log = log.clone();
+        async move {
+            let (parts, body) = request.into_parts();
+            let body = axum::body::to_bytes(body, usize::MAX).await.unwrap();
+            let body = String::from_utf8_lossy(&body).into_owned();
+            let header = |name: &str| parts.headers.get(name).and_then(|v| v.to_str().ok());
+            let path = parts.uri.path().to_owned();
+            log.lock().unwrap().push(json!({
+                "path": path,
+                "query": parts.uri.query(),
+                "xi_api_key": header("xi-api-key"),
+                "authorization": header("authorization"),
+                "content_type": header("content-type"),
+                "body": body,
+            }));
+            if body.contains("fail") {
+                (
+                    axum::http::StatusCode::UNPROCESSABLE_ENTITY,
+                    "voice_not_found",
+                )
+                    .into_response()
+            } else if path.ends_with("speech-to-text") || path.ends_with("transcriptions") {
+                axum::Json(json!({"text": " hello there ", "language_code": "en"})).into_response()
+            } else if path == "/v2/voices" {
+                let more = !parts
+                    .uri
+                    .query()
+                    .unwrap_or_default()
+                    .contains("next_page_token");
+                let name = if more { "Zed" } else { "Ada" };
+                axum::Json(
+                    json!({"voices": [{"voice_id": format!("id-{name}"), "name": name,
+                    "verified_languages": [{"language": "de"}]}],
+                    "has_more": more, "next_page_token": "page2"}),
+                )
+                .into_response()
+            } else if path == "/v1/models" {
+                axum::Json(json!([{"model_id": "eleven_flash_v2_5", "name": "Flash",
+                    "can_do_text_to_speech": true, "languages": [{"language_id": "de", "name": "German"}]}]))
+                .into_response()
+            } else if path == "/v1/single-use-token/realtime_scribe" {
+                axum::Json(json!({"token": "single-use-1"})).into_response()
+            } else {
+                ([("content-type", "audio/mpeg")], &b"ID3-fake-mp3"[..]).into_response()
+            }
+        }
+    };
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let addr = listener.local_addr().unwrap();
+    let app = axum::Router::new().fallback(handler);
+    tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });
+    (format!("http://{addr}"), seen)
+}
+
+async fn speak(d: &Daemon, text: &str) -> (u16, Vec<(String, String)>, Vec<u8>) {
+    let body = json!({ "text": text }).to_string();
+    http_raw(
+        &d.ui,
+        "POST",
+        "/v1/voice/speech",
+        &[("content-type", "application/json")],
+        body.as_bytes(),
+    )
+    .await
+}
+
+async fn put_voice(d: &Daemon, body: Value) -> (u16, Value) {
+    http(&d.ui, "PUT", "/v1/voice", Some(body)).await
+}
+
+#[tokio::test]
+async fn voice_speaks_and_listens_with_keys_kept_in_the_daemon() {
+    let (upstream, seen) = voice_upstream().await;
+    let d = start_with(
+        Arc::new(StatefulBackend::default()),
+        None,
+        "127.0.0.1:0",
+        |s| s.voice_upstream = Some(upstream),
+    )
+    .await;
+    let last = || seen.lock().unwrap().last().cloned().unwrap();
+
+    let (status, voice) = http(&d.ui, "GET", "/v1/voice", None).await;
+    assert_eq!(status, 200);
+    assert_eq!(voice["provider"], Value::Null);
+    assert_eq!(voice["providers"][0]["has_key"], false);
+    assert_eq!(speak(&d, "Hallo").await.0, 409, "not set up yet");
+
+    let (status, voice) = put_voice(
+        &d,
+        json!({"provider": "elevenlabs", "api_key": "xi-secret"}),
+    )
+    .await;
+    assert_eq!(status, 200, "{voice}");
+    assert_eq!(voice["providers"][0]["kind"], "elevenlabs");
+    assert_eq!(voice["providers"][0]["has_key"], true);
+    assert!(!voice.to_string().contains("xi-secret"));
+    assert_eq!(speak(&d, "Hallo").await.0, 409, "ElevenLabs needs a voice");
+    let (status, _) = put_voice(
+        &d,
+        json!({"provider": "elevenlabs", "voice": "../v1/history"}),
+    )
+    .await;
+    assert_eq!(status, 400, "voices stay out of other paths");
+    let (status, voice) =
+        put_voice(&d, json!({"provider": "elevenlabs", "voice": "voice123"})).await;
+    assert_eq!(status, 200);
+    assert_eq!(
+        voice["providers"][0]["has_key"], true,
+        "omitted key is kept"
+    );
+
+    let (status, headers, audio) = speak(&d, "Hallo").await;
+    assert_eq!(status, 200);
+    assert!(headers.contains(&("content-type".into(), "audio/mpeg".into())));
+    assert_eq!(audio, b"ID3-fake-mp3");
+    let call = last();
+    assert_eq!(call["path"], "/v1/text-to-speech/voice123/stream");
+    assert_eq!(call["query"], "output_format=mp3_44100_128");
+    assert_eq!(call["xi_api_key"], "xi-secret");
+    let sent: Value = serde_json::from_str(call["body"].as_str().unwrap()).unwrap();
+    assert_eq!(
+        sent,
+        json!({"text": "Hallo", "model_id": "eleven_flash_v2_5"})
+    );
+
+    let (status, _, out) = http_raw(
+        &d.ui,
+        "POST",
+        "/v1/voice/transcription",
+        &[("content-type", "audio/webm;codecs=opus")],
+        b"webm-bytes",
+    )
+    .await;
+    assert_eq!(status, 200);
+    let out: Value = serde_json::from_slice(&out).unwrap();
+    assert_eq!(out, json!({"text": "hello there"}));
+    let call = last();
+    assert_eq!(call["path"], "/v1/speech-to-text");
+    assert!(
+        call["content_type"]
+            .as_str()
+            .unwrap()
+            .starts_with("multipart/form-data; boundary=")
+    );
+    let form = call["body"].as_str().unwrap();
+    assert!(
+        form.contains("scribe_v3") && form.contains("webm-bytes"),
+        "{form}"
+    );
+
+    // Limits: text length, audio type and size; provider errors pass on.
+    assert_eq!(speak(&d, &"a".repeat(4097)).await.0, 400);
+    let transcribe = |mime: &'static str, audio: Vec<u8>| {
+        let ui = d.ui.clone();
+        async move {
+            http_raw(
+                &ui,
+                "POST",
+                "/v1/voice/transcription",
+                &[("content-type", mime)],
+                &audio,
+            )
+            .await
+            .0
+        }
+    };
+    assert_eq!(transcribe("video/mp4", b"x".to_vec()).await, 400);
+    assert_eq!(
+        transcribe("audio/webm", vec![0; 10 * 1024 * 1024 + 1]).await,
+        413
+    );
+    let (status, _, out) = speak(&d, "fail").await;
+    assert_eq!(status, 502);
+    assert!(
+        String::from_utf8_lossy(&out).contains("voice_not_found"),
+        "the provider's reason reaches the operator"
+    );
+
+    // OpenRouter: bearer key, its default voice, mp3.
+    let (status, voice) = put_voice(
+        &d,
+        json!({"provider": "openrouter", "api_key": "sk-or-secret"}),
+    )
+    .await;
+    assert_eq!(status, 200);
+    assert_eq!(voice["providers"][1]["has_key"], true);
+    assert_eq!(speak(&d, "Hi").await.0, 200);
+    let call = last();
+    assert_eq!(call["path"], "/audio/speech");
+    assert_eq!(call["authorization"], "Bearer sk-or-secret");
+    let sent: Value = serde_json::from_str(call["body"].as_str().unwrap()).unwrap();
+    assert_eq!(sent["voice"], "en_paul_neutral");
+    assert_eq!(sent["response_format"], "mp3");
+
+    // A stuck UI cannot keep spending: about a minute's budget, then 429.
+    assert_eq!(speak(&d, &"b".repeat(4096)).await.0, 200);
+    let (status, _, out) = speak(&d, &"c".repeat(4096)).await;
+    assert_eq!(status, 429, "{}", String::from_utf8_lossy(&out));
+
+    let (status, voice) = put_voice(&d, json!({"provider": "openrouter", "api_key": null})).await;
+    assert_eq!(status, 200);
+    assert_eq!(
+        voice["providers"][1]["has_key"], false,
+        "null removes the key"
+    );
+    assert_eq!(voice["providers"][0]["has_key"], true);
+
+    // Agents in a call can speak with their own voice.
+    let agent = "00000000-0000-4000-8000-000000000001";
+    let (status, _) = put_voice(
+        &d,
+        json!({"provider": "elevenlabs", "voice": "voice123", "agent_voices": {agent: "bobvoice"}}),
+    )
+    .await;
+    assert_eq!(status, 200);
+    let body = json!({ "text": "Hi", "agent_id": agent }).to_string();
+    let (status, _, _) = http_raw(
+        &d.ui,
+        "POST",
+        "/v1/voice/speech",
+        &[("content-type", "application/json")],
+        body.as_bytes(),
+    )
+    .await;
+    assert_eq!(status, 200);
+    assert_eq!(last()["path"], "/v1/text-to-speech/bobvoice/stream");
+
+    // The account's voices (all pages) and speech models, fetched with the key.
+    let (status, catalog) = http(&d.ui, "GET", "/v1/voice/catalog", None).await;
+    assert_eq!(status, 200, "{catalog}");
+    let names: Vec<&str> = catalog["voices"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|v| v["name"].as_str().unwrap())
+        .collect();
+    assert_eq!(names, ["Ada", "Zed"], "both pages, sorted");
+    assert_eq!(catalog["tts_models"][0]["languages"][0]["code"], "de");
+    assert_eq!(last()["xi_api_key"], "xi-secret");
+
+    // Live transcription gets a single-use token; the key stays here.
+    let live = json!({"mode": "dictation", "sample_rate": 16000});
+    let (status, session) = http(&d.ui, "POST", "/v1/voice/live", Some(live)).await;
+    assert_eq!(status, 200, "{session}");
+    let url = session["url"].as_str().unwrap();
+    assert!(
+        url.starts_with("ws://") && url.contains("token=single-use-1"),
+        "{url}"
+    );
+    assert!(!session.to_string().contains("xi-secret"));
+    let bad = json!({"mode": "call", "sample_rate": 11025});
+    assert_eq!(
+        http(&d.ui, "POST", "/v1/voice/live", Some(bad)).await.0,
+        400
+    );
+
+    // Speed and language reach the provider.
+    let (status, _) = put_voice(
+        &d,
+        json!({"provider": "elevenlabs", "voice": "voice123", "speed": 1.1, "language": "DE"}),
+    )
+    .await;
+    assert_eq!(status, 200);
+    assert_eq!(
+        http(&d.ui, "GET", "/v1/voice", None).await.1["language"],
+        "de"
+    );
+
+    // Switched off: nothing speaks, listens or calls, settings and keys stay.
+    let (status, voice) = put_voice(
+        &d,
+        json!({"provider": "elevenlabs", "voice": "voice123", "enabled": false}),
+    )
+    .await;
+    assert_eq!((status, &voice["enabled"]), (200, &json!(false)));
+    assert_eq!(voice["providers"][0]["has_key"], true);
+    assert_eq!(speak(&d, "Hi").await.0, 409);
+    let live = json!({"mode": "call", "sample_rate": 16000});
+    assert_eq!(
+        http(&d.ui, "POST", "/v1/voice/live", Some(live)).await.0,
+        409
+    );
+    assert_eq!(http(&d.ui, "GET", "/v1/voice/catalog", None).await.0, 409);
+    let call = json!({"agents": [agent]});
+    assert_eq!(http(&d.ui, "PUT", "/v1/call", Some(call)).await.0, 409);
+}
+
+/// Messages queued for `agent` (not the ones it sent).
+async fn received(d: &Daemon, agent: AgentId) -> Vec<Value> {
+    let (_, msgs) = http(&d.ui, "GET", &format!("/v1/agents/{agent}/messages"), None).await;
+    msgs.as_array()
+        .unwrap()
+        .iter()
+        .filter(|m| m["recipient"] == agent.to_string())
+        .cloned()
+        .collect()
+}
+
+#[tokio::test]
+async fn voice_calls_pass_lines_on_without_agents_waking_each_other() {
+    use ferrobot_core::protocol::{TurnEvent, TurnOutcome};
+    use rmcp::model::CallToolRequestParams;
+    let backend = Arc::new(StatefulBackend::default());
+    let d = start(backend.clone(), None, "127.0.0.1:0").await;
+    let mut ids = Vec::new();
+    for name in ["ann", "bob", "cy", "dot", "eve"] {
+        let agent = create(&d, json!({ "name": name })).await;
+        ids.push(agent["id"].as_str().unwrap().parse::<AgentId>().unwrap());
+    }
+    let [ann, bob, cy, dot, eve] = ids[..] else {
+        unreachable!()
+    };
+
+    // Voice on in ann's chat, then ann brings bob in with its tool.
+    let (status, call) = http(&d.ui, "PUT", "/v1/call", Some(json!({"agents": [ann]}))).await;
+    assert_eq!(status, 200);
+    assert_eq!(call["agents"], json!([ann.to_string()]));
+    let mcp = mcp_as(&d, backend.token("ann")).await;
+    let args = json!({"agent": "@bob", "topic": "Is the deploy done?"});
+    let result = mcp
+        .call_tool(
+            CallToolRequestParams::new("invite_to_call")
+                .with_arguments(args.as_object().unwrap().clone()),
+        )
+        .await
+        .unwrap();
+    assert_ne!(result.is_error, Some(true), "{result:?}");
+    assert_eq!(d.state.call_agents(), [ann, bob]);
+    let invite = received(&d, bob).await;
+    assert_eq!(invite.len(), 1);
+    assert_eq!(invite[0]["sender"], json!({"kind": "agent", "id": ann}));
+    assert!(
+        invite[0]["body"]
+            .as_str()
+            .unwrap()
+            .starts_with("Is the deploy done?")
+    );
+    assert!(
+        d.state.invite_to_call(cy, dot, "x").await.is_err(),
+        "cy is not in the call"
+    );
+
+    // bob answers in its turn: spoken, and kept for ann without mail or a turn.
+    let mut ws = connect_runner(&d.agents, &backend.token("bob")).await;
+    let DaemonFrame::Turn { turn_id, .. } = next_frame(&mut ws).await else {
+        panic!("expected the invite as a turn");
+    };
+    for frame in [
+        RunnerFrame::Event {
+            turn_id: turn_id.clone(),
+            event: TurnEvent::AssistantText {
+                text: "Deploy is green.".into(),
+            },
+        },
+        RunnerFrame::TurnDone {
+            turn_id,
+            outcome: TurnOutcome::Completed,
+            session_id: None,
+            result: None,
+            error: None,
+            steered: vec![],
+        },
+    ] {
+        ws.send(Message::text(serde_json::to_string(&frame).unwrap()))
+            .await
+            .unwrap();
+    }
+    let bob_id = bob.to_string();
+    eventually(
+        "bob's reply is recorded",
+        Duration::from_secs(5),
+        || async {
+            events(&d, &bob_id)
+                .await
+                .iter()
+                .any(|e| e["kind"] == "turn_done")
+                .then_some(())
+        },
+    )
+    .await;
+    assert!(received(&d, ann).await.is_empty(), "no mail to ann");
+    assert!(!d.state.store.has_queued_messages(ann).await.unwrap());
+
+    // The operator speaks: everyone hears it, ann also hears bob, once.
+    let say = |body: &'static str| {
+        let ui = d.ui.clone();
+        async move {
+            let (status, sent) = http(
+                &ui,
+                "POST",
+                "/v1/call/messages",
+                Some(json!({ "body": body })),
+            )
+            .await;
+            assert_eq!(status, 202, "{sent}");
+            sent.as_array()
+                .unwrap()
+                .iter()
+                .map(|m| {
+                    (
+                        m["recipient"].as_str().unwrap().to_owned(),
+                        m["body"].clone(),
+                    )
+                })
+                .collect::<BTreeMap<_, _>>()
+        }
+    };
+    let sent = say("Thanks. What's next?").await;
+    assert_eq!(
+        sent[&ann.to_string()],
+        format!(
+            "In the call since your last turn:\n<@{bob}>: Deploy is green.\n\nThe operator: Thanks. What's next?"
+        )
+    );
+    assert_eq!(sent[&bob.to_string()], "Thanks. What's next?");
+    let sent = say("Bye").await;
+    assert_eq!(sent[&ann.to_string()], "Bye", "passed on once");
+
+    // At most four agents; an empty call ends it.
+    let put = |agents: Vec<AgentId>| {
+        let ui = d.ui.clone();
+        async move {
+            http(&ui, "PUT", "/v1/call", Some(json!({ "agents": agents })))
+                .await
+                .0
+        }
+    };
+    assert_eq!(put(vec![ann, bob, cy, dot, eve]).await, 400);
+    assert_eq!(put(vec![ann, bob, cy, dot]).await, 200);
+    assert!(
+        d.state.invite_to_call(ann, eve, "x").await.is_err(),
+        "call is full"
+    );
+    assert_eq!(put(vec![]).await, 200);
+    let (status, _) = http(
+        &d.ui,
+        "POST",
+        "/v1/call/messages",
+        Some(json!({"body": "hi"})),
+    )
+    .await;
+    assert_eq!(status, 409);
+}

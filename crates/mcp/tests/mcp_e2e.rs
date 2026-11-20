@@ -112,6 +112,7 @@ async fn tools_act_as_the_authenticated_agent() {
             "assign_task",
             "create_agent",
             "forget",
+            "invite_to_call",
             "list_agents",
             "list_tasks",
             "read_mailbox",
