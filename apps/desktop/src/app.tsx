@@ -154,6 +154,7 @@ export function App(): JSX.Element {
           onSettings={() => { setSettings(settings ? null : "providers"); }}
           settingsOpen={settings !== null}
           online={online}
+          onDeleted={(id) => { if (id === selected) setSelected(null); }}
         />
         {settings ? (
           <Settings section={settings} onSection={setSettings} onClose={() => { setSettings(null); }} theme={theme} onTheme={setTheme} />

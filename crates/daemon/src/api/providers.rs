@@ -40,11 +40,11 @@ fn parse_pid(raw: &str) -> Result<Uuid, ApiError> {
         .map_err(|_| ApiError::NotFound(format!("provider {raw} not found")))
 }
 
-fn clean(v: Option<String>) -> Option<String> {
+pub(crate) fn clean(v: Option<String>) -> Option<String> {
     v.map(|s| s.trim().to_owned()).filter(|s| !s.is_empty())
 }
 
-fn check_key(key: &str) -> Result<(), ApiError> {
+pub(crate) fn check_key(key: &str) -> Result<(), ApiError> {
     if key.is_empty() || key.len() > 4096 || key.chars().any(char::is_control) {
         return Err(ApiError::BadRequest(
             "api_key must be 1-4096 printable characters".into(),

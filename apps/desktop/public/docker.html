@@ -1,0 +1,23 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Docker is not running</title>
+    <link rel="stylesheet" href="docker.css" />
+    <script src="docker.js" defer></script>
+  </head>
+  <body>
+    <main>
+      <h1>Docker is not running</h1>
+      <p>Every agent works in its own Docker container, so the app needs Docker Desktop.</p>
+      <ol>
+        <li>
+          <a href="https://www.docker.com/products/docker-desktop/">Download Docker Desktop</a>
+          and install it, or start it if it is installed.
+        </li>
+        <li>Wait until Docker says it is running. This page continues by itself.</li>
+      </ol>
+      <p id="status" class="muted">Checking every few seconds…</p>
+    </main>
+  </body>
+</html>

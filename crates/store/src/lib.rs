@@ -15,6 +15,7 @@ mod memory;
 mod migrations;
 mod providers;
 mod routines;
+mod settings;
 mod snapshots;
 mod tasks;
 mod util;

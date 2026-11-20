@@ -104,6 +104,17 @@ pub trait MailboxNotifier: Send + Sync + 'static {
         let _ = (requester, request);
         Box::pin(async { Err("creating agents is not supported here".to_owned()) })
     }
+    /// Brings `guest` into the operator's voice call that `host` is in
+    /// and sends it `topic`. `Err` carries a message for the agent.
+    fn invite_to_call(
+        &self,
+        host: AgentId,
+        guest: AgentId,
+        topic: String,
+    ) -> BoxFuture<Result<(), String>> {
+        let _ = (host, guest, topic);
+        Box::pin(async { Err("voice calls are not supported here".to_owned()) })
+    }
 }
 
 /// Shared state for the MCP endpoint.

@@ -12,6 +12,7 @@
 pub mod agents;
 pub mod api;
 pub mod auth;
+pub mod call;
 pub mod codex;
 pub mod connectors;
 pub mod error;
@@ -30,6 +31,7 @@ pub mod storage;
 pub mod supervisor;
 pub mod tasks;
 pub mod views;
+pub mod voice;
 
 use axum::Router;
 use axum::http::{HeaderValue, Method, header};

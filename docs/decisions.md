@@ -555,6 +555,157 @@ the code and this file together.
   keyring's Linux backend), and in the Tauri lockfile `proc-macro-error`, the
   `unic-*` crates and `glib` 0.18 (unsound iterator, Linux GTK stack of Tauri).
 
+- **The desktop app bundles the daemon** as a Tauri sidecar
+  (`tauri.release.conf.json` adds it, so dev builds need no binary). The shell
+  starts it only when nothing answers on `127.0.0.1:7878`, with the OS app
+  data dir as `--data-dir` (macOS: `~/Library/Application Support/dev.ferrobot.desktop`),
+  `--driver claude`, `--agent-listen 0.0.0.0:7879` and the release's runner
+  image, logs to `daemon.log` there, and stops it on exit (SIGTERM, then kill
+  after 5 s; Windows: kill). Ports stay fixed because the CSP and the UI's
+  default URL name them.
+- **The daemon starts without Docker** and logs an error instead of exiting;
+  `/v1/health` reports `sandbox_ready` and `sandbox_error` (live ping, 2 s
+  timeout). Without a socket at start the client points at a port that never
+  answers, and each ping tries the real socket again, so Docker started later
+  is picked up without a restart. When the shell sees `sandbox_ready: false` at start it opens
+  `docker.html` (a static page in `public/`, no UI code), which links Docker
+  Desktop and returns to the app once health says ready.
+- **Release builds use `ghcr.io/byquexo/ferrobot-runner:<version>`,** pushed by
+  the tag workflow (amd64 and arm64 on native runners, one manifest). Docker
+  pulls the configured runner image when the engine lacks it, on the first
+  agent start; archive images are never pulled.
+- **Release workflow on `v*` tags:** a draft release first (so both desktop
+  jobs upload to it), macOS universal `.dmg` (daemon built for both arches and
+  joined with `lipo`) and Windows NSIS `.exe`, then `SHA256SUMS`. Signing is
+  optional: Apple and Windows certificate secrets are used only when set,
+  otherwise the build is unsigned and the README explains how to open it.
+- **Windows build of the sandbox crate:** the Firecracker module keeps
+  compiling with a stand-in for Unix sockets that always fails; Firecracker
+  needs Linux anyway.
+- **Files the page builds (blob URLs, e.g. the usage CSV) save to Downloads**
+  through the shell's download handler; other downloads are refused.
+
+## Voice
+
+- **The UI speaks and listens, the daemon calls the provider.** With voice on
+  in a chat, every `assistant_text` that arrives live (interim updates and
+  the final reply, never history) is spoken in order; the mic button records
+  a message, the daemon transcribes it and the UI sends the text like a typed
+  one. Pressing the mic or switching voice off or changing chats stops the
+  audio. Spoken messages reach a running turn only where typed ones do
+  (steering: the OpenAI-compatible and Claude drivers); with Codex and
+  Gemini CLI they wait for the turn to end.
+- **Providers: ElevenLabs and OpenRouter** (both checked against their docs
+  on 2026-11-20):
+  - ElevenLabs speech: `POST /v1/text-to-speech/{voice}/stream?output_format=mp3_44100_128`,
+    `xi-api-key`, `{text, model_id}`, default model `eleven_flash_v2_5`
+    (https://elevenlabs.io/docs/api-reference/text-to-speech/stream,
+    https://elevenlabs.io/docs/overview/models). No default voice: the docs'
+    example voice expires on 2026-12-31 and voices differ per account, so the
+    operator enters a voice id.
+  - ElevenLabs transcription: `POST /v1/speech-to-text`, multipart `model_id`
+    + `file`, answer `{text}`, default `scribe_v3`
+    (https://elevenlabs.io/docs/api-reference/speech-to-text/convert).
+  - OpenRouter speech: `POST /api/v1/audio/speech`, Bearer,
+    `{model, input, voice, response_format: "mp3"}` (its default is pcm,
+    which `<audio>` cannot play); default `mistralai/voxtral-mini-tts-2603`
+    with `en_paul_neutral`
+    (https://openrouter.ai/docs/guides/overview/multimodal/tts).
+  - OpenRouter transcription: `POST /api/v1/audio/transcriptions`, multipart
+    `model` + `file`, answer `{text}`, default `openai/whisper-large-v3`
+    (https://openrouter.ai/docs/guides/overview/multimodal/stt).
+- **No OpenAI provider.** Its `/v1/audio/speech` models all shut down on
+  2027-01-06 (https://developers.openai.com/api/docs/deprecations) and the
+  same models are reachable through OpenRouter.
+- **Keys** live in the secret store as `voice:elevenlabs` and
+  `voice:openrouter`, write-only over `PUT /v1/voice` (`has_key` per
+  provider), separate from model provider keys. **Settings** (provider,
+  models, voice) are JSON under the key `voice` in a new `settings` table
+  (v12), so later voice fields need no migration.
+- **Multipart is built by hand** (about 15 lines): reqwest's `multipart`
+  feature would add `mime_guess`. No new crates.
+- **Limits so a stuck UI stays cheap:** speech text at most 4096 characters
+  (the UI cuts replies at about 1500, at a sentence), recordings at most
+  10 MiB and 2 minutes, and per minute at most 6000 characters of speech
+  (about four times listening speed) and 20 transcriptions; above that the
+  API answers 429. Provider calls time out after 120 s. Neither text nor
+  audio is logged; a provider's error reason goes to the operator only.
+- **Playback waits for each clip** (fetch, then `<audio>` with a blob URL)
+  instead of streaming through `MediaSource`; clips are fetched as soon as
+  they arrive, so the next one is ready while the current one plays.
+- **Tauri:** the CSP allows `media-src 'self' blob:`, and
+  `src-tauri/Info.plist` carries `NSMicrophoneUsageDescription` (Tauri
+  embeds it in dev builds and merges it into bundles). wry 0.55 grants the
+  page's microphone request itself. Not tried in the real window; a signed
+  build with the hardened runtime also needs the
+  `com.apple.security.device.audio-input` entitlement.
+- **Two buttons: call and dictation (Tim's feedback after the first test).**
+  The phone button in the chat header starts a hands-free call: replies are
+  read aloud and, with ElevenLabs, the microphone streams to its realtime
+  transcription (`scribe_v3_live`, commit on a 1.2 s pause); each finished
+  sentence is sent. While an agent speaks the app sends silence instead of
+  the microphone, so its voice is not transcribed as the operator's (and the
+  session stays open; ElevenLabs closes after 15 s without input). The mic
+  button in the message box is dictation: the words appear live in the box,
+  stop keeps them there unsent. Other providers transcribe after stopping.
+- **Live transcription with a single-use token.** `POST /v1/voice/live`
+  asks ElevenLabs for a `realtime_scribe` token (consumed on use, valid 15
+  minutes, session capped at 10 minutes) and returns the WebSocket URL with
+  it; the app connects directly, the real key stays in the daemon and the
+  daemon relays no audio. The CSP allows `wss://api.elevenlabs.io` only.
+  Audio is 16-bit mono PCM at the AudioContext's rate (16 kHz asked for)
+  through a ScriptProcessor, because an AudioWorklet needs a module file
+  the CSP would block. Not verified against the real service yet: the
+  token endpoint's auth (the docs show none; the daemon sends `xi-api-key`).
+- **Catalog and quick changes.** `GET /v1/voice/catalog` lists the account's
+  voices (`/v2/voices`, up to 3 pages of 100, sorted by name, with verified
+  languages) and its text-to-speech models (`/v1/models`). Settings and a
+  small picker in the chat header choose voice, language and speed from it;
+  a "Custom…" entry still takes any id. Speed (`voice_settings.speed`) is
+  limited to 0.7-1.2, ElevenLabs' own UI range (the API docs state no
+  range); language (`language_code`) is skipped for `eleven_multilingual_v2`,
+  which refuses it. OpenRouter gets neither.
+- **Voice can be switched off** (`enabled`, default on, also for settings
+  saved before): speech, transcription, live sessions, the catalog and new
+  calls answer 409, the app hides the call and mic buttons; keys and
+  settings stay.
+- **Voice on is a call; agents bring teammates in.** Switching voice on in a
+  chat starts the operator's voice call with that agent (`PUT /v1/call`,
+  in memory, so a daemon restart ends it); switching it off or leaving the
+  chat ends it. Agents in the call have an `invite_to_call(agent, topic)`
+  tool: the teammate joins and gets the topic as mail from the inviter,
+  which starts its first turn. At most 4 agents per call. With more than one
+  agent, what the operator says or types goes to all of them
+  (`POST /v1/call/messages`), and every agent's replies are spoken, each with
+  its own voice if one is set (`agent_voices`, by agent id).
+- **Agents in a call never start each other's turns.** A deferred message
+  (`priority: false`) is no guard: an awake runner claims it at once, so two
+  agents forwarding replies to each other would loop and burn money. Instead
+  the daemon keeps what each agent said (its `assistant_text`, cut to 1500
+  characters, at most 12 KiB per listener, oldest dropped) and puts it in
+  front of the operator's next message to each other agent ("In the call
+  since your last turn: ..."). Only the operator's messages and invitations
+  start turns. The invitation tells the teammate to answer in its reply
+  (spoken), not with `send_message`.
+- **Costs and open questions:** each message in a call with N agents starts
+  N turns, and agents that were not addressed will probably still answer.
+  Options: route by spoken name, or let agents stay silent with an empty
+  reply. Agents also hear each other only with the operator's next message,
+  so the call is operator-driven, not a free discussion.
+- **Follow-up:** streaming playback; a remove button per call participant
+  (today: end the call); telling the host agent that the operator is
+  listening (it does not know until someone joins).
+
+## Agent list: order and delete
+
+- **The order lives in the app** (`localStorage`, `ferrobot.agent-order`),
+  not in the daemon: there is one desktop per daemon today, and a column
+  would need a migration while v12/v13 are taken by open branches. Pinned
+  agents stay first; dragging only reorders within the pinned strip or the
+  list. New agents go after the ordered ones, by name.
+- **Right-click on an agent** opens Move up / Move down (the keyboard way to
+  reorder) and Delete…, which asks for confirmation first.
+
 ## Model picker
 
 - **Provider lists:** `GET /v1/providers/{id}/models` asks the provider's own

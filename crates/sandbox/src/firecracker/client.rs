@@ -3,6 +3,8 @@
 
 use std::path::{Path, PathBuf};
 
+#[cfg(not(unix))]
+use super::NoUnixSockets as UnixStream;
 use bytes::Bytes;
 use http_body_util::{BodyExt, Full};
 use hyper::Method;
@@ -10,6 +12,7 @@ use hyper::header::{ACCEPT, CONTENT_TYPE, HOST};
 use hyper_util::rt::TokioIo;
 use serde::Serialize;
 use serde_json::{Value, json};
+#[cfg(unix)]
 use tokio::net::UnixStream;
 
 use crate::SandboxError;

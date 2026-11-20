@@ -209,6 +209,14 @@ const MIGRATIONS: &[&str] = &[
     r"
     ALTER TABLE agents ADD COLUMN pinned INTEGER NOT NULL DEFAULT 0;
     ",
+    // v12: daemon-wide settings as JSON values by key (e.g. 'voice'); no secrets
+    r"
+    CREATE TABLE settings (
+        key        TEXT PRIMARY KEY,
+        value      TEXT NOT NULL,
+        updated_at TEXT NOT NULL
+    );
+    ",
 ];
 
 pub(crate) fn run(conn: &mut Connection) -> Result<(), StoreError> {
@@ -304,6 +312,10 @@ mod tests {
             .query_row("SELECT pinned FROM agents", [], |r| r.get(0))
             .unwrap();
         assert!(!pinned, "existing agents are not pinned");
+        let settings: i64 = conn
+            .query_row("SELECT COUNT(*) FROM settings", [], |r| r.get(0))
+            .unwrap();
+        assert_eq!(settings, 0, "settings start empty: voice is off");
         let version: i64 = conn
             .query_row("PRAGMA user_version", [], |r| r.get(0))
             .unwrap();

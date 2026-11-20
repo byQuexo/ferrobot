@@ -98,6 +98,15 @@ pub const QUESTION_CARD_FILE: &str = "question-card.v1.schema.json";
         api::connectors::start_oauth,
         api::connectors::sign_out,
         api::connectors::oauth_callback,
+        api::voice::get_voice,
+        api::voice::put_voice,
+        api::voice::speech,
+        api::voice::catalog,
+        api::voice::live,
+        api::voice::transcription,
+        api::voice::get_call,
+        api::voice::put_call,
+        api::voice::post_call_message,
         api::files::shared_file,
         api::files::page,
         api::ws::ui_ws,
@@ -118,6 +127,7 @@ pub const QUESTION_CARD_FILE: &str = "question-card.v1.schema.json";
         (name = "sandbox", description = "Each agent's own computer: sleep, wake, snapshots"),
         (name = "providers", description = "Model providers and their API keys"),
         (name = "connectors", description = "Remote MCP servers whose tools agents can use"),
+        (name = "voice", description = "Speech and transcription for the operator's chat"),
     )
 )]
 struct ApiDoc;

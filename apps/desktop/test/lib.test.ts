@@ -8,6 +8,8 @@ import { relativeTime, stepLabel, toolLabel } from "../src/lib/format.ts";
 import { buildTimeline, sharedFiles } from "../src/lib/timeline.ts";
 import { parseBlocks, parseInline } from "../src/lib/markdown.ts";
 import { modelOptions } from "../src/lib/models.ts";
+import { moveId, orderAgents } from "../src/lib/order.ts";
+import { liveEvent, pcm16Base64, speakable } from "../src/lib/voice.ts";
 
 const ME = "11111111-1111-4111-8111-111111111111";
 const BOB = "22222222-2222-4222-8222-222222222222";
@@ -262,6 +264,61 @@ describe("markdown", () => {
       { text: " snake_case_name" },
     ]);
     assert.deepEqual(parseInline("[x](javascript:alert(1))"), [{ text: "[x](javascript:alert(1))" }]);
+  });
+});
+
+describe("voice", () => {
+  const nameOf = (id: string): string | undefined => names.agents.get(id);
+
+  it("reads the words of a message, not its Markdown or code", () => {
+    const text = [
+      "## Done",
+      `**Deploy** finished, <@${BOB}> checked it.`,
+      "- see [the log](https://x.dev/log) and `plan.md`",
+      "```sh\nrm -rf /tmp/x\n```",
+      "Keep scribe_v3_live and _this_ word, see https://y.dev/a.",
+    ].join("\n");
+    assert.equal(
+      speakable(text, nameOf),
+      "Done Deploy finished, @bob checked it. see the log and plan.md (code) Keep scribe_v3_live and this word, see (link)",
+    );
+  });
+
+  it("cuts long replies at a sentence", () => {
+    const out = speakable("This is one sentence. ".repeat(100), nameOf);
+    assert.ok(out.length < 1600);
+    assert.ok(out.endsWith("sentence. The rest is in the chat."));
+  });
+});
+
+describe("live transcription", () => {
+  it("reads partial, committed and error messages", () => {
+    assert.deepEqual(liveEvent('{"message_type":"partial_transcript","text":"hel"}'), { kind: "partial", text: "hel" });
+    assert.deepEqual(liveEvent('{"message_type":"committed_transcript","text":"hello"}'), { kind: "committed", text: "hello" });
+    assert.deepEqual(liveEvent('{"message_type":"auth_error","error":"bad token"}'), { kind: "error", message: "bad token" });
+    assert.deepEqual(liveEvent('{"message_type":"session_started"}'), { kind: "other" });
+    assert.deepEqual(liveEvent("not json"), { kind: "other" });
+  });
+
+  it("encodes samples as 16-bit little-endian PCM in base64", () => {
+    const bytes = Buffer.from(pcm16Base64(new Float32Array([0, 1, -1, 2])), "base64");
+    assert.deepEqual([...new Int16Array(bytes.buffer, bytes.byteOffset, 4)], [0, 32767, -32767, 32767], "clipped to -1..1");
+    assert.equal(pcm16Base64(new Float32Array(0)), "");
+  });
+});
+
+describe("agent order", () => {
+  const a = (id: string, pinned = false): { id: string; name: string; pinned: boolean } => ({ id, name: id, pinned });
+  it("keeps pinned first, then the saved order, new agents last by name", () => {
+    const got = orderAgents([a("c"), a("b"), a("p", true), a("a"), a("z")], ["z", "c", "gone"]);
+    assert.deepEqual(got.map((x) => x.id), ["p", "z", "c", "a", "b"]);
+  });
+
+  it("moves an id before or after another", () => {
+    assert.deepEqual(moveId(["a", "b", "c"], "c", "a", false), ["c", "a", "b"]);
+    assert.deepEqual(moveId(["a", "b", "c"], "a", "c", true), ["b", "c", "a"]);
+    assert.deepEqual(moveId(["a", "b"], "a", "a", true), ["a", "b"]);
+    assert.deepEqual(moveId(["a", "b"], "a", "x", true), ["a", "b"], "unknown target: unchanged");
   });
 });
 

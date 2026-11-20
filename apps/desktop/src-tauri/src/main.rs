@@ -1,19 +1,31 @@
-//! Desktop shell: hosts the web UI and hands it the operator token from `FERROBOT_API_TOKEN`,
-//! else the file `FERROBOT_API_TOKEN_FILE`, else `$FERROBOT_DATA_DIR/api-token` (`.ferrobot`).
+//! Desktop shell: starts the bundled daemon unless one already answers, then hosts the web UI and
+//! hands it the operator token (`FERROBOT_API_TOKEN`, `FERROBOT_API_TOKEN_FILE`, `<data dir>/api-token`).
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
-use std::path::PathBuf;
+use std::io::{Read, Write};
+use std::net::{SocketAddr, TcpStream};
+use std::path::{Path, PathBuf};
+use std::process::{Child, Command};
+use std::sync::Mutex;
+use std::time::{Duration, Instant};
 
-fn token() -> Option<String> {
+use tauri::Manager;
+use tauri::webview::DownloadEvent;
+
+/// Must match `DEFAULT_DAEMON` in `src/api.ts` and the CSP in `tauri.conf.json`.
+const DAEMON: &str = "127.0.0.1:7878";
+const RUNNER_IMAGE: &str = concat!(
+    "ghcr.io/byquexo/ferrobot-runner:",
+    env!("CARGO_PKG_VERSION")
+);
+
+/// The daemon this shell started, stopped when the app exits.
+struct OwnDaemon(Mutex<Option<Child>>);
+
+fn token(data_dir: &Path) -> Option<String> {
     let token = std::env::var("FERROBOT_API_TOKEN").ok().or_else(|| {
-        let path = std::env::var_os("FERROBOT_API_TOKEN_FILE").map_or_else(
-            || {
-                let dir =
-                    std::env::var_os("FERROBOT_DATA_DIR").unwrap_or_else(|| ".ferrobot".into());
-                PathBuf::from(dir).join("api-token")
-            },
-            PathBuf::from,
-        );
+        let path = std::env::var_os("FERROBOT_API_TOKEN_FILE")
+            .map_or_else(|| data_dir.join("api-token"), PathBuf::from);
         std::fs::read_to_string(path).ok()
     })?;
     let token = token.trim().to_owned();
@@ -23,6 +35,90 @@ fn token() -> Option<String> {
             .bytes()
             .all(|b| b.is_ascii_alphanumeric() || b"-._~".contains(&b));
     ok.then_some(token)
+}
+
+/// The body of `GET /v1/health`, or `None` when no daemon answers.
+fn health() -> Option<String> {
+    let addr: SocketAddr = DAEMON.parse().ok()?;
+    let mut stream = TcpStream::connect_timeout(&addr, Duration::from_millis(500)).ok()?;
+    stream.set_read_timeout(Some(Duration::from_secs(5))).ok()?;
+    stream
+        .write_all(b"GET /v1/health HTTP/1.0\r\nHost: 127.0.0.1\r\n\r\n")
+        .ok()?;
+    let mut response = String::new();
+    stream.read_to_string(&mut response).ok()?;
+    let (head, body) = response.split_once("\r\n\r\n")?;
+    (head.split_whitespace().nth(1) == Some("200")).then(|| body.to_owned())
+}
+
+/// `ferrobotd` next to this executable: present in release bundles, absent in dev builds.
+fn bundled_daemon() -> Option<PathBuf> {
+    let name = if cfg!(windows) {
+        "ferrobotd.exe"
+    } else {
+        "ferrobotd"
+    };
+    let path = std::env::current_exe().ok()?.parent()?.join(name);
+    path.is_file().then_some(path)
+}
+
+fn start_daemon(bin: &Path, data_dir: &Path) -> std::io::Result<Child> {
+    std::fs::create_dir_all(data_dir)?;
+    let log = std::fs::File::create(data_dir.join("daemon.log"))?;
+    Command::new(bin)
+        .args([
+            "--backend",
+            "docker",
+            "--driver",
+            "claude",
+            "--listen",
+            DAEMON,
+        ])
+        // Containers reach the agent API through host.docker.internal; it checks agent tokens.
+        .args([
+            "--agent-listen",
+            "0.0.0.0:7879",
+            "--runner-image",
+            RUNNER_IMAGE,
+        ])
+        .arg("--data-dir")
+        .arg(data_dir)
+        .stdout(log.try_clone()?)
+        .stderr(log)
+        .spawn()
+}
+
+fn wait_for_daemon(child: &mut Child) -> Result<String, String> {
+    let deadline = Instant::now() + Duration::from_secs(20);
+    while Instant::now() < deadline {
+        if let Some(body) = health() {
+            return Ok(body);
+        }
+        if let Ok(Some(status)) = child.try_wait() {
+            return Err(format!("the daemon exited ({status}); see daemon.log"));
+        }
+        std::thread::sleep(Duration::from_millis(200));
+    }
+    Err("the daemon did not answer within 20 s; see daemon.log".into())
+}
+
+fn stop_daemon(child: &mut Child) {
+    // SIGTERM lets the daemon shut down cleanly; Windows has no signal to send.
+    #[cfg(unix)]
+    {
+        let _ = Command::new("kill")
+            .args(["-TERM", &child.id().to_string()])
+            .status();
+        let deadline = Instant::now() + Duration::from_secs(5);
+        while Instant::now() < deadline {
+            if matches!(child.try_wait(), Ok(Some(_))) {
+                return;
+            }
+            std::thread::sleep(Duration::from_millis(100));
+        }
+    }
+    let _ = child.kill();
+    let _ = child.wait();
 }
 
 /// The app's own pages (bundled UI or Vite dev server) and agent-shared pages the viewer frames
@@ -60,19 +156,55 @@ fn open_external(url: &tauri::Url) {
     }
 }
 
+/// Files the page builds itself (blob URLs, e.g. the usage CSV) go to the Downloads folder.
+fn download(webview: &tauri::Webview, event: DownloadEvent<'_>) -> bool {
+    let DownloadEvent::Requested { url, destination } = event else {
+        return true;
+    };
+    let (Some(name), Ok(dir)) = (
+        destination.file_name().map(ToOwned::to_owned),
+        webview.path().download_dir(),
+    ) else {
+        return false;
+    };
+    *destination = dir.join(name);
+    url.scheme() == "blob"
+}
+
 fn main() {
-    let script = token()
-        .map(|t| format!("window.__FERROBOT_TOKEN__ = \"{t}\";"))
-        .unwrap_or_default();
-    let result = tauri::Builder::default()
-        .setup(move |app| {
-            let config = app
+    let app = tauri::Builder::default()
+        .setup(|app| {
+            let bundled = bundled_daemon();
+            let data_dir = if bundled.is_some() {
+                app.path().app_data_dir()?
+            } else {
+                PathBuf::from(
+                    std::env::var_os("FERROBOT_DATA_DIR").unwrap_or_else(|| ".ferrobot".into()),
+                )
+            };
+            let mut status = health();
+            if let (None, Some(bin)) = (&status, &bundled) {
+                let mut child = start_daemon(bin, &data_dir)?;
+                match wait_for_daemon(&mut child) {
+                    Ok(body) => status = Some(body),
+                    Err(e) => eprintln!("{e}"),
+                }
+                app.manage(OwnDaemon(Mutex::new(Some(child))));
+            }
+            let mut config = app
                 .config()
                 .app
                 .windows
                 .first()
                 .cloned()
                 .ok_or("no window configured")?;
+            // Compact JSON from the daemon, so a substring check is enough here.
+            if status.is_some_and(|body| body.contains("\"sandbox_ready\":false")) {
+                config.url = tauri::WebviewUrl::App("docker.html".into());
+            }
+            let script = token(&data_dir)
+                .map(|t| format!("window.__FERROBOT_TOKEN__ = \"{t}\";"))
+                .unwrap_or_default();
             tauri::WebviewWindowBuilder::from_config(app.handle(), &config)?
                 .initialization_script(&script)
                 .on_navigation(|url| {
@@ -86,12 +218,24 @@ fn main() {
                     open_external(&url);
                     tauri::webview::NewWindowResponse::Deny
                 })
+                .on_download(|webview, event| download(&webview, event))
                 .build()?;
             Ok(())
         })
-        .run(tauri::generate_context!());
-    if let Err(e) = result {
-        eprintln!("ferrobot desktop failed to start: {e}");
-        std::process::exit(1);
-    }
+        .build(tauri::generate_context!());
+    let app = match app {
+        Ok(app) => app,
+        Err(e) => {
+            eprintln!("ferrobot desktop failed to start: {e}");
+            std::process::exit(1);
+        }
+    };
+    app.run(|handle, event| {
+        if let tauri::RunEvent::Exit = event
+            && let Some(own) = handle.try_state::<OwnDaemon>()
+            && let Some(mut child) = own.0.lock().ok().and_then(|mut c| c.take())
+        {
+            stop_daemon(&mut child);
+        }
+    });
 }
