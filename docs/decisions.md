@@ -958,7 +958,7 @@ slop, so polish mode: palette, accent, logo, layout and features stay.
   button refuses token connectors.
 - **Errors in our words.** `error` is one of a few fixed texts plus at most an
   HTTP status number; never the server's text or a URL, which can echo a
-  token or hold a key. The raw error goes to the log.
+  token or hold a key.
 - **When it runs:** inline after `POST /v1/connectors`, every PATCH (also the
   Vault token and client secret edits) and sign-out, so the response holds the
   result; in the background after an OAuth sign-in (the browser page does not
