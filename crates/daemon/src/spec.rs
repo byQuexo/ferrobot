@@ -107,6 +107,9 @@ pub const QUESTION_CARD_FILE: &str = "question-card.v1.schema.json";
         api::voice::get_call,
         api::voice::put_call,
         api::voice::post_call_message,
+        api::usage::get_usage,
+        api::usage::get_prices,
+        api::usage::put_prices,
         api::files::shared_file,
         api::files::page,
         api::ws::ui_ws,
@@ -128,6 +131,7 @@ pub const QUESTION_CARD_FILE: &str = "question-card.v1.schema.json";
         (name = "providers", description = "Model providers and their API keys"),
         (name = "connectors", description = "Remote MCP servers whose tools agents can use"),
         (name = "voice", description = "Speech and transcription for the operator's chat"),
+        (name = "usage", description = "Model calls, tokens and estimated cost"),
     )
 )]
 struct ApiDoc;

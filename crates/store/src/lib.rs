@@ -2,7 +2,7 @@
 //!
 //! One database file holds the agent registry, the agent-to-agent mailbox,
 //! per-agent memory (FTS5 full-text search), the turn event log, routines
-//! with their run history and snapshot records. Access goes through [`Store`], a cheap-to-clone handle
+//! with their run history, snapshot records and model usage. Access goes through [`Store`], a cheap-to-clone handle
 //! that runs every query on Tokio's blocking pool so async callers never
 //! block the reactor.
 
@@ -18,6 +18,7 @@ mod routines;
 mod settings;
 mod snapshots;
 mod tasks;
+mod usage;
 mod util;
 
 use std::path::Path;
@@ -33,6 +34,7 @@ pub use memory::MemoryEntry;
 pub use routines::{NewRoutine, Routine, RoutineRun, RunTrigger};
 pub use snapshots::SnapshotRecord;
 pub use tasks::Task;
+pub use usage::{Tokens, UsageFilter, UsageGroupBy, UsageRecord, UsageSlice, UsageStatus};
 
 /// Maximum delivery attempts before a message is marked failed.
 pub const MAX_DELIVERY_ATTEMPTS: u32 = 3;

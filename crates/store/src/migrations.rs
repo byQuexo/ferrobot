@@ -217,6 +217,25 @@ const MIGRATIONS: &[&str] = &[
         updated_at TEXT NOT NULL
     );
     ",
+    // v13: model usage per proxied call; no agent FK so rows outlive deleted agents
+    r"
+    CREATE TABLE usage (
+        id                 INTEGER PRIMARY KEY AUTOINCREMENT,
+        at                 TEXT NOT NULL,
+        agent_id           TEXT NOT NULL,
+        agent_name         TEXT NOT NULL,
+        provider_id        TEXT,
+        provider_kind      TEXT NOT NULL,
+        model              TEXT NOT NULL,
+        input_tokens       INTEGER,
+        output_tokens      INTEGER,
+        cache_read_tokens  INTEGER,
+        cache_write_tokens INTEGER,
+        latency_ms         INTEGER NOT NULL,
+        status             TEXT NOT NULL CHECK (status IN ('ok','refused','error'))
+    );
+    CREATE INDEX usage_at ON usage(at);
+    ",
 ];
 
 pub(crate) fn run(conn: &mut Connection) -> Result<(), StoreError> {
@@ -320,5 +339,35 @@ mod tests {
             .query_row("PRAGMA user_version", [], |r| r.get(0))
             .unwrap();
         assert_eq!(version, i64::try_from(MIGRATIONS.len()).unwrap());
+    }
+
+    #[test]
+    fn v12_database_gains_an_empty_usage_table() {
+        let mut conn = Connection::open_in_memory().unwrap();
+        for sql in &MIGRATIONS[..12] {
+            conn.execute_batch(sql).unwrap();
+        }
+        conn.pragma_update(None, "user_version", 12).unwrap();
+        conn.execute_batch(
+            "INSERT INTO agents (id, name, instructions, status, created_at)
+             VALUES ('00000000-0000-4000-8000-000000000001', 'alice', 'x', 'running',
+                     '2026-01-01T00:00:00Z');
+             INSERT INTO settings (key, value, updated_at)
+             VALUES ('voice', '{}', '2026-01-01T00:00:00Z');",
+        )
+        .unwrap();
+        run(&mut conn).unwrap();
+        let (name, voice): (String, String) = conn
+            .query_row(
+                "SELECT (SELECT name FROM agents), (SELECT value FROM settings)",
+                [],
+                |r| Ok((r.get(0)?, r.get(1)?)),
+            )
+            .unwrap();
+        assert_eq!((name.as_str(), voice.as_str()), ("alice", "{}"));
+        let usage: i64 = conn
+            .query_row("SELECT COUNT(*) FROM usage", [], |r| r.get(0))
+            .unwrap();
+        assert_eq!(usage, 0);
     }
 }
