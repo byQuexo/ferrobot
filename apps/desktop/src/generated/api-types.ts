@@ -998,6 +998,8 @@ export interface components {
             content: string;
             /** Format: date-time */
             updated_at: string;
+            /** @description Global memory only: the agent that wrote it; absent = the operator. */
+            author?: string | null;
         };
         OAuthStart: {
             /** @description Open this in a browser on the daemon's computer to sign in. */

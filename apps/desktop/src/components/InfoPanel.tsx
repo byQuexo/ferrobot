@@ -413,7 +413,7 @@ function RoutineForm(props: {
 
 /** An agent's memory, or the global memory when `agent` is null. */
 export function Memory(props: { agent: Agent | null }): JSX.Element {
-  const { client, run, listen } = useApp();
+  const { client, run, listen, agents } = useApp();
   const id = props.agent?.id ?? null;
   const [q, setQ] = useState("");
   const [entries, setEntries] = useState<MemoryEntry[] | null>(null);
@@ -488,6 +488,7 @@ export function Memory(props: { agent: Agent | null }): JSX.Element {
           <li key={m.key} class="card memory">
             <div class="memory-head">
               <strong class="mono">{m.key}</strong>
+              {!props.agent && <span class="muted small">by {m.author ? `@${agents.get(m.author)?.name ?? "a deleted agent"}` : "you"}</span>}
               <span class="spacer" />
               <span class="muted small">{relativeTime(m.updated_at)}</span>
               <IconButton label={`Forget ${m.key}`} tone="danger" onClick={() => void run(async () => { await client.forget(id, m.key); await refresh(); })}>

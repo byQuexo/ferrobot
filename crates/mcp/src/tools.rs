@@ -172,6 +172,9 @@ pub struct MemoryItem {
     pub updated_at: String,
     /// From the global memory every agent shares.
     pub global: bool,
+    /// Global memories only: who wrote it, an agent's name or `operator`.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub written_by: Option<String>,
 }
 
 #[derive(Debug, Serialize, JsonSchema)]
@@ -493,7 +496,8 @@ impl FerrobotTools {
 
     #[tool(
         description = "Store a long-term memory under a key (overwrites an existing key). \
-        `global: true` stores it in the global memory all agents share."
+        `global: true` stores it in the global memory all agents share; you can only overwrite \
+        global memories you wrote."
     )]
     async fn remember(
         &self,
@@ -513,7 +517,9 @@ impl FerrobotTools {
         }
         let store = &self.state.store;
         if args.global == Some(true) {
-            store.remember_global(key.to_owned(), args.content).await
+            store
+                .remember_global(key.to_owned(), args.content, Some(me))
+                .await
         } else {
             store.remember(me, key.to_owned(), args.content).await
         }
@@ -538,8 +544,17 @@ impl FerrobotTools {
         let store = &self.state.store;
         let own = store.recall(me, query.clone(), limit).await;
         let global = store.recall_global(query, limit).await;
+        let agents = store.list_agents().await.map_err(store_err)?;
+        let author = |id: Option<AgentId>| match id {
+            None => "operator".to_owned(),
+            Some(id) => agents
+                .iter()
+                .find(|a| a.id == id)
+                .map_or_else(|| "a deleted agent".to_owned(), |a| a.name.to_string()),
+        };
         let item = |global: bool| {
             move |m: ferrobot_store::MemoryEntry| MemoryItem {
+                written_by: global.then(|| author(m.author)),
                 key: m.key,
                 content: m.content,
                 updated_at: m.updated_at.to_string(),
@@ -573,7 +588,7 @@ impl FerrobotTools {
         let me = caller(&parts)?.0.id;
         let store = &self.state.store;
         let existed = if args.global == Some(true) {
-            store.forget_global(args.key).await
+            store.forget_global(args.key, Some(me)).await
         } else {
             store.forget(me, args.key).await
         }

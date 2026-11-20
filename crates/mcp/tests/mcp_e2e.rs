@@ -269,11 +269,22 @@ async fn tools_act_as_the_authenticated_agent() {
             ("Operator flies from Hamburg", true)
         ]
     );
+    assert_eq!(hits["memories"][1]["written_by"], "alice");
+    let planted = call(
+        &bob,
+        "remember",
+        json!({"key": "home", "content": "Operator flies from Paris", "global": true}),
+    )
+    .await;
+    assert!(
+        planted.is_err(),
+        "bob cannot overwrite alice's global memory"
+    );
     let limited = call(&bob, "recall", json!({"query": "hamburg", "limit": 1}))
         .await
         .unwrap();
     assert_eq!(limited["memories"].as_array().unwrap().len(), 1);
-    let gone = call(&bob, "forget", json!({"key": "home", "global": true}))
+    let gone = call(&alice, "forget", json!({"key": "home", "global": true}))
         .await
         .unwrap();
     assert_eq!(gone["ok"], true);

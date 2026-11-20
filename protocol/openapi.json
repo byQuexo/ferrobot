@@ -4017,6 +4017,13 @@
           "updated_at": {
             "type": "string",
             "format": "date-time"
+          },
+          "author": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Global memory only: the agent that wrote it; absent = the operator."
           }
         }
       },

@@ -223,11 +223,13 @@ the code and this file together.
   than a nullable `memories.agent_id`, which would need a table rebuild.
   `remember`/`forget` take `global: true`; `recall` searches both scopes,
   alternating hits so neither crowds out the other, and marks global ones.
-- **Agents may write global memory.** That is what makes it useful (one agent
-  learns where the operator flies from, all know). Risk: a hijacked agent can
-  plant text every agent reads. Mitigations: the operator sees and deletes
-  entries in the Global memory dialog, and `recall` describes global entries
-  as notes, not instructions. No per-entry author yet.
+- **Agents may write global memory, but only change their own entries.**
+  That is what makes it useful (one agent learns where the operator flies
+  from, all know). Each entry records its author (v10; `NULL` = the
+  operator); agents cannot overwrite or delete entries of other agents or of
+  the operator, `recall` says who wrote each one, and the Global memory dialog
+  shows it. Remaining risk: a hijacked agent can still add new entries every
+  agent reads; `recall` calls them notes, not instructions.
 
 ## Connectors
 
