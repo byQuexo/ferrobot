@@ -779,3 +779,43 @@ slop, so polish mode: palette, accent, logo, layout and features stay.
 - **Voice settings** use the shared `Choice`; `withSaved` keeps a saved
   voice or model id the list lacks selectable, as `modelOptions` does for
   models.
+
+## Usage and cost
+
+- **Counted where the money goes: in the proxy.** Every driver (Claude,
+  OpenAI-compatible, Codex with a key or a ChatGPT sign-in, Gemini CLI)
+  reaches its model through `/model`, so the runner reports nothing. The
+  proxy wraps the upstream body: bytes pass on at once, SSE is read line by
+  line (only lines with `"usage`), a JSON body is kept up to 2 MiB and read
+  at the end. The row is written when the body is dropped, at its end or
+  when the agent hangs up, in a spawned task.
+- **One normalization:** `input_tokens` excludes cache reads and writes
+  (Anthropic's meaning); OpenAI-style and Gemini counts have the cached part
+  subtracted. `NULL` means the API reported nothing; nothing is estimated.
+  A call is "not tracked" when it succeeded without input and output counts.
+- **Not tracked:** Bedrock's streaming event stream (binary, not decoded);
+  an SSE line over 2 MiB drops that call's counts; OpenAI-compatible servers
+  that ignore `include_usage`. Model lists and token counts are not logged.
+  Unknown or missing agent tokens leave no row.
+- **Status:** `ok` (2xx), `error` (upstream non-2xx, unreachable, or a stream
+  that broke), `refused` (the proxy said no to a known agent: not allowed,
+  too large, bad path, no key).
+- **Prices:** `config/pricing.toml`, compiled in, USD per 1M tokens per
+  provider kind and model id, each with its source page and check date.
+  Only what was read on the official pages; anything else is "unknown",
+  never guessed. Ollama is free. Codex and Gemini CLI use the OpenAI and
+  Gemini entries; a dated id falls back to its undated entry. The operator's
+  prices (`PUT /v1/usage/prices`, setting `pricing`) replace the file's.
+  Costs are computed when asked, so a price change also reprices the past.
+- **Known gaps in the estimate:** one rate per token kind: Anthropic cache
+  writes at the 5-minute rate, no long-prompt tiers (the file notes them),
+  no batch, fast-mode or data-residency multipliers, no Gemini cache storage.
+  A ChatGPT sign-in is not billed per token, so its cost is overstated.
+- **Days are UTC dates.** The view's ranges start at local midnight, so the
+  first day bar can hold only a few hours.
+- **CSV export is a Blob download.** It works in a browser; the Tauri window
+  cancels it (wry has no download handler set, and FileViewer's way, a
+  signed daemon link for the system browser, does not fit a file built in
+  the page). Options: `on_download` in the shell limited to the app's own
+  blob URLs, or a signed CSV link from the daemon.
+

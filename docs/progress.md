@@ -784,3 +784,44 @@ store used for the run) or the daemon's own env.
 - The model list in the add-provider form: the daemon binary was built from
   `feature/voice`, before the model routes, so the field fell back to text.
 - A stored voice key with a real catalog.
+
+## Usage: model calls, tokens and cost (`feat/usage-tab`)
+
+**Done**
+
+- Migration v13: table `usage`, one row per model call a known agent makes
+  through the proxy (agent name kept, no FK, so rows outlive the agent).
+- The proxy meters generation calls while the body streams past: Anthropic
+  Messages (also Vertex `rawPredict`/`streamRawPredict` and Bedrock
+  `invoke`), OpenAI-style `chat/completions`, Codex `responses`, Gemini
+  `generateContent`. Rows also for refused calls (`refused`) and upstream
+  errors (`error`). No prompt or completion is stored.
+- The OpenAI-compatible driver asks for `stream_options.include_usage`.
+- `config/pricing.toml` (Anthropic, OpenAI, Gemini; checked 2026-11-20 on
+  their pricing pages), operator overrides in the `pricing` setting.
+- `GET /v1/usage` (filters, group by day/agent/provider/model, estimated
+  cost), `GET`/`PUT /v1/usage/prices`.
+- Desktop: a Usage view (chart icon next to Settings) with ranges, totals,
+  a cost-per-day chart, sortable tables by provider, model and agent, CSV
+  export and a price edit per model row.
+
+**Tested**
+
+- Daemon: Anthropic SSE with cache tokens and OpenAI SSE with
+  `include_usage` against a fake upstream, split mid-line; a refused call;
+  filters, groups, unknown and not-tracked counts, overrides; usage parsing
+  per API family; cost math; the price file; the v12 to v13 upgrade.
+- Runner: the request carries `stream_options`, a usage-only last chunk
+  does not break the turn. Desktop: range math, UTC days, sorting, CSV.
+- The view was checked in a browser (`vite preview`) against a real daemon
+  with seeded rows: totals, chart, tables, price edit.
+
+**Not tested**
+
+- Any real upstream: no Anthropic, OpenAI, Gemini or Codex response has
+  been metered. The live smoke test must be re-run (proxy and runner
+  changed).
+- Gemini native and Codex Responses only against unit fixtures; whether
+  strict OpenAI-compatible servers accept `stream_options`.
+- CSV export in the Tauri window (see decisions: it cannot save downloads).
+
