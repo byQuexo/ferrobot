@@ -765,6 +765,50 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/usage": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Calls, tokens and estimated cost of the model calls agents made through
+         *     the proxy, in total and per group.
+         */
+        get: operations["get_usage"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/usage/prices": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Prices in USD per 1M tokens: the operator's overrides, then the shipped
+         *     table. Ollama models cost 0 and are not listed.
+         */
+        get: operations["get_prices"];
+        /**
+         * Replaces the operator's price overrides (the whole list) and returns the
+         *     prices in effect.
+         */
+        put: operations["put_prices"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/voice": {
         parameters: {
             query?: never;
@@ -1337,6 +1381,33 @@ export interface components {
          * @enum {string}
          */
         Presence: "working" | "awake" | "starting" | "sleeping" | "error";
+        /** @description USD per 1M tokens. */
+        Price: {
+            /** Format: double */
+            input: number;
+            /** Format: double */
+            output: number;
+            /**
+             * Format: double
+             * @description `null`: unknown; calls with cache reads then cost an unknown amount.
+             */
+            cache_read?: number | null;
+            /**
+             * Format: double
+             * @description `null`: unknown; calls with cache writes then cost an unknown amount.
+             */
+            cache_write?: number | null;
+        };
+        /** @description One model's price and where it comes from. */
+        PriceEntry: components["schemas"]["Price"] & {
+            provider_kind: components["schemas"]["ProviderKind"];
+            /** @description API model id, as agents send it. */
+            model: string;
+            /** @description When the price was read off the source, or set by the operator (`YYYY-MM-DD`). */
+            checked?: string | null;
+            /** @description The provider's pricing page; `null` for the operator's own price. */
+            source?: string | null;
+        };
         /**
          * @description A configured model provider. Its credential lives in the daemon's secret
          *     store, never here.
@@ -1524,6 +1595,11 @@ export interface components {
             /** @enum {string} */
             kind: "routine";
         };
+        SetPrice: components["schemas"]["Price"] & {
+            provider_kind: components["schemas"]["ProviderKind"];
+            /** @description API model id, as agents send it. */
+            model: string;
+        };
         SharedFileView: {
             name: string;
             /** Format: int64 */
@@ -1695,6 +1771,50 @@ export interface components {
              *     Stored in the OS keychain; never returned.
              */
             api_key?: string | null;
+        };
+        UsageGroup: components["schemas"]["UsageTotals"] & {
+            /**
+             * @description UTC date, agent id, provider id (`default`: the daemon's key) or
+             *     `<provider kind>/<model>`.
+             */
+            key: string;
+            /** @description Date, agent name, provider name or model id. */
+            label: string;
+        };
+        UsageReport: {
+            totals: components["schemas"]["UsageTotals"];
+            groups: components["schemas"]["UsageGroup"][];
+        };
+        /** @description Sums for a time range or group. Costs are estimates from the price table. */
+        UsageTotals: {
+            /** Format: int64 */
+            calls: number;
+            /**
+             * Format: int64
+             * @description Input tokens without cache reads and writes.
+             */
+            input_tokens: number;
+            /** Format: int64 */
+            output_tokens: number;
+            /** Format: int64 */
+            cache_read_tokens: number;
+            /** Format: int64 */
+            cache_write_tokens: number;
+            /**
+             * Format: double
+             * @description Estimated USD; `null` when no call here could be priced.
+             */
+            cost_usd?: number | null;
+            /**
+             * Format: int64
+             * @description Calls with tokens but no known price (not in `cost_usd`).
+             */
+            unknown_cost_calls: number;
+            /**
+             * Format: int64
+             * @description Successful calls whose API reported no tokens.
+             */
+            not_tracked_calls: number;
         };
         VoiceCatalog: {
             /** @description The account's voices (`ElevenLabs`); empty for other providers. */
@@ -4557,6 +4677,124 @@ export interface operations {
             };
             /** @description Unknown routine */
             404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+        };
+    };
+    get_usage: {
+        parameters: {
+            query?: {
+                /** @description Start, inclusive (RFC 3339). */
+                from?: string;
+                /** @description End, exclusive (RFC 3339). */
+                to?: string;
+                /** @description Only this agent (id). */
+                agent?: string;
+                /** @description Only this provider (id), or `default` for the daemon's own key. */
+                provider?: string;
+                /** @description Only this model id. */
+                model?: string;
+                /** @description `day` (UTC date, the default), `agent`, `provider` or `model`. */
+                group_by?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["UsageReport"];
+                };
+            };
+            /** @description Bad filter */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Missing or wrong API token */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+        };
+    };
+    get_prices: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PriceEntry"][];
+                };
+            };
+            /** @description Missing or wrong API token */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+        };
+    };
+    put_prices: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SetPrice"][];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PriceEntry"][];
+                };
+            };
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Missing or wrong API token */
+            401: {
                 headers: {
                     [name: string]: unknown;
                 };

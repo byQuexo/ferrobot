@@ -45,6 +45,12 @@ export type VoiceProvider = Schemas["VoiceProvider"];
 export type UpdateVoice = Schemas["UpdateVoice"];
 export type VoiceCatalog = Schemas["VoiceCatalog"];
 export type LiveMode = Schemas["LiveMode"];
+export type UsageReport = Schemas["UsageReport"];
+export type UsageGroup = Schemas["UsageGroup"];
+export type UsageTotals = Schemas["UsageTotals"];
+export type PriceEntry = Schemas["PriceEntry"];
+export type SetPrice = Schemas["SetPrice"];
+export type UsageGroupBy = "day" | "agent" | "provider" | "model";
 
 export class ApiError extends Error {
   override name = "ApiError";
@@ -214,6 +220,13 @@ export class DaemonClient {
     (await this.#request<{ agents: string[] }>("PUT", "/v1/call", { agents })).agents;
   /** The operator's message to everyone in the call. */
   sayInCall = (body: string): Promise<MailMessage[]> => this.#request("POST", "/v1/call/messages", { body });
+
+  // model usage; `to` null means until now
+  usage = (groupBy: UsageGroupBy, from: string, to: string | null): Promise<UsageReport> =>
+    this.#request("GET", `/v1/usage?group_by=${groupBy}&from=${enc(from)}${to ? `&to=${enc(to)}` : ""}`);
+  prices = (): Promise<PriceEntry[]> => this.#request("GET", "/v1/usage/prices");
+  /** Replaces all of the operator's own prices. */
+  setPrices = (prices: SetPrice[]): Promise<PriceEntry[]> => this.#request("PUT", "/v1/usage/prices", prices);
 
   // agent-to-agent conversations (read-only)
   listConversations = (): Promise<Conversation[]> => this.#request("GET", "/v1/conversations");

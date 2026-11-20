@@ -10,6 +10,8 @@ import { parseBlocks, parseInline } from "../src/lib/markdown.ts";
 import { modelOptions, withSaved } from "../src/lib/models.ts";
 import { moveId, orderAgents } from "../src/lib/order.ts";
 import { liveEvent, pcm16Base64, speakable } from "../src/lib/voice.ts";
+import { costLabel, rangeOf, sortGroups, toCsv, utcDays } from "../src/lib/usage.ts";
+import type { UsageGroup } from "../src/api.ts";
 
 const ME = "11111111-1111-4111-8111-111111111111";
 const BOB = "22222222-2222-4222-8222-222222222222";
@@ -341,5 +343,53 @@ describe("modelOptions", () => {
     assert.equal(withSaved(voices, "v1"), voices);
     assert.equal(withSaved(voices, ""), voices);
     assert.deepEqual(withSaved([], "v9"), [], "no list: the field is typed");
+  });
+});
+
+describe("usage", () => {
+  const group = (label: string, cost: number | null, unknown = 0): UsageGroup => ({
+    key: label,
+    label,
+    calls: 1,
+    input_tokens: 0,
+    output_tokens: 0,
+    cache_read_tokens: 0,
+    cache_write_tokens: 0,
+    cost_usd: cost,
+    unknown_cost_calls: unknown,
+    not_tracked_calls: cost === null && unknown === 0 ? 1 : 0,
+  });
+
+  it("turns ranges into local-midnight bounds", () => {
+    const now = new Date(2026, 10, 20, 15, 30);
+    assert.deepEqual(rangeOf("today", now, { from: "", to: "" }), { from: new Date(2026, 10, 20).toISOString(), to: null });
+    assert.equal(rangeOf("7d", now, { from: "", to: "" })?.from, new Date(2026, 10, 14).toISOString());
+    assert.deepEqual(rangeOf("custom", now, { from: "2026-10-30", to: "2026-11-01" }), {
+      from: new Date(2026, 9, 30).toISOString(),
+      to: new Date(2026, 10, 2).toISOString(),
+    });
+    assert.equal(rangeOf("custom", now, { from: "2026-11-02", to: "2026-11-01" }), null);
+    assert.equal(rangeOf("custom", now, { from: "", to: "2026-11-01" }), null);
+  });
+
+  it("lists every UTC day of a range", () => {
+    assert.deepEqual(utcDays("2026-11-18T23:00:00.000Z", "2026-11-20T23:00:00.000Z", new Date()), ["2026-11-18", "2026-11-19", "2026-11-20"]);
+    assert.deepEqual(utcDays("2026-11-20T00:00:00.000Z", null, new Date("2026-11-20T09:00:00Z")), ["2026-11-20"]);
+  });
+
+  it("sorts with unknown costs last and labels them plainly", () => {
+    const rows = [group("b", 2), group("a", null, 3), group("c", 0.004)];
+    assert.deepEqual(sortGroups(rows, "cost_usd", true).map((g) => g.label), ["b", "c", "a"]);
+    assert.deepEqual(sortGroups(rows, "label", false).map((g) => g.label), ["a", "b", "c"]);
+    assert.deepEqual(rows.map(costLabel), ["$2.00", "unknown", "<$0.01"]);
+    assert.equal(costLabel(group("d", null)), "not tracked");
+    assert.equal(costLabel(group("e", 1, 2)), "$1.00 + unknown");
+  });
+
+  it("writes CSV that spreadsheets read as text", () => {
+    assert.equal(
+      toCsv([["name", "cost"], ['a "b", c', 1.5], ["=SUM(A1)", null]]),
+      'name,cost\r\n"a ""b"", c",1.5\r\n\'=SUM(A1),\r\n',
+    );
   });
 });

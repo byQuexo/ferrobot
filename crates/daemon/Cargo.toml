@@ -51,11 +51,14 @@ tower-http.workspace = true
 tracing.workspace = true
 tracing-subscriber.workspace = true
 tempfile.workspace = true
+# Already in the tree via proc-macro-crate; only the parser, so no new crates.
+toml_edit = { version = "0.25", default-features = false, features = ["parse"] }
 url.workspace = true
 uuid.workspace = true
 
 [dev-dependencies]
 jsonschema = { version = "0.61", default-features = false }
+rusqlite.workspace = true
 tokio-tungstenite.workspace = true
 
 [lints]

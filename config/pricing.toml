@@ -1,0 +1,314 @@
+# Model prices in USD per 1M tokens, for the Usage view's cost estimates.
+# Keyed by provider kind, then the API model id the agent sends. Only prices
+# read on the provider's own pricing page on the `checked` date; anything
+# missing shows as "unknown". Operator overrides (PUT /v1/usage/prices) win.
+#
+# - cache_write is Anthropic's 5-minute cache write; 1-hour writes cost more.
+# - A dated id (claude-sonnet-4-5-20250929) falls back to its undated entry.
+# - codex uses the openai entries, gemini_cli the gemini ones. Ollama is free.
+# - Long-prompt tiers are not modelled: where a page lists a higher price above
+#   a prompt length, the entry says so (input / output / cache_read) and
+#   holds the lower price. Dated price changes are noted the same way.
+# - Not listed on purpose: claude-haiku-5-5 (prompts over 100k tokens cost
+#   5x, which agents reach often), gpt-5.6-* (cache write prices whose usage
+#   field is undocumented), Bedrock, Vertex and OpenRouter (not checked).
+
+[anthropic."claude-fable-5-2"]
+input = 8.0
+output = 40.0
+cache_read = 0.20
+cache_write = 10.0
+checked = "2026-11-20"
+source = "https://platform.claude.com/docs/en/about-claude/pricing"
+
+[anthropic."claude-opus-5-5"]
+input = 4.0
+output = 20.0
+cache_read = 0.20
+cache_write = 5.0
+checked = "2026-11-20"
+source = "https://platform.claude.com/docs/en/about-claude/pricing"
+
+[anthropic."claude-sonnet-5-5"]
+input = 2.0
+output = 10.0
+cache_read = 0.10
+cache_write = 2.50
+checked = "2026-11-20"
+source = "https://platform.claude.com/docs/en/about-claude/pricing"
+
+[anthropic."claude-opus-5"]
+input = 5.0
+output = 25.0
+cache_read = 0.50
+cache_write = 6.25
+checked = "2026-11-20"
+source = "https://platform.claude.com/docs/en/about-claude/pricing"
+
+[anthropic."claude-sonnet-5"]
+input = 2.0
+output = 10.0
+cache_read = 0.20
+cache_write = 2.50
+checked = "2026-11-20"
+source = "https://platform.claude.com/docs/en/about-claude/pricing"
+
+[anthropic."claude-opus-4-8"]
+input = 5.0
+output = 25.0
+cache_read = 0.50
+cache_write = 6.25
+checked = "2026-11-20"
+source = "https://platform.claude.com/docs/en/about-claude/pricing"
+
+[anthropic."claude-opus-4-7"]
+input = 5.0
+output = 25.0
+cache_read = 0.50
+cache_write = 6.25
+checked = "2026-11-20"
+source = "https://platform.claude.com/docs/en/about-claude/pricing"
+
+[anthropic."claude-opus-4-6"]
+input = 5.0
+output = 25.0
+cache_read = 0.50
+cache_write = 6.25
+checked = "2026-11-20"
+source = "https://platform.claude.com/docs/en/about-claude/pricing"
+
+[anthropic."claude-sonnet-4-6"]
+input = 3.0
+output = 15.0
+cache_read = 0.30
+cache_write = 3.75
+checked = "2026-11-20"
+source = "https://platform.claude.com/docs/en/about-claude/pricing"
+
+[anthropic."claude-opus-4-5"]
+input = 5.0
+output = 25.0
+cache_read = 0.50
+cache_write = 6.25
+checked = "2026-11-20"
+source = "https://platform.claude.com/docs/en/about-claude/pricing"
+
+[anthropic."claude-sonnet-4-5"]
+input = 3.0
+output = 15.0
+cache_read = 0.30
+cache_write = 3.75
+checked = "2026-11-20"
+source = "https://platform.claude.com/docs/en/about-claude/pricing"
+
+[anthropic."claude-haiku-4-5"]
+input = 1.0
+output = 5.0
+cache_read = 0.10
+cache_write = 1.25
+checked = "2026-11-20"
+source = "https://platform.claude.com/docs/en/about-claude/pricing"
+
+# Prompts over 272K tokens cost more (10.00 / 45.00 / 1.00).
+[openai."gpt-5.5"]
+input = 5.0
+output = 30.0
+cache_read = 0.50
+checked = "2026-11-20"
+source = "https://developers.openai.com/api/docs/pricing"
+
+# Prompts over 272K tokens cost more (5.00 / 22.50 / 0.50).
+[openai."gpt-5.4"]
+input = 2.50
+output = 15.0
+cache_read = 0.25
+checked = "2026-11-20"
+source = "https://developers.openai.com/api/docs/pricing"
+
+[openai."gpt-5.4-mini"]
+input = 0.75
+output = 4.50
+cache_read = 0.075
+checked = "2026-11-20"
+source = "https://developers.openai.com/api/docs/pricing"
+
+[openai."gpt-5.4-nano"]
+input = 0.20
+output = 1.25
+cache_read = 0.02
+checked = "2026-11-20"
+source = "https://developers.openai.com/api/docs/pricing"
+
+[openai."gpt-5.3-codex"]
+input = 1.75
+output = 14.0
+cache_read = 0.175
+checked = "2026-11-20"
+source = "https://developers.openai.com/api/docs/pricing"
+
+[openai."gpt-5.2"]
+input = 1.75
+output = 14.0
+cache_read = 0.175
+checked = "2026-11-20"
+source = "https://developers.openai.com/api/docs/pricing"
+
+[openai."gpt-5.1"]
+input = 1.25
+output = 10.0
+cache_read = 0.125
+checked = "2026-11-20"
+source = "https://developers.openai.com/api/docs/pricing"
+
+[openai."gpt-5"]
+input = 1.25
+output = 10.0
+cache_read = 0.125
+checked = "2026-11-20"
+source = "https://developers.openai.com/api/docs/pricing"
+
+[openai."gpt-5-mini"]
+input = 0.25
+output = 2.0
+cache_read = 0.025
+checked = "2026-11-20"
+source = "https://developers.openai.com/api/docs/pricing"
+
+[openai."gpt-5-nano"]
+input = 0.05
+output = 0.40
+cache_read = 0.005
+checked = "2026-11-20"
+source = "https://developers.openai.com/api/docs/pricing"
+
+[openai."gpt-4.1"]
+input = 2.0
+output = 8.0
+cache_read = 0.50
+checked = "2026-11-20"
+source = "https://developers.openai.com/api/docs/pricing"
+
+[openai."gpt-4.1-mini"]
+input = 0.40
+output = 1.60
+cache_read = 0.10
+checked = "2026-11-20"
+source = "https://developers.openai.com/api/docs/pricing"
+
+[openai."gpt-4o"]
+input = 2.50
+output = 10.0
+cache_read = 1.25
+checked = "2026-11-20"
+source = "https://developers.openai.com/api/docs/pricing"
+
+[openai."gpt-4o-mini"]
+input = 0.15
+output = 0.60
+cache_read = 0.075
+checked = "2026-11-20"
+source = "https://developers.openai.com/api/docs/pricing"
+
+[openai."o3"]
+input = 2.0
+output = 8.0
+cache_read = 0.50
+checked = "2026-11-20"
+source = "https://developers.openai.com/api/docs/pricing"
+
+# Through 2026-11-30; from 2026-12-01 the page lists 4.00 / 20.00 / 0.20.
+[gemini."gemini-4-carbon"]
+input = 2.0
+output = 10.0
+cache_read = 0.10
+checked = "2026-11-20"
+source = "https://aistudio.google.com/docs/pricing"
+
+# Through 2026-11-30; from 2026-12-01 the page lists 4.00 / 20.00 / 0.20.
+[gemini."gemini-4-argon"]
+input = 2.0
+output = 10.0
+cache_read = 0.10
+checked = "2026-11-20"
+source = "https://aistudio.google.com/docs/pricing"
+
+[gemini."gemini-4-neon"]
+input = 3.0
+output = 15.0
+cache_read = 0.15
+checked = "2026-11-20"
+source = "https://aistudio.google.com/docs/pricing"
+
+[gemini."gemini-4-hydrogen"]
+input = 1.50
+output = 7.50
+cache_read = 0.075
+checked = "2026-11-20"
+source = "https://aistudio.google.com/docs/pricing"
+
+# Through 2026-12-31; from 2027-01-01 the page lists 1.50 / 7.50 / 0.15.
+[gemini."gemini-3.8-flash"]
+input = 0.75
+output = 3.75
+cache_read = 0.075
+checked = "2026-11-20"
+source = "https://aistudio.google.com/docs/pricing"
+
+# Through 2026-12-31; from 2027-01-01 the page lists 1.50 / 7.50 / 0.15.
+[gemini."gemini-3.6-flash"]
+input = 0.75
+output = 3.75
+cache_read = 0.075
+checked = "2026-11-20"
+source = "https://aistudio.google.com/docs/pricing"
+
+[gemini."gemini-3.5-flash-lite"]
+input = 0.30
+output = 2.50
+cache_read = 0.03
+checked = "2026-11-20"
+source = "https://aistudio.google.com/docs/pricing"
+
+[gemini."gemini-3.1-flash-lite"]
+input = 0.25
+output = 1.50
+cache_read = 0.025
+checked = "2026-11-20"
+source = "https://aistudio.google.com/docs/pricing"
+
+# Prompts over 200k tokens cost more (4.00 / 18.00 / 0.40).
+[gemini."gemini-3.1-pro-preview"]
+input = 2.0
+output = 12.0
+cache_read = 0.20
+checked = "2026-11-20"
+source = "https://aistudio.google.com/docs/pricing"
+
+[gemini."gemini-3-flash-preview"]
+input = 0.50
+output = 3.0
+cache_read = 0.05
+checked = "2026-11-20"
+source = "https://aistudio.google.com/docs/pricing"
+
+# Prompts over 200k tokens cost more (2.50 / 15.00 / 0.25).
+[gemini."gemini-2.5-pro"]
+input = 1.25
+output = 10.0
+cache_read = 0.125
+checked = "2026-11-20"
+source = "https://aistudio.google.com/docs/pricing"
+
+[gemini."gemini-2.5-flash"]
+input = 0.30
+output = 2.50
+cache_read = 0.03
+checked = "2026-11-20"
+source = "https://aistudio.google.com/docs/pricing"
+
+[gemini."gemini-2.5-flash-lite"]
+input = 0.10
+output = 0.40
+cache_read = 0.01
+checked = "2026-11-20"
+source = "https://aistudio.google.com/docs/pricing"

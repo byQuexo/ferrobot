@@ -218,18 +218,29 @@ export class OpenAIDriver implements ModelDriver {
     tools: unknown[],
     ctx: TurnContext,
   ): Promise<{ text: string; calls: RequestedCall[] }> {
-    const res = await this.#fetch(
-      `${this.#opts.baseUrl.href.replace(/\/+$/, "")}/chat/completions`,
-      {
+    const request = (withUsage: boolean): Promise<Response> =>
+      this.#fetch(`${this.#opts.baseUrl.href.replace(/\/+$/, "")}/chat/completions`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
           Authorization: `Bearer ${this.#opts.token}`,
         },
-        body: JSON.stringify({ model: this.#opts.model, stream: true, messages, tools }),
+        // The daemon reads token usage from the last chunk; it has no choices, so the loop skips it.
+        body: JSON.stringify({
+          model: this.#opts.model,
+          stream: true,
+          ...(withUsage ? { stream_options: { include_usage: true } } : {}),
+          messages,
+          tools,
+        }),
         signal: ctx.signal,
-      },
-    );
+      });
+    let res = await request(true);
+    if (res.status === 400) {
+      // Strict OpenAI-compatible servers reject `stream_options`; their usage then goes untracked.
+      await res.body?.cancel();
+      res = await request(false);
+    }
     if (!res.ok || !res.body) {
       throw new Error(`model request failed with ${res.status}: ${errorSnippet(await res.text())}`);
     }

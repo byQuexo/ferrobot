@@ -1,6 +1,7 @@
 //! Model proxy at `<agent API>/model`: checks the agent token, picks the upstream from the agent's
-//! provider and swaps in the real credential, which never leaves the daemon. Responses stream back.
+//! provider and swaps in the real credential, which never leaves the daemon; each call leaves a usage row.
 
+use std::task::Poll;
 use std::time::{Duration, Instant};
 
 use axum::Router;
@@ -9,10 +10,13 @@ use axum::extract::{Path, Request, State};
 use axum::http::{HeaderMap, StatusCode, header};
 use axum::response::{IntoResponse, Response};
 use axum::routing::any;
+use futures_util::StreamExt;
 
-use ferrobot_core::{Agent, ProviderKind, UpstreamAuth};
+use ferrobot_core::{Provider, ProviderKind, UpstreamAuth};
+use ferrobot_store::{Tokens, UsageStatus};
 
 use crate::AppState;
+use crate::usage::{Call, Family, Meter};
 
 /// Google access tokens live an hour; refresh well before.
 const GCLOUD_TOKEN_TTL: Duration = Duration::from_secs(45 * 60);
@@ -126,6 +130,33 @@ fn permitted(api: &Api, method: &axum::http::Method, path: &str) -> bool {
     }
 }
 
+/// The usage shape of a permitted call that runs the model; `None` for
+/// model lists and token counts.
+fn generation(api: &Api, path: &str) -> Option<Family> {
+    let verb = |verbs: &[&str]| {
+        path.rsplit_once(':')
+            .is_some_and(|(_, v)| verbs.contains(&v))
+    };
+    match api {
+        Api::Anthropic => (path == "v1/messages").then_some(Family::Anthropic),
+        Api::Bedrock => (!path.ends_with("/count-tokens")).then_some(Family::Anthropic),
+        Api::BedrockControl => None,
+        Api::Vertex { .. } => (verb(&["rawPredict", "streamRawPredict"])
+            && !path.contains("/count-tokens:"))
+        .then_some(Family::Anthropic),
+        Api::ChatCompletions => (path == "chat/completions").then_some(Family::ChatCompletions),
+        Api::Responses => path.starts_with("responses").then_some(Family::Responses),
+        Api::GeminiNative => {
+            verb(&["generateContent", "streamGenerateContent"]).then_some(Family::Gemini)
+        }
+    }
+}
+
+/// Bedrock, Vertex and Gemini run (and bill) the model in the path, whatever the body says.
+fn body_names_model(api: &Api) -> bool {
+    !matches!(api, Api::Bedrock | Api::Vertex { .. } | Api::GeminiNative)
+}
+
 /// Plain characters only, so nothing is decoded twice: no `%`, no control
 /// characters, no empty or dot segments.
 fn clean(path: &str) -> bool {
@@ -187,8 +218,8 @@ pub fn secret_key(provider: uuid::Uuid) -> String {
 /// Status and message for the agent when a request cannot be routed.
 type Failure = (StatusCode, String);
 
-async fn route(state: &AppState, agent: &Agent, path: &str) -> Result<Route, Failure> {
-    let Some(id) = agent.provider_id else {
+async fn route(state: &AppState, provider: Option<Provider>, path: &str) -> Result<Route, Failure> {
+    let Some(provider) = provider else {
         if !path.starts_with("v1/") {
             return Err((
                 StatusCode::NOT_FOUND,
@@ -209,12 +240,8 @@ async fn route(state: &AppState, agent: &Agent, path: &str) -> Result<Route, Fai
             chatgpt_account: None,
         });
     };
+    let id = provider.id;
     let unavailable = |msg: String| (StatusCode::SERVICE_UNAVAILABLE, msg);
-    let provider = state
-        .store
-        .get_provider(id)
-        .await
-        .map_err(|e| unavailable(format!("provider: {e}")))?;
     if provider.kind == ProviderKind::Anthropic && !path.starts_with("v1/") {
         return Err((
             StatusCode::NOT_FOUND,
@@ -350,27 +377,56 @@ async fn forward(
             return error(StatusCode::INTERNAL_SERVER_ERROR, "token lookup failed");
         }
     };
+    let provider = match agent.provider_id {
+        Some(id) => Some(state.store.get_provider(id).await),
+        None => None,
+    };
+    let mut call = Call::new(
+        &state,
+        &agent,
+        provider.as_ref().and_then(|p| p.as_ref().ok()),
+        &path,
+    );
+    let refuse = |call: Call, status: StatusCode, message: &str| {
+        call.record(UsageStatus::Refused, Tokens::default());
+        error(status, message)
+    };
+    let provider = match provider.transpose() {
+        Ok(provider) => provider,
+        Err(e) => {
+            let message = format!("provider: {e}");
+            return refuse(call, StatusCode::SERVICE_UNAVAILABLE, &message);
+        }
+    };
     if !clean(&path) {
         tracing::warn!(agent = %agent.name, "model call with an invalid path refused");
-        return error(StatusCode::NOT_FOUND, "invalid path");
+        return refuse(call, StatusCode::NOT_FOUND, "invalid path");
     }
-    let route = match route(&state, &agent, &path).await {
+    let route = match route(&state, provider, &path).await {
         Ok(route) => route,
-        Err((status, message)) => return error(status, &message),
+        Err((status, message)) => return refuse(call, status, &message),
     };
     if !permitted(&route.api, request.method(), &path) {
         // Visible on the host: an SDK update may call an endpoint not listed yet.
         tracing::warn!(agent = %agent.name, method = %request.method(), %path, "model call not proxied");
-        return error(StatusCode::NOT_FOUND, "this API call is not proxied");
+        return refuse(call, StatusCode::NOT_FOUND, "this API call is not proxied");
     }
 
     let (parts, body) = request.into_parts();
     let Ok(body) = axum::body::to_bytes(body, MAX_REQUEST_BYTES).await else {
-        return error(StatusCode::PAYLOAD_TOO_LARGE, "request body too large");
+        return refuse(
+            call,
+            StatusCode::PAYLOAD_TOO_LARGE,
+            "request body too large",
+        );
     };
     let mut url = format!("{}/{path}", route.upstream.trim_end_matches('/'));
     if !below(&route.upstream, &url) {
-        return error(StatusCode::NOT_FOUND, "invalid path");
+        return refuse(call, StatusCode::NOT_FOUND, "invalid path");
+    }
+    let family = generation(&route.api, &path);
+    if family.is_some() && body_names_model(&route.api) {
+        call.model_from_body(&body);
     }
     if let Some(q) = parts.uri.query() {
         url.push('?');
@@ -401,9 +457,17 @@ async fn forward(
         Ok(r) => r,
         Err(e) => {
             tracing::warn!(agent = %agent.name, error = %e, "model upstream unreachable");
+            if family.is_some() {
+                call.record(UsageStatus::Error, Tokens::default());
+            }
             return error(StatusCode::BAD_GATEWAY, "model upstream unreachable");
         }
     };
+    respond(response, family.map(|f| (f, call)))
+}
+
+/// The upstream's response for the agent; a model run is metered as it streams.
+fn respond(response: reqwest::Response, metered: Option<(Family, Call)>) -> Response {
     let status = response.status();
     let mut out = Response::builder().status(status.as_u16());
     for (name, value) in response.headers() {
@@ -411,7 +475,27 @@ async fn forward(
             out = out.header(name.clone(), value.clone());
         }
     }
-    out.body(Body::from_stream(response.bytes_stream()))
+    let stream = response.bytes_stream();
+    let body = match metered {
+        Some((family, call)) => {
+            let content_type = out
+                .headers_ref()
+                .and_then(|h| h.get(header::CONTENT_TYPE))
+                .and_then(|v| v.to_str().ok())
+                .unwrap_or_default();
+            let mut meter = Meter::new(call, family, status.is_success(), content_type);
+            let mut stream = Box::pin(stream);
+            Body::from_stream(futures_util::stream::poll_fn(move |cx| {
+                let next = stream.poll_next_unpin(cx);
+                if let Poll::Ready(chunk) = &next {
+                    meter.feed(chunk.as_ref());
+                }
+                next
+            }))
+        }
+        None => Body::from_stream(stream),
+    };
+    out.body(body)
         .unwrap_or_else(|_| error(StatusCode::BAD_GATEWAY, "invalid upstream response"))
 }
 
@@ -492,5 +576,45 @@ mod tests {
             "v1beta/models/gemini-2.5-flash:streamGenerateContent"
         ));
         assert!(!ok(&Api::GeminiNative, &post, "v1beta/files"));
+    }
+
+    #[test]
+    fn only_model_runs_are_metered() {
+        let vertex = Api::Vertex {
+            project: "p".into(),
+            region: "r".into(),
+        };
+        let base = "projects/p/locations/r/publishers/anthropic/models";
+        let (stream, count) = (
+            format!("{base}/m:streamRawPredict"),
+            format!("{base}/count-tokens:rawPredict"),
+        );
+        for (api, path, family) in [
+            (&Api::Anthropic, "v1/messages", Some(Family::Anthropic)),
+            (&Api::Anthropic, "v1/messages/count_tokens", None),
+            (&Api::Anthropic, "v1/models", None),
+            (
+                &Api::Bedrock,
+                "model/x/invoke-with-response-stream",
+                Some(Family::Anthropic),
+            ),
+            (&Api::Bedrock, "model/x/count-tokens", None),
+            (&vertex, stream.as_str(), Some(Family::Anthropic)),
+            (&vertex, count.as_str(), None),
+            (&Api::ChatCompletions, "models", None),
+            (&Api::Responses, "responses", Some(Family::Responses)),
+            (&Api::GeminiNative, "v1beta/models/g:countTokens", None),
+            (
+                &Api::GeminiNative,
+                "v1beta/models/g:generateContent",
+                Some(Family::Gemini),
+            ),
+        ] {
+            assert_eq!(generation(api, path), family, "{path}");
+        }
+        assert!(body_names_model(&Api::Anthropic) && body_names_model(&Api::ChatCompletions));
+        for api in [&Api::Bedrock, &vertex, &Api::GeminiNative] {
+            assert!(!body_names_model(api), "the path names the model");
+        }
     }
 }

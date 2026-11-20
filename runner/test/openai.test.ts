@@ -18,6 +18,7 @@ interface Sent {
   body: {
     model: string;
     stream: boolean;
+    stream_options?: { include_usage: boolean };
     messages: ChatMessage[];
     tools: { type: string; function: { name: string; description: string; parameters: unknown } }[];
   };
@@ -115,7 +116,8 @@ function context(overrides: Partial<TurnContext> = {}): { ctx: TurnContext; even
 
 describe("OpenAIDriver", () => {
   it("streams text and sends model, token, tools and messages", async () => {
-    const { driver, sent } = setup({ replies: [[text("Hel"), text("lo ü")]] });
+    const usage = { choices: [], usage: { prompt_tokens: 9, completion_tokens: 2 } };
+    const { driver, sent } = setup({ replies: [[text("Hel"), text("lo ü"), usage]] });
     const { ctx, events } = context();
     const out = await driver.runTurn(ctx);
     assert.deepEqual(events, [
@@ -130,6 +132,7 @@ describe("OpenAIDriver", () => {
     assert.equal(req.headers["Authorization"], "Bearer agent-token");
     assert.equal(req.body.model, "gpt-test");
     assert.equal(req.body.stream, true);
+    assert.deepEqual(req.body.stream_options, { include_usage: true });
     assert.deepEqual(
       req.body.tools.map((t) => t.function.name),
       ["bash", "read_file", "write_file"],
@@ -142,6 +145,25 @@ describe("OpenAIDriver", () => {
       role: "user",
       content: "Message #7 from user:\n\nhi",
     });
+  });
+
+  it("retries once without stream_options when the server rejects them", async () => {
+    const rejected = (): Response =>
+      new Response(
+        JSON.stringify({ error: { message: "Unrecognized argument: stream_options" } }),
+        {
+          status: 400,
+        },
+      );
+    const { driver, sent } = setup({ replies: [rejected(), [text("ok")]] });
+    const out = await driver.runTurn(context().ctx);
+    assert.equal(out.result, "ok");
+    assert.deepEqual(at(sent, 0).body.stream_options, { include_usage: true });
+    assert.equal(at(sent, 1).body.stream_options, undefined);
+
+    const twice = setup({ replies: [rejected(), rejected()] });
+    await assert.rejects(twice.driver.runTurn(context().ctx), /400: Unrecognized argument/);
+    assert.equal(twice.sent.length, 2);
   });
 
   it("runs bash in the workspace and sends the result back", async () => {

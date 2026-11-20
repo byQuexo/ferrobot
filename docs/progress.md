@@ -784,3 +784,51 @@ store used for the run) or the daemon's own env.
 - The model list in the add-provider form: the daemon binary was built from
   `feature/voice`, before the model routes, so the field fell back to text.
 - A stored voice key with a real catalog.
+
+## Release prep 6: usage and cost (`feat/usage`)
+
+**Done**
+
+- Migration v13: table `usage`, one row per model call a known agent makes
+  through the proxy (agent name kept, no FK, so rows outlive the agent).
+- The proxy meters generation calls while the body streams past: Anthropic
+  Messages (also Vertex `rawPredict`/`streamRawPredict` and Bedrock
+  `invoke`), OpenAI-style `chat/completions`, Codex `responses`, Gemini
+  `generateContent`. Rows also for refused calls (`refused`) and upstream
+  errors (`error`). No prompt or completion is stored.
+- The OpenAI-compatible driver asks for `stream_options.include_usage`.
+- `config/pricing.toml` (Anthropic, OpenAI, Gemini; checked 2026-11-20 on
+  their pricing pages), operator overrides in the `pricing` setting.
+- `GET /v1/usage` (filters, group by day/agent/provider/model, estimated
+  cost), `GET`/`PUT /v1/usage/prices`.
+- Desktop: a Usage view (chart icon next to Settings) with ranges, totals,
+  a cost-per-day chart, sortable tables by provider, model and agent, CSV
+  export and a price edit per model row.
+
+**Tested**
+
+- Daemon: Anthropic SSE with cache tokens and OpenAI SSE with
+  `include_usage` against a fake upstream, split mid-line; a refused call;
+  filters, groups, unknown and not-tracked counts, overrides; usage parsing
+  per API family; cost math; the price file; the v12 to v13 upgrade.
+- Runner: the request carries `stream_options`, a usage-only last chunk
+  does not break the turn. Desktop: range math, UTC days, sorting, CSV.
+- The view was checked in a browser (`vite preview`) against a real daemon
+  with seeded rows: totals, chart, tables, price edit.
+- Live, Ollama only (2026-11-20, after rebasing on main): a real daemon in
+  Docker with a runner image built from this branch, an Ollama provider,
+  `qwen2.5:3b`, one tool-using turn: two usage rows with input, output and
+  cache-read tokens from Ollama's own usage fields, cost 0.
+
+**Not tested**
+
+- No cloud upstream: no Anthropic, OpenAI, Gemini or Codex response has
+  been metered. `scripts/smoke-live.sh` was not re-run after the usage/proxy
+  changes (Tim's call, 2026-11-20).
+- After the review fixes, the same Ollama run recorded four `ok` rows (the
+  runner stops reading at `[DONE]`, which now counts as the end).
+- Gemini native and Codex Responses only against unit fixtures; whether
+  strict OpenAI-compatible servers accept `stream_options`.
+- CSV export in the Tauri window: the shell's download handler saves blob
+  downloads to Downloads (release prep 7), never tried in the window.
+

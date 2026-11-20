@@ -10,6 +10,7 @@ import { Chat } from "./components/Chat.tsx";
 import { ConversationView, type Pair } from "./components/Conversations.tsx";
 import { InfoPanel, type InfoTab } from "./components/InfoPanel.tsx";
 import { Sidebar } from "./components/Sidebar.tsx";
+import { Usage } from "./components/Usage.tsx";
 import { Button, Empty } from "./components/ui.tsx";
 import { AppContext, type AppContextValue } from "./context.ts";
 import { applyTheme, followSystem, loadTheme, type ThemePref } from "./lib/theme.ts";
@@ -46,6 +47,7 @@ export function App(): JSX.Element {
   const [pair, setPair] = useState<Pair | null>(null);
   const [dialog, setDialog] = useState<"create" | "edit" | null>(null);
   const [settings, setSettings] = useState<SettingsSection | null>(null);
+  const [usage, setUsage] = useState(false);
   const [infoOpen, setInfoOpen] = useState(() => localStorage.getItem("ferrobot.info") !== "closed");
   const [tab, setTab] = useState<InfoTab>("profile");
   const [theme, setTheme] = useState<ThemePref>(loadTheme);
@@ -131,33 +133,40 @@ export function App(): JSX.Element {
   const openAgent = useCallback((id: string) => {
     setPair(null);
     setSettings(null);
+    setUsage(false);
     setSelected(id);
   }, []);
   const openConversation = useCallback((a: string, b: string) => {
     setSettings(null);
+    setUsage(false);
     setPair(a < b ? [a, b] : [b, a]);
   }, []);
   const [file, setFile] = useState<{ agent: string; file: number } | null>(null);
   const openFile = useCallback((agent: string, id: number) => { setFile({ agent, file: id }); }, []);
   const ctx: AppContextValue = { client, health, agents, listen, toast, run, openAgent, openConversation, openFile };
   const agent = selected ? agents.get(selected) : undefined;
+  const withInfo = agent && infoOpen && !pair && !settings && !usage;
 
   return (
     <AppContext.Provider value={ctx}>
-      <div class={`shell${agent && infoOpen && !pair && !settings ? " with-info" : ""}`}>
+      <div class={`shell${withInfo ? " with-info" : ""}`}>
         <Sidebar
           selected={selected}
           onSelect={openAgent}
           pair={pair}
-          onOpenPair={setPair}
+          onOpenPair={(p) => { setUsage(false); setPair(p); }}
           onCreate={() => { setDialog("create"); }}
-          onSettings={() => { setSettings(settings ? null : "providers"); }}
+          onSettings={() => { setUsage(false); setSettings(settings ? null : "providers"); }}
           settingsOpen={settings !== null}
+          onUsage={() => { setSettings(null); setUsage(!usage); }}
+          usageOpen={usage}
           online={online}
           onDeleted={(id) => { if (id === selected) setSelected(null); }}
         />
         {settings ? (
           <Settings section={settings} onSection={setSettings} onClose={() => { setSettings(null); }} theme={theme} onTheme={setTheme} />
+        ) : usage ? (
+          <Usage onClose={() => { setUsage(false); }} />
         ) : pair ? (
           <ConversationView key={pair.join()} pair={pair} />
         ) : agent ? (
@@ -189,7 +198,7 @@ export function App(): JSX.Element {
             )}
           </main>
         )}
-        {agent && infoOpen && !pair && !settings && (
+        {agent && withInfo && (
           <InfoPanel
             agent={agent}
             tab={tab}

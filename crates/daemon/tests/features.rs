@@ -3751,3 +3751,403 @@ async fn voice_calls_pass_lines_on_without_agents_waking_each_other() {
     .await;
     assert_eq!(status, 409);
 }
+
+/// Fake model API that streams usage like Anthropic and `OpenAI`, split mid-line as networks do.
+/// Model `claude-hang` stalls after its first event; `claude-overloaded` ends in an error event.
+async fn usage_upstream() -> String {
+    fn sse(chunks: &'static [&'static str], hang: bool) -> axum::response::Response {
+        let stream =
+            futures_util::stream::iter(chunks.iter().copied().map(Ok::<_, std::io::Error>));
+        let pings = futures_util::stream::unfold((), |()| async {
+            tokio::time::sleep(Duration::from_millis(10)).await;
+            Some((Ok(": ping\n\n"), ()))
+        });
+        let body = if hang {
+            Body::from_stream(stream.chain(pings))
+        } else {
+            Body::from_stream(stream)
+        };
+        ([("content-type", "text/event-stream")], body).into_response()
+    }
+    const BROKEN: &[&str] = &[
+        "event: message_start\ndata: {\"type\":\"message_start\",\"message\":{\"usage\":{\"input_tokens\":12}}}\n\n",
+        "event: error\ndata: {\"type\":\"error\",\"error\":{\"type\":\"overloaded_error\",\"message\":\"Overloaded\"}}\n\n",
+    ];
+    const ANTHROPIC: &[&str] = &[
+        r#"event: message_start
+data: {"type":"message_start","message":{"usage":{"input_tokens":12,"cache_read_input_tokens":1000,"cache_creation_input_tokens":200,"output_tokens":1}}}
+
+event: content_block_delta
+data: {"type":"content_block_delta","delta":{"type":"text_delta","text":"the answer"}}
+
+event: message_delta
+data: {"type":"message_"#,
+        r#"delta","usage":{"output_tokens":30}}
+
+"#,
+        "event: message_stop\ndata: {\"type\":\"message_stop\"}\n\n",
+    ];
+    const OPENAI: &[&str] = &[
+        "data: {\"choices\":[{\"delta\":{\"content\":\"hi\"}}],\"usage\":null}\n\n",
+        "data: {\"choices\":[],\"usage\":{\"prompt_tokens\":100,\"completion_tokens\":7,",
+        "\"prompt_tokens_details\":{\"cached_tokens\":60}}}\n\ndata: [DONE]\n\n",
+    ];
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let addr = listener.local_addr().unwrap();
+    let app = axum::Router::new()
+        .route(
+            "/v1/messages",
+            axum::routing::post(|body: String| async move {
+                if body.contains("claude-hang") {
+                    sse(&BROKEN[..1], true)
+                } else if body.contains("claude-overloaded") {
+                    sse(BROKEN, false)
+                } else {
+                    sse(ANTHROPIC, false)
+                }
+            }),
+        )
+        .route(
+            "/v1/chat/completions",
+            axum::routing::post(|| async { sse(OPENAI, false) }),
+        );
+    tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });
+    format!("http://{addr}")
+}
+
+#[tokio::test]
+async fn the_proxy_records_usage_per_call() {
+    let upstream = usage_upstream().await;
+    let dir = tempfile::tempdir().unwrap();
+    let db = dir.path().join("ferrobot.db");
+    let backend = Arc::new(StatefulBackend::default());
+    let d = start_on(
+        ferrobot_store::Store::open(&db).unwrap(),
+        backend.clone(),
+        None,
+        "127.0.0.1:0",
+        |s| {
+            s.driver = "claude".into();
+            s.anthropic_api_key = Some("sk-real-secret".into());
+            s.anthropic_upstream.clone_from(&upstream);
+        },
+    )
+    .await;
+    create(&d, json!({"name": "ann"})).await;
+    let (_, openai) = http(
+        &d.ui,
+        "POST",
+        "/v1/providers",
+        Some(
+            json!({"name": "oai", "kind": "openai", "base_url": format!("{upstream}/v1"),
+                    "default_model": "gpt-5-mini", "api_key": "sk-openai"}),
+        ),
+    )
+    .await;
+    create(&d, json!({"name": "oli", "provider_id": openai["id"]})).await;
+
+    let (status, _, out) = http_raw(
+        &d.agents,
+        "POST",
+        "/model/v1/messages",
+        &[("x-api-key", &backend.token("ann"))],
+        br#"{"model":"claude-sonnet-4-5-20250929","stream":true}"#,
+    )
+    .await;
+    assert_eq!(status, 200);
+    assert!(
+        String::from_utf8(out).unwrap().contains("the answer"),
+        "bytes pass unchanged"
+    );
+    let bearer = format!("Bearer {}", backend.token("oli"));
+    let body = br#"{"model":"gpt-5-mini","stream":true,"stream_options":{"include_usage":true}}"#;
+    let (status, _, _) = http_raw(
+        &d.agents,
+        "POST",
+        "/model/chat/completions",
+        &[("authorization", &bearer)],
+        body,
+    )
+    .await;
+    assert_eq!(status, 200);
+    let (status, _, _) = http_raw(
+        &d.agents,
+        "POST",
+        "/model/v1beta/models/sneaky:generateContent",
+        &[("x-api-key", &backend.token("ann"))],
+        b"",
+    )
+    .await;
+    assert_eq!(status, 404, "a refused call keeps no model from its path");
+
+    let conn = rusqlite::Connection::open(&db).unwrap();
+    let rows = eventually("three usage rows", Duration::from_secs(5), || {
+        let mut stmt = conn
+            .prepare("SELECT agent_name, model, status FROM usage ORDER BY agent_name, status")
+            .unwrap();
+        let rows: Vec<(String, String, String)> = stmt
+            .query_map([], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)))
+            .unwrap()
+            .map(Result::unwrap)
+            .collect();
+        std::future::ready((rows.len() == 3).then_some(rows))
+    })
+    .await;
+    let row = |n: &str, m: &str, s: &str| (n.to_owned(), m.to_owned(), s.to_owned());
+    assert_eq!(
+        rows,
+        [
+            row("ann", "claude-sonnet-4-5-20250929", "ok"),
+            row("ann", "unknown", "refused"),
+            row("oli", "gpt-5-mini", "ok"),
+        ]
+    );
+
+    let (status, report) = http(&d.ui, "GET", "/v1/usage?group_by=model", None).await;
+    assert_eq!(status, 200, "{report}");
+    let groups = report["groups"].as_array().unwrap();
+    let claude = groups
+        .iter()
+        .find(|g| g["key"] == "anthropic/claude-sonnet-4-5-20250929")
+        .unwrap();
+    let counts = |g: &Value| {
+        [
+            "input_tokens",
+            "output_tokens",
+            "cache_read_tokens",
+            "cache_write_tokens",
+        ]
+        .map(|k| g[k].as_i64())
+    };
+    assert_eq!(counts(claude), [Some(12), Some(30), Some(1000), Some(200)]);
+    // 12 * 3 + 30 * 15 + 1000 * 0.30 + 200 * 3.75 USD per 1M tokens
+    assert!(
+        (claude["cost_usd"].as_f64().unwrap() - 0.001_536).abs() < 1e-12,
+        "{claude}"
+    );
+    let gpt = groups
+        .iter()
+        .find(|g| g["key"] == "openai/gpt-5-mini")
+        .unwrap();
+    assert_eq!(
+        counts(gpt),
+        [Some(40), Some(7), Some(60), Some(0)],
+        "cached tokens leave the input count"
+    );
+    assert_eq!(report["totals"]["calls"], 3);
+    assert_eq!(report["totals"]["not_tracked_calls"], 0);
+}
+
+#[tokio::test]
+async fn usage_of_a_broken_stream_is_an_error() {
+    use tokio::io::{AsyncReadExt, AsyncWriteExt};
+    let upstream = usage_upstream().await;
+    let dir = tempfile::tempdir().unwrap();
+    let db = dir.path().join("ferrobot.db");
+    let backend = Arc::new(StatefulBackend::default());
+    let d = start_on(
+        ferrobot_store::Store::open(&db).unwrap(),
+        backend.clone(),
+        None,
+        "127.0.0.1:0",
+        |s| {
+            s.driver = "claude".into();
+            s.anthropic_api_key = Some("sk-real-secret".into());
+            s.anthropic_upstream.clone_from(&upstream);
+        },
+    )
+    .await;
+    create(&d, json!({"name": "ann"})).await;
+    let key = backend.token("ann");
+
+    let (status, _, _) = http_raw(
+        &d.agents,
+        "POST",
+        "/model/v1/messages",
+        &[("x-api-key", &key)],
+        br#"{"model":"claude-overloaded","stream":true}"#,
+    )
+    .await;
+    assert_eq!(status, 200);
+
+    // The agent hangs up after the first event while the upstream keeps streaming.
+    let body = br#"{"model":"claude-hang","stream":true}"#;
+    let mut s = tokio::net::TcpStream::connect(&d.agents).await.unwrap();
+    let head = format!(
+        "POST /model/v1/messages HTTP/1.1\r\nHost: x\r\nx-api-key: {key}\r\nContent-Length: {}\r\n\r\n",
+        body.len()
+    );
+    s.write_all(head.as_bytes()).await.unwrap();
+    s.write_all(body).await.unwrap();
+    let mut seen = Vec::new();
+    tokio::time::timeout(Duration::from_secs(5), async {
+        while !String::from_utf8_lossy(&seen).contains("message_start") {
+            let mut buf = [0; 1024];
+            let n = s.read(&mut buf).await.unwrap();
+            assert!(n > 0, "stream closed early");
+            seen.extend_from_slice(&buf[..n]);
+        }
+    })
+    .await
+    .unwrap();
+    drop(s);
+
+    let conn = rusqlite::Connection::open(&db).unwrap();
+    let rows = eventually("two usage rows", Duration::from_secs(5), || {
+        let mut stmt = conn
+            .prepare("SELECT model, status, input_tokens FROM usage ORDER BY model")
+            .unwrap();
+        let rows: Vec<(String, String, Option<i64>)> = stmt
+            .query_map([], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)))
+            .unwrap()
+            .map(Result::unwrap)
+            .collect();
+        std::future::ready((rows.len() == 2).then_some(rows))
+    })
+    .await;
+    let row = |m: &str| (m.to_owned(), "error".to_owned(), Some(12));
+    assert_eq!(
+        rows,
+        [row("claude-hang"), row("claude-overloaded")],
+        "counts seen before the break are kept"
+    );
+}
+
+#[tokio::test]
+async fn usage_filters_groups_and_price_overrides() {
+    use ferrobot_store::{Tokens, UsageRecord, UsageStatus};
+    let d = start(Arc::new(StatefulBackend::default()), None, "127.0.0.1:0").await;
+    let (amy, bob) = (AgentId::new(), AgentId::new());
+    let row = |at: &str, agent: AgentId, kind: &str, model: &str, input: Option<i64>| UsageRecord {
+        at: time::OffsetDateTime::parse(at, &time::format_description::well_known::Rfc3339)
+            .unwrap(),
+        agent_id: agent,
+        agent_name: if agent == amy { "amy" } else { "bob" }.into(),
+        provider_id: None,
+        provider_kind: kind.into(),
+        model: model.into(),
+        tokens: Tokens {
+            input,
+            output: input,
+            cache_read: None,
+            cache_write: None,
+        },
+        latency_ms: 5,
+        status: UsageStatus::Ok,
+    };
+    for r in [
+        row(
+            "2026-11-18T10:00:00Z",
+            amy,
+            "anthropic",
+            "claude-opus-5",
+            Some(1_000_000),
+        ),
+        row(
+            "2026-11-19T10:00:00Z",
+            amy,
+            "anthropic",
+            "house-model",
+            Some(10),
+        ),
+        row("2026-11-19T12:00:00Z", bob, "ollama", "llama9", Some(50)),
+        row(
+            "2026-11-19T13:00:00Z",
+            bob,
+            "bedrock",
+            "anthropic.claude-opus-5",
+            None,
+        ),
+    ] {
+        d.state.store.insert_usage(r).await.unwrap();
+    }
+
+    let (status, all) = http(&d.ui, "GET", "/v1/usage", None).await;
+    assert_eq!(status, 200, "{all}");
+    let days: Vec<_> = all["groups"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|g| g["key"].clone())
+        .collect();
+    assert_eq!(days, [json!("2026-11-18"), json!("2026-11-19")]);
+    assert_eq!(all["totals"]["calls"], 4);
+    assert_eq!(all["totals"]["unknown_cost_calls"], 1);
+    assert_eq!(all["totals"]["not_tracked_calls"], 1);
+    let total = all["totals"]["cost_usd"].as_f64().unwrap();
+    assert!(
+        (total - 30.0).abs() < 1e-9,
+        "opus 5 at 5 + 25 per 1M: {total}"
+    );
+
+    // A browser's toISOString() sends milliseconds.
+    let day = "from=2026-11-19T00:00:00.000Z&to=2026-11-20T00:00:00Z";
+    let (_, by_agent) = http(
+        &d.ui,
+        "GET",
+        &format!("/v1/usage?{day}&group_by=agent"),
+        None,
+    )
+    .await;
+    let groups = by_agent["groups"].as_array().unwrap();
+    assert_eq!(groups.len(), 2, "{by_agent}");
+    let amy_day = groups.iter().find(|g| g["label"] == "amy").unwrap();
+    assert_eq!(
+        amy_day["cost_usd"],
+        Value::Null,
+        "only an unknown model that day"
+    );
+    let bob_day = groups.iter().find(|g| g["label"] == "bob").unwrap();
+    assert_eq!(bob_day["cost_usd"], json!(0.0), "ollama is free");
+    assert_eq!(bob_day["not_tracked_calls"], 1);
+    let (_, only_bob) = http(
+        &d.ui,
+        "GET",
+        &format!("/v1/usage?{day}&agent={bob}&group_by=model"),
+        None,
+    )
+    .await;
+    assert_eq!(only_bob["totals"]["calls"], 2, "{only_bob}");
+
+    for bad in [
+        "from=yesterday",
+        "group_by=week",
+        "agent=nope",
+        "provider=x",
+        "from=2026-11-20T00:00:00Z&to=2026-11-19T00:00:00Z",
+    ] {
+        let (status, err) = http(&d.ui, "GET", &format!("/v1/usage?{bad}"), None).await;
+        assert_eq!(status, 400, "{bad}: {err}");
+    }
+
+    let set = json!([{"provider_kind": "anthropic", "model": "house-model", "input": 1.0, "output": 1.0}]);
+    let (status, prices) = http(&d.ui, "PUT", "/v1/usage/prices", Some(set)).await;
+    assert_eq!(status, 200, "{prices}");
+    let prices = prices.as_array().unwrap();
+    let house = prices.iter().find(|p| p["model"] == "house-model").unwrap();
+    assert_eq!(house["source"], Value::Null, "the operator's own price");
+    assert!(
+        prices
+            .iter()
+            .any(|p| p["model"] == "claude-opus-5" && p["source"].is_string())
+    );
+    let (_, report) = http(&d.ui, "GET", &format!("/v1/usage?{day}&agent={amy}"), None).await;
+    let cost = report["totals"]["cost_usd"].as_f64().unwrap();
+    assert!((cost - 0.000_02).abs() < 1e-12, "{report}");
+    let negative =
+        json!([{"provider_kind": "anthropic", "model": "m", "input": -1.0, "output": 1.0}]);
+    let (status, _) = http(&d.ui, "PUT", "/v1/usage/prices", Some(negative)).await;
+    assert_eq!(status, 400);
+
+    let pid = uuid::Uuid::new_v4();
+    let mut keyed = row("2026-11-17T10:00:00Z", amy, "openai", "gpt-5", Some(1));
+    keyed.provider_id = Some(pid);
+    d.state.store.insert_usage(keyed).await.unwrap();
+    let braced = format!(
+        "/v1/usage?provider=%7B{}%7D",
+        pid.to_string().to_uppercase()
+    );
+    let (status, by_provider) = http(&d.ui, "GET", &braced, None).await;
+    assert_eq!(status, 200, "{by_provider}");
+    assert_eq!(by_provider["totals"]["calls"], 1, "{by_provider}");
+}

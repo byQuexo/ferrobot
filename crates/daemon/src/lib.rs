@@ -21,6 +21,7 @@ pub mod hub;
 pub mod lifecycle;
 pub mod models;
 pub mod oauth;
+pub mod pricing;
 pub mod proxy;
 pub mod runner_ws;
 pub mod scheduler;
@@ -30,6 +31,7 @@ pub mod state;
 pub mod storage;
 pub mod supervisor;
 pub mod tasks;
+pub mod usage;
 pub mod views;
 pub mod voice;
 

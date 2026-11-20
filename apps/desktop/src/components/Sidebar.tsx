@@ -1,6 +1,6 @@
 import type { JSX } from "preact";
 import { useEffect, useMemo, useRef, useState } from "preact/hooks";
-import { ArrowDown, ArrowUp, Pin, Plus, Search, Settings, Trash2 } from "lucide-preact";
+import { ArrowDown, ArrowUp, ChartColumn, Pin, Plus, Search, Settings, Trash2 } from "lucide-preact";
 
 import type { Agent } from "../api.ts";
 import { useApp } from "../context.ts";
@@ -29,6 +29,8 @@ export function Sidebar(props: {
   onCreate: () => void;
   onSettings: () => void;
   settingsOpen: boolean;
+  onUsage: () => void;
+  usageOpen: boolean;
   online: boolean;
   onDeleted: (id: string) => void;
 }): JSX.Element {
@@ -95,6 +97,9 @@ export function Sidebar(props: {
         <Logo />
         <span class="brand-name">ferrobot</span>
         <span class="spacer" />
+        <IconButton label="Usage" onClick={props.onUsage} pressed={props.usageOpen}>
+          <ChartColumn size={18} />
+        </IconButton>
         <IconButton label="Settings" onClick={props.onSettings} pressed={props.settingsOpen}>
           <Settings size={18} />
         </IconButton>
