@@ -228,7 +228,7 @@ pub(crate) async fn get_usage(
 }
 
 /// Prices in USD per 1M tokens: the operator's overrides, then the shipped
-/// table. Ollama models cost 0 and are not listed.
+/// table. Unlisted Ollama models cost 0.
 #[utoipa::path(get, path = "/v1/usage/prices", tag = "usage",
     responses((status = 200, body = Vec<PriceEntry>)))]
 pub(crate) async fn get_prices(State(state): State<AppState>) -> ApiResult<Vec<PriceEntry>> {

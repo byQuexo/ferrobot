@@ -64,7 +64,6 @@ struct Done {
 async fn run_connection(state: AppState, agent: Agent, socket: WebSocket) {
     let (mut sink, mut stream) = socket.split();
 
-    // 1. Handshake: the runner must say hello first.
     let hello = tokio::time::timeout(HELLO_TIMEOUT, stream.next()).await;
     let Ok(Some(Ok(Message::Text(text)))) = hello else {
         tracing::warn!(agent = %agent.name, "runner did not send hello in time");
@@ -99,7 +98,6 @@ async fn run_connection(state: AppState, agent: Agent, socket: WebSocket) {
         return;
     }
 
-    // 2. Register and start writer + dispatcher.
     let (out_tx, mut out_rx) = mpsc::channel::<DaemonFrame>(32);
     let conn_id = state.hub.register(agent.id, out_tx.clone());
     if let Err(e) = state.store.requeue_in_flight(agent.id).await {
@@ -136,7 +134,6 @@ async fn run_connection(state: AppState, agent: Agent, socket: WebSocket) {
         done_rx,
     ));
 
-    // 3. Read frames until the socket closes.
     while let Some(msg) = stream.next().await {
         let text = match msg {
             Ok(Message::Text(t)) => t,
@@ -146,7 +143,6 @@ async fn run_connection(state: AppState, agent: Agent, socket: WebSocket) {
         handle_frame(&state, &agent, &done_tx, &text).await;
     }
 
-    // 4. Cleanup: anything in flight goes back to the queue.
     dispatcher.abort();
     writer.abort();
     state.hub.unregister(agent.id, conn_id);
@@ -246,7 +242,6 @@ async fn sender_name(state: &AppState, sender: Sender) -> String {
     }
 }
 
-/// Feeds queued messages to the runner one turn at a time.
 /// One runner connection, as the dispatch loop sees it.
 struct Conn {
     id: u64,
@@ -255,6 +250,7 @@ struct Conn {
     steering: bool,
 }
 
+/// Feeds queued messages to the runner one turn at a time.
 async fn dispatch_loop(
     state: AppState,
     agent: AgentId,

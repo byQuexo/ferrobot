@@ -8,7 +8,8 @@ export function rangeOf(
   now: Date,
   custom: { from: string; to: string },
 ): { from: string; to: string | null } | null {
-  const day = (d: Date, plus = 0): Date => new Date(d.getFullYear(), d.getMonth(), d.getDate() + plus);
+  const day = (d: Date, plus = 0): Date =>
+    new Date(d.getFullYear(), d.getMonth(), d.getDate() + plus);
   switch (kind) {
     case "today":
       return { from: day(now).toISOString(), to: null };
@@ -33,17 +34,29 @@ function localDay(s: string): Date | null {
 export function utcDays(from: string, to: string | null, now: Date): string[] {
   const end = to ? new Date(Date.parse(to) - 1) : now;
   const days: string[] = [];
-  for (let t = Date.parse(from.slice(0, 10)); t <= end.getTime() && days.length < 400; t += 86_400_000) {
+  for (
+    let t = Date.parse(from.slice(0, 10));
+    t <= end.getTime() && days.length < 400;
+    t += 86_400_000
+  ) {
     days.push(new Date(t).toISOString().slice(0, 10));
   }
   return days;
 }
 
-export type SortKey = "label" | "calls" | "input_tokens" | "output_tokens" | "cache_read_tokens" | "cache_write_tokens" | "cost_usd";
+export type SortKey =
+  | "label"
+  | "calls"
+  | "input_tokens"
+  | "output_tokens"
+  | "cache_read_tokens"
+  | "cache_write_tokens"
+  | "cost_usd";
 
-/** Unknown costs sort below every known one. */
+/** Unknown costs count as lower than any known one. */
 export function sortGroups(groups: UsageGroup[], key: SortKey, desc: boolean): UsageGroup[] {
-  const value = (g: UsageGroup): string | number => (key === "label" ? g.label.toLowerCase() : (g[key] ?? -1));
+  const value = (g: UsageGroup): string | number =>
+    key === "label" ? g.label.toLowerCase() : (g[key] ?? -1);
   return [...groups].sort((a, b) => {
     const [x, y] = [value(a), value(b)];
     const order = x < y ? -1 : x > y ? 1 : 0;
@@ -64,7 +77,17 @@ export function toCsv(rows: (string | number | null | undefined)[][]): string {
 
 export function usageCsv(groups: UsageGroup[], name: string): string {
   return toCsv([
-    [name, "calls", "input tokens", "output tokens", "cache read tokens", "cache write tokens", "estimated cost (USD)", "calls with unknown cost", "calls not tracked"],
+    [
+      name,
+      "calls",
+      "input tokens",
+      "output tokens",
+      "cache read tokens",
+      "cache write tokens",
+      "estimated cost (USD)",
+      "calls with unknown cost",
+      "calls not tracked",
+    ],
     ...groups.map((g) => [
       g.label,
       g.calls,

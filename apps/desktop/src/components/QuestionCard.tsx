@@ -28,7 +28,9 @@ export function isAnswered(q: Question, a: Draft | undefined): boolean {
 /** Human-readable answer, e.g. "Email, Chat". */
 export function answerLabel(q: Question, a: QuestionAnswer | undefined): string {
   if (!a) return "";
-  const parts = (a.values ?? []).map((v) => (q.choices ?? []).find((c) => c.value === v)?.label ?? v);
+  const parts = (a.values ?? []).map(
+    (v) => (q.choices ?? []).find((c) => c.value === v)?.label ?? v,
+  );
   const custom = (a.custom ?? "").trim();
   if (custom) parts.push(custom);
   return parts.join(", ");
@@ -49,12 +51,20 @@ export function QuestionCardView(props: {
 
   const head = (
     <div class="qcard-head">
-      <span class="qcard-title">{card.title ?? (total === 1 ? "A question for you" : "A few questions for you")}</span>
+      <span class="qcard-title">
+        {card.title ?? (total === 1 ? "A question for you" : "A few questions for you")}
+      </span>
       <span class="spacer" />
       {answered ? (
-        <span class="qcard-done"><Check size={16} /> Answered</span>
+        <span class="qcard-done">
+          <Check size={16} /> Answered
+        </span>
       ) : (
-        total > 1 && <span class="qcard-step">{step + 1} of {total}</span>
+        total > 1 && (
+          <span class="qcard-step">
+            {step + 1} of {total}
+          </span>
+        )
       )}
     </div>
   );
@@ -68,7 +78,12 @@ export function QuestionCardView(props: {
             {card.questions.map((q) => (
               <div key={q.id}>
                 <dt>{q.prompt}</dt>
-                <dd>{answerLabel(q, answered.answers.find((a) => a.question_id === q.id))}</dd>
+                <dd>
+                  {answerLabel(
+                    q,
+                    answered.answers.find((a) => a.question_id === q.id),
+                  )}
+                </dd>
               </div>
             ))}
           </dl>
@@ -80,10 +95,18 @@ export function QuestionCardView(props: {
   const q = card.questions[step] as Question;
   const choices = q.choices ?? [];
   const cur = draft.get(step) ?? EMPTY;
-  const update = (next: Draft): void => { setDraft(new Map(draft).set(step, next)); };
+  const update = (next: Draft): void => {
+    setDraft(new Map(draft).set(step, next));
+  };
   const toggle = (value: string): void => {
     if (q.kind === "single") update({ values: cur.values[0] === value ? [] : [value], custom: "" });
-    else update({ ...cur, values: cur.values.includes(value) ? cur.values.filter((v) => v !== value) : [...cur.values, value] });
+    else
+      update({
+        ...cur,
+        values: cur.values.includes(value)
+          ? cur.values.filter((v) => v !== value)
+          : [...cur.values, value],
+      });
   };
   const setCustom = (text: string): void => {
     update({ ...cur, custom: text, values: q.kind === "single" && text.trim() ? [] : cur.values });
@@ -94,7 +117,11 @@ export function QuestionCardView(props: {
     setSending(true);
     const answers: QuestionAnswer[] = card.questions.map((x, i) => {
       const a = draft.get(i) ?? EMPTY;
-      return { question_id: x.id ?? `q${String(i + 1)}`, values: a.values, custom: a.custom.trim() || null };
+      return {
+        question_id: x.id ?? `q${String(i + 1)}`,
+        values: a.values,
+        custom: a.custom.trim() || null,
+      };
     });
     await run(() => client.answerQuestion(agent.id, props.id, answers));
     setSending(false);
@@ -127,7 +154,9 @@ export function QuestionCardView(props: {
                   class={`choice${on ? " on" : ""}${q.kind === "multi" ? " multi" : ""}`}
                   role={q.kind === "single" ? "radio" : "checkbox"}
                   aria-checked={on}
-                  onClick={() => { toggle(value); }}
+                  onClick={() => {
+                    toggle(value);
+                  }}
                 >
                   <span class="choice-mark">{on && <Check size={12} />}</span>
                   {c.label}
@@ -141,14 +170,22 @@ export function QuestionCardView(props: {
             class="qcard-custom"
             value={cur.custom}
             placeholder={q.kind === "text" ? "Your answer" : "Something else…"}
-            onInput={(e) => { setCustom(e.currentTarget.value); }}
+            onInput={(e) => {
+              setCustom(e.currentTarget.value);
+            }}
           />
         )}
         <div class="qcard-foot">
           {q.kind === "multi" && <span class="muted small">Pick any</span>}
           <span class="spacer" />
           {step > 0 && (
-            <Button variant="ghost" small onClick={() => { setStep(step - 1); }}>
+            <Button
+              variant="ghost"
+              small
+              onClick={() => {
+                setStep(step - 1);
+              }}
+            >
               <ChevronLeft size={16} /> Back
             </Button>
           )}

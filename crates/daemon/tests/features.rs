@@ -1,6 +1,4 @@
-//! Phase-1 features against a stateful fake backend: profiles and avatars,
-//! memory, routines and the scheduler, idle sleep and auto-wake, snapshots,
-//! and the model proxy. No Node, no Docker.
+//! Daemon features against a stateful fake backend and fake upstreams. No Node, no Docker.
 
 #![allow(
     clippy::too_many_lines,
@@ -406,7 +404,6 @@ async fn profile_avatar_unread_and_memory() {
         .collect();
     assert!(!kinds.contains(&json!("assistant_delta")), "{kinds:?}");
 
-    // Memory CRUD + search.
     let mem = format!("/v1/agents/{id}/memory");
     for (key, content) in [("db", "Postgres on port 5432"), ("lang", "Rust first")] {
         let (status, _) = http(
@@ -488,7 +485,6 @@ async fn routines_crud_run_now_and_schedule() {
     .await;
     assert_eq!(status, 409);
 
-    // Disable / enable.
     let (_, r) = http(
         &d.ui,
         "PATCH",
@@ -564,7 +560,6 @@ async fn idle_sleep_auto_wake_and_crash_recovery() {
         .to_owned();
     let ws = connect_runner(&d.agents, &backend.token("sam")).await;
 
-    // Not idle long enough yet.
     ferrobot_daemon::supervisor::check_all(&d.state).await;
     let (_, a) = http(&d.ui, "GET", &format!("/v1/agents/{id}"), None).await;
     assert_eq!(a["status"], "running");
@@ -626,7 +621,6 @@ async fn idle_sleep_auto_wake_and_crash_recovery() {
         .collect();
     assert!(kinds.contains(&json!("sandbox_restarted")), "{kinds:?}");
 
-    // Manual stop / wake.
     let (status, _) = http(&d.ui, "POST", &format!("/v1/agents/{id}/stop"), None).await;
     assert_eq!(status, 204);
     let (status, _) = http(&d.ui, "POST", &format!("/v1/agents/{id}/wake"), None).await;
@@ -2219,9 +2213,8 @@ async fn upstream_with(
     (format!("{base}/mcp"), seen)
 }
 
-/// A minimal OAuth authorization server for the MCP server at `<base>/mcp`:
-/// metadata, dynamic registration and a token endpoint that checks PKCE
-/// against the challenge the test read from the authorization URL.
+/// A minimal OAuth server for `<base>/mcp`: metadata, dynamic registration and a token
+/// endpoint that checks PKCE against the challenge the test read from the authorization URL.
 fn fake_auth_server(base: &str, challenge: Arc<Mutex<Option<String>>>) -> axum::Router {
     use axum::routing::{get, post};
     use base64::Engine as _;
@@ -2765,9 +2758,8 @@ struct AppServer {
     revoked: Vec<(String, bool)>,
 }
 
-/// An authorization server like Google's: no dynamic registration, a
-/// pre-registered client (`client-app` / `app-secret`), short-lived access
-/// tokens, refresh, and RFC 7009 revocation.
+/// An authorization server like Google's: a pre-registered client (`client-app` /
+/// `app-secret`), short-lived access tokens, refresh and RFC 7009 revocation.
 fn fake_app_server(base: &str, log: Arc<Mutex<AppServer>>) -> axum::Router {
     use axum::routing::{get, post};
     use base64::Engine as _;
@@ -3314,7 +3306,7 @@ async fn new_agents_greet_the_operator_first() {
                 .unwrap()
         }
     };
-    // Created by the operator: (message queued before its runner connects).
+    // Created by the operator, with and without a message queued before its runner connects.
     for (name, queued) in [("gia", None), ("hal", Some("plan the trip"))] {
         let id = create(&d, json!({"name": name})).await["id"]
             .as_str()

@@ -46,11 +46,8 @@ impl FromStr for AgentId {
     }
 }
 
-/// Human-facing, unique agent handle such as `alice` or `build-bot`.
-///
-/// Rules: 1-32 chars, lowercase ASCII letters, digits and `-`,
-/// must start with a letter and must not end with `-`.
-/// Names double as container and volume name suffixes, so they stay DNS-safe.
+/// Unique agent handle like `build-bot`: 1-32 chars of `a-z0-9-`, starting with a letter and
+/// not ending with `-`, so it stays DNS-safe in sandbox resource names.
 #[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(utoipa::ToSchema))]
 #[cfg_attr(
@@ -188,9 +185,8 @@ pub enum CharacterEyes {
     Visor,
 }
 
-/// A chosen look for the agent's animated character avatar. Clients derive
-/// a deterministic look from the agent id when none is set; an uploaded
-/// avatar image takes precedence over both.
+/// A chosen character avatar look; without one, clients derive a look from the agent id.
+/// An uploaded avatar image wins over both.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(utoipa::ToSchema))]
 #[cfg_attr(feature = "mcp", derive(schemars::JsonSchema))]

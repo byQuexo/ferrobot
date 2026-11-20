@@ -842,3 +842,34 @@ store used for the run) or the daemon's own env.
   the real OpenRouter (no key used): whether cached tokens show up in its
   usage as documented.
 
+
+## Release prep 0, second part: desktop and deferred files (`chore/desktop-lint`)
+
+**Done**
+
+- Desktop: ESLint (`strictTypeChecked`, named exports only) and Prettier for
+  TS files (`npm run lint`, `npm run format:check`, both in CI). The
+  formatting is its own commit. Lint findings fixed: a dynamic `delete`
+  replaced; the deprecated ScriptProcessor calls in `voice.ts` keep an
+  `eslint-disable` with the CSP reason.
+- Comments trimmed in the desktop and in the files the earlier pass left for
+  the voice and collaboration PRs; API doc comments corrected (runner
+  `driver` values, `Presence::Sleeping`, `StopQuery.level`, `page_url`,
+  "secret store" instead of "keychain", and more), so `protocol/` and the
+  desktop types are regenerated.
+- CI's npm audit fails on moderate advisories in shipped dependencies and on
+  high ones in dev tooling. The desktop's lint tooling carries a moderate
+  `minimatch` advisory whose fixed release is newer than this machine's npm
+  release-age cutoff; it clears with the next update.
+- Tests: desktop 30 → 29 (one model-picker case folded into a table), Rust
+  and runner unchanged.
+
+**Found, not fixed (reported)**
+
+- Desktop: the provider re-key, connector token and OAuth-app forms and the
+  snapshot label close even when the save failed, so typed input is lost; a
+  live-transcription socket that drops after opening is not reported; an
+  unknown routine shows as `#<id>`; ChatGPT sign-in polls without a limit;
+  sorting usage ascending puts unknown costs first.
+- Daemon: message bodies are length-checked before `@name` becomes
+  `<@uuid>`, so a stored body can exceed the cap by a few bytes per mention.

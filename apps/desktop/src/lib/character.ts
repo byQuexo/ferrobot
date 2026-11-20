@@ -1,5 +1,3 @@
-// Animated character avatars: a look (body, eyes, hue) derived from the agent
-// id unless the profile stores a chosen one, and a mood from its presence.
 import type { AvatarCharacter, Presence } from "../api.ts";
 import { hash } from "./avatar.ts";
 
@@ -24,7 +22,11 @@ export function deriveCharacter(seed: string): Character {
 }
 
 /** The stored look if set, else the derived one. */
-export function characterOf(agent: { id?: string; name: string; character?: Character | null }): Character {
+export function characterOf(agent: {
+  id?: string;
+  name: string;
+  character?: Character | null;
+}): Character {
   return agent.character ?? deriveCharacter(agent.id ?? agent.name);
 }
 
@@ -33,7 +35,8 @@ export function rerollCharacter(current: Character, random: () => number = Math.
   for (;;) {
     const pick = <T>(xs: readonly T[]): T => xs[Math.floor(random() * xs.length)] as T;
     const next = { body: pick(BODIES), eyes: pick(EYES), hue: pick(HUES) };
-    if (next.body !== current.body || next.eyes !== current.eyes || next.hue !== current.hue) return next;
+    if (next.body !== current.body || next.eyes !== current.eyes || next.hue !== current.hue)
+      return next;
   }
 }
 

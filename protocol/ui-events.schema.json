@@ -115,7 +115,7 @@
       "type": "string"
     },
     "AgentName": {
-      "description": "Human-facing, unique agent handle such as `alice` or `build-bot`.\n\nRules: 1-32 chars, lowercase ASCII letters, digits and `-`,\nmust start with a letter and must not end with `-`.\nNames double as container and volume name suffixes, so they stay DNS-safe.",
+      "description": "Unique agent handle like `build-bot`: 1-32 chars of `a-z0-9-`, starting with a letter and\nnot ending with `-`, so it stays DNS-safe in sandbox resource names.",
       "example": "alice",
       "pattern": "^[a-z]([a-z0-9-]{0,30}[a-z0-9])?$",
       "type": "string"
@@ -171,7 +171,7 @@
       "description": "An agent plus live state."
     },
     "AvatarCharacter": {
-      "description": "A chosen look for the agent's animated character avatar. Clients derive\na deterministic look from the agent id when none is set; an uploaded\navatar image takes precedence over both.",
+      "description": "A chosen character avatar look; without one, clients derive a look from the agent id.\nAn uploaded avatar image wins over both.",
       "properties": {
         "body": {
           "$ref": "#/$defs/CharacterBody"
@@ -235,7 +235,7 @@
           "type": "integer"
         },
         "priority": {
-          "description": "Set by the sending agent: `true` wakes the recipient and goes ahead\nof its other queued messages; `false` waits for the recipient's next\nturn without waking it; `null` (default) queues and wakes.",
+          "description": "`true`: wakes the recipient and goes first; `false`: waits for its next turn\nwithout waking it; `null` (default): queues and wakes.",
           "type": [
             "boolean",
             "null"
@@ -270,7 +270,7 @@
       "type": "object"
     },
     "MailStatus": {
-      "description": "Delivery state of a mailbox message.\n\n`Pending -> InFlight -> Delivered`, or back to `Pending` when a runner\ndisconnects mid-turn, or `Failed` after too many attempts.",
+      "description": "Delivery state: `pending`, `in_flight`, `delivered`; back to `pending` when a runner\ndisconnects mid-turn, `failed` after too many attempts.",
       "enum": [
         "pending",
         "in_flight",
@@ -352,6 +352,7 @@
       ]
     },
     "StoredEvent": {
+      "description": "One recorded event in an agent's chat.",
       "properties": {
         "agent_id": {
           "$ref": "#/$defs/AgentId"
@@ -410,7 +411,7 @@
           "type": "object"
         },
         {
-          "description": "Live text fragment of the assistant message being written in a turn.\nNot persisted: the final `assistant_text` event replaces it.",
+          "description": "Live text of the assistant message being written; not persisted, the final\n`assistant_text` event replaces it.",
           "properties": {
             "agent_id": {
               "$ref": "#/$defs/AgentId"

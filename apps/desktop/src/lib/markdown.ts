@@ -22,7 +22,12 @@ const ITEM = /^(\s*)([-*+]|\d+[.)])\s+(.*)$/;
 const ROW = /^\s*\|.*\|\s*$/;
 const RULE = /^\s*\|?\s*:?-{2,}:?\s*(\|\s*:?-{2,}:?\s*)*\|?\s*$/;
 
-const cells = (line: string): string[] => line.trim().replace(/^\||\|$/g, "").split("|").map((c) => c.trim());
+const cells = (line: string): string[] =>
+  line
+    .trim()
+    .replace(/^\||\|$/g, "")
+    .split("|")
+    .map((c) => c.trim());
 
 export function parseBlocks(src: string): Block[] {
   const lines = src.replace(/\r\n?/g, "\n").split("\n");
@@ -44,7 +49,11 @@ export function parseBlocks(src: string): Block[] {
     const heading = /^(#{1,6})\s+(.*)$/.exec(line);
     if (heading) {
       flush();
-      out.push({ kind: "heading", level: Math.min(heading[1]?.length ?? 1, 3), text: heading[2] ?? "" });
+      out.push({
+        kind: "heading",
+        level: Math.min(heading[1]?.length ?? 1, 3),
+        text: heading[2] ?? "",
+      });
       continue;
     }
     if (/^\s*([-*_])(\s*\1){2,}\s*$/.test(line)) {
@@ -56,7 +65,8 @@ export function parseBlocks(src: string): Block[] {
       flush();
       const head = cells(line);
       const rows: string[][] = [];
-      for (i += 2; i < lines.length && ROW.test(lines[i] ?? ""); i++) rows.push(cells(lines[i] ?? ""));
+      for (i += 2; i < lines.length && ROW.test(lines[i] ?? ""); i++)
+        rows.push(cells(lines[i] ?? ""));
       i--;
       out.push({ kind: "table", head, rows });
       continue;
@@ -111,7 +121,8 @@ export function parseInline(src: string): Inline[] {
     const [, code, strong, label, href, mention, url, em1, em2] = m;
     if (code !== undefined) out.push({ code });
     else if (strong !== undefined) out.push({ strong: parseInline(strong) });
-    else if (label !== undefined && href !== undefined) out.push({ link: href, children: parseInline(label) });
+    else if (label !== undefined && href !== undefined)
+      out.push({ link: href, children: parseInline(label) });
     else if (mention !== undefined) out.push({ mention });
     else if (url !== undefined) out.push({ link: url, children: [{ text: url }] });
     else out.push({ em: parseInline(em1 ?? em2 ?? "") });

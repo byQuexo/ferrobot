@@ -44,6 +44,7 @@ pub struct SandboxHandle {
     pub id: String,
 }
 
+/// A sandbox's state as its backend reports it.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(utoipa::ToSchema))]
 #[serde(rename_all = "snake_case")]
@@ -90,6 +91,7 @@ impl ExecRequest {
     }
 }
 
+/// Exit code and captured output of a command.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 #[cfg_attr(feature = "schema", derive(utoipa::ToSchema))]
 pub struct ExecOutput {
@@ -100,11 +102,12 @@ pub struct ExecOutput {
     pub truncated: bool,
 }
 
+/// A snapshot a backend took.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 #[cfg_attr(feature = "schema", derive(utoipa::ToSchema))]
 pub struct SnapshotRef {
     pub id: String,
-    /// What the snapshot covers, e.g. "container rootfs (home volume excluded)".
+    /// What the snapshot covers, e.g. "container root filesystem and home directory".
     pub scope: String,
 }
 

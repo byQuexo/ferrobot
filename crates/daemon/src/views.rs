@@ -17,7 +17,7 @@ pub enum Presence {
     Awake,
     /// Sandbox starting or runner not connected yet.
     Starting,
-    /// Sandbox stopped (manually or after idling); a new message wakes it.
+    /// Sandbox paused, stopped or archived; a new message wakes it.
     Sleeping,
     /// Provisioning failed.
     Error,

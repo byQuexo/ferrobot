@@ -2,7 +2,14 @@ import type { JSX } from "preact";
 import { useCallback, useEffect, useMemo, useRef, useState } from "preact/hooks";
 import { Bot, KeyRound, Plus, WifiOff } from "lucide-preact";
 
-import { ApiError, DEFAULT_DAEMON, DaemonClient, type Agent, type Health, type UiEvent } from "./api.ts";
+import {
+  ApiError,
+  DEFAULT_DAEMON,
+  DaemonClient,
+  type Agent,
+  type Health,
+  type UiEvent,
+} from "./api.ts";
 import { AgentDialog } from "./components/AgentDialog.tsx";
 import { FileViewer } from "./components/FileViewer.tsx";
 import { Settings, type SettingsSection } from "./components/Settings.tsx";
@@ -43,12 +50,16 @@ export function App(): JSX.Element {
   const [agents, setAgents] = useState<Map<string, Agent>>(new Map());
   const [health, setHealth] = useState<Health | null>(null);
   const [online, setOnline] = useState(false);
-  const [selected, setSelected] = useState<string | null>(() => localStorage.getItem("ferrobot.selected"));
+  const [selected, setSelected] = useState<string | null>(() =>
+    localStorage.getItem("ferrobot.selected"),
+  );
   const [pair, setPair] = useState<Pair | null>(null);
   const [dialog, setDialog] = useState<"create" | "edit" | null>(null);
   const [settings, setSettings] = useState<SettingsSection | null>(null);
   const [usage, setUsage] = useState(false);
-  const [infoOpen, setInfoOpen] = useState(() => localStorage.getItem("ferrobot.info") !== "closed");
+  const [infoOpen, setInfoOpen] = useState(
+    () => localStorage.getItem("ferrobot.info") !== "closed",
+  );
   const [tab, setTab] = useState<InfoTab>("profile");
   const [theme, setTheme] = useState<ThemePref>(loadTheme);
   const [toasts, setToasts] = useState<Toast[]>([]);
@@ -60,13 +71,19 @@ export function App(): JSX.Element {
     applyTheme(theme);
   }, [theme]);
   useEffect(() => followSystem(() => themeRef.current), []);
-  useEffect(() => { localStorage.setItem("ferrobot.info", infoOpen ? "open" : "closed"); }, [infoOpen]);
-  useEffect(() => { if (selected) localStorage.setItem("ferrobot.selected", selected); }, [selected]);
+  useEffect(() => {
+    localStorage.setItem("ferrobot.info", infoOpen ? "open" : "closed");
+  }, [infoOpen]);
+  useEffect(() => {
+    if (selected) localStorage.setItem("ferrobot.selected", selected);
+  }, [selected]);
 
   const toast = useCallback((message: string, kind: "error" | "info" = "error") => {
     const id = Date.now() + Math.random();
     setToasts((t) => [...t.slice(-2), { id, message, kind }]);
-    setTimeout(() => { setToasts((t) => t.filter((x) => x.id !== id)); }, 5000);
+    setTimeout(() => {
+      setToasts((t) => t.filter((x) => x.id !== id));
+    }, 5000);
   }, []);
 
   const run = useCallback(
@@ -93,9 +110,10 @@ export function App(): JSX.Element {
     }
   }, [client]);
 
-  // Connect, load, and keep the agent list live.
   useEffect(() => {
-    void refresh().catch(() => { setOnline(false); });
+    void refresh().catch(() => {
+      setOnline(false);
+    });
     return client.subscribe({
       onStatus: (up) => {
         setOnline(up);
@@ -115,11 +133,11 @@ export function App(): JSX.Element {
     });
   }, [client]);
 
-  // Fall back to the first agent when the selection is gone.
   useEffect(() => {
     if (selected && agents.has(selected)) return;
     const first = [...agents.values()].sort(
-      (a, b) => Number(Boolean(b.pinned)) - Number(Boolean(a.pinned)) || a.name.localeCompare(b.name),
+      (a, b) =>
+        Number(Boolean(b.pinned)) - Number(Boolean(a.pinned)) || a.name.localeCompare(b.name),
     )[0];
     if (first) setSelected(first.id);
     else if (agents.size === 0) setSelected(null);
@@ -127,7 +145,9 @@ export function App(): JSX.Element {
 
   const listen = useCallback((fn: (e: UiEvent) => void) => {
     listeners.current.add(fn);
-    return () => { listeners.current.delete(fn); };
+    return () => {
+      listeners.current.delete(fn);
+    };
   }, []);
 
   const openAgent = useCallback((id: string) => {
@@ -142,8 +162,20 @@ export function App(): JSX.Element {
     setPair(a < b ? [a, b] : [b, a]);
   }, []);
   const [file, setFile] = useState<{ agent: string; file: number } | null>(null);
-  const openFile = useCallback((agent: string, id: number) => { setFile({ agent, file: id }); }, []);
-  const ctx: AppContextValue = { client, health, agents, listen, toast, run, openAgent, openConversation, openFile };
+  const openFile = useCallback((agent: string, id: number) => {
+    setFile({ agent, file: id });
+  }, []);
+  const ctx: AppContextValue = {
+    client,
+    health,
+    agents,
+    listen,
+    toast,
+    run,
+    openAgent,
+    openConversation,
+    openFile,
+  };
   const agent = selected ? agents.get(selected) : undefined;
   const withInfo = agent && infoOpen && !pair && !settings && !usage;
 
@@ -154,19 +186,44 @@ export function App(): JSX.Element {
           selected={selected}
           onSelect={openAgent}
           pair={pair}
-          onOpenPair={(p) => { setUsage(false); setPair(p); }}
-          onCreate={() => { setDialog("create"); }}
-          onSettings={() => { setUsage(false); setSettings(settings ? null : "providers"); }}
+          onOpenPair={(p) => {
+            setUsage(false);
+            setPair(p);
+          }}
+          onCreate={() => {
+            setDialog("create");
+          }}
+          onSettings={() => {
+            setUsage(false);
+            setSettings(settings ? null : "providers");
+          }}
           settingsOpen={settings !== null}
-          onUsage={() => { setSettings(null); setUsage(!usage); }}
+          onUsage={() => {
+            setSettings(null);
+            setUsage(!usage);
+          }}
           usageOpen={usage}
           online={online}
-          onDeleted={(id) => { if (id === selected) setSelected(null); }}
+          onDeleted={(id) => {
+            if (id === selected) setSelected(null);
+          }}
         />
         {settings ? (
-          <Settings section={settings} onSection={setSettings} onClose={() => { setSettings(null); }} theme={theme} onTheme={setTheme} />
+          <Settings
+            section={settings}
+            onSection={setSettings}
+            onClose={() => {
+              setSettings(null);
+            }}
+            theme={theme}
+            onTheme={setTheme}
+          />
         ) : usage ? (
-          <Usage onClose={() => { setUsage(false); }} />
+          <Usage
+            onClose={() => {
+              setUsage(false);
+            }}
+          />
         ) : pair ? (
           <ConversationView key={pair.join()} pair={pair} />
         ) : agent ? (
@@ -174,8 +231,12 @@ export function App(): JSX.Element {
             key={agent.id}
             agent={agent}
             infoOpen={infoOpen}
-            onToggleInfo={() => { setInfoOpen(!infoOpen); }}
-            onEdit={() => { setDialog("edit"); }}
+            onToggleInfo={() => {
+              setInfoOpen(!infoOpen);
+            }}
+            onEdit={() => {
+              setDialog("edit");
+            }}
           />
         ) : (
           <main class="chat chat-none">
@@ -188,13 +249,27 @@ export function App(): JSX.Element {
               />
             ) : online || agents.size > 0 ? (
               <Empty icon={<Bot size={28} />} title="Create your first agent">
-                <p>Each agent gets its own computer, memory and mailbox. Agents can message each other.</p>
-                <Button variant="primary" onClick={() => { setDialog("create"); }}>
+                <p>
+                  Each agent gets its own computer, memory and mailbox. Agents can message each
+                  other.
+                </p>
+                <Button
+                  variant="primary"
+                  onClick={() => {
+                    setDialog("create");
+                  }}
+                >
                   <Plus size={16} /> New agent
                 </Button>
               </Empty>
             ) : (
-              <Offline base={base} onChange={(b) => { localStorage.setItem(DAEMON_KEY, b); setBase(b); }} />
+              <Offline
+                base={base}
+                onChange={(b) => {
+                  localStorage.setItem(DAEMON_KEY, b);
+                  setBase(b);
+                }}
+              />
             )}
           </main>
         )}
@@ -203,16 +278,30 @@ export function App(): JSX.Element {
             agent={agent}
             tab={tab}
             onTab={setTab}
-            onEdit={() => { setDialog("edit"); }}
-            onDeleted={() => { setSelected(null); }}
+            onEdit={() => {
+              setDialog("edit");
+            }}
+            onDeleted={() => {
+              setSelected(null);
+            }}
           />
         )}
       </div>
-      {file && <FileViewer agent={file.agent} file={file.file} onClose={() => { setFile(null); }} />}
+      {file && (
+        <FileViewer
+          agent={file.agent}
+          file={file.file}
+          onClose={() => {
+            setFile(null);
+          }}
+        />
+      )}
       {(dialog === "create" || dialog === "edit") && (
         <AgentDialog
           agent={dialog === "edit" ? agent : undefined}
-          onClose={() => { setDialog(null); }}
+          onClose={() => {
+            setDialog(null);
+          }}
           onSaved={(a) => {
             setAgents((m) => new Map(m).set(a.id, a));
             setSelected(a.id);
@@ -222,7 +311,9 @@ export function App(): JSX.Element {
       )}
       <div class="toasts" role="status" aria-live="polite">
         {toasts.map((t) => (
-          <div key={t.id} class={`toast toast-${t.kind}`}>{t.message}</div>
+          <div key={t.id} class={`toast toast-${t.kind}`}>
+            {t.message}
+          </div>
         ))}
       </div>
     </AppContext.Provider>
@@ -234,7 +325,8 @@ function TokenForm(props: { onSave: (token: string) => void }): JSX.Element {
   return (
     <Empty icon={<KeyRound size={28} />} title="The daemon needs its access token">
       <p>
-        Paste the token from <code>api-token</code> in the daemon’s data folder (default <code>.ferrobot/</code>).
+        Paste the token from <code>api-token</code> in the daemon’s data folder (default{" "}
+        <code>.ferrobot/</code>).
       </p>
       <form
         class="inline-form"
@@ -243,7 +335,15 @@ function TokenForm(props: { onSave: (token: string) => void }): JSX.Element {
           if (value.trim()) props.onSave(value.trim());
         }}
       >
-        <input class="mono" type="password" autoComplete="off" value={value} onInput={(e) => { setValue(e.currentTarget.value); }} />
+        <input
+          class="mono"
+          type="password"
+          autoComplete="off"
+          value={value}
+          onInput={(e) => {
+            setValue(e.currentTarget.value);
+          }}
+        />
         <Button type="submit">Connect</Button>
       </form>
     </Empty>
@@ -255,7 +355,8 @@ function Offline(props: { base: string; onChange: (b: string) => void }): JSX.El
   return (
     <Empty icon={<WifiOff size={28} />} title="Can’t reach the ferrobot daemon">
       <p>
-        Start it with <code>ferrobotd</code>, or point this app at another address. It retries automatically.
+        Start it with <code>ferrobotd</code>, or point this app at another address. It retries
+        automatically.
       </p>
       <form
         class="inline-form"
@@ -264,7 +365,13 @@ function Offline(props: { base: string; onChange: (b: string) => void }): JSX.El
           props.onChange(value.trim() || DEFAULT_DAEMON);
         }}
       >
-        <input class="mono" value={value} onInput={(e) => { setValue(e.currentTarget.value); }} />
+        <input
+          class="mono"
+          value={value}
+          onInput={(e) => {
+            setValue(e.currentTarget.value);
+          }}
+        />
         <Button type="submit">Connect</Button>
       </form>
     </Empty>

@@ -9,9 +9,8 @@ use thiserror::Error;
 /// JSON body of every non-2xx UI API response.
 #[derive(Debug, Serialize, utoipa::ToSchema)]
 pub struct ErrorBody {
-    /// Stable machine-readable code: `bad_request`, `unauthorized`,
-    /// `not_found`, `conflict`, `rate_limited`, `not_implemented`,
-    /// `sandbox_error`, `upstream_error` or `internal`.
+    /// Stable code: `bad_request`, `unauthorized`, `not_found`, `conflict`, `rate_limited`,
+    /// `not_implemented`, `sandbox_error`, `upstream_error` or `internal`.
     pub error: String,
     /// Human-readable description.
     pub message: String,
@@ -34,7 +33,7 @@ pub enum ApiError {
     Sandbox(#[from] SandboxError),
     #[error("internal error")]
     Internal(String),
-    /// A host tool the daemon relies on (e.g. `codex`) failed.
+    /// A host tool (`codex`) or an upstream provider failed.
     #[error("{0}")]
     Upstream(String),
 }

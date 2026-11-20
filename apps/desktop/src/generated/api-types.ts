@@ -12,11 +12,8 @@ export interface paths {
             cookie?: never;
         };
         /**
-         * A file an agent shared. Needs no operator token (frames and the system
-         *     browser cannot send one); the link is a signed capability that expires
-         *     (HMAC-SHA256 with a keychain key over agent, file and expiry).
-         *     .html opens as a sandboxed page (opaque origin, inline code only, no
-         *     network requests), a real PDF opens inline, anything else downloads.
+         * A shared file by signed, expiring link (HMAC over agent, file and expiry), as frames cannot
+         *     send the operator token. Pages open sandboxed, a real PDF inline, anything else downloads.
          */
         get: operations["page"];
         put?: never;
@@ -241,11 +238,8 @@ export interface paths {
         get?: never;
         put?: never;
         /**
-         * Answers a question card the agent showed with `ask_user`. The answers are
-         *     sent to the agent as one user message and the card is locked (a
-         *     `question_answered` event is recorded and pushed). On an approval card
-         *     (`approval` set, e.g. from `create_agent`) the decision goes to the
-         *     waiting tool call instead; `409` if that request already timed out.
+         * Answers a question card: the agent gets the answers as one user message and the card locks.
+         *     An approval card's decision goes to the waiting tool call instead (`409` once it timed out).
          */
         post: operations["answer_question"];
         delete?: never;
@@ -430,9 +424,8 @@ export interface paths {
         get?: never;
         put?: never;
         /**
-         * Sends the operator's message to every agent in the call. Each one also
-         *     gets what the others said since its own last turn; agents' replies never
-         *     start each other's turns.
+         * Sends the operator's message to every agent in the call, each with what the others said
+         *     since its last turn. Agents' replies never start each other's turns.
          */
         post: operations["post_call_message"];
         delete?: never;
@@ -490,9 +483,8 @@ export interface paths {
         get?: never;
         put?: never;
         /**
-         * Starts an OAuth sign-in for a connector without a token: discovers the
-         *     server's authorization server, registers ferrobot as a client and returns
-         *     the page to sign in on. The browser comes back to `/v1/oauth/callback`.
+         * Starts an OAuth sign-in for a connector without a token and returns the page to sign in on;
+         *     the browser comes back to `/v1/oauth/callback`.
          */
         post: operations["start_oauth"];
         /**
@@ -681,9 +673,8 @@ export interface paths {
         get: operations["chatgpt_login_status"];
         put?: never;
         /**
-         * Starts signing a `codex` provider in with `ChatGPT`, on the daemon host's
-         *     `codex`. Open `verification_url`, enter `user_code`, then poll the status.
-         *     The tokens stay with the host's Codex; agents never see them.
+         * Starts a `ChatGPT` sign-in for a `codex` provider on the daemon host: open
+         *     `verification_url`, enter `user_code`, poll the status. Agents never see the tokens.
          */
         post: operations["start_chatgpt_login"];
         delete?: never;
@@ -700,9 +691,8 @@ export interface paths {
             cookie?: never;
         };
         /**
-         * Models to offer for a provider: its own list, fetched with the stored key
-         *     (cached for a few minutes), or a short built-in list when it has none or
-         *     the fetch fails. The key is never returned.
+         * Models to offer for a provider: its own list fetched with the stored key (cached for a
+         *     few minutes), else a short built-in list.
          */
         get: operations["provider_models"];
         put?: never;
@@ -794,7 +784,7 @@ export interface paths {
         };
         /**
          * Prices in USD per 1M tokens: the operator's overrides, then the shipped
-         *     table. Ollama models cost 0 and are not listed.
+         *     table. Unlisted Ollama models cost 0.
          */
         get: operations["get_prices"];
         /**
@@ -915,9 +905,8 @@ export interface paths {
             cookie?: never;
         };
         /**
-         * WebSocket stream of `UiEvent` JSON text frames (schema:
-         *     `protocol/ui-events.schema.json`). Client-to-server frames are ignored.
-         *     After a reconnect (or a `lagged` gap) clients should refetch over HTTP.
+         * WebSocket of `UiEvent` text frames (`protocol/ui-events.schema.json`); client frames are
+         *     ignored. After a reconnect or a `lagged` gap, refetch over HTTP.
          */
         get: operations["ui_ws"];
         put?: never;
@@ -979,11 +968,8 @@ export interface components {
          */
         AgentId: string;
         /**
-         * @description Human-facing, unique agent handle such as `alice` or `build-bot`.
-         *
-         *     Rules: 1-32 chars, lowercase ASCII letters, digits and `-`,
-         *     must start with a letter and must not end with `-`.
-         *     Names double as container and volume name suffixes, so they stay DNS-safe.
+         * @description Unique agent handle like `build-bot`: 1-32 chars of `a-z0-9-`, starting with a letter and
+         *     not ending with `-`, so it stays DNS-safe in sandbox resource names.
          * @example alice
          */
         AgentName: string;
@@ -1010,9 +996,8 @@ export interface components {
             answers: components["schemas"]["QuestionAnswer"][];
         };
         /**
-         * @description What an approval card asks the operator to allow. The daemon raises
-         *     these itself; the decision goes to the waiting tool call, not to the
-         *     agent's mailbox.
+         * @description What an approval card asks the operator to allow; the decision goes to the waiting tool
+         *     call, not to the agent's mailbox.
          */
         Approval: {
             /** @description Requested name of the new agent. */
@@ -1023,9 +1008,8 @@ export interface components {
             kind: "create_agent";
         };
         /**
-         * @description A chosen look for the agent's animated character avatar. Clients derive
-         *     a deterministic look from the agent id when none is set; an uploaded
-         *     avatar image takes precedence over both.
+         * @description A chosen character avatar look; without one, clients derive a look from the agent id.
+         *     An uploaded avatar image wins over both.
          */
         AvatarCharacter: {
             body: components["schemas"]["CharacterBody"];
@@ -1064,6 +1048,7 @@ export interface components {
             /** @description Stable value reported in the answer; defaults to the label. */
             value?: string;
         };
+        /** @description A remote MCP server whose tools assigned agents can use. */
         Connector: {
             /** Format: uuid */
             id: string;
@@ -1143,7 +1128,7 @@ export interface components {
              */
             url: string;
             /**
-             * @description Sent as `Authorization: Bearer <token>`. Stored in the OS keychain;
+             * @description Sent as `Authorization: Bearer <token>`. Kept in the daemon's secret store;
              *     never returned.
              */
             token?: string | null;
@@ -1152,14 +1137,13 @@ export interface components {
              *     registration (e.g. Google). Register `redirect_uri` with it.
              */
             client_id?: string | null;
-            /** @description That app's client secret. Stored in the OS keychain; never returned. */
+            /** @description That app's client secret. Kept in the daemon's secret store; never returned. */
             client_secret?: string | null;
             /** @description Scopes to ask for at sign-in (space-separated entries are split). */
             scopes?: string[];
             /**
-             * @description The authorization server the app belongs to (e.g.
-             *     `https://accounts.google.com`); needed with `client_id`. Sign-ins
-             *     through any other server are refused.
+             * @description The authorization server the app belongs to (e.g. `https://accounts.google.com`);
+             *     needed with `client_id`. Sign-ins through any other server are refused.
              */
             issuer?: string | null;
         };
@@ -1177,7 +1161,7 @@ export interface components {
             /** @description Google Cloud project; required for `vertex`. */
             project?: string | null;
             default_model?: string | null;
-            /** @description Stored in the OS keychain; never returned. */
+            /** @description Kept in the daemon's secret store; never returned. */
             api_key?: string | null;
         };
         CreateRoutine: {
@@ -1206,14 +1190,14 @@ export interface components {
         /** @description JSON body of every non-2xx UI API response. */
         ErrorBody: {
             /**
-             * @description Stable machine-readable code: `bad_request`, `unauthorized`,
-             *     `not_found`, `conflict`, `rate_limited`, `not_implemented`,
-             *     `sandbox_error`, `upstream_error` or `internal`.
+             * @description Stable code: `bad_request`, `unauthorized`, `not_found`, `conflict`, `rate_limited`,
+             *     `not_implemented`, `sandbox_error`, `upstream_error` or `internal`.
              */
             error: string;
             /** @description Human-readable description. */
             message: string;
         };
+        /** @description Exit code and captured output of a command. */
         ExecOutput: {
             /** Format: int64 */
             exit_code: number;
@@ -1246,7 +1230,7 @@ export interface components {
             model_proxy: boolean;
             /**
              * Format: int64
-             * @description Seconds of inactivity before a sandbox sleeps; null when disabled.
+             * @description Seconds idle before a sandbox is stopped (cold sleep); null: never.
              */
             idle_timeout_s?: number | null;
             /** @description Default time zone for new routines. */
@@ -1315,9 +1299,8 @@ export interface components {
             /** Format: int64 */
             reply_to?: number | null;
             /**
-             * @description Set by the sending agent: `true` wakes the recipient and goes ahead
-             *     of its other queued messages; `false` waits for the recipient's next
-             *     turn without waking it; `null` (default) queues and wakes.
+             * @description `true`: wakes the recipient and goes first; `false`: waits for its next turn
+             *     without waking it; `null` (default): queues and wakes.
              */
             priority?: boolean | null;
             status: components["schemas"]["MailStatus"];
@@ -1327,13 +1310,12 @@ export interface components {
             created_at: string;
         };
         /**
-         * @description Delivery state of a mailbox message.
-         *
-         *     `Pending -> InFlight -> Delivered`, or back to `Pending` when a runner
-         *     disconnects mid-turn, or `Failed` after too many attempts.
+         * @description Delivery state: `pending`, `in_flight`, `delivered`; back to `pending` when a runner
+         *     disconnects mid-turn, `failed` after too many attempts.
          * @enum {string}
          */
         MailStatus: "pending" | "in_flight" | "delivered" | "failed";
+        /** @description One long-term memory, an agent's own or global. */
         MemoryEntry: {
             key: string;
             content: string;
@@ -1501,6 +1483,7 @@ export interface components {
          * @enum {string}
          */
         QuestionKind: "single" | "multi" | "text";
+        /** @description A prompt an agent receives on a cron schedule. */
         Routine: {
             /** Format: int64 */
             id: number;
@@ -1575,7 +1558,10 @@ export interface components {
             /** @description Whether the backend can snapshot and restore. */
             snapshots_supported: boolean;
         };
-        /** @enum {string} */
+        /**
+         * @description A sandbox's state as its backend reports it.
+         * @enum {string}
+         */
         SandboxState: "running" | "paused" | "stopped" | "missing";
         /** @description Who sent a mailbox message. */
         Sender: {
@@ -1607,7 +1593,7 @@ export interface components {
             /** @description The text, for UTF-8 files up to 2 MiB; otherwise `null`. */
             content?: string | null;
             /**
-             * @description For .html files: the page (relative to the daemon), sandboxed, with
+             * @description For .html and .htm files: the page (relative to the daemon), sandboxed, with
              *     no access to the app or the operator token.
              */
             page_url?: string | null;
@@ -1628,6 +1614,7 @@ export interface components {
          * @enum {string}
          */
         SleepLevel: "warm" | "cold" | "archived";
+        /** @description A snapshot of an agent's sandbox. */
         SnapshotRecord: {
             /** Format: int64 */
             id: number;
@@ -1651,6 +1638,7 @@ export interface components {
             text: string;
             agent_id?: components["schemas"]["AgentId"] | null;
         };
+        /** @description One recorded event in an agent's chat. */
         StoredEvent: {
             /** Format: int64 */
             id: number;
@@ -1767,8 +1755,8 @@ export interface components {
         };
         UpdateVoice: components["schemas"]["VoiceSettings"] & {
             /**
-             * @description New API key for `provider`; `null` removes it, omitted keeps it.
-             *     Stored in the OS keychain; never returned.
+             * @description New API key for `provider`; `null` removes it, omitted keeps it. Kept in the
+             *     daemon's secret store; never returned.
              */
             api_key?: string | null;
         };
@@ -1834,7 +1822,10 @@ export interface components {
             gender?: string | null;
             preview_url?: string | null;
         };
-        /** @enum {string} */
+        /**
+         * @description A speech and transcription provider.
+         * @enum {string}
+         */
         VoiceProvider: "elevenlabs" | "openrouter";
         VoiceProviderView: {
             kind: components["schemas"]["VoiceProvider"];
@@ -3379,9 +3370,8 @@ export interface operations {
         parameters: {
             query?: {
                 /**
-                 * @description `cold` (default) stops the sandbox; `warm` pauses it, keeping memory;
-                 *     `archived` moves it to object storage (a wake restores it). Backends
-                 *     that cannot pause or archive answer 501.
+                 * @description `cold` (default) stops, `warm` pauses, `archived` moves the sandbox to object storage.
+                 *     Backends without pause or archive answer 501; Firecracker stops instead of archiving.
                  */
                 level?: components["schemas"]["SleepLevel"];
             };
@@ -5026,7 +5016,7 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorBody"];
                 };
             };
-            /** @description Voice not set up, or no key or voice */
+            /** @description Voice off, not set up, or no key or voice */
             409: {
                 headers: {
                     [name: string]: unknown;
@@ -5095,7 +5085,7 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorBody"];
                 };
             };
-            /** @description Voice not set up or no key */
+            /** @description Voice off, not set up or no key */
             409: {
                 headers: {
                     [name: string]: unknown;

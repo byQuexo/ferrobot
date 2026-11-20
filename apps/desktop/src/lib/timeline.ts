@@ -18,7 +18,14 @@ export type TimelineItem =
       isError: boolean;
       denied: string | null;
     }
-  | { type: "question"; key: string; at: string; id: number; card: QuestionCard; answered: QuestionAnswered | null }
+  | {
+      type: "question";
+      key: string;
+      at: string;
+      id: number;
+      card: QuestionCard;
+      answered: QuestionAnswered | null;
+    }
   | { type: "file"; key: string; at: string; id: number; name: string; size: number }
   | { type: "error"; key: string; at: string; text: string }
   | { type: "system"; key: string; at: string; text: string };
@@ -37,7 +44,8 @@ function str(v: unknown): string {
 }
 
 const SYSTEM_TEXT: Record<string, (p: Payload) => string> = {
-  sleeping: (p) => (str(p["reason"]) === "idle" ? "Went to sleep after being idle" : "Went to sleep"),
+  sleeping: (p) =>
+    str(p["reason"]) === "idle" ? "Went to sleep after being idle" : "Went to sleep",
   awake: () => "Woke up",
   restored: (p) => `Computer restored from snapshot ${str(p["label"]) || ""}`.trim(),
   snapshot: (p) => `Snapshot taken${str(p["label"]) ? `: ${str(p["label"])}` : ""}`,
@@ -114,7 +122,15 @@ export function buildTimeline(
         break;
       case "question": {
         const card = (p["card"] ?? null) as QuestionCard | null;
-        if (card) push({ type: "question", key, at: e.created_at, id: e.id, card, answered: answers.get(e.id) ?? null });
+        if (card)
+          push({
+            type: "question",
+            key,
+            at: e.created_at,
+            id: e.id,
+            card,
+            answered: answers.get(e.id) ?? null,
+          });
         break;
       }
       case "tool_use": {
@@ -142,7 +158,14 @@ export function buildTimeline(
         break;
       }
       case "file":
-        push({ type: "file", key, at: e.created_at, id: e.id, name: str(p["name"]), size: Number(p["size"] ?? 0) });
+        push({
+          type: "file",
+          key,
+          at: e.created_at,
+          id: e.id,
+          name: str(p["name"]),
+          size: Number(p["size"] ?? 0),
+        });
         break;
       case "tool_denied":
         push({
@@ -158,7 +181,12 @@ export function buildTimeline(
         break;
       case "turn_done":
         if (p["outcome"] === "failed") {
-          push({ type: "error", key, at: e.created_at, text: str(p["error"]) || "The turn failed" });
+          push({
+            type: "error",
+            key,
+            at: e.created_at,
+            text: str(p["error"]) || "The turn failed",
+          });
         } else if (p["outcome"] === "interrupted") {
           push({ type: "system", key, at: e.created_at, text: "Stopped" });
         }
@@ -182,7 +210,8 @@ export function buildTimeline(
     return t !== 0 ? t : a.order - b.order;
   });
   // A successful ask_user call is shown as its card instead of a tool card.
-  const isCardCall = (i: TimelineItem): boolean => i.type === "tool" && /(^|__)ask_user$/.test(i.name) && !i.isError;
+  const isCardCall = (i: TimelineItem): boolean =>
+    i.type === "tool" && /(^|__)ask_user$/.test(i.name) && !i.isError;
   const shown = items.map((x) => x.item).filter((i) => !isCardCall(i));
   // Sleep deepens in steps (paused, then stopped); the chat shows the first one.
   return shown.filter((i, n) => {
@@ -212,9 +241,8 @@ const isSendCall = (i: TimelineItem): i is ToolItem =>
   i.type === "tool" && i.denied === null && /(^|__)send_message$/.test(i.name);
 
 /**
- * Folds consecutive agent-to-agent messages with the same peer (and the
- * `send_message` calls right before them) into one `exchange` item.
- * Anything else between them (user mail, replies, other tools) ends the run.
+ * Folds consecutive agent-to-agent mail with one peer, and the `send_message` calls right
+ * before it, into one `exchange`; anything else in between (user mail, replies, tools) ends it.
  */
 export function groupExchanges(items: readonly TimelineItem[]): DisplayItem[] {
   const out: DisplayItem[] = [];
@@ -234,7 +262,15 @@ export function groupExchanges(items: readonly TimelineItem[]): DisplayItem[] {
       if (run?.peerId !== item.peerId) {
         close();
         const peerName = item.type === "incoming" ? item.from : item.to;
-        run = { type: "exchange", key: `x-${item.key}`, at: item.at, peerId: item.peerId, peerName, messages: [], tools: [] };
+        run = {
+          type: "exchange",
+          key: `x-${item.key}`,
+          at: item.at,
+          peerId: item.peerId,
+          peerName,
+          messages: [],
+          tools: [],
+        };
         cur.run = run;
       }
       run.tools.push(...calls);

@@ -1,6 +1,5 @@
-//! Tracked tasks: a message one agent handed another with `assign_task` or
-//! `create_agent`. A `task` event on the delegate marks it, so tasks need no
-//! table of their own; their state is derived from the mailbox.
+//! Tracked tasks: messages handed over with `assign_task` or `create_agent`, marked by a `task`
+//! event on the delegate; their state is derived from the mailbox, with no table of their own.
 
 use ferrobot_core::{AgentId, MailMessage, MailStatus, Sender};
 use rusqlite::{OptionalExtension, Row, params};

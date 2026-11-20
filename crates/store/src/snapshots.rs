@@ -8,6 +8,7 @@ use time::OffsetDateTime;
 use crate::util::{fmt_ts, now, parse_ts};
 use crate::{Store, StoreError};
 
+/// A snapshot of an agent's sandbox.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 #[cfg_attr(feature = "schema", derive(utoipa::ToSchema))]
 pub struct SnapshotRecord {

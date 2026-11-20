@@ -1,7 +1,6 @@
-// Avatar uploads are normalized client-side to a 256x256 PNG (center crop),
-// which keeps them well under the daemon's 512 KiB limit.
 const SIZE = 256;
 
+/** A center-cropped 256x256 PNG, well under the daemon's 512 KiB avatar limit. */
 export async function toAvatarPng(file: Blob): Promise<Blob> {
   const url = URL.createObjectURL(file);
   try {
@@ -27,7 +26,10 @@ export async function toAvatarPng(file: Blob): Promise<Blob> {
       SIZE,
     );
     return await new Promise<Blob>((resolve, reject) => {
-      canvas.toBlob((b) => { if (b) resolve(b); else reject(new Error("could not encode image")); }, "image/png");
+      canvas.toBlob((b) => {
+        if (b) resolve(b);
+        else reject(new Error("could not encode image"));
+      }, "image/png");
     });
   } finally {
     URL.revokeObjectURL(url);

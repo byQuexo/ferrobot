@@ -13,7 +13,10 @@ export function orderAgents<T extends Orderable>(agents: T[], saved: string[]): 
   const rank = new Map(saved.map((id, i) => [id, i]));
   const pos = (a: T): number => rank.get(a.id) ?? Number.MAX_SAFE_INTEGER;
   return [...agents].sort(
-    (a, b) => Number(Boolean(b.pinned)) - Number(Boolean(a.pinned)) || pos(a) - pos(b) || a.name.localeCompare(b.name),
+    (a, b) =>
+      Number(Boolean(b.pinned)) - Number(Boolean(a.pinned)) ||
+      pos(a) - pos(b) ||
+      a.name.localeCompare(b.name),
   );
 }
 

@@ -1,6 +1,15 @@
 import type { JSX } from "preact";
 import { useEffect, useMemo, useRef, useState } from "preact/hooks";
-import { ArrowDown, ArrowUp, ChartColumn, Pin, Plus, Search, Settings, Trash2 } from "lucide-preact";
+import {
+  ArrowDown,
+  ArrowUp,
+  ChartColumn,
+  Pin,
+  Plus,
+  Search,
+  Settings,
+  Trash2,
+} from "lucide-preact";
 
 import type { Agent } from "../api.ts";
 import { useApp } from "../context.ts";
@@ -43,18 +52,27 @@ export function Sidebar(props: {
   const dragged = useRef<string | null>(null);
   const list = useMemo(() => {
     const f = filter.trim().toLowerCase();
-    const shown = [...agents.values()].filter((a) => !f || a.name.includes(f) || a.description.toLowerCase().includes(f));
+    const shown = [...agents.values()].filter(
+      (a) => !f || a.name.includes(f) || a.description.toLowerCase().includes(f),
+    );
     return orderAgents(shown, order);
   }, [agents, filter, order]);
 
   const reorder = (id: string, target: string, after: boolean): void => {
-    const next = moveId(orderAgents([...agents.values()], order).map((a) => a.id), id, target, after);
+    const next = moveId(
+      orderAgents([...agents.values()], order).map((a) => a.id),
+      id,
+      target,
+      after,
+    );
     setOrder(next);
     saveOrder(next);
   };
   /** Moves `a` one place up or down within its group (pinned or not). */
   const step = (a: Agent, dir: -1 | 1): void => {
-    const group = orderAgents([...agents.values()], order).filter((x) => Boolean(x.pinned) === Boolean(a.pinned));
+    const group = orderAgents([...agents.values()], order).filter(
+      (x) => Boolean(x.pinned) === Boolean(a.pinned),
+    );
     const neighbour = group[group.findIndex((x) => x.id === a.id) + dir];
     if (neighbour) reorder(a.id, neighbour.id, dir > 0);
   };
@@ -72,7 +90,9 @@ export function Sidebar(props: {
       if (!from || from.id === a.id || Boolean(from.pinned) !== Boolean(a.pinned)) return;
       e.preventDefault();
       const r = (e.currentTarget as HTMLElement).getBoundingClientRect();
-      const after = horizontal ? e.clientX > r.left + r.width / 2 : e.clientY > r.top + r.height / 2;
+      const after = horizontal
+        ? e.clientX > r.left + r.width / 2
+        : e.clientY > r.top + r.height / 2;
       if (drop?.id !== a.id || drop.after !== after) setDrop({ id: a.id, after });
     },
     onDrop: (e) => {
@@ -113,38 +133,72 @@ export function Sidebar(props: {
           type="search"
           placeholder="Find an agent"
           value={filter}
-          onInput={(e) => { setFilter(e.currentTarget.value); }}
+          onInput={(e) => {
+            setFilter(e.currentTarget.value);
+          }}
         />
       </label>
       <nav class="agent-list" aria-label="Agents">
         {list.some((a) => a.pinned) && (
           <div class="pinned-strip" aria-label="Pinned agents">
-            {list.filter((a) => a.pinned).map((a) => (
-              <PinnedAgent key={a.id} agent={a} active={!props.pair && a.id === props.selected} onSelect={props.onSelect} row={handlers(a, true)} />
-            ))}
+            {list
+              .filter((a) => a.pinned)
+              .map((a) => (
+                <PinnedAgent
+                  key={a.id}
+                  agent={a}
+                  active={!props.pair && a.id === props.selected}
+                  onSelect={props.onSelect}
+                  row={handlers(a, true)}
+                />
+              ))}
           </div>
         )}
-        {list.filter((a) => !a.pinned).map((a) => (
-          <AgentRow key={a.id} agent={a} active={!props.pair && a.id === props.selected} onSelect={props.onSelect} row={handlers(a, false)} />
-        ))}
-        {list.length === 0 && agents.size > 0 && <p class="muted pad">No agent matches “{filter}”.</p>}
+        {list
+          .filter((a) => !a.pinned)
+          .map((a) => (
+            <AgentRow
+              key={a.id}
+              agent={a}
+              active={!props.pair && a.id === props.selected}
+              onSelect={props.onSelect}
+              row={handlers(a, false)}
+            />
+          ))}
+        {list.length === 0 && agents.size > 0 && (
+          <p class="muted pad">No agent matches “{filter}”.</p>
+        )}
         <ConversationList active={props.pair} onOpen={props.onOpenPair} />
       </nav>
       {menu && (
         <AgentMenu
           {...menu}
-          onClose={() => { setMenu(null); }}
-          onStep={(dir) => { step(menu.agent, dir); }}
-          onDelete={() => { setDeleting(menu.agent); }}
+          onClose={() => {
+            setMenu(null);
+          }}
+          onStep={(dir) => {
+            step(menu.agent, dir);
+          }}
+          onDelete={() => {
+            setDeleting(menu.agent);
+          }}
         />
       )}
       {deleting && (
         <Dialog
           title={`Delete ${deleting.name}?`}
-          onClose={() => { setDeleting(null); }}
+          onClose={() => {
+            setDeleting(null);
+          }}
           footer={
             <>
-              <Button onClick={() => { setDeleting(null); }}>Cancel</Button>
+              <Button
+                onClick={() => {
+                  setDeleting(null);
+                }}
+              >
+                Cancel
+              </Button>
               <Button
                 variant="danger"
                 onClick={() =>
@@ -160,7 +214,10 @@ export function Sidebar(props: {
             </>
           }
         >
-          <p>This removes {deleting.name}, its computer, chat, memory and routines. It cannot be undone.</p>
+          <p>
+            This removes {deleting.name}, its computer, chat, memory and routines. It cannot be
+            undone.
+          </p>
         </Dialog>
       )}
       <footer class="sidebar-foot">
@@ -232,16 +289,31 @@ function AgentMenu(props: {
   const left = Math.min(props.x, window.innerWidth - 200);
   const top = Math.min(props.y, window.innerHeight - 130);
   return (
-    <div class="context-menu" role="menu" aria-label={props.agent.name} ref={box} style={{ left: `${String(left)}px`, top: `${String(top)}px` }}>
-      {item("Move up", <ArrowUp size={16} />, () => { props.onStep(-1); })}
-      {item("Move down", <ArrowDown size={16} />, () => { props.onStep(1); })}
+    <div
+      class="context-menu"
+      role="menu"
+      aria-label={props.agent.name}
+      ref={box}
+      style={{ left: `${String(left)}px`, top: `${String(top)}px` }}
+    >
+      {item("Move up", <ArrowUp size={16} />, () => {
+        props.onStep(-1);
+      })}
+      {item("Move down", <ArrowDown size={16} />, () => {
+        props.onStep(1);
+      })}
       {item(`Delete ${props.agent.name}…`, <Trash2 size={16} />, props.onDelete, true)}
     </div>
   );
 }
 
 /** A pinned (main) agent: large avatar and name at the top of the list. */
-function PinnedAgent(props: { agent: Agent; active: boolean; onSelect: (id: string) => void; row: RowHandlers }): JSX.Element {
+function PinnedAgent(props: {
+  agent: Agent;
+  active: boolean;
+  onSelect: (id: string) => void;
+  row: RowHandlers;
+}): JSX.Element {
   const a = props.agent;
   const { class: drop, ...row } = props.row;
   return (
@@ -251,7 +323,9 @@ function PinnedAgent(props: { agent: Agent; active: boolean; onSelect: (id: stri
         class={`pinned-agent${props.active ? " active" : ""}`}
         aria-current={props.active ? "page" : undefined}
         title={`${a.name} · ${presenceLabel(a.presence)}`}
-        onClick={() => { props.onSelect(a.id); }}
+        onClick={() => {
+          props.onSelect(a.id);
+        }}
       >
         <Avatar agent={a} size={60} presence={a.presence} />
         <span class="pinned-name">{a.name}</span>
@@ -266,32 +340,39 @@ function PinnedAgent(props: { agent: Agent; active: boolean; onSelect: (id: stri
   );
 }
 
-function AgentRow(props: { agent: Agent; active: boolean; onSelect: (id: string) => void; row: RowHandlers }): JSX.Element {
+function AgentRow(props: {
+  agent: Agent;
+  active: boolean;
+  onSelect: (id: string) => void;
+  row: RowHandlers;
+}): JSX.Element {
   const a = props.agent;
   const { class: drop, ...row } = props.row;
   return (
     <div class={`agent-row-wrap${drop}`} {...row}>
-    <button
-      type="button"
-      class={`agent-row${props.active ? " active" : ""}`}
-      aria-current={props.active ? "page" : undefined}
-      title={`${a.name} · ${presenceLabel(a.presence)}`}
-      onClick={() => { props.onSelect(a.id); }}
-    >
-      <Avatar agent={a} size={40} presence={a.presence} />
-      <span class="agent-row-text">
-        <span class="agent-row-top">
-          <span class="agent-name">{a.name}</span>
+      <button
+        type="button"
+        class={`agent-row${props.active ? " active" : ""}`}
+        aria-current={props.active ? "page" : undefined}
+        title={`${a.name} · ${presenceLabel(a.presence)}`}
+        onClick={() => {
+          props.onSelect(a.id);
+        }}
+      >
+        <Avatar agent={a} size={40} presence={a.presence} />
+        <span class="agent-row-text">
+          <span class="agent-row-top">
+            <span class="agent-name">{a.name}</span>
+          </span>
+          <span class="agent-desc">{a.description || "No description"}</span>
         </span>
-        <span class="agent-desc">{a.description || "No description"}</span>
-      </span>
-      {a.unread > 0 && (
-        <span class="badge" aria-label={`${String(a.unread)} unread`}>
-          {a.unread > 99 ? "99+" : a.unread}
-        </span>
-      )}
-    </button>
-    <PinToggle agent={a} />
+        {a.unread > 0 && (
+          <span class="badge" aria-label={`${String(a.unread)} unread`}>
+            {a.unread > 99 ? "99+" : a.unread}
+          </span>
+        )}
+      </button>
+      <PinToggle agent={a} />
     </div>
   );
 }

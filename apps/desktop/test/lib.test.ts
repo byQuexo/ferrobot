@@ -16,22 +16,49 @@ import type { UsageGroup } from "../src/api.ts";
 const ME = "11111111-1111-4111-8111-111111111111";
 const BOB = "22222222-2222-4222-8222-222222222222";
 
-function msg(id: number, sender: MailMessage["sender"], recipient: string, body: string, at: string): MailMessage {
+function msg(
+  id: number,
+  sender: MailMessage["sender"],
+  recipient: string,
+  body: string,
+  at: string,
+): MailMessage {
   return { id, sender, recipient, body, status: "delivered", attempts: 1, created_at: at };
 }
 
-function ev(id: number, kind: string, payload: Record<string, unknown>, at: string, turn = "t1"): StoredEvent {
-  return { id, agent_id: ME, turn_id: turn, kind, payload: payload as StoredEvent["payload"], created_at: at };
+function ev(
+  id: number,
+  kind: string,
+  payload: Record<string, unknown>,
+  at: string,
+  turn = "t1",
+): StoredEvent {
+  return {
+    id,
+    agent_id: ME,
+    turn_id: turn,
+    kind,
+    payload: payload as StoredEvent["payload"],
+    created_at: at,
+  };
 }
 
-const names = { agents: new Map([[ME, "ada"], [BOB, "bob"]]), routines: new Map([[4, "digest"]]) };
+const names = {
+  agents: new Map([
+    [ME, "ada"],
+    [BOB, "bob"],
+  ]),
+  routines: new Map([[4, "digest"]]),
+};
 
 describe("avatar", () => {
   it("derives a stable character look from the id", () => {
     assert.equal(hash("ada"), hash("ada"));
     assert.notEqual(hash("ada"), hash("bob"));
     assert.deepEqual(deriveCharacter(ME), deriveCharacter(ME));
-    const looks = new Set(Array.from({ length: 40 }, (_, i) => JSON.stringify(deriveCharacter(`agent-${String(i)}`))));
+    const looks = new Set(
+      Array.from({ length: 40 }, (_, i) => JSON.stringify(deriveCharacter(`agent-${String(i)}`))),
+    );
     assert.ok(looks.size > 20, "looks should vary");
   });
   it("prefers the stored look and re-rolls to a different one", () => {
@@ -61,14 +88,23 @@ describe("format", () => {
     assert.equal(stepLabel("mcp__ferrobot__send_message", { to: "b-1" }, nameOf), "Messaging @bob");
     assert.equal(stepLabel("mcp__ferrobot__github__create_issue", {}, nameOf), "Using github");
     assert.equal(stepLabel("Bash", { command: "ls -la" }, nameOf), "Working on its computer");
-    assert.equal(stepLabel("bash", { command: "curl x", description: "checking flight prices" }, nameOf), "Checking flight prices");
+    assert.equal(
+      stepLabel("bash", { command: "curl x", description: "checking flight prices" }, nameOf),
+      "Checking flight prices",
+    );
     assert.equal(stepLabel("Read", { file_path: "/w/notes/plan.md" }, nameOf), "Reading plan.md");
-    assert.equal(stepLabel("WebFetch", { url: "https://example.com/x" }, nameOf), "Reading example.com");
+    assert.equal(
+      stepLabel("WebFetch", { url: "https://example.com/x" }, nameOf),
+      "Reading example.com",
+    );
     assert.equal(stepLabel("mcp__other__thing", {}, nameOf), "Using other");
   });
 
   it("splits MCP tool names", () => {
-    assert.deepEqual(toolLabel("mcp__ferrobot__send_message"), { server: "ferrobot", tool: "send_message" });
+    assert.deepEqual(toolLabel("mcp__ferrobot__send_message"), {
+      server: "ferrobot",
+      tool: "send_message",
+    });
     assert.deepEqual(toolLabel("Bash"), { server: null, tool: "Bash" });
   });
 });
@@ -85,8 +121,18 @@ describe("buildTimeline", () => {
       ],
       [
         ev(10, "message_in", { message_id: 1 }, "2026-01-01T10:00:01Z"),
-        ev(11, "tool_use", { id: "c1", name: "mcp__ferrobot__send_message", input: { to: "bob" } }, "2026-01-01T10:00:01.500Z"),
-        ev(12, "tool_result", { id: "c1", output: "sent", is_error: false }, "2026-01-01T10:00:02Z"),
+        ev(
+          11,
+          "tool_use",
+          { id: "c1", name: "mcp__ferrobot__send_message", input: { to: "bob" } },
+          "2026-01-01T10:00:01.500Z",
+        ),
+        ev(
+          12,
+          "tool_result",
+          { id: "c1", output: "sent", is_error: false },
+          "2026-01-01T10:00:02Z",
+        ),
         ev(13, "assistant_text", { text: "Asked bob." }, "2026-01-01T10:00:03Z"),
         ev(14, "turn_done", { outcome: "completed" }, "2026-01-01T10:00:03Z"),
         ev(15, "sleeping", { reason: "idle" }, "2026-01-01T10:00:08Z", ""),
@@ -113,7 +159,13 @@ describe("buildTimeline", () => {
       ev(2, "file", { name: "plan.md", size: 4096 }, "2026-01-01T12:05:00Z", "t2"),
     ];
     const items = buildTimeline(ME, [], events, new Map(), names);
-    assert.deepEqual(items.map((i) => (i.type === "file" ? [i.id, i.name, i.size] : null)), [[1, "plan.md", 2048], [2, "plan.md", 4096]]);
+    assert.deepEqual(
+      items.map((i) => (i.type === "file" ? [i.id, i.name, i.size] : null)),
+      [
+        [1, "plan.md", 2048],
+        [2, "plan.md", 4096],
+      ],
+    );
     assert.equal(sharedFiles(events).get("plan.md"), 2, "the latest version wins");
   });
 
@@ -142,11 +194,23 @@ describe("buildTimeline", () => {
   });
 
   it("shows live text until the final text arrives", () => {
-    const live = new Map([["t1", "Hel"], ["t2", "Wor"]]);
-    const items = buildTimeline(ME, [], [ev(1, "assistant_text", { text: "Hello" }, "2026-01-01T10:00:00Z", "t1")], live, names);
+    const live = new Map([
+      ["t1", "Hel"],
+      ["t2", "Wor"],
+    ]);
+    const items = buildTimeline(
+      ME,
+      [],
+      [ev(1, "assistant_text", { text: "Hello" }, "2026-01-01T10:00:00Z", "t1")],
+      live,
+      names,
+    );
     assert.deepEqual(
       items.map((i) => (i.type === "assistant" ? [i.text, i.streaming] : null)),
-      [["Hello", false], ["Wor", true]],
+      [
+        ["Hello", false],
+        ["Wor", true],
+      ],
     );
   });
 
@@ -156,7 +220,12 @@ describe("buildTimeline", () => {
       [],
       [
         ev(1, "tool_denied", { name: "Bash", reason: "outside workspace" }, "2026-01-01T10:00:00Z"),
-        ev(2, "turn_done", { outcome: "failed", error: "model unavailable" }, "2026-01-01T10:00:01Z"),
+        ev(
+          2,
+          "turn_done",
+          { outcome: "failed", error: "model unavailable" },
+          "2026-01-01T10:00:01Z",
+        ),
       ],
       new Map(),
       names,
@@ -169,7 +238,10 @@ describe("buildTimeline", () => {
 describe("DaemonClient", () => {
   it("puts the token in URLs that cannot carry headers", () => {
     const c = new DaemonClient("http://127.0.0.1:7878/", "tok-123");
-    assert.equal(c.url("/v1/agents/a/avatar?v=2"), "http://127.0.0.1:7878/v1/agents/a/avatar?v=2&access_token=tok-123");
+    assert.equal(
+      c.url("/v1/agents/a/avatar?v=2"),
+      "http://127.0.0.1:7878/v1/agents/a/avatar?v=2&access_token=tok-123",
+    );
     assert.equal(c.url("/v1/ws"), "http://127.0.0.1:7878/v1/ws?access_token=tok-123");
     assert.equal(new DaemonClient("http://h").url("/v1/ws"), "http://h/v1/ws");
   });
@@ -179,9 +251,19 @@ describe("mentions", () => {
   it("splits id tokens and renders current names as text", async () => {
     const { mentionsAsText, splitMentions } = await import("../src/lib/mentions.ts");
     const text = `hi <@${BOB}>, see <@not-an-id>`;
-    assert.deepEqual(splitMentions(text), [{ text: "hi " }, { mention: BOB }, { text: ", see <@not-an-id>" }]);
-    assert.equal(mentionsAsText(text, (id) => (id === BOB ? "robert" : undefined)), "hi @robert, see <@not-an-id>");
-    assert.equal(mentionsAsText(`<@${ME}>`, () => undefined), "@unknown-agent");
+    assert.deepEqual(splitMentions(text), [
+      { text: "hi " },
+      { mention: BOB },
+      { text: ", see <@not-an-id>" },
+    ]);
+    assert.equal(
+      mentionsAsText(text, (id) => (id === BOB ? "robert" : undefined)),
+      "hi @robert, see <@not-an-id>",
+    );
+    assert.equal(
+      mentionsAsText(`<@${ME}>`, () => undefined),
+      "@unknown-agent",
+    );
   });
 });
 
@@ -196,15 +278,28 @@ describe("groupExchanges", () => {
         msg(3, { kind: "agent", id: BOB }, ME, "re: hi bob", "2026-01-01T10:00:05Z"),
       ],
       [
-        ev(11, "tool_use", { id: "c1", name: "mcp__ferrobot__send_message", input: { to: "bob" } }, "2026-01-01T10:00:01Z"),
-        ev(12, "tool_use", { id: "c2", name: "mcp__ferrobot__recall", input: {} }, "2026-01-01T10:00:06Z"),
+        ev(
+          11,
+          "tool_use",
+          { id: "c1", name: "mcp__ferrobot__send_message", input: { to: "bob" } },
+          "2026-01-01T10:00:01Z",
+        ),
+        ev(
+          12,
+          "tool_use",
+          { id: "c2", name: "mcp__ferrobot__recall", input: {} },
+          "2026-01-01T10:00:06Z",
+        ),
         ev(13, "assistant_text", { text: "done" }, "2026-01-01T10:00:07Z"),
       ],
       new Map(),
       names,
     );
     const shown = groupExchanges(items);
-    assert.deepEqual(shown.map((i) => i.type), ["user", "exchange", "tool", "assistant"]);
+    assert.deepEqual(
+      shown.map((i) => i.type),
+      ["user", "exchange", "tool", "assistant"],
+    );
     const x = shown[1];
     assert.ok(x?.type === "exchange");
     assert.equal(x.peerId, BOB);
@@ -215,22 +310,55 @@ describe("groupExchanges", () => {
 
 describe("question cards", () => {
   it("shows the card instead of the ask_user call and hides the answer message", () => {
-    const card = { title: null, questions: [{ id: "q1", prompt: "Ship?", kind: "single", allow_custom: false,
-      choices: [{ label: "Yes", value: "yes" }, { label: "No", value: "no" }] }] };
+    const card = {
+      title: null,
+      questions: [
+        {
+          id: "q1",
+          prompt: "Ship?",
+          kind: "single",
+          allow_custom: false,
+          choices: [
+            { label: "Yes", value: "yes" },
+            { label: "No", value: "no" },
+          ],
+        },
+      ],
+    };
     const items = buildTimeline(
       ME,
-      [msg(5, { kind: "user" }, ME, "Answers to your questions:\n- Ship? Yes", "2026-01-01T10:00:09Z")],
       [
-        ev(1, "tool_use", { id: "c1", name: "mcp__ferrobot__ask_user", input: card }, "2026-01-01T10:00:00Z"),
+        msg(
+          5,
+          { kind: "user" },
+          ME,
+          "Answers to your questions:\n- Ship? Yes",
+          "2026-01-01T10:00:09Z",
+        ),
+      ],
+      [
+        ev(
+          1,
+          "tool_use",
+          { id: "c1", name: "mcp__ferrobot__ask_user", input: card },
+          "2026-01-01T10:00:00Z",
+        ),
         ev(2, "question", { version: 1, card }, "2026-01-01T10:00:01Z"),
         ev(3, "tool_result", { id: "c1", output: "{}", is_error: false }, "2026-01-01T10:00:02Z"),
-        ev(4, "question_answered", { question: 2, message_id: 5, answers: [{ question_id: "q1", values: ["yes"] }] },
-          "2026-01-01T10:00:09Z"),
+        ev(
+          4,
+          "question_answered",
+          { question: 2, message_id: 5, answers: [{ question_id: "q1", values: ["yes"] }] },
+          "2026-01-01T10:00:09Z",
+        ),
       ],
       new Map(),
       names,
     );
-    assert.deepEqual(items.map((i) => i.type), ["question"]);
+    assert.deepEqual(
+      items.map((i) => i.type),
+      ["question"],
+    );
     const q = items[0];
     assert.ok(q?.type === "question" && q.answered?.message_id === 5);
   });
@@ -238,10 +366,18 @@ describe("question cards", () => {
 
 describe("markdown", () => {
   it("splits blocks", () => {
-    const md = "## Plan\n\n- **Day 1**: Gothic Quarter\n  - Boqueria\n1. one\n\n> note\n\n| a | b |\n|---|---|\n| 1 | 2 |\n\n```\nx = 1\n```\n---\nend\nline 2";
+    const md =
+      "## Plan\n\n- **Day 1**: Gothic Quarter\n  - Boqueria\n1. one\n\n> note\n\n| a | b |\n|---|---|\n| 1 | 2 |\n\n```\nx = 1\n```\n---\nend\nline 2";
     assert.deepEqual(parseBlocks(md), [
       { kind: "heading", level: 2, text: "Plan" },
-      { kind: "list", ordered: false, items: [{ text: "**Day 1**: Gothic Quarter", depth: 0 }, { text: "Boqueria", depth: 1 }] },
+      {
+        kind: "list",
+        ordered: false,
+        items: [
+          { text: "**Day 1**: Gothic Quarter", depth: 0 },
+          { text: "Boqueria", depth: 1 },
+        ],
+      },
       { kind: "list", ordered: true, items: [{ text: "one", depth: 0 }] },
       { kind: "quote", text: "note" },
       { kind: "table", head: ["a", "b"], rows: [["1", "2"]] },
@@ -253,19 +389,26 @@ describe("markdown", () => {
 
   it("parses inline marks, links and mentions without touching code", () => {
     const id = "11111111-2222-4333-8444-555555555555";
-    assert.deepEqual(parseInline(`**bold _it_** see [docs](https://x.dev/a) or https://y.dev. <@${id}> \`**no**\` snake_case_name`), [
-      { strong: [{ text: "bold " }, { em: [{ text: "it" }] }] },
-      { text: " see " },
-      { link: "https://x.dev/a", children: [{ text: "docs" }] },
-      { text: " or " },
-      { link: "https://y.dev", children: [{ text: "https://y.dev" }] },
-      { text: ". " },
-      { mention: id },
-      { text: " " },
-      { code: "**no**" },
-      { text: " snake_case_name" },
+    assert.deepEqual(
+      parseInline(
+        `**bold _it_** see [docs](https://x.dev/a) or https://y.dev. <@${id}> \`**no**\` snake_case_name`,
+      ),
+      [
+        { strong: [{ text: "bold " }, { em: [{ text: "it" }] }] },
+        { text: " see " },
+        { link: "https://x.dev/a", children: [{ text: "docs" }] },
+        { text: " or " },
+        { link: "https://y.dev", children: [{ text: "https://y.dev" }] },
+        { text: ". " },
+        { mention: id },
+        { text: " " },
+        { code: "**no**" },
+        { text: " snake_case_name" },
+      ],
+    );
+    assert.deepEqual(parseInline("[x](javascript:alert(1))"), [
+      { text: "[x](javascript:alert(1))" },
     ]);
-    assert.deepEqual(parseInline("[x](javascript:alert(1))"), [{ text: "[x](javascript:alert(1))" }]);
   });
 });
 
@@ -295,25 +438,45 @@ describe("voice", () => {
 
 describe("live transcription", () => {
   it("reads partial, committed and error messages", () => {
-    assert.deepEqual(liveEvent('{"message_type":"partial_transcript","text":"hel"}'), { kind: "partial", text: "hel" });
-    assert.deepEqual(liveEvent('{"message_type":"committed_transcript","text":"hello"}'), { kind: "committed", text: "hello" });
-    assert.deepEqual(liveEvent('{"message_type":"auth_error","error":"bad token"}'), { kind: "error", message: "bad token" });
+    assert.deepEqual(liveEvent('{"message_type":"partial_transcript","text":"hel"}'), {
+      kind: "partial",
+      text: "hel",
+    });
+    assert.deepEqual(liveEvent('{"message_type":"committed_transcript","text":"hello"}'), {
+      kind: "committed",
+      text: "hello",
+    });
+    assert.deepEqual(liveEvent('{"message_type":"auth_error","error":"bad token"}'), {
+      kind: "error",
+      message: "bad token",
+    });
     assert.deepEqual(liveEvent('{"message_type":"session_started"}'), { kind: "other" });
     assert.deepEqual(liveEvent("not json"), { kind: "other" });
   });
 
   it("encodes samples as 16-bit little-endian PCM in base64", () => {
     const bytes = Buffer.from(pcm16Base64(new Float32Array([0, 1, -1, 2])), "base64");
-    assert.deepEqual([...new Int16Array(bytes.buffer, bytes.byteOffset, 4)], [0, 32767, -32767, 32767], "clipped to -1..1");
+    assert.deepEqual(
+      [...new Int16Array(bytes.buffer, bytes.byteOffset, 4)],
+      [0, 32767, -32767, 32767],
+      "clipped to -1..1",
+    );
     assert.equal(pcm16Base64(new Float32Array(0)), "");
   });
 });
 
 describe("agent order", () => {
-  const a = (id: string, pinned = false): { id: string; name: string; pinned: boolean } => ({ id, name: id, pinned });
+  const a = (id: string, pinned = false): { id: string; name: string; pinned: boolean } => ({
+    id,
+    name: id,
+    pinned,
+  });
   it("keeps pinned first, then the saved order, new agents last by name", () => {
     const got = orderAgents([a("c"), a("b"), a("p", true), a("a"), a("z")], ["z", "c", "gone"]);
-    assert.deepEqual(got.map((x) => x.id), ["p", "z", "c", "a", "b"]);
+    assert.deepEqual(
+      got.map((x) => x.id),
+      ["p", "z", "c", "a", "b"],
+    );
   });
 
   it("moves an id before or after another", () => {
@@ -325,21 +488,27 @@ describe("agent order", () => {
 });
 
 describe("modelOptions", () => {
-  const models = [{ id: "claude-x", name: "Claude X" }, { id: "gpt-x", name: null }];
+  const models = [
+    { id: "claude-x", name: "Claude X" },
+    { id: "gpt-x", name: null },
+  ];
 
-  it("labels models and keeps a current id the list lacks", () => {
-    assert.deepEqual(modelOptions(models, ""), [["claude-x", "Claude X (claude-x)"], ["gpt-x", "gpt-x"]]);
+  it("labels models, keeps a current id the list lacks, and has none without a list", () => {
+    assert.deepEqual(modelOptions(models, ""), [
+      ["claude-x", "Claude X (claude-x)"],
+      ["gpt-x", "gpt-x"],
+    ]);
     assert.equal(modelOptions(models, "gpt-x").length, 2);
     assert.deepEqual(modelOptions(models, "my-finetune")[0], ["my-finetune", "my-finetune"]);
-  });
-
-  it("has no options without a list, so the field is typed", () => {
-    assert.deepEqual(modelOptions([], "my-finetune"), []);
+    assert.deepEqual(modelOptions([], "my-finetune"), [], "no list: the field is typed");
   });
 
   it("keeps a saved voice id the list lacks", () => {
     const voices: [string, string][] = [["v1", "Rachel"]];
-    assert.deepEqual(withSaved(voices, "v9"), [["v9", "v9"], ["v1", "Rachel"]]);
+    assert.deepEqual(withSaved(voices, "v9"), [
+      ["v9", "v9"],
+      ["v1", "Rachel"],
+    ]);
     assert.equal(withSaved(voices, "v1"), voices);
     assert.equal(withSaved(voices, ""), voices);
     assert.deepEqual(withSaved([], "v9"), [], "no list: the field is typed");
@@ -362,8 +531,14 @@ describe("usage", () => {
 
   it("turns ranges into local-midnight bounds", () => {
     const now = new Date(2026, 10, 20, 15, 30);
-    assert.deepEqual(rangeOf("today", now, { from: "", to: "" }), { from: new Date(2026, 10, 20).toISOString(), to: null });
-    assert.equal(rangeOf("7d", now, { from: "", to: "" })?.from, new Date(2026, 10, 14).toISOString());
+    assert.deepEqual(rangeOf("today", now, { from: "", to: "" }), {
+      from: new Date(2026, 10, 20).toISOString(),
+      to: null,
+    });
+    assert.equal(
+      rangeOf("7d", now, { from: "", to: "" })?.from,
+      new Date(2026, 10, 14).toISOString(),
+    );
     assert.deepEqual(rangeOf("custom", now, { from: "2026-10-30", to: "2026-11-01" }), {
       from: new Date(2026, 9, 30).toISOString(),
       to: new Date(2026, 10, 2).toISOString(),
@@ -373,14 +548,26 @@ describe("usage", () => {
   });
 
   it("lists every UTC day of a range", () => {
-    assert.deepEqual(utcDays("2026-11-18T23:00:00.000Z", "2026-11-20T23:00:00.000Z", new Date()), ["2026-11-18", "2026-11-19", "2026-11-20"]);
-    assert.deepEqual(utcDays("2026-11-20T00:00:00.000Z", null, new Date("2026-11-20T09:00:00Z")), ["2026-11-20"]);
+    assert.deepEqual(utcDays("2026-11-18T23:00:00.000Z", "2026-11-20T23:00:00.000Z", new Date()), [
+      "2026-11-18",
+      "2026-11-19",
+      "2026-11-20",
+    ]);
+    assert.deepEqual(utcDays("2026-11-20T00:00:00.000Z", null, new Date("2026-11-20T09:00:00Z")), [
+      "2026-11-20",
+    ]);
   });
 
   it("sorts with unknown costs last and labels them plainly", () => {
     const rows = [group("b", 2), group("a", null, 3), group("c", 0.004)];
-    assert.deepEqual(sortGroups(rows, "cost_usd", true).map((g) => g.label), ["b", "c", "a"]);
-    assert.deepEqual(sortGroups(rows, "label", false).map((g) => g.label), ["a", "b", "c"]);
+    assert.deepEqual(
+      sortGroups(rows, "cost_usd", true).map((g) => g.label),
+      ["b", "c", "a"],
+    );
+    assert.deepEqual(
+      sortGroups(rows, "label", false).map((g) => g.label),
+      ["a", "b", "c"],
+    );
     assert.deepEqual(rows.map(costLabel), ["$2.00", "unknown", "<$0.01"]);
     assert.equal(costLabel(group("d", null)), "not tracked");
     assert.equal(costLabel(group("e", 1, 2)), "$1.00 + unknown");
@@ -388,7 +575,11 @@ describe("usage", () => {
 
   it("writes CSV that spreadsheets read as text", () => {
     assert.equal(
-      toCsv([["name", "cost"], ['a "b", c', 1.5], ["=SUM(A1)", null]]),
+      toCsv([
+        ["name", "cost"],
+        ['a "b", c', 1.5],
+        ["=SUM(A1)", null],
+      ]),
       'name,cost\r\n"a ""b"", c",1.5\r\n\'=SUM(A1),\r\n',
     );
   });

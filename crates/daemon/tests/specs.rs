@@ -1,6 +1,4 @@
-//! Keeps the committed API contracts in `protocol/` in sync with the Rust types.
-//!
-//! Regenerate after changing an API type:
+//! Keeps the committed API contracts in `protocol/` in sync with the Rust types. Regenerate:
 //! `FERROBOT_UPDATE_SPECS=1 cargo test -p ferrobot-daemon --test specs`
 #![allow(
     clippy::unwrap_used,

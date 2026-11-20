@@ -81,7 +81,7 @@ pub(crate) struct CreateProvider {
     project: Option<String>,
     #[serde(default)]
     default_model: Option<String>,
-    /// Stored in the OS keychain; never returned.
+    /// Kept in the daemon's secret store; never returned.
     #[serde(default)]
     api_key: Option<String>,
 }
@@ -231,9 +231,8 @@ async fn codex_provider(state: &AppState, raw: &str) -> Result<Uuid, ApiError> {
     Ok(id)
 }
 
-/// Starts signing a `codex` provider in with `ChatGPT`, on the daemon host's
-/// `codex`. Open `verification_url`, enter `user_code`, then poll the status.
-/// The tokens stay with the host's Codex; agents never see them.
+/// Starts a `ChatGPT` sign-in for a `codex` provider on the daemon host: open
+/// `verification_url`, enter `user_code`, poll the status. Agents never see the tokens.
 #[utoipa::path(post, path = "/v1/providers/{id}/chatgpt-login", tag = "providers",
     params(("id" = String, Path, description = "Provider id (UUID)")),
     responses((status = 200, body = DeviceCode),
@@ -265,9 +264,8 @@ pub(crate) async fn chatgpt_login_status(
     Ok(Json(codex::login_status(&state, id).await))
 }
 
-/// Models to offer for a provider: its own list, fetched with the stored key
-/// (cached for a few minutes), or a short built-in list when it has none or
-/// the fetch fails. The key is never returned.
+/// Models to offer for a provider: its own list fetched with the stored key (cached for a
+/// few minutes), else a short built-in list.
 #[utoipa::path(get, path = "/v1/providers/{id}/models", tag = "providers",
     params(("id" = String, Path, description = "Provider id (UUID)")),
     responses((status = 200, body = ModelList),

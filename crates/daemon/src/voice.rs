@@ -1,6 +1,5 @@
-//! Speech for the operator's chat: text to speech and speech to text with
-//! `ElevenLabs` or `OpenRouter`. The daemon holds the key (secret store,
-//! `voice:<provider>`); neither the key, the text nor the audio is logged.
+//! Speech and transcription for the operator's chat with `ElevenLabs` or `OpenRouter`. The key
+//! stays in the secret store (`voice:<provider>`); key, text and audio are never logged.
 
 use std::collections::BTreeMap;
 use std::fmt::Write as _;
@@ -26,6 +25,7 @@ const LIVE_MAX_SECONDS: u32 = 600;
 /// Speaking speeds `ElevenLabs` offers (its own UI range).
 pub const SPEEDS: std::ops::RangeInclusive<f32> = 0.7..=1.2;
 
+/// A speech and transcription provider.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum VoiceProvider {
@@ -282,9 +282,8 @@ fn audio_extension(essence: &str) -> Option<&'static str> {
     })
 }
 
-/// `multipart/form-data` with text fields and the recording as `file`
-/// (`mime` is a known essence and field values are validated settings, so
-/// neither can break the part headers).
+/// `multipart/form-data` with text fields and the recording as `file`. `mime` is a known
+/// essence and the fields are validated settings, so neither can break the part headers.
 fn multipart(
     boundary: &str,
     fields: &[(&str, &str)],
@@ -474,8 +473,8 @@ pub struct Budget {
 }
 
 impl Budget {
-    /// Takes `chars` characters of speech or one transcription from this
-    /// minute's budget; `false` when it is used up.
+    /// Takes `chars` and `transcriptions` from this minute's budget; `false` when that
+    /// would overrun it.
     pub fn spend(&mut self, chars: usize, transcriptions: u32) -> bool {
         let now = Instant::now();
         if self

@@ -8,6 +8,7 @@ use time::OffsetDateTime;
 use crate::util::{fmt_ts, now, parse_ts};
 use crate::{Store, StoreError};
 
+/// One recorded event in an agent's chat.
 #[derive(Debug, Clone, PartialEq, Serialize)]
 #[cfg_attr(feature = "schema", derive(utoipa::ToSchema))]
 pub struct StoredEvent {

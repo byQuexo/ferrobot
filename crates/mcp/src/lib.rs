@@ -1,9 +1,5 @@
-//! ferrobot's own tools, exposed to agents as an MCP server (Streamable HTTP).
-//!
-//! Every request must carry `Authorization: Bearer <runner token>`. The
-//! [`router`] middleware resolves the token to an agent and stores it as
-//! [`Caller`] in the request extensions; tools read it from there, so an
-//! agent can only ever act as itself.
+//! ferrobot's own tools as an MCP server (Streamable HTTP). [`router`] resolves the bearer
+//! runner token to a [`Caller`] that tools act as, so an agent can only act as itself.
 
 mod auth;
 mod tools;
@@ -93,9 +89,8 @@ pub trait MailboxNotifier: Send + Sync + 'static {
     fn event_recorded(&self, event: &StoredEvent) {
         let _ = event;
     }
-    /// Asks the operator to approve a new agent and creates it if they do.
-    /// Resolves once the operator answered or the request timed out. `Err`
-    /// carries a message for the agent (invalid name, limit reached, ...).
+    /// Asks the operator to approve a new agent and creates it if they do; resolves on the
+    /// answer or the timeout. `Err` carries a message for the agent.
     fn request_agent(
         &self,
         requester: AgentId,

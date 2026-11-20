@@ -14,14 +14,19 @@ export function fileSize(bytes: number): string {
 }
 
 /**
- * A file an agent shared: .html opens full screen in the browser, a PDF in a
- * full-screen viewer, Markdown and text inline. Every file can be
- * downloaded (the browser saves it; the app window cannot).
+ * A file an agent shared: a page opens in the system browser, a PDF fills the window,
+ * Markdown and text show inline. Downloads go through the browser; the app window cannot save.
  */
-export function FileViewer(props: { agent: string; file: number; onClose: () => void }): JSX.Element | null {
+export function FileViewer(props: {
+  agent: string;
+  file: number;
+  onClose: () => void;
+}): JSX.Element | null {
   const { client, toast } = useApp();
   const [file, setFile] = useState<SharedFile | null>(null);
-  const open = (path: string): void => { window.open(`${client.base}${path}`, "_blank", "noopener"); };
+  const open = (path: string): void => {
+    window.open(`${client.base}${path}`, "_blank", "noopener");
+  };
 
   useEffect(() => {
     client.sharedFile(props.agent, props.file).then(
@@ -41,11 +46,19 @@ export function FileViewer(props: { agent: string; file: number; onClose: () => 
   }, [props.agent, props.file]);
 
   if (!file) {
-    return <Dialog title="Opening…" onClose={props.onClose} wide><Skeleton lines={8} /></Dialog>;
+    return (
+      <Dialog title="Opening…" onClose={props.onClose} wide>
+        <Skeleton lines={8} />
+      </Dialog>
+    );
   }
   const footer = (
     <>
-      <Button onClick={() => { open(`${file.url}&download=1`); }}>
+      <Button
+        onClick={() => {
+          open(`${file.url}&download=1`);
+        }}
+      >
         <Download size={16} /> Download
       </Button>
       <Button onClick={props.onClose}>Close</Button>
@@ -60,11 +73,17 @@ export function FileViewer(props: { agent: string; file: number; onClose: () => 
   }
   let body: JSX.Element;
   if (file.content == null) {
-    body = <p class="muted">No preview for this file ({fileSize(file.size)}). Download it to open it.</p>;
+    body = (
+      <p class="muted">No preview for this file ({fileSize(file.size)}). Download it to open it.</p>
+    );
   } else if (/\.(md|markdown)$/i.test(file.name)) {
     body = <RichText text={file.content} />;
   } else {
-    body = <pre class="code-block"><code>{file.content}</code></pre>;
+    body = (
+      <pre class="code-block">
+        <code>{file.content}</code>
+      </pre>
+    );
   }
   return (
     <Dialog title={file.name} onClose={props.onClose} footer={footer} wide>

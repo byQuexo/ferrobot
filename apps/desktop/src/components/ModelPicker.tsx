@@ -20,9 +20,18 @@ export function ModelPicker(props: {
   useEffect(() => {
     let live = true;
     setModels([]);
-    const list = props.provider ? client.providerModels(props.provider) : client.kindModels(props.kind);
-    list.then((l) => { if (live) setModels(l.models); }, () => undefined);
-    return () => { live = false; };
+    const list = props.provider
+      ? client.providerModels(props.provider)
+      : client.kindModels(props.kind);
+    list.then(
+      (l) => {
+        if (live) setModels(l.models);
+      },
+      () => undefined,
+    );
+    return () => {
+      live = false;
+    };
   }, [source]);
   return (
     <Choice

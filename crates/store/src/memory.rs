@@ -9,6 +9,7 @@ use time::OffsetDateTime;
 use crate::util::{fmt_ts, now, parse_ts};
 use crate::{Store, StoreError};
 
+/// One long-term memory, an agent's own or global.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 #[cfg_attr(feature = "schema", derive(utoipa::ToSchema))]
 pub struct MemoryEntry {

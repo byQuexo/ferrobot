@@ -24,15 +24,28 @@ import {
 import type { Agent, MailMessage, Routine, StoredEvent, VoiceView } from "../api.ts";
 import { useApp } from "../context.ts";
 import { clockTime, presenceLabel, stepLabel, toolLabel } from "../lib/format.ts";
-import { buildTimeline, groupExchanges, sharedFiles, type DisplayItem, type Exchange, type TimelineItem } from "../lib/timeline.ts";
-import { record, Speaker, speakable, startLive, type LiveSession, type Recording } from "../lib/voice.ts";
+import {
+  buildTimeline,
+  groupExchanges,
+  sharedFiles,
+  type DisplayItem,
+  type Exchange,
+  type TimelineItem,
+} from "../lib/timeline.ts";
+import {
+  record,
+  Speaker,
+  speakable,
+  startLive,
+  type LiveSession,
+  type Recording,
+} from "../lib/voice.ts";
 import { fileSize } from "./FileViewer.tsx";
 import { Avatar } from "./Avatar.tsx";
 import { QuestionCardView } from "./QuestionCard.tsx";
 import { RichText, type ChatFiles } from "./RichText.tsx";
 import { Button, IconButton } from "./ui.tsx";
 import { VoiceQuick } from "./VoiceQuick.tsx";
-
 
 export function Chat(props: {
   agent: Agent;
@@ -60,7 +73,10 @@ export function Chat(props: {
   names.current = agents;
   const spoken = useRef(new Set<number>());
   const speaker = useMemo(
-    () => new Speaker(client.speech, (err) => { toast(err instanceof Error ? err.message : String(err)); }),
+    () =>
+      new Speaker(client.speech, (err) => {
+        toast(err instanceof Error ? err.message : String(err));
+      }),
     [client],
   );
   const [voiceView, setVoiceView] = useState<VoiceView | null>(null);
@@ -69,7 +85,9 @@ export function Chat(props: {
   const [caption, setCaption] = useState("");
   const listening = useRef<LiveSession | null>(null);
   const [hearing, setHearing] = useState(false);
-  useEffect(() => { client.voice().then(setVoiceView, () => undefined); }, [client]);
+  useEffect(() => {
+    client.voice().then(setVoiceView, () => undefined);
+  }, [client]);
   const voiceEnabled = voiceView?.enabled !== false;
 
   const endCall = (): void => {
@@ -101,7 +119,10 @@ export function Chat(props: {
     setCall(agents);
     setVoice(true);
     if (settings.provider !== "elevenlabs") {
-      toast("Hands-free listening needs ElevenLabs; replies are read aloud, dictate with the microphone", "info");
+      toast(
+        "Hands-free listening needs ElevenLabs; replies are read aloud, dictate with the microphone",
+        "info",
+      );
       return;
     }
     try {
@@ -112,10 +133,14 @@ export function Chat(props: {
           const said = text.trim();
           if (said) void run(() => sendRef.current(said));
         },
-        error: (message) => { toast(`Listening stopped: ${message}`); },
+        error: (message) => {
+          toast(`Listening stopped: ${message}`);
+        },
       });
       // The agent's own voice must not come back as something the operator said.
-      speaker.onPlaying = (playing) => { listening.current?.mute(playing); };
+      speaker.onPlaying = (playing) => {
+        listening.current?.mute(playing);
+      };
       setHearing(true);
     } catch (err) {
       toast(err instanceof Error ? err.message : String(err));
@@ -127,7 +152,6 @@ export function Chat(props: {
   const sendRef = useRef(send);
   sendRef.current = send;
 
-  // Initial load + live updates for the selected agent.
   useEffect(() => {
     let cancelled = false;
     setLoaded(false);
@@ -150,14 +174,26 @@ export function Chat(props: {
         case "event": {
           const ev = e.event;
           const speaks = ev.agent_id === id || inCall.current.includes(ev.agent_id);
-          if (voiceOn.current && speaks && ev.kind === "assistant_text" && !spoken.current.has(ev.id)) {
+          if (
+            voiceOn.current &&
+            speaks &&
+            ev.kind === "assistant_text" &&
+            !spoken.current.has(ev.id)
+          ) {
             spoken.current.add(ev.id);
             const text = (ev.payload as { text?: unknown }).text;
-            if (typeof text === "string") speaker.say(speakable(text, (aid) => names.current.get(aid)?.name), ev.agent_id);
+            if (typeof text === "string")
+              speaker.say(
+                speakable(text, (aid) => names.current.get(aid)?.name),
+                ev.agent_id,
+              );
           }
           if (ev.agent_id !== id) return;
           setEvents((prev) => (prev.some((x) => x.id === e.event.id) ? prev : [...prev, e.event]));
-          if (e.event.turn_id && (e.event.kind === "assistant_text" || e.event.kind === "turn_done")) {
+          if (
+            e.event.turn_id &&
+            (e.event.kind === "assistant_text" || e.event.kind === "turn_done")
+          ) {
             const turn = e.event.turn_id;
             setLive((prev) => {
               if (!prev.has(turn)) return prev;
@@ -182,11 +218,15 @@ export function Chat(props: {
           const m = e.message;
           const mine = m.recipient === id || (m.sender.kind === "agent" && m.sender.id === id);
           if (!mine) return;
-          setMessages((prev) => (prev.some((x) => x.id === m.id) ? prev.map((x) => (x.id === m.id ? m : x)) : [...prev, m]));
+          setMessages((prev) =>
+            prev.some((x) => x.id === m.id)
+              ? prev.map((x) => (x.id === m.id ? m : x))
+              : [...prev, m],
+          );
           break;
         }
         case "routines_changed":
-          if (e.agent_id === id) void client.routines(id).then(setRoutines).catch(() => undefined);
+          if (e.agent_id === id) void client.routines(id).then(setRoutines, () => undefined);
           break;
         default:
           break;
@@ -212,10 +252,17 @@ export function Chat(props: {
     // The current activity: the newest step since the message being worked on.
     let start = all.length - 1;
     while (start >= 0 && !["user", "incoming", "routine"].includes(all[start]?.type ?? "")) start--;
-    const last = all.slice(start + 1).filter((i) => i.type === "tool").pop();
+    const last = all
+      .slice(start + 1)
+      .filter((i) => i.type === "tool")
+      .pop();
     const nameOf = (agentId: string): string | undefined => agents.get(agentId)?.name;
     const files: ChatFiles = { agent: id, byName: sharedFiles(events) };
-    return { shown, files, step: last?.type === "tool" ? stepLabel(last.name, last.input, nameOf) : "Getting started" };
+    return {
+      shown,
+      files,
+      step: last?.type === "tool" ? stepLabel(last.name, last.input, nameOf) : "Getting started",
+    };
   }, [id, messages, events, live, agents, routines]);
 
   // Keep the view pinned to the bottom unless the user scrolled up.
@@ -247,22 +294,47 @@ export function Chat(props: {
           </Button>
         )}
         {voice && call.length > 1 && (
-          <span class="call-people" title={`Also in the call: ${call.filter((a) => a !== id).map((a) => agents.get(a)?.name ?? "?").join(", ")}`}>
-            {call.filter((a) => a !== id).map((a) => {
-              const peer = agents.get(a);
-              return peer ? <Avatar key={a} agent={peer} size={24} /> : null;
-            })}
+          <span
+            class="call-people"
+            title={`Also in the call: ${call
+              .filter((a) => a !== id)
+              .map((a) => agents.get(a)?.name ?? "?")
+              .join(", ")}`}
+          >
+            {call
+              .filter((a) => a !== id)
+              .map((a) => {
+                const peer = agents.get(a);
+                return peer ? <Avatar key={a} agent={peer} size={24} /> : null;
+              })}
           </span>
         )}
         {voiceEnabled && (
           <span class="voice-tools">
-            <IconButton label="Voice, language and speed" onClick={() => { setQuick(!quick); }} pressed={quick}>
+            <IconButton
+              label="Voice, language and speed"
+              onClick={() => {
+                setQuick(!quick);
+              }}
+              pressed={quick}
+            >
               <SlidersHorizontal size={18} />
             </IconButton>
             {quick && voiceView && (
-              <VoiceQuick agent={agent} view={voiceView} onView={setVoiceView} onClose={() => { setQuick(false); }} />
+              <VoiceQuick
+                agent={agent}
+                view={voiceView}
+                onView={setVoiceView}
+                onClose={() => {
+                  setQuick(false);
+                }}
+              />
             )}
-            <IconButton label={voice ? "End the call" : "Start a voice call"} onClick={() => void toggleCall()} pressed={voice}>
+            <IconButton
+              label={voice ? "End the call" : "Start a voice call"}
+              onClick={() => void toggleCall()}
+              pressed={voice}
+            >
               {voice ? <PhoneOff size={18} /> : <Phone size={18} />}
             </IconButton>
           </span>
@@ -270,7 +342,11 @@ export function Chat(props: {
         <IconButton label="Edit agent" onClick={props.onEdit}>
           <Pencil size={18} />
         </IconButton>
-        <IconButton label={props.infoOpen ? "Hide details" : "Show details"} onClick={props.onToggleInfo} pressed={props.infoOpen}>
+        <IconButton
+          label={props.infoOpen ? "Hide details" : "Show details"}
+          onClick={props.onToggleInfo}
+          pressed={props.infoOpen}
+        >
           <Info size={18} />
         </IconButton>
       </header>
@@ -288,7 +364,8 @@ export function Chat(props: {
             <Avatar agent={agent} size={64} />
             <p class="empty-title">Say hello to {agent.name}</p>
             <p class="muted">
-              Messages are delivered to the agent’s own computer. It wakes up automatically when something arrives.
+              Messages are delivered to the agent’s own computer. It wakes up automatically when
+              something arrives.
             </p>
           </div>
         )}
@@ -298,7 +375,9 @@ export function Chat(props: {
         {working && !items.shown.some((i) => i.type === "assistant" && i.streaming) && (
           <div class="row row-agent">
             <Avatar agent={agent} size={28} mood="working" />
-            <div class="step-now" role="status">{items.step}…</div>
+            <div class="step-now" role="status">
+              {items.step}…
+            </div>
           </div>
         )}
       </div>
@@ -308,7 +387,14 @@ export function Chat(props: {
           <Mic size={16} /> {caption || "Listening…"}
         </div>
       )}
-      <Composer agent={agent} send={send} voice={voiceEnabled ? voiceView : null} onTalk={() => { speaker.stop(); }} />
+      <Composer
+        agent={agent}
+        send={send}
+        voice={voiceEnabled ? voiceView : null}
+        onTalk={() => {
+          speaker.stop();
+        }}
+      />
     </section>
   );
 }
@@ -323,7 +409,14 @@ function ExchangeHint(props: { item: Exchange; agent: Agent }): JSX.Element {
   return (
     <>
       <div class={`row row-center exchange${open ? " open" : ""}`}>
-        <button type="button" class="exchange-hint" aria-expanded={open} onClick={() => { setOpen(!open); }}>
+        <button
+          type="button"
+          class="exchange-hint"
+          aria-expanded={open}
+          onClick={() => {
+            setOpen(!open);
+          }}
+        >
           <span>
             {n} {n === 1 ? "message" : "messages"} with
           </span>
@@ -337,15 +430,18 @@ function ExchangeHint(props: { item: Exchange; agent: Agent }): JSX.Element {
             class="exchange-open"
             title={`Open the thread between ${agent.name} and ${peer.name}`}
             aria-label="Open thread"
-            onClick={() => { openConversation(agent.id, peer.id); }}
+            onClick={() => {
+              openConversation(agent.id, peer.id);
+            }}
           >
             <MessagesSquare size={16} />
           </button>
         )}
       </div>
-      {open && [...item.tools, ...item.messages]
-        .sort((a, b) => Date.parse(a.at) - Date.parse(b.at))
-        .map((m) => <Item key={m.key} item={m} agent={agent} />)}
+      {open &&
+        [...item.tools, ...item.messages]
+          .sort((a, b) => Date.parse(a.at) - Date.parse(b.at))
+          .map((m) => <Item key={m.key} item={m} agent={agent} />)}
     </>
   );
 }
@@ -363,7 +459,11 @@ function Item(props: { item: DisplayItem; agent: Agent; files?: ChatFiles }): JS
             <RichText text={item.text} />
             <span class="meta">
               {clockTime(item.at)}
-              {item.status === "pending" ? " · queued" : item.status === "failed" ? " · not delivered" : ""}
+              {item.status === "pending"
+                ? " · queued"
+                : item.status === "failed"
+                  ? " · not delivered"
+                  : ""}
             </span>
           </div>
         </div>
@@ -380,10 +480,18 @@ function Item(props: { item: DisplayItem; agent: Agent; files?: ChatFiles }): JS
     case "file":
       return (
         <div class="row row-agent">
-          <button type="button" class="file-card" onClick={() => { openFile(agent.id, item.id); }}>
+          <button
+            type="button"
+            class="file-card"
+            onClick={() => {
+              openFile(agent.id, item.id);
+            }}
+          >
             <FileText size={16} />
             <span class="file-name">{item.name}</span>
-            <span class="meta">{fileSize(item.size)} · {clockTime(item.at)}</span>
+            <span class="meta">
+              {fileSize(item.size)} · {clockTime(item.at)}
+            </span>
           </button>
         </div>
       );
@@ -435,7 +543,9 @@ function Item(props: { item: DisplayItem; agent: Agent; files?: ChatFiles }): JS
     case "tool":
       return <ToolCard item={item} />;
     case "question":
-      return <QuestionCardView agent={agent} id={item.id} card={item.card} answered={item.answered} />;
+      return (
+        <QuestionCardView agent={agent} id={item.id} card={item.card} answered={item.answered} />
+      );
     case "error":
       return (
         <div class="row row-center">
@@ -464,7 +574,6 @@ function pretty(value: unknown): string {
   }
 }
 
-/** Pretty-prints JSON tool output; other text is shown as is. */
 function prettyOutput(text: string): string {
   const t = text.trim();
   if (!t.startsWith("{") && !t.startsWith("[")) return text;
@@ -488,18 +597,40 @@ export function ToolCard(props: { item: Extract<TimelineItem, { type: "tool" }> 
   const { item } = props;
   const [open, setOpen] = useState(false);
   const label = toolLabel(item.name);
-  const state = item.denied !== null ? "denied" : item.output === null ? "running" : item.isError ? "error" : "ok";
+  const state =
+    item.denied !== null
+      ? "denied"
+      : item.output === null
+        ? "running"
+        : item.isError
+          ? "error"
+          : "ok";
   return (
     <div class="row row-tool">
       <div class={`tool-card t-${state}${open ? " open" : ""}`}>
-        <button type="button" class="tool-head" aria-expanded={open} onClick={() => { setOpen(!open); }}>
+        <button
+          type="button"
+          class="tool-head"
+          aria-expanded={open}
+          onClick={() => {
+            setOpen(!open);
+          }}
+        >
           <ChevronRight size={16} class="chev" />
           {state === "denied" ? <ShieldAlert size={16} /> : <Wrench size={16} />}
           <span class="tool-name">{label.tool}</span>
           {label.server && <span class="tool-server">{label.server}</span>}
-          <span class="tool-summary">{state === "denied" ? `Blocked: ${item.denied ?? ""}` : summary(item.input)}</span>
+          <span class="tool-summary">
+            {state === "denied" ? `Blocked: ${item.denied ?? ""}` : summary(item.input)}
+          </span>
           <span class={`tool-state s-${state}`}>
-            {state === "running" ? "Running" : state === "ok" ? "Done" : state === "error" ? "Error" : "Blocked"}
+            {state === "running"
+              ? "Running"
+              : state === "ok"
+                ? "Done"
+                : state === "error"
+                  ? "Error"
+                  : "Blocked"}
           </span>
         </button>
         {open && (
@@ -523,13 +654,15 @@ export function ToolCard(props: { item: Extract<TimelineItem, { type: "tool" }> 
   );
 }
 
-/** Joins dictated pieces with single spaces. */
-const joinText = (...parts: string[]): string => parts.map((p) => p.trim()).filter(Boolean).join(" ");
+const joinText = (...parts: string[]): string =>
+  parts
+    .map((p) => p.trim())
+    .filter(Boolean)
+    .join(" ");
 
 /**
- * Dictation: hold to talk, or click to start and again to stop. The words
- * appear in the message box as they are said (ElevenLabs) or after stopping
- * (other providers); nothing is sent until the operator sends it.
+ * Dictation: hold to talk, or click to start and stop. Words reach the message box live
+ * (ElevenLabs) or after stopping (other providers); nothing is sent until the operator sends it.
  */
 function MicButton(props: {
   agent: Agent;
@@ -576,12 +709,16 @@ function MicButton(props: {
       if (props.voice.provider === "elevenlabs") {
         let said = "";
         const s = await startLive((rate) => client.voiceLive("dictation", rate), {
-          partial: (p) => { props.setText(joinText(before, said, p)); },
+          partial: (p) => {
+            props.setText(joinText(before, said, p));
+          },
           committed: (c) => {
             said = joinText(said, c);
             props.setText(joinText(before, said));
           },
-          error: (message) => { toast(`Dictation stopped: ${message}`); },
+          error: (message) => {
+            toast(`Dictation stopped: ${message}`);
+          },
         });
         if (startedIn !== chat.current) {
           void s.stop(false);
@@ -604,21 +741,28 @@ function MicButton(props: {
   };
   const active = (): boolean => session.current !== null || rec.current !== null;
   // Leaving the chat drops a recording in progress.
-  useEffect(() => () => {
-    chat.current++;
-    clearTimeout(limit.current);
-    void session.current?.stop(false);
-    session.current = null;
-    void rec.current?.stop();
-    rec.current = null;
-  }, [props.agent.id]);
+  useEffect(
+    () => () => {
+      chat.current++;
+      clearTimeout(limit.current);
+      void session.current?.stop(false);
+      session.current = null;
+      void rec.current?.stop();
+      rec.current = null;
+    },
+    [props.agent.id],
+  );
 
   return (
     <button
       type="button"
       class={`mic${recording ? " on" : ""}`}
       aria-label={recording ? "Stop dictating" : "Dictate a message"}
-      title={recording ? "Stop: the text stays in the box" : "Hold to talk, or click to start and stop; the text goes into the box"}
+      title={
+        recording
+          ? "Stop: the text stays in the box"
+          : "Hold to talk, or click to start and stop; the text goes into the box"
+      }
       aria-pressed={recording}
       disabled={transcribing}
       onPointerDown={(e) => {
@@ -657,7 +801,9 @@ function Composer(props: {
   current.current = text;
   const [sending, setSending] = useState(false);
   const ref = useRef<HTMLTextAreaElement>(null);
-  useEffect(() => { ref.current?.focus(); }, [props.agent.id]);
+  useEffect(() => {
+    ref.current?.focus();
+  }, [props.agent.id]);
   useLayoutEffect(() => {
     const el = ref.current;
     if (!el) return;
@@ -687,8 +833,12 @@ function Composer(props: {
         ref={ref}
         rows={1}
         value={text}
-        placeholder={asleep ? `Message ${props.agent.name} — this wakes it up` : `Message ${props.agent.name}`}
-        onInput={(e) => { setText(e.currentTarget.value); }}
+        placeholder={
+          asleep ? `Message ${props.agent.name} — this wakes it up` : `Message ${props.agent.name}`
+        }
+        onInput={(e) => {
+          setText(e.currentTarget.value);
+        }}
         onKeyDown={(e) => {
           if (e.key === "Enter" && !e.shiftKey && !e.isComposing) {
             e.preventDefault();
@@ -697,9 +847,21 @@ function Composer(props: {
         }}
       />
       {props.voice && (
-        <MicButton agent={props.agent} voice={props.voice} text={() => current.current} setText={setText} onTalk={props.onTalk} />
+        <MicButton
+          agent={props.agent}
+          voice={props.voice}
+          text={() => current.current}
+          setText={setText}
+          onTalk={props.onTalk}
+        />
       )}
-      <button type="submit" class="send" disabled={!text.trim() || sending} aria-label="Send" title="Send (Enter)">
+      <button
+        type="submit"
+        class="send"
+        disabled={!text.trim() || sending}
+        aria-label="Send"
+        title="Send (Enter)"
+      >
         <SendHorizontal size={18} />
       </button>
     </form>

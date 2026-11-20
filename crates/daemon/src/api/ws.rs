@@ -7,9 +7,8 @@ use tokio::sync::broadcast::error::RecvError;
 
 use crate::AppState;
 
-/// WebSocket stream of `UiEvent` JSON text frames (schema:
-/// `protocol/ui-events.schema.json`). Client-to-server frames are ignored.
-/// After a reconnect (or a `lagged` gap) clients should refetch over HTTP.
+/// WebSocket of `UiEvent` text frames (`protocol/ui-events.schema.json`); client frames are
+/// ignored. After a reconnect or a `lagged` gap, refetch over HTTP.
 #[utoipa::path(get, path = "/v1/ws", tag = "chat",
     responses((status = 101, description = "Switching protocols; then one `UiEvent` per text frame")))]
 pub(crate) async fn ui_ws(State(state): State<AppState>, ws: WebSocketUpgrade) -> Response {

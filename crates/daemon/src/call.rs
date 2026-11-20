@@ -1,6 +1,5 @@
-//! The operator's voice call with one or more agents. Everyone in it hears
-//! the operator; what an agent says reaches the others with the operator's
-//! next message, so agents in a call never start each other's turns.
+//! The operator's voice call with agents. What an agent says reaches the others with the
+//! operator's next message, so agents in a call never start each other's turns.
 
 use std::collections::{HashMap, VecDeque};
 use std::sync::{MutexGuard, PoisonError};

@@ -66,9 +66,8 @@ pub(crate) async fn sandbox_info(
 #[derive(Debug, Deserialize, IntoParams)]
 #[into_params(parameter_in = Query)]
 pub(crate) struct StopQuery {
-    /// `cold` (default) stops the sandbox; `warm` pauses it, keeping memory;
-    /// `archived` moves it to object storage (a wake restores it). Backends
-    /// that cannot pause or archive answer 501.
+    /// `cold` (default) stops, `warm` pauses, `archived` moves the sandbox to object storage.
+    /// Backends without pause or archive answer 501; Firecracker stops instead of archiving.
     #[serde(default)]
     #[param(value_type = Option<SleepLevel>)]
     level: Option<SleepLevel>,

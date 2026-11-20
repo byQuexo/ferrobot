@@ -1,7 +1,7 @@
 {
   "$defs": {
     "Approval": {
-      "description": "What an approval card asks the operator to allow. The daemon raises\nthese itself; the decision goes to the waiting tool call, not to the\nagent's mailbox.",
+      "description": "What an approval card asks the operator to allow; the decision goes to the waiting tool\ncall, not to the agent's mailbox.",
       "oneOf": [
         {
           "description": "An agent wants to create another agent (`create_agent` tool).",
