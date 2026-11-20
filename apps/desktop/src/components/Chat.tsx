@@ -478,6 +478,8 @@ function MicButton(props: { agent: Agent; send: (body: string) => Promise<unknow
   const rec = useRef<Recording | null>(null);
   const pressedAt = useRef(0);
   const limit = useRef<ReturnType<typeof setTimeout>>();
+  // Bumped when the chat changes, so a recording that starts late is dropped.
+  const chat = useRef(0);
 
   const finish = async (): Promise<void> => {
     const r = rec.current;
@@ -494,8 +496,14 @@ function MicButton(props: { agent: Agent; send: (body: string) => Promise<unknow
   };
   const start = async (): Promise<void> => {
     props.onTalk();
+    const startedIn = chat.current;
     try {
-      rec.current = await record();
+      const r = await record();
+      if (startedIn !== chat.current) {
+        void r.stop();
+        return;
+      }
+      rec.current = r;
       setRecording(true);
       limit.current = setTimeout(() => void finish(), 120_000);
     } catch (err) {
@@ -504,6 +512,7 @@ function MicButton(props: { agent: Agent; send: (body: string) => Promise<unknow
   };
   // Leaving the chat drops a recording in progress.
   useEffect(() => () => {
+    chat.current++;
     clearTimeout(limit.current);
     void rec.current?.stop();
     rec.current = null;
