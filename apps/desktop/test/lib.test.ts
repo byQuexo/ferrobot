@@ -10,7 +10,17 @@ import { parseBlocks, parseInline } from "../src/lib/markdown.ts";
 import { modelOptions, withSaved } from "../src/lib/models.ts";
 import { moveId, orderAgents } from "../src/lib/order.ts";
 import { liveEvent, pcm16Base64, speakable } from "../src/lib/voice.ts";
-import { costLabel, rangeOf, sortGroups, toCsv, utcDays } from "../src/lib/usage.ts";
+import {
+  chartMetric,
+  costLabel,
+  niceTicks,
+  rangeOf,
+  sortGroups,
+  stackDays,
+  tickLabel,
+  toCsv,
+  zoneDays,
+} from "../src/lib/usage.ts";
 import type { UsageGroup } from "../src/api.ts";
 
 const ME = "11111111-1111-4111-8111-111111111111";
@@ -565,15 +575,81 @@ describe("usage", () => {
     assert.equal(rangeOf("custom", now, { from: "", to: "2026-11-01" }), null);
   });
 
-  it("lists every UTC day of a range", () => {
-    assert.deepEqual(utcDays("2026-11-18T23:00:00.000Z", "2026-11-20T23:00:00.000Z", new Date()), [
+  it("lists every day of a range in the daemon's time zone", () => {
+    const now = new Date();
+    assert.deepEqual(zoneDays("2026-11-18T23:00:00.000Z", "2026-11-20T23:00:00.000Z", now, "UTC"), [
       "2026-11-18",
       "2026-11-19",
       "2026-11-20",
     ]);
-    assert.deepEqual(utcDays("2026-11-20T00:00:00.000Z", null, new Date("2026-11-20T09:00:00Z")), [
-      "2026-11-20",
-    ]);
+    assert.deepEqual(
+      zoneDays("2026-11-18T23:00:00.000Z", "2026-11-20T23:00:00.000Z", now, "Europe/Berlin"),
+      ["2026-11-19", "2026-11-20"],
+      "Berlin midnights",
+    );
+    assert.deepEqual(
+      zoneDays("2026-11-20T00:00:00.000Z", null, new Date("2026-11-20T09:00:00Z"), "UTC"),
+      ["2026-11-20"],
+    );
+    assert.deepEqual(
+      zoneDays("2026-03-28T23:00:00.000Z", "2026-03-30T22:00:00.000Z", now, "Europe/Berlin"),
+      ["2026-03-29", "2026-03-30"],
+      "a 23-hour DST day",
+    );
+  });
+
+  it("stacks the biggest groups per day and folds the rest", () => {
+    const daily = (label: string, costs: Record<string, number | null>): UsageGroup => {
+      const days = Object.entries(costs).map(([date, cost]) => ({
+        ...group(label, cost, cost === null ? 1 : 0),
+        date,
+      }));
+      const known = days.filter((d) => d.cost_usd !== null);
+      return {
+        ...group(label, known.length > 0 ? known.reduce((s, d) => s + (d.cost_usd ?? 0), 0) : null),
+        days,
+      };
+    };
+    const groups = [
+      daily("zed", { "2026-11-19": 9 }),
+      daily("amy", { "2026-11-18": 1, "2026-11-19": 2 }),
+      daily("bob", { "2026-11-19": null }),
+      daily("cy", { "2026-11-18": 4 }),
+      daily("dee", { "2026-11-19": 0.5 }),
+      daily("eve", { "2026-11-19": 0.25 }),
+    ];
+    const stack = stackDays(groups, ["2026-11-18", "2026-11-19", "2026-11-20"], "cost");
+    assert.deepEqual(
+      stack.series.map((s) => s.label),
+      ["amy", "cy", "dee", "zed", "Other"],
+      "top four by cost, named in order; eve and bob fold",
+    );
+    assert.deepEqual(
+      stack.columns.map((c) => [c.date, c.values, c.total, c.unknown]),
+      [
+        ["2026-11-18", [1, 4, 0, 0, 0], 5, false],
+        ["2026-11-19", [2, 0, 0.5, 9, 0.25], 11.75, true],
+        ["2026-11-20", [0, 0, 0, 0, 0], 0, false],
+      ],
+    );
+    assert.equal(stackDays(groups.slice(0, 5), [], "cost").series.length, 5, "five fit");
+  });
+
+  it("charts tokens when no cost is known", () => {
+    assert.equal(chartMetric(group("a", 1.5)), "cost");
+    assert.equal(chartMetric(group("a", null, 2)), "tokens");
+    assert.equal(chartMetric(group("a", 0)), "tokens", "only free models");
+  });
+
+  it("picks round axis ticks and labels them", () => {
+    assert.deepEqual(niceTicks(3.2), [0, 1, 2, 3, 4]);
+    assert.deepEqual(niceTicks(1), [0, 0.5, 1]);
+    assert.deepEqual(niceTicks(0.004), [0, 0.001, 0.002, 0.003, 0.004]);
+    assert.deepEqual(niceTicks(0), [0, 1]);
+    assert.equal(tickLabel(0.5, 0.5, "cost"), "$0.50");
+    assert.equal(tickLabel(0.002, 0.001, "cost"), "$0.002");
+    assert.equal(tickLabel(2000, 1000, "cost"), "$2,000");
+    assert.equal(tickLabel(20_000, 10_000, "tokens"), "20K");
   });
 
   it("sorts with unknown costs last and labels them plainly", () => {

@@ -4354,3 +4354,91 @@ async fn usage_filters_groups_and_price_overrides() {
     assert_eq!(status, 200, "{by_provider}");
     assert_eq!(by_provider["totals"]["calls"], 1, "{by_provider}");
 }
+
+#[tokio::test]
+async fn usage_days_follow_the_daemon_time_zone() {
+    use ferrobot_store::{Tokens, UsageRecord, UsageStatus};
+    let d = start_with(
+        Arc::new(StatefulBackend::default()),
+        None,
+        "127.0.0.1:0",
+        |s| s.default_timezone = "Europe/Berlin".into(),
+    )
+    .await;
+    let (amy, bob) = (AgentId::new(), AgentId::new());
+    let row = |at: &str, agent: AgentId, kind: &str, model: &str, tokens: i64| UsageRecord {
+        at: time::OffsetDateTime::parse(at, &time::format_description::well_known::Rfc3339)
+            .unwrap(),
+        agent_id: agent,
+        agent_name: if agent == amy { "amy" } else { "bob" }.into(),
+        provider_id: None,
+        provider_kind: kind.into(),
+        model: model.into(),
+        tokens: Tokens {
+            input: Some(tokens),
+            output: Some(tokens),
+            cache_read: None,
+            cache_write: None,
+        },
+        latency_ms: 5,
+        status: UsageStatus::Ok,
+    };
+    // 23:30 and 00:30 in Berlin: one UTC day, two local days.
+    for r in [
+        row(
+            "2026-11-18T22:30:00Z",
+            amy,
+            "anthropic",
+            "claude-opus-5",
+            1_000_000,
+        ),
+        row(
+            "2026-11-18T23:30:00Z",
+            amy,
+            "anthropic",
+            "claude-opus-5",
+            1_000_000,
+        ),
+        row("2026-11-19T10:00:00Z", bob, "ollama", "llama9", 50),
+    ] {
+        d.state.store.insert_usage(r).await.unwrap();
+    }
+
+    let (status, report) = http(&d.ui, "GET", "/v1/usage?group_by=agent&daily=true", None).await;
+    assert_eq!(status, 200, "{report}");
+    assert_eq!(report["timezone"], "Europe/Berlin");
+    let days = |label: &str| -> Vec<(String, f64)> {
+        let group = report["groups"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|g| g["label"] == label)
+            .unwrap();
+        group["days"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|d| {
+                (
+                    d["date"].as_str().unwrap().to_owned(),
+                    d["cost_usd"].as_f64().unwrap(),
+                )
+            })
+            .collect()
+    };
+    assert_eq!(
+        days("amy"),
+        [
+            ("2026-11-18".to_owned(), 30.0),
+            ("2026-11-19".to_owned(), 30.0)
+        ]
+    );
+    assert_eq!(days("bob"), [("2026-11-19".to_owned(), 0.0)]);
+
+    let (_, plain) = http(&d.ui, "GET", "/v1/usage?group_by=agent", None).await;
+    assert!(plain.get("timezone").is_none(), "{plain}");
+    assert!(plain["groups"][0].get("days").is_none(), "{plain}");
+    let (_, utc) = http(&d.ui, "GET", "/v1/usage", None).await;
+    assert_eq!(utc["groups"][0]["key"], "2026-11-18", "{utc}");
+    assert_eq!(utc["groups"][0]["calls"], 2, "group_by=day stays UTC");
+}

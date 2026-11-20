@@ -3737,6 +3737,15 @@
             "schema": {
               "type": "string"
             }
+          },
+          {
+            "name": "daily",
+            "in": "query",
+            "description": "Also sum each group per day in the daemon's time zone (`days`).",
+            "required": false,
+            "schema": {
+              "type": "boolean"
+            }
           }
         ],
         "responses": {
@@ -6561,6 +6570,25 @@
           }
         ]
       },
+      "UsageDay": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/UsageTotals"
+          },
+          {
+            "type": "object",
+            "required": [
+              "date"
+            ],
+            "properties": {
+              "date": {
+                "type": "string",
+                "description": "Date in the report's `timezone`, `YYYY-MM-DD`."
+              }
+            }
+          }
+        ]
+      },
       "UsageGroup": {
         "allOf": [
           {
@@ -6580,6 +6608,16 @@
               "label": {
                 "type": "string",
                 "description": "Date, agent name, provider name or model id."
+              },
+              "days": {
+                "type": [
+                  "array",
+                  "null"
+                ],
+                "items": {
+                  "$ref": "#/components/schemas/UsageDay"
+                },
+                "description": "Sums per day, oldest first, only days with calls; only with `daily=true`."
               }
             }
           }
@@ -6600,6 +6638,13 @@
             "items": {
               "$ref": "#/components/schemas/UsageGroup"
             }
+          },
+          "timezone": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "IANA time zone of the `days` dates (the daemon's `--timezone`); only\nwith `daily=true`."
           }
         }
       },
