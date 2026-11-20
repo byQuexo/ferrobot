@@ -598,3 +598,82 @@ store used for the run) or the daemon's own env.
   message steered into a Claude turn whose resume then fails is reported as
   seen but never reaches the model; the bearer scheme is matched
   case-sensitively (all our clients send `Bearer`).
+
+## Release prep 1: security leftovers (`fix/security-leftovers`)
+
+**Done**
+
+- Archived and snapshot images blank every env variable that holds the agent
+  token (value match), so `ANTHROPIC_API_KEY`, `GEMINI_API_KEY` and
+  `AWS_BEARER_TOKEN_BEDROCK` no longer keep the old token in the image config.
+- CI job "Dependency audit": `cargo audit` (workspace and Tauri lockfiles) and
+  `npm audit` (runner, desktop). Local result: no vulnerability after the
+  `time` update; unmaintained-crate warnings listed in decisions.
+- The shared-page CSP test also asserts that `allow-same-origin` is absent.
+
+**Tested**
+
+- Unit test of the env change; the Docker sandbox test now gives the sandbox
+  the token under all four names and checks the snapshot image and the image
+  restored from an archive carry no env value with the token (Docker Desktop
+  on macOS, `ferrobot-runner:dev` image).
+## Release prep 3: contributor docs (`chore/contributor-docs`)
+
+**Done**
+
+- README: pitch, download section (unsigned-build steps for macOS and
+  Windows), a five-minute quick start with Docker Desktop and Ollama and no
+  key, a new architecture diagram with the model proxy, "Status and limits";
+  stale lines fixed (Codex is in the image, a live Claude turn ran, archives
+  are encrypted, which routes are open, 244-bit agent tokens).
+- CONTRIBUTING.md, CODE_OF_CONDUCT.md (Contributor Covenant 2.1), SECURITY.md
+  (private advisories, known open hardening items), issue forms, PR template,
+  CODEOWNERS, ten issue drafts in `docs/launch/issues/`.
+- Clean-room and employer check: no OpenBot or Grok Bot material; the only
+  mentions are the README's clean-room note and CLAUDE.md's rules. No
+  employer named anywhere.
+
+**Not verified**
+
+- The README describes the desktop download as section 7 builds it (bundled
+  daemon, Docker check, runner image on ghcr.io); true once that lands.
+- The Code of Conduct points reporters to the email on the maintainer's
+  GitHub profile; GitHub has no private messages.
+
+## Release prep 5: wiki (`chore/wiki`)
+
+**Done**
+
+- `docs/wiki/` as GitHub-wiki pages: Home, sidebar, Architecture (mermaid),
+  Roadmap (M1, L0–L5, F0–F5 with status, no dates), Getting Started (desktop
+  and source paths), Providers, Sandbox Backends, Usage and Costs,
+  Conventions, FAQ.
+- `scripts/publish-wiki.sh` copies the pages into the `.wiki.git` repository
+  over SSH; dry run unless `--yes`.
+
+**Not verified**
+
+- The script never ran (the wiki needs a public repo or a paid plan, and a
+  first page created on GitHub before its git repository exists); checked
+  with `bash -n` only.
+
+## Release prep 8: repository settings (`chore/github-settings`)
+
+**Done**
+
+- `docs/launch/github-settings.md` and `scripts/apply-github-settings.sh`
+  (dry run unless `--yes`, refuses on a private repo or a
+  `pull_request_target` workflow that touches PR code): ruleset for `main`
+  (no deletion or force push, PR with one approval, stale approvals
+  dismissed, code owner review, every PR job required, linear history, admin
+  bypass for a solo maintainer), approval for outside contributors' workflow
+  runs, read-only default token.
+- CI: a `Changes` job replaces `paths-ignore`, so docs-only PRs skip the real
+  jobs instead of leaving required checks pending forever.
+
+**Not verified**
+
+- Nothing ran against GitHub. `actor_id 5` (admin role) and the check names
+  as ruleset contexts are taken from docs, not tried. Linear history means
+  switching from merge commits to squash merges before the ruleset goes on.
+- The new `Changes` job has not run on GitHub (Actions minutes are used up).

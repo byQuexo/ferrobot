@@ -1,0 +1,69 @@
+name: Bug report
+description: Something does not work as documented.
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Found a security problem? Do not file it here. Use **Report a vulnerability** on the Security tab (see SECURITY.md).
+  - type: input
+    id: version
+    attributes:
+      label: Version
+      description: "`ferrobotd --version`, or the tag or commit you built."
+    validations:
+      required: true
+  - type: input
+    id: os
+    attributes:
+      label: Operating system
+      placeholder: "macOS 15 (Apple silicon), Ubuntu 24.04, Windows 11"
+    validations:
+      required: true
+  - type: dropdown
+    id: backend
+    attributes:
+      label: Sandbox backend
+      options:
+        - docker (Docker)
+        - docker (Podman)
+        - firecracker
+        - local (development only)
+        - not sure
+    validations:
+      required: true
+  - type: input
+    id: provider
+    attributes:
+      label: Provider, model and driver
+      description: "For example `anthropic` + model id (claude driver), `ollama` + `qwen2.5:3b` (openai driver), `codex`, `gemini_cli`, or `--driver mock`."
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      placeholder: |
+        1. Start the daemon with ...
+        2. Create an agent ...
+        3. Send ...
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected
+    validations:
+      required: true
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual
+    validations:
+      required: true
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs
+      description: Daemon log, runner output or the failing request. **Remove API keys, the operator token, agent tokens and OAuth tokens first.**
+      render: text

@@ -540,6 +540,21 @@ the code and this file together.
   retried. `Settings::greet_new_agents` turns it off; the in-process test
   harness does, because fake runners expect the operator's message first.
 
+## Release prep (v0.1.0)
+
+- **Committed images lose every copy of the agent token,** not only
+  `FERROBOT_AGENT_TOKEN`: the archive and snapshot paths read the container's
+  env and blank each variable whose value is the token (today also
+  `ANTHROPIC_API_KEY`, `GEMINI_API_KEY` and `AWS_BEARER_TOKEN_BEDROCK`). Matching
+  by value instead of a name list means a new driver variable cannot slip past.
+- **Dependency audit in CI** (`cargo audit` on both lockfiles, `npm audit` on
+  both packages): vulnerabilities fail the job. `time` was updated to 0.3.55
+  for RUSTSEC-2026-0009. Unmaintained crates stay warnings because no
+  maintained release exists: `chrono` and `chrono-tz` (routines' time zones,
+  `croner`), `humantime` (via `object_store`), `zbus_names`/`zvariant` (the
+  keyring's Linux backend), and in the Tauri lockfile `proc-macro-error`, the
+  `unic-*` crates and `glib` 0.18 (unsound iterator, Linux GTK stack of Tauri).
+
 ## Voice
 
 - **The UI speaks and listens, the daemon calls the provider.** With voice on
