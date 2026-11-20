@@ -1052,3 +1052,30 @@ store used for the run) or the daemon's own env.
 - Not tested: a real OAuth sign-in with any catalog server (dynamic
   registration with a loopback redirect is advertised but unproven per
   server); the Tauri window.
+
+## Self-update (`feat/self-update`)
+
+**Done**
+
+- Settings, Updates: version (and commit for source builds) and one
+  "Update and restart" button.
+- Release builds: Tauri's updater and process plugins; check, version and
+  notes, download with progress, install, relaunch. Updater config, public key
+  and `createUpdaterArtifacts` in `tauri.release.conf.json`; the release
+  workflow signs and uploads `latest.json` when the key secrets exist.
+- Source builds (debug only): `GET /v1/update` (version, commit, state, step,
+  log tail) and `POST /v1/update` (pull, rebuild, re-exec in the background).
+- The shell stops the daemon it started on every exit path, including the
+  Windows updater's.
+
+**Tested**
+
+- Unit test: only a clean `main` ferrobot checkout updates (temp git repos:
+  dirty tree, other branch, not ferrobot).
+- Daemon test with fake steps: both routes need the token; a failed build is
+  reported with step, error and log; a retry rebuilds and restarts; a third
+  update during the restart gets 409.
+- Desktop unit test: what a status poll means (wait, done, restarted).
+- Not tested: a real pull, rebuild and re-exec; the Settings page in a browser
+  or the Tauri window; an update check against a real release (private repo,
+  no signing secrets); the release workflow (not run); Windows.

@@ -62,6 +62,9 @@ pub struct Settings {
     pub storage: Arc<dyn object_store::ObjectStore>,
     /// Base URL for every voice provider instead of its public API (tests).
     pub voice_upstream: Option<String>,
+    /// The checkout a debug build updates itself from; `None`: no self-update.
+    #[cfg(debug_assertions)]
+    pub source_update: Option<crate::update::Source>,
 }
 
 impl std::fmt::Debug for Settings {
@@ -91,10 +94,12 @@ impl std::fmt::Debug for Settings {
             ui_url,
             storage,
             voice_upstream,
+            #[cfg(debug_assertions)]
+            source_update,
         } = self;
         let redacted = |v: &Option<String>| v.as_ref().map(|_| "[REDACTED]");
-        f.debug_struct("Settings")
-            .field("sandbox_daemon_url", sandbox_daemon_url)
+        let mut s = f.debug_struct("Settings");
+        s.field("sandbox_daemon_url", sandbox_daemon_url)
             .field("driver", driver)
             .field("anthropic_api_key", &redacted(anthropic_api_key))
             .field("anthropic_upstream", anthropic_upstream)
@@ -116,8 +121,10 @@ impl std::fmt::Debug for Settings {
             .field("chatgpt_upstream", chatgpt_upstream)
             .field("ui_url", ui_url)
             .field("storage", storage)
-            .field("voice_upstream", voice_upstream)
-            .finish()
+            .field("voice_upstream", voice_upstream);
+        #[cfg(debug_assertions)]
+        s.field("source_update", source_update);
+        s.finish()
     }
 }
 
@@ -150,6 +157,8 @@ impl Settings {
             ui_url: "http://127.0.0.1:7878".into(),
             storage: Arc::new(object_store::memory::InMemory::new()),
             voice_upstream: None,
+            #[cfg(debug_assertions)]
+            source_update: None,
         }
     }
 }
@@ -217,6 +226,8 @@ pub struct AppState {
     pub voice: Arc<Mutex<crate::voice::Budget>>,
     /// The operator's voice call (in memory: a restart ends it).
     pub call: Arc<Mutex<crate::call::Call>>,
+    /// The running or last source update (in memory: the restarted daemon starts idle).
+    pub update: Arc<Mutex<crate::update::UpdateInfo>>,
 }
 
 impl AppState {
@@ -249,6 +260,7 @@ impl AppState {
             model_lists: Arc::default(),
             voice: Arc::default(),
             call: Arc::default(),
+            update: Arc::default(),
         }
     }
 

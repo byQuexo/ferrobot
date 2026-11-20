@@ -773,6 +773,28 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/update": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** This daemon's version and, for a source build, the state of its update. */
+        get: operations["get_update"];
+        put?: never;
+        /**
+         * Updates a source build (a debug build from a ferrobot checkout on a clean `main`): pulls,
+         *     rebuilds the UI, daemon and desktop shell, then re-executes the daemon with the same
+         *     arguments. Runs in the background; poll `GET /v1/update`.
+         */
+        post: operations["start_update"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/usage": {
         parameters: {
             query?: never;
@@ -1792,6 +1814,25 @@ export interface components {
             /** @description Issuer of the own OAuth app. */
             issuer?: string | null;
         };
+        /** @description This daemon's version and self-update status. */
+        UpdateInfo: {
+            /** @description Daemon version. */
+            version: string;
+            /**
+             * @description A debug build from a ferrobot checkout, which `POST /v1/update` can pull, rebuild and
+             *     restart. Release builds update through the desktop app.
+             */
+            source_build: boolean;
+            /** @description The checkout's commit when this daemon started (source builds). */
+            commit?: string | null;
+            state: components["schemas"]["UpdateState"];
+            /** @description The command that is running or failed. */
+            step?: string | null;
+            /** @description Why the update failed. */
+            error?: string | null;
+            /** @description The last lines of the steps' output. */
+            log: string[];
+        };
         UpdateProvider: {
             name?: string | null;
             /** @description `null` goes back to the kind's default upstream. */
@@ -1810,6 +1851,11 @@ export interface components {
             timezone?: string | null;
             enabled?: boolean | null;
         };
+        /**
+         * @description Where a source update stands.
+         * @enum {string}
+         */
+        UpdateState: "idle" | "running" | "up_to_date" | "failed" | "restarting";
         UpdateVoice: components["schemas"]["VoiceSettings"] & {
             /**
              * @description New API key for `provider`; `null` removes it, omitted keeps it. Kept in the
@@ -4803,6 +4849,81 @@ export interface operations {
             };
             /** @description Missing or wrong API token */
             401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+        };
+    };
+    get_update: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["UpdateInfo"];
+                };
+            };
+            /** @description Missing or wrong API token */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+        };
+    };
+    start_update: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Update started */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["UpdateInfo"];
+                };
+            };
+            /** @description Missing or wrong API token */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Not a source build */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description The checkout has changes or is not on main, or an update is running */
+            409: {
                 headers: {
                     [name: string]: unknown;
                 };

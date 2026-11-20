@@ -1,5 +1,13 @@
 {
   "bundle": {
-    "externalBin": ["binaries/ferrobotd"]
+    "externalBin": ["binaries/ferrobotd"],
+    "createUpdaterArtifacts": true
+  },
+  "plugins": {
+    "updater": {
+      "endpoints": ["https://github.com/byQuexo/ferrobot/releases/latest/download/latest.json"],
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDk5MTg5ODQ1QzIyRTNCQzcKUldUSE95N0NSWmdZbWZFaDFLenc2ekREQTFsOFZ4a3A5eUFOaU5RQzYwdEhtMjFPcU1KaGNYRncK",
+      "requireSignedVersion": true
+    }
   }
 }

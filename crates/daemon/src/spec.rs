@@ -109,6 +109,8 @@ pub const QUESTION_CARD_FILE: &str = "question-card.v1.schema.json";
         api::usage::get_usage,
         api::usage::get_prices,
         api::usage::put_prices,
+        api::update::get_update,
+        api::update::start_update,
         api::files::shared_file,
         api::files::page,
         api::ws::ui_ws,

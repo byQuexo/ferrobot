@@ -771,6 +771,148 @@ async fn operator_api_requires_the_token() {
     assert_eq!(status, 401, "only the operator turns on Auto mode");
 }
 
+#[cfg(debug_assertions)]
+fn git(dir: &std::path::Path, args: &[&str]) {
+    let out = std::process::Command::new("git")
+        .args(["-c", "user.name=t", "-c", "user.email=t@example.com"])
+        .args([
+            "-c",
+            "commit.gpgsign=false",
+            "-c",
+            "core.hooksPath=/dev/null",
+        ])
+        .arg("-C")
+        .arg(dir)
+        .args(args)
+        .output()
+        .unwrap();
+    assert!(out.status.success(), "git {args:?}");
+}
+
+/// Update steps that pull one new commit, fail the first daemon build and record the restart.
+#[cfg(debug_assertions)]
+#[derive(Debug, Default)]
+struct FakeSteps {
+    calls: Mutex<Vec<String>>,
+    restarts: Mutex<usize>,
+}
+
+#[cfg(debug_assertions)]
+#[async_trait]
+impl ferrobot_daemon::update::Runner for FakeSteps {
+    async fn run(
+        &self,
+        dir: &std::path::Path,
+        cmd: &[&str],
+        log: &(dyn Fn(String) + Send + Sync),
+    ) -> Result<(), String> {
+        let cmd = cmd.join(" ").replace("npm.cmd", "npm");
+        log(format!("ran {cmd}"));
+        let runs = {
+            let mut calls = self.calls.lock().unwrap();
+            calls.push(cmd.clone());
+            calls.iter().filter(|c| **c == cmd).count()
+        };
+        match (cmd.as_str(), runs) {
+            ("git pull --ff-only", 1) => {
+                git(dir, &["commit", "-q", "--allow-empty", "-m", "pulled"]);
+                Ok(())
+            }
+            ("cargo build -p ferrobot-daemon", 1) => Err("error[E0425]: cannot find value".into()),
+            _ => Ok(()),
+        }
+    }
+
+    fn restart(&self, _: &std::path::Path) -> Result<(), String> {
+        *self.restarts.lock().unwrap() += 1;
+        Ok(())
+    }
+}
+
+#[cfg(debug_assertions)]
+#[tokio::test]
+async fn source_update_needs_the_token_and_reports_its_steps() {
+    let dir = tempfile::tempdir().unwrap();
+    let repo = dir.path();
+    std::fs::create_dir_all(repo.join("crates/daemon")).unwrap();
+    std::fs::create_dir_all(repo.join("target/debug")).unwrap();
+    std::fs::write(
+        repo.join("crates/daemon/Cargo.toml"),
+        "[package]\nname = \"ferrobot-daemon\"\n",
+    )
+    .unwrap();
+    std::fs::write(repo.join(".gitignore"), "target/\n").unwrap();
+    git(repo, &["init", "-q", "-b", "main"]);
+    git(repo, &["add", "."]);
+    git(repo, &["commit", "-q", "-m", "init"]);
+    let steps = Arc::new(FakeSteps::default());
+    let source =
+        ferrobot_daemon::update::Source::detect(repo.join("target/debug/ferrobotd"), steps.clone())
+            .unwrap();
+    let d = start_with(
+        Arc::new(StatefulBackend::default()),
+        None,
+        "127.0.0.1:0",
+        |s| s.source_update = Some(source),
+    )
+    .await;
+    for method in ["GET", "POST"] {
+        let (status, _, _) =
+            http_raw(&d.ui, method, "/v1/update", &[("Authorization", "")], b"").await;
+        assert_eq!(status, 401, "{method}");
+    }
+    let (status, info) = http(&d.ui, "GET", "/v1/update", None).await;
+    assert_eq!(status, 200);
+    assert_eq!(
+        (&info["source_build"], &info["state"]),
+        (&json!(true), &json!("idle"))
+    );
+    let started = info["commit"].clone();
+    let reached = |want: &'static str| {
+        let ui = d.ui.clone();
+        eventually(want, Duration::from_secs(10), move || {
+            let ui = ui.clone();
+            async move {
+                let (_, info) = http(&ui, "GET", "/v1/update", None).await;
+                (info["state"] == want).then_some(info)
+            }
+        })
+    };
+
+    let (status, info) = http(&d.ui, "POST", "/v1/update", None).await;
+    assert_eq!((status, info["state"].as_str()), (202, Some("running")));
+    let failed = reached("failed").await;
+    assert_eq!(failed["step"], "cargo build -p ferrobot-daemon");
+    assert!(
+        failed["error"].as_str().unwrap().contains("E0425"),
+        "{failed}"
+    );
+    assert!(
+        failed["log"]
+            .as_array()
+            .unwrap()
+            .contains(&json!("ran npm run build"))
+    );
+    assert_eq!(failed["commit"], started, "the commit the daemon runs");
+
+    // The retry pulls nothing new but still rebuilds: the daemon runs an older commit.
+    let (status, _) = http(&d.ui, "POST", "/v1/update", None).await;
+    assert_eq!(status, 202);
+    reached("restarting").await;
+    assert_eq!(*steps.restarts.lock().unwrap(), 1);
+    let daemon = [
+        "git pull --ff-only",
+        "npm ci",
+        "npm run build",
+        "cargo build -p ferrobot-daemon",
+    ];
+    let mut want = [daemon, daemon].concat();
+    want.push("cargo build");
+    assert_eq!(*steps.calls.lock().unwrap(), want);
+    let (status, info) = http(&d.ui, "POST", "/v1/update", None).await;
+    assert_eq!(status, 409, "{info}");
+}
+
 /// Fake model API: echoes the key it saw and streams two SSE chunks.
 async fn fake_upstream() -> String {
     async fn handler(headers: HeaderMap, body: String) -> axum::response::Response {

@@ -3,7 +3,7 @@ name = "ferrobot-desktop"
 description = "Tauri shell for the ferrobot chat UI (UI only, talks to ferrobotd over HTTP/WS)."
 version = "0.1.0"
 edition = "2024"
-rust-version = "1.88"
+rust-version = "1.90"
 license = "MIT OR Apache-2.0"
 publish = false
 
@@ -15,6 +15,8 @@ tauri-build = { version = "2", features = [] }
 
 [dependencies]
 tauri = { version = "2", features = [] }
+tauri-plugin-process = "2"
+tauri-plugin-updater = "2"
 
 [lints.rust]
 unsafe_code = "forbid"

@@ -1,7 +1,7 @@
 {
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "default",
-  "description": "The UI needs no Tauri APIs: it only talks HTTP/WS to ferrobotd.",
+  "description": "The UI talks HTTP/WS to ferrobotd; Tauri APIs only to update the app and relaunch it.",
   "windows": ["main"],
-  "permissions": []
+  "permissions": ["updater:allow-check", "updater:allow-download-and-install", "process:allow-restart"]
 }

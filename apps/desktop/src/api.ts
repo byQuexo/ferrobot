@@ -48,6 +48,7 @@ export type UsageTotals = Schemas["UsageTotals"];
 export type PriceEntry = Schemas["PriceEntry"];
 export type SetPrice = Schemas["SetPrice"];
 export type GeneralSettings = Schemas["GeneralSettings"];
+export type UpdateInfo = Schemas["UpdateInfo"];
 export type UsageGroupBy = "day" | "agent" | "provider" | "model";
 
 export class ApiError extends Error {
@@ -269,6 +270,9 @@ export class DaemonClient {
   settings = (): Promise<GeneralSettings> => this.#request("GET", "/v1/settings");
   updateSettings = (s: GeneralSettings): Promise<GeneralSettings> =>
     this.#request("PUT", "/v1/settings", s);
+  updateInfo = (): Promise<UpdateInfo> => this.#request("GET", "/v1/update");
+  /** Pulls, rebuilds and restarts a source build; poll `updateInfo` for progress. */
+  startUpdate = (): Promise<UpdateInfo> => this.#request("POST", "/v1/update");
 
   listConversations = (): Promise<Conversation[]> => this.#request("GET", "/v1/conversations");
   conversation = (a: string, b: string): Promise<MailMessage[]> =>

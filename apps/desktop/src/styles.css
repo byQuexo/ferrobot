@@ -429,10 +429,11 @@ textarea { resize: vertical; min-height: 40px; line-height: 1.5; }
 .s-error, .s-denied { color: var(--err); }
 .t-denied { border-color: color-mix(in srgb, var(--err) 35%, var(--border)); }
 .tool-body { padding: 4px 12px 12px 36px; border-top: 1px solid var(--border); }
-.tool-body pre {
+.tool-body pre, .update-log {
   margin: 4px 0 8px; padding: 8px 12px; background: var(--surface-2); border-radius: 8px; max-height: 260px;
   overflow: auto; font: 12px/1.5 var(--mono); white-space: pre-wrap; overflow-wrap: anywhere;
 }
+.update-notes { white-space: pre-wrap; }
 .tool-label { font-size: 12px; font-weight: 500; color: var(--muted); margin-top: 8px; }
 
 .notice { font-size: 12px; color: var(--muted); padding: 4px 12px; border-radius: 999px; background: var(--surface-2); display: inline-flex; align-items: center; gap: 8px; }

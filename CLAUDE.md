@@ -54,7 +54,8 @@ Principles:
 - **Desktop is thin**: no business logic in Tauri (there are no Tauri
   commands); the shell only starts the bundled `ferrobotd` (release builds,
   when nothing answers on 127.0.0.1:7878) and injects the operator token. The
-  UI does everything through the `/v1` API and the `/v1/ws` event stream.
+  UI does everything through the `/v1` API and the `/v1/ws` event stream;
+  the one exception is the updater and process plugins (app update, relaunch).
   Generated API types live in `apps/desktop/src/generated/`.
 - **The API is versioned** (`/v1`). Additive changes only; breaking changes
   need a new version. `protocol/` is generated from the code, never by hand.
@@ -92,6 +93,8 @@ Principles:
   recording in the UI.
 - `crates/daemon/src/storage.rs` — object storage (`object_store`) for snapshot
   archives, `--storage-url` (default: the data dir; `s3://` for S3/R2).
+- `crates/daemon/src/update.rs` — `/v1/update` status; `update/source.rs` — a
+  debug build pulls `main`, rebuilds and re-execs itself (debug builds only).
 - `crates/daemon/src/lifecycle.rs`, `supervisor.rs`, `scheduler.rs`, `runner_ws.rs`.
 - `crates/daemon/src/tasks.rs` — tracked tasks: automatic report and reminder;
   `crates/store/src/tasks.rs` — task state from `task` events and the mailbox.
@@ -165,8 +168,12 @@ Release bundle (local, host arch; CI builds universal macOS and Windows on a
 cargo build --release -p ferrobot-daemon
 mkdir -p apps/desktop/src-tauri/binaries
 cp target/release/ferrobotd apps/desktop/src-tauri/binaries/ferrobotd-$(rustc -vV | sed -n 's/^host: //p')
-cd apps/desktop && npm run tauri build -- --bundles dmg --config src-tauri/tauri.release.conf.json
+cd apps/desktop && npm run tauri build -- --bundles dmg --config src-tauri/tauri.release.conf.json \
+  --config '{"bundle":{"createUpdaterArtifacts":false}}'
 ```
+The release config makes signed updater artifacts: to build them, drop the last
+`--config` and set `TAURI_SIGNING_PRIVATE_KEY=~/.tauri/ferrobot-updater.key` and
+`TAURI_SIGNING_PRIVATE_KEY_PASSWORD`.
 
 Demo data:
 ```
@@ -238,6 +245,8 @@ daemon, `docker ps -a` must be empty of ferrobot containers.
   Credential Manager path has never run.
 - Voice never called ElevenLabs or OpenRouter for real (fake upstream only),
   and the microphone was never used in the Tauri window.
+- The app updater never ran against a real release (private repo, no signing
+  secrets yet), and its Windows install path is untested.
 
 ## Next up: Firecracker
 
