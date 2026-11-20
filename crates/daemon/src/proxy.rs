@@ -208,6 +208,47 @@ struct Route {
     secret: Option<String>,
     /// `ChatGPT` account of a Codex provider signed in with `ChatGPT`.
     chatgpt_account: Option<String>,
+    /// `OpenRouter` gets caching and sticky routing added (see `openrouter_extras`).
+    openrouter: bool,
+}
+
+/// For `OpenRouter`: one session per agent (sticky routing keeps its calls on
+/// the provider holding its cache) and caching for Claude chat calls.
+fn openrouter_extras(
+    upstream: reqwest::RequestBuilder,
+    route: &Route,
+    agent: ferrobot_core::AgentId,
+    body: axum::body::Bytes,
+) -> (reqwest::RequestBuilder, axum::body::Bytes) {
+    if !route.openrouter {
+        return (upstream, body);
+    }
+    let upstream = upstream.header("x-session-id", agent.to_string());
+    match route.api {
+        Api::ChatCompletions => (upstream, with_openrouter_cache(body)),
+        _ => (upstream, body),
+    }
+}
+
+/// `OpenRouter` caches Claude only when asked; one top-level `cache_control`
+/// turns on automatic caching. Other models there cache on their own.
+fn with_openrouter_cache(body: axum::body::Bytes) -> axum::body::Bytes {
+    let Ok(mut json) = serde_json::from_slice::<serde_json::Value>(&body) else {
+        return body;
+    };
+    let claude = json["model"]
+        .as_str()
+        .is_some_and(|m| m.starts_with("anthropic/"));
+    match json.as_object_mut() {
+        Some(obj) if claude && !obj.contains_key("cache_control") => {
+            obj.insert(
+                "cache_control".into(),
+                serde_json::json!({ "type": "ephemeral" }),
+            );
+            serde_json::to_vec(&json).map_or(body, axum::body::Bytes::from)
+        }
+        _ => body,
+    }
 }
 
 /// Where a provider's API key lives in the secret store.
@@ -238,6 +279,7 @@ async fn route(state: &AppState, provider: Option<Provider>, path: &str) -> Resu
             auth: UpstreamAuth::ApiKeyHeader,
             secret: Some(key),
             chatgpt_account: None,
+            openrouter: false,
         });
     };
     let id = provider.id;
@@ -295,6 +337,7 @@ async fn route(state: &AppState, provider: Option<Provider>, path: &str) -> Resu
             auth: UpstreamAuth::Bearer,
             secret: Some(token),
             chatgpt_account: Some(account),
+            openrouter: false,
         });
     }
     if secret.is_none() && provider.kind.needs_key() {
@@ -309,6 +352,7 @@ async fn route(state: &AppState, provider: Option<Provider>, path: &str) -> Resu
         auth,
         secret,
         chatgpt_account: None,
+        openrouter: provider.kind == ProviderKind::Openrouter,
     })
 }
 
@@ -438,6 +482,7 @@ async fn forward(
             upstream = upstream.header(name, value);
         }
     }
+    let (mut upstream, body) = openrouter_extras(upstream, &route, agent.id, body);
     if let Some(secret) = route.secret {
         upstream = match route.auth {
             UpstreamAuth::ApiKeyHeader => upstream.header("x-api-key", secret),
