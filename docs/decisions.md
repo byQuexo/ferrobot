@@ -876,8 +876,9 @@ slop, so polish mode: palette, accent, logo, layout and features stay.
   and `ask_user` cards (questions, not approvals, still go to the operator).
 - **Fails closed:** an unreadable `general` setting counts as off, so the
   card shows.
-- **Only `create_agent`.** Each approval kind decides its own Auto mode
-  behaviour; `add_connector` (see Vault) always shows its card.
+- **Per approval kind.** Each kind decides its own Auto mode behaviour:
+  `create_agent` and `create_routine` skip their card, `add_connector` (see
+  Vault) always shows it.
 - **Agent-facing text** stays true in both modes (the tool list is static per
   connection): the tool description and the Claude prompt say the operator
   approves unless Auto mode is on.
@@ -943,3 +944,17 @@ slop, so polish mode: palette, accent, logo, layout and features stay.
   the daemon holds the token; CLIs in the sandbox will be keyless (Tim,
   2026-11-20). A credential-swapping proxy for OAuth CLIs is a later option,
   only for CLIs without an MCP server.
+
+## Routines made by agents
+
+- **`create_routine`** lets an agent schedule its own prompt (cron or alias, the
+  daemon's time zone), so "remind me every morning" works without the
+  operator opening the Routines tab. Only for itself: a routine for another
+  agent would let one agent drive another's model spend.
+- **Approval like `create_agent`:** a card in the chat the operator uses for the
+  agent (name, schedule in words, the message) unless Auto mode is on; each
+  routine is recurring model spend. The tool does not wait (like
+  `add_connector`): the outcome arrives as a message, and the card holds
+  everything needed, so it still works after a daemon restart.
+- **Not added:** list, edit or delete tools for routines; the operator manages
+  them in the Routines tab.

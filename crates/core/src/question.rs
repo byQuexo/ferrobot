@@ -111,6 +111,14 @@ pub enum Approval {
         /// The agent that asked: it gets the connector and a message with the outcome.
         requester: AgentId,
     },
+    /// An agent wants a routine of its own (`create_routine` tool): `prompt` reaches it on
+    /// `schedule` (cron, the daemon's time zone).
+    CreateRoutine {
+        name: String,
+        schedule: String,
+        prompt: String,
+        requester: AgentId,
+    },
 }
 
 /// Choice value that approves an approval card; anything else declines.

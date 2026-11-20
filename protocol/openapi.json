@@ -4589,6 +4589,37 @@
                 ]
               }
             }
+          },
+          {
+            "type": "object",
+            "description": "An agent wants a routine of its own (`create_routine` tool): `prompt` reaches it on\n`schedule` (cron, the daemon's time zone).",
+            "required": [
+              "name",
+              "schedule",
+              "prompt",
+              "requester",
+              "kind"
+            ],
+            "properties": {
+              "name": {
+                "type": "string"
+              },
+              "schedule": {
+                "type": "string"
+              },
+              "prompt": {
+                "type": "string"
+              },
+              "requester": {
+                "$ref": "#/components/schemas/AgentId"
+              },
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "create_routine"
+                ]
+              }
+            }
           }
         ],
         "description": "What an approval card asks the operator to allow; the decision goes to the waiting tool\ncall, not to the agent's mailbox."

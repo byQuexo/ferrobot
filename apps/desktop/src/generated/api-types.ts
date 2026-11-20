@@ -1049,6 +1049,13 @@ export interface components {
             requester: components["schemas"]["AgentId"];
             /** @enum {string} */
             kind: "add_connector";
+        } | {
+            name: string;
+            schedule: string;
+            prompt: string;
+            requester: components["schemas"]["AgentId"];
+            /** @enum {string} */
+            kind: "create_routine";
         };
         /**
          * @description A chosen character avatar look; without one, clients derive a look from the agent id.
