@@ -7,7 +7,7 @@ import { characterOf, deriveCharacter, moodOf, rerollCharacter } from "../src/li
 import { relativeTime, stepLabel, toolLabel } from "../src/lib/format.ts";
 import { buildTimeline, sharedFiles } from "../src/lib/timeline.ts";
 import { parseBlocks, parseInline } from "../src/lib/markdown.ts";
-import { speakable } from "../src/lib/voice.ts";
+import { liveEvent, pcm16Base64, speakable } from "../src/lib/voice.ts";
 
 const ME = "11111111-1111-4111-8111-111111111111";
 const BOB = "22222222-2222-4222-8222-222222222222";
@@ -286,5 +286,21 @@ describe("voice", () => {
     const out = speakable("This is one sentence. ".repeat(100), nameOf);
     assert.ok(out.length < 1600);
     assert.ok(out.endsWith("sentence. The rest is in the chat."));
+  });
+});
+
+describe("live transcription", () => {
+  it("reads partial, committed and error messages", () => {
+    assert.deepEqual(liveEvent('{"message_type":"partial_transcript","text":"hel"}'), { kind: "partial", text: "hel" });
+    assert.deepEqual(liveEvent('{"message_type":"committed_transcript","text":"hello"}'), { kind: "committed", text: "hello" });
+    assert.deepEqual(liveEvent('{"message_type":"auth_error","error":"bad token"}'), { kind: "error", message: "bad token" });
+    assert.deepEqual(liveEvent('{"message_type":"session_started"}'), { kind: "other" });
+    assert.deepEqual(liveEvent("not json"), { kind: "other" });
+  });
+
+  it("encodes samples as 16-bit little-endian PCM in base64", () => {
+    const bytes = Buffer.from(pcm16Base64(new Float32Array([0, 1, -1, 2])), "base64");
+    assert.deepEqual([...new Int16Array(bytes.buffer, bytes.byteOffset, 4)], [0, 32767, -32767, 32767], "clipped to -1..1");
+    assert.equal(pcm16Base64(new Float32Array(0)), "");
   });
 });

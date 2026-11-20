@@ -41,6 +41,8 @@ export type LoginStatus = Schemas["LoginStatus"];
 export type VoiceView = Schemas["VoiceView"];
 export type VoiceProvider = Schemas["VoiceProvider"];
 export type UpdateVoice = Schemas["UpdateVoice"];
+export type VoiceCatalog = Schemas["VoiceCatalog"];
+export type LiveMode = Schemas["LiveMode"];
 
 export class ApiError extends Error {
   override name = "ApiError";
@@ -198,6 +200,11 @@ export class DaemonClient {
     (await this.#fetch("POST", "/v1/voice/speech", { text, agent_id: agent ?? null })).blob();
   transcribe = async (audio: Blob): Promise<string> =>
     (await this.#request<{ text: string }>("POST", "/v1/voice/transcription", audio)).text;
+  /** The account's voices and speech models (ElevenLabs; empty otherwise). */
+  voiceCatalog = (): Promise<VoiceCatalog> => this.#request("GET", "/v1/voice/catalog");
+  /** A provider WebSocket URL with a single-use token for live transcription. */
+  voiceLive = async (mode: LiveMode, sampleRate: number): Promise<string> =>
+    (await this.#request<{ url: string }>("POST", "/v1/voice/live", { mode, sample_rate: sampleRate })).url;
   /** Starts, changes or (empty) ends the voice call; returns who is in it. */
   setCall = async (agents: string[]): Promise<string[]> =>
     (await this.#request<{ agents: string[] }>("PUT", "/v1/call", { agents })).agents;

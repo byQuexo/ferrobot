@@ -2902,6 +2902,25 @@ async fn voice_upstream() -> (String, Arc<Mutex<Vec<Value>>>) {
                     .into_response()
             } else if path.ends_with("speech-to-text") || path.ends_with("transcriptions") {
                 axum::Json(json!({"text": " hello there ", "language_code": "en"})).into_response()
+            } else if path == "/v2/voices" {
+                let more = !parts
+                    .uri
+                    .query()
+                    .unwrap_or_default()
+                    .contains("next_page_token");
+                let name = if more { "Zed" } else { "Ada" };
+                axum::Json(
+                    json!({"voices": [{"voice_id": format!("id-{name}"), "name": name,
+                    "verified_languages": [{"language": "de"}]}],
+                    "has_more": more, "next_page_token": "page2"}),
+                )
+                .into_response()
+            } else if path == "/v1/models" {
+                axum::Json(json!([{"model_id": "eleven_flash_v2_5", "name": "Flash",
+                    "can_do_text_to_speech": true, "languages": [{"language_id": "de", "name": "German"}]}]))
+                .into_response()
+            } else if path == "/v1/single-use-token/realtime_scribe" {
+                axum::Json(json!({"token": "single-use-1"})).into_response()
             } else {
                 ([("content-type", "audio/mpeg")], &b"ID3-fake-mp3"[..]).into_response()
             }
@@ -3087,6 +3106,65 @@ async fn voice_speaks_and_listens_with_keys_kept_in_the_daemon() {
     .await;
     assert_eq!(status, 200);
     assert_eq!(last()["path"], "/v1/text-to-speech/bobvoice/stream");
+
+    // The account's voices (all pages) and speech models, fetched with the key.
+    let (status, catalog) = http(&d.ui, "GET", "/v1/voice/catalog", None).await;
+    assert_eq!(status, 200, "{catalog}");
+    let names: Vec<&str> = catalog["voices"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|v| v["name"].as_str().unwrap())
+        .collect();
+    assert_eq!(names, ["Ada", "Zed"], "both pages, sorted");
+    assert_eq!(catalog["tts_models"][0]["languages"][0]["code"], "de");
+    assert_eq!(last()["xi_api_key"], "xi-secret");
+
+    // Live transcription gets a single-use token; the key stays here.
+    let live = json!({"mode": "dictation", "sample_rate": 16000});
+    let (status, session) = http(&d.ui, "POST", "/v1/voice/live", Some(live)).await;
+    assert_eq!(status, 200, "{session}");
+    let url = session["url"].as_str().unwrap();
+    assert!(
+        url.starts_with("ws://") && url.contains("token=single-use-1"),
+        "{url}"
+    );
+    assert!(!session.to_string().contains("xi-secret"));
+    let bad = json!({"mode": "call", "sample_rate": 11025});
+    assert_eq!(
+        http(&d.ui, "POST", "/v1/voice/live", Some(bad)).await.0,
+        400
+    );
+
+    // Speed and language reach the provider.
+    let (status, _) = put_voice(
+        &d,
+        json!({"provider": "elevenlabs", "voice": "voice123", "speed": 1.1, "language": "DE"}),
+    )
+    .await;
+    assert_eq!(status, 200);
+    assert_eq!(
+        http(&d.ui, "GET", "/v1/voice", None).await.1["language"],
+        "de"
+    );
+
+    // Switched off: nothing speaks, listens or calls, settings and keys stay.
+    let (status, voice) = put_voice(
+        &d,
+        json!({"provider": "elevenlabs", "voice": "voice123", "enabled": false}),
+    )
+    .await;
+    assert_eq!((status, &voice["enabled"]), (200, &json!(false)));
+    assert_eq!(voice["providers"][0]["has_key"], true);
+    assert_eq!(speak(&d, "Hi").await.0, 409);
+    let live = json!({"mode": "call", "sample_rate": 16000});
+    assert_eq!(
+        http(&d.ui, "POST", "/v1/voice/live", Some(live)).await.0,
+        409
+    );
+    assert_eq!(http(&d.ui, "GET", "/v1/voice/catalog", None).await.0, 409);
+    let call = json!({"agents": [agent]});
+    assert_eq!(http(&d.ui, "PUT", "/v1/call", Some(call)).await.0, 409);
 }
 
 /// Messages queued for `agent` (not the ones it sent).

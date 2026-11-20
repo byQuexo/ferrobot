@@ -543,6 +543,36 @@ the code and this file together.
   page's microphone request itself. Not tried in the real window; a signed
   build with the hardened runtime also needs the
   `com.apple.security.device.audio-input` entitlement.
+- **Two buttons: call and dictation (Tim's feedback after the first test).**
+  The phone button in the chat header starts a hands-free call: replies are
+  read aloud and, with ElevenLabs, the microphone streams to its realtime
+  transcription (`scribe_v3_live`, commit on a 1.2 s pause); each finished
+  sentence is sent. While an agent speaks the app sends silence instead of
+  the microphone, so its voice is not transcribed as the operator's (and the
+  session stays open; ElevenLabs closes after 15 s without input). The mic
+  button in the message box is dictation: the words appear live in the box,
+  stop keeps them there unsent. Other providers transcribe after stopping.
+- **Live transcription with a single-use token.** `POST /v1/voice/live`
+  asks ElevenLabs for a `realtime_scribe` token (consumed on use, valid 15
+  minutes, session capped at 10 minutes) and returns the WebSocket URL with
+  it; the app connects directly, the real key stays in the daemon and the
+  daemon relays no audio. The CSP allows `wss://api.elevenlabs.io` only.
+  Audio is 16-bit mono PCM at the AudioContext's rate (16 kHz asked for)
+  through a ScriptProcessor, because an AudioWorklet needs a module file
+  the CSP would block. Not verified against the real service yet: the
+  token endpoint's auth (the docs show none; the daemon sends `xi-api-key`).
+- **Catalog and quick changes.** `GET /v1/voice/catalog` lists the account's
+  voices (`/v2/voices`, up to 3 pages of 100, sorted by name, with verified
+  languages) and its text-to-speech models (`/v1/models`). Settings and a
+  small picker in the chat header choose voice, language and speed from it;
+  a "Custom…" entry still takes any id. Speed (`voice_settings.speed`) is
+  limited to 0.7-1.2, ElevenLabs' own UI range (the API docs state no
+  range); language (`language_code`) is skipped for `eleven_multilingual_v2`,
+  which refuses it. OpenRouter gets neither.
+- **Voice can be switched off** (`enabled`, default on, also for settings
+  saved before): speech, transcription, live sessions, the catalog and new
+  calls answer 409, the app hides the call and mic buttons; keys and
+  settings stay.
 - **Voice on is a call; agents bring teammates in.** Switching voice on in a
   chat starts the operator's voice call with that agent (`PUT /v1/call`,
   in memory, so a daemon restart ends it); switching it off or leaving the

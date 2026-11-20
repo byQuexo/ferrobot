@@ -12,24 +12,26 @@ import {
   Info,
   Mic,
   Pencil,
+  Phone,
+  PhoneOff,
   SendHorizontal,
   ShieldAlert,
+  SlidersHorizontal,
   Square,
-  Volume2,
-  VolumeX,
   Wrench,
 } from "lucide-preact";
 
-import type { Agent, MailMessage, Routine, StoredEvent } from "../api.ts";
+import type { Agent, MailMessage, Routine, StoredEvent, VoiceView } from "../api.ts";
 import { useApp } from "../context.ts";
 import { clockTime, presenceLabel, stepLabel, toolLabel } from "../lib/format.ts";
 import { buildTimeline, groupExchanges, sharedFiles, type DisplayItem, type Exchange, type TimelineItem } from "../lib/timeline.ts";
-import { record, Speaker, speakable, type Recording } from "../lib/voice.ts";
+import { record, Speaker, speakable, startLive, type LiveSession, type Recording } from "../lib/voice.ts";
 import { fileSize } from "./FileViewer.tsx";
 import { Avatar } from "./Avatar.tsx";
 import { QuestionCardView } from "./QuestionCard.tsx";
 import { RichText, type ChatFiles } from "./RichText.tsx";
 import { Button, IconButton } from "./ui.tsx";
+import { VoiceQuick } from "./VoiceQuick.tsx";
 
 
 export function Chat(props: {
@@ -61,13 +63,26 @@ export function Chat(props: {
     () => new Speaker(client.speech, (err) => { toast(err instanceof Error ? err.message : String(err)); }),
     [client],
   );
+  const [voiceView, setVoiceView] = useState<VoiceView | null>(null);
+  const [quick, setQuick] = useState(false);
+  // What the operator is saying during a hands-free call.
+  const [caption, setCaption] = useState("");
+  const listening = useRef<LiveSession | null>(null);
+  const [hearing, setHearing] = useState(false);
+  useEffect(() => { client.voice().then(setVoiceView, () => undefined); }, [client]);
+  const voiceEnabled = voiceView?.enabled !== false;
 
   const endCall = (): void => {
     speaker.stop();
+    speaker.onPlaying = () => {};
+    void listening.current?.stop(false);
+    listening.current = null;
+    setHearing(false);
+    setCaption("");
     setVoice(false);
     setCall([]);
   };
-  const toggleVoice = async (): Promise<void> => {
+  const toggleCall = async (): Promise<void> => {
     if (voice) {
       endCall();
       void run(() => client.setCall([]));
@@ -75,19 +90,42 @@ export function Chat(props: {
     }
     const settings = await run(() => client.voice());
     if (!settings) return;
+    setVoiceView(settings);
     const provider = settings.providers.find((p) => p.kind === settings.provider);
     if (!provider?.has_key || !(settings.voice ?? provider.default_voice)) {
-      toast("Set up voice first: a key and a voice (the sound wave button in the sidebar)", "info");
+      toast("Set up voice first: a key and a voice (Settings → Voice)", "info");
       return;
     }
     const agents = await run(() => client.setCall([id]));
     if (!agents) return;
     setCall(agents);
     setVoice(true);
+    if (settings.provider !== "elevenlabs") {
+      toast("Hands-free listening needs ElevenLabs; replies are read aloud, dictate with the microphone", "info");
+      return;
+    }
+    try {
+      listening.current = await startLive((rate) => client.voiceLive("call", rate), {
+        partial: setCaption,
+        committed: (text) => {
+          setCaption("");
+          const said = text.trim();
+          if (said) void run(() => sendRef.current(said));
+        },
+        error: (message) => { toast(`Listening stopped: ${message}`); },
+      });
+      // The agent's own voice must not come back as something the operator said.
+      speaker.onPlaying = (playing) => { listening.current?.mute(playing); };
+      setHearing(true);
+    } catch (err) {
+      toast(err instanceof Error ? err.message : String(err));
+    }
   };
   // Everyone in a call hears what the operator says; otherwise it goes to this agent only.
   const send = (body: string): Promise<unknown> =>
     voice && call.length > 1 ? client.sayInCall(body) : client.send(id, body);
+  const sendRef = useRef(send);
+  sendRef.current = send;
 
   // Initial load + live updates for the selected agent.
   useEffect(() => {
@@ -216,9 +254,19 @@ export function Chat(props: {
             })}
           </span>
         )}
-        <IconButton label={voice ? "End the voice call" : "Voice call: read replies aloud"} onClick={() => void toggleVoice()} pressed={voice}>
-          {voice ? <Volume2 size={18} /> : <VolumeX size={18} />}
-        </IconButton>
+        {voiceEnabled && (
+          <span class="voice-tools">
+            <IconButton label="Voice, language and speed" onClick={() => { setQuick(!quick); }} pressed={quick}>
+              <SlidersHorizontal size={17} />
+            </IconButton>
+            {quick && voiceView && (
+              <VoiceQuick agent={agent} view={voiceView} onView={setVoiceView} onClose={() => { setQuick(false); }} />
+            )}
+            <IconButton label={voice ? "End the call" : "Start a voice call"} onClick={() => void toggleCall()} pressed={voice}>
+              {voice ? <PhoneOff size={18} /> : <Phone size={18} />}
+            </IconButton>
+          </span>
+        )}
         <IconButton label="Edit agent" onClick={props.onEdit}>
           <Pencil size={17} />
         </IconButton>
@@ -255,7 +303,12 @@ export function Chat(props: {
         )}
       </div>
 
-      <Composer agent={agent} send={send} onTalk={() => { speaker.stop(); }} />
+      {voice && hearing && (
+        <div class="call-caption" role="status">
+          <Mic size={14} /> {caption || "Listening…"}
+        </div>
+      )}
+      <Composer agent={agent} send={send} voice={voiceEnabled ? voiceView : null} onTalk={() => { speaker.stop(); }} />
     </section>
   );
 }
@@ -470,50 +523,92 @@ export function ToolCard(props: { item: Extract<TimelineItem, { type: "tool" }> 
   );
 }
 
-/** Hold to talk, or click to start and click again to send; the recording is transcribed and sent. */
-function MicButton(props: { agent: Agent; send: (body: string) => Promise<unknown>; onTalk: () => void }): JSX.Element {
+/** Joins dictated pieces with single spaces. */
+const joinText = (...parts: string[]): string => parts.map((p) => p.trim()).filter(Boolean).join(" ");
+
+/**
+ * Dictation: hold to talk, or click to start and again to stop. The words
+ * appear in the message box as they are said (ElevenLabs) or after stopping
+ * (other providers); nothing is sent until the operator sends it.
+ */
+function MicButton(props: {
+  agent: Agent;
+  voice: VoiceView;
+  text: () => string;
+  setText: (t: string) => void;
+  onTalk: () => void;
+}): JSX.Element {
   const { client, run, toast } = useApp();
   const [recording, setRecording] = useState(false);
   const [transcribing, setTranscribing] = useState(false);
   const rec = useRef<Recording | null>(null);
+  const session = useRef<LiveSession | null>(null);
   const pressedAt = useRef(0);
   const limit = useRef<ReturnType<typeof setTimeout>>();
   // Bumped when the chat changes, so a recording that starts late is dropped.
   const chat = useRef(0);
 
   const finish = async (): Promise<void> => {
+    clearTimeout(limit.current);
+    setRecording(false);
+    const s = session.current;
+    if (s) {
+      session.current = null;
+      await s.stop(true);
+      return;
+    }
     const r = rec.current;
     if (!r) return;
     rec.current = null;
-    clearTimeout(limit.current);
-    setRecording(false);
     setTranscribing(true);
+    const before = props.text();
     const text = await run(async () => client.transcribe(await r.stop()));
     setTranscribing(false);
     if (text === undefined) return;
     if (!text) toast("Nothing heard", "info");
-    else await run(() => props.send(text));
+    else props.setText(joinText(before, text));
   };
   const start = async (): Promise<void> => {
     props.onTalk();
     const startedIn = chat.current;
+    const before = props.text();
     try {
-      const r = await record();
-      if (startedIn !== chat.current) {
-        void r.stop();
-        return;
+      if (props.voice.provider === "elevenlabs") {
+        let said = "";
+        const s = await startLive((rate) => client.voiceLive("dictation", rate), {
+          partial: (p) => { props.setText(joinText(before, said, p)); },
+          committed: (c) => {
+            said = joinText(said, c);
+            props.setText(joinText(before, said));
+          },
+          error: (message) => { toast(`Dictation stopped: ${message}`); },
+        });
+        if (startedIn !== chat.current) {
+          void s.stop(false);
+          return;
+        }
+        session.current = s;
+      } else {
+        const r = await record();
+        if (startedIn !== chat.current) {
+          void r.stop();
+          return;
+        }
+        rec.current = r;
       }
-      rec.current = r;
       setRecording(true);
       limit.current = setTimeout(() => void finish(), 120_000);
     } catch (err) {
       toast(err instanceof Error ? err.message : String(err));
     }
   };
+  const active = (): boolean => session.current !== null || rec.current !== null;
   // Leaving the chat drops a recording in progress.
   useEffect(() => () => {
     chat.current++;
     clearTimeout(limit.current);
+    void session.current?.stop(false);
+    session.current = null;
     void rec.current?.stop();
     rec.current = null;
   }, [props.agent.id]);
@@ -522,13 +617,13 @@ function MicButton(props: { agent: Agent; send: (body: string) => Promise<unknow
     <button
       type="button"
       class={`mic${recording ? " on" : ""}`}
-      aria-label={recording ? "Stop and send" : "Speak a message"}
-      title={recording ? "Stop and send" : "Hold to talk, or click to start and stop"}
+      aria-label={recording ? "Stop dictating" : "Dictate a message"}
+      title={recording ? "Stop: the text stays in the box" : "Hold to talk, or click to start and stop; the text goes into the box"}
       aria-pressed={recording}
       disabled={transcribing}
       onPointerDown={(e) => {
         if (e.button !== 0) return;
-        if (rec.current) {
+        if (active()) {
           void finish();
         } else {
           pressedAt.current = Date.now();
@@ -536,12 +631,12 @@ function MicButton(props: { agent: Agent; send: (body: string) => Promise<unknow
         }
       }}
       onPointerUp={() => {
-        if (rec.current && pressedAt.current && Date.now() - pressedAt.current > 400) void finish();
+        if (active() && pressedAt.current && Date.now() - pressedAt.current > 400) void finish();
         pressedAt.current = 0;
       }}
       onClick={(e) => {
         // Keyboard presses arrive as clicks without pointer events.
-        if (e.detail === 0) void (rec.current ? finish() : start());
+        if (e.detail === 0) void (active() ? finish() : start());
       }}
     >
       {recording ? <Square size={16} /> : <Mic size={18} />}
@@ -549,9 +644,17 @@ function MicButton(props: { agent: Agent; send: (body: string) => Promise<unknow
   );
 }
 
-function Composer(props: { agent: Agent; send: (body: string) => Promise<unknown>; onTalk: () => void }): JSX.Element {
+function Composer(props: {
+  agent: Agent;
+  send: (body: string) => Promise<unknown>;
+  /** `null`: voice is off, no microphone. */
+  voice: VoiceView | null;
+  onTalk: () => void;
+}): JSX.Element {
   const { run } = useApp();
   const [text, setText] = useState("");
+  const current = useRef(text);
+  current.current = text;
   const [sending, setSending] = useState(false);
   const ref = useRef<HTMLTextAreaElement>(null);
   useEffect(() => { ref.current?.focus(); }, [props.agent.id]);
@@ -593,7 +696,9 @@ function Composer(props: { agent: Agent; send: (body: string) => Promise<unknown
           }
         }}
       />
-      <MicButton agent={props.agent} send={props.send} onTalk={props.onTalk} />
+      {props.voice && (
+        <MicButton agent={props.agent} voice={props.voice} text={() => current.current} setText={setText} onTalk={props.onTalk} />
+      )}
       <button type="submit" class="send" disabled={!text.trim() || sending} aria-label="Send" title="Send (Enter)">
         <SendHorizontal size={18} />
       </button>

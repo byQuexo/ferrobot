@@ -99,6 +99,8 @@ pub const QUESTION_CARD_FILE: &str = "question-card.v1.schema.json";
         api::voice::get_voice,
         api::voice::put_voice,
         api::voice::speech,
+        api::voice::catalog,
+        api::voice::live,
         api::voice::transcription,
         api::voice::get_call,
         api::voice::put_call,

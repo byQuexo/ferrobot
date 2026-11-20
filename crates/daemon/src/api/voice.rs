@@ -16,7 +16,10 @@ use super::agents::explicit;
 use super::providers::{check_key, clean};
 use crate::call::MAX_CALL_TEXT_BYTES;
 use crate::error::{ApiError, ErrorBody};
-use crate::voice::{self, MAX_SPEECH_CHARS, Transcript, VoiceProvider, VoiceSettings};
+use crate::voice::{
+    self, LiveMode, MAX_SPEECH_CHARS, ModelOption, Speak, Transcript, VoiceOption, VoiceProvider,
+    VoiceSettings,
+};
 use crate::{AppState, UiEvent};
 
 const SETTING: &str = "voice";
@@ -104,6 +107,9 @@ pub(crate) async fn put_voice(
     Json(req): Json<UpdateVoice>,
 ) -> ApiResult<VoiceView> {
     let settings = VoiceSettings {
+        enabled: req.settings.enabled,
+        speed: req.settings.speed,
+        language: clean(req.settings.language).map(|l| l.to_ascii_lowercase()),
         provider: req.settings.provider,
         tts_model: clean(req.settings.tts_model),
         voice: clean(req.settings.voice),
@@ -146,6 +152,11 @@ struct Ready {
 
 async fn ready(state: &AppState) -> Result<Ready, ApiError> {
     let settings = load(state).await?;
+    if !settings.enabled {
+        return Err(ApiError::Conflict(
+            "voice is switched off in the settings".into(),
+        ));
+    }
     let provider = settings
         .provider
         .ok_or_else(|| ApiError::Conflict("voice is not set up".into()))?;
@@ -246,7 +257,14 @@ pub(crate) async fn speech(
         .as_deref()
         .unwrap_or(r.provider.default_tts_model());
     spend(&state, chars, 0)?;
-    let request = voice::speech(&state.http, &r.base, r.provider, &r.key, model, voice, text);
+    let speak = Speak {
+        model,
+        voice,
+        text,
+        speed: r.settings.speed,
+        language: r.settings.language.as_deref(),
+    };
+    let request = voice::speech(&state.http, &r.base, r.provider, &r.key, speak);
     let response = send(request).await?;
     let content_type = response
         .headers()
@@ -289,9 +307,20 @@ pub(crate) async fn transcription(
         .stt_model
         .as_deref()
         .unwrap_or(r.provider.default_stt_model());
-    let request =
-        voice::transcription(&state.http, &r.base, r.provider, &r.key, model, mime, &body)
-            .map_err(ApiError::BadRequest)?;
+    let listen = voice::Listen {
+        model,
+        language: r.settings.language.as_deref(),
+    };
+    let request = voice::transcription(
+        &state.http,
+        &r.base,
+        r.provider,
+        &r.key,
+        listen,
+        mime,
+        &body,
+    )
+    .map_err(ApiError::BadRequest)?;
     spend(&state, 0, 1)?;
     let transcript: Transcript = send(request)
         .await?
@@ -301,6 +330,123 @@ pub(crate) async fn transcription(
     Ok(Json(Transcript {
         text: transcript.text.trim().to_owned(),
     }))
+}
+
+#[derive(Debug, Default, Serialize, ToSchema)]
+pub(crate) struct VoiceCatalog {
+    /// The account's voices (`ElevenLabs`); empty for other providers.
+    voices: Vec<VoiceOption>,
+    /// Text-to-speech models of the account (`ElevenLabs`); empty otherwise.
+    tts_models: Vec<ModelOption>,
+}
+
+/// Most voices fetched (pages of 100), so a huge library stays quick.
+const MAX_VOICE_PAGES: usize = 3;
+
+/// The voices and speech models of the configured provider, fetched live.
+#[utoipa::path(get, path = "/v1/voice/catalog", tag = "voice",
+    responses((status = 200, body = VoiceCatalog),
+        (status = 409, description = "Voice off, not set up or no key", body = ErrorBody),
+        (status = 502, description = "The provider failed", body = ErrorBody)))]
+pub(crate) async fn catalog(State(state): State<AppState>) -> ApiResult<VoiceCatalog> {
+    let r = ready(&state).await?;
+    if r.provider != VoiceProvider::Elevenlabs {
+        return Ok(Json(VoiceCatalog::default()));
+    }
+    let base = r.base.trim_end_matches('/');
+    let json = |response: reqwest::Response| async move {
+        response
+            .json::<serde_json::Value>()
+            .await
+            .map_err(|_| ApiError::Upstream("the voice provider sent no list".into()))
+    };
+    let mut voices = Vec::new();
+    let mut cursor: Option<String> = None;
+    for _ in 0..MAX_VOICE_PAGES {
+        let mut url = url::Url::parse(&format!("{base}/v2/voices"))
+            .map_err(|e| ApiError::Internal(format!("voice upstream: {e}")))?;
+        url.query_pairs_mut()
+            .append_pair("page_size", "100")
+            .append_pair("include_total_count", "false");
+        if let Some(c) = &cursor {
+            url.query_pairs_mut().append_pair("next_page_token", c);
+        }
+        let request = state
+            .http
+            .get(url)
+            .header("xi-api-key", &r.key)
+            .timeout(voice::TIMEOUT);
+        let (page, next) = voice::parse_voices(&json(send(request).await?).await?);
+        voices.extend(page);
+        cursor = next;
+        if cursor.is_none() {
+            break;
+        }
+    }
+    voices.sort_by_key(|v| v.name.to_lowercase());
+    let models = state
+        .http
+        .get(format!("{base}/v1/models"))
+        .header("xi-api-key", &r.key)
+        .timeout(voice::TIMEOUT);
+    let tts_models = voice::parse_models(&json(send(models).await?).await?);
+    Ok(Json(VoiceCatalog { voices, tts_models }))
+}
+
+#[derive(Debug, Deserialize, ToSchema)]
+pub(crate) struct LiveRequest {
+    mode: LiveMode,
+    /// Sample rate of the 16-bit mono PCM the app sends: 8000, 16000,
+    /// 22050, 24000, 44100 or 48000.
+    sample_rate: u32,
+}
+
+#[derive(Debug, Serialize, ToSchema)]
+pub(crate) struct LiveSession {
+    /// The provider's WebSocket with a single-use token (valid 15 minutes,
+    /// one session of at most 10 minutes); the real key never leaves the daemon.
+    url: String,
+}
+
+/// Opens live transcription for dictation or a hands-free call
+/// (`ElevenLabs` only; other providers transcribe after recording).
+#[utoipa::path(post, path = "/v1/voice/live", tag = "voice",
+    request_body = LiveRequest,
+    responses((status = 200, body = LiveSession),
+        (status = 400, description = "Unsupported sample rate", body = ErrorBody),
+        (status = 409, description = "Voice off, not set up, no key, or not ElevenLabs", body = ErrorBody),
+        (status = 429, description = "Limit for this minute reached", body = ErrorBody),
+        (status = 502, description = "The provider failed", body = ErrorBody)))]
+pub(crate) async fn live(
+    State(state): State<AppState>,
+    Json(req): Json<LiveRequest>,
+) -> ApiResult<LiveSession> {
+    let r = ready(&state).await?;
+    if r.provider != VoiceProvider::Elevenlabs {
+        return Err(ApiError::Conflict(
+            "live transcription needs ElevenLabs".into(),
+        ));
+    }
+    // Fails before the provider is asked for a token.
+    voice::live_url(&r.base, "-", req.mode, req.sample_rate, None).map_err(ApiError::BadRequest)?;
+    spend(&state, 0, 1)?;
+    let token: serde_json::Value = send(voice::live_token(&state.http, &r.base, &r.key))
+        .await?
+        .json()
+        .await
+        .map_err(|_| ApiError::Upstream("the voice provider sent no token".into()))?;
+    let token = token["token"]
+        .as_str()
+        .ok_or_else(|| ApiError::Upstream("the voice provider sent no token".into()))?;
+    let url = voice::live_url(
+        &r.base,
+        token,
+        req.mode,
+        req.sample_rate,
+        r.settings.language.as_deref(),
+    )
+    .map_err(ApiError::BadRequest)?;
+    Ok(Json(LiveSession { url }))
 }
 
 #[derive(Debug, Serialize, Deserialize, ToSchema)]
@@ -324,11 +470,17 @@ pub(crate) async fn get_call(State(state): State<AppState>) -> Json<CallView> {
     request_body = CallView,
     responses((status = 200, body = CallView),
         (status = 400, description = "More than 4 agents", body = ErrorBody),
-        (status = 404, description = "Unknown agent", body = ErrorBody)))]
+        (status = 404, description = "Unknown agent", body = ErrorBody),
+        (status = 409, description = "Voice is switched off", body = ErrorBody)))]
 pub(crate) async fn put_call(
     State(state): State<AppState>,
     Json(req): Json<CallView>,
 ) -> ApiResult<CallView> {
+    if !req.agents.is_empty() && !load(&state).await?.enabled {
+        return Err(ApiError::Conflict(
+            "voice is switched off in the settings".into(),
+        ));
+    }
     for agent in &req.agents {
         state.store.get_agent(*agent).await?;
     }

@@ -2198,6 +2198,16 @@
                 }
               }
             }
+          },
+          "409": {
+            "description": "Voice is switched off",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
           }
         }
       }
@@ -3573,6 +3583,136 @@
         }
       }
     },
+    "/v1/voice/catalog": {
+      "get": {
+        "tags": [
+          "voice"
+        ],
+        "summary": "The voices and speech models of the configured provider, fetched live.",
+        "operationId": "catalog",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/VoiceCatalog"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or wrong API token",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Voice off, not set up or no key",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "The provider failed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/voice/live": {
+      "post": {
+        "tags": [
+          "voice"
+        ],
+        "summary": "Opens live transcription for dictation or a hands-free call\n(`ElevenLabs` only; other providers transcribe after recording).",
+        "operationId": "live",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/LiveRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LiveSession"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Unsupported sample rate",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or wrong API token",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Voice off, not set up, no key, or not ElevenLabs",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Limit for this minute reached",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "The provider failed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/v1/voice/speech": {
       "post": {
         "tags": [
@@ -4523,6 +4663,60 @@
           }
         }
       },
+      "LanguageOption": {
+        "type": "object",
+        "description": "A language a model speaks.",
+        "required": [
+          "code",
+          "name"
+        ],
+        "properties": {
+          "code": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          }
+        }
+      },
+      "LiveMode": {
+        "type": "string",
+        "description": "How live speech is cut into messages.",
+        "enum": [
+          "dictation",
+          "call"
+        ]
+      },
+      "LiveRequest": {
+        "type": "object",
+        "required": [
+          "mode",
+          "sample_rate"
+        ],
+        "properties": {
+          "mode": {
+            "$ref": "#/components/schemas/LiveMode"
+          },
+          "sample_rate": {
+            "type": "integer",
+            "format": "int32",
+            "description": "Sample rate of the 16-bit mono PCM the app sends: 8000, 16000,\n22050, 24000, 44100 or 48000.",
+            "minimum": 0
+          }
+        }
+      },
+      "LiveSession": {
+        "type": "object",
+        "required": [
+          "url"
+        ],
+        "properties": {
+          "url": {
+            "type": "string",
+            "description": "The provider's WebSocket with a single-use token (valid 15 minutes,\none session of at most 10 minutes); the real key never leaves the daemon."
+          }
+        }
+      },
       "LoginStatus": {
         "oneOf": [
           {
@@ -4679,6 +4873,29 @@
               "null"
             ],
             "description": "Global memory only: the agent that wrote it; absent = the operator."
+          }
+        }
+      },
+      "ModelOption": {
+        "type": "object",
+        "description": "A text-to-speech model of the account.",
+        "required": [
+          "model_id",
+          "name",
+          "languages"
+        ],
+        "properties": {
+          "model_id": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "languages": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/LanguageOption"
+            }
           }
         }
       },
@@ -5820,6 +6037,78 @@
           }
         ]
       },
+      "VoiceCatalog": {
+        "type": "object",
+        "required": [
+          "voices",
+          "tts_models"
+        ],
+        "properties": {
+          "voices": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/VoiceOption"
+            },
+            "description": "The account's voices (`ElevenLabs`); empty for other providers."
+          },
+          "tts_models": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ModelOption"
+            },
+            "description": "Text-to-speech models of the account (`ElevenLabs`); empty otherwise."
+          }
+        }
+      },
+      "VoiceOption": {
+        "type": "object",
+        "description": "An `ElevenLabs` voice the operator can pick.",
+        "required": [
+          "voice_id",
+          "name",
+          "languages"
+        ],
+        "properties": {
+          "voice_id": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "category": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "`premade`, `cloned`, `generated`, `professional`, ..."
+          },
+          "languages": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Languages the voice is verified for (codes), else its `language` label."
+          },
+          "accent": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "gender": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "preview_url": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        }
+      },
       "VoiceProvider": {
         "type": "string",
         "enum": [
@@ -5862,6 +6151,10 @@
         "type": "object",
         "description": "Voice settings (no secrets), stored as JSON under the `voice` setting.",
         "properties": {
+          "enabled": {
+            "type": "boolean",
+            "description": "`false`: voice is switched off; no speech, dictation or calls."
+          },
           "provider": {
             "oneOf": [
               {
@@ -5903,6 +6196,21 @@
             "propertyNames": {
               "type": "string"
             }
+          },
+          "speed": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "format": "float",
+            "description": "Speaking speed, 0.7-1.2 (`ElevenLabs`); `null`: normal."
+          },
+          "language": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Language of speech and dictation, ISO 639-1 or 639-3 (`de`, `fil`);\n`null`: detected."
           }
         }
       },
