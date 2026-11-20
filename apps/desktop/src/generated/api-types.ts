@@ -614,6 +614,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/provider-kinds/{kind}/models": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** The built-in model list for a provider kind, e.g. before the provider exists. */
+        get: operations["kind_models"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/providers": {
         parameters: {
             query?: never;
@@ -669,6 +686,27 @@ export interface paths {
          *     The tokens stay with the host's Codex; agents never see them.
          */
         post: operations["start_chatgpt_login"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/providers/{id}/models": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Models to offer for a provider: its own list, fetched with the stored key
+         *     (cached for a few minutes), or a short built-in list when it has none or
+         *     the fetch fails. The key is never returned.
+         */
+        get: operations["provider_models"];
+        put?: never;
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -786,6 +824,43 @@ export interface paths {
          */
         put: operations["put_voice"];
         post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/voice/catalog": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** The voices and speech models of the configured provider, fetched live. */
+        get: operations["catalog"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/voice/live": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Opens live transcription for dictation or a hands-free call
+         *     (`ElevenLabs` only; other providers transcribe after recording).
+         */
+        post: operations["live"];
         delete?: never;
         options?: never;
         head?: never;
@@ -1176,10 +1251,40 @@ export interface components {
             idle_timeout_s?: number | null;
             /** @description Default time zone for new routines. */
             timezone: string;
+            /** @description Whether the sandbox backend can start agents now (Docker: the engine answers). */
+            sandbox_ready: boolean;
+            /** @description Why the backend is not ready, for the operator; null when ready. */
+            sandbox_error?: string | null;
         };
         Interrupted: {
             /** @description The interrupted turn, or null if the agent was idle. */
             turn_id?: string | null;
+        };
+        /** @description A language a model speaks. */
+        LanguageOption: {
+            code: string;
+            name: string;
+        };
+        /**
+         * @description How live speech is cut into messages.
+         * @enum {string}
+         */
+        LiveMode: "dictation" | "call";
+        LiveRequest: {
+            mode: components["schemas"]["LiveMode"];
+            /**
+             * Format: int32
+             * @description Sample rate of the 16-bit mono PCM the app sends: 8000, 16000,
+             *     22050, 24000, 44100 or 48000.
+             */
+            sample_rate: number;
+        };
+        LiveSession: {
+            /**
+             * @description The provider's WebSocket with a single-use token (valid 15 minutes,
+             *     one session of at most 10 minutes); the real key never leaves the daemon.
+             */
+            url: string;
         };
         /** @description Sign-in progress per provider (in memory; a restart forgets pending ones). */
         LoginStatus: {
@@ -1237,6 +1342,29 @@ export interface components {
             /** @description Global memory only: the agent that wrote it; absent = the operator. */
             author?: string | null;
         };
+        /** @description One model a picker offers. */
+        ModelInfo: {
+            /** @description The id an agent or provider uses as its `model`. */
+            id: string;
+            /** @description Display name, when the provider gives one. */
+            name?: string | null;
+        };
+        /** @description Models to offer for a provider. Any other id can still be typed. */
+        ModelList: {
+            models: components["schemas"]["ModelInfo"][];
+            source: components["schemas"]["ModelSource"];
+        };
+        /** @description A text-to-speech model of the account. */
+        ModelOption: {
+            model_id: string;
+            name: string;
+            languages: components["schemas"]["LanguageOption"][];
+        };
+        /**
+         * @description Where a model list comes from.
+         * @enum {string}
+         */
+        ModelSource: "provider" | "suggested";
         OAuthStart: {
             /** @description Open this in a browser on the daemon's computer to sign in. */
             authorization_url: string;
@@ -1688,6 +1816,24 @@ export interface components {
              */
             not_tracked_calls: number;
         };
+        VoiceCatalog: {
+            /** @description The account's voices (`ElevenLabs`); empty for other providers. */
+            voices: components["schemas"]["VoiceOption"][];
+            /** @description Text-to-speech models of the account (`ElevenLabs`); empty otherwise. */
+            tts_models: components["schemas"]["ModelOption"][];
+        };
+        /** @description An `ElevenLabs` voice the operator can pick. */
+        VoiceOption: {
+            voice_id: string;
+            name: string;
+            /** @description `premade`, `cloned`, `generated`, `professional`, ... */
+            category?: string | null;
+            /** @description Languages the voice is verified for (codes), else its `language` label. */
+            languages: string[];
+            accent?: string | null;
+            gender?: string | null;
+            preview_url?: string | null;
+        };
         /** @enum {string} */
         VoiceProvider: "elevenlabs" | "openrouter";
         VoiceProviderView: {
@@ -1701,6 +1847,8 @@ export interface components {
         };
         /** @description Voice settings (no secrets), stored as JSON under the `voice` setting. */
         VoiceSettings: {
+            /** @description `false`: voice is switched off; no speech, dictation or calls. */
+            enabled?: boolean;
             provider?: components["schemas"]["VoiceProvider"] | null;
             /** @description Text-to-speech model; `null`: the provider's default. */
             tts_model?: string | null;
@@ -1718,6 +1866,16 @@ export interface components {
             agent_voices?: {
                 [key: string]: string;
             };
+            /**
+             * Format: float
+             * @description Speaking speed, 0.7-1.2 (`ElevenLabs`); `null`: normal.
+             */
+            speed?: number | null;
+            /**
+             * @description Language of speech and dictation, ISO 639-1 or 639-3 (`de`, `fil`);
+             *     `null`: detected.
+             */
+            language?: string | null;
         };
         VoiceView: components["schemas"]["VoiceSettings"] & {
             /** @description Every provider with its defaults and whether its key is stored. */
@@ -3405,6 +3563,15 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorBody"];
                 };
             };
+            /** @description Voice is switched off */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
         };
     };
     post_call_message: {
@@ -3965,6 +4132,46 @@ export interface operations {
             };
         };
     };
+    kind_models: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Provider kind */
+                kind: components["schemas"]["ProviderKind"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ModelList"];
+                };
+            };
+            /** @description Missing or wrong API token */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Unknown kind */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+        };
+    };
     list_providers: {
         parameters: {
             query?: never;
@@ -4249,6 +4456,46 @@ export interface operations {
             };
             /** @description codex failed on the daemon host */
             502: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+        };
+    };
+    provider_models: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Provider id (UUID) */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ModelList"];
+                };
+            };
+            /** @description Missing or wrong API token */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Unknown provider */
+            404: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -4616,6 +4863,120 @@ export interface operations {
             };
             /** @description Missing or wrong API token */
             401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+        };
+    };
+    catalog: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["VoiceCatalog"];
+                };
+            };
+            /** @description Missing or wrong API token */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Voice off, not set up or no key */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description The provider failed */
+            502: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+        };
+    };
+    live: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["LiveRequest"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LiveSession"];
+                };
+            };
+            /** @description Unsupported sample rate */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Missing or wrong API token */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Voice off, not set up, no key, or not ElevenLabs */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Limit for this minute reached */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description The provider failed */
+            502: {
                 headers: {
                     [name: string]: unknown;
                 };
