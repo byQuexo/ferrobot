@@ -251,11 +251,16 @@ export class DaemonClient {
   sayInCall = (body: string): Promise<MailMessage[]> =>
     this.#request("POST", "/v1/call/messages", { body });
 
-  /** `to` null means until now. */
-  usage = (groupBy: UsageGroupBy, from: string, to: string | null): Promise<UsageReport> =>
+  /** `to` null means until now; `daily` adds each group's `days`. */
+  usage = (
+    groupBy: UsageGroupBy,
+    from: string,
+    to: string | null,
+    daily = false,
+  ): Promise<UsageReport> =>
     this.#request(
       "GET",
-      `/v1/usage?group_by=${groupBy}&from=${enc(from)}${to ? `&to=${enc(to)}` : ""}`,
+      `/v1/usage?group_by=${groupBy}&from=${enc(from)}${to ? `&to=${enc(to)}` : ""}${daily ? "&daily=true" : ""}`,
     );
   prices = (): Promise<PriceEntry[]> => this.#request("GET", "/v1/usage/prices");
   /** Replaces all of the operator's own prices. */

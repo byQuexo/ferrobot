@@ -78,7 +78,7 @@ pub struct UsageFilter {
     pub model: Option<String>,
 }
 
-/// Sums for one group and one (provider kind, model), so prices can apply.
+/// Sums for one group, (provider kind, model) and cache use, so prices apply as per call.
 #[derive(Debug, Clone, PartialEq)]
 pub struct UsageSlice {
     pub key: String,
@@ -96,6 +96,8 @@ pub struct UsageSlice {
     pub not_tracked_calls: i64,
     /// Newest row id, so the latest label wins when names change.
     pub last_id: i64,
+    /// UTC minute, `YYYY-MM-DDTHH:MM`, when asked to split by minute.
+    pub minute: Option<String>,
     /// Sum of the upstream-reported costs; a slice holds either only such rows or none.
     pub reported_cost_usd: Option<f64>,
 }
@@ -138,11 +140,13 @@ impl Store {
         .await
     }
 
-    /// Usage summed per group and (provider kind, model), ordered by key.
+    /// Usage summed per group, (provider kind, model) and whether cache tokens
+    /// were reported, ordered by key; `by_minute` also splits by UTC minute.
     pub async fn usage_slices(
         &self,
         filter: UsageFilter,
         group_by: UsageGroupBy,
+        by_minute: bool,
     ) -> Result<Vec<UsageSlice>, StoreError> {
         let (key, label) = match group_by {
             UsageGroupBy::Day => ("substr(u.at, 1, 10)", "substr(u.at, 1, 10)"),
@@ -154,6 +158,14 @@ impl Store {
             ),
             UsageGroupBy::Model => ("u.provider_kind || '/' || u.model", "u.model"),
         };
+        // Minutes, because every time zone's offset is a whole number of them.
+        let minute = if by_minute {
+            "substr(u.at, 1, 16)"
+        } else {
+            "NULL"
+        };
+        // Cache users apart: a missing cache price leaves the same calls unknown in any grouping.
+        let cache = "COALESCE(u.cache_read_tokens, 0) > 0, COALESCE(u.cache_write_tokens, 0) > 0";
         // The label is a bare column: SQLite takes it from the MAX(u.id) row.
         let sql = format!(
             "SELECT {key}, {label}, u.provider_kind, u.model, COUNT(*),
@@ -161,14 +173,14 @@ impl Store {
                     COALESCE(SUM(u.cache_read_tokens), 0), COALESCE(SUM(u.cache_write_tokens), 0),
                     SUM(u.input_tokens IS NOT NULL OR u.output_tokens IS NOT NULL),
                     SUM(u.status = 'ok' AND u.input_tokens IS NULL AND u.output_tokens IS NULL),
-                    MAX(u.id), SUM(u.cost_usd)
+                    MAX(u.id), {minute} AS bucket, SUM(u.cost_usd)
              FROM usage u LEFT JOIN providers p ON p.id = u.provider_id
              WHERE (?1 IS NULL OR u.at >= ?1) AND (?2 IS NULL OR u.at < ?2)
                AND (?3 IS NULL OR u.agent_id = ?3)
                AND (?4 IS NULL OR COALESCE(u.provider_id, 'default') = ?4)
                AND (?5 IS NULL OR u.model = ?5)
-             GROUP BY 1, u.provider_kind, u.model, u.cost_usd IS NULL
-             ORDER BY 1, u.provider_kind, u.model, u.cost_usd IS NULL"
+             GROUP BY 1, bucket, u.provider_kind, u.model, {cache}, u.cost_usd IS NULL
+             ORDER BY 1, bucket, u.provider_kind, u.model, {cache}, u.cost_usd IS NULL"
         );
         self.with(move |c| {
             let mut stmt = c.prepare(&sql)?;
@@ -194,7 +206,8 @@ impl Store {
                         tracked_calls: r.get(9)?,
                         not_tracked_calls: r.get(10)?,
                         last_id: r.get(11)?,
-                        reported_cost_usd: r.get(12)?,
+                        minute: r.get(12)?,
+                        reported_cost_usd: r.get(13)?,
                     })
                 },
             )?;
@@ -241,7 +254,7 @@ mod tests {
             store.insert_usage(row).await.unwrap();
         }
         let slices = store
-            .usage_slices(UsageFilter::default(), UsageGroupBy::Model)
+            .usage_slices(UsageFilter::default(), UsageGroupBy::Model, false)
             .await
             .unwrap();
         let split: Vec<_> = slices
@@ -271,7 +284,7 @@ mod tests {
             .unwrap();
 
         let days = store
-            .usage_slices(UsageFilter::default(), UsageGroupBy::Day)
+            .usage_slices(UsageFilter::default(), UsageGroupBy::Day, false)
             .await
             .unwrap();
         let keys: Vec<_> = days
@@ -288,6 +301,21 @@ mod tests {
         );
         assert_eq!((days[1].input_tokens, days[1].cache_read_tokens), (20, 7));
         assert_eq!((days[2].tracked_calls, days[2].not_tracked_calls), (0, 1));
+        assert_eq!(days[0].minute, None);
+
+        let minutes = store
+            .usage_slices(UsageFilter::default(), UsageGroupBy::Agent, true)
+            .await
+            .unwrap();
+        let a_minutes: Vec<_> = minutes
+            .iter()
+            .filter(|s| s.key == a.to_string())
+            .map(|s| s.minute.as_deref())
+            .collect();
+        assert_eq!(
+            a_minutes,
+            [Some("2026-11-19T23:59"), Some("2026-11-20T07:00")]
+        );
 
         let only_a = UsageFilter {
             from: Some(parse_ts("2026-11-20T00:00:00Z").unwrap()),
@@ -295,7 +323,7 @@ mod tests {
             ..UsageFilter::default()
         };
         let agents = store
-            .usage_slices(only_a, UsageGroupBy::Agent)
+            .usage_slices(only_a, UsageGroupBy::Agent, false)
             .await
             .unwrap();
         assert_eq!(agents.len(), 1);
@@ -306,7 +334,7 @@ mod tests {
             ..UsageFilter::default()
         };
         let models = store
-            .usage_slices(before, UsageGroupBy::Model)
+            .usage_slices(before, UsageGroupBy::Model, false)
             .await
             .unwrap();
         assert_eq!(models[0].key, "anthropic/m1");

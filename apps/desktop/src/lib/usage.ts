@@ -30,18 +30,104 @@ function localDay(s: string): Date | null {
   return m ? new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3])) : null;
 }
 
-/** Every UTC date the range touches, so days without calls still get a bar. */
-export function utcDays(from: string, to: string | null, now: Date): string[] {
-  const end = to ? new Date(Date.parse(to) - 1) : now;
+/** Every date in `timeZone` the range touches, so days without calls still get a column. */
+export function zoneDays(from: string, to: string | null, now: Date, timeZone: string): string[] {
+  const format = new Intl.DateTimeFormat("en", {
+    timeZone,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  });
+  const date = (t: number): string => {
+    const p = new Map(format.formatToParts(t).map((x) => [x.type, x.value]));
+    return `${p.get("year") ?? ""}-${p.get("month") ?? ""}-${p.get("day") ?? ""}`;
+  };
+  const last = date(to ? Date.parse(to) - 1 : now.getTime());
   const days: string[] = [];
-  for (
-    let t = Date.parse(from.slice(0, 10));
-    t <= end.getTime() && days.length < 400;
-    t += 86_400_000
-  ) {
-    days.push(new Date(t).toISOString().slice(0, 10));
+  for (let t = Date.parse(date(Date.parse(from))); days.length < 400; t += 86_400_000) {
+    const day = new Date(t).toISOString().slice(0, 10);
+    if (day > last) break;
+    days.push(day);
   }
   return days;
+}
+
+export type Metric = "cost" | "tokens";
+
+/** Cost when some is known and above zero, else tokens (no prices, or only free models). */
+export function chartMetric(t: UsageTotals): Metric {
+  return t.cost_usd ? "cost" : "tokens";
+}
+
+export function metricOf(t: UsageTotals, metric: Metric): number {
+  return metric === "cost"
+    ? (t.cost_usd ?? 0)
+    : t.input_tokens + t.output_tokens + t.cache_read_tokens + t.cache_write_tokens;
+}
+
+export interface DayStack {
+  /** In colour order; "Other" (key "") comes last. */
+  series: { key: string; label: string }[];
+  /** One per date; `values` line up with `series`. */
+  columns: { date: string; values: number[]; total: number; unknown: boolean }[];
+}
+
+const SERIES = 5;
+
+/** Per-day sums of the biggest groups, the rest folded into "Other". */
+export function stackDays(groups: UsageGroup[], dates: string[], metric: Metric): DayStack {
+  const ranked = [...groups].sort((a, b) => metricOf(b, metric) - metricOf(a, metric));
+  const shown = ranked.length > SERIES ? ranked.slice(0, SERIES - 1) : ranked;
+  const rest = ranked.slice(shown.length);
+  // By name, so a group keeps its colour when a new range changes its rank.
+  shown.sort((a, b) => a.label.localeCompare(b.label));
+  const parts = [...shown.map((g) => [g]), ...(rest.length > 0 ? [rest] : [])].map((part) =>
+    part.map((g) => new Map((g.days ?? []).map((d) => [d.date, d]))),
+  );
+  return {
+    series: [
+      ...shown.map(({ key, label }) => ({ key, label })),
+      ...(rest.length > 0 ? [{ key: "", label: "Other" }] : []),
+    ],
+    columns: dates.map((date) => {
+      const days = parts.map((part) => part.flatMap((byDate) => byDate.get(date) ?? []));
+      const values = days.map((part) => part.reduce((sum, d) => sum + metricOf(d, metric), 0));
+      return {
+        date,
+        values,
+        total: values.reduce((a, b) => a + b, 0),
+        unknown: days.some((part) => part.some((d) => d.unknown_cost_calls > 0)),
+      };
+    }),
+  };
+}
+
+/** Axis ticks from 0 to at least `max` in steps of 1, 2 or 5 times a power of ten. */
+export function niceTicks(max: number, target = 4): number[] {
+  if (!(max > 0)) return [0, 1];
+  const raw = max / target;
+  const power = 10 ** Math.floor(Math.log10(raw));
+  const step = [1, 2, 5, 10].map((m) => m * power).find((s) => s >= raw) ?? raw;
+  return Array.from({ length: Math.ceil(max / step - 1e-9) + 1 }, (_, i) =>
+    Number((i * step).toPrecision(12)),
+  );
+}
+
+export function tickLabel(n: number, step: number, metric: Metric): string {
+  if (metric === "tokens") return count(n);
+  const digits = step >= 1 ? 0 : Math.max(2, Math.ceil(-Math.log10(step) - 1e-9));
+  return `$${n.toLocaleString("en", { minimumFractionDigits: digits, maximumFractionDigits: digits })}`;
+}
+
+const shortDate = new Intl.DateTimeFormat("en", {
+  month: "short",
+  day: "numeric",
+  timeZone: "UTC",
+});
+
+/** "Nov 19" for "2026-11-19". */
+export function dayLabel(date: string): string {
+  return shortDate.format(Date.parse(date));
 }
 
 export type SortKey =

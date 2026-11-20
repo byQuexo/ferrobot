@@ -1,7 +1,11 @@
 //! Model usage and estimated cost, from the rows the model proxy records.
 
+use std::collections::BTreeMap;
+
 use axum::Json;
 use axum::extract::{Query, State};
+use chrono::{NaiveDateTime, TimeZone};
+use chrono_tz::Tz;
 use ferrobot_core::{AgentId, ProviderKind};
 use ferrobot_store::{UsageFilter, UsageGroupBy, UsageSlice};
 use serde::{Deserialize, Serialize};
@@ -32,6 +36,8 @@ pub(crate) struct UsageQuery {
     model: Option<String>,
     /// `day` (UTC date, the default), `agent`, `provider` or `model`.
     group_by: Option<String>,
+    /// Also sum each group per day in the daemon's time zone (`days`).
+    daily: Option<bool>,
 }
 
 /// Sums for a time range or group. Costs are what `OpenRouter` reported it charged, else
@@ -62,12 +68,27 @@ pub(crate) struct UsageGroup {
     label: String,
     #[serde(flatten)]
     totals: UsageTotals,
+    /// Sums per day, oldest first, only days with calls; only with `daily=true`.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    days: Option<Vec<UsageDay>>,
+}
+
+#[derive(Debug, Serialize, ToSchema)]
+pub(crate) struct UsageDay {
+    /// Date in the report's `timezone`, `YYYY-MM-DD`.
+    date: String,
+    #[serde(flatten)]
+    totals: UsageTotals,
 }
 
 #[derive(Debug, Serialize, ToSchema)]
 pub(crate) struct UsageReport {
     totals: UsageTotals,
     groups: Vec<UsageGroup>,
+    /// IANA time zone of the `days` dates (the daemon's `--timezone`); only
+    /// with `daily=true`.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    timezone: Option<String>,
 }
 
 /// Running sums while slices are folded into a group.
@@ -119,6 +140,23 @@ impl Sum {
         t.cost_usd = (self.priced || !unpriced).then_some(self.cost);
         t
     }
+}
+
+/// One group while slices are folded in.
+struct GroupSum {
+    key: String,
+    label: String,
+    /// Newest row id seen, so the latest label wins.
+    last_id: i64,
+    sum: Sum,
+    days: BTreeMap<String, Sum>,
+}
+
+/// The date in `tz` of a UTC minute (`YYYY-MM-DDTHH:MM`).
+fn local_date(minute: &str, tz: Tz) -> Result<String, ApiError> {
+    let utc = NaiveDateTime::parse_from_str(minute, "%Y-%m-%dT%H:%M")
+        .map_err(|e| ApiError::Internal(format!("usage time {minute}: {e}")))?;
+    Ok(tz.from_utc_datetime(&utc).date_naive().to_string())
 }
 
 fn bad(message: &str) -> ApiError {
@@ -200,24 +238,44 @@ pub(crate) async fn get_usage(
         "model" => UsageGroupBy::Model,
         _ => return Err(bad("group_by must be day, agent, provider or model")),
     };
-    let slices = state.store.usage_slices(filter(&q)?, group_by).await?;
+    let zone = if q.daily.unwrap_or(false) {
+        let name = &state.settings.default_timezone;
+        let tz: Tz = name
+            .parse()
+            .map_err(|_| ApiError::Internal(format!("unknown time zone {name:?}")))?;
+        Some((tz, name.clone()))
+    } else {
+        None
+    };
+    let slices = state
+        .store
+        .usage_slices(filter(&q)?, group_by, zone.is_some())
+        .await?;
     let prices = Prices::new(overrides(&state).await?);
     let mut total = Sum::default();
-    // Slices come ordered by key; (key, label, newest row id, sums).
-    let mut groups: Vec<(String, String, i64, Sum)> = Vec::new();
+    // Slices come ordered by key.
+    let mut groups: Vec<GroupSum> = Vec::new();
     for s in &slices {
         total.add(s, &prices);
-        match groups.last_mut() {
-            Some((key, label, last_id, sum)) if *key == s.key => {
-                if s.last_id > *last_id {
-                    (*label, *last_id) = (s.label.clone(), s.last_id);
-                }
-                sum.add(s, &prices);
+        if groups.last().is_none_or(|g| g.key != s.key) {
+            groups.push(GroupSum {
+                key: s.key.clone(),
+                label: s.label.clone(),
+                last_id: s.last_id,
+                sum: Sum::default(),
+                days: BTreeMap::new(),
+            });
+        }
+        if let Some(g) = groups.last_mut() {
+            if s.last_id > g.last_id {
+                (g.label, g.last_id) = (s.label.clone(), s.last_id);
             }
-            _ => {
-                let mut sum = Sum::default();
-                sum.add(s, &prices);
-                groups.push((s.key.clone(), s.label.clone(), s.last_id, sum));
+            g.sum.add(s, &prices);
+            if let (Some((tz, _)), Some(minute)) = (&zone, &s.minute) {
+                g.days
+                    .entry(local_date(minute, *tz)?)
+                    .or_default()
+                    .add(s, &prices);
             }
         }
     }
@@ -225,12 +283,22 @@ pub(crate) async fn get_usage(
         totals: total.finish(),
         groups: groups
             .into_iter()
-            .map(|(key, label, _, sum)| UsageGroup {
-                key,
-                label,
-                totals: sum.finish(),
+            .map(|g| UsageGroup {
+                key: g.key,
+                label: g.label,
+                totals: g.sum.finish(),
+                days: zone.is_some().then(|| {
+                    g.days
+                        .into_iter()
+                        .map(|(date, sum)| UsageDay {
+                            date,
+                            totals: sum.finish(),
+                        })
+                        .collect()
+                }),
             })
             .collect(),
+        timezone: zone.map(|(_, name)| name),
     }))
 }
 

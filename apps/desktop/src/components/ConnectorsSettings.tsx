@@ -1,9 +1,27 @@
 import type { JSX } from "preact";
 import { useEffect, useState } from "preact/hooks";
-import { LogIn, LogOut, Plus, Settings2, Trash2 } from "lucide-preact";
+import {
+  BookOpen,
+  Bug,
+  Check,
+  Cloud,
+  Code,
+  CreditCard,
+  Database,
+  ListTodo,
+  LogIn,
+  LogOut,
+  NotebookText,
+  Plus,
+  Search,
+  Settings2,
+  Sparkles,
+  Trash2,
+} from "lucide-preact";
 
 import type { Connector } from "../api.ts";
 import { useApp } from "../context.ts";
+import { CATALOG, type CatalogEntry, isAdded } from "../lib/catalog.ts";
 import { Button, IconButton } from "./ui.tsx";
 
 const STATUS: Record<Connector["sign_in"], string> = {
@@ -83,6 +101,25 @@ function AppFields(props: {
 
 const scopesOf = (text: string): string[] => text.split(/\s+/).filter(Boolean);
 
+const KIND_ICONS: Record<CatalogEntry["kind"], typeof Code> = {
+  work: ListTodo,
+  notes: NotebookText,
+  code: Code,
+  errors: Bug,
+  data: Database,
+  cloud: Cloud,
+  money: CreditCard,
+  docs: BookOpen,
+  search: Search,
+  ai: Sparkles,
+};
+
+const AUTH_LABELS: Record<CatalogEntry["auth"], string> = {
+  oauth: "Sign in",
+  token: "Token",
+  none: "No sign-in",
+};
+
 /** Add, sign in and remove connectors; their tokens and client secrets live in Vault. */
 export function ConnectorsSettings(props: { onVault: () => void }): JSX.Element {
   const { client, toast } = useApp();
@@ -141,6 +178,18 @@ export function ConnectorsSettings(props: { onVault: () => void }): JSX.Element 
       // The system browser (the app window never shows the provider's page).
       window.open(authorization_url, "_blank", "noopener");
       setSignIn({ id: c.id, url: authorization_url });
+    });
+
+  const addFromCatalog = (e: CatalogEntry): Promise<void> =>
+    run(async () => {
+      const c = await client.createConnector({ name: e.name, url: e.url });
+      if (e.auth === "oauth") {
+        const { authorization_url } = await client.startConnectorOAuth(c.id);
+        window.open(authorization_url, "_blank", "noopener");
+        setSignIn({ id: c.id, url: authorization_url });
+      } else if (e.auth === "token") {
+        props.onVault();
+      }
     });
 
   const add = (): Promise<void> =>
@@ -272,6 +321,41 @@ export function ConnectorsSettings(props: { onVault: () => void }): JSX.Element 
               )}
             </li>
           ))}
+        </ul>
+      </section>
+      <section class="settings-section">
+        <h3 class="form-head">Catalog</h3>
+        <p class="muted small">Popular MCP servers run by their vendors. Add one, then sign in.</p>
+        <ul class="catalog">
+          {CATALOG.map((e) => {
+            const Icon = KIND_ICONS[e.kind];
+            const added = isAdded(e, connectors);
+            return (
+              <li key={e.name} class="catalog-card">
+                <div class="catalog-head">
+                  <span class="catalog-icon" aria-hidden="true">
+                    <Icon size={16} />
+                  </span>
+                  <b>{e.title}</b>
+                  <span class="spacer" />
+                  <span class="muted small">{AUTH_LABELS[e.auth]}</span>
+                </div>
+                <p class="muted small">{e.about}</p>
+                {e.setup && <p class="hint">{e.setup}</p>}
+                <div>
+                  {added ? (
+                    <span class="muted small catalog-added">
+                      <Check size={14} /> Added
+                    </span>
+                  ) : (
+                    <Button small disabled={busy} onClick={() => void addFromCatalog(e)}>
+                      <Plus size={16} /> Add <span class="sr-only">{e.title}</span>
+                    </Button>
+                  )}
+                </div>
+              </li>
+            );
+          })}
         </ul>
       </section>
       <section class="settings-section">

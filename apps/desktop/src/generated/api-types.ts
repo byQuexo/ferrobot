@@ -1817,6 +1817,10 @@ export interface components {
              */
             api_key?: string | null;
         };
+        UsageDay: components["schemas"]["UsageTotals"] & {
+            /** @description Date in the report's `timezone`, `YYYY-MM-DD`. */
+            date: string;
+        };
         UsageGroup: components["schemas"]["UsageTotals"] & {
             /**
              * @description UTC date, agent id, provider id (`default`: the daemon's key) or
@@ -1825,10 +1829,17 @@ export interface components {
             key: string;
             /** @description Date, agent name, provider name or model id. */
             label: string;
+            /** @description Sums per day, oldest first, only days with calls; only with `daily=true`. */
+            days?: components["schemas"]["UsageDay"][] | null;
         };
         UsageReport: {
             totals: components["schemas"]["UsageTotals"];
             groups: components["schemas"]["UsageGroup"][];
+            /**
+             * @description IANA time zone of the `days` dates (the daemon's `--timezone`); only
+             *     with `daily=true`.
+             */
+            timezone?: string | null;
         };
         /**
          * @description Sums for a time range or group. Costs are what `OpenRouter` reported it charged, else
@@ -4816,6 +4827,8 @@ export interface operations {
                 model?: string;
                 /** @description `day` (UTC date, the default), `agent`, `provider` or `model`. */
                 group_by?: string;
+                /** @description Also sum each group per day in the daemon's time zone (`days`). */
+                daily?: boolean;
             };
             header?: never;
             path?: never;

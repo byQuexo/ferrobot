@@ -36,6 +36,11 @@
   --err: #d0443c;
   --err-soft: rgba(208, 68, 60, 0.08);
   --sleep: #a0a5ae;
+  --series-1: #2a78d6;
+  --series-2: #eb6834;
+  --series-3: #1baf7a;
+  --series-4: #eda100;
+  --series-5: #e87ba4;
   --shadow: 0 1px 2px rgba(16, 24, 40, 0.04), 0 4px 14px rgba(16, 24, 40, 0.05);
   --shadow-lg: 0 20px 50px rgba(16, 24, 40, 0.18);
   --avatar-l: 56%;
@@ -69,6 +74,11 @@
   --err: #f0665c;
   --err-soft: rgba(240, 102, 92, 0.12);
   --sleep: #6f747e;
+  --series-1: #3987e5;
+  --series-2: #d95926;
+  --series-3: #199e70;
+  --series-4: #c98500;
+  --series-5: #d55181;
   --shadow: 0 1px 2px rgba(0, 0, 0, 0.3), 0 6px 18px rgba(0, 0, 0, 0.22);
   --shadow-lg: 0 24px 60px rgba(0, 0, 0, 0.55);
   --avatar-l: 50%;
@@ -96,6 +106,14 @@ b, strong { font-weight: 600; }
 ::selection { background: var(--accent-soft); }
 
 .spacer { flex: 1; }
+.sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+.catalog { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 12px; margin: 12px 0 0; padding: 0; list-style: none; }
+.catalog-card { display: flex; flex-direction: column; gap: 8px; padding: 12px; border: 1px solid var(--border); border-radius: 12px; background: var(--surface); }
+.catalog-card p { margin: 0; }
+.catalog-head { display: flex; align-items: center; gap: 8px; }
+.catalog-icon { display: inline-flex; padding: 6px; border-radius: 8px; background: var(--accent-soft); color: var(--accent); }
+.catalog-added { display: inline-flex; align-items: center; gap: 4px; }
+.catalog-card > :last-child { margin-top: auto; }
 .grow { flex: 1; min-width: 0; }
 .muted { color: var(--muted); }
 .small { font-size: 12px; }
@@ -699,9 +717,30 @@ textarea { resize: vertical; min-height: 40px; line-height: 1.5; }
 .usage-totals .card { display: flex; flex-direction: column; gap: 4px; }
 .usage-big { font-size: 20px; font-weight: 500; font-variant-numeric: tabular-nums; }
 .usage-chart { margin: 0 0 20px; }
-.usage-chart svg { display: block; width: 100%; height: 120px; margin-top: 8px; border-bottom: 1px solid var(--border); }
-.usage-chart rect { fill: var(--accent); }
-.usage-chart-axis { display: flex; justify-content: space-between; margin-top: 4px; }
+.usage-plot { position: relative; height: 192px; margin-top: 8px; }
+.usage-plot svg { display: block; overflow: visible; font-size: 12px; font-variant-numeric: tabular-nums; }
+.usage-plot svg:focus-visible { outline-offset: 4px; border-radius: 4px; }
+.usage-plot text { fill: var(--muted); text-anchor: middle; }
+.usage-plot .tick { text-anchor: end; dominant-baseline: middle; }
+.usage-plot .grid { stroke: var(--border); }
+.usage-plot .base { stroke: var(--border-strong); }
+.usage-plot .hover { fill: var(--surface-2); }
+.usage-chart .s0 { fill: var(--series-1); background: var(--series-1); }
+.usage-chart .s1 { fill: var(--series-2); background: var(--series-2); }
+.usage-chart .s2 { fill: var(--series-3); background: var(--series-3); }
+.usage-chart .s3 { fill: var(--series-4); background: var(--series-4); }
+.usage-chart .s4 { fill: var(--series-5); background: var(--series-5); }
+.usage-chart .other { fill: var(--muted); background: var(--muted); }
+.usage-tip {
+  position: absolute; top: 0; z-index: 1; display: flex; flex-direction: column; gap: 2px; min-width: 120px; padding: 8px 10px;
+  border: 1px solid var(--border); border-radius: var(--radius-sm); background: var(--surface); box-shadow: var(--shadow);
+  font-size: 12px; white-space: nowrap; pointer-events: none;
+}
+.usage-tip.flip { transform: translateX(-100%); }
+.usage-key { display: inline-block; width: 12px; height: 2px; margin-right: 6px; border-radius: 1px; vertical-align: middle; }
+.usage-legend { display: flex; flex-wrap: wrap; gap: 4px 16px; margin-top: 4px; font-size: 12px; color: var(--text-2); }
+.usage-legend span { display: inline-flex; align-items: center; gap: 6px; max-width: 240px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.usage-swatch { flex: none; width: 10px; height: 10px; border-radius: 3px; }
 .usage-table { width: 100%; border-collapse: collapse; font-size: 13px; margin-bottom: 10px; }
 .usage-table th, .usage-table td { padding: 8px; border-bottom: 1px solid var(--border); text-align: left; }
 .usage-table .num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }

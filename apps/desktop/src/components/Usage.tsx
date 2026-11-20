@@ -1,17 +1,29 @@
 import type { JSX } from "preact";
-import { useEffect, useState } from "preact/hooks";
+import { useEffect, useRef, useState } from "preact/hooks";
 import { ArrowDown, ArrowUp, ChartColumn, Download, Pencil, X } from "lucide-preact";
 
-import type { PriceEntry, ProviderKind, UsageGroup, UsageGroupBy, UsageReport } from "../api.ts";
+import type {
+  PriceEntry,
+  ProviderKind,
+  UsageGroup,
+  UsageGroupBy,
+  UsageReport,
+  UsageTotals,
+} from "../api.ts";
 import { useApp } from "../context.ts";
 import {
+  chartMetric,
   costLabel,
   count,
+  dayLabel,
+  niceTicks,
   rangeOf,
   sortGroups,
+  stackDays,
+  tickLabel,
   usageCsv,
   usd,
-  utcDays,
+  zoneDays,
   type RangeKind,
   type SortKey,
 } from "../lib/usage.ts";
@@ -67,14 +79,15 @@ export function Usage(props: { onClose: () => void }): JSX.Element {
     let live = true;
     setReports(null);
     setError(null);
-    const report = (g: UsageGroupBy): Promise<UsageReport> => client.usage(g, span.from, span.to);
+    const report = (g: UsageGroupBy, daily = false): Promise<UsageReport> =>
+      client.usage(g, span.from, span.to, daily);
     const load = async (): Promise<void> => {
       try {
         const [day, provider, model, agent, p] = await Promise.all([
           report("day"),
-          report("provider"),
-          report("model"),
-          report("agent"),
+          report("provider", true),
+          report("model", true),
+          report("agent", true),
           client.prices(),
         ]);
         if (!live) return;
@@ -91,6 +104,8 @@ export function Usage(props: { onClose: () => void }): JSX.Element {
   }, [span?.from, span?.to, reload]);
 
   const groups = reports ? sortGroups(reports[by].groups, sort.key, sort.desc) : [];
+  const byLabel = BREAKDOWNS.find(([id]) => id === by)?.[1] ?? "";
+  const timeZone = reports?.[by].timezone ?? "UTC";
   const exportCsv = (): void => {
     const url = URL.createObjectURL(new Blob([usageCsv(groups, by)], { type: "text/csv" }));
     const a = document.createElement("a");
@@ -176,7 +191,6 @@ export function Usage(props: { onClose: () => void }): JSX.Element {
         ) : (
           <>
             <Totals report={reports.day} />
-            <DayChart report={reports.day} days={utcDays(span.from, span.to, new Date())} />
             <div class="usage-bar">
               <div class="chips" role="group" aria-label="Break down by">
                 {BREAKDOWNS.map(([id, label]) => (
@@ -199,15 +213,16 @@ export function Usage(props: { onClose: () => void }): JSX.Element {
                 <Download size={16} /> Export CSV
               </Button>
             </div>
+            <DayChart
+              report={reports[by]}
+              totals={reports.day.totals}
+              dates={zoneDays(span.from, span.to, new Date(), timeZone)}
+              by={byLabel.toLowerCase()}
+            />
             <table class="usage-table">
               <thead>
                 <tr>
-                  <SortHeader
-                    label={BREAKDOWNS.find(([id]) => id === by)?.[1] ?? ""}
-                    column="label"
-                    sort={sort}
-                    onSort={setSort}
-                  />
+                  <SortHeader label={byLabel} column="label" sort={sort} onSort={setSort} />
                   {COLUMNS.map(([key, label]) => (
                     <SortHeader key={key} label={label} column={key} sort={sort} onSort={setSort} />
                   ))}
@@ -235,7 +250,7 @@ export function Usage(props: { onClose: () => void }): JSX.Element {
             </table>
             <p class="muted small">
               Unknown: no price for that model (set one with the pencil on the model list). Not
-              tracked: the API reported no tokens. Days are UTC.
+              tracked: the API reported no tokens. Chart days are in {timeZone}.
             </p>
           </>
         )}
@@ -303,34 +318,167 @@ function Totals(props: { report: UsageReport }): JSX.Element {
   );
 }
 
-function DayChart(props: { report: UsageReport; days: string[] }): JSX.Element {
-  const byDay = new Map(props.report.groups.map((g) => [g.key, g]));
-  const cost = (d: string): number => byDay.get(d)?.cost_usd ?? 0;
-  const max = Math.max(...props.days.map(cost), 0);
-  const [w, h] = [24, 120];
+const [LEFT, RIGHT, TOP, PLOT, AXIS] = [56, 16, 8, 160, 24];
+
+/** A rectangle path with its top corners rounded by `r`. */
+function columnPath(x: number, y: number, w: number, h: number, r: number): string {
+  const c = Math.min(r, w / 2, h);
+  return ["M", x, y + h, "V", y + c, "A", c, c, 0, 0, 1, x + c, y, "H", x + w - c]
+    .concat(["A", c, c, 0, 0, 1, x + w, y + c, "V", y + h, "Z"])
+    .join(" ");
+}
+
+/** Estimated cost per day (tokens when no cost is known), stacked by the breakdown. */
+function DayChart(props: {
+  report: UsageReport;
+  totals: UsageTotals;
+  dates: string[];
+  by: string;
+}): JSX.Element {
+  const box = useRef<HTMLDivElement>(null);
+  const [width, setWidth] = useState(0);
+  const [active, setActive] = useState<number | null>(null);
+  useEffect(() => {
+    const el = box.current;
+    if (!el) return;
+    const observer = new ResizeObserver(([entry]) => {
+      if (entry) setWidth(entry.contentRect.width);
+    });
+    observer.observe(el);
+    return () => {
+      observer.disconnect();
+    };
+  }, []);
+
+  const metric = chartMetric(props.totals);
+  const { series, columns } = stackDays(props.report.groups, props.dates, metric);
+  const ticks = niceTicks(Math.max(0, ...columns.map((c) => c.total)));
+  const [top, step] = [ticks[ticks.length - 1] ?? 1, ticks[1] ?? 1];
+  const band = Math.max(width - LEFT - RIGHT, 0) / Math.max(columns.length, 1);
+  const bar = Math.min(24, band * 0.7);
+  const every = Math.ceil(56 / Math.max(band, 1));
+  const y = (v: number): number => TOP + PLOT - (v / top) * PLOT;
+  const center = (i: number): number => LEFT + band * (i + 0.5);
+  const value = (n: number): string => (metric === "cost" ? usd(n) : count(n));
+  const slot = (s: number): string => (series[s]?.key === "" ? "other" : `s${String(s)}`);
+  const title = `${metric === "cost" ? "Estimated cost" : "Tokens"} per day${series.length > 1 ? ` by ${props.by}` : ""}`;
+  const peak = columns.reduce<(typeof columns)[number] | undefined>(
+    (a, c) => (!a || c.total > a.total ? c : a),
+    undefined,
+  );
+  const [first, last] = [props.dates[0] ?? "", props.dates[props.dates.length - 1] ?? ""];
+  const summary = `${title}, ${dayLabel(first)} to ${dayLabel(last)}${peak ? `; highest ${dayLabel(peak.date)} at ${value(peak.total)}` : ""}.`;
+  const at = active === null ? undefined : columns[active];
+  const flip = active !== null && center(active) > width / 2;
+  const keys: Record<string, number> = {
+    ArrowLeft: (active ?? columns.length) - 1,
+    ArrowRight: (active ?? -1) + 1,
+    Home: 0,
+    End: columns.length - 1,
+  };
+
+  const segments = (c: (typeof columns)[number], x: number): JSX.Element[] => {
+    const height = c.total > 0 ? Math.max(2, (c.total / top) * PLOT) : 0;
+    const topmost = c.values.reduce((t, v, s) => (v > 0 ? s : t), -1);
+    let bottom = TOP + PLOT;
+    return c.values.flatMap((v, s) => {
+      if (v <= 0) return [];
+      const h = (height * v) / c.total;
+      const gap = bottom < TOP + PLOT ? 2 : 0;
+      bottom -= h;
+      if (h - gap < 0.5) return [];
+      const d = columnPath(x, bottom, bar, h - gap, s === topmost ? 4 : 0);
+      return [<path key={s} class={slot(s)} d={d} />];
+    });
+  };
+
   return (
     <figure class="usage-chart">
-      <figcaption class="muted small">Estimated cost per day · max {usd(max)}</figcaption>
-      <svg
-        viewBox={`0 0 ${String(props.days.length * w)} ${String(h)}`}
-        preserveAspectRatio="none"
-        role="img"
-        aria-label="Estimated cost per day"
-      >
-        {props.days.map((d, i) => {
-          const group = byDay.get(d);
-          const bar = max > 0 ? Math.max((cost(d) / max) * (h - 4), cost(d) > 0 ? 2 : 0) : 0;
-          return (
-            <rect key={d} x={i * w + 3} y={h - bar} width={w - 6} height={bar} rx={2}>
-              <title>{`${d}: ${group ? costLabel(group) : "no calls"}`}</title>
-            </rect>
-          );
-        })}
-      </svg>
-      <div class="usage-chart-axis muted small">
-        <span>{props.days[0]}</span>
-        <span>{props.days[props.days.length - 1]}</span>
+      <figcaption class="muted small">{title}</figcaption>
+      <div class="usage-plot" ref={box}>
+        {width > 0 && (
+          <svg
+            width={width}
+            height={TOP + PLOT + AXIS}
+            role="img"
+            aria-label={summary}
+            tabIndex={0}
+            onPointerMove={(e) => {
+              const x = e.clientX - e.currentTarget.getBoundingClientRect().left - LEFT;
+              const i = Math.floor(x / band);
+              setActive(i >= 0 && i < columns.length ? i : null);
+            }}
+            onPointerLeave={() => {
+              setActive(null);
+            }}
+            onFocus={() => {
+              setActive((a) => a ?? columns.length - 1);
+            }}
+            onBlur={() => {
+              setActive(null);
+            }}
+            onKeyDown={(e) => {
+              const to = keys[e.key];
+              if (to === undefined) return;
+              e.preventDefault();
+              setActive(Math.min(columns.length - 1, Math.max(0, to)));
+            }}
+          >
+            {active !== null && (
+              <rect class="hover" x={LEFT + band * active} y={TOP} width={band} height={PLOT} />
+            )}
+            {ticks.map((t) => (
+              <g key={t}>
+                <line class={t === 0 ? "base" : "grid"} x1={LEFT} x2={width} y1={y(t)} y2={y(t)} />
+                <text class="tick" x={LEFT - 8} y={y(t)}>
+                  {tickLabel(t, step, metric)}
+                </text>
+              </g>
+            ))}
+            {columns.map((c, i) => (
+              <g key={c.date}>
+                {segments(c, center(i) - bar / 2)}
+                {(columns.length - 1 - i) % every === 0 && (
+                  <text x={center(i)} y={TOP + PLOT + 18}>
+                    {dayLabel(c.date)}
+                  </text>
+                )}
+              </g>
+            ))}
+          </svg>
+        )}
+        <div aria-live="polite">
+          {at && active !== null && (
+            <div
+              class={`usage-tip${flip ? " flip" : ""}`}
+              style={{ left: center(active) + (flip ? -1 : 1) * (bar / 2 + 8) }}
+            >
+              <span class="muted">{dayLabel(at.date)}</span>
+              <b>
+                {value(at.total)}
+                {metric === "cost" && at.unknown ? " + unknown" : ""}
+              </b>
+              {series.length > 1 &&
+                series.map((s, i) => (
+                  <span key={s.key}>
+                    <i class={`usage-key ${slot(i)}`} />
+                    <b>{value(at.values[i] ?? 0)}</b> {s.label}
+                  </span>
+                ))}
+            </div>
+          )}
+        </div>
       </div>
+      {series.length > 1 && (
+        <div class="usage-legend">
+          {series.map((s, i) => (
+            <span key={s.key} title={s.label}>
+              <i class={`usage-swatch ${slot(i)}`} />
+              {s.label}
+            </span>
+          ))}
+        </div>
+      )}
     </figure>
   );
 }

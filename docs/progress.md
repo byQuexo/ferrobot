@@ -806,6 +806,12 @@ store used for the run) or the daemon's own env.
 - Desktop: a Usage view (chart icon next to Settings) with ranges, totals,
   a cost-per-day chart, sortable tables by provider, model and agent, CSV
   export and a price edit per model row.
+- Follow-up (`feat/usage-chart`): the chart stacks each day by the chosen
+  breakdown (the biggest five, or four plus "Other"), falls back to tokens
+  when no cost is known, and counts days in the daemon's `--timezone`
+  (`GET /v1/usage?daily=true`, new `days` and `timezone` fields). A price
+  without cache rates now leaves only the calls with cache tokens unknown,
+  so totals add up in every grouping, daily or not.
 
 **Tested**
 
@@ -843,7 +849,6 @@ store used for the run) or the daemon's own env.
   `cache_control` and non-JSON bodies stay untouched). Not tested against
   the real OpenRouter (no key used): whether cached tokens show up in its
   usage as documented.
-
 
 ## Release prep 0, second part: desktop and deferred files (`chore/desktop-lint`)
 
@@ -1027,3 +1032,23 @@ store used for the run) or the daemon's own env.
   `v13_usage_rows_keep_their_estimate` and the unit test
   `only_a_plausible_reported_cost_counts`.
 - Not tested: against the real OpenRouter API.
+
+## MCP catalog (`feat/mcp-catalog`)
+
+**Done**
+
+- Settings, Connectors: a catalog of 17 vendor-run MCP servers with a one-line
+  description and sign-in kind. "Add" creates the connector and, for OAuth,
+  opens the sign-in right away; GitHub goes on to Vault for its token. Entries
+  already added show "Added".
+
+**Tested**
+
+- Desktop unit tests: every entry is a valid connector name and HTTPS URL, no
+  duplicates; "added" by name or URL.
+- Live, through a throwaway daemon: the five keyless servers (Context7,
+  DeepWiki, Microsoft Learn, Cloudflare docs, Exa) listed their tools to an
+  agent through `/mcp`. Viewed the catalog in Chromium (light theme).
+- Not tested: a real OAuth sign-in with any catalog server (dynamic
+  registration with a loopback redirect is advertised but unproven per
+  server); the Tauri window.
