@@ -355,6 +355,7 @@ async fn forward(
         }
     };
     if !clean(&path) {
+        tracing::warn!(agent = %agent.name, "model call with an invalid path refused");
         return error(StatusCode::NOT_FOUND, "invalid path");
     }
     let route = match route(&state, &agent, &path).await {
@@ -362,6 +363,8 @@ async fn forward(
         Err((status, message)) => return error(status, &message),
     };
     if !permitted(&route.api, request.method(), &path) {
+        // Visible on the host: an SDK update may call an endpoint not listed yet.
+        tracing::warn!(agent = %agent.name, method = %request.method(), %path, "model call not proxied");
         return error(StatusCode::NOT_FOUND, "this API call is not proxied");
     }
 
