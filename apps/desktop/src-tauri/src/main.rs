@@ -66,9 +66,21 @@ fn start_daemon(bin: &Path, data_dir: &Path) -> std::io::Result<Child> {
     std::fs::create_dir_all(data_dir)?;
     let log = std::fs::File::create(data_dir.join("daemon.log"))?;
     Command::new(bin)
-        .args(["--backend", "docker", "--driver", "claude", "--listen", DAEMON])
+        .args([
+            "--backend",
+            "docker",
+            "--driver",
+            "claude",
+            "--listen",
+            DAEMON,
+        ])
         // Containers reach the agent API through host.docker.internal; it checks agent tokens.
-        .args(["--agent-listen", "0.0.0.0:7879", "--runner-image", RUNNER_IMAGE])
+        .args([
+            "--agent-listen",
+            "0.0.0.0:7879",
+            "--runner-image",
+            RUNNER_IMAGE,
+        ])
         .arg("--data-dir")
         .arg(data_dir)
         .stdout(log.try_clone()?)
