@@ -1,10 +1,5 @@
-//! Question cards: structured questions an agent shows the operator in its
-//! chat (the `ask_user` MCP tool). The operator's answer goes back to the
-//! agent as an ordinary user message.
-//!
-//! The shape is ferrobot's own, kept small on purpose, and maps 1:1 onto a
-//! subset of A2UI v1.0 (`ChoicePicker`, `TextField`, `Button`); see
-//! `protocol/README.md`.
+//! Question cards an agent shows the operator (`ask_user`); the answer returns as a user message.
+//! Maps 1:1 onto a subset of A2UI v1.0 (see `protocol/README.md`).
 
 use std::fmt::Write as _;
 

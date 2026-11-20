@@ -1,15 +1,21 @@
-// Tool permission policy. The sandbox (container/microVM) is the primary
-// security boundary; this policy adds guard rails inside it: obviously
-// destructive shell commands are refused and file tools stay inside $HOME.
+// Guard rails inside the sandbox, which stays the real security boundary: obviously destructive
+// shell commands are refused and file tools stay inside the agent's workspace.
 import { isAbsolute, relative, resolve } from "node:path";
 
 export type Decision = { allow: true } | { allow: false; reason: string };
 
 const DESTRUCTIVE_SHELL: readonly { pattern: RegExp; reason: string }[] = [
-  { pattern: /\brm\s+(-[a-z]*r[a-z]*f|-[a-z]*f[a-z]*r)[a-z]*\s+(\/|~|\$HOME)(\s|$)/i, reason: "recursive delete of / or $HOME" },
+  {
+    pattern:
+      /\brm\s+(?:-\S*\s+)*?(?:-[a-zA-Z]*[rR][a-zA-Z]*|--recursive)\s+(?:-\S*\s+)*["']?(?:\/|~\/?|\$HOME\/?|\$\{HOME\}\/?)\*?["']?(?=[\s;&|]|$)/,
+    reason: "recursive delete of / or $HOME",
+  },
   { pattern: /\bmkfs(\.\w+)?\b/, reason: "formatting a filesystem" },
   { pattern: /:\(\)\s*\{\s*:\|:&\s*\};:/, reason: "fork bomb" },
-  { pattern: /\b(curl|wget)\b[^|]*\|\s*(sudo\s+)?(ba|z)?sh\b/, reason: "piping a download into a shell" },
+  {
+    pattern: /\b(curl|wget)\b[^|]*\|\s*(sudo\s+)?(ba|z)?sh\b/,
+    reason: "piping a download into a shell",
+  },
   { pattern: /\bdd\s+[^\n]*of=\/dev\//, reason: "writing to a raw device" },
 ];
 
@@ -25,7 +31,7 @@ function stringField(input: Record<string, unknown>, key: string): string | unde
   return typeof value === "string" ? value : undefined;
 }
 
-/** Decides whether a tool call may run. Pure, so it is easy to test. */
+/** Decides whether a tool call may run; file tools must stay inside `home`. */
 export function decide(toolName: string, input: Record<string, unknown>, home: string): Decision {
   if (toolName.startsWith("mcp__ferrobot__")) return { allow: true };
 

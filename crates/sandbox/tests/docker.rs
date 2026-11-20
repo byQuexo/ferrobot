@@ -1,7 +1,5 @@
-//! Docker backend integration test.
-//!
-//! Needs a reachable Docker/Podman engine and a pullable `alpine` image:
-//! `cargo test -p ferrobot-sandbox --features docker-tests`
+//! Docker backend integration test; needs a Docker/Podman engine and the runner image
+//! (`FERROBOT_TEST_IMAGE`, default `ferrobot-runner:dev`): `--features docker-tests`.
 #![cfg(feature = "docker-tests")]
 
 use std::collections::BTreeMap;
@@ -17,7 +15,6 @@ use ferrobot_sandbox::{
 async fn container_lifecycle() {
     let snapshots = tempfile::tempdir().unwrap();
     let backend = DockerBackend::connect(DockerConfig {
-        // Any long-running image works for the lifecycle test.
         image: std::env::var("FERROBOT_TEST_IMAGE")
             .unwrap_or_else(|_| "ferrobot-runner:dev".into()),
         name_prefix: "ferrobot-test-".into(),
@@ -69,7 +66,6 @@ async fn container_lifecycle() {
     assert!(snap.id.starts_with("ferrobot-snapshot:"));
     assert!(snap.scope.contains("home"), "{}", snap.scope);
 
-    // Change the disk after the snapshot, then restore it.
     backend
         .write_file(&h, &path, b"changed")
         .await
@@ -126,6 +122,7 @@ async fn container_lifecycle() {
 }
 
 /// Warm sleep pauses in place; wake resumes; a paused container still stops cleanly.
+#[allow(clippy::unwrap_used, clippy::expect_used, reason = "test helper")]
 async fn warm_sleep_round_trip(backend: &DockerBackend, h: &ferrobot_sandbox::SandboxHandle) {
     let warm = backend.sleep(h, SleepLevel::Warm).await.expect("pause");
     assert_eq!(warm, SleepLevel::Warm);

@@ -1,10 +1,5 @@
-//! Host-side Codex: `ChatGPT` sign-in and access tokens come from the daemon
-//! host's own `codex app-server`, so `ChatGPT` credentials never enter a
-//! sandbox. The proxy adds them to requests from the in-sandbox Codex.
-//!
-//! Codex keeps its sign-in in `$CODEX_HOME/auth.json`. Here that file lives in
-//! the secret store; each app-server run gets a fresh private `CODEX_HOME`
-//! with it, and what Codex writes back (sign-in, refreshed tokens) is stored.
+//! Host-side `codex app-server` for `ChatGPT` sign-in, so its tokens never enter a sandbox.
+//! Its `auth.json` lives in the secret store and is copied into a private `CODEX_HOME` per run.
 
 use std::collections::HashMap;
 use std::path::Path;
@@ -329,7 +324,7 @@ async fn auth_status(state: &AppState, provider: Uuid, token: bool) -> Result<Va
             json!({"includeToken": token, "refreshToken": token}),
         )
         .await?;
-    // A refresh rewrote auth.json.
+    // A token refresh may have rewritten auth.json.
     home.save(state).await?;
     Ok(status)
 }

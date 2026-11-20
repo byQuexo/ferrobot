@@ -1,7 +1,5 @@
-// Guest agent for Firecracker sandboxes: one JSON request on stdin, one JSON
-// answer on stdout. Inside the microVM, socat serves it on vsock port 52
-// (see scripts/firecracker/ferrobot-init); the host side is
-// crates/sandbox/src/firecracker/guest.rs.
+// Firecracker guest agent: one JSON request on stdin, one answer on stdout, served by socat on vsock
+// port 52 (scripts/firecracker/ferrobot-init); the host side is crates/sandbox/src/firecracker/guest.rs.
 import { spawn } from "node:child_process";
 import { readFile, writeFile } from "node:fs/promises";
 import { homedir } from "node:os";
@@ -32,11 +30,17 @@ function run(cmd: string[], cwd: string, env: Record<string, string>): Promise<A
     }
     const out: Buffer[] = [];
     const err: Buffer[] = [];
-    const keep = (into: Buffer[]) => (chunk: Buffer): void => {
-      const have = into.reduce((n, b) => n + b.length, 0);
-      if (have < MAX_OUTPUT) into.push(chunk.subarray(0, MAX_OUTPUT - have));
-    };
-    const child = spawn(program, args, { cwd, env: { ...process.env, ...env }, stdio: ["ignore", "pipe", "pipe"] });
+    const keep =
+      (into: Buffer[]) =>
+      (chunk: Buffer): void => {
+        const have = into.reduce((n, b) => n + b.length, 0);
+        if (have < MAX_OUTPUT) into.push(chunk.subarray(0, MAX_OUTPUT - have));
+      };
+    const child = spawn(program, args, {
+      cwd,
+      env: { ...process.env, ...env },
+      stdio: ["ignore", "pipe", "pipe"],
+    });
     child.stdout.on("data", keep(out));
     child.stderr.on("data", keep(err));
     child.on("error", (e) => {

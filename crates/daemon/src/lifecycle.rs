@@ -1,8 +1,5 @@
 //! Agent sandbox lifecycle: provision, wake, sleep, restore, destroy, reconcile.
-//!
-//! Status semantics: `running` means the agent should be awake (the
-//! supervisor restarts a crashed sandbox), `stopped` means it sleeps until
-//! the next message or an explicit wake.
+//! `running` means the agent should be awake (a crashed sandbox is restarted).
 
 use std::collections::BTreeMap;
 
@@ -14,7 +11,7 @@ use serde_json::json;
 use crate::error::ApiError;
 use crate::{AppState, UiEvent};
 
-/// 256-bit random bearer token (two v4 UUIDs, hex encoded).
+/// Random bearer token: two v4 UUIDs, 244 random bits in 64 hex chars.
 fn new_token() -> String {
     format!(
         "{}{}",
@@ -287,7 +284,6 @@ pub async fn snapshot(
     Ok(record)
 }
 
-/// Replaces the sandbox with one booted from a snapshot.
 /// Rebuilds the sandbox (disk kept) so a new provider or model takes
 /// effect; a running agent comes back up right away.
 pub async fn recreate(state: &AppState, id: AgentId) -> Result<(), ApiError> {
@@ -305,6 +301,7 @@ pub async fn recreate(state: &AppState, id: AgentId) -> Result<(), ApiError> {
     Ok(())
 }
 
+/// Replaces the sandbox with one booted from a snapshot.
 pub async fn restore(state: &AppState, id: AgentId, snapshot_id: i64) -> Result<(), ApiError> {
     let lock = state.hub.lifecycle_lock(id);
     let _guard = lock.lock().await;

@@ -1,9 +1,5 @@
-//! Development backend: the runner runs as a host child process.
-//!
-//! Each sandbox is a directory `<root>/<name>/` that stands in for the
-//! machine's filesystem (`/` inside the sandbox maps onto it) and `$HOME` is
-//! `<root>/<name>/home`. There is **no isolation**: use it for development
-//! and CI, never for untrusted agents.
+//! Development backend: the runner is a host child process; sandbox `/` is `<root>/<name>/`.
+//! There is **no isolation**: use it for development and CI, never for untrusted agents.
 
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};

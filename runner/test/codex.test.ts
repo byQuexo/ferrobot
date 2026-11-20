@@ -56,14 +56,22 @@ function setup(bin = BIN) {
       .split("\n")
       .map((line) => JSON.parse(line) as Received);
   const sent = (method: string): Received[] => received().filter((m) => m.method === method);
-  const answer = (id: string): Received | undefined => received().find((m) => m.id === id && !m.method);
+  const answer = (id: string): Received | undefined =>
+    received().find((m) => m.id === id && !m.method);
   return { driver, script, received, sent, answer, workspaceDir, codexHome };
 }
 
 function context(overrides: Partial<TurnContext> = {}): { ctx: TurnContext; events: TurnEvent[] } {
   const events: TurnEvent[] = [];
   const ctx: TurnContext = {
-    turn: { type: "turn", turn_id: "t1", message_id: 7, sender: { kind: "user" }, sender_name: "user", body: "hi" },
+    turn: {
+      type: "turn",
+      turn_id: "t1",
+      message_id: 7,
+      sender: { kind: "user" },
+      sender_name: "user",
+      body: "hi",
+    },
     instructions: "Be brief.",
     agentName: "alice",
     sessionId: null,
@@ -81,7 +89,12 @@ const turnDone = (status = "completed", error: Params | null = null): Step => ({
   notify: "turn/completed",
   params: { turn: { status, error, items: [] } },
 });
-const command = (id: string, cmd: string, status: string, aggregatedOutput: string | null = null): Params => ({
+const command = (
+  id: string,
+  cmd: string,
+  status: string,
+  aggregatedOutput: string | null = null,
+): Params => ({
   type: "commandExecution",
   id,
   command: cmd,
@@ -104,7 +117,10 @@ describe("CodexDriver", () => {
         [
           { notify: "turn/started", params: { turn: { status: "inProgress" } } },
           // The tail of another turn must not end this one.
-          { notify: "turn/completed", params: { turnId: "turn-old", turn: { id: "turn-old", status: "failed" } } },
+          {
+            notify: "turn/completed",
+            params: { turnId: "turn-old", turn: { id: "turn-old", status: "failed" } },
+          },
           { notify: "item/agentMessage/delta", params: { itemId: "msg-1", delta: "Hel" } },
           { notify: "item/agentMessage/delta", params: { itemId: "msg-1", delta: "lo" } },
           completed(message("Hello")),
@@ -122,7 +138,11 @@ describe("CodexDriver", () => {
     ]);
 
     const [spawned, init, initialized, start, turn] = received();
-    assert.deepEqual(spawned, { argv: ["app-server"], cwd: realpathSync(workspaceDir), token: "agent-token" });
+    assert.deepEqual(spawned, {
+      argv: ["app-server"],
+      cwd: realpathSync(workspaceDir),
+      token: "agent-token",
+    });
     assert.equal(init?.method, "initialize");
     assert.equal((init.params?.["clientInfo"] as { name: string }).name, "ferrobot");
     assert.deepEqual(initialized, { method: "initialized" });
@@ -136,13 +156,26 @@ describe("CodexDriver", () => {
     assert.equal(sent("thread/resume").length, 0);
 
     const config = readFileSync(join(codexHome, "config.toml"), "utf8");
-    assert.equal(config, codexConfigToml({ model: "gpt-test", baseUrl: new URL("http://daemon:7879/model"), mcpUrl: new URL("http://daemon:7879/mcp") }));
+    assert.equal(
+      config,
+      codexConfigToml({
+        model: "gpt-test",
+        baseUrl: new URL("http://daemon:7879/model"),
+        mcpUrl: new URL("http://daemon:7879/mcp"),
+      }),
+    );
     assert.ok(!config.includes("agent-token"), "no secret in config.toml");
   });
 
   it("resumes an existing thread once per process", async () => {
     const { driver, script, sent } = setup();
-    script({ resumable: ["thread-old"], turns: [[completed(message("one")), turnDone()], [completed(message("two")), turnDone()]] });
+    script({
+      resumable: ["thread-old"],
+      turns: [
+        [completed(message("one")), turnDone()],
+        [completed(message("two")), turnDone()],
+      ],
+    });
     const first = await driver.runTurn(context({ sessionId: "thread-old" }).ctx);
     const second = await driver.runTurn(context({ sessionId: "thread-old" }).ctx);
     assert.deepEqual(first, { result: "one", sessionId: "thread-old" });
@@ -239,7 +272,11 @@ describe("CodexDriver", () => {
     assert.deepEqual(
       events.filter((e) => e.kind === "tool_denied"),
       [
-        { kind: "tool_denied", name: "apply_patch", reason: `blocked: Write outside ${workspaceDir}` },
+        {
+          kind: "tool_denied",
+          name: "apply_patch",
+          reason: `blocked: Write outside ${workspaceDir}`,
+        },
         { kind: "tool_denied", name: "apply_patch", reason: "blocked: unknown file change" },
       ],
     );
@@ -282,7 +319,10 @@ describe("CodexDriver", () => {
       },
     });
     await assert.rejects(driver.runTurn(ctx), TurnAbortedError);
-    assert.deepEqual(sent("turn/interrupt")[0]?.params, { threadId: "thread-new", turnId: "turn-1" });
+    assert.deepEqual(sent("turn/interrupt")[0]?.params, {
+      threadId: "thread-new",
+      turnId: "turn-1",
+    });
 
     const next = await driver.runTurn(context({ sessionId: "thread-new" }).ctx);
     assert.deepEqual(next, { result: "again", sessionId: "thread-new" });
@@ -299,7 +339,12 @@ describe("CodexDriver", () => {
 
   it("starts a fresh app-server after a reconfigure (new tools)", async () => {
     const { driver, script, sent } = setup();
-    script({ turns: [[completed(message("one")), turnDone()], [completed(message("two")), turnDone()]] });
+    script({
+      turns: [
+        [completed(message("one")), turnDone()],
+        [completed(message("two")), turnDone()],
+      ],
+    });
     await driver.runTurn(context().ctx);
     driver.reconfigure();
     const out = await driver.runTurn(context({ sessionId: "thread-new" }).ctx);
@@ -309,7 +354,10 @@ describe("CodexDriver", () => {
 
   it("says so when codex is not installed", async () => {
     const { driver } = setup(join(tmpdir(), "no-such-dir", "codex"));
-    await assert.rejects(driver.runTurn(context().ctx), /codex is not installed in this sandbox image/);
+    await assert.rejects(
+      driver.runTurn(context().ctx),
+      /codex is not installed in this sandbox image/,
+    );
   });
 });
 
@@ -345,7 +393,11 @@ describe("codexConfigToml", () => {
   });
 
   it("escapes quotes in values", () => {
-    const toml = codexConfigToml({ model: 'a"b\\c', baseUrl: new URL("http://x/"), mcpUrl: new URL("http://x/mcp") });
+    const toml = codexConfigToml({
+      model: 'a"b\\c',
+      baseUrl: new URL("http://x/"),
+      mcpUrl: new URL("http://x/mcp"),
+    });
     assert.match(toml, /^model = "a\\"b\\\\c"$/m);
   });
 });
@@ -360,8 +412,14 @@ describe("codex config", () => {
 
   it("needs FERROBOT_MODEL and FERROBOT_CODEX_BASE_URL", () => {
     assert.throws(() => loadConfig({ ...base, ...url }), /FERROBOT_MODEL/);
-    assert.throws(() => loadConfig({ ...base, FERROBOT_MODEL: "gpt-5.5" }), /FERROBOT_CODEX_BASE_URL/);
-    assert.throws(() => loadConfig({ ...base, FERROBOT_MODEL: "gpt-5.5", FERROBOT_CODEX_BASE_URL: "ftp://x" }), ConfigError);
+    assert.throws(
+      () => loadConfig({ ...base, FERROBOT_MODEL: "gpt-5.5" }),
+      /FERROBOT_CODEX_BASE_URL/,
+    );
+    assert.throws(
+      () => loadConfig({ ...base, FERROBOT_MODEL: "gpt-5.5", FERROBOT_CODEX_BASE_URL: "ftp://x" }),
+      ConfigError,
+    );
     const config = loadConfig({ ...base, ...url, FERROBOT_MODEL: "gpt-5.5" });
     assert.ok(config.driver === "codex");
     assert.equal(config.model, "gpt-5.5");
@@ -370,7 +428,12 @@ describe("codex config", () => {
   });
 
   it("takes the binary from FERROBOT_CODEX_BIN", () => {
-    const config = loadConfig({ ...base, ...url, FERROBOT_MODEL: "m", FERROBOT_CODEX_BIN: "/opt/codex/bin/codex" });
+    const config = loadConfig({
+      ...base,
+      ...url,
+      FERROBOT_MODEL: "m",
+      FERROBOT_CODEX_BIN: "/opt/codex/bin/codex",
+    });
     assert.ok(config.driver === "codex");
     assert.equal(config.codexBin, "/opt/codex/bin/codex");
   });

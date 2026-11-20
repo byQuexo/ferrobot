@@ -38,7 +38,13 @@ const send = (msg: Record<string, unknown>): void => {
   process.stdout.write(`${JSON.stringify(msg)}\n`);
 };
 
-record(JSON.stringify({ argv: process.argv.slice(2), cwd: process.cwd(), token: process.env["FERROBOT_AGENT_TOKEN"] }));
+record(
+  JSON.stringify({
+    argv: process.argv.slice(2),
+    cwd: process.cwd(),
+    token: process.env["FERROBOT_AGENT_TOKEN"],
+  }),
+);
 
 const lines = createInterface({ input: process.stdin })[Symbol.asyncIterator]();
 async function read(): Promise<Msg | null> {
@@ -81,7 +87,15 @@ for (let msg = await read(); msg; msg = await read()) {
   const params = msg.params ?? {};
   switch (msg.method ?? "") {
     case "initialize":
-      send({ id: msg.id, result: { userAgent: "fake-codex", codexHome: home, platformFamily: "unix", platformOs: "linux" } });
+      send({
+        id: msg.id,
+        result: {
+          userAgent: "fake-codex",
+          codexHome: home,
+          platformFamily: "unix",
+          platformOs: "linux",
+        },
+      });
       break;
     case "thread/start":
       thread = "thread-new";
@@ -98,11 +112,19 @@ for (let msg = await read(); msg; msg = await read()) {
       break;
     }
     case "turn/start": {
-      const count = readFileSync(logFile, "utf8").split("\n").filter((l) => l.includes('"method":"turn/start"')).length;
+      const count = readFileSync(logFile, "utf8")
+        .split("\n")
+        .filter((l) => l.includes('"method":"turn/start"')).length;
       const turn = `turn-${String(count)}`;
-      send({ id: msg.id, result: { turn: { id: turn, status: "inProgress", items: [], error: null } } });
+      send({
+        id: msg.id,
+        result: { turn: { id: turn, status: "inProgress", items: [], error: null } },
+      });
       // Like Codex; items can arrive before the driver has read the response above.
-      send({ method: "turn/started", params: { threadId: thread, turn: { id: turn, status: "inProgress" } } });
+      send({
+        method: "turn/started",
+        params: { threadId: thread, turn: { id: turn, status: "inProgress" } },
+      });
       await play(scenario.turns[count - 1] ?? [], turn);
       break;
     }

@@ -53,8 +53,16 @@ function httpUrl(env: NodeJS.ProcessEnv, key: string): URL {
 export function loadConfig(env: NodeJS.ProcessEnv = process.env): RunnerConfig {
   const daemonUrl = httpUrl(env, "FERROBOT_DAEMON_URL");
   const driver = env["FERROBOT_DRIVER"] ?? "mock";
-  if (driver !== "mock" && driver !== "claude" && driver !== "openai" && driver !== "codex" && driver !== "acp") {
-    throw new ConfigError(`FERROBOT_DRIVER must be "mock", "claude", "openai", "codex" or "acp", got ${driver}`);
+  if (
+    driver !== "mock" &&
+    driver !== "claude" &&
+    driver !== "openai" &&
+    driver !== "codex" &&
+    driver !== "acp"
+  ) {
+    throw new ConfigError(
+      `FERROBOT_DRIVER must be "mock", "claude", "openai", "codex" or "acp", got ${driver}`,
+    );
   }
   if (driver === "claude" && !env["ANTHROPIC_API_KEY"]) {
     throw new ConfigError("FERROBOT_DRIVER=claude needs ANTHROPIC_API_KEY");
@@ -87,7 +95,8 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): RunnerConfig {
   }
   if (driver === "acp") {
     const agent = required(env, "FERROBOT_ACP_AGENT");
-    if (agent !== "gemini") throw new ConfigError(`FERROBOT_ACP_AGENT must be "gemini", got ${agent}`);
+    if (agent !== "gemini")
+      throw new ConfigError(`FERROBOT_ACP_AGENT must be "gemini", got ${agent}`);
     // Without the proxy URL Gemini would send the agent token to Google itself.
     httpUrl(env, "GOOGLE_GEMINI_BASE_URL");
     required(env, "GEMINI_API_KEY");

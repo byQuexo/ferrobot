@@ -1,9 +1,5 @@
-//! `@name` mentions, stored by agent id so they survive renames.
-//!
-//! When a text is persisted, `@name` (case-insensitive) is replaced with the
-//! token `<@agent-id>` if an agent of that name exists; unknown names stay
-//! plain text. Clients render tokens with the agent's current name; texts
-//! handed to a model get them back as `@current-name` ([`render`]).
+//! `@name` mentions, stored as `<@agent-id>` tokens so they survive renames; unknown
+//! names stay plain text. [`render`] turns tokens back into `@current-name`.
 
 use crate::AgentId;
 
@@ -15,10 +11,8 @@ fn is_name_byte(b: u8) -> bool {
     b.is_ascii_alphanumeric() || b == b'-'
 }
 
-/// Replaces `@name` with `<@id>` where `lookup` (given the lower-cased name)
-/// knows the agent. A mention must not follow a word character (so e-mail
-/// addresses are left alone). `**name**` and `` `name` `` become mentions
-/// too, markers dropped: models emphasise names instead of writing `@`.
+/// Replaces `@name` (not after a word character, so e-mail stays) with `<@id>` where `lookup`
+/// knows the lower-cased name; `**name**` and `` `name` `` count too, as models emphasise names.
 pub fn normalize(text: &str, lookup: impl Fn(&str) -> Option<AgentId>) -> String {
     let text = wrapped(text, "**", &lookup);
     let text = wrapped(&text, "`", &lookup);

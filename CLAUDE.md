@@ -46,8 +46,8 @@ scripts/         seed-demo.sh, smoke-docker.sh, smoke-live.sh
 ```
 
 Principles:
-- **Core crates stay plain**: `core`, `store`, `sandbox` (and `mcp`) must not
-  depend on Tauri or axum, so they stay embeddable (e.g. a future UniFFI
+- **Core crates stay plain**: `core`, `store` and `sandbox` must not
+  depend on Tauri or axum (`mcp` serves over axum, never Tauri), so they stay embeddable (e.g. a future UniFFI
   binding). API derives are behind features (`core`/`sandbox`: `schema` for
   utoipa, `core`: `mcp` for schemars). CI checks
   `cargo check -p ferrobot-core -p ferrobot-store -p ferrobot-sandbox`.
@@ -90,6 +90,9 @@ Principles:
 - `apps/desktop/src/app.tsx`, `src/api.ts`, `src/components/`, `src/lib/timeline.ts`.
 
 ## Code conventions
+
+The rules are in [`docs/CONVENTIONS.md`](docs/CONVENTIONS.md); the points below
+are the repo-specific ones.
 
 - Rust 2024, stable toolchain (`rust-toolchain.toml`), `rustfmt.toml`.
 - `unsafe_code = "forbid"`; clippy `pedantic` is on and CI uses `-D warnings`.
@@ -137,7 +140,7 @@ cargo test -p ferrobot-daemon --features docker-tests --test e2e -- --ignored
 sudo scripts/firecracker/build-rootfs.sh   # Linux only; see scripts/firecracker/README.md
 ```
 
-Runner (`runner/`): `npm ci && npm run lint && npm run typecheck && npm test && npm run build`
+Runner (`runner/`): `npm ci && npm run lint && npm run format:check && npm run typecheck && npm test && npm run build`
 
 Desktop (`apps/desktop/`): `npm ci && npm run check:api && npm run typecheck && npm test && npm run build`;
 Tauri shell: `cd src-tauri && cargo fmt --check && cargo clippy --all-targets -- -D warnings`.

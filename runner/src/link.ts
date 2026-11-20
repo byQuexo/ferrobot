@@ -33,7 +33,12 @@ export class DaemonLink {
   #closed = false;
   #timer: NodeJS.Timeout | null = null;
 
-  constructor(url: URL, token: string, handlers: LinkHandlers, backoff: BackoffOptions = { initialMs: 500, maxMs: 30_000 }) {
+  constructor(
+    url: URL,
+    token: string,
+    handlers: LinkHandlers,
+    backoff: BackoffOptions = { initialMs: 500, maxMs: 30_000 },
+  ) {
     this.#url = url;
     this.#token = token;
     this.#handlers = handlers;
@@ -93,7 +98,9 @@ export class DaemonLink {
     if (this.#closed) return;
     const delay = backoffDelay(this.#attempt++, this.#backoff);
     log.info("reconnecting", { inMs: delay });
-    this.#timer = setTimeout(() => { this.#connect(); }, delay);
+    this.#timer = setTimeout(() => {
+      this.#connect();
+    }, delay);
   }
 }
 

@@ -110,7 +110,10 @@ for (let msg = await read(); msg; msg = await read()) {
         id: msg.id,
         result: {
           protocolVersion: scenario.protocolVersion ?? 1,
-          agentCapabilities: scenario.agentCapabilities ?? { loadSession: true, mcpCapabilities: { http: true, sse: true } },
+          agentCapabilities: scenario.agentCapabilities ?? {
+            loadSession: true,
+            mcpCapabilities: { http: true, sse: true },
+          },
           authMethods: scenario.authMethods ?? [
             { id: "oauth-personal", name: "Log in with Google" },
             { id: "gemini-api-key", name: "Gemini API key" },
@@ -141,11 +144,14 @@ for (let msg = await read(); msg; msg = await read()) {
       break;
     }
     case "session/prompt": {
-      const count = readFileSync(logFile, "utf8").split("\n").filter((l) => l.includes('"method":"session/prompt"')).length;
+      const count = readFileSync(logFile, "utf8")
+        .split("\n")
+        .filter((l) => l.includes('"method":"session/prompt"')).length;
       send({ id: msg.id, ...(await play(scenario.turns[count - 1] ?? [])) });
       break;
     }
     default:
-      if (msg.id !== undefined) send({ id: msg.id, error: { code: -32601, message: `no ${String(msg.method)}` } });
+      if (msg.id !== undefined)
+        send({ id: msg.id, error: { code: -32601, message: `no ${String(msg.method)}` } });
   }
 }

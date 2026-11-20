@@ -226,6 +226,7 @@ impl AppState {
             settings: Arc::new(settings),
             scheduler: Arc::new(Notify::new()),
             // A redirect would carry the provider key to another host.
+            #[allow(clippy::panic, reason = "startup: no TLS backend means no daemon")]
             http: reqwest::Client::builder()
                 .redirect(reqwest::redirect::Policy::none())
                 .build()

@@ -1,31 +1,13 @@
 #!/usr/bin/env bash
-# Live smoke test: real models, real Docker sandboxes, a throwaway daemon.
-#
-#   scripts/smoke-live.sh      # in your own terminal
-#
-# It asks for the Anthropic API key without echoing it, so the key stays out
-# of the terminal and the shell history (Enter skips the Claude part); an
-# ANTHROPIC_API_KEY already in the environment is used as is. The key goes the
-# way a key from Settings goes: into an Anthropic provider, stored by the
-# daemon in the OS keychain (macOS Keychain, Windows Credential Manager,
-# Secret Service). The daemon itself gets no ANTHROPIC_API_KEY. The provider
-# and its keychain entry are deleted at the end.
-#
-# 1. A Claude agent (on that provider) runs one
-#    tool-using turn: it writes a file with its shell tool and reports it.
-# 2. An agent on local Ollama (OpenAI-compatible driver) does the same, if
-#    Ollama runs and has OLLAMA_MODEL (default qwen2.5:3b; `ollama pull` it).
-# 3. The real key must not appear in the container env, its files (root
-#    filesystem and home volume), container logs, the daemon log or the data
-#    dir. The key is never printed.
-#
-# Needs Docker; rebuilds the runner image first (SKIP_BUILD=1 skips that).
-# Uses ports 17878/17879, so a running ferrobot is left alone. Cleans up
-# after itself.
+# Live smoke test in your own terminal: Claude (key read hidden, kept only in a keychain provider) and Ollama
+# agents in Docker; fails if the key leaks. Env: SKIP_BUILD, OLLAMA_MODEL, FERROBOT_SMOKE_PORT/_AGENT_PORT.
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
-API=http://127.0.0.1:17878
+# Not 7878/7879, so a running ferrobot is left alone.
+PORT=${FERROBOT_SMOKE_PORT:-17878}
+AGENT_PORT=${FERROBOT_SMOKE_AGENT_PORT:-17879}
+API=http://127.0.0.1:$PORT
 DATA=$(mktemp -d)
 BIN=target/debug/ferrobotd
 OLLAMA_MODEL=${OLLAMA_MODEL:-qwen2.5:3b}
@@ -43,7 +25,7 @@ cargo build -q -p ferrobot-daemon
 
 # No key in the daemon's environment: Claude works only through the keychain.
 env -u ANTHROPIC_API_KEY "$BIN" --data-dir "$DATA" --backend docker --driver claude --idle-timeout 0 \
-  --secret-store keyring --listen 127.0.0.1:17878 --agent-listen 0.0.0.0:17879 \
+  --secret-store keyring --listen "127.0.0.1:$PORT" --agent-listen "0.0.0.0:$AGENT_PORT" \
   --api-token "$TOKEN" >>"$DATA/daemon.log" 2>&1 &
 PID=$!
 stop_daemon() {
@@ -94,10 +76,8 @@ turn() { # turn <agent-id> <label>
     && ok "$label wrote the file in its sandbox" || fail "$label did not write the file"
 }
 
-# The real key must be nowhere the agent or a log could see it. grep -c reads
-# the whole stream (no early exit, no SIGPIPE under pipefail); a source that
-# cannot be read counts as a failure, not as clean. The pattern comes from a
-# pipe, not argv, so the key never shows up in `ps`.
+# grep -c reads the whole stream (no SIGPIPE under pipefail) and an unreadable source fails, not passes.
+# The pattern comes from a pipe, not argv, so the key never shows up in `ps`.
 leak_check() { # leak_check <what> <command...>
   local what=$1 count; shift
   if ! count=$("$@" 2>/dev/null | grep -acFf <(printf '%s\n' "$KEY"); exit "${PIPESTATUS[0]}"); then

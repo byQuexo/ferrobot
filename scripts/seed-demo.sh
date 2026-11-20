@@ -1,8 +1,6 @@
 #!/usr/bin/env bash
-# Seeds a running daemon (mock driver works) with a few demo agents and some
-# real activity: agent-to-agent mail, tool calls, memory, routines, a sleeping
-# agent. Used for the screenshots in docs/. Usage: scripts/seed-demo.sh [avatar.png]
-# Token: FERROBOT_API_TOKEN, else $FERROBOT_DATA_DIR/api-token (default .ferrobot).
+# Seeds a running daemon (mock driver works) with demo agents and activity for the screenshots in docs/.
+# Usage: scripts/seed-demo.sh [avatar.png]; token: FERROBOT_API_TOKEN, else $FERROBOT_DATA_DIR/api-token.
 set -euo pipefail
 API=${FERROBOT_API:-http://127.0.0.1:7878}
 TOKEN=${FERROBOT_API_TOKEN:-$(cat "${FERROBOT_DATA_DIR:-.ferrobot}/api-token")}

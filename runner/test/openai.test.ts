@@ -95,7 +95,14 @@ function setup(opts: Setup = {}) {
 function context(overrides: Partial<TurnContext> = {}): { ctx: TurnContext; events: TurnEvent[] } {
   const events: TurnEvent[] = [];
   const ctx: TurnContext = {
-    turn: { type: "turn", turn_id: "t1", message_id: 7, sender: { kind: "user" }, sender_name: "user", body: "hi" },
+    turn: {
+      type: "turn",
+      turn_id: "t1",
+      message_id: 7,
+      sender: { kind: "user" },
+      sender_name: "user",
+      body: "hi",
+    },
     instructions: "Be brief.",
     agentName: "alice",
     sessionId: null,
@@ -131,13 +138,19 @@ describe("OpenAIDriver", () => {
     assert.equal(system.role, "system");
     assert.match(system.content, /bash, read_file and write_file/);
     assert.match(system.content, /"alice"[\s\S]*Be brief\./);
-    assert.deepEqual(at(req.body.messages, 1), { role: "user", content: "Message #7 from user:\n\nhi" });
+    assert.deepEqual(at(req.body.messages, 1), {
+      role: "user",
+      content: "Message #7 from user:\n\nhi",
+    });
   });
 
   it("runs bash in the workspace and sends the result back", async () => {
     const { driver, sent, workspaceDir } = setup({
       replies: [
-        [call(0, { name: "bash", arguments: '{"comm' }, "call_1"), call(0, { arguments: 'and":"echo hi; pwd"}' })],
+        [
+          call(0, { name: "bash", arguments: '{"comm' }, "call_1"),
+          call(0, { arguments: 'and":"echo hi; pwd"}' }),
+        ],
         [text("done")],
       ],
     });
@@ -161,7 +174,13 @@ describe("OpenAIDriver", () => {
     assert.deepEqual(at(followUp, 2), {
       role: "assistant",
       content: "",
-      tool_calls: [{ id: "call_1", type: "function", function: { name: "bash", arguments: '{"command":"echo hi; pwd"}' } }],
+      tool_calls: [
+        {
+          id: "call_1",
+          type: "function",
+          function: { name: "bash", arguments: '{"command":"echo hi; pwd"}' },
+        },
+      ],
     });
     const tool = at(followUp, 3);
     assert.ok(tool.role === "tool");
@@ -178,7 +197,12 @@ describe("OpenAIDriver", () => {
       ],
     });
     const late = (id: number, body: string) => ({
-      type: "steer" as const, turn_id: "t1", message_id: id, sender: { kind: "user" as const }, sender_name: "user", body,
+      type: "steer" as const,
+      turn_id: "t1",
+      message_id: id,
+      sender: { kind: "user" as const },
+      sender_name: "user",
+      body,
     });
     // Taken after the tool round, after the first answer, after the second.
     const inbox = [[late(8, "also hotels")], [late(9, "and trains")], []];
@@ -186,7 +210,11 @@ describe("OpenAIDriver", () => {
     const out = await driver.runTurn(ctx);
     assert.equal(out.result, "Trains too: 2 options.");
     assert.equal(sent.length, 3);
-    const lastUser = (i: number) => at(at(sent, i).body.messages.filter((m) => m.role === "user"), -1).content;
+    const lastUser = (i: number) =>
+      at(
+        at(sent, i).body.messages.filter((m) => m.role === "user"),
+        -1,
+      ).content;
     assert.equal(lastUser(1), "Message #8 from user, sent while you were working:\n\nalso hotels");
     assert.equal(lastUser(2), "Message #9 from user, sent while you were working:\n\nand trains");
   });
@@ -203,7 +231,11 @@ describe("OpenAIDriver", () => {
     });
     await driver.runTurn(context().ctx);
     assert.equal(readFileSync(join(workspaceDir, "notes/a.txt"), "utf8"), "x");
-    assert.deepEqual(at(at(sent, 1).body.messages, 4), { role: "tool", tool_call_id: "r", content: "x" });
+    assert.deepEqual(at(at(sent, 1).body.messages, 4), {
+      role: "tool",
+      tool_call_id: "r",
+      content: "x",
+    });
   });
 
   it("refuses calls the policy blocks and tells the model why", async () => {
@@ -219,7 +251,9 @@ describe("OpenAIDriver", () => {
     const { ctx, events } = context();
     await driver.runTurn(ctx);
     assert.deepEqual(
-      events.filter((e) => e.kind !== "assistant_delta" && e.kind !== "assistant_text").map((e) => e.kind),
+      events
+        .filter((e) => e.kind !== "assistant_delta" && e.kind !== "assistant_text")
+        .map((e) => e.kind),
       ["tool_denied", "tool_denied"],
     );
     const tools = at(sent, 1).body.messages.filter((m) => m.role === "tool");
@@ -243,14 +277,21 @@ describe("OpenAIDriver", () => {
         ],
         [text("sent")],
       ],
-      mcpCall: (name) => (name === "recall" ? Promise.reject(new Error("recall broke")) : Promise.resolve({ ok: true })),
+      mcpCall: (name) =>
+        name === "recall"
+          ? Promise.reject(new Error("recall broke"))
+          : Promise.resolve({ ok: true }),
     });
     const { ctx, events } = context();
     const out = await driver.runTurn(ctx);
     assert.equal(out.result, "sent");
     assert.deepEqual(at(at(sent, 0).body.tools, 3), {
       type: "function",
-      function: { name: "mcp__ferrobot__send_message", description: "Send a message", parameters: schema },
+      function: {
+        name: "mcp__ferrobot__send_message",
+        description: "Send a message",
+        parameters: schema,
+      },
     });
     assert.deepEqual(mcpCalls, [
       ["send_message", { to: "bob" }],
@@ -290,7 +331,9 @@ describe("OpenAIDriver", () => {
     const resumed = await second.driver.runTurn(context({ sessionId: id }).ctx);
     assert.equal(resumed.sessionId, id);
     assert.deepEqual(
-      at(second.sent, 0).body.messages.slice(1).map((m) => [m.role, m.content]),
+      at(second.sent, 0)
+        .body.messages.slice(1)
+        .map((m) => [m.role, m.content]),
       [
         ["user", "Message #7 from user:\n\nhi"],
         ["assistant", "first"],
@@ -306,11 +349,16 @@ describe("OpenAIDriver", () => {
 
   it("kills a running command on abort", async () => {
     const abort = new AbortController();
-    const { driver } = setup({ replies: [[call(0, { name: "bash", arguments: '{"command":"sleep 30; echo late"}' }, "z")]] });
+    const { driver } = setup({
+      replies: [[call(0, { name: "bash", arguments: '{"command":"sleep 30; echo late"}' }, "z")]],
+    });
     const { ctx } = context({
       signal: abort.signal,
       emit: (e) => {
-        if (e.kind === "tool_use") setTimeout(() => { abort.abort(); }, 50);
+        if (e.kind === "tool_use")
+          setTimeout(() => {
+            abort.abort();
+          }, 50);
       },
     });
     const started = Date.now();
@@ -345,16 +393,23 @@ describe("OpenAIDriver", () => {
     const abort = new AbortController();
     const hanging = ((_url: string, init: RequestInit) =>
       new Promise<Response>((_resolve, reject) => {
-        init.signal?.addEventListener("abort", () => { reject(new Error("aborted")); });
+        init.signal?.addEventListener("abort", () => {
+          reject(new Error("aborted"));
+        });
       })) as typeof fetch;
     const { driver } = setup({ fetch: hanging });
     const run = driver.runTurn(context({ signal: abort.signal }).ctx);
-    setTimeout(() => { abort.abort(); }, 10);
+    setTimeout(() => {
+      abort.abort();
+    }, 10);
     await assert.rejects(run, TurnAbortedError);
   });
 
   it("reports HTTP errors with status and message", async () => {
-    const envelope = JSON.stringify({ type: "error", error: { type: "api_error", message: "upstream down" } });
+    const envelope = JSON.stringify({
+      type: "error",
+      error: { type: "api_error", message: "upstream down" },
+    });
     const { driver } = setup({ replies: [new Response(envelope, { status: 502 })] });
     await assert.rejects(driver.runTurn(context().ctx), /502: upstream down/);
   });
@@ -377,7 +432,10 @@ describe("openai config", () => {
   it("needs FERROBOT_MODEL and FERROBOT_OPENAI_BASE_URL", () => {
     const url = { FERROBOT_OPENAI_BASE_URL: "http://host.docker.internal:7879/model" };
     assert.throws(() => loadConfig({ ...base, ...url }), /FERROBOT_MODEL/);
-    assert.throws(() => loadConfig({ ...base, FERROBOT_MODEL: "gpt-5" }), /FERROBOT_OPENAI_BASE_URL/);
+    assert.throws(
+      () => loadConfig({ ...base, FERROBOT_MODEL: "gpt-5" }),
+      /FERROBOT_OPENAI_BASE_URL/,
+    );
     assert.throws(
       () => loadConfig({ ...base, FERROBOT_MODEL: "gpt-5", FERROBOT_OPENAI_BASE_URL: "not a url" }),
       ConfigError,
@@ -394,8 +452,14 @@ describe("plainSchema", () => {
     const schema = {
       $schema: "https://json-schema.org/draft/2020-12/schema",
       type: "object",
-      properties: { card: { $ref: "#/$defs/Card" }, tags: { type: "array", items: { $ref: "#/$defs/Tag" } } },
-      $defs: { Card: { type: "object", properties: { tag: { $ref: "#/$defs/Tag" } } }, Tag: { type: "string" } },
+      properties: {
+        card: { $ref: "#/$defs/Card" },
+        tags: { type: "array", items: { $ref: "#/$defs/Tag" } },
+      },
+      $defs: {
+        Card: { type: "object", properties: { tag: { $ref: "#/$defs/Tag" } } },
+        Tag: { type: "string" },
+      },
     };
     assert.deepEqual(plainSchema(schema), {
       type: "object",
