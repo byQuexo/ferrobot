@@ -551,3 +551,50 @@ store used for the run) or the daemon's own env.
   binds 7878/7879). Not handled: a delegate that hands part of its task to a
   third agent gets that agent's answer as a normal message, so its final
   answer to the first assigner then depends on the model again.
+## Release prep 0: conventions and cleanup (`chore/conventions`)
+
+**Done**
+
+- `docs/CONVENTIONS.md`, linked from CLAUDE.md. Enforced by `.editorconfig`,
+  `clippy.toml` and the workspace lints `unwrap_used`, `expect_used` and
+  `panic` (allowed in tests and at two annotated startup sites), and by
+  Prettier in the runner (`npm run format:check`, also in CI).
+- Comments trimmed to the why in all crates, the runner, scripts and the Tauri
+  shell; wrong doc comments fixed (CLI help of `--listen`, `--warm-after`,
+  `--codex-bin`, `--model`; `update_agent_profile`; `new_token`; the
+  permission policy's scope). Each `TODO(kvm)` points to an issue draft in
+  `docs/launch/issues/`.
+- Promise chains in the runner became `async`/`await`.
+- `scripts/smoke-docker.sh` and `smoke-live.sh` take their ports from
+  `FERROBOT_SMOKE_PORT` / `FERROBOT_SMOKE_AGENT_PORT`; the Docker smoke test
+  uses the file secret store (no keychain prompt).
+- Test diet: Rust 134 → 133 (two near-identical pairs merged into table tests,
+  one test added for the timestamp fix), runner 83 → 80 (four mock-parser
+  tests merged into one table with all eight cases), desktop 17. No security
+  test was removed.
+
+**Bugs fixed on the way**
+
+- Stored timestamps had a variable width (RFC 3339 drops a zero fraction), so
+  SQLite's text comparison put `…:00Z` after `…:00.5Z`: a routine due on a
+  whole second could be missed for up to a second while the scheduler spun.
+  Timestamps are now fixed-width microseconds; old rows sort at most one
+  second off until they are rewritten.
+- The runner's shell guard let `rm -rf /*`, `rm -rf ~/`, `rm -r -f /` and
+  `rm -rf --no-preserve-root /` through.
+- The ACP driver allowed edit, delete and move requests that named no path.
+- The desktop shell injected the operator token into any page on `localhost`;
+  now only the Vite dev server port (1420) and the app's own pages get it.
+
+**Not done here**
+
+- Files the open voice PR changes (`state.rs` apart from one attribute,
+  `runner_ws.rs`, `api/mod.rs`, `error.rs`, `spec.rs`, `api/providers.rs`,
+  `lib.rs`, `features.rs`, `specs.rs`, `mcp` `lib.rs`/`tools.rs`, store
+  `lib.rs`/`migrations.rs`), API doc comments that generate `protocol/`, and
+  the desktop UI (ESLint, Prettier, comments): after that PR merges.
+- Found, not fixed: on Firecracker an archive request stops the VM and
+  reports success, so `--archive-after` would stop it again every tick; a
+  message steered into a Claude turn whose resume then fails is reported as
+  seen but never reaches the model; the bearer scheme is matched
+  case-sensitively (all our clients send `Bearer`).
