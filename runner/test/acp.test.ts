@@ -344,6 +344,16 @@ describe("AcpDriver", () => {
     assert.equal(sent("initialize").length, 2);
   });
 
+  it("starts a fresh agent after a reconfigure (new tools)", async () => {
+    const { driver, script, sent } = setup();
+    script({ turns: [[chunk("one")], [chunk("two")]] });
+    await driver.runTurn(context().ctx);
+    driver.reconfigure();
+    const out = await driver.runTurn(context().ctx);
+    assert.equal(out.result, "two");
+    assert.equal(sent("initialize").length, 2);
+  });
+
   it("refuses an agent that speaks another ACP version", async () => {
     const { driver, script } = setup();
     script({ protocolVersion: 2, turns: [] });

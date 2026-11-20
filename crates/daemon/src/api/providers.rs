@@ -212,6 +212,9 @@ pub(crate) async fn delete_provider(
     let id = parse_pid(&id)?;
     state.store.delete_provider(id).await?;
     state.settings.secrets.delete(&secret_key(id)).await?;
+    codex::forget(&state, id)
+        .await
+        .map_err(ApiError::Internal)?;
     Ok(StatusCode::NO_CONTENT)
 }
 

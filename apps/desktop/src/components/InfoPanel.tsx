@@ -17,12 +17,13 @@ import {
   UserRound,
 } from "lucide-preact";
 
-import type { Agent, MemoryEntry, Routine, RoutineRun, SandboxInfo, Snapshot, StoredEvent } from "../api.ts";
+import type { Agent, MemoryEntry, Provider, Routine, RoutineRun, SandboxInfo, Snapshot, StoredEvent } from "../api.ts";
 import { useApp } from "../context.ts";
 import { dateTime, duration, presenceLabel, relativeTime } from "../lib/format.ts";
 import { buildTimeline, type TimelineItem } from "../lib/timeline.ts";
 import { Avatar } from "./Avatar.tsx";
 import { ToolCard } from "./Chat.tsx";
+import { KIND_LABELS } from "./ProvidersSettings.tsx";
 import { Button, Empty, IconButton, Skeleton, Switch } from "./ui.tsx";
 
 type Tab = "profile" | "computer" | "routines" | "memory" | "activities";
@@ -76,6 +77,10 @@ function Profile(props: { agent: Agent; onEdit: () => void; onDeleted: () => voi
   const a = props.agent;
   const creator = a.created_by ? agents.get(a.created_by) : undefined;
   const [confirm, setConfirm] = useState(false);
+  const [providers, setProviders] = useState<Provider[] | null>(null);
+  useEffect(() => { client.listProviders().then(setProviders, () => { setProviders([]); }); }, [a.provider_id]);
+  const provider = providers?.find((p) => p.id === a.provider_id);
+  const model = a.model ?? provider?.default_model ?? (provider ? "provider default" : "default");
   return (
     <div class="profile">
       <Avatar agent={a} size={88} />
@@ -84,6 +89,12 @@ function Profile(props: { agent: Agent; onEdit: () => void; onDeleted: () => voi
       <div class="kv">
         <span>Status</span>
         <span class={`status-chip p-${a.presence}`}>{presenceLabel(a.presence)}</span>
+        <span>Model</span>
+        <span class="model-line">
+          <span class="mono">{model}</span>
+          <span class="muted">· {a.provider_id ? (provider ? `${provider.name} (${KIND_LABELS[provider.kind]})` : "…") : "Anthropic (daemon key)"}</span>
+          <button type="button" class="text-link" onClick={props.onEdit}>Change</button>
+        </span>
         <span>Created</span>
         <span>{dateTime(a.created_at)}</span>
         {a.created_by && (

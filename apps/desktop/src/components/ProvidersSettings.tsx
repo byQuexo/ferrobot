@@ -4,7 +4,7 @@ import { KeyRound, LogIn, Trash2 } from "lucide-preact";
 
 import type { DeviceCode, LoginStatus, Provider, ProviderKind } from "../api.ts";
 import { useApp } from "../context.ts";
-import { Button, Dialog, IconButton } from "./ui.tsx";
+import { Button, IconButton } from "./ui.tsx";
 
 export const KIND_LABELS: Record<ProviderKind, string> = {
   anthropic: "Anthropic",
@@ -86,8 +86,8 @@ function fieldsOf(kind: ProviderKind): { key: boolean; baseUrl: boolean; region:
   };
 }
 
-/** Add, re-key and remove model providers. Keys go to the daemon’s keychain and never come back. */
-export function ProvidersDialog(props: { onClose: () => void }): JSX.Element {
+/** Add, re-key and remove model providers (a settings section). Keys go to the daemon’s keychain and never come back. */
+export function ProvidersSettings(): JSX.Element {
   const { client, toast } = useApp();
   const [providers, setProviders] = useState<Provider[]>([]);
   const [kind, setKind] = useState<ProviderKind>("openai");
@@ -133,7 +133,6 @@ export function ProvidersDialog(props: { onClose: () => void }): JSX.Element {
     });
 
   return (
-    <Dialog title="Model providers" onClose={props.onClose} footer={<Button onClick={props.onClose}>Done</Button>}>
       <div class="form">
         {providers.length === 0 && (
           <p class="muted small">No providers yet. Without one, agents use the daemon’s ANTHROPIC_API_KEY.</p>
@@ -239,6 +238,5 @@ export function ProvidersDialog(props: { onClose: () => void }): JSX.Element {
           </Button>
         </div>
       </div>
-    </Dialog>
   );
 }

@@ -276,6 +276,7 @@ export class CodexDriver implements ModelDriver {
   readonly #opts: CodexDriverOptions;
   #server: AppServer | null = null;
   #thread: { id: string; instructions: string } | null = null;
+  #stale = false;
 
   constructor(opts: CodexDriverOptions) {
     this.#opts = opts;
@@ -295,8 +296,15 @@ export class CodexDriver implements ModelDriver {
     return Promise.resolve();
   }
 
+  reconfigure(): void {
+    this.#stale = true;
+  }
+
   async #start(): Promise<AppServer> {
-    if (this.#server?.alive) return this.#server;
+    if (this.#server?.alive && !this.#stale) return this.#server;
+    // A fresh app-server lists the MCP tools anew; the thread resumes by id.
+    this.#server?.kill();
+    this.#stale = false;
     this.#thread = null;
     const home = join(this.#opts.stateDir, "codex");
     await mkdir(home, { recursive: true, mode: 0o700 });

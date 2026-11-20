@@ -10,7 +10,7 @@ import { dirname, join, resolve } from "node:path";
 import { errorMessage, log } from "../log.ts";
 import type { FerrobotMcp } from "../mcp-client.ts";
 import { decide, type Decision } from "../permissions.ts";
-import { aborted, clip, systemAppend, turnPrompt } from "./claude.ts";
+import { aborted, clip, latePrompt, systemAppend, turnPrompt } from "./claude.ts";
 import type { ModelDriver, TurnContext, TurnResult } from "./types.ts";
 import { TurnAbortedError } from "./types.ts";
 
@@ -195,7 +195,7 @@ export class OpenAIDriver implements ModelDriver {
     for (const m of late) {
       messages.push({
         role: "user",
-        content: `Message #${String(m.message_id)} from ${m.sender_name}, sent while you were working:\n\n${m.body}`,
+        content: latePrompt(m),
       });
     }
     return late.length > 0;

@@ -1,6 +1,6 @@
 # Progress
 
-Status per roadmap phase (`docs/roadmap.md`). Decisions are in
+Status per roadmap phase (the [roadmap page](https://cursor.com/canvas/store-0b9dda1f-693e-4629-9899-c87852755bdc/ad9f72df-2257-4c5f-ba31-48368896c60a)). Decisions are in
 `docs/decisions.md`.
 
 ## M1 Storage layer — done (`feature/m1-storage`)
@@ -283,8 +283,7 @@ store used for the run) or the daemon's own env.
 
 **Open**
 
-- No encryption at rest (the roadmap wants it for S3/R2); only a local FS
-  target was used. The archived image still holds the (retired) agent token.
+- ~~No encryption at rest~~ (done in the hardening pass, item 3).
 - Each archive saves the whole image (~1.3 GB); see the `shortcut:` comment.
 - Firecracker archive (snapshot + disk) is part of F4b/F4c on KVM.
 
@@ -400,4 +399,102 @@ store used for the run) or the daemon's own env.
 
 - None of the UI changes in the Tauri window (Activities tab, step line,
   Markdown, link opening); steering and the new prompt lines with a real
-  model; Claude, Codex and Gemini CLI do not steer yet.
+  model; Codex and Gemini CLI do not steer (Claude does since item 6).
+
+## Hardening after the external review
+
+- **Item 1 (shared files):** done. Links are HMAC-signed and expire after
+  30 minutes (key in the keychain); the page CSP allows no remote origin;
+  `files::read` only reads the event's own agent's `artifacts/<agent>/<uuid>`.
+  Tested in `agents_share_files_that_open_from_storage`: unsigned, tampered,
+  expired and other-file links 404; forged events with another agent's key
+  or a `../` key 404 on both routes. Not checked: the Tauri window with the
+  new links (the URL shape changed; FileViewer appends `&download=1`).
+- **Item 2 (Settings Debug):** done; test `debug_never_shows_the_api_key_or_token`.
+- **Item 6 (steering, tool refresh):** Claude steers via the SDK's streaming
+  input; Codex and Gemini documented as not steering. A connector assignment
+  re-sends `configure`; Codex and Gemini start a fresh process next turn.
+  Tested with a fake SDK `query()` (late message folded in with
+  `priority: "next"` and `client_composed`, input ends once all are answered,
+  a message after the answer keeps the query open) and fake Codex/Gemini
+  binaries (a reconfigure starts a new process); the daemon sends `configure`
+  on assignment. Not tested against the real Claude CLI (does it fold
+  `"next"` messages as documented?), Codex or Gemini.
+- **Item 3 (archives):** encrypted with AES-256-GCM, key in the keychain;
+  non-local `--storage-url` refused without the key; old token rotated
+  (401 on `/mcp`) and blanked in committed images. Tested: seal round trip at
+  every chunk boundary and in any piece sizes; wrong key, other object path,
+  dropped/appended chunk, flipped byte, missing key all fail; plaintext only
+  where allowed; key made once, a corrupt key never replaced; `Debug` of the
+  key redacted. The Docker archive test (`docker-tests`) now checks the
+  header on disk, no plaintext in `home.tar`, a wrong key failing without
+  consuming the archive, and the restored token; it runs in CI's Docker
+  job, not locally (the Docker engine was down after the disk filled up).
+- **Item 4 (Codex sign-in):** `auth.json` in the secret store, a private temp
+  `CODEX_HOME` per app-server run. Tested with a fake `codex`: sign-in and
+  refresh stored back, the home is 0700 and `auth.json` 0600 while Codex
+  runs, no `auth.json` left on disk afterwards, an old sign-in moves over,
+  deleting the provider deletes it. Not tested with the real Codex CLI
+  (assumes it writes `auth.json` before `account/login/completed`).
+
+- **Item 5 (connector OAuth):** the DCR client secret is kept in the
+  keychain; revocation on sign-out and delete came with the OAuth apps PR.
+  Tested with a fake OAuth server that registers confidential clients
+  (`connectors_keep_the_secret_a_server_registered_them_with`: sign-in, then
+  a refresh in a fresh session with the stored secret, registration stored
+  only after the sign-in and forgotten on sign-out) and in
+  `connectors_use_an_own_oauth_app_refresh_and_revoke` (no revocation over
+  http; https revocation covered by unit tests only, no real server).
+
+## Connector OAuth apps, review fixes (`feature/connector-oauth-clients`)
+
+**Done**
+
+- Own OAuth app per connector (client id, secret, scopes, issuer), Google
+  offline access, `expired` sign-ins, revocation on sign-out (RFC 7009) and
+  on delete, Settings page, model row in the profile.
+- Review findings fixed: issuer binding against AS mix-up; revocation checks
+  the issuer and stays out of the LAN; secret dropped on URL/client
+  id/issuer change; scope cap checked as it fills (was O(n²) before the cap);
+  sign-ins started before a change are discarded; no duplicate Google
+  parameters.
+
+**Tested**
+
+- `connectors_use_an_own_oauth_app_refresh_and_revoke`: sign-in with the own
+  app, refresh with the secret, rejected refresh shows `expired`, sign-out,
+  no revocation over http, missing or http issuer refused, 40 scopes refused,
+  a server whose issuer is not the app's gets no sign-in, a new client id
+  drops the secret. Unit tests: issuer check, internal addresses, a
+  revocation URL on 127.0.0.1 refused unless the connector is local, Google
+  parameters.
+
+**Not tested**
+
+- Revocation against a real https server; Google itself (needs Tim's
+  Workspace preview and OAuth client); the Settings page in the Tauri window.
+
+## Live smoke test (hardening pass, 2026-11-20)
+
+- **Runner image and Docker e2e: ran in CI only.** On every hardening PR
+  (#6 to #12) the "E2E (Docker backend)" job built `runner/Dockerfile` and
+  ran the sandbox Docker test (now with encrypted archives: header on disk,
+  no plaintext, wrong key refused, token from the container env) and the
+  daemon's Docker e2e; all green. Not run on Tim's Mac: Docker Desktop
+  stopped answering after the disk filled up and did not come back after a
+  restart.
+- **Real Claude turn: not run.** `ANTHROPIC_API_KEY` is not in this
+  session's environment, and the key must not go through the transcript.
+  `scripts/smoke-live.sh` runs it from Tim's own terminal.
+- **Ollama turn: not run.** Ollama is installed but was not running and has
+  no model pulled; the script needs `OLLAMA_MODEL` (default `qwen2.5:3b`).
+- **Key leak check: written, not yet run live.** `smoke-live.sh` counts
+  matches of the real key over the whole stream of: container config and
+  env, runtime env, root filesystem, home volume, container logs, daemon log
+  and data dir; a source that cannot be read fails the check. Self-tested
+  against known inputs (found, absent, unreadable, key at the end of a large
+  stream).
+- **What the script asserts per agent:** a completed `turn_done` whose result
+  contains a fresh nonce, a `tool_use` event and the nonce in the sandbox
+  file; it rebuilds the runner image first and reads the data dir only
+  after the daemon stopped.

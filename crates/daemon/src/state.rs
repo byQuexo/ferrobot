@@ -11,8 +11,8 @@ use tokio::sync::{Notify, broadcast, oneshot};
 use crate::hub::Hub;
 use crate::views::AgentView;
 
-/// Static daemon settings.
-#[derive(Debug, Clone)]
+/// Static daemon settings. `Debug` never shows the API key or token.
+#[derive(Clone)]
 pub struct Settings {
     /// Agent API base URL *as seen from inside a sandbox*.
     pub sandbox_daemon_url: String,
@@ -65,6 +65,61 @@ pub struct Settings {
     pub storage: Arc<dyn object_store::ObjectStore>,
     /// Base URL for every voice provider instead of its public API (tests).
     pub voice_upstream: Option<String>,
+}
+
+impl std::fmt::Debug for Settings {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        // Exhaustive on purpose: a new field must be classified here.
+        let Self {
+            sandbox_daemon_url,
+            driver,
+            anthropic_api_key,
+            anthropic_upstream,
+            model,
+            turn_timeout,
+            warm_timeout,
+            idle_timeout,
+            archive_timeout,
+            supervisor_interval,
+            default_timezone,
+            api_token,
+            max_agents,
+            approval_timeout,
+            secrets,
+            gcloud_token_cmd,
+            codex_bin,
+            codex_home,
+            chatgpt_upstream,
+            ui_url,
+            storage,
+            voice_upstream,
+        } = self;
+        let redacted = |v: &Option<String>| v.as_ref().map(|_| "[REDACTED]");
+        f.debug_struct("Settings")
+            .field("sandbox_daemon_url", sandbox_daemon_url)
+            .field("driver", driver)
+            .field("anthropic_api_key", &redacted(anthropic_api_key))
+            .field("anthropic_upstream", anthropic_upstream)
+            .field("model", model)
+            .field("turn_timeout", turn_timeout)
+            .field("warm_timeout", warm_timeout)
+            .field("idle_timeout", idle_timeout)
+            .field("archive_timeout", archive_timeout)
+            .field("supervisor_interval", supervisor_interval)
+            .field("default_timezone", default_timezone)
+            .field("api_token", &redacted(api_token))
+            .field("max_agents", max_agents)
+            .field("approval_timeout", approval_timeout)
+            .field("secrets", secrets)
+            .field("gcloud_token_cmd", gcloud_token_cmd)
+            .field("codex_bin", codex_bin)
+            .field("codex_home", codex_home)
+            .field("chatgpt_upstream", chatgpt_upstream)
+            .field("ui_url", ui_url)
+            .field("storage", storage)
+            .field("voice_upstream", voice_upstream)
+            .finish()
+    }
 }
 
 impl Settings {
@@ -152,6 +207,8 @@ pub struct AppState {
     pub codex: Arc<tokio::sync::Mutex<crate::codex::CodexState>>,
     /// Open sessions with connector MCP servers.
     pub connectors: Arc<crate::connectors::Sessions>,
+    /// Signs links to shared files; loaded from the keychain once.
+    pub link_key: Arc<tokio::sync::OnceCell<ring::hmac::Key>>,
     /// Connector OAuth sign-ins waiting for the browser, refresh locks.
     pub oauth: Arc<crate::oauth::OAuth>,
     /// What speech and transcription may still spend this minute.
@@ -184,6 +241,7 @@ impl AppState {
             gcloud_token: Arc::default(),
             codex: Arc::default(),
             connectors: Arc::default(),
+            link_key: Arc::default(),
             oauth: Arc::default(),
             voice: Arc::default(),
             call: Arc::default(),
@@ -349,5 +407,23 @@ impl ferrobot_mcp::MailboxNotifier for AppState {
     ) -> ferrobot_mcp::BoxFuture<Result<rmcp::model::CallToolResult, String>> {
         let state = self.clone();
         Box::pin(async move { crate::connectors::call(&state, agent, &name, arguments).await })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn debug_never_shows_the_api_key_or_token() {
+        let mut settings = Settings::new("http://127.0.0.1:7879");
+        settings.anthropic_api_key = Some("sk-ant-very-secret".into());
+        settings.api_token = Some("operator-token-secret".into());
+        let shown = format!("{settings:?}");
+        assert!(
+            !shown.contains("very-secret") && !shown.contains("token-secret"),
+            "{shown}"
+        );
+        assert!(shown.contains("[REDACTED]") && shown.contains("127.0.0.1:7879"));
     }
 }

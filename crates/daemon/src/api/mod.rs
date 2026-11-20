@@ -33,7 +33,7 @@ pub fn router() -> Router<AppState> {
         .merge(integrations())
         .route("/v1/health", get(health))
         .route("/v1/agents/{id}/files/{file_id}", get(files::shared_file))
-        .route("/artifacts/{id}/{file_id}/{view}", get(files::page))
+        .route("/artifacts/{id}/{file_id}", get(files::page))
         .route("/v1/ws", get(ws::ui_ws))
         .route(
             "/v1/agents",

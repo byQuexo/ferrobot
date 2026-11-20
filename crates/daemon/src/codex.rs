@@ -1,6 +1,10 @@
 //! Host-side Codex: `ChatGPT` sign-in and access tokens come from the daemon
 //! host's own `codex app-server`, so `ChatGPT` credentials never enter a
 //! sandbox. The proxy adds them to requests from the in-sandbox Codex.
+//!
+//! Codex keeps its sign-in in `$CODEX_HOME/auth.json`. Here that file lives in
+//! the secret store; each app-server run gets a fresh private `CODEX_HOME`
+//! with it, and what Codex writes back (sign-in, refreshed tokens) is stored.
 
 use std::collections::HashMap;
 use std::path::Path;
@@ -170,13 +174,101 @@ impl AppServer {
     }
 }
 
-fn home(state: &AppState, provider: Uuid) -> std::path::PathBuf {
-    state.settings.codex_home.join(provider.to_string())
+/// Where a provider's Codex sign-in (Codex's `auth.json`) is kept.
+pub fn secret_key(provider: Uuid) -> String {
+    format!("codex-auth:{provider}")
+}
+
+/// Private `CODEX_HOME`s of running app-servers, under the codex dir.
+fn run_dir(codex_home: &Path) -> std::path::PathBuf {
+    codex_home.join("run")
+}
+
+/// The codex dir, without private homes a crash left behind (they hold
+/// copies of `ChatGPT` sign-ins).
+pub fn clean_home(codex_home: std::path::PathBuf) -> std::path::PathBuf {
+    let _ = std::fs::remove_dir_all(run_dir(&codex_home));
+    codex_home
+}
+
+/// A `CODEX_HOME` that exists while one app-server runs (0700, `auth.json`
+/// 0600); removed on drop.
+struct Home {
+    dir: tempfile::TempDir,
+    provider: Uuid,
+    stored: Option<String>,
+}
+
+fn io(e: impl std::fmt::Display) -> String {
+    format!("codex home: {e}")
+}
+
+impl Home {
+    async fn open(state: &AppState, provider: Uuid) -> Result<Self, String> {
+        let root = run_dir(&state.settings.codex_home);
+        tokio::fs::create_dir_all(&root).await.map_err(io)?;
+        let dir = tempfile::Builder::new()
+            .prefix("home-")
+            .tempdir_in(&root)
+            .map_err(io)?;
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            std::fs::set_permissions(dir.path(), std::fs::Permissions::from_mode(0o700))
+                .map_err(io)?;
+        }
+        let secrets = &state.settings.secrets;
+        let key = secret_key(provider);
+        let mut stored = secrets.get(&key).await.map_err(|e| e.to_string())?;
+        // Sign-ins from before the secret store: move them over once.
+        let legacy = state.settings.codex_home.join(provider.to_string());
+        if stored.is_none()
+            && let Ok(auth) = tokio::fs::read_to_string(legacy.join("auth.json")).await
+        {
+            secrets.set(&key, &auth).await.map_err(|e| e.to_string())?;
+            stored = Some(auth);
+        }
+        let _ = tokio::fs::remove_dir_all(&legacy).await;
+        if let Some(auth) = &stored {
+            let mut file = std::fs::OpenOptions::new();
+            file.write(true).create_new(true);
+            #[cfg(unix)]
+            std::os::unix::fs::OpenOptionsExt::mode(&mut file, 0o600);
+            std::io::Write::write_all(
+                &mut file.open(dir.path().join("auth.json")).map_err(io)?,
+                auth.as_bytes(),
+            )
+            .map_err(io)?;
+        }
+        Ok(Self {
+            dir,
+            provider,
+            stored,
+        })
+    }
+
+    /// Keeps what Codex wrote, unless another run replaced the stored
+    /// sign-in meanwhile (a new sign-in must not lose to a stale refresh).
+    async fn save(&self, state: &AppState) -> Result<(), String> {
+        let Ok(auth) = tokio::fs::read_to_string(self.dir.path().join("auth.json")).await else {
+            return Ok(());
+        };
+        if Some(&auth) == self.stored.as_ref() {
+            return Ok(());
+        }
+        let _codex = state.codex.lock().await;
+        let (secrets, key) = (&state.settings.secrets, secret_key(self.provider));
+        if secrets.get(&key).await.map_err(|e| e.to_string())? != self.stored {
+            return Ok(());
+        }
+        secrets.set(&key, &auth).await.map_err(|e| e.to_string())
+    }
 }
 
 /// Starts a `ChatGPT` device-code sign-in on the host; it completes in the background.
 pub async fn start_login(state: &AppState, provider: Uuid) -> Result<DeviceCode, String> {
-    let mut server = AppServer::start(&state.settings.codex_bin, &home(state, provider)).await?;
+    let home = Home::open(state, provider).await?;
+    let mut server = AppServer::start(&state.settings.codex_bin, home.dir.path()).await?;
     let started = server
         .request("account/login/start", json!({"type": "chatgptDeviceCode"}))
         .await?;
@@ -196,7 +288,9 @@ pub async fn start_login(state: &AppState, provider: Uuid) -> Result<DeviceCode,
         let done = tokio::time::timeout(LOGIN_TIMEOUT, server.wait_for("account/login/completed"))
             .await
             .unwrap_or_else(|_| Err("not confirmed in time".into()));
-        let status = match done {
+        let saved = home.save(&state).await;
+        drop(server);
+        let status = match done.and_then(|p| saved.map(|()| p)) {
             Ok(p) if p["success"] == true => LoginStatus::SignedIn,
             Ok(p) => LoginStatus::Failed {
                 error: p["error"].as_str().unwrap_or("sign-in failed").to_owned(),
@@ -227,13 +321,31 @@ pub async fn login_status(state: &AppState, provider: Uuid) -> LoginStatus {
 }
 
 async fn auth_status(state: &AppState, provider: Uuid, token: bool) -> Result<Value, String> {
-    let mut server = AppServer::start(&state.settings.codex_bin, &home(state, provider)).await?;
-    server
+    let home = Home::open(state, provider).await?;
+    let mut server = AppServer::start(&state.settings.codex_bin, home.dir.path()).await?;
+    let status = server
         .request(
             "getAuthStatus",
             json!({"includeToken": token, "refreshToken": token}),
         )
+        .await?;
+    // A refresh rewrote auth.json.
+    home.save(state).await?;
+    Ok(status)
+}
+
+/// Forgets a provider's sign-in (the provider was deleted).
+pub async fn forget(state: &AppState, provider: Uuid) -> Result<(), String> {
+    let _ = tokio::fs::remove_dir_all(state.settings.codex_home.join(provider.to_string())).await;
+    let mut codex = state.codex.lock().await;
+    codex.tokens.remove(&provider);
+    codex.logins.remove(&provider);
+    state
+        .settings
+        .secrets
+        .delete(&secret_key(provider))
         .await
+        .map_err(|e| e.to_string())
 }
 
 /// A fresh `ChatGPT` access token and account id for the proxy.

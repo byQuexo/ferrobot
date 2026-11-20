@@ -36,7 +36,12 @@ keyring.workspace = true
 object_store = { workspace = true, features = ["fs", "aws"] }
 reqwest = { workspace = true, features = ["stream"] }
 rmcp = { workspace = true, features = ["client", "transport-streamable-http-client-reqwest", "auth"] }
+# Already in the tree via rustls: HMAC for share links, AES-GCM for archives.
+ring = "0.17"
+# Same version rmcp uses; for RFC 7009 token revocation on sign-out.
+oauth2 = { version = "5.0", default-features = false }
 sha2.workspace = true
+hex.workspace = true
 time = { workspace = true, features = ["macros"] }
 serde.workspace = true
 serde_json.workspace = true
@@ -45,12 +50,12 @@ tokio.workspace = true
 tower-http.workspace = true
 tracing.workspace = true
 tracing-subscriber.workspace = true
+tempfile.workspace = true
 url.workspace = true
 uuid.workspace = true
 
 [dev-dependencies]
 jsonschema = { version = "0.61", default-features = false }
-tempfile.workspace = true
 tokio-tungstenite.workspace = true
 
 [lints]

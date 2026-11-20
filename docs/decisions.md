@@ -1,6 +1,6 @@
 # Decisions
 
-Open questions from `docs/roadmap.md` that were settled during implementation,
+Open questions from the roadmap that were settled during implementation,
 with the assumption made. Newest phase last. Revisit any of them by editing
 the code and this file together.
 
@@ -90,7 +90,7 @@ the code and this file together.
   (header name from Codex's `openai_headers.rs`); inbound
   `chatgpt-account-id` headers from agents are dropped.
 - **ChatGPT sign-in on the host via the official surface.** The daemon runs the
-  host's `codex app-server` with `CODEX_HOME=<data dir>/codex/<provider id>`
+  host's `codex app-server` with a private `CODEX_HOME` (see hardening item 4)
   and calls `account/login/start {type: "chatgptDeviceCode"}`; the UI shows the
   URL and code. Tokens are read with `getAuthStatus {includeToken,
   refreshToken}` (Codex refreshes them itself) and cached until 5 minutes
@@ -189,11 +189,9 @@ the code and this file together.
   reference: `create` looks for an archive first. A new agent with the same
   name as an agent deleted with `keep_data=true` would get its archive, the
   same way it would get its kept home volume today.
-- **No encryption yet:** Tim scoped this step to a local FS target. Before
-  pointing `--storage-url` at S3/R2 for archives, add encryption (needs a key
-  decision: OS keychain like provider keys is the obvious place).
-- **Old token retired on archive** instead of stripping env from the image:
-  `docker commit` copies the container env into the image config.
+- **Encrypted at rest** since the hardening pass (see item 3 below).
+- **Old token retired on archive**, and blanked in the image config
+  (`docker commit` copies the container env into it).
 
 ## F2: guest agent
 
@@ -319,17 +317,17 @@ the code and this file together.
 - **The runner reports what the model saw** (`turn_done.steered`); everything
   else goes back to the queue without counting a delivery attempt, so old
   runners, drivers without steering and failed turns keep the old behaviour.
-- **Only the OpenAI-compatible driver steers so far.** It adds late messages
-  before its next model call, and after a final answer it makes one more call
-  so the reply covers them. Claude, Codex and Gemini CLI queue as before.
+- **The OpenAI-compatible driver** adds late messages before its next model
+  call, and after a final answer it makes one more call so the reply covers
+  them. **Claude** steers too since hardening item 6; Codex and Gemini CLI
+  queue as before (see item 6).
 - **After the OAuth review:** sign-in and token use need published metadata
   (no rmcp endpoint fallback, which has no issuer to check), refreshes of one
   connector take turns and a revoked refresh token signs it out, sign-in
   links must be http(s), a URL change drops the tokens, a duplicate `state` is
   refused, and loopback connectors keep rmcp's private-address guard.
-- **Not fixed:** a client secret from dynamic registration is used once and
-  not stored (rmcp has no field for it), so servers that issue one fail at
-  the first refresh; sign-out does not revoke tokens at the server.
+- ~~Not fixed: DCR client secret, revocation~~ (both done in the hardening
+  pass, item 5).
 - **Desktop links** (Markdown, sign-in pages) open in the system browser; the
   window itself only navigates within the app, so the injected operator
   token never reaches another page.
@@ -347,24 +345,149 @@ the code and this file together.
 - **Reads are capped** at 32 MiB in every backend (`read_file`), so a file an
   agent names cannot exhaust the daemon.
 - **Markdown and text open inline; `.html` opens as a page** at
-  `/artifacts/<agent>/<file>/<view>`: outside `/v1` (a frame cannot send the
-  operator token), authorized by a random 128-bit view key, served with
-  `Content-Security-Policy: sandbox allow-scripts` (opaque origin), inline and
-  https scripts/styles allowed, `connect-src 'none'`, no forms. The app frames
-  it with `sandbox="allow-scripts"` and no same-origin, so the page cannot
-  reach the app, its storage or the token. Risk left: a page can still show
-  misleading content (phishing-like UI) inside ferrobot.
+  `/artifacts/<agent>/<file>?exp=<unix>&sig=<hex>`: outside `/v1` (a frame
+  or the system browser cannot send the operator token), authorized by a
+  signed capability: HMAC-SHA256 over `<agent>/<file>/<exp>` with a 256-bit
+  key from the keychain (`artifact-link-key`, made on first use), valid for
+  30 minutes. `GET /v1/agents/{id}/files/{file}` (operator token) hands out a
+  fresh link each time. A stolen link stops working after its expiry; the
+  key never leaves the daemon. Served with `Content-Security-Policy: sandbox
+  allow-scripts` (opaque origin, no same-origin), inline scripts, styles and
+  `data:`/`blob:` media only, `connect-src 'none'`, no forms. The allowlist
+  of remote origins is empty on purpose: any allowed origin is a channel out
+  of the page and a script supply chain. Risk left: a page can still show
+  misleading content (phishing-like UI).
+- **Storage keys are checked on read.** `files::read` only reads
+  `artifacts/<agent>/<uuid>` of the agent the event belongs to, so a forged
+  or corrupted `file` event cannot point at another agent's files, a
+  snapshot or `../`.
 - File names in an agent's message (in backticks) open the shared file of
   that name in the chat; the latest share wins.
 - **Every shared file has a capability URL** (`url`): pages open sandboxed,
   a file named `.pdf` that starts with `%PDF-` opens inline (no CSP sandbox,
   which would stop browsers' PDF viewers; `nosniff` keeps it a PDF), anything
-  else or `?download` is an attachment under `sandbox; default-src 'none'`.
+  else or `&download=1` is an attachment under `sandbox; default-src 'none'`.
   The desktop opens pages and downloads in the system browser (the window
   cannot save downloads) and PDFs in a full-screen viewer.
 - **`ferrobot-pdf`** in the runner image renders HTML to PDF with Debian's
   Chromium (`--no-sandbox`: the container is the sandbox). The image grows
   from about 1.3 GB to about 2 GB.
+
+## Hardening after the external review (Nov 2026)
+
+- **Item 1: shared-file links are signed and expire** (see "Shared files and
+  HTML pages"). 30 minutes is long enough to read a page and short enough
+  that a link copied out of a log or history is dead by then. No
+  per-link revocation: rotating `artifact-link-key` in the keychain kills
+  every link.
+- **Item 2: `Settings` has a hand-written `Debug`** that prints
+  `[REDACTED]` for `anthropic_api_key` and `api_token`. It destructures every
+  field, so a new field does not compile until someone decides whether it is
+  secret. `AppState`'s derived `Debug` goes through it.
+- **Item 6: the Claude driver steers** through the Agent SDK's streaming
+  input: the turn's prompt and every late message go in as user messages
+  with a uuid, `priority: "next"` (folded into the running turn between tool
+  rounds) and `client_composed` (the text is not read as a slash command or
+  `@`-mention, whoever wrote it). The query ends once every uuid shows up in
+  a result's `user_message_uuids`, so a message that lands after the final
+  answer gets its own answer in the same runner turn. Any result answers the
+  turn's own prompt, so only late messages can hold the query open; a CLI
+  that does not report `user_message_uuids` ends after the first result.
+- **Codex and Gemini CLI do not steer;** their messages wait for the next
+  turn as before. ACP's `session/prompt` takes no further input once sent
+  (only `session/cancel`). Whether Codex 0.166.0's app-server can add input
+  to a running turn was not checked (the Docker engine was down; `codex
+  app-server generate-json-schema` in the runner image would tell).
+- **Connector tools refresh after an assignment change:** the daemon sends
+  `configure` again, and the Codex and Gemini drivers start a fresh process
+  for the next turn (the thread or session resumes by id), which lists the
+  tools anew. Claude and the OpenAI-compatible driver list tools every turn.
+  Changes on the connector's side (its server adds a tool) still show up only
+  with a fresh process.
+- **Item 3: archives and snapshot home tars are encrypted** before they
+  reach `--storage-url` (`ferrobot_sandbox::seal`): AES-256-GCM (ring) over
+  64 KiB chunks, STREAM-style nonces (random 7-byte prefix per write,
+  counter, last-chunk flag) and the object key as AAD, so a dropped,
+  reordered or appended chunk, or an archive moved to another agent's path,
+  fails to open. Images stream through it (about 1.3 GB, never in memory).
+  The key is `archive-key` in the secret store, made on first start and
+  never replaced: with a stored value that is not a key, a remote store
+  stops the daemon, and the local store warns and writes new archives
+  unencrypted (old ones fail to open until the key is fixed); nothing is
+  orphaned.
+- **Remote storage needs the key.** With an `s3://` (or any non-local)
+  `--storage-url` the daemon refuses to start without the key; with the
+  local data dir it warns and writes plaintext (the disk is the daemon's
+  anyway). Objects without the header (written before this change) are read
+  only from a local store; a remote store refuses them, so nobody with
+  bucket write access can swap in an unencrypted image.
+- **The retired token:** rotated on archive (tested: the old token gets 401
+  on `/mcp`) and blanked in committed images (`ENV FERROBOT_AGENT_TOKEN=`;
+  the container env sets the current one). Not stripped: files in the home
+  directory (e.g. tool configs) may still contain the old, dead token.
+- **Not encrypted:** files agents share (`artifacts/`). They are small,
+  meant to be read and served, and the review scoped this to archives; with
+  S3 they would sit there in the clear. Snapshot images stay in the local
+  Docker engine and are not encrypted either.
+- **Losing the key loses the archives.** It lives in the OS keychain (or
+  `secrets.json` with `--secret-store file`); there is no export or escrow.
+- **Item 4: Codex's `auth.json` lives in the secret store**
+  (`codex-auth:<provider>`), not in `<data dir>/codex`. Each `codex
+  app-server` run gets a fresh `CODEX_HOME` under `<data dir>/codex/run/`
+  (0700, `auth.json` 0600), removed when the run ends; leftovers from a crash
+  are removed at start. What Codex wrote (a sign-in, refreshed tokens) is
+  stored back, unless another run replaced the stored sign-in meanwhile, so a
+  stale refresh cannot undo a new sign-in. Sign-ins in the old place move
+  over on first use; deleting the provider deletes its sign-in. Not done:
+  locking runs per provider; two runs refreshing at once could each use the
+  refresh token (the old shared file had the same race).
+
+- **Item 5: a client secret from dynamic registration is kept**
+  (`connector-dcr:<id>`, keychain). The daemon registers the client itself
+  (rmcp's `register_client`, same scopes rmcp would pick) instead of letting
+  rmcp's session do it, because rmcp drops the secret. It is stored only when
+  the sign-in succeeds, so an abandoned sign-in cannot orphan the tokens of
+  the current client, and it is used for refresh and revocation only for
+  the client id it came with. Sign-out, a URL change and delete forget it.
+  Revocation itself (RFC 7009) landed with the connector OAuth apps PR.
+
+## Connector OAuth: own apps, scopes, expiry, revocation
+
+- **Own OAuth app per connector** (client id, optional secret, scopes) for
+  providers without dynamic client registration (Google, GitHub, Slack). It
+  is stored as one Keychain entry (`connector-client:<id>`), so no migration.
+  rmcp's `with_preregistered_client` / `with_client_secret` / `with_scopes`
+  build the request; rmcp stores no client secret, so the daemon re-applies
+  it (`configure_client`) before every session, which makes refreshes of
+  confidential clients work. Changing the client id signs the connector out.
+- **Google:** sign-in URLs to `accounts.google.com` get
+  `access_type=offline&prompt=consent`, else Google issues no refresh token.
+- **Expired sign-ins** are kept as the client registration plus an `expired`
+  flag when the server rejects a refresh token, so the UI can say "sign in
+  again" instead of silently showing "not signed in".
+- **Sign-out revokes at the server** (RFC 7009) through the `oauth2` crate
+  (already a dependency of rmcp, same version): the refresh token, else the
+  access token, only to an https endpoint on the token endpoint's origin
+  (`oauth2` itself refuses non-https). Best effort: sign-out always forgets
+  the tokens locally.
+- Sign in opens the system browser directly; the connector list shows the
+  redirect URI to register with an own app.
+- **An own app is bound to an issuer** the operator enters (e.g.
+  `https://accounts.google.com`). Sign-in, refresh and revocation are refused
+  when the server's metadata names another issuer; rmcp checks that the
+  metadata was served by that issuer (RFC 8414). Without this, a hostile MCP
+  server could point the authorization endpoint at Google and the token
+  endpoint at itself and receive the code, the PKCE verifier and the client
+  secret (found by the OAuth review, verified against a fake server).
+- **Revocation only to the issuer that issued the tokens** (stored issuer =
+  discovered issuer), to an address resolved once, pinned and checked: no
+  private, loopback, link-local or CGNAT address unless the connector itself
+  lives on this machine or in the LAN.
+- **A changed URL, client id or issuer drops the stored client secret**
+  unless the same request sends a new one, and a sign-in that was started
+  before such a change is discarded when the browser comes back.
+- **Deleting a connector revokes its tokens** (like sign-out) and removes
+  its secrets before the row, so a keychain error leaves it to retry.
 
 ## Voice
 
@@ -374,7 +497,7 @@ the code and this file together.
   a message, the daemon transcribes it and the UI sends the text like a typed
   one. Pressing the mic or switching voice off or changing chats stops the
   audio. Spoken messages reach a running turn only where typed ones do
-  (steering: so far the OpenAI-compatible driver); with Claude, Codex and
+  (steering: the OpenAI-compatible and Claude drivers); with Codex and
   Gemini CLI they wait for the turn to end.
 - **Providers: ElevenLabs and OpenRouter** (both checked against their docs
   on 2026-11-20):

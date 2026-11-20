@@ -1,11 +1,10 @@
 import type { JSX } from "preact";
 import { useMemo, useState } from "preact/hooks";
-import { AudioLines, Brain, KeyRound, Monitor, Moon, Pin, Plug, Plus, Search, Sun } from "lucide-preact";
+import { Pin, Plus, Search, Settings } from "lucide-preact";
 
 import type { Agent } from "../api.ts";
 import { useApp } from "../context.ts";
 import { presenceLabel } from "../lib/format.ts";
-import type { ThemePref } from "../lib/theme.ts";
 import { Avatar } from "./Avatar.tsx";
 import { ConversationList, type Pair } from "./Conversations.tsx";
 import { IconButton, Logo } from "./ui.tsx";
@@ -16,13 +15,9 @@ export function Sidebar(props: {
   pair: Pair | null;
   onOpenPair: (p: Pair) => void;
   onCreate: () => void;
-  onProviders: () => void;
-  onMemory: () => void;
-  onConnectors: () => void;
-  onVoice: () => void;
+  onSettings: () => void;
+  settingsOpen: boolean;
   online: boolean;
-  theme: ThemePref;
-  onTheme: (t: ThemePref) => void;
 }): JSX.Element {
   const { agents } = useApp();
   const [filter, setFilter] = useState("");
@@ -40,17 +35,8 @@ export function Sidebar(props: {
         <Logo />
         <span class="brand-name">ferrobot</span>
         <span class="spacer" />
-        <IconButton label="Global memory" onClick={props.onMemory}>
-          <Brain size={16} />
-        </IconButton>
-        <IconButton label="Connectors" onClick={props.onConnectors}>
-          <Plug size={16} />
-        </IconButton>
-        <IconButton label="Voice" onClick={props.onVoice}>
-          <AudioLines size={16} />
-        </IconButton>
-        <IconButton label="Model providers" onClick={props.onProviders}>
-          <KeyRound size={16} />
+        <IconButton label="Settings" onClick={props.onSettings} pressed={props.settingsOpen}>
+          <Settings size={17} />
         </IconButton>
         <IconButton label="New agent" onClick={props.onCreate} tone="accent">
           <Plus size={18} />
@@ -84,28 +70,6 @@ export function Sidebar(props: {
           <span class="conn-dot" />
           {props.online ? "Daemon connected" : "Daemon offline"}
         </span>
-        <span class="spacer" />
-        <div class="segmented" role="radiogroup" aria-label="Theme">
-          {(
-            [
-              ["system", Monitor, "System theme"],
-              ["light", Sun, "Light theme"],
-              ["dark", Moon, "Dark theme"],
-            ] as const
-          ).map(([value, Icon, label]) => (
-            <button
-              key={value}
-              type="button"
-              role="radio"
-              aria-checked={props.theme === value}
-              aria-label={label}
-              title={label}
-              onClick={() => { props.onTheme(value); }}
-            >
-              <Icon size={14} />
-            </button>
-          ))}
-        </div>
       </footer>
     </aside>
   );

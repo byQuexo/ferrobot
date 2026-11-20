@@ -175,7 +175,8 @@ async fn main() -> Result<()> {
         .with_context(|| format!("creating {}", cli.data_dir.display()))?;
     let store = Store::open(cli.data_dir.join("ferrobot.db")).context("opening database")?;
 
-    let backend = make_backend(&cli).await?;
+    let secrets = secret_store(&cli);
+    let backend = make_backend(&cli, &secrets).await?;
     let api_token = api_token(&cli)?;
 
     let anthropic_api_key = std::env::var("ANTHROPIC_API_KEY")
@@ -228,9 +229,9 @@ async fn main() -> Result<()> {
     settings.api_token = Some(api_token);
     settings.max_agents = cli.max_agents;
     settings.approval_timeout = Duration::from_secs(cli.approval_timeout);
-    settings.secrets = secret_store(&cli);
+    settings.secrets = secrets;
     settings.codex_bin.clone_from(&cli.codex_bin);
-    settings.codex_home = cli.data_dir.join("codex");
+    settings.codex_home = ferrobot_daemon::codex::clean_home(cli.data_dir.join("codex"));
     let state = AppState::new(store, backend, settings);
 
     let ui = tokio::net::TcpListener::bind(cli.listen)
@@ -310,7 +311,7 @@ fn secret_store(cli: &Cli) -> SecretStore {
     }
 }
 
-async fn make_backend(cli: &Cli) -> Result<Arc<dyn SandboxBackend>> {
+async fn make_backend(cli: &Cli, secrets: &SecretStore) -> Result<Arc<dyn SandboxBackend>> {
     let backend: Arc<dyn SandboxBackend> = match cli.backend {
         Backend::Docker => {
             let docker = DockerBackend::connect(DockerConfig {
@@ -319,6 +320,10 @@ async fn make_backend(cli: &Cli) -> Result<Arc<dyn SandboxBackend>> {
                     storage::open(cli.storage_url.as_deref(), &cli.data_dir)
                         .context("--storage-url")?,
                 ),
+                archive_key: storage::archive_key(cli.storage_url.as_deref(), secrets)
+                    .await
+                    .map_err(|e| anyhow::anyhow!("--storage-url: {e}"))?,
+                accept_plaintext: storage::is_local(cli.storage_url.as_deref()),
                 ..DockerConfig::default()
             })?;
             docker

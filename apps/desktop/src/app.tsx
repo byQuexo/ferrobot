@@ -4,16 +4,13 @@ import { Bot, KeyRound, Plus, WifiOff } from "lucide-preact";
 
 import { ApiError, DEFAULT_DAEMON, DaemonClient, type Agent, type Health, type UiEvent } from "./api.ts";
 import { AgentDialog } from "./components/AgentDialog.tsx";
-import { ConnectorsDialog } from "./components/ConnectorsDialog.tsx";
 import { FileViewer } from "./components/FileViewer.tsx";
-import { Memory } from "./components/InfoPanel.tsx";
-import { ProvidersDialog } from "./components/ProvidersDialog.tsx";
-import { VoiceDialog } from "./components/VoiceDialog.tsx";
+import { Settings, type SettingsSection } from "./components/Settings.tsx";
 import { Chat } from "./components/Chat.tsx";
 import { ConversationView, type Pair } from "./components/Conversations.tsx";
 import { InfoPanel, type InfoTab } from "./components/InfoPanel.tsx";
 import { Sidebar } from "./components/Sidebar.tsx";
-import { Button, Dialog, Empty } from "./components/ui.tsx";
+import { Button, Empty } from "./components/ui.tsx";
 import { AppContext, type AppContextValue } from "./context.ts";
 import { applyTheme, followSystem, loadTheme, type ThemePref } from "./lib/theme.ts";
 
@@ -47,7 +44,8 @@ export function App(): JSX.Element {
   const [online, setOnline] = useState(false);
   const [selected, setSelected] = useState<string | null>(() => localStorage.getItem("ferrobot.selected"));
   const [pair, setPair] = useState<Pair | null>(null);
-  const [dialog, setDialog] = useState<"create" | "edit" | "providers" | "memory" | "connectors" | "voice" | null>(null);
+  const [dialog, setDialog] = useState<"create" | "edit" | null>(null);
+  const [settings, setSettings] = useState<SettingsSection | null>(null);
   const [infoOpen, setInfoOpen] = useState(() => localStorage.getItem("ferrobot.info") !== "closed");
   const [tab, setTab] = useState<InfoTab>("profile");
   const [theme, setTheme] = useState<ThemePref>(loadTheme);
@@ -132,9 +130,11 @@ export function App(): JSX.Element {
 
   const openAgent = useCallback((id: string) => {
     setPair(null);
+    setSettings(null);
     setSelected(id);
   }, []);
   const openConversation = useCallback((a: string, b: string) => {
+    setSettings(null);
     setPair(a < b ? [a, b] : [b, a]);
   }, []);
   const [file, setFile] = useState<{ agent: string; file: number } | null>(null);
@@ -144,22 +144,20 @@ export function App(): JSX.Element {
 
   return (
     <AppContext.Provider value={ctx}>
-      <div class={`shell${agent && infoOpen && !pair ? " with-info" : ""}`}>
+      <div class={`shell${agent && infoOpen && !pair && !settings ? " with-info" : ""}`}>
         <Sidebar
           selected={selected}
           onSelect={openAgent}
           pair={pair}
           onOpenPair={setPair}
           onCreate={() => { setDialog("create"); }}
-          onProviders={() => { setDialog("providers"); }}
-          onMemory={() => { setDialog("memory"); }}
-          onConnectors={() => { setDialog("connectors"); }}
-          onVoice={() => { setDialog("voice"); }}
+          onSettings={() => { setSettings(settings ? null : "providers"); }}
+          settingsOpen={settings !== null}
           online={online}
-          theme={theme}
-          onTheme={setTheme}
         />
-        {pair ? (
+        {settings ? (
+          <Settings section={settings} onSection={setSettings} onClose={() => { setSettings(null); }} theme={theme} onTheme={setTheme} />
+        ) : pair ? (
           <ConversationView key={pair.join()} pair={pair} />
         ) : agent ? (
           <Chat
@@ -190,7 +188,7 @@ export function App(): JSX.Element {
             )}
           </main>
         )}
-        {agent && infoOpen && !pair && (
+        {agent && infoOpen && !pair && !settings && (
           <InfoPanel
             agent={agent}
             tab={tab}
@@ -200,15 +198,7 @@ export function App(): JSX.Element {
           />
         )}
       </div>
-      {dialog === "providers" && <ProvidersDialog onClose={() => { setDialog(null); }} />}
-      {dialog === "connectors" && <ConnectorsDialog onClose={() => { setDialog(null); }} />}
-      {dialog === "voice" && <VoiceDialog onClose={() => { setDialog(null); }} />}
       {file && <FileViewer agent={file.agent} file={file.file} onClose={() => { setFile(null); }} />}
-      {dialog === "memory" && (
-        <Dialog title="Global memory" onClose={() => { setDialog(null); }} footer={<Button onClick={() => { setDialog(null); }}>Done</Button>}>
-          <Memory agent={null} />
-        </Dialog>
-      )}
       {(dialog === "create" || dialog === "edit") && (
         <AgentDialog
           agent={dialog === "edit" ? agent : undefined}
