@@ -75,7 +75,8 @@ pub async fn nudge(state: &AppState) {
     for task in tasks {
         let delegate = task.message.recipient;
         if state.hub.is_working(delegate)
-            || !matches!(state.store.has_queued_messages(delegate).await, Ok(false))
+            // Deferred mail waits for a wake, so it must not hold the reminder back.
+            || !matches!(state.store.has_waking_messages(delegate).await, Ok(false))
         {
             continue;
         }

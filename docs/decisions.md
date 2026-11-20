@@ -504,8 +504,9 @@ the code and this file together.
   from the mailbox: `queued`/`working`/`failed` from the message, `done` when
   the delegate sent the assigner a message threaded to the task (directly or
   to a follow-up threaded to it), `open` otherwise. The events have no index
-  on `kind`, so listing tasks scans the events table; fine at this size, an
-  index (a migration) if it grows.
+  on `kind`, so listing tasks, and the supervisor's reminder pass on every
+  tick, scan the events table and every delivered task; fine at this size,
+  an index or a closed-task marker (a migration) if it grows.
 - **Automatic report at the end of the turn.** When the delegate's turn on
   the task (or on a follow-up the assigner threaded to it) ends, the daemon
   sends its final answer to the assigner as a normal message from the
@@ -522,7 +523,8 @@ the code and this file together.
 - **One reminder:** a delegate whose turn ended without an answer (empty
   result, no reply) gets one message from the supervisor, sent as from the
   assigner and threaded to the task, once it is idle (no turn, nothing
-  queued); its turn then reports like the task's. A `task_nudged` event
+  queued that would wake it); its turn then reports like the task's. It
+  shows in the assigner's chat as a message it did not write. A `task_nudged` event
   keeps it to one. Not for interrupted tasks: that would restart work the
   operator stopped.
 - **Names:** the prompt and `create_agent` ask for short, memorable,
