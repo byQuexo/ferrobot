@@ -1,7 +1,5 @@
-// Any OpenAI-compatible Chat Completions API (OpenAI, Gemini, OpenRouter,
-// Ollama, ...). That API has no agent loop, so the driver runs one. Requests
-// go to the daemon's model proxy with this agent's token; the real key and the
-// upstream choice stay in the daemon.
+// Any OpenAI-compatible Chat Completions API; it has no agent loop, so the driver runs one. Requests go
+// to the daemon's model proxy with this agent's token; the real key and the upstream stay in the daemon.
 import { spawn } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
@@ -41,7 +39,11 @@ interface StreamChunk {
   choices?: {
     delta?: {
       content?: string | null;
-      tool_calls?: { index?: number; id?: string; function?: { name?: string; arguments?: string } }[];
+      tool_calls?: {
+        index?: number;
+        id?: string;
+        function?: { name?: string; arguments?: string };
+      }[];
     };
   }[];
 }
@@ -73,7 +75,11 @@ export interface OpenAIDriverOptions {
 function functionTool(name: string, description: string, properties: Record<string, unknown>) {
   return {
     type: "function" as const,
-    function: { name, description, parameters: { type: "object", properties, required: Object.keys(properties) } },
+    function: {
+      name,
+      description,
+      parameters: { type: "object", properties, required: Object.keys(properties) },
+    },
   };
 }
 
@@ -82,24 +88,26 @@ const BUILTIN_TOOLS = [
     command: { type: "string" },
     description: {
       type: "string",
-      description: "What this does in a few plain words for your operator, e.g. \"Checking flight prices\".",
+      description:
+        'What this does in a few plain words for your operator, e.g. "Checking flight prices".',
     },
   }),
   functionTool("read_file", "Read a text file. Relative paths are inside your workspace.", {
     path: { type: "string" },
   }),
-  functionTool("write_file", "Write a text file, creating parent directories. Relative paths are inside your workspace.", {
-    path: { type: "string" },
-    content: { type: "string" },
-  }),
+  functionTool(
+    "write_file",
+    "Write a text file, creating parent directories. Relative paths are inside your workspace.",
+    {
+      path: { type: "string" },
+      content: { type: "string" },
+    },
+  ),
 ];
 
 const TOOLS_LINE = "On your own computer you can use the bash, read_file and write_file tools.";
 
-/**
- * Inlines `$ref`s to `$defs` and drops `$schema`: several OpenAI-compatible
- * upstreams (Gemini among them) reject JSON Schema meta keywords.
- */
+/** Inlines `$defs` refs and drops `$schema`: several upstreams (Gemini among them) reject those keywords. */
 export function plainSchema(schema: object): Record<string, unknown> {
   const root = schema as { $defs?: Record<string, unknown> };
   const defs = root.$defs ?? {};
@@ -155,7 +163,11 @@ export class OpenAIDriver implements ModelDriver {
       ...BUILTIN_TOOLS,
       ...mcpTools.map((t) => ({
         type: "function" as const,
-        function: { name: `${MCP_PREFIX}${t.name}`, description: t.description ?? "", parameters: plainSchema(t.inputSchema) },
+        function: {
+          name: `${MCP_PREFIX}${t.name}`,
+          description: t.description ?? "",
+          parameters: plainSchema(t.inputSchema),
+        },
       })),
     ];
     const messages: ChatMessage[] = [...history, { role: "user", content: turnPrompt(ctx) }];
@@ -206,12 +218,18 @@ export class OpenAIDriver implements ModelDriver {
     tools: unknown[],
     ctx: TurnContext,
   ): Promise<{ text: string; calls: RequestedCall[] }> {
-    const res = await this.#fetch(`${this.#opts.baseUrl.href.replace(/\/+$/, "")}/chat/completions`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json", Authorization: `Bearer ${this.#opts.token}` },
-      body: JSON.stringify({ model: this.#opts.model, stream: true, messages, tools }),
-      signal: ctx.signal,
-    });
+    const res = await this.#fetch(
+      `${this.#opts.baseUrl.href.replace(/\/+$/, "")}/chat/completions`,
+      {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${this.#opts.token}`,
+        },
+        body: JSON.stringify({ model: this.#opts.model, stream: true, messages, tools }),
+        signal: ctx.signal,
+      },
+    );
     if (!res.ok || !res.body) {
       throw new Error(`model request failed with ${res.status}: ${errorSnippet(await res.text())}`);
     }
@@ -234,7 +252,12 @@ export class OpenAIDriver implements ModelDriver {
     }
     const calls = parts
       .filter((p) => p.name)
-      .map((p) => ({ id: p.id || `call_${randomUUID()}`, name: p.name, args: p.args, input: parseArgs(p.args) }));
+      .map((p) => ({
+        id: p.id || `call_${randomUUID()}`,
+        name: p.name,
+        args: p.args,
+        input: parseArgs(p.args),
+      }));
     return { text, calls };
   }
 
@@ -280,13 +303,20 @@ export class OpenAIDriver implements ModelDriver {
     }
   }
 
-  async #execute(name: string, input: Record<string, unknown>, signal: AbortSignal): Promise<ToolOutcome> {
+  async #execute(
+    name: string,
+    input: Record<string, unknown>,
+    signal: AbortSignal,
+  ): Promise<ToolOutcome> {
     const home = this.#opts.workspaceDir;
     switch (name) {
       case "bash":
         return runBash(stringArg(input, "command"), home, signal);
       case "read_file":
-        return { output: await readFile(resolve(home, stringArg(input, "path")), "utf8"), isError: false };
+        return {
+          output: await readFile(resolve(home, stringArg(input, "path")), "utf8"),
+          isError: false,
+        };
       case "write_file": {
         const path = resolve(home, stringArg(input, "path"));
         const content = stringArg(input, "content");
@@ -311,9 +341,15 @@ export class OpenAIDriver implements ModelDriver {
     // The id names a file, so only plain ids are looked up.
     if (sessionId && SESSION_ID.test(sessionId)) {
       try {
-        return { id: sessionId, history: JSON.parse(await readFile(this.#file(sessionId), "utf8")) as ChatMessage[] };
+        return {
+          id: sessionId,
+          history: JSON.parse(await readFile(this.#file(sessionId), "utf8")) as ChatMessage[],
+        };
       } catch (err) {
-        log.warn("could not resume session; starting a new one", { session: sessionId, error: errorMessage(err) });
+        log.warn("could not resume session; starting a new one", {
+          session: sessionId,
+          error: errorMessage(err),
+        });
       }
     }
     return { id: randomUUID(), history: [] };
@@ -376,7 +412,11 @@ function errorSnippet(body: string): string {
 function runBash(command: string, cwd: string, signal: AbortSignal): Promise<ToolOutcome> {
   return new Promise((resolveOutcome, reject) => {
     // Own process group, so a timeout or abort also kills what the command started.
-    const child = spawn("bash", ["-lc", command], { cwd, detached: true, stdio: ["ignore", "pipe", "pipe"] });
+    const child = spawn("bash", ["-lc", command], {
+      cwd,
+      detached: true,
+      stdio: ["ignore", "pipe", "pipe"],
+    });
     let stdout = "";
     let stderr = "";
     child.stdout.setEncoding("utf8").on("data", (s: string) => {

@@ -61,6 +61,7 @@
               "type": "string"
             },
             "message_id": {
+              "description": "`0`: a new agent's greeting turn, which has no mailbox message.",
               "format": "int64",
               "type": "integer"
             },

@@ -48,6 +48,9 @@ pub struct Settings {
     pub max_agents: usize,
     /// How long a `create_agent` approval card waits for the operator.
     pub approval_timeout: Duration,
+    /// A new agent's first turn opens with a greeting to the operator; one
+    /// created by the operator greets in a turn of its own.
+    pub greet_new_agents: bool,
     /// Where provider API keys live.
     pub secrets: crate::secrets::SecretStore,
     /// Prints a Google access token for Vertex providers.
@@ -63,6 +66,8 @@ pub struct Settings {
     pub ui_url: String,
     /// Object storage for files agents share (`--storage-url`).
     pub storage: Arc<dyn object_store::ObjectStore>,
+    /// Base URL for every voice provider instead of its public API (tests).
+    pub voice_upstream: Option<String>,
 }
 
 impl std::fmt::Debug for Settings {
@@ -83,6 +88,7 @@ impl std::fmt::Debug for Settings {
             api_token,
             max_agents,
             approval_timeout,
+            greet_new_agents,
             secrets,
             gcloud_token_cmd,
             codex_bin,
@@ -90,6 +96,7 @@ impl std::fmt::Debug for Settings {
             chatgpt_upstream,
             ui_url,
             storage,
+            voice_upstream,
         } = self;
         let redacted = |v: &Option<String>| v.as_ref().map(|_| "[REDACTED]");
         f.debug_struct("Settings")
@@ -107,6 +114,7 @@ impl std::fmt::Debug for Settings {
             .field("api_token", &redacted(api_token))
             .field("max_agents", max_agents)
             .field("approval_timeout", approval_timeout)
+            .field("greet_new_agents", greet_new_agents)
             .field("secrets", secrets)
             .field("gcloud_token_cmd", gcloud_token_cmd)
             .field("codex_bin", codex_bin)
@@ -114,6 +122,7 @@ impl std::fmt::Debug for Settings {
             .field("chatgpt_upstream", chatgpt_upstream)
             .field("ui_url", ui_url)
             .field("storage", storage)
+            .field("voice_upstream", voice_upstream)
             .finish()
     }
 }
@@ -136,6 +145,7 @@ impl Settings {
             api_token: None,
             max_agents: crate::agents::DEFAULT_MAX_AGENTS,
             approval_timeout: crate::agents::DEFAULT_APPROVAL_TIMEOUT,
+            greet_new_agents: true,
             secrets: crate::secrets::SecretStore::default(),
             gcloud_token_cmd: ["gcloud", "auth", "print-access-token"]
                 .map(String::from)
@@ -145,6 +155,7 @@ impl Settings {
             chatgpt_upstream: crate::codex::CHATGPT_CODEX_UPSTREAM.into(),
             ui_url: "http://127.0.0.1:7878".into(),
             storage: Arc::new(object_store::memory::InMemory::new()),
+            voice_upstream: None,
         }
     }
 }
@@ -174,6 +185,8 @@ pub enum UiEvent {
     GlobalMemoryChanged,
     /// The agent's routines or their runs changed; refetch them.
     RoutinesChanged { agent_id: AgentId },
+    /// Who is in the operator's voice call changed (empty: it ended).
+    Call { agents: Vec<AgentId> },
 }
 
 /// Shared daemon state. Cheap to clone.
@@ -204,6 +217,10 @@ pub struct AppState {
     pub link_key: Arc<tokio::sync::OnceCell<ring::hmac::Key>>,
     /// Connector OAuth sign-ins waiting for the browser, refresh locks.
     pub oauth: Arc<crate::oauth::OAuth>,
+    /// What speech and transcription may still spend this minute.
+    pub voice: Arc<Mutex<crate::voice::Budget>>,
+    /// The operator's voice call (in memory: a restart ends it).
+    pub call: Arc<Mutex<crate::call::Call>>,
 }
 
 impl AppState {
@@ -220,6 +237,7 @@ impl AppState {
             settings: Arc::new(settings),
             scheduler: Arc::new(Notify::new()),
             // A redirect would carry the provider key to another host.
+            #[allow(clippy::panic, reason = "startup: no TLS backend means no daemon")]
             http: reqwest::Client::builder()
                 .redirect(reqwest::redirect::Policy::none())
                 .build()
@@ -232,6 +250,8 @@ impl AppState {
             connectors: Arc::default(),
             link_key: Arc::default(),
             oauth: Arc::default(),
+            voice: Arc::default(),
+            call: Arc::default(),
         }
     }
 
@@ -360,6 +380,16 @@ impl ferrobot_mcp::MailboxNotifier for AppState {
                 .await
                 .map_err(|e| e.to_string())
         })
+    }
+
+    fn invite_to_call(
+        &self,
+        host: AgentId,
+        guest: AgentId,
+        topic: String,
+    ) -> ferrobot_mcp::BoxFuture<Result<(), String>> {
+        let state = self.clone();
+        Box::pin(async move { state.invite_to_call(host, guest, &topic).await })
     }
 
     fn share_file(

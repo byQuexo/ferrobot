@@ -3,6 +3,8 @@
 
 use std::path::{Path, PathBuf};
 
+#[cfg(not(unix))]
+use super::NoUnixSockets as UnixStream;
 use bytes::Bytes;
 use http_body_util::{BodyExt, Full};
 use hyper::Method;
@@ -10,6 +12,7 @@ use hyper::header::{ACCEPT, CONTENT_TYPE, HOST};
 use hyper_util::rt::TokioIo;
 use serde::Serialize;
 use serde_json::{Value, json};
+#[cfg(unix)]
 use tokio::net::UnixStream;
 
 use crate::SandboxError;
@@ -116,7 +119,6 @@ impl Request {
         Self::new(Method::PUT, "/mmds", contents)
     }
 
-    #[allow(dead_code, reason = "for the guest agent over vsock (roadmap F2)")]
     pub fn vsock(guest_cid: u32, uds_path: &Path) -> Self {
         Self::new(
             Method::PUT,
@@ -137,7 +139,7 @@ impl Request {
         Self::new(Method::PATCH, "/vm", json!({ "state": state }))
     }
 
-    #[allow(dead_code, reason = "for cold sleep (roadmap F4b)")]
+    #[allow(dead_code, reason = "for cold sleep")]
     pub fn snapshot_create(snapshot_path: &Path, mem_file_path: &Path) -> Self {
         Self::new(
             Method::PUT,
@@ -150,7 +152,7 @@ impl Request {
         )
     }
 
-    #[allow(dead_code, reason = "for cold sleep (roadmap F4b)")]
+    #[allow(dead_code, reason = "for cold sleep")]
     pub fn snapshot_load(snapshot_path: &Path, mem_file_path: &Path, resume_vm: bool) -> Self {
         Self::new(
             Method::PUT,
@@ -413,34 +415,36 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn errors_carry_the_fault_message() {
+    async fn errors_carry_the_fault_message_or_the_raw_body() {
         let dir = tempfile::tempdir().unwrap();
-        let socket = dir.path().join("api.sock");
-        serve(&socket, 400, r#"{"fault_message":"Invalid kernel path"}"#);
-        let err = Client::new(&socket)
-            .send(&Request::boot_source(Path::new("/nope"), ""))
-            .await
-            .unwrap_err();
-        assert!(
-            matches!(&err, SandboxError::Firecracker { status: 400, fault_message } if fault_message == "Invalid kernel path"),
-            "{err}"
-        );
-        assert_eq!(err.to_string(), "firecracker API 400: Invalid kernel path");
-    }
-
-    #[tokio::test]
-    async fn non_json_errors_keep_the_raw_body() {
-        let dir = tempfile::tempdir().unwrap();
-        let socket = dir.path().join("api.sock");
-        serve(&socket, 500, "boom");
-        let err = Client::new(&socket)
-            .send(&Request::vm(VmState::Paused))
-            .await
-            .unwrap_err();
-        assert!(
-            matches!(&err, SandboxError::Firecracker { status: 500, fault_message } if fault_message == "boom"),
-            "{err}"
-        );
+        let cases = [
+            (
+                400,
+                r#"{"fault_message":"Invalid kernel path"}"#,
+                "Invalid kernel path",
+            ),
+            (500, "boom", "boom"),
+        ];
+        for (status, answer, expected) in cases {
+            let socket = dir.path().join(format!("{status}.sock"));
+            serve(&socket, status, answer);
+            let err = Client::new(&socket)
+                .send(&Request::vm(VmState::Paused))
+                .await
+                .unwrap_err();
+            let SandboxError::Firecracker {
+                status: got,
+                fault_message,
+            } = &err
+            else {
+                panic!("{err}");
+            };
+            assert_eq!((*got, fault_message.as_str()), (status, expected));
+            assert_eq!(
+                err.to_string(),
+                format!("firecracker API {status}: {expected}")
+            );
+        }
     }
 
     #[tokio::test]

@@ -1,9 +1,5 @@
-//! Cron schedules for routines and the loop that fires them.
-//!
-//! Schedules are standard 5-field cron expressions (minute granularity) or
-//! aliases such as `@hourly`, evaluated in the routine's IANA time zone, so
-//! "0 9 * * 1-5" means 09:00 local time on weekdays across DST changes.
-//! A routine that came due while the daemon was down fires once on startup.
+//! Routine schedules (5-field cron or `@hourly`-style aliases in the routine's IANA time zone, so
+//! DST-safe) and the loop that fires them. A run missed while the daemon was down fires once.
 
 use std::time::Duration;
 
@@ -17,9 +13,9 @@ use time::OffsetDateTime;
 use crate::error::ApiError;
 use crate::{AppState, UiEvent};
 
-/// Longest sleep between checks, so clock jumps are noticed.
 /// Pause after a failed pass.
 const ERROR_BACKOFF: Duration = Duration::from_secs(5);
+/// Longest sleep between checks, so clock jumps are noticed.
 const MAX_IDLE: Duration = Duration::from_secs(30);
 
 /// A parsed, validated schedule.

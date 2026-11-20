@@ -523,3 +523,200 @@ store used for the run) or the daemon's own env.
   contains a fresh nonce, a `tool_use` event and the nonce in the sandbox
   file; it rebuilds the runner image first and reads the data dir only
   after the daemon stopped.
+
+## Agent collaboration (`feat/agent-collaboration`)
+
+- **Done:** mail from an agent wakes a sleeping one (now tested); tracked
+  tasks (`assign_task`, `create_agent` with `task`, `list_tasks`) with an
+  automatic report when the delegate's turn ends and one reminder from the
+  supervisor; memorable names asked for in the prompt and `create_agent`;
+  a greeting to the operator at the start of a new agent's first turn, in a
+  turn of its own for operator-created agents. Design in `docs/decisions.md`.
+  No migration; the runner protocol only documents `message_id: 0`.
+- **Tested** (in-process daemon, fake runner frames, real MCP tools):
+  `agent_mail_wakes_sleeping_agents` (paused, stopped and archived agents
+  woken by `send_message`, tool descriptions), `tasks_report_back_once_and_never_loop`
+  (report without a reply, none when the delegate replied, one reminder
+  only, a reply threaded to the reminder counts, `list_tasks`, the
+  assigner's turns on answers send nothing back),
+  `new_agents_greet_the_operator_first` (greeting turn, greeting before a
+  queued message, greets once, no own turn for agent-created agents). Runner:
+  the prompt lines (`systemAppend`). Live, with the real `ferrobotd`, the
+  local backend and the mock driver: an operator-created agent's greeting
+  turn runs, shows as its first chat text and counts as unread; its next
+  turn has no greeting.
+- **Not tested:** a real model with any of it: whether models end task turns
+  with their answer, keep `reply_to` for the final answer, pick memorable
+  names and greet in one or two lines. `smoke-docker.sh` was not run (it
+  binds 7878/7879). Not handled: a delegate that hands part of its task to a
+  third agent gets that agent's answer as a normal message, so its final
+  answer to the first assigner then depends on the model again.
+## Release prep 0: conventions and cleanup (`chore/conventions`)
+
+**Done**
+
+- `docs/CONVENTIONS.md`, linked from CLAUDE.md. Enforced by `.editorconfig`,
+  `clippy.toml` and the workspace lints `unwrap_used`, `expect_used` and
+  `panic` (allowed in tests and at two annotated startup sites), and by
+  Prettier in the runner (`npm run format:check`, also in CI).
+- Comments trimmed to the why in all crates, the runner, scripts and the Tauri
+  shell; wrong doc comments fixed (CLI help of `--listen`, `--warm-after`,
+  `--codex-bin`, `--model`; `update_agent_profile`; `new_token`; the
+  permission policy's scope). Each `TODO(kvm)` points to an issue draft in
+  `docs/launch/issues/`.
+- Promise chains in the runner became `async`/`await`.
+- `scripts/smoke-docker.sh` and `smoke-live.sh` take their ports from
+  `FERROBOT_SMOKE_PORT` / `FERROBOT_SMOKE_AGENT_PORT`; the Docker smoke test
+  uses the file secret store (no keychain prompt).
+- Test diet: Rust 134 → 133 (two near-identical pairs merged into table tests,
+  one test added for the timestamp fix), runner 83 → 80 (four mock-parser
+  tests merged into one table with all eight cases), desktop 17. No security
+  test was removed.
+
+**Bugs fixed on the way**
+
+- Stored timestamps had a variable width (RFC 3339 drops a zero fraction), so
+  SQLite's text comparison put `…:00Z` after `…:00.5Z`: a routine due on a
+  whole second could be missed for up to a second while the scheduler spun.
+  Timestamps are now fixed-width microseconds; old rows sort at most one
+  second off until they are rewritten.
+- The runner's shell guard let `rm -rf /*`, `rm -rf ~/`, `rm -r -f /` and
+  `rm -rf --no-preserve-root /` through.
+- The ACP driver allowed edit, delete and move requests that named no path.
+- The desktop shell injected the operator token into any page on `localhost`;
+  now only the Vite dev server port (1420) and the app's own pages get it.
+
+**Not done here**
+
+- Files the open voice PR changes (`state.rs` apart from one attribute,
+  `runner_ws.rs`, `api/mod.rs`, `error.rs`, `spec.rs`, `api/providers.rs`,
+  `lib.rs`, `features.rs`, `specs.rs`, `mcp` `lib.rs`/`tools.rs`, store
+  `lib.rs`/`migrations.rs`), API doc comments that generate `protocol/`, and
+  the desktop UI (ESLint, Prettier, comments): after that PR merges.
+- Found, not fixed: on Firecracker an archive request stops the VM and
+  reports success, so `--archive-after` would stop it again every tick; a
+  message steered into a Claude turn whose resume then fails is reported as
+  seen but never reaches the model; the bearer scheme is matched
+  case-sensitively (all our clients send `Bearer`).
+
+## Release prep 1: security leftovers (`fix/security-leftovers`)
+
+**Done**
+
+- Archived and snapshot images blank every env variable that holds the agent
+  token (value match), so `ANTHROPIC_API_KEY`, `GEMINI_API_KEY` and
+  `AWS_BEARER_TOKEN_BEDROCK` no longer keep the old token in the image config.
+- CI job "Dependency audit": `cargo audit` (workspace and Tauri lockfiles) and
+  `npm audit` (runner, desktop). Local result: no vulnerability after the
+  `time` update; unmaintained-crate warnings listed in decisions.
+- The shared-page CSP test also asserts that `allow-same-origin` is absent.
+
+**Tested**
+
+- Unit test of the env change; the Docker sandbox test now gives the sandbox
+  the token under all four names and checks the snapshot image and the image
+  restored from an archive carry no env value with the token (Docker Desktop
+  on macOS, `ferrobot-runner:dev` image).
+## Release prep 3: contributor docs (`chore/contributor-docs`)
+
+**Done**
+
+- README: pitch, download section (unsigned-build steps for macOS and
+  Windows), a five-minute quick start with Docker Desktop and Ollama and no
+  key, a new architecture diagram with the model proxy, "Status and limits";
+  stale lines fixed (Codex is in the image, a live Claude turn ran, archives
+  are encrypted, which routes are open, 244-bit agent tokens).
+- CONTRIBUTING.md, CODE_OF_CONDUCT.md (Contributor Covenant 2.1), SECURITY.md
+  (private advisories, known open hardening items), issue forms, PR template,
+  CODEOWNERS, ten issue drafts in `docs/launch/issues/`.
+- Clean-room and employer check: no OpenBot or Grok Bot material; the only
+  mentions are the README's clean-room note and CLAUDE.md's rules. No
+  employer named anywhere.
+
+**Not verified**
+
+- The README describes the desktop download as section 7 builds it (bundled
+  daemon, Docker check, runner image on ghcr.io); true once that lands.
+- The Code of Conduct points reporters to the email on the maintainer's
+  GitHub profile; GitHub has no private messages.
+
+## Release prep 5: wiki (`chore/wiki`)
+
+**Done**
+
+- `docs/wiki/` as GitHub-wiki pages: Home, sidebar, Architecture (mermaid),
+  Roadmap (M1, L0–L5, F0–F5 with status, no dates), Getting Started (desktop
+  and source paths), Providers, Sandbox Backends, Usage and Costs,
+  Conventions, FAQ.
+- `scripts/publish-wiki.sh` copies the pages into the `.wiki.git` repository
+  over SSH; dry run unless `--yes`.
+
+**Not verified**
+
+- The script never ran (the wiki needs a public repo or a paid plan, and a
+  first page created on GitHub before its git repository exists); checked
+  with `bash -n` only.
+
+## Release prep 8: repository settings (`chore/github-settings`)
+
+**Done**
+
+- `docs/launch/github-settings.md` and `scripts/apply-github-settings.sh`
+  (dry run unless `--yes`, refuses on a private repo or a
+  `pull_request_target` workflow that touches PR code): ruleset for `main`
+  (no deletion or force push, PR with one approval, stale approvals
+  dismissed, code owner review, every PR job required, linear history, admin
+  bypass for a solo maintainer), approval for outside contributors' workflow
+  runs, read-only default token.
+- CI: a `Changes` job replaces `paths-ignore`, so docs-only PRs skip the real
+  jobs instead of leaving required checks pending forever.
+
+**Not verified**
+
+- Nothing ran against GitHub. `actor_id 5` (admin role) and the check names
+  as ruleset contexts are taken from docs, not tried. Linear history means
+  switching from merge commits to squash merges before the ruleset goes on.
+- The new `Changes` job has not run on GitHub (Actions minutes are used up).
+
+## Release prep 7: desktop release (`feat/desktop-release`)
+
+**Done**
+
+- The desktop shell starts the bundled `ferrobotd` and stops it on exit; the
+  daemon keeps running without Docker and says so in `/v1/health`; the app
+  then shows a "Docker is not running" page that continues by itself.
+- Docker pulls the runner image on first use; release builds name
+  `ghcr.io/byquexo/ferrobot-runner:0.1.0`.
+- `.github/workflows/release.yml` (tag `v*`): draft release, universal `.dmg`,
+  NSIS `.exe`, `SHA256SUMS`, multi-arch runner image; optional signing.
+- `CHANGELOG.md`; version 0.1.0 was already set everywhere (workspace,
+  `package.json` files, `tauri.conf.json`, the Tauri crate).
+
+**Tested**
+
+- Daemon test: `/v1/health` reports `sandbox_ready: true` with a working
+  backend. All Rust, runner, desktop and Tauri shell gates pass.
+- `ferrobot_0.1.0_aarch64.dmg` built locally (`CI=true` skips the Finder
+  layout step, which times out without a GUI session; GitHub runners set
+  `CI`). The bundle holds `ferrobotd` next to the app binary, and
+  `ferrobotd --version` runs from the mounted image.
+- The release `ferrobotd`, started the way the app starts it but on spare
+  ports with the mock driver and the file secret store: health reports
+  `sandbox_ready: true`, a mock agent in a Docker container answered, and
+  deleting it left no container.
+- Without a Docker socket the daemon starts and reports `sandbox_ready:
+  false`; once the socket appears, the next health call reports `true`.
+- The Docker sandbox test passes with the reconnecting client.
+
+**Not verified**
+
+- The app was not launched: the window, the sidecar start and stop, the
+  Docker page, the token injection and the blob download handler. A launch
+  needs port 7878 (in use on the build machine) and the real keychain; left
+  for Tim.
+- The universal macOS build, any Windows build (Windows: CI only, never run
+  on real hardware), signing, notarization.
+- The release workflow and the runner image push never ran (no Actions
+  minutes; macOS runners cost ten times the minutes on a private repo and are
+  free once the repo is public). `ubuntu-24.04-arm` runners are free for
+  public repos only.

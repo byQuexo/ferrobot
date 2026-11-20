@@ -1,8 +1,5 @@
-//! OAuth sign-in for connectors, as the MCP authorization spec describes it:
-//! metadata discovery, client registration (dynamic, or the operator's own
-//! OAuth app), PKCE, refresh, and RFC 7009 revocation on sign-out. Built on
-//! rmcp's OAuth client and the `oauth2` crate. The daemon is the OAuth client;
-//! tokens live in the secret store, never in a sandbox.
+//! Connector OAuth per the MCP authorization spec (discovery, registration, PKCE, refresh,
+//! RFC 7009 revocation). The daemon is the client; tokens never reach a sandbox.
 
 use std::collections::HashMap;
 use std::sync::{Arc, PoisonError};
@@ -275,9 +272,8 @@ impl OAuth {
     }
 }
 
-/// Private LAN addresses the operator chose themselves. rmcp already allows
-/// loopback for loopback connectors and keeps its guard for everything else,
-/// so metadata cannot point the daemon into the LAN.
+/// A private LAN address the operator chose. rmcp allows loopback itself and keeps
+/// its guard for everything else, so metadata cannot point the daemon into the LAN.
 fn is_private(url: &str) -> bool {
     match url::Url::parse(url)
         .ok()
@@ -319,9 +315,8 @@ fn same_issuer(a: &str, b: &str) -> bool {
     a.trim_end_matches('/') == b.trim_end_matches('/')
 }
 
-/// An own OAuth app is used only with the issuer the operator named: a
-/// hostile MCP server must not get its code, verifier or secret sent to
-/// another token endpoint. rmcp checks that metadata comes from its issuer.
+/// An own OAuth app works only with the issuer the operator named, so a hostile MCP server cannot
+/// steer the app's code, verifier or secret to another token endpoint. rmcp checks the metadata.
 fn check_issuer(config: &ClientConfig, metadata: &AuthorizationMetadata) -> Result<(), String> {
     if config.client_id.is_none() {
         return Ok(());

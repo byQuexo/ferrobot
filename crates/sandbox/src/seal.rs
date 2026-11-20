@@ -1,10 +1,5 @@
-//! Encryption at rest for archives in object storage: AES-256-GCM over 64 KiB
-//! chunks (the STREAM construction), so gigabyte images never sit in memory.
-//!
-//! Layout: `MAGIC`, a random 7-byte nonce prefix, then chunks of plaintext
-//! plus a 16-byte tag. A chunk's nonce is prefix, big-endian counter and a
-//! last-chunk flag, so reordered, dropped or appended chunks fail to open.
-//! The object's key is the AAD: an archive copied to another path fails too.
+//! Archive encryption at rest: AES-256-GCM over 64 KiB chunks (the STREAM construction), so
+//! gigabyte images never sit in memory. Layout: `MAGIC`, nonce prefix, then sealed chunks.
 
 use std::sync::Arc;
 
@@ -26,6 +21,7 @@ pub struct SealKey(Arc<LessSafeKey>);
 impl SealKey {
     /// # Panics
     /// Never: 32 bytes are always an AES-256 key.
+    #[allow(clippy::expect_used, reason = "cannot fail for a 32-byte key")]
     pub fn new(bytes: &[u8; 32]) -> Self {
         let key = UnboundKey::new(&AES_256_GCM, bytes).expect("32 bytes is an AES-256 key");
         Self(Arc::new(LessSafeKey::new(key)))
@@ -42,6 +38,8 @@ fn damaged() -> SandboxError {
     SandboxError::Other("archive cannot be decrypted: wrong key or damaged".into())
 }
 
+// Counter and last-chunk flag make reordered, dropped or appended chunks fail; the object key
+// is the AAD, so an archive copied to another path fails too.
 fn nonce(prefix: [u8; PREFIX], counter: u32, last: bool) -> Nonce {
     let mut n = [0u8; NONCE_LEN];
     n[..PREFIX].copy_from_slice(&prefix);

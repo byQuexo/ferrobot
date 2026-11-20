@@ -46,14 +46,16 @@ scripts/         seed-demo.sh, smoke-docker.sh, smoke-live.sh
 ```
 
 Principles:
-- **Core crates stay plain**: `core`, `store`, `sandbox` (and `mcp`) must not
-  depend on Tauri or axum, so they stay embeddable (e.g. a future UniFFI
+- **Core crates stay plain**: `core`, `store` and `sandbox` must not
+  depend on Tauri or axum (`mcp` serves over axum, never Tauri), so they stay embeddable (e.g. a future UniFFI
   binding). API derives are behind features (`core`/`sandbox`: `schema` for
   utoipa, `core`: `mcp` for schemars). CI checks
   `cargo check -p ferrobot-core -p ferrobot-store -p ferrobot-sandbox`.
 - **Desktop is thin**: no business logic in Tauri (there are no Tauri
-  commands); the UI does everything through the `/v1` API and the `/v1/ws`
-  event stream. Generated API types live in `apps/desktop/src/generated/`.
+  commands); the shell only starts the bundled `ferrobotd` (release builds,
+  when nothing answers on 127.0.0.1:7878) and injects the operator token. The
+  UI does everything through the `/v1` API and the `/v1/ws` event stream.
+  Generated API types live in `apps/desktop/src/generated/`.
 - **The API is versioned** (`/v1`). Additive changes only; breaking changes
   need a new version. `protocol/` is generated from the code, never by hand.
 - Two listeners with different trust: UI API on loopback (operator token),
@@ -78,9 +80,17 @@ Principles:
   is the MCP client of remote MCP servers and lends their tools to assigned
   agents through `/mcp` (tokens in the keychain, never in a sandbox);
   `oauth.rs` — their OAuth sign-in (rmcp's client, loopback callback).
+- `crates/daemon/src/voice.rs`, `api/voice.rs` — voice: speech and
+  transcription for the operator's chat via ElevenLabs or OpenRouter (keys
+  in the keychain as `voice:<provider>`); `call.rs` — the operator's voice
+  call (agents invite teammates; replies reach the others only with the
+  operator's next message); `apps/desktop/src/lib/voice.ts` — playback and
+  recording in the UI.
 - `crates/daemon/src/storage.rs` — object storage (`object_store`) for snapshot
   archives, `--storage-url` (default: the data dir; `s3://` for S3/R2).
 - `crates/daemon/src/lifecycle.rs`, `supervisor.rs`, `scheduler.rs`, `runner_ws.rs`.
+- `crates/daemon/src/tasks.rs` — tracked tasks: automatic report and reminder;
+  `crates/store/src/tasks.rs` — task state from `task` events and the mailbox.
 - `crates/mcp/src/tools.rs` — MCP tools; `crates/mcp/src/lib.rs` — `MailboxNotifier`.
 - `crates/store/src/migrations.rs` — schema migrations.
 - `crates/core/src/question.rs` — question/approval cards.
@@ -88,6 +98,9 @@ Principles:
 - `apps/desktop/src/app.tsx`, `src/api.ts`, `src/components/`, `src/lib/timeline.ts`.
 
 ## Code conventions
+
+The rules are in [`docs/CONVENTIONS.md`](docs/CONVENTIONS.md); the points below
+are the repo-specific ones.
 
 - Rust 2024, stable toolchain (`rust-toolchain.toml`), `rustfmt.toml`.
 - `unsafe_code = "forbid"`; clippy `pedantic` is on and CI uses `-D warnings`.
@@ -135,12 +148,21 @@ cargo test -p ferrobot-daemon --features docker-tests --test e2e -- --ignored
 sudo scripts/firecracker/build-rootfs.sh   # Linux only; see scripts/firecracker/README.md
 ```
 
-Runner (`runner/`): `npm ci && npm run lint && npm run typecheck && npm test && npm run build`
+Runner (`runner/`): `npm ci && npm run lint && npm run format:check && npm run typecheck && npm test && npm run build`
 
 Desktop (`apps/desktop/`): `npm ci && npm run check:api && npm run typecheck && npm test && npm run build`;
 Tauri shell: `cd src-tauri && cargo fmt --check && cargo clippy --all-targets -- -D warnings`.
 The built `dist/` is embedded at compile time: run `npm run build` before
 `cargo build` in `src-tauri`.
+
+Release bundle (local, host arch; CI builds universal macOS and Windows on a
+`v*` tag, `.github/workflows/release.yml`):
+```
+cargo build --release -p ferrobot-daemon
+mkdir -p apps/desktop/src-tauri/binaries
+cp target/release/ferrobotd apps/desktop/src-tauri/binaries/ferrobotd-$(rustc -vV | sed -n 's/^host: //p')
+cd apps/desktop && npm run tauri build -- --bundles dmg --config src-tauri/tauri.release.conf.json
+```
 
 Demo data:
 ```
@@ -153,9 +175,10 @@ daemon, `docker ps -a` must be empty of ferrobot containers.
 ## Migrations
 
 - `crates/store/src/migrations.rs`, tracked with `PRAGMA user_version`.
-- Forward-only, numbered v1..v11 (v7: `providers`, `agents.provider_id`/`model`; v8:
+- Forward-only, numbered v1..v12 (v7: `providers`, `agents.provider_id`/`model`; v8:
   `global_memories`; v9: `connectors`, `agent_connectors`; v10:
-  `global_memories.author`; v11: `agents.pinned`). Append a new entry
+  `global_memories.author`; v11: `agents.pinned`; v12: `settings`, JSON by
+  key, e.g. `voice`). Append a new entry
   with a `// vN: ...` comment; **never edit or reorder existing ones**.
 - Every migration gets a test (upgrade an old DB, check defaults of existing
   rows). New columns on existing tables need a default.
@@ -173,7 +196,8 @@ daemon, `docker ps -a` must be empty of ferrobot containers.
   No Claude subscription (OAuth) logins (connector OAuth is fine).
 - **Operator token on `/v1`.** Every UI route requires
   `Authorization: Bearer <token>` (`FERROBOT_API_TOKEN` or
-  `<data dir>/api-token`); only `/v1/health` is open. Keep the UI listener on
+  `<data dir>/api-token`); only `/v1/health` and `/v1/oauth/callback` (single-use
+  `state`) are open, and `/artifacts/` takes signed links. Keep the UI listener on
   loopback by default.
 - **Per-agent tokens** on `/runner/ws`, `/mcp`, `/model`. An agent can only act
   as itself (MCP tools read the caller from the token). Only hashes are stored.
@@ -192,7 +216,8 @@ daemon, `docker ps -a` must be empty of ferrobot containers.
 - Docker e2e, `smoke-docker.sh` and the Docker sandbox test passed on
   `feature/firecracker-client` (macOS, Docker Desktop); runner image rebuilt.
 - Firecracker: no microVM has booted; every `TODO(kvm)` needs a KVM host.
-- No provider has been run against its real upstream (no keys used).
+- Only Anthropic (Claude driver) and Ollama have run against a real
+  upstream; OpenAI, Gemini, OpenRouter, Bedrock and Vertex never have.
 - Codex 0.166.0 is in the runner image; a live Codex turn ran against Ollama's
   Responses API, not against OpenAI (no key in the environment).
 - A live Claude turn passed (`scripts/smoke-live.sh`, 2026-11-20, macOS): an
@@ -200,6 +225,8 @@ daemon, `docker ps -a` must be empty of ferrobot containers.
   Docker sandbox, no trace of the key in the sandbox, logs or data dir.
   Claude steering is still untested against the real API; the Windows
   Credential Manager path has never run.
+- Voice never called ElevenLabs or OpenRouter for real (fake upstream only),
+  and the microphone was never used in the Tauri window.
 
 ## Next up: Firecracker
 

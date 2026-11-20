@@ -37,7 +37,13 @@ interface FileUpdate {
 
 type CodexItem =
   | { type: "agentMessage"; id: string; text: string }
-  | { type: "commandExecution"; id: string; command: string; status: string; aggregatedOutput: string | null }
+  | {
+      type: "commandExecution";
+      id: string;
+      command: string;
+      status: string;
+      aggregatedOutput: string | null;
+    }
   | { type: "fileChange"; id: string; status: string; changes: FileUpdate[] }
   | {
       type: "mcpToolCall";
@@ -97,19 +103,47 @@ function itemEvents(stage: "started" | "completed", item: CodexItem): TurnEvent[
   const { id } = item;
   switch (item.type) {
     case "agentMessage":
-      return stage === "completed" && item.text.trim() ? [{ kind: "assistant_text", text: item.text }] : [];
+      return stage === "completed" && item.text.trim()
+        ? [{ kind: "assistant_text", text: item.text }]
+        : [];
     case "commandExecution":
       return stage === "started"
         ? [{ kind: "tool_use", id, name: "Bash", input: { command: item.command } }]
         : [toolResult(id, item.status, item.aggregatedOutput ?? item.status)];
     case "fileChange":
       return stage === "started"
-        ? [{ kind: "tool_use", id, name: "apply_patch", input: { changes: item.changes.map((c) => ({ path: c.path, kind: c.kind.type })) } }]
-        : [toolResult(id, item.status, item.changes.map((c) => `${c.kind.type} ${c.path}\n${c.diff}`).join("\n"))];
+        ? [
+            {
+              kind: "tool_use",
+              id,
+              name: "apply_patch",
+              input: { changes: item.changes.map((c) => ({ path: c.path, kind: c.kind.type })) },
+            },
+          ]
+        : [
+            toolResult(
+              id,
+              item.status,
+              item.changes.map((c) => `${c.kind.type} ${c.path}\n${c.diff}`).join("\n"),
+            ),
+          ];
     case "mcpToolCall":
       return stage === "started"
-        ? [{ kind: "tool_use", id, name: `mcp__${item.server}__${item.tool}`, input: item.arguments }]
-        : [toolResult(id, item.status, item.error?.message ?? toolResultText(item.result?.content))];
+        ? [
+            {
+              kind: "tool_use",
+              id,
+              name: `mcp__${item.server}__${item.tool}`,
+              input: item.arguments,
+            },
+          ]
+        : [
+            toolResult(
+              id,
+              item.status,
+              item.error?.message ?? toolResultText(item.result?.content),
+            ),
+          ];
     default:
       return [];
   }
@@ -134,8 +168,14 @@ function review(
       // The request names only the item; its paths arrived with item/started.
       const itemId = params["itemId"];
       const files = typeof itemId === "string" ? filesByItem.get(itemId) : undefined;
-      if (!files) return { name: "apply_patch", verdict: { allow: false, reason: "blocked: unknown file change" } };
-      const denied = files.map((file_path) => decide("Write", { file_path }, home)).find((v) => !v.allow);
+      if (!files)
+        return {
+          name: "apply_patch",
+          verdict: { allow: false, reason: "blocked: unknown file change" },
+        };
+      const denied = files
+        .map((file_path) => decide("Write", { file_path }, home))
+        .find((v) => !v.allow);
       return { name: "apply_patch", verdict: denied ?? { allow: true } };
     }
     default:
@@ -156,7 +196,10 @@ function threadIdOf(result: unknown): string {
 /** One `codex app-server` process: JSON-RPC without the "jsonrpc" field, one message per line. */
 class AppServer {
   readonly #child: ChildProcessWithoutNullStreams;
-  readonly #pending = new Map<string | number, { resolve: (result: unknown) => void; reject: (err: Error) => void }>();
+  readonly #pending = new Map<
+    string | number,
+    { resolve: (result: unknown) => void; reject: (err: Error) => void }
+  >();
   #nextId = 0;
   #stderr = "";
   #exit: Error | null = null;
@@ -194,7 +237,9 @@ class AppServer {
       gone(`codex app-server failed: ${err.message}`);
     });
     child.on("close", (code, signal) => {
-      gone(`codex app-server exited with ${code === null ? (signal ?? "a signal") : `code ${String(code)}`}`);
+      gone(
+        `codex app-server exited with ${code === null ? (signal ?? "a signal") : `code ${String(code)}`}`,
+      );
     });
     child.stderr.setEncoding("utf8").on("data", (text: string) => {
       process.stderr.write(text);
@@ -248,19 +293,28 @@ class AppServer {
       try {
         result = this.onRequest(msg.method, params);
       } catch (err) {
-        log.warn("codex: could not handle a request", { method: msg.method, error: errorMessage(err) });
+        log.warn("codex: could not handle a request", {
+          method: msg.method,
+          error: errorMessage(err),
+        });
       }
       // Codex waits for every answer, so an unhandled request gets an error, never silence.
       this.#send(
         result === undefined
-          ? { id: msg.id, error: { code: -32601, message: `ferrobot does not handle ${msg.method}` } }
+          ? {
+              id: msg.id,
+              error: { code: -32601, message: `ferrobot does not handle ${msg.method}` },
+            }
           : { id: msg.id, result },
       );
     } else if (msg.method !== undefined) {
       try {
         this.onNotification(msg.method, params);
       } catch (err) {
-        log.warn("codex: could not handle a notification", { method: msg.method, error: errorMessage(err) });
+        log.warn("codex: could not handle a notification", {
+          method: msg.method,
+          error: errorMessage(err),
+        });
       }
     } else if (msg.id !== undefined) {
       const pending = this.#pending.get(msg.id);
@@ -317,9 +371,12 @@ export class CodexDriver implements ModelDriver {
         [TOKEN_ENV]: this.#opts.token,
       });
     } catch (err) {
-      throw new Error(`codex is not installed in this sandbox image (${this.#opts.bin}: ${errorMessage(err)})`, {
-        cause: err,
-      });
+      throw new Error(
+        `codex is not installed in this sandbox image (${this.#opts.bin}: ${errorMessage(err)})`,
+        {
+          cause: err,
+        },
+      );
     }
     try {
       await server.request("initialize", { clientInfo: { name: "ferrobot", version: "0.1.0" } });
@@ -335,16 +392,26 @@ export class CodexDriver implements ModelDriver {
   async #openThread(server: AppServer, ctx: TurnContext): Promise<string> {
     const instructions = systemAppend(ctx.agentName, ctx.instructions);
     const wanted = ctx.sessionId;
-    if (wanted && this.#thread?.id === wanted && this.#thread.instructions === instructions) return wanted;
+    if (wanted && this.#thread?.id === wanted && this.#thread.instructions === instructions)
+      return wanted;
     const common = { cwd: this.#opts.workspaceDir, developerInstructions: instructions };
     let id: string | null = null;
     if (wanted) {
       try {
-        id = threadIdOf(await server.request("thread/resume", { ...common, threadId: wanted, excludeTurns: true }));
+        id = threadIdOf(
+          await server.request("thread/resume", {
+            ...common,
+            threadId: wanted,
+            excludeTurns: true,
+          }),
+        );
       } catch (err) {
         // A thread that cannot be resumed (e.g. after restoring an older snapshot) must not wedge the agent.
         if (!server.alive) throw err;
-        log.warn("could not resume session; starting a new one", { session: wanted, error: errorMessage(err) });
+        log.warn("could not resume session; starting a new one", {
+          session: wanted,
+          error: errorMessage(err),
+        });
       }
     }
     id ??= threadIdOf(await server.request("thread/start", common));
@@ -365,14 +432,21 @@ export class CodexDriver implements ModelDriver {
     });
     const stopped = new Promise<"aborted">((resolve) => {
       if (aborted(signal)) resolve("aborted");
-      signal.addEventListener("abort", () => { resolve("aborted"); }, { once: true });
+      signal.addEventListener(
+        "abort",
+        () => {
+          resolve("aborted");
+        },
+        { once: true },
+      );
     });
 
     // Anything of another turn (e.g. the tail of an interrupted one) is dropped.
     const ours = (params: Params): boolean =>
       params["threadId"] === threadId && turnId !== null && turnOf(params) === turnId;
     server.onNotification = (method, params) => {
-      if (method === "turn/started" && turnId === null && params["threadId"] === threadId) turnId = turnOf(params);
+      if (method === "turn/started" && turnId === null && params["threadId"] === threadId)
+        turnId = turnOf(params);
       if (!ours(params)) return;
       switch (method) {
         case "item/agentMessage/delta":
@@ -384,8 +458,10 @@ export class CodexDriver implements ModelDriver {
         case "item/completed": {
           const item = params["item"] as CodexItem;
           const stage = method === "item/started" ? "started" : "completed";
-          if (stage === "started" && item.type === "fileChange") filesByItem.set(item.id, changedPaths(item.changes));
-          if (stage === "completed" && item.type === "agentMessage" && item.text.trim()) lastText = item.text;
+          if (stage === "started" && item.type === "fileChange")
+            filesByItem.set(item.id, changedPaths(item.changes));
+          if (stage === "completed" && item.type === "agentMessage" && item.text.trim())
+            lastText = item.text;
           for (const event of itemEvents(stage, item)) emit(event);
           break;
         }
@@ -432,7 +508,7 @@ export class CodexDriver implements ModelDriver {
 
 async function interrupt(server: AppServer, params: Params): Promise<void> {
   const answer = await Promise.race([
-    server.request("turn/interrupt", params).catch(() => "failed"),
+    Promise.allSettled([server.request("turn/interrupt", params)]),
     sleep(INTERRUPT_TIMEOUT_MS, "timeout", { ref: false }),
   ]);
   // A Codex that ignores the interrupt is wedged; the next turn starts a fresh one.

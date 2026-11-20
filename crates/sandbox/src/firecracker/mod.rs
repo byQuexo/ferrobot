@@ -1,15 +1,5 @@
-//! Firecracker backend: one microVM per agent, driven over its API socket.
-//!
-//! Each VM has a directory `<state_dir>/<name>/` with the API socket, a
-//! sparse home disk (formatted by the guest init on first boot), the
-//! Firecracker log and `index`, the VM's slot on the host bridge (guest IP,
-//! MAC, TAP name). All guests share one gateway, the bridge's `host_ip`,
-//! which is also where they reach the daemon. The runner env goes in through
-//! MMDS, never the kernel command line.
-//!
-//! Needs Linux with KVM and root for the TAP devices; see
-//! `scripts/firecracker/README.md`. `exec`, files and snapshots wait for the
-//! guest agent (roadmap F2) and snapshot sleep (F4b).
+//! Firecracker backend: one microVM per agent, driven over its API socket; the runner env goes in
+//! through MMDS, not the kernel command line. Needs Linux, KVM and root; see `scripts/firecracker`.
 
 mod client;
 mod guest;
@@ -199,7 +189,7 @@ fn tap_exists(tap: &str) -> bool {
     Path::new("/sys/class/net").join(tap).exists()
 }
 
-// TODO(kvm): untested; needs root (CAP_NET_ADMIN) and the bridge from the README.
+// TODO(kvm): untested; needs CAP_NET_ADMIN, the bridge (docs/launch/issues/firecracker-on-kvm.md)
 async fn ensure_tap(tap: &str, bridge: &str) -> Result<(), SandboxError> {
     if tap_exists(tap) {
         return Ok(());
@@ -313,7 +303,7 @@ impl FirecrackerBackend {
         Ok(index)
     }
 
-    // TODO(kvm): untested; spawns firecracker and needs /dev/kvm and root.
+    // TODO(kvm): untested; needs /dev/kvm and root (docs/launch/issues/firecracker-on-kvm.md)
     async fn boot(&self, name: &str) -> Result<(), SandboxError> {
         self.check_kvm()?;
         let (vm, env) = {
@@ -339,7 +329,7 @@ impl FirecrackerBackend {
             .create(true)
             .append(true)
             .open(vm.dir.join("firecracker.log"))?;
-        // TODO(kvm): start through the jailer (roadmap F3), not firecracker directly.
+        // TODO(kvm): start through the jailer, not firecracker directly (docs/launch/issues/firecracker-jailer.md)
         let mut child = Command::new(&self.config.firecracker_bin)
             .arg("--api-sock")
             .arg(&socket)
@@ -403,7 +393,7 @@ impl SandboxBackend for FirecrackerBackend {
         Ok(handle)
     }
 
-    // TODO(kvm): the guest side (socat on vsock + guest-agent.js) has not run in a VM.
+    // TODO(kvm): the guest agent has never run in a VM (docs/launch/issues/firecracker-on-kvm.md)
     async fn exec(
         &self,
         sandbox: &SandboxHandle,
@@ -437,7 +427,7 @@ impl SandboxBackend for FirecrackerBackend {
         _sandbox: &SandboxHandle,
         _label: &str,
     ) -> Result<SnapshotRef, SandboxError> {
-        // TODO(kvm): pause + `PUT /snapshot/create` (Full), with the disks (roadmap F4b).
+        // TODO(kvm): pause + snapshot/create with disks (docs/launch/issues/firecracker-snapshot-sleep.md)
         Err(SandboxError::NotImplemented {
             backend: KIND,
             operation: "snapshot",
@@ -483,12 +473,12 @@ impl SandboxBackend for FirecrackerBackend {
                 SandboxState::Stopped | SandboxState::Missing => Ok(SleepLevel::Cold),
             };
         }
-        // TODO(kvm): cold sleep should snapshot and load on wake (roadmap F4b); now it stops.
+        // TODO(kvm): snapshot here, load on wake (docs/launch/issues/firecracker-snapshot-sleep.md)
         self.stop(sandbox).await?;
         Ok(SleepLevel::Cold)
     }
 
-    // TODO(kvm): untested against a real guest.
+    // TODO(kvm): untested against a real guest (docs/launch/issues/firecracker-on-kvm.md)
     async fn stop(&self, sandbox: &SandboxHandle) -> Result<(), SandboxError> {
         let name = Self::name(sandbox)?;
         let client = self.client(name);
@@ -546,7 +536,7 @@ impl SandboxBackend for FirecrackerBackend {
         if let Some(index) = read_index(&dir) {
             let tap = self.config.vm(name, index)?.tap;
             if tap_exists(&tap) {
-                // TODO(kvm): untested.
+                // TODO(kvm): untested (docs/launch/issues/firecracker-on-kvm.md)
                 ip(&["link", "del", "dev", &tap]).await?;
             }
         }
@@ -574,6 +564,20 @@ impl SandboxBackend for FirecrackerBackend {
             Err(SandboxError::Io(_)) => Ok(SandboxState::Stopped),
             Err(e) => Err(e),
         }
+    }
+}
+
+/// Lets the crate build on Windows, where Firecracker cannot run anyway.
+#[cfg(not(unix))]
+struct NoUnixSockets;
+
+#[cfg(not(unix))]
+impl NoUnixSockets {
+    async fn connect(_: impl AsRef<Path>) -> std::io::Result<tokio::io::DuplexStream> {
+        Err(std::io::Error::new(
+            std::io::ErrorKind::Unsupported,
+            "Firecracker needs Linux with KVM",
+        ))
     }
 }
 

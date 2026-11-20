@@ -1,8 +1,5 @@
-//! Core domain types shared by every ferrobot crate.
-//!
-//! This crate is deliberately dependency-light: no I/O, no async runtime.
-//! It defines identifiers, the agent and mailbox models, and the JSON wire
-//! protocol spoken between the daemon and the in-sandbox agent runner.
+//! Core domain types shared by every ferrobot crate: ids, agents, mail and the
+//! daemon <-> runner wire protocol. No I/O and no async runtime, on purpose.
 
 pub mod agent;
 pub mod connector;

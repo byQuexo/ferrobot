@@ -1,17 +1,5 @@
-//! "One computer per agent": the [`SandboxBackend`] abstraction.
-//!
-//! A sandbox is an isolated machine (container, microVM, ...) owned by exactly
-//! one agent. It has a persistent disk, can sleep and wake, and runs the
-//! agent runner, which dials *out* to the daemon. Backends:
-//!
-//! * [`DockerBackend`]: one container per agent via the Docker Engine API
-//!   (works with Podman's Docker-compatible socket too).
-//! * [`FirecrackerBackend`]: one Firecracker microVM per agent (Linux + KVM).
-//! * [`LocalProcessBackend`]: runs the runner as a plain child process in a
-//!   per-agent directory. **No isolation**; for development and CI only.
-//! * [`SpritesBackend`]: Fly.io Sprites (Firecracker microVM per agent).
-//!   Phase 0 ships the client skeleton only; every operation returns
-//!   [`SandboxError::NotImplemented`].
+//! "One computer per agent": the [`SandboxBackend`] trait and its backends ([`DockerBackend`],
+//! [`FirecrackerBackend`], [`LocalProcessBackend`] without isolation, the [`SpritesBackend`] stub).
 
 mod docker;
 mod error;
@@ -120,11 +108,8 @@ pub struct SnapshotRef {
     pub scope: String,
 }
 
-/// A backend that gives each agent its own computer.
-///
-/// All operations are idempotent where that makes sense: `create` on an
-/// existing name adopts it, `wake` on a running sandbox and `stop` on a
-/// stopped one are no-ops.
+/// A backend that gives each agent its own computer. `create` on an existing name adopts it;
+/// `wake` on a running sandbox and `stop` on a stopped one are no-ops.
 #[async_trait]
 pub trait SandboxBackend: Send + Sync + std::fmt::Debug {
     /// Stable backend kind, stored next to the sandbox id.
@@ -139,6 +124,11 @@ pub trait SandboxBackend: Send + Sync + std::fmt::Debug {
     /// workspace is `<home>/workspace`.
     fn home(&self) -> String {
         "/home/node".into()
+    }
+
+    /// Whether the backend can run sandboxes right now (e.g. the Docker engine answers).
+    async fn ready(&self) -> Result<(), SandboxError> {
+        Ok(())
     }
 
     /// Creates (or adopts) and starts the sandbox. A sandbox archived with
@@ -201,9 +191,8 @@ pub trait SandboxBackend: Send + Sync + std::fmt::Debug {
     /// Starts a stopped/sleeping sandbox (resumes a paused one).
     async fn wake(&self, sandbox: &SandboxHandle) -> Result<(), SandboxError>;
 
-    /// Puts the sandbox to sleep and returns the level reached (a sandbox
-    /// that is not running reaches `Cold`). `Cold` is [`stop`](Self::stop);
-    /// backends that cannot pause answer `Warm` with `NotImplemented`.
+    /// Puts the sandbox to sleep and returns the level reached (`Cold` if it was not running).
+    /// By default `Cold` is [`stop`](Self::stop) and `Warm`/`Archived` are `NotImplemented`.
     async fn sleep(
         &self,
         sandbox: &SandboxHandle,

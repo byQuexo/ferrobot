@@ -1,15 +1,16 @@
-//! Host side of the guest agent: exec and file access inside a microVM over
-//! Firecracker's vsock. The host connects to the VM's vsock Unix socket and
-//! asks for the guest port with `CONNECT <port>`; inside the guest, socat
-//! serves `dist/guest-agent.js` (one JSON request and one answer per connection).
+//! Host side of the guest agent: exec and files via `CONNECT <port>` on the VM's vsock socket.
+//! In the guest, socat serves `dist/guest-agent.js`: one JSON request and answer per connection.
 
 use std::path::Path;
 use std::time::Duration;
 
+#[cfg(not(unix))]
+use super::NoUnixSockets as UnixStream;
 use base64::Engine as _;
 use base64::engine::general_purpose::STANDARD as B64;
 use serde_json::{Value, json};
 use tokio::io::{AsyncBufReadExt, AsyncReadExt, AsyncWriteExt, BufReader};
+#[cfg(unix)]
 use tokio::net::UnixStream;
 
 use crate::{ExecOutput, ExecRequest, SandboxError, capture};

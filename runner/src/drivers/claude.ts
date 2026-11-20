@@ -1,12 +1,5 @@
-// Claude through the Claude Agent SDK. The SDK runs its own agent loop; we
-// wire in the daemon's MCP server, a permission policy, an audit hook,
-// streaming, interrupts, session resume and steering (messages that arrive
-// mid-turn go into the running query through the SDK's streaming input).
-//
-// Model traffic: the daemon starts the sandbox with ANTHROPIC_BASE_URL
-// pointing at its model proxy and ANTHROPIC_API_KEY set to this agent's
-// token, so the real key never enters the sandbox. The SDK reads both from
-// the environment.
+// Claude through the Claude Agent SDK, which runs its own agent loop. The SDK reads ANTHROPIC_BASE_URL
+// (the daemon's model proxy) and ANTHROPIC_API_KEY (this agent's token) from the env: no real key here.
 import { randomUUID } from "node:crypto";
 
 import {
@@ -49,23 +42,32 @@ export function systemAppend(agentName: string, instructions: string): string {
     `You are "${agentName}", one agent in a ferrobot team. You have your own computer;`,
     "your working directory is your workspace and persists between turns.",
     "Coordinate with teammates through the ferrobot MCP tools: list_agents, send_message,",
-    "read_mailbox, remember, recall, forget, ask_user (a question card for your operator)",
-    "and create_agent (a new teammate; waits for your operator's approval).",
+    "assign_task, list_tasks, read_mailbox, remember, recall, forget, ask_user (a question",
+    "card for your operator) and create_agent (a new teammate; waits for your operator's",
+    "approval).",
     "Messages and answers are asynchronous: after sending a message or asking,",
-    "finish your turn; the answer arrives later as a new message. In send_message.to use",
+    "finish your turn; the answer arrives later as a new message. A message wakes a",
+    "sleeping teammate, so you can always reach one. In send_message.to use",
     "the id from list_agents (names can change). In any text you write, mention a teammate",
     "as @name (e.g. @bob), never bold, in backticks or by id: your operator's app shows it",
     "as a link to that agent.",
-    "When you create an agent for a task, pass the task to create_agent so it starts right",
-    "away. A teammate's task is yours to finish: send your questions and results back to",
-    "that teammate with send_message, not ask_user; it talks to the operator. When a",
+    "To hand a teammate work, use assign_task, or create_agent with a task for a new one:",
+    "when its turn on the task ends, its answer comes back to you automatically, even while",
+    "you sleep. list_tasks shows the tasks you gave and got. Give a new agent a short,",
+    "memorable lowercase name that fits its role, like scout (research), forge (building),",
+    "ledger (numbers) or echo (comms), not research-agent.",
+    "A teammate's task is yours to finish: end your turn with your answer and it goes back",
+    "to that teammate automatically (a send_message with reply_to the task replaces it, so",
+    "use reply_to only for your final answer). Send questions to that teammate with",
+    "send_message, not ask_user; it talks to the operator. When a",
     "teammate you briefed asks something only the operator knows, ask with ask_user, then",
     "pass the answer back to it with send_message.",
     "Share what you learn as you go: after each useful step, write a short update with",
-    "your findings so far (in your reply for your operator, or with send_message to the",
-    "teammate that gave you the task), then keep working. Do not save it all for the end.",
-    "A message marked \"sent while you were working\" came in during your task: acknowledge",
-    "it at once in one short line (e.g. \"Noted, I'll finish the flights first\" or \"Good",
+    "your findings so far (in your reply for your operator, or with send_message without",
+    "reply_to to the teammate that gave you the task), then keep working. Do not save it",
+    "all for the end.",
+    'A message marked "sent while you were working" came in during your task: acknowledge',
+    'it at once in one short line (e.g. "Noted, I\'ll finish the flights first" or "Good',
     "point, I'll tell @bob\"), then act on it or carry on.",
     "To hand your operator a file you made (a plan, a report), call share_file with its",
     "path; it shows in your chat as a file they can open. For something visual (a page, a",
@@ -97,9 +99,8 @@ class Inbox implements AsyncIterable<SDKUserMessage> {
   /** Queues a user message and returns its uuid. */
   push(text: string): string {
     const uuid = randomUUID();
-    // client_composed: the text is delivered as written (no slash commands
-    // or @-mentions from what another agent typed); "next" folds a message
-    // into the running turn between tool rounds.
+    // client_composed: delivered as written, no slash commands or @-mentions from another agent's text;
+    // priority "next" folds the message into the running turn between tool rounds.
     this.#items.push({
       type: "user",
       message: { role: "user", content: text },
@@ -125,7 +126,9 @@ class Inbox implements AsyncIterable<SDKUserMessage> {
         continue;
       }
       if (this.#ended) return;
-      await new Promise<void>((resolve) => { this.#wake = resolve; });
+      await new Promise<void>((resolve) => {
+        this.#wake = resolve;
+      });
       this.#wake = null;
     }
   }
@@ -196,12 +199,13 @@ export function toolResultText(content: unknown): string {
     .join("\n");
 }
 
-/** Maps one SDK message to turn events. Pure, so it is tested against SDK-typed fixtures. */
+/** Maps one SDK message to turn events. */
 export function mapSdkMessage(message: SDKMessage): Mapped {
   const events: TurnEvent[] = [];
   const out: Mapped = {
     events,
-    sessionId: "session_id" in message && typeof message.session_id === "string" ? message.session_id : null,
+    sessionId:
+      "session_id" in message && typeof message.session_id === "string" ? message.session_id : null,
   };
   if (message.type === "stream_event") {
     // Live text of the top-level assistant only; subagent chatter stays out.
@@ -260,8 +264,7 @@ export class ClaudeDriver implements ModelDriver {
     try {
       return await this.#attempt(ctx, ctx.sessionId);
     } catch (err) {
-      // A session that cannot be resumed (e.g. after restoring an older
-      // snapshot) must not wedge the agent: start a fresh one once.
+      // A session that cannot be resumed (e.g. after restoring an older snapshot) must not wedge the agent.
       if (err instanceof ResumeFailedError) {
         log.warn("could not resume session; starting a new one", { session: ctx.sessionId });
         return this.#attempt(ctx, null);
@@ -274,7 +277,9 @@ export class ClaudeDriver implements ModelDriver {
     const { emit } = ctx;
     const home = this.#opts.workspaceDir;
     const abortController = new AbortController();
-    const onAbort = (): void => { abortController.abort(); };
+    const onAbort = (): void => {
+      abortController.abort();
+    };
     if (aborted(ctx.signal)) throw new TurnAbortedError("interrupted");
     ctx.signal.addEventListener("abort", onAbort, { once: true });
 

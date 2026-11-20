@@ -1,24 +1,5 @@
-//! Fly.io Sprites backend (stub).
-//!
-//! A Sprite is a Firecracker microVM with a persistent ext4 disk that sleeps
-//! on its own when idle and wakes on HTTP/exec. There is no official Rust
-//! SDK, so this module carries a small REST client skeleton.
-//!
-//! Design notes for the real implementation (phase 3):
-//! * Sprites have no templates/images/env at create time. Provisioning is
-//!   "create, then `exec` a setup script, then `checkpoint`" (checkpoint v0).
-//!   Secrets are written with the filesystem API, not passed as env.
-//! * There is no explicit stop/resume. `stop` becomes "close connections and
-//!   let it sleep"; `wake` becomes an HTTP request or exec against the sprite.
-//! * TCP connections drop when a sprite sleeps, which is why the runner dials
-//!   the daemon and reconnects instead of being driven over a held stdin.
-//! * Long turns need the in-sprite Tasks API heartbeat to stay awake.
-//!
-//! Endpoints (from <https://sprites.dev/api>, checked 2026-11-19):
-//! `POST /v1/sprites`, `DELETE /v1/sprites/{name}`,
-//! `POST /v1/sprites/{name}/exec`, `GET /v1/sprites/{name}/fs/read`,
-//! `PUT /v1/sprites/{name}/fs/write`, `POST /v1/sprites/{name}/checkpoint`.
-//! Lifecycle: <https://docs.fly.io/sprites/concepts/lifecycle.md>.
+//! Fly.io Sprites backend (stub): every operation returns `NotImplemented`. API:
+//! <https://sprites.dev/api>, lifecycle: <https://docs.fly.io/sprites/concepts/lifecycle.md>.
 
 use async_trait::async_trait;
 
@@ -54,8 +35,7 @@ impl Default for SpritesConfig {
     }
 }
 
-/// Thin REST client skeleton. Request/response types will be generated or
-/// hand-written from the published `OpenAPI` spec in phase 3.
+/// Thin REST client skeleton for Fly.io Sprites (Firecracker microVMs that sleep when idle).
 #[derive(Debug, Clone)]
 pub struct SpritesBackend {
     http: reqwest::Client,
@@ -71,7 +51,7 @@ impl SpritesBackend {
     }
 
     /// Builds an authenticated request for `path` (e.g. `/v1/sprites`).
-    #[allow(dead_code)] // used once the operations below are implemented
+    #[allow(dead_code, reason = "used once the operations below are implemented")]
     fn request(&self, method: reqwest::Method, path: &str) -> reqwest::RequestBuilder {
         self.http
             .request(method, format!("{}{path}", self.config.base_url))
@@ -93,7 +73,8 @@ impl SandboxBackend for SpritesBackend {
     }
 
     async fn create(&self, _spec: &SandboxSpec) -> Result<SandboxHandle, SandboxError> {
-        // POST /v1/sprites {name}; then exec setup + fs/write secrets + checkpoint.
+        // No image or env at create: POST /v1/sprites {name}, exec setup, fs/write secrets
+        // (never env), then checkpoint.
         Err(Self::todo("create"))
     }
 
@@ -140,7 +121,8 @@ impl SandboxBackend for SpritesBackend {
     }
 
     async fn stop(&self, _sandbox: &SandboxHandle) -> Result<(), SandboxError> {
-        // No stop endpoint: sprites sleep by themselves when idle.
+        // No stop endpoint: sprites sleep by themselves when idle; long turns need the
+        // in-sprite Tasks API heartbeat to stay awake.
         Err(Self::todo("stop"))
     }
 

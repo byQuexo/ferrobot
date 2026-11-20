@@ -1,7 +1,5 @@
-// Contract test for the Claude driver against the Claude Agent SDK's own
-// types. No API key or network: fixtures are typed as the SDK's message
-// types (so an SDK upgrade that changes these shapes fails `npm run
-// typecheck`), and `query` is replaced by a fake generator.
+// Fixtures are typed as the SDK's own message types, so an SDK upgrade that changes these shapes
+// fails `npm run typecheck`; `query` is a fake generator (no key, no network).
 import assert from "node:assert/strict";
 import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -21,6 +19,7 @@ import {
   MAX_TOOL_OUTPUT,
   buildOptions,
   mapSdkMessage,
+  systemAppend,
   type QueryFn,
 } from "../src/drivers/claude.ts";
 import type { TurnContext } from "../src/drivers/types.ts";
@@ -123,7 +122,12 @@ describe("mapSdkMessage (SDK-typed fixtures)", () => {
   it("maps assistant text and tool calls with ids", () => {
     assert.deepEqual(mapSdkMessage(assistant).events, [
       { kind: "assistant_text", text: "Hello, I will ask bob." },
-      { kind: "tool_use", id: "toolu_01", name: "mcp__ferrobot__send_message", input: { to: "bob", body: "hi" } },
+      {
+        kind: "tool_use",
+        id: "toolu_01",
+        name: "mcp__ferrobot__send_message",
+        input: { to: "bob", body: "hi" },
+      },
     ]);
   });
 
@@ -136,7 +140,12 @@ describe("mapSdkMessage (SDK-typed fixtures)", () => {
     assert.equal(first.is_error, false);
     assert.ok(first.output.length < MAX_TOOL_OUTPUT + 100);
     assert.match(first.output, /more characters/);
-    assert.deepEqual(second, { kind: "tool_result", id: "toolu_02", output: "boom", is_error: true });
+    assert.deepEqual(second, {
+      kind: "tool_result",
+      id: "toolu_02",
+      output: "boom",
+      is_error: true,
+    });
   });
 
   it("reads the final result", () => {
@@ -171,6 +180,21 @@ describe("buildOptions", () => {
       headers: { Authorization: "Bearer tok" },
     });
   });
+});
+
+describe("systemAppend", () => {
+  const prompt = systemAppend("ada", "");
+  for (const [what, line] of [
+    ["mail wakes a sleeping teammate", /A message wakes a\s+sleeping teammate/],
+    ["tasks report back on their own", /assign_task[\s\S]*answer comes back to you automatically/],
+    ["agents can list their tasks", /list_tasks shows the tasks you gave and got/],
+    ["delegates finish with their answer", /end your turn with your answer and it goes back/],
+    ["new agents get memorable names", /scout \(research\), forge \(building\)/],
+  ] as const) {
+    it(`tells the agent: ${what}`, () => {
+      assert.match(prompt, line);
+    });
+  }
 });
 
 function ctx(overrides: Partial<TurnContext> = {}): { ctx: TurnContext; events: TurnEvent[] } {
@@ -249,7 +273,9 @@ describe("ClaudeDriver with a fake query()", () => {
     });
     const { ctx: c } = ctx({ signal: abort.signal });
     const running = d.runTurn(c);
-    setTimeout(() => { abort.abort(); }, 10);
+    setTimeout(() => {
+      abort.abort();
+    }, 10);
     await assert.rejects(running, TurnAbortedError);
     assert.ok(sdkAborted);
   });
@@ -281,13 +307,23 @@ describe("ClaudeDriver with a fake query()", () => {
       ended = (await input.next()).done === true;
     });
     const late: SteerFrame[] = [
-      { type: "steer", turn_id: "t1", message_id: 4, sender: { kind: "user" }, sender_name: "user", body: "also book a hotel" },
+      {
+        type: "steer",
+        turn_id: "t1",
+        message_id: 4,
+        sender: { kind: "user" },
+        sender_name: "user",
+        body: "also book a hotel",
+      },
     ];
     let calls = 0;
     const takeMessages = (): SteerFrame[] => (calls++ === 0 ? [...late] : []);
     const out = await d.runTurn(ctx({ takeMessages }).ctx);
     assert.equal(out.result, "Asked bob.");
-    assert.match(textOf(seen[1]), /^Message #4 from user, sent while you were working:\n\nalso book a hotel$/);
+    assert.match(
+      textOf(seen[1]),
+      /^Message #4 from user, sent while you were working:\n\nalso book a hotel$/,
+    );
     assert.equal(seen[1]?.priority, "next");
     assert.equal(seen[1].client_composed, true, "no slash commands from message text");
     assert.ok(ended, "the input ends once every message is answered");
@@ -303,11 +339,20 @@ describe("ClaudeDriver with a fake query()", () => {
       const next = await input.next();
       assert.equal(next.done, false, "input must stay open for the queued message");
       seen.push(next.value);
-      yield { ...result, result: "Hotel booked.", user_message_uuids: [seen[1]?.uuid] } as unknown as SDKMessage;
+      yield {
+        ...result,
+        result: "Hotel booked.",
+        user_message_uuids: [seen[1]?.uuid],
+      } as unknown as SDKMessage;
     });
     let calls = 0;
     const late: SteerFrame = {
-      type: "steer", turn_id: "t1", message_id: 5, sender: { kind: "user" }, sender_name: "user", body: "hotel too",
+      type: "steer",
+      turn_id: "t1",
+      message_id: 5,
+      sender: { kind: "user" },
+      sender_name: "user",
+      body: "hotel too",
     };
     const takeMessages = (): SteerFrame[] => (calls++ === 0 ? [late] : []);
     const out = await d.runTurn(ctx({ takeMessages }).ctx);

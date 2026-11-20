@@ -1,23 +1,51 @@
-//! Docker backend integration test.
-//!
-//! Needs a reachable Docker/Podman engine and a pullable `alpine` image:
-//! `cargo test -p ferrobot-sandbox --features docker-tests`
+//! Docker backend integration test; needs a Docker/Podman engine and the runner image
+//! (`FERROBOT_TEST_IMAGE`, default `ferrobot-runner:dev`): `--features docker-tests`.
 #![cfg(feature = "docker-tests")]
 
 use std::collections::BTreeMap;
 use std::sync::Arc;
 
+use bollard::query_parameters::InspectContainerOptions;
 use ferrobot_sandbox::seal::SealKey;
 use ferrobot_sandbox::{
     DockerBackend, DockerConfig, ExecRequest, SandboxBackend, SandboxPath, SandboxSpec,
     SandboxState, SleepLevel,
 };
 
+/// The env the daemon gives a sandbox, with the agent token under every name it uses.
+fn agent_env(token: &str) -> BTreeMap<String, String> {
+    let mut env = BTreeMap::from([
+        ("FERROBOT_DAEMON_URL".into(), "http://127.0.0.1:9".into()),
+        ("FERROBOT_DRIVER".into(), "mock".into()),
+    ]);
+    for name in [
+        "FERROBOT_AGENT_TOKEN",
+        "ANTHROPIC_API_KEY",
+        "GEMINI_API_KEY",
+        "AWS_BEARER_TOKEN_BEDROCK",
+    ] {
+        env.insert(name.into(), token.into());
+    }
+    env
+}
+
+/// Env entries of a committed image that still carry `token`.
+#[allow(clippy::unwrap_used, reason = "test helper")]
+async fn token_in_image(image: &str, token: &str) -> Vec<String> {
+    let docker = bollard::Docker::connect_with_local_defaults().unwrap();
+    let config = docker.inspect_image(image).await.unwrap().config.unwrap();
+    config
+        .env
+        .unwrap_or_default()
+        .into_iter()
+        .filter(|kv| kv.contains(token))
+        .collect()
+}
+
 #[tokio::test]
 async fn container_lifecycle() {
     let snapshots = tempfile::tempdir().unwrap();
     let backend = DockerBackend::connect(DockerConfig {
-        // Any long-running image works for the lifecycle test.
         image: std::env::var("FERROBOT_TEST_IMAGE")
             .unwrap_or_else(|_| "ferrobot-runner:dev".into()),
         name_prefix: "ferrobot-test-".into(),
@@ -33,11 +61,7 @@ async fn container_lifecycle() {
     let spec = SandboxSpec {
         name: name.clone(),
         // No daemon is listening: the runner keeps retrying, which is fine here.
-        env: BTreeMap::from([
-            ("FERROBOT_DAEMON_URL".into(), "http://127.0.0.1:9".into()),
-            ("FERROBOT_AGENT_TOKEN".into(), "test".into()),
-            ("FERROBOT_DRIVER".into(), "mock".into()),
-        ]),
+        env: agent_env("test-token-lifecycle"),
         labels: BTreeMap::new(),
     };
     let h = backend.create(&spec).await.expect("create");
@@ -68,8 +92,12 @@ async fn container_lifecycle() {
     let snap = backend.snapshot(&h, "test").await.expect("snapshot");
     assert!(snap.id.starts_with("ferrobot-snapshot:"));
     assert!(snap.scope.contains("home"), "{}", snap.scope);
+    assert_eq!(
+        token_in_image(&snap.id, "test-token-lifecycle").await,
+        Vec::<String>::new(),
+        "no agent token in the snapshot image"
+    );
 
-    // Change the disk after the snapshot, then restore it.
     backend
         .write_file(&h, &path, b"changed")
         .await
@@ -126,6 +154,7 @@ async fn container_lifecycle() {
 }
 
 /// Warm sleep pauses in place; wake resumes; a paused container still stops cleanly.
+#[allow(clippy::unwrap_used, clippy::expect_used, reason = "test helper")]
 async fn warm_sleep_round_trip(backend: &DockerBackend, h: &ferrobot_sandbox::SandboxHandle) {
     let warm = backend.sleep(h, SleepLevel::Warm).await.expect("pause");
     assert_eq!(warm, SleepLevel::Warm);
@@ -166,11 +195,7 @@ async fn archive_moves_the_sandbox_into_the_store_and_back() {
     let name = format!("arch{}", std::process::id());
     let spec = SandboxSpec {
         name: name.clone(),
-        env: BTreeMap::from([
-            ("FERROBOT_DAEMON_URL".into(), "http://127.0.0.1:9".into()),
-            ("FERROBOT_AGENT_TOKEN".into(), "test".into()),
-            ("FERROBOT_DRIVER".into(), "mock".into()),
-        ]),
+        env: agent_env("test-token-archive"),
         labels: BTreeMap::new(),
     };
     let h = backend.create(&spec).await.expect("create");
@@ -216,10 +241,22 @@ async fn archive_moves_the_sandbox_into_the_store_and_back() {
         .unwrap();
     assert_eq!(
         env.stdout.trim(),
-        "test",
+        "test-token-archive",
         "the current token comes from the container"
     );
     assert_eq!(backend.state(&h).await.unwrap(), SandboxState::Running);
+    let image = bollard::Docker::connect_with_local_defaults()
+        .unwrap()
+        .inspect_container(&h.id, None::<InspectContainerOptions>)
+        .await
+        .unwrap()
+        .image
+        .unwrap();
+    assert_eq!(
+        token_in_image(&image, "test-token-archive").await,
+        Vec::<String>::new(),
+        "no agent token in the archived image"
+    );
     assert_eq!(
         backend.read_file(&h, &note).await.unwrap(),
         b"survives the archive"

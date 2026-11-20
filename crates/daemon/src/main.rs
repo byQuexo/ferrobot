@@ -61,10 +61,10 @@ struct Cli {
     /// Directory for the database and local sandboxes.
     #[arg(long, env = "FERROBOT_DATA_DIR", default_value = ".ferrobot")]
     data_dir: PathBuf,
-    /// UI API address. Keep it on loopback: it is not authenticated.
+    /// UI API address (operator token required). Keep it on loopback.
     #[arg(long, env = "FERROBOT_LISTEN", default_value = "127.0.0.1:7878")]
     listen: SocketAddr,
-    /// Agent API address (runner WebSocket + MCP, token-authenticated).
+    /// Agent API address (runner WebSocket, MCP, model proxy; token-authenticated).
     /// With Docker it must be reachable from containers, e.g. 0.0.0.0:7879.
     #[arg(long, env = "FERROBOT_AGENT_LISTEN", default_value = "127.0.0.1:7879")]
     agent_listen: SocketAddr,
@@ -75,7 +75,7 @@ struct Cli {
     backend: Backend,
     #[arg(long, env = "FERROBOT_DRIVER", value_enum, default_value_t = Driver::Mock)]
     driver: Driver,
-    /// Optional model override passed to the runner.
+    /// Model for agents that set none and whose provider has no default.
     #[arg(long, env = "FERROBOT_MODEL")]
     model: Option<String>,
     /// Runner image for the Docker backend.
@@ -118,7 +118,7 @@ struct Cli {
     turn_timeout: u64,
     /// Seconds without activity before an agent's sandbox is paused (warm
     /// sleep: memory kept, quick wake; 0 disables). Backends that cannot
-    /// pause stop it instead.
+    /// pause keep it running until `--idle-timeout`.
     #[arg(long, env = "FERROBOT_WARM_AFTER", default_value_t = 300)]
     warm_after: u64,
     /// Seconds without activity before a sleeping agent's sandbox is moved
@@ -133,7 +133,7 @@ struct Cli {
     /// Default IANA time zone for routines (default: the system's).
     #[arg(long, env = "FERROBOT_TIMEZONE")]
     timezone: Option<String>,
-    /// Upstream for the model proxy.
+    /// Model proxy upstream for agents without a model provider.
     #[arg(
         long,
         env = "FERROBOT_ANTHROPIC_UPSTREAM",
@@ -153,10 +153,10 @@ struct Cli {
     #[arg(long, env = "FERROBOT_APPROVAL_TIMEOUT", default_value_t = 300)]
     approval_timeout: u64,
     /// The daemon host's `codex` binary, used to sign `codex` providers in
-    /// with `ChatGPT` (the tokens stay with it, under `<data dir>/codex`).
+    /// with `ChatGPT` (the sign-in stays on the host, in the secret store).
     #[arg(long, env = "FERROBOT_CODEX_BIN", default_value = "codex")]
     codex_bin: String,
-    /// Where provider API keys are kept.
+    /// Where API keys, tokens and sign-ins are kept.
     #[arg(long, env = "FERROBOT_SECRET_STORE", value_enum, default_value_t = SecretStoreKind::Keyring)]
     secret_store: SecretStoreKind,
 }
@@ -258,9 +258,8 @@ async fn main() -> Result<()> {
         axum::serve(ui, ui_router(state.clone())).with_graceful_shutdown(stopped(stop_rx.clone()));
     let agent_server =
         axum::serve(agents, agent_router(state)).with_graceful_shutdown(stopped(stop_rx.clone()));
-    // WebSockets (runners, UI) never finish on their own, so graceful shutdown
-    // gets a grace period; leaving `main` then drops them and runners reconnect
-    // to the next daemon.
+    // WebSockets never finish on their own: after a grace period, leaving `main`
+    // drops them and runners reconnect to the next daemon.
     let grace = async {
         stopped(stop_rx).await;
         tokio::time::sleep(SHUTDOWN_GRACE).await;
@@ -290,7 +289,7 @@ fn api_token(cli: &Cli) -> Result<String> {
     Ok(token)
 }
 
-/// The configured secret store for provider API keys.
+/// The configured secret store.
 fn secret_store(cli: &Cli) -> SecretStore {
     match cli.secret_store {
         SecretStoreKind::Keyring => {
@@ -326,10 +325,10 @@ async fn make_backend(cli: &Cli, secrets: &SecretStore) -> Result<Arc<dyn Sandbo
                 accept_plaintext: storage::is_local(cli.storage_url.as_deref()),
                 ..DockerConfig::default()
             })?;
-            docker
-                .ping()
-                .await
-                .context("Docker/Podman engine not reachable (is the daemon running?)")?;
+            // Keep running without an engine: /v1/health tells the app, which asks for Docker.
+            if let Err(e) = docker.ping().await {
+                tracing::error!(error = %e, "Docker/Podman engine not reachable; agents cannot start until it runs");
+            }
             Arc::new(docker)
         }
         Backend::Firecracker => {

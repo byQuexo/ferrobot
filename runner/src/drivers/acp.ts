@@ -91,7 +91,9 @@ export async function selectGeminiApiKeyAuth(homeDir: string): Promise<void> {
 }
 
 function object(value: unknown): Params {
-  return typeof value === "object" && value !== null && !Array.isArray(value) ? (value as Params) : {};
+  return typeof value === "object" && value !== null && !Array.isArray(value)
+    ? (value as Params)
+    : {};
 }
 
 function commandOf(call: ToolCallUpdate): string {
@@ -103,7 +105,9 @@ function commandOf(call: ToolCallUpdate): string {
 function pathsOf(call: ToolCallUpdate): string[] {
   return [
     ...(call.locations ?? []).map((l) => l.path),
-    ...(call.content ?? []).flatMap((c) => (c.type === "diff" && typeof c.path === "string" ? [c.path] : [])),
+    ...(call.content ?? []).flatMap((c) =>
+      c.type === "diff" && typeof c.path === "string" ? [c.path] : [],
+    ),
   ];
 }
 
@@ -127,10 +131,15 @@ function contentText(call: ToolCallUpdate): string {
 
 function review(call: ToolCallUpdate, home: string): { name: string; verdict: Decision } {
   const { name } = toolUse(call);
-  const paths = (tool: string): Decision =>
-    pathsOf(call)
-      .map((file_path) => decide(tool, { file_path }, home))
-      .find((v) => !v.allow) ?? { allow: true };
+  const paths = (tool: string): Decision => {
+    const files = pathsOf(call);
+    if (files.length === 0) return { allow: false, reason: "blocked: file access without a path" };
+    return (
+      files.map((file_path) => decide(tool, { file_path }, home)).find((v) => !v.allow) ?? {
+        allow: true,
+      }
+    );
+  };
   switch (call.kind ?? "other") {
     case "execute":
       return { name, verdict: decide("Bash", { command: commandOf(call) }, home) };
@@ -149,7 +158,10 @@ function review(call: ToolCallUpdate, home: string): { name: string; verdict: De
 /** The agent process: JSON-RPC 2.0, one message per line on stdio. */
 class Connection {
   readonly #child: ChildProcessWithoutNullStreams;
-  readonly #pending = new Map<string | number, { resolve: (result: unknown) => void; reject: (err: Error) => void }>();
+  readonly #pending = new Map<
+    string | number,
+    { resolve: (result: unknown) => void; reject: (err: Error) => void }
+  >();
   #nextId = 0;
   #stderr = "";
   #exit: Error | null = null;
@@ -159,7 +171,12 @@ class Connection {
   /** The result to send back, or undefined for requests the runner does not handle. */
   onRequest: (method: string, params: Params) => unknown = () => undefined;
 
-  static async start(bin: string, args: string[], cwd: string, env: NodeJS.ProcessEnv): Promise<Connection> {
+  static async start(
+    bin: string,
+    args: string[],
+    cwd: string,
+    env: NodeJS.ProcessEnv,
+  ): Promise<Connection> {
     const child = spawn(bin, args, { cwd, env, stdio: "pipe" });
     await new Promise<void>((resolve, reject) => {
       child.once("spawn", resolve);
@@ -237,11 +254,17 @@ class Connection {
       try {
         result = this.onRequest(msg.method, params);
       } catch (err) {
-        log.warn("acp: could not handle a request", { method: msg.method, error: errorMessage(err) });
+        log.warn("acp: could not handle a request", {
+          method: msg.method,
+          error: errorMessage(err),
+        });
       }
       this.#send(
         result === undefined
-          ? { id: msg.id, error: { code: -32601, message: `ferrobot does not handle ${msg.method}` } }
+          ? {
+              id: msg.id,
+              error: { code: -32601, message: `ferrobot does not handle ${msg.method}` },
+            }
           : { id: msg.id, result },
       );
     } else if (msg.method === "session/update") {
@@ -313,7 +336,10 @@ export class AcpDriver implements ModelDriver {
         GEMINI_CLI_TRUST_WORKSPACE: "true",
       });
     } catch (err) {
-      throw new Error(`gemini is not installed in this sandbox image (${bin}: ${errorMessage(err)})`, { cause: err });
+      throw new Error(
+        `gemini is not installed in this sandbox image (${bin}: ${errorMessage(err)})`,
+        { cause: err },
+      );
     }
     try {
       const init = (await conn.request("initialize", {
@@ -323,14 +349,20 @@ export class AcpDriver implements ModelDriver {
         clientInfo: { name: "ferrobot", version: "0.1.0" },
       })) as InitializeResult | null;
       if (init?.protocolVersion !== ACP_VERSION) {
-        throw new Error(`gemini speaks ACP version ${String(init?.protocolVersion)}, ferrobot speaks ${String(ACP_VERSION)}`);
+        throw new Error(
+          `gemini speaks ACP version ${String(init?.protocolVersion)}, ferrobot speaks ${String(ACP_VERSION)}`,
+        );
       }
       if (init.authMethods?.some((m) => m.id === GEMINI_AUTH)) {
         await conn.request("authenticate", { methodId: GEMINI_AUTH });
       }
       const caps = init.agentCapabilities;
-      this.#caps = { loadSession: caps?.loadSession === true, mcpHttp: caps?.mcpCapabilities?.http === true };
-      if (!this.#caps.mcpHttp) log.warn("gemini cannot reach HTTP MCP servers; the ferrobot tools are unavailable");
+      this.#caps = {
+        loadSession: caps?.loadSession === true,
+        mcpHttp: caps?.mcpCapabilities?.http === true,
+      };
+      if (!this.#caps.mcpHttp)
+        log.warn("gemini cannot reach HTTP MCP servers; the ferrobot tools are unavailable");
     } catch (err) {
       conn.kill();
       throw err;
@@ -345,7 +377,14 @@ export class AcpDriver implements ModelDriver {
     const common = {
       cwd: workspaceDir,
       mcpServers: this.#caps.mcpHttp
-        ? [{ type: "http", name: "ferrobot", url: mcpUrl.href, headers: [{ name: "Authorization", value: `Bearer ${token}` }] }]
+        ? [
+            {
+              type: "http",
+              name: "ferrobot",
+              url: mcpUrl.href,
+              headers: [{ name: "Authorization", value: `Bearer ${token}` }],
+            },
+          ]
         : [],
     };
     let id: string | null = null;
@@ -357,13 +396,18 @@ export class AcpDriver implements ModelDriver {
       } catch (err) {
         // A session that cannot be loaded (e.g. after restoring an older snapshot) must not wedge the agent.
         if (!conn.alive) throw err;
-        log.warn("could not load session; starting a new one", { session: wanted, error: errorMessage(err) });
+        log.warn("could not load session; starting a new one", {
+          session: wanted,
+          error: errorMessage(err),
+        });
       }
     } else if (wanted) {
       log.info("gemini cannot load sessions; starting a new one", { session: wanted });
     }
     if (id === null) {
-      const sessionId = ((await conn.request("session/new", common)) as { sessionId?: unknown } | null)?.sessionId;
+      const sessionId = (
+        (await conn.request("session/new", common)) as { sessionId?: unknown } | null
+      )?.sessionId;
       if (typeof sessionId !== "string") throw new Error("gemini returned no session id");
       id = sessionId;
     }
@@ -376,7 +420,10 @@ export class AcpDriver implements ModelDriver {
     const home = this.#opts.workspaceDir;
     // Gemini has no system-prompt channel over ACP, so the instructions lead the prompt instead.
     const instructions = systemAppend(ctx.agentName, ctx.instructions);
-    const text = session.instructions === instructions ? turnPrompt(ctx) : `${instructions}\n\n${turnPrompt(ctx)}`;
+    const text =
+      session.instructions === instructions
+        ? turnPrompt(ctx)
+        : `${instructions}\n\n${turnPrompt(ctx)}`;
     session.instructions = instructions;
 
     const calls = new Map<string, ToolCallUpdate>();
@@ -393,7 +440,13 @@ export class AcpDriver implements ModelDriver {
     };
     const stopped = new Promise<"aborted">((resolve) => {
       if (aborted(signal)) resolve("aborted");
-      signal.addEventListener("abort", () => { resolve("aborted"); }, { once: true });
+      signal.addEventListener(
+        "abort",
+        () => {
+          resolve("aborted");
+        },
+        { once: true },
+      );
     });
 
     conn.onUpdate = (params) => {
@@ -401,37 +454,52 @@ export class AcpDriver implements ModelDriver {
       const update = params["update"] as SessionUpdate;
       if (update.sessionUpdate === "agent_message_chunk") {
         const content = object(update.content);
-        if (content["type"] !== "text" || typeof content["text"] !== "string" || !content["text"]) return;
+        if (content["type"] !== "text" || typeof content["text"] !== "string" || !content["text"])
+          return;
         if (update.messageId && update.messageId !== messageId) {
           flush();
           messageId = update.messageId;
         }
         message += content["text"];
         emit({ kind: "assistant_delta", text: content["text"] });
-      } else if (update.sessionUpdate === "tool_call" || update.sessionUpdate === "tool_call_update") {
+      } else if (
+        update.sessionUpdate === "tool_call" ||
+        update.sessionUpdate === "tool_call_update"
+      ) {
         flush();
-        for (const event of toolEvents(update as unknown as ToolCallUpdate, calls, finished)) emit(event);
+        for (const event of toolEvents(update as unknown as ToolCallUpdate, calls, finished))
+          emit(event);
       }
     };
     conn.onRequest = (method, params) => {
-      if (method !== "session/request_permission" || params["sessionId"] !== session.id) return undefined;
+      if (method !== "session/request_permission" || params["sessionId"] !== session.id)
+        return undefined;
       const asked = params["toolCall"] as ToolCallUpdate;
       const { name, verdict } = review({ ...calls.get(asked.toolCallId), ...asked }, home);
       const options = (params["options"] ?? []) as PermissionOption[];
-      const pick = (kind: string): string | undefined => options.find((o) => o.kind === kind)?.optionId;
+      const pick = (kind: string): string | undefined =>
+        options.find((o) => o.kind === kind)?.optionId;
       // Never allow_always: the agent would remember it and stop asking decide().
-      const optionId = verdict.allow ? pick("allow_once") : (pick("reject_once") ?? pick("reject_always"));
+      const optionId = verdict.allow
+        ? pick("allow_once")
+        : (pick("reject_once") ?? pick("reject_always"));
       if (!verdict.allow) emit({ kind: "tool_denied", name, reason: verdict.reason });
-      return { outcome: optionId === undefined ? { outcome: "cancelled" } : { outcome: "selected", optionId } };
+      return {
+        outcome:
+          optionId === undefined ? { outcome: "cancelled" } : { outcome: "selected", optionId },
+      };
     };
 
     try {
-      const prompt = conn.request("session/prompt", { sessionId: session.id, prompt: [{ type: "text", text }] });
+      const prompt = conn.request("session/prompt", {
+        sessionId: session.id,
+        prompt: [{ type: "text", text }],
+      });
       const end = await Promise.race([prompt, stopped]);
       if (end === "aborted") {
         conn.notify("session/cancel", { sessionId: session.id });
         const settled = await Promise.race([
-          prompt.then(() => "done", () => "done"),
+          Promise.allSettled([prompt]),
           sleep(CANCEL_TIMEOUT_MS, "timeout", { ref: false }),
         ]);
         // An agent that ignores the cancel is wedged; the next turn starts a fresh one.
@@ -449,7 +517,11 @@ export class AcpDriver implements ModelDriver {
   }
 }
 
-function toolEvents(update: ToolCallUpdate, calls: Map<string, ToolCallUpdate>, finished: Set<string>): TurnEvent[] {
+function toolEvents(
+  update: ToolCallUpdate,
+  calls: Map<string, ToolCallUpdate>,
+  finished: Set<string>,
+): TurnEvent[] {
   const id = update.toolCallId;
   const known = calls.get(id);
   const call = { ...known, ...update };
@@ -458,7 +530,12 @@ function toolEvents(update: ToolCallUpdate, calls: Map<string, ToolCallUpdate>, 
   if (!known) events.push({ kind: "tool_use", id, ...toolUse(call) });
   if ((call.status === "completed" || call.status === "failed") && !finished.has(id)) {
     finished.add(id);
-    events.push({ kind: "tool_result", id, output: clip(contentText(update) || call.status), is_error: call.status === "failed" });
+    events.push({
+      kind: "tool_result",
+      id,
+      output: clip(contentText(update) || call.status),
+      is_error: call.status === "failed",
+    });
   }
   return events;
 }

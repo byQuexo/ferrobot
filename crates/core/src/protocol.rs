@@ -1,10 +1,5 @@
-//! JSON wire protocol between the daemon and the agent runner.
-//!
-//! Transport: one WebSocket per runner, opened *by the runner* (outbound from
-//! the sandbox) so that sleeping or restarted sandboxes simply reconnect.
-//! Every frame is a JSON text message with a `type` tag. The TypeScript mirror
-//! lives in `runner/src/protocol.ts`; both sides are tested against the shared
-//! fixtures in `protocol/fixtures/`.
+//! JSON frames on the runner's WebSocket, dialled out by the runner so sleeping sandboxes just
+//! reconnect. Mirrored by `runner/src/protocol.ts`; both sides parse `protocol/fixtures/`.
 
 use serde::{Deserialize, Serialize};
 
@@ -27,6 +22,7 @@ pub enum DaemonFrame {
     /// Run one turn for a mailbox message.
     Turn {
         turn_id: String,
+        /// `0`: a new agent's greeting turn, which has no mailbox message.
         message_id: i64,
         sender: Sender,
         /// Display name of the sender (`user` or the agent name).

@@ -2114,6 +2114,167 @@
         }
       }
     },
+    "/v1/call": {
+      "get": {
+        "tags": [
+          "voice"
+        ],
+        "summary": "Who is in the operator's voice call.",
+        "operationId": "get_call",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CallView"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or wrong API token",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        }
+      },
+      "put": {
+        "tags": [
+          "voice"
+        ],
+        "summary": "Starts, changes or (with no agents) ends the voice call. Agents in it\ncan invite others with their `invite_to_call` tool.",
+        "operationId": "put_call",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CallView"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CallView"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "More than 4 agents",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or wrong API token",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Unknown agent",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Voice is switched off",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/call/messages": {
+      "post": {
+        "tags": [
+          "voice"
+        ],
+        "summary": "Sends the operator's message to every agent in the call. Each one also\ngets what the others said since its own last turn; agents' replies never\nstart each other's turns.",
+        "operationId": "post_call_message",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CallMessage"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "202": {
+            "description": "Queued, one message per agent",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/MailMessage"
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or wrong API token",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "No voice call",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/v1/connectors": {
       "get": {
         "tags": [
@@ -3345,6 +3506,388 @@
         }
       }
     },
+    "/v1/voice": {
+      "get": {
+        "tags": [
+          "voice"
+        ],
+        "summary": "Voice settings and the speech providers.",
+        "operationId": "get_voice",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/VoiceView"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or wrong API token",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        }
+      },
+      "put": {
+        "tags": [
+          "voice"
+        ],
+        "summary": "Replaces the voice settings; with `api_key`, also stores or removes the\nkey of `provider`.",
+        "operationId": "put_voice",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateVoice"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/VoiceView"
+                }
+              }
+            }
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or wrong API token",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/voice/catalog": {
+      "get": {
+        "tags": [
+          "voice"
+        ],
+        "summary": "The voices and speech models of the configured provider, fetched live.",
+        "operationId": "catalog",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/VoiceCatalog"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or wrong API token",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Voice off, not set up or no key",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "The provider failed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/voice/live": {
+      "post": {
+        "tags": [
+          "voice"
+        ],
+        "summary": "Opens live transcription for dictation or a hands-free call\n(`ElevenLabs` only; other providers transcribe after recording).",
+        "operationId": "live",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/LiveRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LiveSession"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Unsupported sample rate",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or wrong API token",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Voice off, not set up, no key, or not ElevenLabs",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Limit for this minute reached",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "The provider failed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/voice/speech": {
+      "post": {
+        "tags": [
+          "voice"
+        ],
+        "summary": "Speaks `text` with the configured provider and voice. The audio\n(usually `audio/mpeg`) streams while the provider makes it.",
+        "operationId": "speech",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SpeechRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Audio, streamed",
+            "content": {
+              "audio/mpeg": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "type": "integer",
+                    "format": "int32",
+                    "minimum": 0
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Empty or too long",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or wrong API token",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Voice not set up, or no key or voice",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Limit for this minute reached",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "The provider failed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/voice/transcription": {
+      "post": {
+        "tags": [
+          "voice"
+        ],
+        "summary": "Transcribes a recording: the raw audio as the body, its type as\n`Content-Type`.",
+        "operationId": "transcription",
+        "requestBody": {
+          "description": "webm, ogg, mp4/m4a, mp3, wav or flac; at most 10 MiB",
+          "content": {
+            "audio/*": {
+              "schema": {
+                "type": "array",
+                "items": {
+                  "type": "integer",
+                  "format": "int32",
+                  "minimum": 0
+                }
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Transcript"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Empty or unsupported audio",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or wrong API token",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Voice not set up or no key",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "Over 10 MiB"
+          },
+          "429": {
+            "description": "Limit for this minute reached",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "The provider failed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/v1/ws": {
       "get": {
         "tags": [
@@ -3608,6 +4151,33 @@
             "description": "Color hue in degrees, 0..=359.",
             "maximum": 359,
             "minimum": 0
+          }
+        }
+      },
+      "CallMessage": {
+        "type": "object",
+        "required": [
+          "body"
+        ],
+        "properties": {
+          "body": {
+            "type": "string",
+            "description": "1..20224 bytes after trimming (the rest of a message is left for\nwhat the others said)."
+          }
+        }
+      },
+      "CallView": {
+        "type": "object",
+        "required": [
+          "agents"
+        ],
+        "properties": {
+          "agents": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AgentId"
+            },
+            "description": "Agents in the operator's voice call (at most 4); empty: no call."
           }
         }
       },
@@ -3980,7 +4550,7 @@
         "properties": {
           "error": {
             "type": "string",
-            "description": "Stable machine-readable code: `bad_request`, `unauthorized`,\n`not_found`, `conflict`, `not_implemented`, `sandbox_error` or `internal`."
+            "description": "Stable machine-readable code: `bad_request`, `unauthorized`,\n`not_found`, `conflict`, `rate_limited`, `not_implemented`,\n`sandbox_error`, `upstream_error` or `internal`."
           },
           "message": {
             "type": "string",
@@ -4047,7 +4617,8 @@
           "backend",
           "driver",
           "model_proxy",
-          "timezone"
+          "timezone",
+          "sandbox_ready"
         ],
         "properties": {
           "name": {
@@ -4078,6 +4649,17 @@
           "timezone": {
             "type": "string",
             "description": "Default time zone for new routines."
+          },
+          "sandbox_ready": {
+            "type": "boolean",
+            "description": "Whether the sandbox backend can start agents now (Docker: the engine answers)."
+          },
+          "sandbox_error": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Why the backend is not ready, for the operator; null when ready."
           }
         }
       },
@@ -4090,6 +4672,60 @@
               "null"
             ],
             "description": "The interrupted turn, or null if the agent was idle."
+          }
+        }
+      },
+      "LanguageOption": {
+        "type": "object",
+        "description": "A language a model speaks.",
+        "required": [
+          "code",
+          "name"
+        ],
+        "properties": {
+          "code": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          }
+        }
+      },
+      "LiveMode": {
+        "type": "string",
+        "description": "How live speech is cut into messages.",
+        "enum": [
+          "dictation",
+          "call"
+        ]
+      },
+      "LiveRequest": {
+        "type": "object",
+        "required": [
+          "mode",
+          "sample_rate"
+        ],
+        "properties": {
+          "mode": {
+            "$ref": "#/components/schemas/LiveMode"
+          },
+          "sample_rate": {
+            "type": "integer",
+            "format": "int32",
+            "description": "Sample rate of the 16-bit mono PCM the app sends: 8000, 16000,\n22050, 24000, 44100 or 48000.",
+            "minimum": 0
+          }
+        }
+      },
+      "LiveSession": {
+        "type": "object",
+        "required": [
+          "url"
+        ],
+        "properties": {
+          "url": {
+            "type": "string",
+            "description": "The provider's WebSocket with a single-use token (valid 15 minutes,\none session of at most 10 minutes); the real key never leaves the daemon."
           }
         }
       },
@@ -4249,6 +4885,29 @@
               "null"
             ],
             "description": "Global memory only: the agent that wrote it; absent = the operator."
+          }
+        }
+      },
+      "ModelOption": {
+        "type": "object",
+        "description": "A text-to-speech model of the account.",
+        "required": [
+          "model_id",
+          "name",
+          "languages"
+        ],
+        "properties": {
+          "model_id": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "languages": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/LanguageOption"
+            }
           }
         }
       },
@@ -4924,6 +5583,29 @@
           }
         }
       },
+      "SpeechRequest": {
+        "type": "object",
+        "required": [
+          "text"
+        ],
+        "properties": {
+          "text": {
+            "type": "string",
+            "description": "What to say: 1-4096 characters."
+          },
+          "agent_id": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/AgentId",
+                "description": "Speak with this agent's voice, if it has one."
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        }
+      },
       "StoredEvent": {
         "type": "object",
         "required": [
@@ -4957,6 +5639,18 @@
           "created_at": {
             "type": "string",
             "format": "date-time"
+          }
+        }
+      },
+      "Transcript": {
+        "type": "object",
+        "description": "What was said. Both providers answer `{\"text\": ...}` (plus fields we ignore).",
+        "required": [
+          "text"
+        ],
+        "properties": {
+          "text": {
+            "type": "string"
           }
         }
       },
@@ -5114,6 +5808,28 @@
                 "type": "string",
                 "enum": [
                   "routines_changed"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "description": "Who is in the operator's voice call changed (empty: it ended).",
+            "required": [
+              "agents",
+              "type"
+            ],
+            "properties": {
+              "agents": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/components/schemas/AgentId"
+                }
+              },
+              "type": {
+                "type": "string",
+                "enum": [
+                  "call"
                 ]
               }
             }
@@ -5313,6 +6029,224 @@
             ]
           }
         }
+      },
+      "UpdateVoice": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/VoiceSettings"
+          },
+          {
+            "type": "object",
+            "properties": {
+              "api_key": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "description": "New API key for `provider`; `null` removes it, omitted keeps it.\nStored in the OS keychain; never returned."
+              }
+            }
+          }
+        ]
+      },
+      "VoiceCatalog": {
+        "type": "object",
+        "required": [
+          "voices",
+          "tts_models"
+        ],
+        "properties": {
+          "voices": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/VoiceOption"
+            },
+            "description": "The account's voices (`ElevenLabs`); empty for other providers."
+          },
+          "tts_models": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ModelOption"
+            },
+            "description": "Text-to-speech models of the account (`ElevenLabs`); empty otherwise."
+          }
+        }
+      },
+      "VoiceOption": {
+        "type": "object",
+        "description": "An `ElevenLabs` voice the operator can pick.",
+        "required": [
+          "voice_id",
+          "name",
+          "languages"
+        ],
+        "properties": {
+          "voice_id": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "category": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "`premade`, `cloned`, `generated`, `professional`, ..."
+          },
+          "languages": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Languages the voice is verified for (codes), else its `language` label."
+          },
+          "accent": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "gender": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "preview_url": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        }
+      },
+      "VoiceProvider": {
+        "type": "string",
+        "enum": [
+          "elevenlabs",
+          "openrouter"
+        ]
+      },
+      "VoiceProviderView": {
+        "type": "object",
+        "required": [
+          "kind",
+          "has_key",
+          "default_tts_model",
+          "default_stt_model"
+        ],
+        "properties": {
+          "kind": {
+            "$ref": "#/components/schemas/VoiceProvider"
+          },
+          "has_key": {
+            "type": "boolean",
+            "description": "Whether an API key is stored. The key itself is never returned."
+          },
+          "default_tts_model": {
+            "type": "string"
+          },
+          "default_voice": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "`null`: no default; pick a voice of your account."
+          },
+          "default_stt_model": {
+            "type": "string"
+          }
+        }
+      },
+      "VoiceSettings": {
+        "type": "object",
+        "description": "Voice settings (no secrets), stored as JSON under the `voice` setting.",
+        "properties": {
+          "enabled": {
+            "type": "boolean",
+            "description": "`false`: voice is switched off; no speech, dictation or calls."
+          },
+          "provider": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/VoiceProvider",
+                "description": "Who speaks and listens; `null`: voice is not set up."
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "tts_model": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Text-to-speech model; `null`: the provider's default."
+          },
+          "voice": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Voice id (`ElevenLabs`) or name (`OpenRouter`); `null`: the\nprovider's default. Letters, digits, `.`, `_` and `-`."
+          },
+          "stt_model": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Speech-to-text model; `null`: the provider's default."
+          },
+          "agent_voices": {
+            "type": "object",
+            "description": "Voices by agent id, so agents in a call sound different; the others\nspeak with `voice`.",
+            "additionalProperties": {
+              "type": "string"
+            },
+            "propertyNames": {
+              "type": "string"
+            }
+          },
+          "speed": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "format": "float",
+            "description": "Speaking speed, 0.7-1.2 (`ElevenLabs`); `null`: normal."
+          },
+          "language": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Language of speech and dictation, ISO 639-1 or 639-3 (`de`, `fil`);\n`null`: detected."
+          }
+        }
+      },
+      "VoiceView": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/VoiceSettings"
+          },
+          {
+            "type": "object",
+            "required": [
+              "providers"
+            ],
+            "properties": {
+              "providers": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/components/schemas/VoiceProviderView"
+                },
+                "description": "Every provider with its defaults and whether its key is stored."
+              }
+            }
+          }
+        ]
       }
     },
     "securitySchemes": {
@@ -5369,6 +6303,10 @@
     {
       "name": "connectors",
       "description": "Remote MCP servers whose tools agents can use"
+    },
+    {
+      "name": "voice",
+      "description": "Speech and transcription for the operator's chat"
     }
   ]
 }

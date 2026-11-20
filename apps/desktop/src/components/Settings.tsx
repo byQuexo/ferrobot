@@ -1,18 +1,20 @@
 import type { JSX } from "preact";
-import { Brain, KeyRound, Monitor, Moon, Palette, Plug, Sun, X } from "lucide-preact";
+import { AudioLines, Brain, KeyRound, Monitor, Moon, Palette, Plug, Sun, X } from "lucide-preact";
 
 import type { ThemePref } from "../lib/theme.ts";
 import { ConnectorsSettings } from "./ConnectorsSettings.tsx";
 import { Memory } from "./InfoPanel.tsx";
 import { ProvidersSettings } from "./ProvidersSettings.tsx";
+import { VoiceSettings } from "./VoiceSettings.tsx";
 import { IconButton } from "./ui.tsx";
 
-export type SettingsSection = "providers" | "connectors" | "memory" | "appearance";
+export type SettingsSection = "providers" | "connectors" | "memory" | "voice" | "appearance";
 
 const SECTIONS: [SettingsSection, string, string, typeof KeyRound][] = [
   ["providers", "Model providers", "The models your agents run on. Keys stay in the keychain of the daemon’s computer.", KeyRound],
   ["connectors", "Connectors", "Remote MCP servers whose tools you can give to agents, with a token or an OAuth sign-in.", Plug],
   ["memory", "Global memory", "Facts every agent can recall. Agents add to it; you can edit and remove entries.", Brain],
+  ["voice", "Voice", "Agents’ replies read aloud and spoken messages. Switch it on with the speaker button in a chat.", AudioLines],
   ["appearance", "Appearance", "How ferrobot looks on this computer.", Palette],
 ];
 
@@ -54,6 +56,7 @@ export function Settings(props: {
         {props.section === "providers" && <ProvidersSettings />}
         {props.section === "connectors" && <ConnectorsSettings />}
         {props.section === "memory" && <Memory agent={null} />}
+        {props.section === "voice" && <VoiceSettings />}
         {props.section === "appearance" && (
           <div class="form">
             <span class="field">

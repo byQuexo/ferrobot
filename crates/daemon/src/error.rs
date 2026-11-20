@@ -10,7 +10,8 @@ use thiserror::Error;
 #[derive(Debug, Serialize, utoipa::ToSchema)]
 pub struct ErrorBody {
     /// Stable machine-readable code: `bad_request`, `unauthorized`,
-    /// `not_found`, `conflict`, `not_implemented`, `sandbox_error` or `internal`.
+    /// `not_found`, `conflict`, `rate_limited`, `not_implemented`,
+    /// `sandbox_error`, `upstream_error` or `internal`.
     pub error: String,
     /// Human-readable description.
     pub message: String,
@@ -27,6 +28,8 @@ pub enum ApiError {
     NotFound(String),
     #[error("{0}")]
     Conflict(String),
+    #[error("{0}")]
+    TooManyRequests(String),
     #[error("sandbox error: {0}")]
     Sandbox(#[from] SandboxError),
     #[error("internal error")]
@@ -60,6 +63,7 @@ impl IntoResponse for ApiError {
             Self::Unauthorized => (StatusCode::UNAUTHORIZED, "unauthorized"),
             Self::NotFound(_) => (StatusCode::NOT_FOUND, "not_found"),
             Self::Conflict(_) => (StatusCode::CONFLICT, "conflict"),
+            Self::TooManyRequests(_) => (StatusCode::TOO_MANY_REQUESTS, "rate_limited"),
             Self::Sandbox(SandboxError::NotImplemented { .. }) => {
                 (StatusCode::NOT_IMPLEMENTED, "not_implemented")
             }

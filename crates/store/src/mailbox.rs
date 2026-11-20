@@ -6,7 +6,7 @@ use rusqlite::{OptionalExtension, Row, params};
 use crate::util::{fmt_ts, now, parse_ts};
 use crate::{MAX_DELIVERY_ATTEMPTS, Store, StoreError};
 
-const COLUMNS: &str =
+pub(crate) const COLUMNS: &str =
     "id, sender, recipient, body, reply_to, status, attempts, created_at, priority";
 
 fn priority_to_db(p: Option<bool>) -> i64 {
@@ -32,7 +32,7 @@ fn from_row(row: &Row<'_>) -> Result<MailMessage, StoreError> {
 }
 
 /// Reads [`COLUMNS`] starting at column `o`.
-fn from_row_at(row: &Row<'_>, o: usize) -> Result<MailMessage, StoreError> {
+pub(crate) fn from_row_at(row: &Row<'_>, o: usize) -> Result<MailMessage, StoreError> {
     let sender: String = row.get(o + 1)?;
     let recipient: String = row.get(o + 2)?;
     let status: String = row.get(o + 5)?;

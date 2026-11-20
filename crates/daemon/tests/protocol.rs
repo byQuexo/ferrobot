@@ -1,8 +1,13 @@
 //! Daemon <-> runner protocol tests with a fake sandbox backend and a fake
 //! runner speaking the WebSocket protocol directly. No Node, no Docker.
 
-// Scenario tests read best as one linear story.
-#![allow(clippy::too_many_lines)]
+#![allow(
+    clippy::too_many_lines,
+    clippy::unwrap_used,
+    clippy::expect_used,
+    clippy::panic,
+    reason = "test scenarios read best as one story"
+)]
 
 mod common;
 

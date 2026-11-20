@@ -1,8 +1,5 @@
-//! Routines: prompts sent to an agent on a cron schedule, with run history.
-//!
-//! The store keeps routines and their next due time; computing that time from
-//! the cron expression is the scheduler's job (in the daemon), so this crate
-//! stays free of calendar logic.
+//! Routines: prompts sent to an agent on a cron schedule, with run history. The daemon's
+//! scheduler computes the next due time, so this crate stays free of calendar logic.
 
 use ferrobot_core::{AgentId, MailMessage, MailStatus, Sender};
 use rusqlite::{OptionalExtension, Row, params};

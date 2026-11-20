@@ -1,10 +1,5 @@
-//! Model proxy: sandboxes call their model provider through the daemon.
-//!
-//! Inside a sandbox the model base URL points at `<agent API>/model` and the
-//! only credential is the agent's own token. The proxy checks that token,
-//! picks the upstream from the agent's provider, swaps in the real credential
-//! (which never leaves the daemon) and streams the response back unchanged,
-//! including server-sent events.
+//! Model proxy at `<agent API>/model`: checks the agent token, picks the upstream from the agent's
+//! provider and swaps in the real credential, which never leaves the daemon. Responses stream back.
 
 use std::time::{Duration, Instant};
 
@@ -184,6 +179,7 @@ struct Route {
     chatgpt_account: Option<String>,
 }
 
+/// Where a provider's API key lives in the secret store.
 pub fn secret_key(provider: uuid::Uuid) -> String {
     format!("provider:{provider}")
 }

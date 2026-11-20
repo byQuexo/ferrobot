@@ -10,6 +10,7 @@ fn fixtures_dir() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../protocol/fixtures")
 }
 
+#[allow(clippy::expect_used, reason = "test helper")]
 fn load(dir: &str) -> Vec<(String, String)> {
     let mut out = Vec::new();
     for entry in fs::read_dir(fixtures_dir().join(dir)).expect("fixture dir") {

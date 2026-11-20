@@ -5,7 +5,7 @@ import { join } from "node:path";
 import { after, describe, it } from "node:test";
 
 import { ConfigError, loadConfig } from "../src/config.ts";
-import { AcpDriver, selectGeminiApiKeyAuth } from "../src/drivers/acp.ts";
+import { AcpDriver, selectGeminiApiKeyAuth, toolUse } from "../src/drivers/acp.ts";
 import { systemAppend } from "../src/drivers/claude.ts";
 import { TurnAbortedError, type TurnContext } from "../src/drivers/types.ts";
 import type { TurnEvent } from "../src/protocol.ts";
@@ -62,7 +62,8 @@ function setup(bin = BIN) {
       .split("\n")
       .map((line) => JSON.parse(line) as Received);
   const sent = (method: string): Received[] => received().filter((m) => m.method === method);
-  const answer = (id: string): Received | undefined => received().find((m) => m.id === id && !m.method);
+  const answer = (id: string): Received | undefined =>
+    received().find((m) => m.id === id && !m.method);
   const prompts = (): string[] =>
     sent("session/prompt").map((m) => (m.params?.["prompt"] as { text: string }[])[0]?.text ?? "");
   return { driver, script, received, sent, answer, prompts, workspaceDir, homeDir };
@@ -71,7 +72,14 @@ function setup(bin = BIN) {
 function context(overrides: Partial<TurnContext> = {}): { ctx: TurnContext; events: TurnEvent[] } {
   const events: TurnEvent[] = [];
   const ctx: TurnContext = {
-    turn: { type: "turn", turn_id: "t1", message_id: 7, sender: { kind: "user" }, sender_name: "user", body: "hi" },
+    turn: {
+      type: "turn",
+      turn_id: "t1",
+      message_id: 7,
+      sender: { kind: "user" },
+      sender_name: "user",
+      body: "hi",
+    },
     instructions: "Be brief.",
     agentName: "alice",
     sessionId: null,
@@ -85,7 +93,11 @@ function context(overrides: Partial<TurnContext> = {}): { ctx: TurnContext; even
 const PROMPT = "Message #7 from user:\n\nhi";
 const INSTRUCTIONS = systemAppend("alice", "Be brief.");
 const chunk = (text: string, messageId?: string): Step => ({
-  update: { sessionUpdate: "agent_message_chunk", content: { type: "text", text }, ...(messageId ? { messageId } : {}) },
+  update: {
+    sessionUpdate: "agent_message_chunk",
+    content: { type: "text", text },
+    ...(messageId ? { messageId } : {}),
+  },
 });
 const toolCall = (toolCallId: string, kind: string, title: string, extra: Params = {}): Step => ({
   update: { sessionUpdate: "tool_call", toolCallId, kind, title, status: "pending", ...extra },
@@ -116,7 +128,12 @@ describe("AcpDriver", () => {
       turns: [
         [
           { update: { sessionUpdate: "available_commands_update", availableCommands: [] } },
-          { update: { sessionUpdate: "agent_thought_chunk", content: { type: "text", text: "**Thinking**" } } },
+          {
+            update: {
+              sessionUpdate: "agent_thought_chunk",
+              content: { type: "text", text: "**Thinking**" },
+            },
+          },
           { update: { sessionUpdate: "plan", entries: [] } },
           chunk("Hel"),
           chunk("lo"),
@@ -153,7 +170,12 @@ describe("AcpDriver", () => {
         clientInfo: { name: "ferrobot", version: "0.1.0" },
       },
     });
-    assert.deepEqual(auth, { jsonrpc: "2.0", id: 2, method: "authenticate", params: { methodId: "gemini-api-key" } });
+    assert.deepEqual(auth, {
+      jsonrpc: "2.0",
+      id: 2,
+      method: "authenticate",
+      params: { methodId: "gemini-api-key" },
+    });
     assert.deepEqual(open, {
       jsonrpc: "2.0",
       id: 3,
@@ -174,12 +196,18 @@ describe("AcpDriver", () => {
     assert.equal(prompt.params?.["sessionId"], "sess-new");
     assert.deepEqual(prompts(), [`${INSTRUCTIONS}\n\n${PROMPT}`]);
     assert.equal(sent("session/load").length, 0);
-    assert.ok(!readFileSync(join(homeDir, ".gemini", "settings.json"), "utf8").includes("agent-token"));
+    assert.ok(
+      !readFileSync(join(homeDir, ".gemini", "settings.json"), "utf8").includes("agent-token"),
+    );
   });
 
   it("skips authenticate, session/load and the MCP server when the agent offers none", async () => {
     const { driver, script, sent } = setup();
-    script({ agentCapabilities: {}, authMethods: [], turns: [[chunk("fresh"), { stop: "end_turn" }]] });
+    script({
+      agentCapabilities: {},
+      authMethods: [],
+      turns: [[chunk("fresh"), { stop: "end_turn" }]],
+    });
     const out = await driver.runTurn(context({ sessionId: "sess-old" }).ctx);
     assert.deepEqual(out, { result: "fresh", sessionId: "sess-new" });
     assert.equal(sent("authenticate").length, 0);
@@ -194,7 +222,14 @@ describe("AcpDriver", () => {
       replay: [
         { sessionUpdate: "user_message_chunk", content: { type: "text", text: "old question" } },
         { sessionUpdate: "agent_message_chunk", content: { type: "text", text: "old answer" } },
-        { sessionUpdate: "tool_call", toolCallId: "old-1", title: "ls", kind: "execute", status: "completed", content: [] },
+        {
+          sessionUpdate: "tool_call",
+          toolCallId: "old-1",
+          title: "ls",
+          kind: "execute",
+          status: "completed",
+          content: [],
+        },
       ],
       turns: [[chunk("one")], [chunk("two")], [chunk("three")]],
     });
@@ -204,7 +239,10 @@ describe("AcpDriver", () => {
       { kind: "assistant_delta", text: "one" },
       { kind: "assistant_text", text: "one" },
     ]);
-    assert.deepEqual(await driver.runTurn(context({ sessionId: "sess-old" }).ctx), { result: "two", sessionId: "sess-old" });
+    assert.deepEqual(await driver.runTurn(context({ sessionId: "sess-old" }).ctx), {
+      result: "two",
+      sessionId: "sess-old",
+    });
     const changed = context({ sessionId: "sess-old", instructions: "Be thorough." }).ctx;
     assert.deepEqual(await driver.runTurn(changed), { result: "three", sessionId: "sess-old" });
 
@@ -248,7 +286,12 @@ describe("AcpDriver", () => {
             locations: [{ path: ok }],
             content: [{ type: "diff", path: ok, oldText: null, newText: "x\n" }],
           }),
-          ask({ toolCallId: "e1", kind: "edit", title: "Writing to ok.txt", locations: [{ path: ok }] }),
+          ask({
+            toolCallId: "e1",
+            kind: "edit",
+            title: "Writing to ok.txt",
+            locations: [{ path: ok }],
+          }),
           {
             update: {
               sessionUpdate: "tool_call_update",
@@ -258,7 +301,14 @@ describe("AcpDriver", () => {
             },
           },
           toolCall("e2", "edit", "Writing to passwd", { locations: [{ path: "/etc/passwd" }] }),
-          ask({ toolCallId: "e2", kind: "edit", title: "Writing to passwd", locations: [{ path: "/etc/passwd" }] }),
+          ask({
+            toolCallId: "e2",
+            kind: "edit",
+            title: "Writing to passwd",
+            locations: [{ path: "/etc/passwd" }],
+          }),
+          toolCall("d1", "delete", "Deleting files"),
+          ask({ toolCallId: "d1", kind: "delete", title: "Deleting files" }),
           { request: "fs/read_text_file", params: { path: "/etc/hosts" } },
           chunk("Found it."),
         ],
@@ -274,11 +324,18 @@ describe("AcpDriver", () => {
       { kind: "tool_result", id: "c1", output: "a.txt\n", is_error: false },
       { kind: "tool_use", id: "c2", name: "Bash", input: { command: "rm -rf /" } },
       { kind: "tool_denied", name: "Bash", reason: "blocked: recursive delete of / or $HOME" },
-      { kind: "tool_result", id: "c2", output: 'Tool "run_shell_command" was canceled by the user.', is_error: true },
+      {
+        kind: "tool_result",
+        id: "c2",
+        output: 'Tool "run_shell_command" was canceled by the user.',
+        is_error: true,
+      },
       { kind: "tool_use", id: "e1", name: "edit", input: { title: "Writing to ok.txt" } },
       { kind: "tool_result", id: "e1", output: `${ok}\nx\n`, is_error: false },
       { kind: "tool_use", id: "e2", name: "edit", input: { title: "Writing to passwd" } },
       { kind: "tool_denied", name: "edit", reason: `blocked: Write outside ${workspaceDir}` },
+      { kind: "tool_use", id: "d1", name: "delete", input: { title: "Deleting files" } },
+      { kind: "tool_denied", name: "delete", reason: "blocked: file access without a path" },
       { kind: "assistant_delta", text: "Found it." },
       { kind: "assistant_text", text: "Found it." },
     ]);
@@ -287,7 +344,8 @@ describe("AcpDriver", () => {
     assert.deepEqual(answer("srv-2")?.result, selected("cancel"));
     assert.deepEqual(answer("srv-3")?.result, selected("proceed_once"));
     assert.deepEqual(answer("srv-4")?.result, selected("cancel"));
-    assert.equal(answer("srv-5")?.error?.code, -32601);
+    assert.deepEqual(answer("srv-5")?.result, selected("cancel"));
+    assert.equal(answer("srv-6")?.error?.code, -32601);
   });
 
   it("starts a new message when the message id changes", async () => {
@@ -306,9 +364,18 @@ describe("AcpDriver", () => {
 
   it("fails the turn on refusal, other stop reasons and errors", async () => {
     const { driver, script } = setup();
-    script({ turns: [[{ stop: "refusal" }], [{ error: "Rate limit exceeded. Try again later." }], [{ stop: "max_tokens" }]] });
+    script({
+      turns: [
+        [{ stop: "refusal" }],
+        [{ error: "Rate limit exceeded. Try again later." }],
+        [{ stop: "max_tokens" }],
+      ],
+    });
     await assert.rejects(driver.runTurn(context().ctx), /gemini ended the turn with refusal/);
-    await assert.rejects(driver.runTurn(context({ sessionId: "sess-new" }).ctx), /Rate limit exceeded/);
+    await assert.rejects(
+      driver.runTurn(context({ sessionId: "sess-new" }).ctx),
+      /Rate limit exceeded/,
+    );
     await assert.rejects(driver.runTurn(context({ sessionId: "sess-new" }).ctx), /max_tokens/);
   });
 
@@ -328,7 +395,9 @@ describe("AcpDriver", () => {
       },
     });
     await assert.rejects(driver.runTurn(ctx), TurnAbortedError);
-    assert.deepEqual(sent("session/cancel"), [{ jsonrpc: "2.0", method: "session/cancel", params: { sessionId: "sess-new" } }]);
+    assert.deepEqual(sent("session/cancel"), [
+      { jsonrpc: "2.0", method: "session/cancel", params: { sessionId: "sess-new" } },
+    ]);
 
     const next = await driver.runTurn(context({ sessionId: "sess-new" }).ctx);
     assert.deepEqual(next, { result: "again", sessionId: "sess-new" });
@@ -357,12 +426,18 @@ describe("AcpDriver", () => {
   it("refuses an agent that speaks another ACP version", async () => {
     const { driver, script } = setup();
     script({ protocolVersion: 2, turns: [] });
-    await assert.rejects(driver.runTurn(context().ctx), /gemini speaks ACP version 2, ferrobot speaks 1/);
+    await assert.rejects(
+      driver.runTurn(context().ctx),
+      /gemini speaks ACP version 2, ferrobot speaks 1/,
+    );
   });
 
   it("says so when gemini is not installed", async () => {
     const { driver } = setup(join(tmpdir(), "no-such-dir", "gemini"));
-    await assert.rejects(driver.runTurn(context().ctx), /gemini is not installed in this sandbox image/);
+    await assert.rejects(
+      driver.runTurn(context().ctx),
+      /gemini is not installed in this sandbox image/,
+    );
   });
 });
 
@@ -374,12 +449,21 @@ describe("selectGeminiApiKeyAuth", () => {
     mkdirSync(join(home, ".gemini"));
     writeFileSync(
       settingsFile(home),
-      JSON.stringify({ ui: { theme: "Dracula" }, security: { folderTrust: { enabled: true }, auth: { selectedType: "oauth-personal", useExternal: false } } }),
+      JSON.stringify({
+        ui: { theme: "Dracula" },
+        security: {
+          folderTrust: { enabled: true },
+          auth: { selectedType: "oauth-personal", useExternal: false },
+        },
+      }),
     );
     await selectGeminiApiKeyAuth(home);
     assert.deepEqual(JSON.parse(readFileSync(settingsFile(home), "utf8")), {
       ui: { theme: "Dracula" },
-      security: { folderTrust: { enabled: true }, auth: { selectedType: "gemini-api-key", useExternal: false } },
+      security: {
+        folderTrust: { enabled: true },
+        auth: { selectedType: "gemini-api-key", useExternal: false },
+      },
     });
   });
 
@@ -427,10 +511,13 @@ describe("acp config", () => {
 });
 
 describe("acp tool names", () => {
-  it("names Gemini's ferrobot MCP calls like the other drivers", async () => {
-    const { toolUse } = await import("../src/drivers/acp.ts");
+  it("names Gemini's ferrobot MCP calls like the other drivers", () => {
     assert.equal(
-      toolUse({ toolCallId: "mcp_ferrobot_remember__mcp_ferrobot_remember_1_0", kind: "other", title: "remember(...)" }).name,
+      toolUse({
+        toolCallId: "mcp_ferrobot_remember__mcp_ferrobot_remember_1_0",
+        kind: "other",
+        title: "remember(...)",
+      }).name,
       "mcp__ferrobot__remember",
     );
     assert.equal(toolUse({ toolCallId: "x_1", kind: "read", title: "Read a" }).name, "read");

@@ -16,7 +16,8 @@ export class Runner {
   #instructions = "";
   #agentName: string;
   #sessionId: string | null = null;
-  #current: { turnId: string; abort: AbortController; late: SteerFrame[]; seen: number[] } | null = null;
+  #current: { turnId: string; abort: AbortController; late: SteerFrame[]; seen: number[] } | null =
+    null;
 
   constructor(deps: RunnerDeps, sessionId: string | null) {
     this.#deps = deps;
@@ -92,7 +93,9 @@ export class Runner {
         agentName: this.#agentName,
         sessionId: this.#sessionId,
         signal: abort.signal,
-        emit: (event) => { send({ type: "event", turn_id: turn.turn_id, event }); },
+        emit: (event) => {
+          send({ type: "event", turn_id: turn.turn_id, event });
+        },
         ...(this.#deps.driver.steering ? { takeMessages } : {}),
       });
       if (out.sessionId && out.sessionId !== this.#sessionId) {

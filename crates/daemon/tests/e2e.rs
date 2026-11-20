@@ -1,13 +1,13 @@
-//! End-to-end: real daemon + real TypeScript runner (mock model driver) +
-//! real sandbox backend. Two agents talk through the mailbox and MCP.
-//!
-//! Local processes (needs `npm --prefix runner ci && npm --prefix runner run build`):
-//!   cargo test -p ferrobot-daemon --test e2e -- --ignored
-//! Docker (needs the `ferrobot-runner:dev` image, see README):
-//!   cargo test -p ferrobot-daemon --features docker-tests --test e2e -- --ignored
+//! End-to-end: real daemon, TypeScript runner (mock driver) and sandbox backend; two agents talk
+//! through the mailbox and MCP. Run with `-- --ignored` (commands in CLAUDE.md).
 
-// Scenario tests read best as one linear story.
-#![allow(clippy::too_many_lines)]
+#![allow(
+    clippy::too_many_lines,
+    clippy::unwrap_used,
+    clippy::expect_used,
+    clippy::panic,
+    reason = "test scenarios read best as one story"
+)]
 
 mod common;
 
