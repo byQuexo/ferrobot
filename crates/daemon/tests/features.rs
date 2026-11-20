@@ -4894,3 +4894,111 @@ async fn openrouter_calls_cost_what_openrouter_reports() {
     assert_eq!(oli["unknown_cost_calls"], 1);
     assert_eq!(report["totals"]["cost_usd"], 0.0042);
 }
+
+#[tokio::test]
+async fn agents_create_routines_with_approval_or_in_auto_mode() {
+    use ferrobot_mcp::{RoutineRequest, RoutineRequestOutcome};
+    let request = |name: &str, schedule: &str| RoutineRequest {
+        name: name.into(),
+        schedule: schedule.into(),
+        prompt: "Summarise yesterday's mail".into(),
+    };
+    let d = start(Arc::new(StatefulBackend::default()), None, "127.0.0.1:0").await;
+    let ada = create(&d, json!({"name": "ada"})).await["id"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    let id: AgentId = ada.parse().unwrap();
+    let routines = || {
+        let path = format!("/v1/agents/{ada}/routines");
+        let ui = d.ui.clone();
+        async move {
+            let (_, list) = http(&ui, "GET", &path, None).await;
+            list.as_array()
+                .unwrap()
+                .iter()
+                .map(|r| r["name"].as_str().unwrap().to_owned())
+                .collect::<Vec<_>>()
+        }
+    };
+    let said = |text: &'static str| {
+        let ada = ada.clone();
+        let d = &d;
+        async move {
+            mail(d, &ada)
+                .await
+                .iter()
+                .any(|m| m["body"].as_str().unwrap().contains(text))
+        }
+    };
+
+    let RoutineRequestOutcome::Pending { question_id } = d
+        .state
+        .request_routine(id, request("digest", "0 9 * * 1-5"))
+        .await
+        .unwrap()
+    else {
+        panic!("expected a card");
+    };
+    assert!(
+        routines().await.is_empty(),
+        "nothing before the operator answers"
+    );
+    let card = events(&d, &ada)
+        .await
+        .into_iter()
+        .find(|e| e["id"] == question_id)
+        .unwrap();
+    assert_eq!(card["payload"]["approval"]["kind"], "create_routine");
+    let prompt = card["payload"]["card"]["questions"][0]["prompt"]
+        .as_str()
+        .unwrap();
+    assert!(
+        prompt.contains("At 09:00") && prompt.contains("Friday (UTC)"),
+        "{prompt}"
+    );
+    assert_eq!(decide(&d, &ada, question_id, "approve").await.0, 202);
+    assert_eq!(routines().await, ["digest"]);
+    assert!(said("approved your routine \"digest\"").await);
+    assert_eq!(decide(&d, &ada, question_id, "approve").await.0, 409);
+
+    let err = d
+        .state
+        .request_routine(id, request("digest", "@daily"))
+        .await
+        .unwrap_err();
+    assert!(err.contains("already"), "{err}");
+    let err = d
+        .state
+        .request_routine(id, request("bad", "every morning"))
+        .await
+        .unwrap_err();
+    assert_ne!(err, "", "an invalid schedule is refused");
+
+    let RoutineRequestOutcome::Pending { question_id } = d
+        .state
+        .request_routine(id, request("weekly", "@weekly"))
+        .await
+        .unwrap()
+    else {
+        panic!("expected a card");
+    };
+    assert_eq!(decide(&d, &ada, question_id, "decline").await.0, 202);
+    assert_eq!(routines().await, ["digest"]);
+    assert!(said("declined your routine \"weekly\"").await);
+
+    let auto = Some(json!({"auto_mode": true}));
+    assert_eq!(http(&d.ui, "PUT", "/v1/settings", auto).await.0, 200);
+    let outcome = d
+        .state
+        .request_routine(id, request("hourly", "@hourly"))
+        .await
+        .unwrap();
+    assert!(
+        matches!(outcome, RoutineRequestOutcome::Created { .. }),
+        "{outcome:?}"
+    );
+    let mut names = routines().await;
+    names.sort();
+    assert_eq!(names, ["digest", "hourly"]);
+}
