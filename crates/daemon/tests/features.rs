@@ -760,6 +760,15 @@ async fn operator_api_requires_the_token() {
     )
     .await;
     assert_eq!(status, 401);
+    let (status, _, _) = http_raw(
+        &d.ui,
+        "PUT",
+        "/v1/settings",
+        &[("Authorization", ""), ("Content-Type", "application/json")],
+        br#"{"auto_mode":true}"#,
+    )
+    .await;
+    assert_eq!(status, 401, "only the operator turns on Auto mode");
 }
 
 /// Fake model API: echoes the key it saw and streams two SSE chunks.
@@ -3926,6 +3935,21 @@ async fn message_limits_count_mentions_as_stored() {
     let res = tokio::time::timeout(Duration::from_secs(5), as_bob.call_tool(request))
         .await
         .expect("rejected without an approval card");
+    assert!(!res.is_ok_and(|r| r.is_error != Some(true)));
+    let (_, all) = http(&d.ui, "GET", "/v1/agents", None).await;
+    assert!(!all.to_string().contains("\"cal\""), "{all}");
+
+    // With Auto mode on it fails before the agent is created.
+    http(
+        &d.ui,
+        "PUT",
+        "/v1/settings",
+        Some(json!({"auto_mode": true})),
+    )
+    .await;
+    let request = CallToolRequestParams::new("create_agent")
+        .with_arguments(args.as_object().cloned().unwrap());
+    let res = as_bob.call_tool(request).await;
     assert!(!res.is_ok_and(|r| r.is_error != Some(true)));
     let (_, all) = http(&d.ui, "GET", "/v1/agents", None).await;
     assert!(!all.to_string().contains("\"cal\""), "{all}");
