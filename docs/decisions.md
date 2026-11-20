@@ -488,3 +488,13 @@ the code and this file together.
   before such a change is discarded when the browser comes back.
 - **Deleting a connector revokes its tokens** (like sign-out) and removes
   its secrets before the row, so a keychain error leaves it to retry.
+
+## Agent list: order and delete
+
+- **The order lives in the app** (`localStorage`, `ferrobot.agent-order`),
+  not in the daemon: there is one desktop per daemon today, and a column
+  would need a migration while v12/v13 are taken by open branches. Pinned
+  agents stay first; dragging only reorders within the pinned strip or the
+  list. New agents go after the ordered ones, by name.
+- **Right-click on an agent** opens Move up / Move down (the keyboard way to
+  reorder) and Delete…, which asks for confirmation first.

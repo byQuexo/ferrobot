@@ -7,6 +7,7 @@ import { characterOf, deriveCharacter, moodOf, rerollCharacter } from "../src/li
 import { relativeTime, stepLabel, toolLabel } from "../src/lib/format.ts";
 import { buildTimeline, sharedFiles } from "../src/lib/timeline.ts";
 import { parseBlocks, parseInline } from "../src/lib/markdown.ts";
+import { moveId, orderAgents } from "../src/lib/order.ts";
 
 const ME = "11111111-1111-4111-8111-111111111111";
 const BOB = "22222222-2222-4222-8222-222222222222";
@@ -261,5 +262,20 @@ describe("markdown", () => {
       { text: " snake_case_name" },
     ]);
     assert.deepEqual(parseInline("[x](javascript:alert(1))"), [{ text: "[x](javascript:alert(1))" }]);
+  });
+});
+
+describe("agent order", () => {
+  const a = (id: string, pinned = false): { id: string; name: string; pinned: boolean } => ({ id, name: id, pinned });
+  it("keeps pinned first, then the saved order, new agents last by name", () => {
+    const got = orderAgents([a("c"), a("b"), a("p", true), a("a"), a("z")], ["z", "c", "gone"]);
+    assert.deepEqual(got.map((x) => x.id), ["p", "z", "c", "a", "b"]);
+  });
+
+  it("moves an id before or after another", () => {
+    assert.deepEqual(moveId(["a", "b", "c"], "c", "a", false), ["c", "a", "b"]);
+    assert.deepEqual(moveId(["a", "b", "c"], "a", "c", true), ["b", "c", "a"]);
+    assert.deepEqual(moveId(["a", "b"], "a", "a", true), ["a", "b"]);
+    assert.deepEqual(moveId(["a", "b"], "a", "x", true), ["a", "b"], "unknown target: unchanged");
   });
 });

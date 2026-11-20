@@ -334,6 +334,20 @@ textarea { resize: vertical; min-height: 40px; line-height: 1.5; }
 @keyframes shimmer { from { background-position: 200% 0; } to { background-position: -200% 0; } }
 @media (prefers-reduced-motion: reduce) { .skeleton-line { animation: none; } }
 .agent-row-wrap, .pinned-agent-wrap { position: relative; }
+.agent-row-wrap.drop-before { box-shadow: inset 0 2px 0 var(--accent); }
+.agent-row-wrap.drop-after { box-shadow: inset 0 -2px 0 var(--accent); }
+.pinned-agent-wrap.drop-before { box-shadow: inset 2px 0 0 var(--accent); }
+.pinned-agent-wrap.drop-after { box-shadow: inset -2px 0 0 var(--accent); }
+.context-menu {
+  position: fixed; z-index: 30; min-width: 180px; padding: 4px; display: flex; flex-direction: column;
+  border: 1px solid var(--border); border-radius: var(--radius-sm); background: var(--surface); box-shadow: var(--shadow);
+}
+.context-menu button {
+  display: flex; align-items: center; gap: 8px; padding: 7px 10px; border: none; border-radius: 7px;
+  background: none; color: var(--text); font: inherit; font-size: 13px; text-align: left; cursor: pointer;
+}
+.context-menu button:hover, .context-menu button:focus-visible { background: var(--surface-2); outline: none; }
+.context-menu button.danger { color: var(--err); }
 .pinned-strip { display: flex; flex-wrap: wrap; justify-content: center; gap: 6px; padding: 10px 4px 14px; margin: 0 4px 8px; border-bottom: 1px solid var(--border); }
 .pinned-agent { position: relative; display: flex; flex-direction: column; align-items: center; gap: 7px; width: 92px; padding: 10px 6px 8px; border: none; border-radius: 16px; background: none; color: var(--text); font: inherit; cursor: pointer; }
 .pinned-agent:hover { background: var(--surface-2); }
