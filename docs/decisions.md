@@ -365,3 +365,10 @@ the code and this file together.
 - **`ferrobot-pdf`** in the runner image renders HTML to PDF with Debian's
   Chromium (`--no-sandbox`: the container is the sandbox). The image grows
   from about 1.3 GB to about 2 GB.
+
+## Hardening after the external review (Nov 2026)
+
+- **Item 2: `Settings` has a hand-written `Debug`** that prints
+  `[REDACTED]` for `anthropic_api_key` and `api_token`. It destructures every
+  field, so a new field does not compile until someone decides whether it is
+  secret. `AppState`'s derived `Debug` goes through it.
