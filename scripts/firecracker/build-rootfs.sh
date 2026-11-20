@@ -1,12 +1,7 @@
 #!/usr/bin/env bash
-# Builds the Firecracker guest root filesystem (ext4) from the runner image.
-# Linux only; run as root so file owners survive into the image.
-#
-#   sudo scripts/firecracker/build-rootfs.sh [OUT.ext4] [SIZE]   # default rootfs.ext4 2G
-#
-# Uses FERROBOT_RUNNER_IMAGE (default ferrobot-runner:dev), built from
-# runner/Dockerfile if missing.
-# TODO(kvm): the resulting image has never booted.
+# Builds the Firecracker guest rootfs (ext4) from FERROBOT_RUNNER_IMAGE (default ferrobot-runner:dev, built if missing).
+# Linux only, as root so file owners survive: sudo scripts/firecracker/build-rootfs.sh [OUT.ext4=rootfs.ext4] [SIZE=2G]
+# TODO(kvm): the resulting image has never booted (docs/launch/issues/firecracker-on-kvm.md)
 set -euo pipefail
 
 if [ "$(uname -s)" != Linux ]; then

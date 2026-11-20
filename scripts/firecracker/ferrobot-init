@@ -1,8 +1,7 @@
 #!/bin/sh
-# PID 1 of a ferrobot Firecracker guest (kernel arg init=/sbin/ferrobot-init).
-# Mounts the basics and the home disk, reads the runner env from MMDS, runs
-# the runner as `node` and powers off when it exits.
-# TODO(kvm): untested; it has never booted in a microVM.
+# PID 1 of a Firecracker guest (init=/sbin/ferrobot-init): mounts the home disk, reads the runner env
+# from MMDS, runs the runner as `node` and powers off when it exits.
+# TODO(kvm): untested; it has never booted in a microVM (docs/launch/issues/firecracker-on-kvm.md)
 # Never `set -x` or print the env: the console ends up in a host log file.
 set -f
 export PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
