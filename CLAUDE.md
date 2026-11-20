@@ -67,7 +67,7 @@ Principles:
 - `crates/daemon/src/lib.rs` — routers (`ui_router`, `agent_router`).
 - `crates/daemon/src/api/` — `/v1` handlers (agents, chat, memory, routines, sandbox, ws).
 - `crates/daemon/src/agents.rs` — agent creation shared by API and `create_agent`,
-  approval flow, limit.
+  approval flow, Auto mode, limit; `api/settings.rs` — daemon-wide settings (`auto_mode`).
 - `crates/daemon/src/state.rs` — `AppState`, `Settings`, `UiEvent`.
 - `crates/daemon/src/spec.rs` — OpenAPI + schema generation.
 - `crates/daemon/src/proxy.rs` — model proxy; `auth.rs` — operator token.
@@ -204,8 +204,10 @@ daemon, `docker ps -a` must be empty of ferrobot containers.
   loopback by default.
 - **Per-agent tokens** on `/runner/ws`, `/mcp`, `/model`. An agent can only act
   as itself (MCP tools read the caller from the token). Only hashes are stored.
-- **`create_agent` needs operator approval**: an Approve/Decline card, the
-  tool waits; decline or `FERROBOT_APPROVAL_TIMEOUT` (300 s) creates nothing.
+- **`create_agent` needs operator approval unless Auto mode is on**: an
+  Approve/Decline card, the tool waits; decline or `FERROBOT_APPROVAL_TIMEOUT`
+  (300 s) creates nothing. Auto mode (`PUT /v1/settings`, operator opt-in)
+  skips the card and leaves an `agent_created` notice; the agent limit applies either way.
 - **`FERROBOT_MAX_AGENTS`** (default 10) applies to `POST /v1/agents` and to
   `create_agent` (both through `daemon::agents::create`).
 - Question cards are answered at most once (`409` after).

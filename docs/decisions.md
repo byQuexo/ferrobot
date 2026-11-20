@@ -859,3 +859,27 @@ slop, so polish mode: palette, accent, logo, layout and features stay.
 - **Not changed:** Anthropic's 5-minute cache lifetime. Agents with turns
   further apart pay the cache write without a hit; the 1-hour option costs
   more per write (2x instead of 1.25x). Decide after measuring real turns.
+
+## Auto mode
+
+- **What it skips:** with `auto_mode` on (`PUT /v1/settings`, the `general`
+  setting, default off) `create_agent` creates the agent without an approval
+  card, through the same `agents::create` path: name check, the task length
+  check, inherited connectors, provider, briefing and greeting stay as they
+  are. It is an operator opt-in from the desktop's Settings, Agents.
+- **Audit trail without a card:** an `agent_created` event
+  (`{name, id, by, auto: true}`, `by` the requester's name at that time) goes
+  to the chat the card would have gone to (`chat_of(requester)`); the desktop
+  shows it as a quiet notice ("ada created scout (auto mode)"). No new table.
+- **Still gated in Auto mode:** the agent limit (`FERROBOT_MAX_AGENTS`; over
+  it `create_agent` still fails), the runner's command permission policy,
+  secrets never entering a sandbox, connector OAuth sign-in (operator only)
+  and `ask_user` cards (questions, not approvals, still go to the operator).
+- **Fails closed:** an unreadable `general` setting counts as off, so the
+  card shows.
+- **Only `create_agent` today.** `Approval` has one kind and `request` is its
+  only caller, so there is no per-kind flag; a future approval kind decides
+  its own Auto mode behaviour.
+- **Agent-facing text** stays true in both modes (the tool list is static per
+  connection): the tool description and the Claude prompt say the operator
+  approves unless Auto mode is on.

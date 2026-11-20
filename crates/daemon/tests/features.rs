@@ -760,6 +760,15 @@ async fn operator_api_requires_the_token() {
     )
     .await;
     assert_eq!(status, 401);
+    let (status, _, _) = http_raw(
+        &d.ui,
+        "PUT",
+        "/v1/settings",
+        &[("Authorization", ""), ("Content-Type", "application/json")],
+        br#"{"auto_mode":true}"#,
+    )
+    .await;
+    assert_eq!(status, 401, "only the operator turns on Auto mode");
 }
 
 /// Fake model API: echoes the key it saw and streams two SSE chunks.
@@ -1339,6 +1348,78 @@ async fn agent_limit_applies_to_api_and_agents() {
             .iter()
             .any(|e| e["kind"] == "question"),
         "no approval card when the limit is reached"
+    );
+}
+
+#[tokio::test]
+async fn auto_mode_creates_agents_without_a_card() {
+    use ferrobot_mcp::AgentRequestOutcome;
+    async fn notices(d: &Daemon, agent: &str) -> Vec<Value> {
+        let evs = events(d, agent).await;
+        assert!(
+            !evs.iter().any(|e| e["kind"] == "question"),
+            "no card: {evs:?}"
+        );
+        evs.into_iter()
+            .filter(|e| e["kind"] == "agent_created")
+            .map(|e| e["payload"].clone())
+            .collect()
+    }
+    let backend = Arc::new(StatefulBackend::default());
+    let d = start_with(backend, None, "127.0.0.1:0", |s| s.max_agents = 3).await;
+    let (status, body) = http(&d.ui, "GET", "/v1/settings", None).await;
+    assert_eq!((status, body), (200, json!({"auto_mode": false})));
+    let (status, body) = http(
+        &d.ui,
+        "PUT",
+        "/v1/settings",
+        Some(json!({"auto_mode": true})),
+    )
+    .await;
+    assert_eq!((status, body), (200, json!({"auto_mode": true})));
+    let (_, body) = http(&d.ui, "GET", "/v1/settings", None).await;
+    assert_eq!(body["auto_mode"], true);
+
+    let ada = create(&d, json!({"name": "ada"})).await["id"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    let AgentRequestOutcome::Created { id: scout, .. } = d
+        .state
+        .request_agent(ada.parse().unwrap(), agent_request("scout"))
+        .await
+        .unwrap()
+    else {
+        panic!("expected created");
+    };
+    // A sub-agent's creation is noted where the operator chats: the top creator's chat.
+    let AgentRequestOutcome::Created { id: deep, .. } = d
+        .state
+        .request_agent(scout, agent_request("deep"))
+        .await
+        .unwrap()
+    else {
+        panic!("expected created");
+    };
+    let expected = |name: &str, id: AgentId, by: &str| json!({"name": name, "id": id.to_string(), "by": by, "auto": true});
+    assert_eq!(
+        notices(&d, &ada).await,
+        vec![
+            expected("scout", scout, "ada"),
+            expected("deep", deep, "scout")
+        ]
+    );
+
+    let err = d
+        .state
+        .request_agent(scout, agent_request("echo"))
+        .await
+        .unwrap_err();
+    assert!(err.contains("at most 3 agents"), "{err}");
+    assert_eq!(
+        notices(&d, &ada).await.len(),
+        2,
+        "nothing created over the limit"
     );
 }
 
@@ -3854,6 +3935,21 @@ async fn message_limits_count_mentions_as_stored() {
     let res = tokio::time::timeout(Duration::from_secs(5), as_bob.call_tool(request))
         .await
         .expect("rejected without an approval card");
+    assert!(!res.is_ok_and(|r| r.is_error != Some(true)));
+    let (_, all) = http(&d.ui, "GET", "/v1/agents", None).await;
+    assert!(!all.to_string().contains("\"cal\""), "{all}");
+
+    // With Auto mode on it fails before the agent is created.
+    http(
+        &d.ui,
+        "PUT",
+        "/v1/settings",
+        Some(json!({"auto_mode": true})),
+    )
+    .await;
+    let request = CallToolRequestParams::new("create_agent")
+        .with_arguments(args.as_object().cloned().unwrap());
+    let res = as_bob.call_tool(request).await;
     assert!(!res.is_ok_and(|r| r.is_error != Some(true)));
     let (_, all) = http(&d.ui, "GET", "/v1/agents", None).await;
     assert!(!all.to_string().contains("\"cal\""), "{all}");

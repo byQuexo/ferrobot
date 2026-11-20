@@ -1,14 +1,29 @@
 import type { JSX } from "preact";
-import { AudioLines, Brain, KeyRound, Monitor, Moon, Palette, Plug, Sun, X } from "lucide-preact";
+import { useEffect, useState } from "preact/hooks";
+import {
+  AudioLines,
+  Bot,
+  Brain,
+  KeyRound,
+  Monitor,
+  Moon,
+  Palette,
+  Plug,
+  Sun,
+  X,
+} from "lucide-preact";
 
+import type { GeneralSettings } from "../api.ts";
+import { useApp } from "../context.ts";
 import type { ThemePref } from "../lib/theme.ts";
 import { ConnectorsSettings } from "./ConnectorsSettings.tsx";
 import { Memory } from "./InfoPanel.tsx";
 import { ProvidersSettings } from "./ProvidersSettings.tsx";
 import { VoiceSettings } from "./VoiceSettings.tsx";
-import { IconButton } from "./ui.tsx";
+import { IconButton, Switch } from "./ui.tsx";
 
-export type SettingsSection = "providers" | "connectors" | "memory" | "voice" | "appearance";
+export type SettingsSection =
+  "providers" | "agents" | "connectors" | "memory" | "voice" | "appearance";
 
 const SECTIONS: [SettingsSection, string, string, typeof KeyRound][] = [
   [
@@ -17,6 +32,7 @@ const SECTIONS: [SettingsSection, string, string, typeof KeyRound][] = [
     "The models your agents run on. Keys stay in the keychain of the daemon’s computer.",
     KeyRound,
   ],
+  ["agents", "Agents", "What agents may do without asking you.", Bot],
   [
     "connectors",
     "Connectors",
@@ -37,6 +53,43 @@ const SECTIONS: [SettingsSection, string, string, typeof KeyRound][] = [
   ],
   ["appearance", "Appearance", "How ferrobot looks on this computer.", Palette],
 ];
+
+/** Auto mode; saved as soon as it is switched. */
+function AgentSettings(): JSX.Element | null {
+  const { client, run } = useApp();
+  const [settings, setSettings] = useState<GeneralSettings | null>(null);
+
+  useEffect(() => {
+    const load = async (): Promise<void> => {
+      setSettings((await run(() => client.settings())) ?? null);
+    };
+    void load();
+  }, []);
+
+  if (!settings) return null;
+  const setAuto = async (auto_mode: boolean): Promise<void> => {
+    const saved = await run(() => client.updateSettings({ ...settings, auto_mode }));
+    if (saved) setSettings(saved);
+  };
+  return (
+    <section class="settings-section form">
+      <span class="field">
+        <span class="field-row">
+          Auto mode
+          <Switch
+            checked={settings.auto_mode}
+            label="Auto mode"
+            onChange={(v) => void setAuto(v)}
+          />
+        </span>
+        <span class="hint">
+          Agents create teammates without asking first. The agent limit, blocked commands and keys
+          stay protected.
+        </span>
+      </span>
+    </section>
+  );
+}
 
 /** All app-wide settings on one page. */
 export function Settings(props: {
@@ -81,6 +134,7 @@ export function Settings(props: {
           </IconButton>
         </header>
         {props.section === "providers" && <ProvidersSettings />}
+        {props.section === "agents" && <AgentSettings />}
         {props.section === "connectors" && <ConnectorsSettings />}
         {props.section === "memory" && <Memory agent={null} />}
         {props.section === "voice" && <VoiceSettings />}

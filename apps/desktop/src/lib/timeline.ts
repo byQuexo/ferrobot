@@ -50,6 +50,7 @@ const SYSTEM_TEXT: Record<string, (p: Payload) => string> = {
   restored: (p) => `Computer restored from snapshot ${str(p["label"]) || ""}`.trim(),
   snapshot: (p) => `Snapshot taken${str(p["label"]) ? `: ${str(p["label"])}` : ""}`,
   sandbox_restarted: () => "Computer restarted after a problem",
+  agent_created: (p) => `${str(p["by"])} created ${str(p["name"])} (auto mode)`,
 };
 
 /**

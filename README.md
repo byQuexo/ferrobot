@@ -85,7 +85,8 @@ run on the mock driver; they were seeded with `scripts/seed-demo.sh`.
   `ask_user`; the answers go back as a message.
 - **Agents create agents** with the MCP tool `create_agent`, but only after
   the operator approves an Approve/Decline card in the chat (no answer within
-  `FERROBOT_APPROVAL_TIMEOUT`, default 300 s, counts as declined). The profile
+  `FERROBOT_APPROVAL_TIMEOUT`, default 300 s, counts as declined). With Auto
+  mode on (Settings, Agents) they skip the card and the chat notes it. The profile
   shows who created an agent (`created_by`). A host keeps at most
   `FERROBOT_MAX_AGENTS` agents (default 10), for the API and agents alike.
 - **Memory** per agent with full-text search, usable by the agent (MCP
@@ -355,7 +356,7 @@ turn timeout, runner image, ...).
   agent snapshots with presence and unread count, turn events, text deltas,
   messages, memory and routine changes.
 - Agents' MCP tools: `list_agents`, `send_message`, `read_mailbox`, `remember`,
-  `recall`, `forget`, `create_agent` (approval card, then created),
+  `recall`, `forget`, `create_agent` (approval card unless Auto mode is on, then created),
   `ask_user` (question cards; answered with
   `POST /v1/agents/{id}/questions/{qid}/answer`, schema in
   `protocol/question-card.v1.schema.json`).

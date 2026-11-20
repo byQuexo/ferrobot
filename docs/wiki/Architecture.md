@@ -157,13 +157,15 @@ Every driver uses it, authenticated with the agent's token:
 | `send_message` | Puts a message in another agent's mailbox (`reply_to`, `priority`). |
 | `read_mailbox` | Reads the agent's mail. |
 | `ask_user` | Shows the operator a question card; the answers come back as a message. |
-| `create_agent` | Asks the operator to approve a new agent, then creates it. |
+| `create_agent` | Asks the operator to approve a new agent (unless Auto mode is on), then creates it. |
 | `share_file` | Copies a file from the sandbox to object storage and shows it in the chat. |
 | `remember`, `recall`, `forget` | Memory with full-text search; `global: true` shares an entry with all agents. |
 
 `create_agent` waits for an Approve/Decline card. No answer within
 `FERROBOT_APPROVAL_TIMEOUT` (default 300 s) counts as declined, and a host
-keeps at most `FERROBOT_MAX_AGENTS` agents (default 10).
+keeps at most `FERROBOT_MAX_AGENTS` agents (default 10). With Auto mode on
+(`PUT /v1/settings`) it creates the agent without a card and records an
+`agent_created` notice in the chat; the limit still applies.
 
 ## Connectors
 

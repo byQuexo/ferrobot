@@ -755,6 +755,24 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/settings": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** The daemon-wide settings. */
+        get: operations["get_settings"];
+        /** Replaces the daemon-wide settings. */
+        put: operations["put_settings"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/usage": {
         parameters: {
             query?: never;
@@ -1218,6 +1236,14 @@ export interface components {
              */
             cmd: string[];
             workdir?: string | null;
+        };
+        /** @description Daemon-wide settings. Omitted fields take their defaults. */
+        GeneralSettings: {
+            /**
+             * @description Agents create agents without an approval card. The agent limit still applies.
+             * @default false
+             */
+            auto_mode: boolean;
         };
         Health: {
             name: string;
@@ -4668,6 +4694,66 @@ export interface operations {
             };
             /** @description Unknown routine */
             404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+        };
+    };
+    get_settings: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["GeneralSettings"];
+                };
+            };
+            /** @description Missing or wrong API token */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+        };
+    };
+    put_settings: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["GeneralSettings"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["GeneralSettings"];
+                };
+            };
+            /** @description Missing or wrong API token */
+            401: {
                 headers: {
                     [name: string]: unknown;
                 };
