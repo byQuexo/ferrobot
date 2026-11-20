@@ -32,6 +32,9 @@ export type Provider = Schemas["ProviderView"];
 export type ProviderKind = Schemas["ProviderKind"];
 export type CreateProvider = Schemas["CreateProvider"];
 export type UpdateProvider = Schemas["UpdateProvider"];
+export type Connector = Schemas["ConnectorView"];
+export type CreateConnector = Schemas["CreateConnector"];
+export type UpdateConnector = Schemas["UpdateConnector"];
 export type DeviceCode = Schemas["DeviceCode"];
 export type LoginStatus = Schemas["LoginStatus"];
 
@@ -108,6 +111,16 @@ export class DaemonClient {
   deleteProvider = (id: string): Promise<void> => this.#request("DELETE", `/v1/providers/${id}`);
   startChatgptLogin = (id: string): Promise<DeviceCode> => this.#request("POST", `/v1/providers/${id}/chatgpt-login`);
   chatgptLoginStatus = (id: string): Promise<LoginStatus> => this.#request("GET", `/v1/providers/${id}/chatgpt-login`);
+
+  // connectors
+  listConnectors = (): Promise<Connector[]> => this.#request("GET", "/v1/connectors");
+  createConnector = (req: CreateConnector): Promise<Connector> => this.#request("POST", "/v1/connectors", req);
+  updateConnector = (id: string, req: UpdateConnector): Promise<Connector> =>
+    this.#request("PATCH", `/v1/connectors/${id}`, req);
+  deleteConnector = (id: string): Promise<void> => this.#request("DELETE", `/v1/connectors/${id}`);
+  agentConnectors = (id: string): Promise<string[]> => this.#request("GET", `/v1/agents/${id}/connectors`);
+  setAgentConnectors = (id: string, ids: string[]): Promise<string[]> =>
+    this.#request("PUT", `/v1/agents/${id}/connectors`, ids);
   setAvatar = (id: string, image: Blob): Promise<Agent> => this.#request("PUT", `/v1/agents/${id}/avatar`, image);
   removeAvatar = (id: string): Promise<Agent> => this.#request("DELETE", `/v1/agents/${id}/avatar`);
 

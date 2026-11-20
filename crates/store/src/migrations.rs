@@ -187,6 +187,20 @@ const MIGRATIONS: &[&str] = &[
         INSERT INTO global_memories_fts(rowid, key, content) VALUES (new.id, new.key, new.content);
     END;
     ",
+    // v9: connectors (remote MCP servers) and which agents may use them
+    r"
+    CREATE TABLE connectors (
+        id         TEXT PRIMARY KEY,
+        name       TEXT NOT NULL UNIQUE,
+        url        TEXT NOT NULL,
+        created_at TEXT NOT NULL
+    );
+    CREATE TABLE agent_connectors (
+        agent_id     TEXT NOT NULL REFERENCES agents(id) ON DELETE CASCADE,
+        connector_id TEXT NOT NULL REFERENCES connectors(id) ON DELETE CASCADE,
+        PRIMARY KEY (agent_id, connector_id)
+    );
+    ",
 ];
 
 pub(crate) fn run(conn: &mut Connection) -> Result<(), StoreError> {
@@ -261,6 +275,10 @@ mod tests {
             .query_row("SELECT COUNT(*) FROM global_memories", [], |r| r.get(0))
             .unwrap();
         assert_eq!(global, 0, "global memory starts empty");
+        let assigned: i64 = conn
+            .query_row("SELECT COUNT(*) FROM agent_connectors", [], |r| r.get(0))
+            .unwrap();
+        assert_eq!(assigned, 0, "existing agents get no connectors");
         let version: i64 = conn
             .query_row("PRAGMA user_version", [], |r| r.get(0))
             .unwrap();

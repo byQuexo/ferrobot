@@ -87,6 +87,12 @@ pub const QUESTION_CARD_FILE: &str = "question-card.v1.schema.json";
         api::providers::delete_provider,
         api::providers::start_chatgpt_login,
         api::providers::chatgpt_login_status,
+        api::connectors::list_connectors,
+        api::connectors::create_connector,
+        api::connectors::update_connector,
+        api::connectors::delete_connector,
+        api::connectors::agent_connectors,
+        api::connectors::set_agent_connectors,
         api::ws::ui_ws,
     ),
     components(schemas(UiEvent, QuestionEvent, QuestionAnswered, ferrobot_sandbox::SleepLevel)),
@@ -98,6 +104,7 @@ pub const QUESTION_CARD_FILE: &str = "question-card.v1.schema.json";
         (name = "routines", description = "Scheduled prompts"),
         (name = "sandbox", description = "Each agent's own computer: sleep, wake, snapshots"),
         (name = "providers", description = "Model providers and their API keys"),
+        (name = "connectors", description = "Remote MCP servers whose tools agents can use"),
     )
 )]
 struct ApiDoc;

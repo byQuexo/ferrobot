@@ -1,8 +1,8 @@
 import type { JSX } from "preact";
 import { useEffect, useRef, useState } from "preact/hooks";
-import { Dices, ImageUp, RotateCcw, X } from "lucide-preact";
+import { Check, Dices, ImageUp, RotateCcw, X } from "lucide-preact";
 
-import type { Agent, Provider } from "../api.ts";
+import type { Agent, Connector, Provider } from "../api.ts";
 import { useApp } from "../context.ts";
 import { BODIES, EYES, HUES, characterOf, deriveCharacter, rerollCharacter, type Character } from "../lib/character.ts";
 import { toAvatarPng } from "../lib/image.ts";
@@ -27,6 +27,9 @@ export function AgentDialog(props: { agent?: Agent; onClose: () => void; onSaved
   const [providers, setProviders] = useState<Provider[]>([]);
   const [providerId, setProviderId] = useState<string | null>(editing?.provider_id ?? null);
   const [model, setModel] = useState(editing?.model ?? "");
+  const [connectors, setConnectors] = useState<Connector[]>([]);
+  const [given, setGiven] = useState<string[] | null>(editing ? null : []);
+  const [picked, setPicked] = useState<string[]>([]);
   const chosen = providers.find((p) => p.id === providerId);
   const modelChanged =
     !editing || providerId !== (editing.provider_id ?? null) || model.trim() !== (editing.model ?? "");
@@ -41,7 +44,14 @@ export function AgentDialog(props: { agent?: Agent; onClose: () => void; onSaved
   useEffect(() => () => { if (preview) URL.revokeObjectURL(preview); }, [preview]);
   useEffect(() => {
     client.listProviders().then(setProviders, () => undefined);
+    client.listConnectors().then(setConnectors, () => undefined);
+    if (editing) {
+      client.agentConnectors(editing.id).then((ids) => { setGiven(ids); setPicked(ids); }, () => undefined);
+    }
   }, []);
+  const togglePick = (id: string): void => {
+    setPicked((p) => (p.includes(id) ? p.filter((x) => x !== id) : [...p, id]));
+  };
 
   const nameOk = NAME.test(name);
   const imageUrl = avatar === null ? null : editing?.avatar_url ?? null;
@@ -79,6 +89,9 @@ export function AgentDialog(props: { agent?: Agent; onClose: () => void; onSaved
             provider_id: providerId,
             model: model.trim() || null,
           });
+      if (given && (picked.length !== given.length || picked.some((id) => !given.includes(id)))) {
+        await client.setAgentConnectors(agent.id, picked);
+      }
       if (avatar instanceof Blob) agent = await client.setAvatar(agent.id, avatar);
       else if (avatar === null && editing?.avatar_url) agent = await client.removeAvatar(agent.id);
       props.onSaved(agent);
@@ -254,6 +267,30 @@ export function AgentDialog(props: { agent?: Agent; onClose: () => void; onSaved
             <span class="hint">Saving restarts the agent’s computer with the new model. Its files are kept.</span>
           )}
         </label>
+        {connectors.length > 0 && given && (
+          <div class="field">
+            <span>Connectors</span>
+            <div class="qcard-choices">
+              {connectors.map((c) => {
+                const on = picked.includes(c.id);
+                return (
+                  <button
+                    key={c.id}
+                    type="button"
+                    class={`choice multi${on ? " on" : ""}`}
+                    role="checkbox"
+                    aria-checked={on}
+                    onClick={() => { togglePick(c.id); }}
+                  >
+                    <span class="choice-mark">{on && <Check size={12} />}</span>
+                    {c.name}
+                  </button>
+                );
+              })}
+            </div>
+            <span class="hint">The agent can use these connectors’ tools from its next turn.</span>
+          </div>
+        )}
         <button type="submit" hidden />
       </form>
     </Dialog>

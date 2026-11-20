@@ -1,9 +1,13 @@
 use ferrobot_core::question::{QUESTION_CARD_VERSION, QuestionCard, QuestionEvent};
 use ferrobot_core::{AgentId, AgentName, AvatarCharacter, MailMessage, Sender, mention};
 use ferrobot_store::StoreError;
-use rmcp::handler::server::tool::Extension;
+use rmcp::handler::server::tool::{Extension, ToolCallContext};
 use rmcp::handler::server::wrapper::{Json, Parameters};
-use rmcp::{ErrorData, ServerHandler, tool, tool_handler, tool_router};
+use rmcp::model::{
+    CallToolRequestParams, CallToolResponse, ListToolsResult, PaginatedRequestParams,
+};
+use rmcp::service::RequestContext;
+use rmcp::{ErrorData, RoleServer, ServerHandler, tool, tool_handler, tool_router};
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
@@ -534,10 +538,48 @@ impl FerrobotTools {
     }
 }
 
+fn context_caller(context: &RequestContext<RoleServer>) -> Option<AgentId> {
+    let parts = context.extensions.get::<http::request::Parts>()?;
+    Some(parts.extensions.get::<Caller>()?.0.id)
+}
+
 // The rmcp macro generates `async` trait methods without awaits.
 #[allow(clippy::unused_async_trait_impl)]
 #[tool_handler(
     name = "ferrobot",
-    instructions = "Mailbox, memory, question-card and agent-creation tools for ferrobot agents. Messages and answers are asynchronous."
+    instructions = "Mailbox, memory, question-card and agent-creation tools for ferrobot agents, plus the tools of the connectors your operator gave you (named `<connector>__<tool>`). Messages and answers are asynchronous."
 )]
-impl ServerHandler for FerrobotTools {}
+impl ServerHandler for FerrobotTools {
+    async fn list_tools(
+        &self,
+        _request: Option<PaginatedRequestParams>,
+        context: RequestContext<RoleServer>,
+    ) -> Result<ListToolsResult, ErrorData> {
+        let mut tools = Self::tool_router().list_all();
+        if let Some(me) = context_caller(&context) {
+            tools.extend(self.state.notifier.connector_tools(me).await);
+        }
+        Ok(ListToolsResult::with_all_items(tools))
+    }
+
+    async fn call_tool(
+        &self,
+        request: CallToolRequestParams,
+        context: RequestContext<RoleServer>,
+    ) -> Result<CallToolResponse, ErrorData> {
+        let router = Self::tool_router();
+        if router.has_route(&request.name) {
+            return router
+                .call(ToolCallContext::new(self, request, context))
+                .await;
+        }
+        let me = context_caller(&context)
+            .ok_or_else(|| ErrorData::invalid_request("unauthenticated", None))?;
+        self.state
+            .notifier
+            .call_connector_tool(me, request.name.into_owned(), request.arguments)
+            .await
+            .map(Into::into)
+            .map_err(|e| ErrorData::invalid_params(e, None))
+    }
+}

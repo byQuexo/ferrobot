@@ -59,6 +59,21 @@ pub trait MailboxNotifier: Send + Sync + 'static {
     }
     /// A tool changed the global memory.
     fn global_memory_changed(&self) {}
+    /// Tools of the connectors `agent` may use, named `<connector>__<tool>`.
+    fn connector_tools(&self, agent: AgentId) -> BoxFuture<Vec<rmcp::model::Tool>> {
+        let _ = agent;
+        Box::pin(async { Vec::new() })
+    }
+    /// Calls a connector tool as `agent`. `Err` carries a message for the agent.
+    fn call_connector_tool(
+        &self,
+        agent: AgentId,
+        name: String,
+        arguments: Option<rmcp::model::JsonObject>,
+    ) -> BoxFuture<Result<rmcp::model::CallToolResult, String>> {
+        let _ = (agent, arguments);
+        Box::pin(async move { Err(format!("unknown tool {name}")) })
+    }
     /// A tool recorded a chat event (e.g. a question card) for the UI.
     fn event_recorded(&self, event: &StoredEvent) {
         let _ = event;

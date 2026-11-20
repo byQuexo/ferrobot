@@ -7,6 +7,7 @@
 //! block the reactor.
 
 mod agents;
+mod connectors;
 mod error;
 mod events;
 mod mailbox;

@@ -75,12 +75,15 @@ fn every_routed_path_is_documented() {
         "/v1/providers",
         "/v1/providers/{id}",
         "/v1/providers/{id}/chatgpt-login",
+        "/v1/connectors",
+        "/v1/connectors/{id}",
+        "/v1/agents/{id}/connectors",
     ] {
         assert!(documented.contains(&path), "{path} missing from OpenAPI");
     }
     assert_eq!(
         documented.len(),
-        30,
+        33,
         "undocumented extra paths: {documented:?}"
     );
 }

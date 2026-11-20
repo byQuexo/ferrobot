@@ -5,6 +5,7 @@
 //! protocol spoken between the daemon and the in-sandbox agent runner.
 
 pub mod agent;
+pub mod connector;
 pub mod error;
 pub mod mail;
 pub mod mention;
@@ -15,6 +16,7 @@ pub mod question;
 pub use agent::{
     Agent, AgentId, AgentName, AgentStatus, AvatarCharacter, CharacterBody, CharacterEyes,
 };
+pub use connector::Connector;
 pub use error::CoreError;
 pub use mail::{MailMessage, MailStatus, Sender};
 pub use provider::{Provider, ProviderKind, UpstreamAuth};

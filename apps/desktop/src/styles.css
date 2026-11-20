@@ -434,7 +434,8 @@ textarea { resize: vertical; min-height: 40px; line-height: 1.5; }
 .memory p { font-size: 13px; color: var(--text-2); }
 
 .form { display: flex; flex-direction: column; gap: 12px; }
-.form label { display: flex; flex-direction: column; gap: 6px; font-size: 12.5px; font-weight: 550; color: var(--text-2); }
+.form label, .form .field { display: flex; flex-direction: column; gap: 6px; font-size: 12.5px; font-weight: 550; color: var(--text-2); }
+.form .field .choice { font-size: 13.5px; font-weight: 400; }
 .hint { font-weight: 400; color: var(--muted); font-size: 12px; }
 .hint.bad { color: var(--err); }
 .form-head { margin: 6px 0 0; font-size: 13px; font-weight: 700; color: var(--text); }
