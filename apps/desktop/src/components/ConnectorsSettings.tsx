@@ -1,6 +1,6 @@
 import type { JSX } from "preact";
 import { useEffect, useState } from "preact/hooks";
-import { KeyRound, LogIn, LogOut, Settings2, Trash2 } from "lucide-preact";
+import { KeyRound, LogIn, LogOut, Plus, Settings2, Trash2 } from "lucide-preact";
 
 import type { Connector } from "../api.ts";
 import { useApp } from "../context.ts";
@@ -11,6 +11,9 @@ const STATUS: Record<Connector["sign_in"], string> = {
   expired: "sign-in expired, sign in again",
   signed_out: "not signed in",
 };
+
+const dotOf = (c: Connector): string =>
+  c.has_token || c.sign_in === "signed_in" ? "p-awake" : c.sign_in === "expired" ? "p-starting" : "p-sleeping";
 
 /** Client id, secret, issuer and scopes of an own OAuth app (empty secret keeps the stored one). */
 interface AppDraft {
@@ -71,6 +74,7 @@ export function ConnectorsSettings(): JSX.Element {
   const [retoken, setRetoken] = useState<{ id: string; token: string } | null>(null);
   const [editApp, setEditApp] = useState<({ id: string } & AppDraft) | null>(null);
   const [signIn, setSignIn] = useState<{ id: string; url: string } | null>(null);
+  const [adding, setAdding] = useState(false);
   const [busy, setBusy] = useState(false);
   const redirectUri = connectors[0]?.redirect_uri ?? `${client.base}/v1/oauth/callback`;
 
@@ -133,16 +137,19 @@ export function ConnectorsSettings(): JSX.Element {
       setToken("");
       setApp(EMPTY_APP);
       setOwnApp(false);
+      setAdding(false);
     });
 
   return (
-      <div class="form">
+      <div>
+        <section class="settings-section form">
         {connectors.length === 0 && (
           <p class="muted small">No connectors yet. A connector is a remote MCP server; agents you give it to can use its tools.</p>
         )}
         <ul class="provider-list">
           {connectors.map((c) => (
             <li key={c.id} class="provider-row">
+              <span class={`dot ${dotOf(c)}`} aria-hidden="true" />
               <div class="provider-main">
                 <b>{c.name}</b>
                 <span class="muted small">
@@ -153,12 +160,12 @@ export function ConnectorsSettings(): JSX.Element {
               </div>
               {!c.has_token && c.sign_in !== "signed_in" && (
                 <IconButton label={`Sign in to ${c.name}`} disabled={busy} onClick={() => void startSignIn(c)}>
-                  <LogIn size={15} />
+                  <LogIn size={16} />
                 </IconButton>
               )}
               {c.sign_in === "signed_in" && (
                 <IconButton label={`Sign out of ${c.name}`} disabled={busy} onClick={() => void run(() => client.signOutConnector(c.id))}>
-                  <LogOut size={15} />
+                  <LogOut size={16} />
                 </IconButton>
               )}
               <IconButton
@@ -167,13 +174,13 @@ export function ConnectorsSettings(): JSX.Element {
                   setEditApp(editApp?.id === c.id ? null : { id: c.id, clientId: c.client_id ?? "", clientSecret: "", issuer: c.issuer ?? "", scopes: c.scopes.join(" ") });
                 }}
               >
-                <Settings2 size={15} />
+                <Settings2 size={16} />
               </IconButton>
               <IconButton label={`Replace the token of ${c.name}`} onClick={() => { setRetoken({ id: c.id, token: "" }); }}>
-                <KeyRound size={15} />
+                <KeyRound size={16} />
               </IconButton>
               <IconButton label={`Delete ${c.name}`} tone="danger" disabled={busy} onClick={() => void run(() => client.deleteConnector(c.id))}>
-                <Trash2 size={15} />
+                <Trash2 size={16} />
               </IconButton>
               {signIn?.id === c.id && (
                 <span class="small provider-login">
@@ -227,31 +234,43 @@ export function ConnectorsSettings(): JSX.Element {
             </li>
           ))}
         </ul>
-        <h3 class="form-head">Add a connector</h3>
-        <label>
-          Name
-          <input value={name} maxLength={16} placeholder="e.g. gmail" onInput={(e) => { setName(e.currentTarget.value); }} />
-          <span class="hint">Lowercase letters, digits and dashes. Its tools show up as name__tool.</span>
-        </label>
-        <label>
-          URL
-          <input value={url} placeholder="https://host/mcp" onInput={(e) => { setUrl(e.currentTarget.value); }} />
-        </label>
-        <label>
-          Token (optional)
-          <input type="password" autoComplete="off" value={token} onInput={(e) => { setToken(e.currentTarget.value); }} />
-          <span class="hint">Sent as a Bearer token. Leave it empty to sign in with OAuth after adding. Stored in the keychain of the daemon’s computer; agents never see it.</span>
-        </label>
-        <label class="check">
-          <input type="checkbox" checked={ownApp} onChange={(e) => { setOwnApp(e.currentTarget.checked); }} />
-          Use my own OAuth app
-        </label>
-        {ownApp && <AppFields draft={app} onChange={setApp} secretStored={false} redirectUri={redirectUri} />}
-        <div>
-          <Button variant="primary" disabled={busy || !name.trim() || !url.trim()} onClick={() => void add()}>
-            Add connector
-          </Button>
-        </div>
+        </section>
+        <section class="settings-section">
+          {adding ? (
+            <div class="form">
+              <h3 class="form-head">Add a connector</h3>
+              <label>
+                Name
+                <input value={name} maxLength={16} placeholder="e.g. gmail" onInput={(e) => { setName(e.currentTarget.value); }} />
+                <span class="hint">Lowercase letters, digits and dashes. Its tools show up as name__tool.</span>
+              </label>
+              <label>
+                URL
+                <input value={url} placeholder="https://host/mcp" onInput={(e) => { setUrl(e.currentTarget.value); }} />
+              </label>
+              <label>
+                Token (optional)
+                <input type="password" autoComplete="off" value={token} onInput={(e) => { setToken(e.currentTarget.value); }} />
+                <span class="hint">Sent as a Bearer token. Leave it empty to sign in with OAuth after adding. Stored in the keychain of the daemon’s computer; agents never see it.</span>
+              </label>
+              <label class="check">
+                <input type="checkbox" checked={ownApp} onChange={(e) => { setOwnApp(e.currentTarget.checked); }} />
+                Use my own OAuth app
+              </label>
+              {ownApp && <AppFields draft={app} onChange={setApp} secretStored={false} redirectUri={redirectUri} />}
+              <div class="form-actions">
+                <Button variant="primary" disabled={busy || !name.trim() || !url.trim()} onClick={() => void add()}>
+                  Add connector
+                </Button>
+                <Button variant="ghost" onClick={() => { setAdding(false); }}>Cancel</Button>
+              </div>
+            </div>
+          ) : (
+            <Button onClick={() => { setAdding(true); }}>
+              <Plus size={16} /> Add connector
+            </Button>
+          )}
+        </section>
       </div>
   );
 }
