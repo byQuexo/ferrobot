@@ -10,6 +10,7 @@ use crate::mailbox::insert_message;
 use crate::util::{fmt_ts, is_unique_violation, now, parse_ts};
 use crate::{Store, StoreError};
 
+/// A prompt an agent receives on a cron schedule.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 #[cfg_attr(feature = "schema", derive(utoipa::ToSchema))]
 pub struct Routine {

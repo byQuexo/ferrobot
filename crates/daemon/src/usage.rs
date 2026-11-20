@@ -1,6 +1,5 @@
-//! Usage capture for the model proxy: token counts read from the upstream's
-//! response while it streams past. Only counts and metadata are kept, never
-//! prompts or completions.
+//! Usage capture for the model proxy: token counts read from the response as it streams past.
+//! Only counts and metadata are kept, never prompts or completions.
 
 use std::time::Instant;
 

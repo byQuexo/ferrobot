@@ -1,10 +1,5 @@
-//! SQLite persistence for the ferrobot daemon.
-//!
-//! One database file holds the agent registry, the agent-to-agent mailbox,
-//! per-agent memory (FTS5 full-text search), the turn event log, routines
-//! with their run history, snapshot records and model usage. Access goes through [`Store`], a cheap-to-clone handle
-//! that runs every query on Tokio's blocking pool so async callers never
-//! block the reactor.
+//! The daemon's SQLite database. [`Store`] runs every query on Tokio's blocking pool, so async
+//! callers never block the reactor.
 
 mod agents;
 mod connectors;

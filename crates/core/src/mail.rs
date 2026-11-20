@@ -49,10 +49,8 @@ impl FromStr for Sender {
     }
 }
 
-/// Delivery state of a mailbox message.
-///
-/// `Pending -> InFlight -> Delivered`, or back to `Pending` when a runner
-/// disconnects mid-turn, or `Failed` after too many attempts.
+/// Delivery state: `pending`, `in_flight`, `delivered`; back to `pending` when a runner
+/// disconnects mid-turn, `failed` after too many attempts.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(utoipa::ToSchema))]
 #[serde(rename_all = "snake_case")]
@@ -102,9 +100,8 @@ pub struct MailMessage {
     /// `ferrobot_core::mention`), so render them with the current names.
     pub body: String,
     pub reply_to: Option<i64>,
-    /// Set by the sending agent: `true` wakes the recipient and goes ahead
-    /// of its other queued messages; `false` waits for the recipient's next
-    /// turn without waking it; `null` (default) queues and wakes.
+    /// `true`: wakes the recipient and goes first; `false`: waits for its next turn
+    /// without waking it; `null` (default): queues and wakes.
     pub priority: Option<bool>,
     pub status: MailStatus,
     pub attempts: u32,

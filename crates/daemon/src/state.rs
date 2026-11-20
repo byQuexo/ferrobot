@@ -18,8 +18,7 @@ pub struct Settings {
     pub sandbox_daemon_url: String,
     /// Runner model driver: `mock` or `claude`.
     pub driver: String,
-    /// Real Anthropic API key. Stays in the daemon: sandboxes reach the model
-    /// through the token-authenticated proxy at `/model`. Never logged.
+    /// Real Anthropic API key; stays in the daemon (sandboxes use `/model`). Never logged.
     pub anthropic_api_key: Option<String>,
     /// Where the model proxy forwards to.
     pub anthropic_upstream: String,
@@ -27,14 +26,11 @@ pub struct Settings {
     pub model: Option<String>,
     /// A turn running longer than this is interrupted and retried.
     pub turn_timeout: Duration,
-    /// Pause an agent's sandbox (warm sleep) after this long without activity
-    /// (`None`: never).
+    /// Pause an idle agent's sandbox (warm sleep) after this long; `None`: never.
     pub warm_timeout: Option<Duration>,
-    /// Stop an agent's sandbox (cold sleep) after this long without activity
-    /// (`None`: never).
+    /// Stop an idle agent's sandbox (cold sleep) after this long; `None`: never.
     pub idle_timeout: Option<Duration>,
-    /// Move a sleeping agent's sandbox to object storage after this long
-    /// without activity (`None`: never).
+    /// Archive an idle agent's sandbox to object storage after this long; `None`: never.
     pub archive_timeout: Option<Duration>,
     /// How often the supervisor checks idle and crashed sandboxes.
     pub supervisor_interval: Duration,
@@ -43,8 +39,7 @@ pub struct Settings {
     /// Bearer token required on the UI API (except health). `None` turns
     /// auth off; `ferrobotd` always sets one.
     pub api_token: Option<String>,
-    /// Most agents this host keeps (`FERROBOT_MAX_AGENTS`), for the API and
-    /// the `create_agent` tool alike.
+    /// Most agents this host keeps (`FERROBOT_MAX_AGENTS`), for the API and `create_agent`.
     pub max_agents: usize,
     /// How long a `create_agent` approval card waits for the operator.
     pub approval_timeout: Duration,
@@ -61,8 +56,7 @@ pub struct Settings {
     pub codex_home: std::path::PathBuf,
     /// Upstream for Codex providers signed in with `ChatGPT`.
     pub chatgpt_upstream: String,
-    /// The UI API as a browser on this computer reaches it; OAuth sign-ins
-    /// redirect here.
+    /// The UI API as a browser on this computer reaches it; OAuth sign-ins redirect here.
     pub ui_url: String,
     /// Object storage for files agents share (`--storage-url`).
     pub storage: Arc<dyn object_store::ObjectStore>,
@@ -166,8 +160,8 @@ impl Settings {
 pub enum UiEvent {
     /// A turn event was recorded (same shape as `GET /v1/agents/{id}/events`).
     Event { event: StoredEvent },
-    /// Live text fragment of the assistant message being written in a turn.
-    /// Not persisted: the final `assistant_text` event replaces it.
+    /// Live text of the assistant message being written; not persisted, the final
+    /// `assistant_text` event replaces it.
     Delta {
         agent_id: AgentId,
         turn_id: String,
@@ -213,7 +207,7 @@ pub struct AppState {
     pub codex: Arc<tokio::sync::Mutex<crate::codex::CodexState>>,
     /// Open sessions with connector MCP servers.
     pub connectors: Arc<crate::connectors::Sessions>,
-    /// Signs links to shared files; loaded from the keychain once.
+    /// Signs links to shared files; loaded from the secret store once.
     pub link_key: Arc<tokio::sync::OnceCell<ring::hmac::Key>>,
     /// Connector OAuth sign-ins waiting for the browser, refresh locks.
     pub oauth: Arc<crate::oauth::OAuth>,
@@ -295,8 +289,7 @@ impl AppState {
         }
     }
 
-    /// Re-reads a message and pushes its current state to UI clients.
-    /// Stores `@name` mentions of existing agents as `<@id>` tokens.
+    /// Turns `@name` mentions of existing agents into `<@id>` tokens.
     pub async fn normalize_mentions(&self, text: &str) -> String {
         let Ok(agents) = self.store.list_agents().await else {
             return text.to_owned();
@@ -320,6 +313,7 @@ impl AppState {
         })
     }
 
+    /// Re-reads a message and pushes its current state to UI clients.
     pub async fn publish_message(&self, id: i64) {
         match self.store.get_message(id).await {
             Ok(message) => self.publish(UiEvent::Message { message }),
@@ -327,8 +321,7 @@ impl AppState {
         }
     }
 
-    /// Something was queued for `agent`: wake its sandbox if it sleeps and
-    /// its dispatch loop.
+    /// Wakes `agent`'s dispatch loop, and its sandbox if it sleeps.
     pub fn message_arrived(&self, agent: AgentId) {
         self.message_queued(agent, true);
     }

@@ -83,9 +83,8 @@ pub struct QuestionAnswer {
     pub custom: Option<String>,
 }
 
-/// What an approval card asks the operator to allow. The daemon raises
-/// these itself; the decision goes to the waiting tool call, not to the
-/// agent's mailbox.
+/// What an approval card asks the operator to allow; the decision goes to the waiting tool
+/// call, not to the agent's mailbox.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(utoipa::ToSchema))]
 #[serde(tag = "kind", rename_all = "snake_case")]

@@ -76,9 +76,8 @@ pub struct SendMessageArgs {
     /// Optional id of the message this answers (one you received or sent);
     /// keeps the conversation threaded.
     pub reply_to: Option<i64>,
-    /// `true`: urgent, wake the recipient now and handle this before its other
-    /// queued messages. `false`: not urgent, don't wake it; it gets this on its
-    /// next turn. Omit for normal delivery (queued, wakes the recipient).
+    /// `true`: urgent, wakes the recipient and goes before its other queued messages.
+    /// `false`: does not wake it; it gets this on its next turn. Omit for normal delivery.
     pub priority: Option<bool>,
 }
 
@@ -122,9 +121,8 @@ pub struct TaskList {
 
 #[derive(Debug, Deserialize, JsonSchema)]
 pub struct CreateAgentArgs {
-    /// A short, memorable name that fits the role, like `scout` (research),
-    /// `forge` (building), `ledger` (numbers) or `echo` (comms), not
-    /// `research-agent`. 1-32 chars, lowercase `a-z0-9-`, starts with a letter.
+    /// A short name that fits the role, like `scout` or `ledger`, not `research-agent`.
+    /// 1-32 chars, lowercase `a-z0-9-`, starts with a letter.
     pub name: String,
     /// One line describing its role, shown to the operator and in agent lists.
     pub description: String,
@@ -133,10 +131,8 @@ pub struct CreateAgentArgs {
     pub instructions: String,
     /// Optional character avatar look; omitted: derived from the new id.
     pub character: Option<AvatarCharacter>,
-    /// The task to start on, with everything the new agent needs to know.
-    /// Sent as your first message to it, so it starts right away; its answer
-    /// comes back to you automatically. Omitted: it stays idle until you
-    /// message it.
+    /// The task to start on, sent as your first message so it starts right away; its answer
+    /// comes back to you automatically. Omitted: it stays idle until you message it.
     pub task: Option<String>,
 }
 
@@ -816,8 +812,10 @@ fn context_caller(context: &RequestContext<RoleServer>) -> Option<AgentId> {
     Some(parts.extensions.get::<Caller>()?.0.id)
 }
 
-// The rmcp macro generates `async` trait methods without awaits.
-#[allow(clippy::unused_async_trait_impl)]
+#[allow(
+    clippy::unused_async_trait_impl,
+    reason = "the rmcp macro generates `async` trait methods without awaits"
+)]
 #[tool_handler(
     name = "ferrobot",
     instructions = "Mailbox, task, memory, question-card and agent-creation tools for ferrobot agents, plus the tools of the connectors your operator gave you (named `<connector>__<tool>`). Messages and answers are asynchronous."

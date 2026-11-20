@@ -1,6 +1,5 @@
-//! Model lists for the model pickers: the provider's own list where its API
-//! has one, otherwise a short built-in list per kind. The key never leaves
-//! the request to the provider.
+//! Model lists for the pickers: the provider's own list where its API has one, else a short
+//! built-in list per kind. The key goes only into the request to the provider.
 
 use std::collections::HashMap;
 use std::sync::{Mutex, PoisonError};
@@ -49,10 +48,8 @@ pub struct ModelList {
 /// Provider lists fetched in the last few minutes, by provider id.
 pub type ModelCache = Mutex<HashMap<Uuid, (Instant, Vec<ModelInfo>)>>;
 
-// Checked on 2026-11-20 against platform.claude.com/docs/en/about-claude/models/overview
-// (Bedrock: .../claude-on-amazon-bedrock-legacy, Vertex: .../claude-models-on-google-cloud/google-managed),
-// developers.openai.com/api/docs/models, learn.chatgpt.com/docs/models (Codex),
-// aistudio.google.com/docs/models, openrouter.ai/{anthropic,openai,google}, ollama.com/library.
+// Checked 2026-11-20: platform.claude.com/docs/en/about-claude/models/overview (+ Bedrock, Vertex pages),
+// developers.openai.com/api/docs/models, learn.chatgpt.com/docs/models, aistudio.google.com/docs/models, openrouter.ai, ollama.com/library.
 fn suggested_ids(kind: ProviderKind) -> &'static [&'static str] {
     match kind {
         ProviderKind::Anthropic | ProviderKind::Vertex => &[

@@ -1,7 +1,5 @@
-//! Tracked tasks: when a delegate's turn on a task ends, its answer goes back
-//! to the assigner as a normal message (waking it if it sleeps), unless the
-//! delegate already answered. A finished task left without an answer gets one
-//! reminder from the supervisor.
+//! Tracked tasks: a delegate's answer goes back to the assigner as a message unless it already
+//! answered; a finished task left without an answer gets one reminder from the supervisor.
 
 use ferrobot_core::protocol::TurnOutcome;
 use ferrobot_core::{AgentId, MailMessage, Sender};

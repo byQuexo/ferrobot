@@ -6,7 +6,7 @@
       "type": "string"
     },
     "AgentName": {
-      "description": "Human-facing, unique agent handle such as `alice` or `build-bot`.\n\nRules: 1-32 chars, lowercase ASCII letters, digits and `-`,\nmust start with a letter and must not end with `-`.\nNames double as container and volume name suffixes, so they stay DNS-safe.",
+      "description": "Unique agent handle like `build-bot`: 1-32 chars of `a-z0-9-`, starting with a letter and\nnot ending with `-`, so it stays DNS-safe in sandbox resource names.",
       "example": "alice",
       "pattern": "^[a-z]([a-z0-9-]{0,30}[a-z0-9])?$",
       "type": "string"
@@ -93,7 +93,7 @@
           "type": "object"
         },
         {
-          "description": "A message that arrived while turn `turn_id` runs, for runners whose\ndriver takes messages mid-turn (`hello.steering`). Unless\n`turn_done.steered` lists it, it is queued again for the next turn.",
+          "description": "A message that arrived during turn `turn_id` (only with `hello.steering`); queued again\nunless `turn_done.steered` lists it.",
           "properties": {
             "body": {
               "type": "string"
@@ -180,7 +180,7 @@
           "description": "First frame on every connection.",
           "properties": {
             "driver": {
-              "description": "`claude` or `mock`.",
+              "description": "`claude`, `openai`, `codex`, `acp` or `mock`.",
               "type": "string"
             },
             "protocol_version": {
@@ -499,6 +499,7 @@
       ]
     },
     "TurnOutcome": {
+      "description": "How a turn ended.",
       "enum": [
         "completed",
         "interrupted",

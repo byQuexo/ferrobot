@@ -157,11 +157,8 @@ pub(crate) struct AnswerQuestion {
     answers: Vec<QuestionAnswer>,
 }
 
-/// Answers a question card the agent showed with `ask_user`. The answers are
-/// sent to the agent as one user message and the card is locked (a
-/// `question_answered` event is recorded and pushed). On an approval card
-/// (`approval` set, e.g. from `create_agent`) the decision goes to the
-/// waiting tool call instead; `409` if that request already timed out.
+/// Answers a question card: the agent gets the answers as one user message and the card locks.
+/// An approval card's decision goes to the waiting tool call instead (`409` once it timed out).
 #[utoipa::path(post, path = "/v1/agents/{id}/questions/{qid}/answer", tag = "chat",
     params(("id" = String, Path, description = "Agent id (UUID)"),
         ("qid" = i64, Path, description = "Id of the `question` event")),

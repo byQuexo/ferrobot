@@ -1,9 +1,5 @@
-//! Machine-readable API contracts, generated from the Rust types.
-//!
-//! The committed copies live in the top-level `protocol/` folder and are kept
-//! in sync by `tests/specs.rs` (regenerate with `FERROBOT_UPDATE_SPECS=1`).
-//! Any client (the Tauri UI, a future native app, scripts) should be able to
-//! use the daemon from these files alone.
+//! API contracts generated from the Rust types; committed under `protocol/` and kept in sync
+//! by `tests/specs.rs` (regenerate with `FERROBOT_UPDATE_SPECS=1`).
 
 use ferrobot_core::protocol::{DaemonFrame, RunnerFrame};
 use ferrobot_core::question::{QuestionAnswered, QuestionEvent};

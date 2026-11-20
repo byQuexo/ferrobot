@@ -172,7 +172,7 @@ pub(crate) struct CreateConnector {
     /// Streamable HTTP endpoint of the MCP server.
     #[schema(example = "https://api.githubcopilot.com/mcp/")]
     url: String,
-    /// Sent as `Authorization: Bearer <token>`. Stored in the OS keychain;
+    /// Sent as `Authorization: Bearer <token>`. Kept in the daemon's secret store;
     /// never returned.
     #[serde(default)]
     token: Option<String>,
@@ -180,15 +180,14 @@ pub(crate) struct CreateConnector {
     /// registration (e.g. Google). Register `redirect_uri` with it.
     #[serde(default)]
     client_id: Option<String>,
-    /// That app's client secret. Stored in the OS keychain; never returned.
+    /// That app's client secret. Kept in the daemon's secret store; never returned.
     #[serde(default)]
     client_secret: Option<String>,
     /// Scopes to ask for at sign-in (space-separated entries are split).
     #[serde(default)]
     scopes: Vec<String>,
-    /// The authorization server the app belongs to (e.g.
-    /// `https://accounts.google.com`); needed with `client_id`. Sign-ins
-    /// through any other server are refused.
+    /// The authorization server the app belongs to (e.g. `https://accounts.google.com`);
+    /// needed with `client_id`. Sign-ins through any other server are refused.
     #[serde(default)]
     issuer: Option<String>,
 }
@@ -339,7 +338,7 @@ pub(crate) async fn delete_connector(
 ) -> Result<StatusCode, ApiError> {
     let id = parse_cid(&id)?;
     let c = state.store.get_connector(id).await?;
-    // Secrets first: if the keychain fails, the connector stays to retry.
+    // Secrets first: if the secret store fails, the connector stays to retry.
     oauth::sign_out(&state, &c).await?;
     state.settings.secrets.delete(&secret_key(id)).await?;
     state
@@ -401,9 +400,8 @@ pub(crate) struct OAuthStart {
     authorization_url: String,
 }
 
-/// Starts an OAuth sign-in for a connector without a token: discovers the
-/// server's authorization server, registers ferrobot as a client and returns
-/// the page to sign in on. The browser comes back to `/v1/oauth/callback`.
+/// Starts an OAuth sign-in for a connector without a token and returns the page to sign in on;
+/// the browser comes back to `/v1/oauth/callback`.
 #[utoipa::path(post, path = "/v1/connectors/{id}/oauth", tag = "connectors",
     params(("id" = String, Path, description = "Connector id (UUID)")),
     responses((status = 200, body = OAuthStart),

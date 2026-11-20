@@ -1,5 +1,4 @@
-//! Operator-facing HTTP + WebSocket API (`/v1`), used by the desktop UI and
-//! any other client. Documented in `protocol/openapi.json`.
+//! The operator API (`/v1`, HTTP and WebSocket), documented in `protocol/openapi.json`.
 
 pub(crate) mod agents;
 pub(crate) mod chat;
@@ -192,7 +191,7 @@ pub(crate) struct Health {
     /// Whether agents make real model calls through the proxy (any driver
     /// but `mock`); each still needs a provider or `ANTHROPIC_API_KEY`.
     model_proxy: bool,
-    /// Seconds of inactivity before a sandbox sleeps; null when disabled.
+    /// Seconds idle before a sandbox is stopped (cold sleep); null: never.
     idle_timeout_s: Option<u64>,
     /// Default time zone for new routines.
     timezone: String,

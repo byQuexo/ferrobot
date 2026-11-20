@@ -1,13 +1,5 @@
-//! The ferrobot daemon as a library, so integration tests can run it in-process.
-//!
-//! Two listeners with different trust levels:
-//!
-//! * **UI API** (`/v1/...`): operator-facing HTTP + WebSocket, bind it to
-//!   loopback only. Requires the operator token (see [`auth`]).
-//! * **Agent API** (`/runner/ws`, `/mcp`, `/model`): reached from sandboxes,
-//!   every request is authenticated with the agent's token. `/model` is the
-//!   model proxy: it swaps the agent token for the real API key, which never
-//!   enters a sandbox.
+//! The daemon as a library: the UI API (`/v1`, loopback, operator token) and the agent API
+//! (`/runner/ws`, `/mcp`, `/model`, agent tokens; `/model` swaps in a key no sandbox sees).
 
 pub mod agents;
 pub mod api;

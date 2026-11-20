@@ -20,7 +20,7 @@ pub(crate) struct SharedFileView {
     size: u64,
     /// The text, for UTF-8 files up to 2 MiB; otherwise `null`.
     content: Option<String>,
-    /// For .html files: the page (relative to the daemon), sandboxed, with
+    /// For .html and .htm files: the page (relative to the daemon), sandboxed, with
     /// no access to the app or the operator token.
     page_url: Option<String>,
     /// The file itself (relative to the daemon), a signed link that works for
@@ -80,11 +80,8 @@ pub(crate) struct FileQuery {
     download: Option<String>,
 }
 
-/// A file an agent shared. Needs no operator token (frames and the system
-/// browser cannot send one); the link is a signed capability that expires
-/// (HMAC-SHA256 with a keychain key over agent, file and expiry).
-/// .html opens as a sandboxed page (opaque origin, inline code only, no
-/// network requests), a real PDF opens inline, anything else downloads.
+/// A shared file by signed, expiring link (HMAC over agent, file and expiry), as frames cannot
+/// send the operator token. Pages open sandboxed, a real PDF inline, anything else downloads.
 #[utoipa::path(get, path = "/artifacts/{id}/{file_id}", tag = "chat",
     params(("id" = String, Path, description = "Agent id (UUID)"),
         ("file_id" = i64, Path, description = "Id of the `file` event"),

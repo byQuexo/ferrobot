@@ -24,7 +24,7 @@
         "tags": [
           "chat"
         ],
-        "summary": "A file an agent shared. Needs no operator token (frames and the system\nbrowser cannot send one); the link is a signed capability that expires\n(HMAC-SHA256 with a keychain key over agent, file and expiry).\n.html opens as a sandboxed page (opaque origin, inline code only, no\nnetwork requests), a real PDF opens inline, anything else downloads.",
+        "summary": "A shared file by signed, expiring link (HMAC over agent, file and expiry), as frames cannot\nsend the operator token. Pages open sandboxed, a real PDF inline, anything else downloads.",
         "operationId": "page",
         "parameters": [
           {
@@ -1294,7 +1294,7 @@
         "tags": [
           "chat"
         ],
-        "summary": "Answers a question card the agent showed with `ask_user`. The answers are\nsent to the agent as one user message and the card is locked (a\n`question_answered` event is recorded and pushed). On an approval card\n(`approval` set, e.g. from `create_agent`) the decision goes to the\nwaiting tool call instead; `409` if that request already timed out.",
+        "summary": "Answers a question card: the agent gets the answers as one user message and the card locks.\nAn approval card's decision goes to the waiting tool call instead (`409` once it timed out).",
         "operationId": "answer_question",
         "parameters": [
           {
@@ -2005,7 +2005,7 @@
           {
             "name": "level",
             "in": "query",
-            "description": "`cold` (default) stops the sandbox; `warm` pauses it, keeping memory;\n`archived` moves it to object storage (a wake restores it). Backends\nthat cannot pause or archive answer 501.",
+            "description": "`cold` (default) stops, `warm` pauses, `archived` moves the sandbox to object storage.\nBackends without pause or archive answer 501; Firecracker stops instead of archiving.",
             "required": false,
             "schema": {
               "$ref": "#/components/schemas/SleepLevel"
@@ -2217,7 +2217,7 @@
         "tags": [
           "voice"
         ],
-        "summary": "Sends the operator's message to every agent in the call. Each one also\ngets what the others said since its own last turn; agents' replies never\nstart each other's turns.",
+        "summary": "Sends the operator's message to every agent in the call, each with what the others said\nsince its last turn. Agents' replies never start each other's turns.",
         "operationId": "post_call_message",
         "requestBody": {
           "content": {
@@ -2493,7 +2493,7 @@
         "tags": [
           "connectors"
         ],
-        "summary": "Starts an OAuth sign-in for a connector without a token: discovers the\nserver's authorization server, registers ferrobot as a client and returns\nthe page to sign in on. The browser comes back to `/v1/oauth/callback`.",
+        "summary": "Starts an OAuth sign-in for a connector without a token and returns the page to sign in on;\nthe browser comes back to `/v1/oauth/callback`.",
         "operationId": "start_oauth",
         "parameters": [
           {
@@ -3258,7 +3258,7 @@
         "tags": [
           "providers"
         ],
-        "summary": "Starts signing a `codex` provider in with `ChatGPT`, on the daemon host's\n`codex`. Open `verification_url`, enter `user_code`, then poll the status.\nThe tokens stay with the host's Codex; agents never see them.",
+        "summary": "Starts a `ChatGPT` sign-in for a `codex` provider on the daemon host: open\n`verification_url`, enter `user_code`, poll the status. Agents never see the tokens.",
         "operationId": "start_chatgpt_login",
         "parameters": [
           {
@@ -3329,7 +3329,7 @@
         "tags": [
           "providers"
         ],
-        "summary": "Models to offer for a provider: its own list, fetched with the stored key\n(cached for a few minutes), or a short built-in list when it has none or\nthe fetch fails. The key is never returned.",
+        "summary": "Models to offer for a provider: its own list fetched with the stored key (cached for a\nfew minutes), else a short built-in list.",
         "operationId": "provider_models",
         "parameters": [
           {
@@ -3709,7 +3709,7 @@
         "tags": [
           "usage"
         ],
-        "summary": "Prices in USD per 1M tokens: the operator's overrides, then the shipped\ntable. Ollama models cost 0 and are not listed.",
+        "summary": "Prices in USD per 1M tokens: the operator's overrides, then the shipped\ntable. Unlisted Ollama models cost 0.",
         "operationId": "get_prices",
         "responses": {
           "200": {
@@ -4051,7 +4051,7 @@
             }
           },
           "409": {
-            "description": "Voice not set up, or no key or voice",
+            "description": "Voice off, not set up, or no key or voice",
             "content": {
               "application/json": {
                 "schema": {
@@ -4137,7 +4137,7 @@
             }
           },
           "409": {
-            "description": "Voice not set up or no key",
+            "description": "Voice off, not set up or no key",
             "content": {
               "application/json": {
                 "schema": {
@@ -4177,7 +4177,7 @@
         "tags": [
           "chat"
         ],
-        "summary": "WebSocket stream of `UiEvent` JSON text frames (schema:\n`protocol/ui-events.schema.json`). Client-to-server frames are ignored.\nAfter a reconnect (or a `lagged` gap) clients should refetch over HTTP.",
+        "summary": "WebSocket of `UiEvent` text frames (`protocol/ui-events.schema.json`); client frames are\nignored. After a reconnect or a `lagged` gap, refetch over HTTP.",
         "operationId": "ui_ws",
         "responses": {
           "101": {
@@ -4315,7 +4315,7 @@
       },
       "AgentName": {
         "type": "string",
-        "description": "Human-facing, unique agent handle such as `alice` or `build-bot`.\n\nRules: 1-32 chars, lowercase ASCII letters, digits and `-`,\nmust start with a letter and must not end with `-`.\nNames double as container and volume name suffixes, so they stay DNS-safe.",
+        "description": "Unique agent handle like `build-bot`: 1-32 chars of `a-z0-9-`, starting with a letter and\nnot ending with `-`, so it stays DNS-safe in sandbox resource names.",
         "example": "alice",
         "pattern": "^[a-z]([a-z0-9-]{0,30}[a-z0-9])?$"
       },
@@ -4412,11 +4412,11 @@
             }
           }
         ],
-        "description": "What an approval card asks the operator to allow. The daemon raises\nthese itself; the decision goes to the waiting tool call, not to the\nagent's mailbox."
+        "description": "What an approval card asks the operator to allow; the decision goes to the waiting tool\ncall, not to the agent's mailbox."
       },
       "AvatarCharacter": {
         "type": "object",
-        "description": "A chosen look for the agent's animated character avatar. Clients derive\na deterministic look from the agent id when none is set; an uploaded\navatar image takes precedence over both.",
+        "description": "A chosen character avatar look; without one, clients derive a look from the agent id.\nAn uploaded avatar image wins over both.",
         "required": [
           "body",
           "eyes",
@@ -4504,6 +4504,7 @@
       },
       "Connector": {
         "type": "object",
+        "description": "A remote MCP server whose tools assigned agents can use.",
         "required": [
           "id",
           "name",
@@ -4687,7 +4688,7 @@
               "string",
               "null"
             ],
-            "description": "Sent as `Authorization: Bearer <token>`. Stored in the OS keychain;\nnever returned."
+            "description": "Sent as `Authorization: Bearer <token>`. Kept in the daemon's secret store;\nnever returned."
           },
           "client_id": {
             "type": [
@@ -4701,7 +4702,7 @@
               "string",
               "null"
             ],
-            "description": "That app's client secret. Stored in the OS keychain; never returned."
+            "description": "That app's client secret. Kept in the daemon's secret store; never returned."
           },
           "scopes": {
             "type": "array",
@@ -4715,7 +4716,7 @@
               "string",
               "null"
             ],
-            "description": "The authorization server the app belongs to (e.g.\n`https://accounts.google.com`); needed with `client_id`. Sign-ins\nthrough any other server are refused."
+            "description": "The authorization server the app belongs to (e.g. `https://accounts.google.com`);\nneeded with `client_id`. Sign-ins through any other server are refused."
           }
         }
       },
@@ -4766,7 +4767,7 @@
               "string",
               "null"
             ],
-            "description": "Stored in the OS keychain; never returned."
+            "description": "Kept in the daemon's secret store; never returned."
           }
         }
       },
@@ -4834,7 +4835,7 @@
         "properties": {
           "error": {
             "type": "string",
-            "description": "Stable machine-readable code: `bad_request`, `unauthorized`,\n`not_found`, `conflict`, `rate_limited`, `not_implemented`,\n`sandbox_error`, `upstream_error` or `internal`."
+            "description": "Stable code: `bad_request`, `unauthorized`, `not_found`, `conflict`, `rate_limited`,\n`not_implemented`, `sandbox_error`, `upstream_error` or `internal`."
           },
           "message": {
             "type": "string",
@@ -4844,6 +4845,7 @@
       },
       "ExecOutput": {
         "type": "object",
+        "description": "Exit code and captured output of a command.",
         "required": [
           "exit_code",
           "stdout",
@@ -4927,7 +4929,7 @@
               "null"
             ],
             "format": "int64",
-            "description": "Seconds of inactivity before a sandbox sleeps; null when disabled.",
+            "description": "Seconds idle before a sandbox is stopped (cold sleep); null: never.",
             "minimum": 0
           },
           "timezone": {
@@ -5119,7 +5121,7 @@
               "boolean",
               "null"
             ],
-            "description": "Set by the sending agent: `true` wakes the recipient and goes ahead\nof its other queued messages; `false` waits for the recipient's next\nturn without waking it; `null` (default) queues and wakes."
+            "description": "`true`: wakes the recipient and goes first; `false`: waits for its next turn\nwithout waking it; `null` (default): queues and wakes."
           },
           "status": {
             "$ref": "#/components/schemas/MailStatus"
@@ -5137,7 +5139,7 @@
       },
       "MailStatus": {
         "type": "string",
-        "description": "Delivery state of a mailbox message.\n\n`Pending -> InFlight -> Delivered`, or back to `Pending` when a runner\ndisconnects mid-turn, or `Failed` after too many attempts.",
+        "description": "Delivery state: `pending`, `in_flight`, `delivered`; back to `pending` when a runner\ndisconnects mid-turn, `failed` after too many attempts.",
         "enum": [
           "pending",
           "in_flight",
@@ -5147,6 +5149,7 @@
       },
       "MemoryEntry": {
         "type": "object",
+        "description": "One long-term memory, an agent's own or global.",
         "required": [
           "key",
           "content",
@@ -5606,6 +5609,7 @@
       },
       "Routine": {
         "type": "object",
+        "description": "A prompt an agent receives on a cron schedule.",
         "required": [
           "id",
           "agent_id",
@@ -5815,6 +5819,7 @@
       },
       "SandboxState": {
         "type": "string",
+        "description": "A sandbox's state as its backend reports it.",
         "enum": [
           "running",
           "paused",
@@ -5934,7 +5939,7 @@
               "string",
               "null"
             ],
-            "description": "For .html files: the page (relative to the daemon), sandboxed, with\nno access to the app or the operator token."
+            "description": "For .html and .htm files: the page (relative to the daemon), sandboxed, with\nno access to the app or the operator token."
           },
           "url": {
             "type": "string",
@@ -5962,6 +5967,7 @@
       },
       "SnapshotRecord": {
         "type": "object",
+        "description": "A snapshot of an agent's sandbox.",
         "required": [
           "id",
           "agent_id",
@@ -6034,6 +6040,7 @@
       },
       "StoredEvent": {
         "type": "object",
+        "description": "One recorded event in an agent's chat.",
         "required": [
           "id",
           "agent_id",
@@ -6103,7 +6110,7 @@
           },
           {
             "type": "object",
-            "description": "Live text fragment of the assistant message being written in a turn.\nNot persisted: the final `assistant_text` event replaces it.",
+            "description": "Live text of the assistant message being written; not persisted, the final\n`assistant_text` event replaces it.",
             "required": [
               "agent_id",
               "turn_id",
@@ -6469,7 +6476,7 @@
                   "string",
                   "null"
                 ],
-                "description": "New API key for `provider`; `null` removes it, omitted keeps it.\nStored in the OS keychain; never returned."
+                "description": "New API key for `provider`; `null` removes it, omitted keeps it. Kept in the\ndaemon's secret store; never returned."
               }
             }
           }
@@ -6645,6 +6652,7 @@
       },
       "VoiceProvider": {
         "type": "string",
+        "description": "A speech and transcription provider.",
         "enum": [
           "elevenlabs",
           "openrouter"

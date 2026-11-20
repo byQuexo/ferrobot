@@ -111,7 +111,7 @@ pub async fn read(state: &AppState, agent: AgentId, key: &str) -> object_store::
 }
 
 /// The key signing file links, created on first use and kept in the
-/// keychain (so links survive a daemon restart until they expire).
+/// secret store (so links survive a daemon restart until they expire).
 async fn link_key(state: &AppState) -> Result<ring::hmac::Key, String> {
     state
         .link_key

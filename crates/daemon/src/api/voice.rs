@@ -1,6 +1,5 @@
-//! Voice for the operator's chat: settings, speech, transcription and the
-//! voice call. Keys stay in the daemon's secret store and are never
-//! returned; neither text nor audio is logged.
+//! Voice settings, speech, transcription and the voice call. Keys stay in the secret store and
+//! are never returned; text and audio are never logged.
 
 use axum::Json;
 use axum::body::{Body, Bytes};
@@ -89,8 +88,8 @@ pub(crate) async fn get_voice(State(state): State<AppState>) -> ApiResult<VoiceV
 pub(crate) struct UpdateVoice {
     #[serde(flatten)]
     settings: VoiceSettings,
-    /// New API key for `provider`; `null` removes it, omitted keeps it.
-    /// Stored in the OS keychain; never returned.
+    /// New API key for `provider`; `null` removes it, omitted keeps it. Kept in the
+    /// daemon's secret store; never returned.
     #[serde(default, deserialize_with = "explicit")]
     #[schema(value_type = Option<String>)]
     api_key: Option<Option<String>>,
@@ -232,7 +231,7 @@ pub(crate) struct SpeechRequest {
     responses(
         (status = 200, description = "Audio, streamed", content_type = "audio/mpeg", body = Vec<u8>),
         (status = 400, description = "Empty or too long", body = ErrorBody),
-        (status = 409, description = "Voice not set up, or no key or voice", body = ErrorBody),
+        (status = 409, description = "Voice off, not set up, or no key or voice", body = ErrorBody),
         (status = 429, description = "Limit for this minute reached", body = ErrorBody),
         (status = 502, description = "The provider failed", body = ErrorBody)))]
 pub(crate) async fn speech(
@@ -285,7 +284,7 @@ pub(crate) async fn speech(
         description = "webm, ogg, mp4/m4a, mp3, wav or flac; at most 10 MiB"),
     responses((status = 200, body = Transcript),
         (status = 400, description = "Empty or unsupported audio", body = ErrorBody),
-        (status = 409, description = "Voice not set up or no key", body = ErrorBody),
+        (status = 409, description = "Voice off, not set up or no key", body = ErrorBody),
         (status = 413, description = "Over 10 MiB"),
         (status = 429, description = "Limit for this minute reached", body = ErrorBody),
         (status = 502, description = "The provider failed", body = ErrorBody)))]
@@ -497,9 +496,8 @@ pub(crate) struct CallMessage {
     body: String,
 }
 
-/// Sends the operator's message to every agent in the call. Each one also
-/// gets what the others said since its own last turn; agents' replies never
-/// start each other's turns.
+/// Sends the operator's message to every agent in the call, each with what the others said
+/// since its last turn. Agents' replies never start each other's turns.
 #[utoipa::path(post, path = "/v1/call/messages", tag = "voice",
     request_body = CallMessage,
     responses(

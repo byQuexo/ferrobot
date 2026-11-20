@@ -4,5184 +4,5148 @@
  */
 
 export interface paths {
-  "/artifacts/{id}/{file_id}": {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
+    "/artifacts/{id}/{file_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * A shared file by signed, expiring link (HMAC over agent, file and expiry), as frames cannot
+         *     send the operator token. Pages open sandboxed, a real PDF inline, anything else downloads.
+         */
+        get: operations["page"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
     };
-    /**
-     * A file an agent shared. Needs no operator token (frames and the system
-     *     browser cannot send one); the link is a signed capability that expires
-     *     (HMAC-SHA256 with a keychain key over agent, file and expiry).
-     *     .html opens as a sandboxed page (opaque origin, inline code only, no
-     *     network requests), a real PDF opens inline, anything else downloads.
-     */
-    get: operations["page"];
-    put?: never;
-    post?: never;
-    delete?: never;
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
-  "/v1/agents": {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
+    "/v1/agents": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Lists all agents. */
+        get: operations["list_agents"];
+        put?: never;
+        /** Registers an agent and provisions its sandbox. */
+        post: operations["create_agent"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
     };
-    /** Lists all agents. */
-    get: operations["list_agents"];
-    put?: never;
-    /** Registers an agent and provisions its sandbox. */
-    post: operations["create_agent"];
-    delete?: never;
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
-  "/v1/agents/{id}": {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
+    "/v1/agents/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Fetches one agent. */
+        get: operations["get_agent"];
+        put?: never;
+        post?: never;
+        /** Deletes an agent with its sandbox, disk and snapshots (unless `keep_data`). */
+        delete: operations["delete_agent"];
+        options?: never;
+        head?: never;
+        /** Edits an agent's profile. */
+        patch: operations["update_agent"];
+        trace?: never;
     };
-    /** Fetches one agent. */
-    get: operations["get_agent"];
-    put?: never;
-    post?: never;
-    /** Deletes an agent with its sandbox, disk and snapshots (unless `keep_data`). */
-    delete: operations["delete_agent"];
-    options?: never;
-    head?: never;
-    /** Edits an agent's profile. */
-    patch: operations["update_agent"];
-    trace?: never;
-  };
-  "/v1/agents/{id}/avatar": {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
+    "/v1/agents/{id}/avatar": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** The agent's avatar image. */
+        get: operations["get_avatar"];
+        /** Uploads (replaces) the avatar. Body: the raw image. */
+        put: operations["put_avatar"];
+        post?: never;
+        /** Removes the avatar (clients fall back to the character avatar). */
+        delete: operations["delete_avatar"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
     };
-    /** The agent's avatar image. */
-    get: operations["get_avatar"];
-    /** Uploads (replaces) the avatar. Body: the raw image. */
-    put: operations["put_avatar"];
-    post?: never;
-    /** Removes the avatar (clients fall back to the character avatar). */
-    delete: operations["delete_avatar"];
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
-  "/v1/agents/{id}/connectors": {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
+    "/v1/agents/{id}/connectors": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Ids of the connectors the agent may use. */
+        get: operations["agent_connectors"];
+        /** Replaces the connectors the agent may use. Takes effect on its next turn. */
+        put: operations["set_agent_connectors"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
     };
-    /** Ids of the connectors the agent may use. */
-    get: operations["agent_connectors"];
-    /** Replaces the connectors the agent may use. Takes effect on its next turn. */
-    put: operations["set_agent_connectors"];
-    post?: never;
-    delete?: never;
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
-  "/v1/agents/{id}/events": {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
+    "/v1/agents/{id}/events": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Turn events (incoming messages, text, tool calls and results, lifecycle),
+         *     oldest first, up to 500 per call; page with `after`.
+         */
+        get: operations["list_events"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
     };
-    /**
-     * Turn events (incoming messages, text, tool calls and results, lifecycle),
-     *     oldest first, up to 500 per call; page with `after`.
-     */
-    get: operations["list_events"];
-    put?: never;
-    post?: never;
-    delete?: never;
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
-  "/v1/agents/{id}/exec": {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
+    "/v1/agents/{id}/exec": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Runs a command in the agent's computer (operator only, loopback API).
+         *     Wakes the computer if it sleeps.
+         */
+        post: operations["exec"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
     };
-    get?: never;
-    put?: never;
-    /**
-     * Runs a command in the agent's computer (operator only, loopback API).
-     *     Wakes the computer if it sleeps.
-     */
-    post: operations["exec"];
-    delete?: never;
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
-  "/v1/agents/{id}/files/{file_id}": {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
+    "/v1/agents/{id}/files/{file_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** A file the agent shared (`file` event id), from storage. */
+        get: operations["shared_file"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
     };
-    /** A file the agent shared (`file` event id), from storage. */
-    get: operations["shared_file"];
-    put?: never;
-    post?: never;
-    delete?: never;
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
-  "/v1/agents/{id}/interrupt": {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
+    "/v1/agents/{id}/interrupt": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Aborts the agent's running turn, if any. Interrupted messages are not retried. */
+        post: operations["interrupt"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
     };
-    get?: never;
-    put?: never;
-    /** Aborts the agent's running turn, if any. Interrupted messages are not retried. */
-    post: operations["interrupt"];
-    delete?: never;
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
-  "/v1/agents/{id}/memory": {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
+    "/v1/agents/{id}/memory": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Lists or searches the agent's memories. */
+        get: operations["list_memory"];
+        put?: never;
+        /** Creates or replaces a memory. */
+        post: operations["put_memory"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
     };
-    /** Lists or searches the agent's memories. */
-    get: operations["list_memory"];
-    put?: never;
-    /** Creates or replaces a memory. */
-    post: operations["put_memory"];
-    delete?: never;
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
-  "/v1/agents/{id}/memory/{key}": {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
+    "/v1/agents/{id}/memory/{key}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /** Deletes one memory by key (URL-encoded). */
+        delete: operations["delete_memory"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
     };
-    get?: never;
-    put?: never;
-    post?: never;
-    /** Deletes one memory by key (URL-encoded). */
-    delete: operations["delete_memory"];
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
-  "/v1/agents/{id}/messages": {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
+    "/v1/agents/{id}/messages": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** The agent's conversation: messages to and from it, oldest first (last 200). */
+        get: operations["list_messages"];
+        put?: never;
+        /**
+         * Sends a message from the operator (`user`) to an agent's mailbox. Wakes
+         *     the agent if it sleeps.
+         */
+        post: operations["post_message"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
     };
-    /** The agent's conversation: messages to and from it, oldest first (last 200). */
-    get: operations["list_messages"];
-    put?: never;
-    /**
-     * Sends a message from the operator (`user`) to an agent's mailbox. Wakes
-     *     the agent if it sleeps.
-     */
-    post: operations["post_message"];
-    delete?: never;
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
-  "/v1/agents/{id}/questions/{qid}/answer": {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
+    "/v1/agents/{id}/questions/{qid}/answer": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Answers a question card: the agent gets the answers as one user message and the card locks.
+         *     An approval card's decision goes to the waiting tool call instead (`409` once it timed out).
+         */
+        post: operations["answer_question"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
     };
-    get?: never;
-    put?: never;
-    /**
-     * Answers a question card the agent showed with `ask_user`. The answers are
-     *     sent to the agent as one user message and the card is locked (a
-     *     `question_answered` event is recorded and pushed). On an approval card
-     *     (`approval` set, e.g. from `create_agent`) the decision goes to the
-     *     waiting tool call instead; `409` if that request already timed out.
-     */
-    post: operations["answer_question"];
-    delete?: never;
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
-  "/v1/agents/{id}/read": {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
+    "/v1/agents/{id}/read": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Marks the agent's chat as read (resets `unread`). */
+        post: operations["mark_read"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
     };
-    get?: never;
-    put?: never;
-    /** Marks the agent's chat as read (resets `unread`). */
-    post: operations["mark_read"];
-    delete?: never;
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
-  "/v1/agents/{id}/routines": {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
+    "/v1/agents/{id}/routines": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** The agent's routines, by name. */
+        get: operations["list_routines"];
+        put?: never;
+        /** Creates a routine. */
+        post: operations["create_routine"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
     };
-    /** The agent's routines, by name. */
-    get: operations["list_routines"];
-    put?: never;
-    /** Creates a routine. */
-    post: operations["create_routine"];
-    delete?: never;
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
-  "/v1/agents/{id}/sandbox": {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
+    "/v1/agents/{id}/sandbox": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Live sandbox status for the info panel. */
+        get: operations["sandbox_info"];
+        put?: never;
+        post?: never;
+        /** Removes the sandbox but keeps the agent and its disk; `wake` recreates it. */
+        delete: operations["destroy_sandbox"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
     };
-    /** Live sandbox status for the info panel. */
-    get: operations["sandbox_info"];
-    put?: never;
-    post?: never;
-    /** Removes the sandbox but keeps the agent and its disk; `wake` recreates it. */
-    delete: operations["destroy_sandbox"];
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
-  "/v1/agents/{id}/snapshots": {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
+    "/v1/agents/{id}/snapshots": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Snapshots of the agent's sandbox, newest first. */
+        get: operations["list_snapshots"];
+        put?: never;
+        /** Snapshots the sandbox (Docker: root filesystem + home directory). */
+        post: operations["create_snapshot"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
     };
-    /** Snapshots of the agent's sandbox, newest first. */
-    get: operations["list_snapshots"];
-    put?: never;
-    /** Snapshots the sandbox (Docker: root filesystem + home directory). */
-    post: operations["create_snapshot"];
-    delete?: never;
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
-  "/v1/agents/{id}/snapshots/{sid}": {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
+    "/v1/agents/{id}/snapshots/{sid}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /** Deletes a snapshot and its data. */
+        delete: operations["delete_snapshot"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
     };
-    get?: never;
-    put?: never;
-    post?: never;
-    /** Deletes a snapshot and its data. */
-    delete: operations["delete_snapshot"];
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
-  "/v1/agents/{id}/snapshots/{sid}/restore": {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
+    "/v1/agents/{id}/snapshots/{sid}/restore": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Replaces the sandbox with one booted from the snapshot. The current
+         *     disk state is discarded; the agent's chat and memory are kept.
+         */
+        post: operations["restore_snapshot"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
     };
-    get?: never;
-    put?: never;
-    /**
-     * Replaces the sandbox with one booted from the snapshot. The current
-     *     disk state is discarded; the agent's chat and memory are kept.
-     */
-    post: operations["restore_snapshot"];
-    delete?: never;
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
-  "/v1/agents/{id}/stop": {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
+    "/v1/agents/{id}/stop": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Puts the agent to sleep, keeping its disk. A new message or `wake`
+         *     starts (or resumes) it again.
+         */
+        post: operations["stop"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
     };
-    get?: never;
-    put?: never;
-    /**
-     * Puts the agent to sleep, keeping its disk. A new message or `wake`
-     *     starts (or resumes) it again.
-     */
-    post: operations["stop"];
-    delete?: never;
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
-  "/v1/agents/{id}/wake": {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
+    "/v1/agents/{id}/wake": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Starts (or re-creates) the agent's sandbox. */
+        post: operations["wake"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
     };
-    get?: never;
-    put?: never;
-    /** Starts (or re-creates) the agent's sandbox. */
-    post: operations["wake"];
-    delete?: never;
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
-  "/v1/call": {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
+    "/v1/call": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Who is in the operator's voice call. */
+        get: operations["get_call"];
+        /**
+         * Starts, changes or (with no agents) ends the voice call. Agents in it
+         *     can invite others with their `invite_to_call` tool.
+         */
+        put: operations["put_call"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
     };
-    /** Who is in the operator's voice call. */
-    get: operations["get_call"];
-    /**
-     * Starts, changes or (with no agents) ends the voice call. Agents in it
-     *     can invite others with their `invite_to_call` tool.
-     */
-    put: operations["put_call"];
-    post?: never;
-    delete?: never;
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
-  "/v1/call/messages": {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
+    "/v1/call/messages": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Sends the operator's message to every agent in the call, each with what the others said
+         *     since its last turn. Agents' replies never start each other's turns.
+         */
+        post: operations["post_call_message"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
     };
-    get?: never;
-    put?: never;
-    /**
-     * Sends the operator's message to every agent in the call. Each one also
-     *     gets what the others said since its own last turn; agents' replies never
-     *     start each other's turns.
-     */
-    post: operations["post_call_message"];
-    delete?: never;
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
-  "/v1/connectors": {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
+    "/v1/connectors": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Configured connectors, by name. */
+        get: operations["list_connectors"];
+        put?: never;
+        /** Adds a connector. Agents get its tools once they are assigned it. */
+        post: operations["create_connector"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
     };
-    /** Configured connectors, by name. */
-    get: operations["list_connectors"];
-    put?: never;
-    /** Adds a connector. Agents get its tools once they are assigned it. */
-    post: operations["create_connector"];
-    delete?: never;
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
-  "/v1/connectors/{id}": {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
+    "/v1/connectors/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /**
+         * Deletes a connector, its token and its assignments; OAuth tokens are
+         *     revoked at the server when it offers that.
+         */
+        delete: operations["delete_connector"];
+        options?: never;
+        head?: never;
+        /** Edits a connector. Open sessions with it are closed. */
+        patch: operations["update_connector"];
+        trace?: never;
     };
-    get?: never;
-    put?: never;
-    post?: never;
-    /**
-     * Deletes a connector, its token and its assignments; OAuth tokens are
-     *     revoked at the server when it offers that.
-     */
-    delete: operations["delete_connector"];
-    options?: never;
-    head?: never;
-    /** Edits a connector. Open sessions with it are closed. */
-    patch: operations["update_connector"];
-    trace?: never;
-  };
-  "/v1/connectors/{id}/oauth": {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
+    "/v1/connectors/{id}/oauth": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Starts an OAuth sign-in for a connector without a token and returns the page to sign in on;
+         *     the browser comes back to `/v1/oauth/callback`.
+         */
+        post: operations["start_oauth"];
+        /**
+         * Signs a connector out: asks the server to revoke its tokens (RFC 7009)
+         *     when it offers that, then forgets them here either way.
+         */
+        delete: operations["sign_out"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
     };
-    get?: never;
-    put?: never;
-    /**
-     * Starts an OAuth sign-in for a connector without a token: discovers the
-     *     server's authorization server, registers ferrobot as a client and returns
-     *     the page to sign in on. The browser comes back to `/v1/oauth/callback`.
-     */
-    post: operations["start_oauth"];
-    /**
-     * Signs a connector out: asks the server to revoke its tokens (RFC 7009)
-     *     when it offers that, then forgets them here either way.
-     */
-    delete: operations["sign_out"];
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
-  "/v1/conversations": {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
+    "/v1/conversations": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Agent-to-agent conversations (one per pair of agents), most recent first. */
+        get: operations["list_conversations"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
     };
-    /** Agent-to-agent conversations (one per pair of agents), most recent first. */
-    get: operations["list_conversations"];
-    put?: never;
-    post?: never;
-    delete?: never;
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
-  "/v1/conversations/{a}/{b}": {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
+    "/v1/conversations/{a}/{b}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Read-only thread between two agents: messages in both directions, oldest
+         *     first (last 200). The order of `a` and `b` does not matter.
+         */
+        get: operations["conversation_thread"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
     };
-    /**
-     * Read-only thread between two agents: messages in both directions, oldest
-     *     first (last 200). The order of `a` and `b` does not matter.
-     */
-    get: operations["conversation_thread"];
-    put?: never;
-    post?: never;
-    delete?: never;
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
-  "/v1/health": {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
+    "/v1/health": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Daemon identity and configuration summary. */
+        get: operations["health"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
     };
-    /** Daemon identity and configuration summary. */
-    get: operations["health"];
-    put?: never;
-    post?: never;
-    delete?: never;
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
-  "/v1/memory": {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
+    "/v1/memory": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Lists or searches the global memory all agents share. */
+        get: operations["list_global_memory"];
+        put?: never;
+        /** Creates or replaces a global memory. */
+        post: operations["put_global_memory"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
     };
-    /** Lists or searches the global memory all agents share. */
-    get: operations["list_global_memory"];
-    put?: never;
-    /** Creates or replaces a global memory. */
-    post: operations["put_global_memory"];
-    delete?: never;
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
-  "/v1/memory/{key}": {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
+    "/v1/memory/{key}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /** Deletes one global memory by key (URL-encoded). */
+        delete: operations["delete_global_memory"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
     };
-    get?: never;
-    put?: never;
-    post?: never;
-    /** Deletes one global memory by key (URL-encoded). */
-    delete: operations["delete_global_memory"];
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
-  "/v1/oauth/callback": {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
+    "/v1/oauth/callback": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Where the authorization server sends the browser back. Needs no operator
+         *     token: the single-use `state` from the sign-in it started authorizes it.
+         */
+        get: operations["oauth_callback"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
     };
-    /**
-     * Where the authorization server sends the browser back. Needs no operator
-     *     token: the single-use `state` from the sign-in it started authorizes it.
-     */
-    get: operations["oauth_callback"];
-    put?: never;
-    post?: never;
-    delete?: never;
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
-  "/v1/provider-kinds/{kind}/models": {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
+    "/v1/provider-kinds/{kind}/models": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** The built-in model list for a provider kind, e.g. before the provider exists. */
+        get: operations["kind_models"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
     };
-    /** The built-in model list for a provider kind, e.g. before the provider exists. */
-    get: operations["kind_models"];
-    put?: never;
-    post?: never;
-    delete?: never;
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
-  "/v1/providers": {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
+    "/v1/providers": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Configured model providers, by name. */
+        get: operations["list_providers"];
+        put?: never;
+        /** Adds a model provider. */
+        post: operations["create_provider"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
     };
-    /** Configured model providers, by name. */
-    get: operations["list_providers"];
-    put?: never;
-    /** Adds a model provider. */
-    post: operations["create_provider"];
-    delete?: never;
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
-  "/v1/providers/{id}": {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
+    "/v1/providers/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /** Deletes a provider and its stored key. Fails while agents use it. */
+        delete: operations["delete_provider"];
+        options?: never;
+        head?: never;
+        /**
+         * Edits a provider. Agents using it restart their computers (disks kept)
+         *     when region, project or default model change.
+         */
+        patch: operations["update_provider"];
+        trace?: never;
     };
-    get?: never;
-    put?: never;
-    post?: never;
-    /** Deletes a provider and its stored key. Fails while agents use it. */
-    delete: operations["delete_provider"];
-    options?: never;
-    head?: never;
-    /**
-     * Edits a provider. Agents using it restart their computers (disks kept)
-     *     when region, project or default model change.
-     */
-    patch: operations["update_provider"];
-    trace?: never;
-  };
-  "/v1/providers/{id}/chatgpt-login": {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
+    "/v1/providers/{id}/chatgpt-login": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Whether a `codex` provider is signed in with `ChatGPT`. */
+        get: operations["chatgpt_login_status"];
+        put?: never;
+        /**
+         * Starts a `ChatGPT` sign-in for a `codex` provider on the daemon host: open
+         *     `verification_url`, enter `user_code`, poll the status. Agents never see the tokens.
+         */
+        post: operations["start_chatgpt_login"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
     };
-    /** Whether a `codex` provider is signed in with `ChatGPT`. */
-    get: operations["chatgpt_login_status"];
-    put?: never;
-    /**
-     * Starts signing a `codex` provider in with `ChatGPT`, on the daemon host's
-     *     `codex`. Open `verification_url`, enter `user_code`, then poll the status.
-     *     The tokens stay with the host's Codex; agents never see them.
-     */
-    post: operations["start_chatgpt_login"];
-    delete?: never;
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
-  "/v1/providers/{id}/models": {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
+    "/v1/providers/{id}/models": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Models to offer for a provider: its own list fetched with the stored key (cached for a
+         *     few minutes), else a short built-in list.
+         */
+        get: operations["provider_models"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
     };
-    /**
-     * Models to offer for a provider: its own list, fetched with the stored key
-     *     (cached for a few minutes), or a short built-in list when it has none or
-     *     the fetch fails. The key is never returned.
-     */
-    get: operations["provider_models"];
-    put?: never;
-    post?: never;
-    delete?: never;
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
-  "/v1/routines/{rid}": {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
+    "/v1/routines/{rid}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /** Deletes a routine and its run history. */
+        delete: operations["delete_routine"];
+        options?: never;
+        head?: never;
+        /** Edits, enables or disables a routine. */
+        patch: operations["update_routine"];
+        trace?: never;
     };
-    get?: never;
-    put?: never;
-    post?: never;
-    /** Deletes a routine and its run history. */
-    delete: operations["delete_routine"];
-    options?: never;
-    head?: never;
-    /** Edits, enables or disables a routine. */
-    patch: operations["update_routine"];
-    trace?: never;
-  };
-  "/v1/routines/{rid}/run": {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
+    "/v1/routines/{rid}/run": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Runs a routine now (does not move its schedule). Wakes the agent if needed. */
+        post: operations["run_routine"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
     };
-    get?: never;
-    put?: never;
-    /** Runs a routine now (does not move its schedule). Wakes the agent if needed. */
-    post: operations["run_routine"];
-    delete?: never;
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
-  "/v1/routines/{rid}/runs": {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
+    "/v1/routines/{rid}/runs": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Run history, newest first (last 50). */
+        get: operations["list_runs"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
     };
-    /** Run history, newest first (last 50). */
-    get: operations["list_runs"];
-    put?: never;
-    post?: never;
-    delete?: never;
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
-  "/v1/usage": {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
+    "/v1/usage": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Calls, tokens and estimated cost of the model calls agents made through
+         *     the proxy, in total and per group.
+         */
+        get: operations["get_usage"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
     };
-    /**
-     * Calls, tokens and estimated cost of the model calls agents made through
-     *     the proxy, in total and per group.
-     */
-    get: operations["get_usage"];
-    put?: never;
-    post?: never;
-    delete?: never;
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
-  "/v1/usage/prices": {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
+    "/v1/usage/prices": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Prices in USD per 1M tokens: the operator's overrides, then the shipped
+         *     table. Unlisted Ollama models cost 0.
+         */
+        get: operations["get_prices"];
+        /**
+         * Replaces the operator's price overrides (the whole list) and returns the
+         *     prices in effect.
+         */
+        put: operations["put_prices"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
     };
-    /**
-     * Prices in USD per 1M tokens: the operator's overrides, then the shipped
-     *     table. Ollama models cost 0 and are not listed.
-     */
-    get: operations["get_prices"];
-    /**
-     * Replaces the operator's price overrides (the whole list) and returns the
-     *     prices in effect.
-     */
-    put: operations["put_prices"];
-    post?: never;
-    delete?: never;
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
-  "/v1/voice": {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
+    "/v1/voice": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Voice settings and the speech providers. */
+        get: operations["get_voice"];
+        /**
+         * Replaces the voice settings; with `api_key`, also stores or removes the
+         *     key of `provider`.
+         */
+        put: operations["put_voice"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
     };
-    /** Voice settings and the speech providers. */
-    get: operations["get_voice"];
-    /**
-     * Replaces the voice settings; with `api_key`, also stores or removes the
-     *     key of `provider`.
-     */
-    put: operations["put_voice"];
-    post?: never;
-    delete?: never;
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
-  "/v1/voice/catalog": {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
+    "/v1/voice/catalog": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** The voices and speech models of the configured provider, fetched live. */
+        get: operations["catalog"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
     };
-    /** The voices and speech models of the configured provider, fetched live. */
-    get: operations["catalog"];
-    put?: never;
-    post?: never;
-    delete?: never;
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
-  "/v1/voice/live": {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
+    "/v1/voice/live": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Opens live transcription for dictation or a hands-free call
+         *     (`ElevenLabs` only; other providers transcribe after recording).
+         */
+        post: operations["live"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
     };
-    get?: never;
-    put?: never;
-    /**
-     * Opens live transcription for dictation or a hands-free call
-     *     (`ElevenLabs` only; other providers transcribe after recording).
-     */
-    post: operations["live"];
-    delete?: never;
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
-  "/v1/voice/speech": {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
+    "/v1/voice/speech": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Speaks `text` with the configured provider and voice. The audio
+         *     (usually `audio/mpeg`) streams while the provider makes it.
+         */
+        post: operations["speech"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
     };
-    get?: never;
-    put?: never;
-    /**
-     * Speaks `text` with the configured provider and voice. The audio
-     *     (usually `audio/mpeg`) streams while the provider makes it.
-     */
-    post: operations["speech"];
-    delete?: never;
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
-  "/v1/voice/transcription": {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
+    "/v1/voice/transcription": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Transcribes a recording: the raw audio as the body, its type as
+         *     `Content-Type`.
+         */
+        post: operations["transcription"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
     };
-    get?: never;
-    put?: never;
-    /**
-     * Transcribes a recording: the raw audio as the body, its type as
-     *     `Content-Type`.
-     */
-    post: operations["transcription"];
-    delete?: never;
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
-  "/v1/ws": {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
+    "/v1/ws": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * WebSocket of `UiEvent` text frames (`protocol/ui-events.schema.json`); client frames are
+         *     ignored. After a reconnect or a `lagged` gap, refetch over HTTP.
+         */
+        get: operations["ui_ws"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
     };
-    /**
-     * WebSocket stream of `UiEvent` JSON text frames (schema:
-     *     `protocol/ui-events.schema.json`). Client-to-server frames are ignored.
-     *     After a reconnect (or a `lagged` gap) clients should refetch over HTTP.
-     */
-    get: operations["ui_ws"];
-    put?: never;
-    post?: never;
-    delete?: never;
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
 }
 export type webhooks = Record<string, never>;
 export interface components {
-  schemas: {
-    /** @description A registered agent. Secrets (the runner token) are never part of this type. */
-    Agent: {
-      id: components["schemas"]["AgentId"];
-      /** @description Display and addressing name; unique, can be changed (rename). */
-      name: components["schemas"]["AgentName"];
-      /**
-       * @description Stable name of the agent's sandbox resources (container, disk). Set
-       *     at creation and kept on rename.
-       */
-      sandbox_name: string;
-      /** @description One-line description shown in agent lists. */
-      description: string;
-      /** @description Operator-provided role handed to the model as system instructions. */
-      instructions: string;
-      /**
-       * Format: int64
-       * @description Changes whenever the avatar changes; positive while an avatar exists.
-       */
-      avatar_rev: number;
-      character?: components["schemas"]["AvatarCharacter"] | null;
-      created_by?: components["schemas"]["AgentId"] | null;
-      /**
-       * Format: uuid
-       * @description Model provider (`GET /v1/providers`); `null` uses the daemon's
-       *     `ANTHROPIC_API_KEY`.
-       */
-      provider_id?: string | null;
-      /** @description Model id; `null` uses the provider's default model. */
-      model?: string | null;
-      status: components["schemas"]["AgentStatus"];
-      /** @description Backend kind that owns the sandbox, e.g. `docker`. */
-      backend?: string | null;
-      /** @description Backend-specific sandbox identifier (container id, sprite name, ...). */
-      sandbox_id?: string | null;
-      /** @description Last model session id reported by the runner, used for resume. */
-      session_id?: string | null;
-      /** @description Pinned to the top of the operator's agent list. */
-      pinned?: boolean;
-      /** Format: date-time */
-      created_at: string;
-    };
-    /**
-     * Format: uuid
-     * @description Stable, opaque identifier of an agent.
-     */
-    AgentId: string;
-    /**
-     * @description Human-facing, unique agent handle such as `alice` or `build-bot`.
-     *
-     *     Rules: 1-32 chars, lowercase ASCII letters, digits and `-`,
-     *     must start with a letter and must not end with `-`.
-     *     Names double as container and volume name suffixes, so they stay DNS-safe.
-     * @example alice
-     */
-    AgentName: string;
-    /**
-     * @description Lifecycle state of an agent's sandbox as tracked by the daemon.
-     * @enum {string}
-     */
-    AgentStatus: "created" | "running" | "paused" | "stopped" | "archived" | "failed";
-    /** @description An agent plus live state. */
-    AgentView: components["schemas"]["Agent"] & {
-      /** @description Whether the agent's runner is connected right now. */
-      connected: boolean;
-      presence: components["schemas"]["Presence"];
-      /**
-       * Format: int32
-       * @description Finished turns since the operator last marked the chat as read.
-       */
-      unread: number;
-      /** @description Relative URL of the avatar image, if one was uploaded. */
-      avatar_url?: string | null;
-    };
-    AnswerQuestion: {
-      /** @description One answer per question of the card. */
-      answers: components["schemas"]["QuestionAnswer"][];
-    };
-    /**
-     * @description What an approval card asks the operator to allow. The daemon raises
-     *     these itself; the decision goes to the waiting tool call, not to the
-     *     agent's mailbox.
-     */
-    Approval: {
-      /** @description Requested name of the new agent. */
-      name: string;
-      /** @description Requested one-line description (role). */
-      description: string;
-      /** @enum {string} */
-      kind: "create_agent";
-    };
-    /**
-     * @description A chosen look for the agent's animated character avatar. Clients derive
-     *     a deterministic look from the agent id when none is set; an uploaded
-     *     avatar image takes precedence over both.
-     */
-    AvatarCharacter: {
-      body: components["schemas"]["CharacterBody"];
-      eyes: components["schemas"]["CharacterEyes"];
-      /**
-       * Format: int32
-       * @description Color hue in degrees, 0..=359.
-       */
-      hue: number;
-    };
-    CallMessage: {
-      /**
-       * @description 1..20224 bytes after trimming (the rest of a message is left for
-       *     what the others said).
-       */
-      body: string;
-    };
-    CallView: {
-      /** @description Agents in the operator's voice call (at most 4); empty: no call. */
-      agents: components["schemas"]["AgentId"][];
-    };
-    /**
-     * @description Body shape of the generated character avatar.
-     * @enum {string}
-     */
-    CharacterBody: "blob" | "bean" | "pebble" | "sprout";
-    /**
-     * @description Eye style of the generated character avatar.
-     * @enum {string}
-     */
-    CharacterEyes: "dots" | "ovals" | "wide" | "visor";
-    /** @description One selectable option. */
-    Choice: {
-      /** @description Shown to the user. */
-      label: string;
-      /** @description Stable value reported in the answer; defaults to the label. */
-      value?: string;
-    };
-    Connector: {
-      /** Format: uuid */
-      id: string;
-      /**
-       * @description 1-16 chars, `a-z0-9-`, starts with a letter. Prefixes its tools
-       *     (`<name>__<tool>`).
-       */
-      name: string;
-      /** @description Streamable HTTP endpoint of the MCP server. */
-      url: string;
-      /** Format: date-time */
-      created_at: string;
-    };
-    ConnectorView: components["schemas"]["Connector"] & {
-      /** @description Whether a token is stored. The token itself is never returned. */
-      has_token: boolean;
-      /** @description Whether the connector is signed in with OAuth. */
-      signed_in: boolean;
-      sign_in: components["schemas"]["SignIn"];
-      /**
-       * @description Client id of the operator's own OAuth app, if set (else dynamic
-       *     client registration is used).
-       */
-      client_id?: string | null;
-      /** @description Whether that app's client secret is stored. Never returned. */
-      has_client_secret: boolean;
-      /** @description Scopes asked for at sign-in; empty: the server's choice. */
-      scopes: string[];
-      /** @description The authorization server the own OAuth app belongs to. */
-      issuer?: string | null;
-      /** @description Register this redirect URI with the provider for an own OAuth app. */
-      redirect_uri: string;
-    };
-    /** @description Messages two agents exchanged. */
-    Conversation: {
-      /** @description The two agents, ordered by id. */
-      a: components["schemas"]["AgentId"];
-      b: components["schemas"]["AgentId"];
-      /**
-       * Format: int32
-       * @description Messages in both directions.
-       */
-      messages: number;
-      /** @description The most recent one. */
-      last: components["schemas"]["MailMessage"];
-    };
-    CreateAgent: {
-      /**
-       * @description 1-32 chars, `a-z0-9-`, starts with a letter. Unique; can be changed later
-       *     with `PATCH` (other agents address it by id, or by its current name).
-       * @example alice
-       */
-      name: string;
-      /** @description One line shown in agent lists (max 280 bytes). */
-      description?: string;
-      /** @description System instructions (role) for the agent's model. */
-      instructions?: string;
-      character?: components["schemas"]["AvatarCharacter"] | null;
-      /**
-       * Format: uuid
-       * @description Model provider (`GET /v1/providers`); omitted: the daemon's
-       *     `ANTHROPIC_API_KEY`.
-       */
-      provider_id?: string | null;
-      /** @description Model id; omitted: the provider's default model. */
-      model?: string | null;
-    };
-    CreateConnector: {
-      /**
-       * @description 1-16 chars, `a-z0-9-`, starts with a letter; prefixes the tools.
-       * @example github
-       */
-      name: string;
-      /**
-       * @description Streamable HTTP endpoint of the MCP server.
-       * @example https://api.githubcopilot.com/mcp/
-       */
-      url: string;
-      /**
-       * @description Sent as `Authorization: Bearer <token>`. Stored in the OS keychain;
-       *     never returned.
-       */
-      token?: string | null;
-      /**
-       * @description Client id of your own OAuth app, for servers without dynamic client
-       *     registration (e.g. Google). Register `redirect_uri` with it.
-       */
-      client_id?: string | null;
-      /** @description That app's client secret. Stored in the OS keychain; never returned. */
-      client_secret?: string | null;
-      /** @description Scopes to ask for at sign-in (space-separated entries are split). */
-      scopes?: string[];
-      /**
-       * @description The authorization server the app belongs to (e.g.
-       *     `https://accounts.google.com`); needed with `client_id`. Sign-ins
-       *     through any other server are refused.
-       */
-      issuer?: string | null;
-    };
-    CreateProvider: {
-      /**
-       * @description Unique display name (1-64 bytes).
-       * @example openai-work
-       */
-      name: string;
-      kind: components["schemas"]["ProviderKind"];
-      /** @description Upstream override; required for `openai_compatible`. */
-      base_url?: string | null;
-      /** @description Required for `bedrock` and `vertex`. */
-      region?: string | null;
-      /** @description Google Cloud project; required for `vertex`. */
-      project?: string | null;
-      default_model?: string | null;
-      /** @description Stored in the OS keychain; never returned. */
-      api_key?: string | null;
-    };
-    CreateRoutine: {
-      /**
-       * @description Unique per agent, 1-64 bytes.
-       * @example morning-digest
-       */
-      name: string;
-      /**
-       * @description 5-field cron expression or alias (`@hourly`, `@daily`, ...).
-       * @example 0 9 * * 1-5
-       */
-      schedule: string;
-      /** @description Message the agent receives on every run. */
-      prompt: string;
-      /** @description IANA time zone; defaults to the daemon's (see `/v1/health`). */
-      timezone?: string | null;
-      /** @description Default true. */
-      enabled?: boolean | null;
-    };
-    /** @description A device code the operator enters at `verification_url`. */
-    DeviceCode: {
-      verification_url: string;
-      user_code: string;
-    };
-    /** @description JSON body of every non-2xx UI API response. */
-    ErrorBody: {
-      /**
-       * @description Stable machine-readable code: `bad_request`, `unauthorized`,
-       *     `not_found`, `conflict`, `rate_limited`, `not_implemented`,
-       *     `sandbox_error`, `upstream_error` or `internal`.
-       */
-      error: string;
-      /** @description Human-readable description. */
-      message: string;
-    };
-    ExecOutput: {
-      /** Format: int64 */
-      exit_code: number;
-      stdout: string;
-      stderr: string;
-      /** @description True if output was cut at [`MAX_EXEC_OUTPUT`]. */
-      truncated: boolean;
-    };
-    ExecReq: {
-      /**
-       * @description argv; must not be empty.
-       * @example [
-       *       "sh",
-       *       "-c",
-       *       "ls"
-       *     ]
-       */
-      cmd: string[];
-      workdir?: string | null;
-    };
-    Health: {
-      name: string;
-      version: string;
-      backend: string;
-      driver: string;
-      /**
-       * @description Whether agents make real model calls through the proxy (any driver
-       *     but `mock`); each still needs a provider or `ANTHROPIC_API_KEY`.
-       */
-      model_proxy: boolean;
-      /**
-       * Format: int64
-       * @description Seconds of inactivity before a sandbox sleeps; null when disabled.
-       */
-      idle_timeout_s?: number | null;
-      /** @description Default time zone for new routines. */
-      timezone: string;
-      /** @description Whether the sandbox backend can start agents now (Docker: the engine answers). */
-      sandbox_ready: boolean;
-      /** @description Why the backend is not ready, for the operator; null when ready. */
-      sandbox_error?: string | null;
-    };
-    Interrupted: {
-      /** @description The interrupted turn, or null if the agent was idle. */
-      turn_id?: string | null;
-    };
-    /** @description A language a model speaks. */
-    LanguageOption: {
-      code: string;
-      name: string;
-    };
-    /**
-     * @description How live speech is cut into messages.
-     * @enum {string}
-     */
-    LiveMode: "dictation" | "call";
-    LiveRequest: {
-      mode: components["schemas"]["LiveMode"];
-      /**
-       * Format: int32
-       * @description Sample rate of the 16-bit mono PCM the app sends: 8000, 16000,
-       *     22050, 24000, 44100 or 48000.
-       */
-      sample_rate: number;
-    };
-    LiveSession: {
-      /**
-       * @description The provider's WebSocket with a single-use token (valid 15 minutes,
-       *     one session of at most 10 minutes); the real key never leaves the daemon.
-       */
-      url: string;
-    };
-    /** @description Sign-in progress per provider (in memory; a restart forgets pending ones). */
-    LoginStatus:
-      | {
-          /** @enum {string} */
-          state: "none";
-        }
-      | {
-          /** @enum {string} */
-          state: "pending";
-        }
-      | {
-          /** @enum {string} */
-          state: "signed_in";
-        }
-      | {
-          error: string;
-          /** @enum {string} */
-          state: "failed";
+    schemas: {
+        /** @description A registered agent. Secrets (the runner token) are never part of this type. */
+        Agent: {
+            id: components["schemas"]["AgentId"];
+            /** @description Display and addressing name; unique, can be changed (rename). */
+            name: components["schemas"]["AgentName"];
+            /**
+             * @description Stable name of the agent's sandbox resources (container, disk). Set
+             *     at creation and kept on rename.
+             */
+            sandbox_name: string;
+            /** @description One-line description shown in agent lists. */
+            description: string;
+            /** @description Operator-provided role handed to the model as system instructions. */
+            instructions: string;
+            /**
+             * Format: int64
+             * @description Changes whenever the avatar changes; positive while an avatar exists.
+             */
+            avatar_rev: number;
+            character?: components["schemas"]["AvatarCharacter"] | null;
+            created_by?: components["schemas"]["AgentId"] | null;
+            /**
+             * Format: uuid
+             * @description Model provider (`GET /v1/providers`); `null` uses the daemon's
+             *     `ANTHROPIC_API_KEY`.
+             */
+            provider_id?: string | null;
+            /** @description Model id; `null` uses the provider's default model. */
+            model?: string | null;
+            status: components["schemas"]["AgentStatus"];
+            /** @description Backend kind that owns the sandbox, e.g. `docker`. */
+            backend?: string | null;
+            /** @description Backend-specific sandbox identifier (container id, sprite name, ...). */
+            sandbox_id?: string | null;
+            /** @description Last model session id reported by the runner, used for resume. */
+            session_id?: string | null;
+            /** @description Pinned to the top of the operator's agent list. */
+            pinned?: boolean;
+            /** Format: date-time */
+            created_at: string;
         };
-    /** @description One message in an agent's mailbox. */
-    MailMessage: {
-      /** Format: int64 */
-      id: number;
-      sender: components["schemas"]["Sender"];
-      recipient: components["schemas"]["AgentId"];
-      /**
-       * @description Text; mentions of agents are stored as `<@agent-id>` tokens (see
-       *     `ferrobot_core::mention`), so render them with the current names.
-       */
-      body: string;
-      /** Format: int64 */
-      reply_to?: number | null;
-      /**
-       * @description Set by the sending agent: `true` wakes the recipient and goes ahead
-       *     of its other queued messages; `false` waits for the recipient's next
-       *     turn without waking it; `null` (default) queues and wakes.
-       */
-      priority?: boolean | null;
-      status: components["schemas"]["MailStatus"];
-      /** Format: int32 */
-      attempts: number;
-      /** Format: date-time */
-      created_at: string;
-    };
-    /**
-     * @description Delivery state of a mailbox message.
-     *
-     *     `Pending -> InFlight -> Delivered`, or back to `Pending` when a runner
-     *     disconnects mid-turn, or `Failed` after too many attempts.
-     * @enum {string}
-     */
-    MailStatus: "pending" | "in_flight" | "delivered" | "failed";
-    MemoryEntry: {
-      key: string;
-      content: string;
-      /** Format: date-time */
-      updated_at: string;
-      /** @description Global memory only: the agent that wrote it; absent = the operator. */
-      author?: string | null;
-    };
-    /** @description One model a picker offers. */
-    ModelInfo: {
-      /** @description The id an agent or provider uses as its `model`. */
-      id: string;
-      /** @description Display name, when the provider gives one. */
-      name?: string | null;
-    };
-    /** @description Models to offer for a provider. Any other id can still be typed. */
-    ModelList: {
-      models: components["schemas"]["ModelInfo"][];
-      source: components["schemas"]["ModelSource"];
-    };
-    /** @description A text-to-speech model of the account. */
-    ModelOption: {
-      model_id: string;
-      name: string;
-      languages: components["schemas"]["LanguageOption"][];
-    };
-    /**
-     * @description Where a model list comes from.
-     * @enum {string}
-     */
-    ModelSource: "provider" | "suggested";
-    OAuthStart: {
-      /** @description Open this in a browser on the daemon's computer to sign in. */
-      authorization_url: string;
-    };
-    PostMessage: {
-      /**
-       * @description 1..32768 bytes after trimming. `@name` mentions of existing agents are
-       *     stored as `<@agent-id>` tokens.
-       */
-      body: string;
-    };
-    /**
-     * @description What an agent is doing right now, for status badges.
-     * @enum {string}
-     */
-    Presence: "working" | "awake" | "starting" | "sleeping" | "error";
-    /** @description USD per 1M tokens. */
-    Price: {
-      /** Format: double */
-      input: number;
-      /** Format: double */
-      output: number;
-      /**
-       * Format: double
-       * @description `null`: unknown; calls with cache reads then cost an unknown amount.
-       */
-      cache_read?: number | null;
-      /**
-       * Format: double
-       * @description `null`: unknown; calls with cache writes then cost an unknown amount.
-       */
-      cache_write?: number | null;
-    };
-    /** @description One model's price and where it comes from. */
-    PriceEntry: components["schemas"]["Price"] & {
-      provider_kind: components["schemas"]["ProviderKind"];
-      /** @description API model id, as agents send it. */
-      model: string;
-      /** @description When the price was read off the source, or set by the operator (`YYYY-MM-DD`). */
-      checked?: string | null;
-      /** @description The provider's pricing page; `null` for the operator's own price. */
-      source?: string | null;
-    };
-    /**
-     * @description A configured model provider. Its credential lives in the daemon's secret
-     *     store, never here.
-     */
-    Provider: {
-      /** Format: uuid */
-      id: string;
-      /** @description Unique display name, e.g. `openai-work`. */
-      name: string;
-      kind: components["schemas"]["ProviderKind"];
-      /** @description Upstream override; `null` uses the kind's default. */
-      base_url?: string | null;
-      /** @description Bedrock / Vertex region, e.g. `us-east-1`, `us-east5`, `global`. */
-      region?: string | null;
-      /** @description Google Cloud project (Vertex). */
-      project?: string | null;
-      /** @description Model for agents that do not pick one. */
-      default_model?: string | null;
-      /** Format: date-time */
-      created_at: string;
-    };
-    /**
-     * @description The API family of a provider. Decides the runner driver, the upstream
-     *     URL and how the daemon's model proxy adds the credential.
-     * @enum {string}
-     */
-    ProviderKind:
-      | "anthropic"
-      | "openai"
-      | "gemini"
-      | "bedrock"
-      | "vertex"
-      | "openrouter"
-      | "ollama"
-      | "openai_compatible"
-      | "codex"
-      | "gemini_cli";
-    ProviderView: components["schemas"]["Provider"] & {
-      /** @description Whether an API key is stored. The key itself is never returned. */
-      has_key: boolean;
-    };
-    PutMemory: {
-      /** @description 1-128 bytes; an existing key is overwritten. */
-      key: string;
-      content: string;
-    };
-    /** @description One question on a card. */
-    Question: {
-      /** @description Unique within the card; defaults to `q1`, `q2`, ... */
-      id?: string;
-      /** @description The question text. */
-      prompt: string;
-      kind: components["schemas"]["QuestionKind"];
-      /** @description Options for `single` and `multi` (2..12). Empty for `text`. */
-      choices?: components["schemas"]["Choice"][];
-      /** @description `single`/`multi`: also offer a free-text "other" answer. */
-      allow_custom?: boolean;
-    };
-    /** @description The answer to one question. */
-    QuestionAnswer: {
-      question_id: string;
-      /** @description Selected choice values (`single`: at most one). */
-      values?: string[];
-      /** @description Free text (`text` questions, or "other" when `allow_custom`). */
-      custom?: string | null;
-    };
-    /** @description Payload of a `question_answered` event. A card is answered at most once. */
-    QuestionAnswered: {
-      /**
-       * Format: int64
-       * @description Id of the `question` event.
-       */
-      question: number;
-      answers: components["schemas"]["QuestionAnswer"][];
-      /**
-       * Format: int64
-       * @description The user message that carried the answer to the agent; `null` for
-       *     approval cards (the decision goes to the waiting tool call).
-       */
-      message_id?: number | null;
-    };
-    /** @description A card with one or more questions, answered together. */
-    QuestionCard: {
-      /** @description Optional heading. */
-      title?: string | null;
-      /** @description 1..8 questions, shown in order. */
-      questions: components["schemas"]["Question"][];
-    };
-    /** @description Payload of a `question` event: the card as shown in the chat. */
-    QuestionEvent: {
-      /**
-       * Format: int32
-       * @description Card format version (currently 1).
-       */
-      version: number;
-      card: components["schemas"]["QuestionCard"];
-      approval?: components["schemas"]["Approval"] | null;
-    };
-    /**
-     * @description How a question is answered.
-     * @enum {string}
-     */
-    QuestionKind: "single" | "multi" | "text";
-    Routine: {
-      /** Format: int64 */
-      id: number;
-      agent_id: components["schemas"]["AgentId"];
-      name: string;
-      /** @description Cron expression (5 fields, minute granularity) or an alias like `@hourly`. */
-      schedule: string;
-      /** @description IANA time zone the schedule is evaluated in, e.g. `Europe/Berlin`. */
-      timezone: string;
-      /** @description Message sent to the agent on every run. */
-      prompt: string;
-      enabled: boolean;
-      /**
-       * Format: date-time
-       * @description Next scheduled run; null while disabled.
-       */
-      next_run_at?: string | null;
-      /** Format: date-time */
-      last_run_at?: string | null;
-      /** Format: date-time */
-      created_at: string;
-    };
-    /** @description One execution of a routine: the message it queued and how that went. */
-    RoutineRun: {
-      /** Format: int64 */
-      id: number;
-      /** Format: int64 */
-      routine_id: number;
-      /** Format: int64 */
-      message_id?: number | null;
-      trigger: components["schemas"]["RunTrigger"];
-      status?: components["schemas"]["MailStatus"] | null;
-      /** @description Last delivery error, if any. */
-      error?: string | null;
-      /** Format: date-time */
-      created_at: string;
-    };
-    /** @description A routine plus a readable form of its schedule. */
-    RoutineView: components["schemas"]["Routine"] & {
-      /** @description English description of the schedule, e.g. "At 09:00 on Monday through Friday". */
-      schedule_text: string;
-    };
-    /**
-     * @description What started a run.
-     * @enum {string}
-     */
-    RunTrigger: "schedule" | "manual";
-    SandboxInfo: {
-      /** @description Backend kind, e.g. `docker`; null before provisioning. */
-      backend?: string | null;
-      /** @description Backend-specific id (container id, ...). */
-      sandbox_id?: string | null;
-      state?: components["schemas"]["SandboxState"] | null;
-      presence: components["schemas"]["Presence"];
-      connected: boolean;
-      /**
-       * Format: int64
-       * @description Seconds since the last activity; pauses at `warm_after_s`, stops at
-       *     `idle_timeout_s`.
-       */
-      idle_s: number;
-      /**
-       * Format: int64
-       * @description Warm sleep (pause) after this long idle; `null`: never.
-       */
-      warm_after_s?: number | null;
-      /**
-       * Format: int64
-       * @description Cold sleep (stop) after this long idle; `null`: never.
-       */
-      idle_timeout_s?: number | null;
-      /** @description Whether the backend can snapshot and restore. */
-      snapshots_supported: boolean;
-    };
-    /** @enum {string} */
-    SandboxState: "running" | "paused" | "stopped" | "missing";
-    /** @description Who sent a mailbox message. */
-    Sender:
-      | {
-          /** @enum {string} */
-          kind: "user";
-        }
-      | {
-          /** @description Another agent, via the `send_message` MCP tool. */
-          id: components["schemas"]["AgentId"];
-          /** @enum {string} */
-          kind: "agent";
-        }
-      | {
-          /**
-           * Format: int64
-           * @description A scheduled routine (by routine id).
-           */
-          id: number;
-          /** @enum {string} */
-          kind: "routine";
+        /**
+         * Format: uuid
+         * @description Stable, opaque identifier of an agent.
+         */
+        AgentId: string;
+        /**
+         * @description Unique agent handle like `build-bot`: 1-32 chars of `a-z0-9-`, starting with a letter and
+         *     not ending with `-`, so it stays DNS-safe in sandbox resource names.
+         * @example alice
+         */
+        AgentName: string;
+        /**
+         * @description Lifecycle state of an agent's sandbox as tracked by the daemon.
+         * @enum {string}
+         */
+        AgentStatus: "created" | "running" | "paused" | "stopped" | "archived" | "failed";
+        /** @description An agent plus live state. */
+        AgentView: components["schemas"]["Agent"] & {
+            /** @description Whether the agent's runner is connected right now. */
+            connected: boolean;
+            presence: components["schemas"]["Presence"];
+            /**
+             * Format: int32
+             * @description Finished turns since the operator last marked the chat as read.
+             */
+            unread: number;
+            /** @description Relative URL of the avatar image, if one was uploaded. */
+            avatar_url?: string | null;
         };
-    SetPrice: components["schemas"]["Price"] & {
-      provider_kind: components["schemas"]["ProviderKind"];
-      /** @description API model id, as agents send it. */
-      model: string;
-    };
-    SharedFileView: {
-      name: string;
-      /** Format: int64 */
-      size: number;
-      /** @description The text, for UTF-8 files up to 2 MiB; otherwise `null`. */
-      content?: string | null;
-      /**
-       * @description For .html files: the page (relative to the daemon), sandboxed, with
-       *     no access to the app or the operator token.
-       */
-      page_url?: string | null;
-      /**
-       * @description The file itself (relative to the daemon), a signed link that works for
-       *     30 minutes: pages and PDFs open inline, other files download. Add
-       *     `&download=1` to always download.
-       */
-      url: string;
-    };
-    /**
-     * @description Where a connector stands with OAuth.
-     * @enum {string}
-     */
-    SignIn: "signed_out" | "signed_in" | "expired";
-    /**
-     * @description How deeply a sandbox sleeps.
-     * @enum {string}
-     */
-    SleepLevel: "warm" | "cold" | "archived";
-    SnapshotRecord: {
-      /** Format: int64 */
-      id: number;
-      agent_id: components["schemas"]["AgentId"];
-      /** @description Backend that created it, e.g. `docker`. */
-      backend: string;
-      /** @description Backend-specific reference (e.g. an image tag). */
-      snapshot_ref: string;
-      label: string;
-      /** @description What the snapshot covers. */
-      scope: string;
-      /** Format: date-time */
-      created_at: string;
-    };
-    SnapshotReq: {
-      /** @description Free-form label (default `manual`, max 64 bytes). */
-      label?: string;
-    };
-    SpeechRequest: {
-      /** @description What to say: 1-4096 characters. */
-      text: string;
-      agent_id?: components["schemas"]["AgentId"] | null;
-    };
-    StoredEvent: {
-      /** Format: int64 */
-      id: number;
-      agent_id: components["schemas"]["AgentId"];
-      turn_id?: string | null;
-      kind: string;
-      /** @description The event body; for runner events this is a `TurnEvent`. */
-      payload: Record<string, never>;
-      /** Format: date-time */
-      created_at: string;
-    };
-    /** @description What was said. Both providers answer `{"text": ...}` (plus fields we ignore). */
-    Transcript: {
-      text: string;
-    };
-    /** @description Pushed to every UI WebSocket client. */
-    UiEvent:
-      | {
-          event: components["schemas"]["StoredEvent"];
-          /** @enum {string} */
-          type: "event";
-        }
-      | {
-          agent_id: components["schemas"]["AgentId"];
-          turn_id: string;
-          text: string;
-          /** @enum {string} */
-          type: "delta";
-        }
-      | {
-          agent: components["schemas"]["AgentView"];
-          /** @enum {string} */
-          type: "agent";
-        }
-      | {
-          agent_id: components["schemas"]["AgentId"];
-          /** @enum {string} */
-          type: "agent_deleted";
-        }
-      | {
-          message: components["schemas"]["MailMessage"];
-          /** @enum {string} */
-          type: "message";
-        }
-      | {
-          agent_id: components["schemas"]["AgentId"];
-          /** @enum {string} */
-          type: "memory_changed";
-        }
-      | {
-          /** @enum {string} */
-          type: "global_memory_changed";
-        }
-      | {
-          agent_id: components["schemas"]["AgentId"];
-          /** @enum {string} */
-          type: "routines_changed";
-        }
-      | {
-          agents: components["schemas"]["AgentId"][];
-          /** @enum {string} */
-          type: "call";
+        AnswerQuestion: {
+            /** @description One answer per question of the card. */
+            answers: components["schemas"]["QuestionAnswer"][];
         };
-    /** @description Partial profile update. Omitted fields stay unchanged. */
-    UpdateAgent: {
-      /**
-       * @description New name (same rules as on create). The agent keeps its id, sandbox,
-       *     disk, memory and history.
-       * @example ada
-       */
-      name?: string | null;
-      description?: string | null;
-      /** @description New system instructions; a connected runner applies them from its next turn. */
-      instructions?: string | null;
-      character?: components["schemas"]["AvatarCharacter"] | null;
-      /**
-       * Format: uuid
-       * @description New model provider; `null` goes back to the daemon's default. Changing
-       *     provider or model restarts the agent's computer (its disk is kept).
-       */
-      provider_id?: string | null;
-      /** @description New model id; `null` goes back to the provider's default model. */
-      model?: string | null;
-      /** @description Pin to the top of the agent list (or unpin). */
-      pinned?: boolean | null;
+        /**
+         * @description What an approval card asks the operator to allow; the decision goes to the waiting tool
+         *     call, not to the agent's mailbox.
+         */
+        Approval: {
+            /** @description Requested name of the new agent. */
+            name: string;
+            /** @description Requested one-line description (role). */
+            description: string;
+            /** @enum {string} */
+            kind: "create_agent";
+        };
+        /**
+         * @description A chosen character avatar look; without one, clients derive a look from the agent id.
+         *     An uploaded avatar image wins over both.
+         */
+        AvatarCharacter: {
+            body: components["schemas"]["CharacterBody"];
+            eyes: components["schemas"]["CharacterEyes"];
+            /**
+             * Format: int32
+             * @description Color hue in degrees, 0..=359.
+             */
+            hue: number;
+        };
+        CallMessage: {
+            /**
+             * @description 1..20224 bytes after trimming (the rest of a message is left for
+             *     what the others said).
+             */
+            body: string;
+        };
+        CallView: {
+            /** @description Agents in the operator's voice call (at most 4); empty: no call. */
+            agents: components["schemas"]["AgentId"][];
+        };
+        /**
+         * @description Body shape of the generated character avatar.
+         * @enum {string}
+         */
+        CharacterBody: "blob" | "bean" | "pebble" | "sprout";
+        /**
+         * @description Eye style of the generated character avatar.
+         * @enum {string}
+         */
+        CharacterEyes: "dots" | "ovals" | "wide" | "visor";
+        /** @description One selectable option. */
+        Choice: {
+            /** @description Shown to the user. */
+            label: string;
+            /** @description Stable value reported in the answer; defaults to the label. */
+            value?: string;
+        };
+        /** @description A remote MCP server whose tools assigned agents can use. */
+        Connector: {
+            /** Format: uuid */
+            id: string;
+            /**
+             * @description 1-16 chars, `a-z0-9-`, starts with a letter. Prefixes its tools
+             *     (`<name>__<tool>`).
+             */
+            name: string;
+            /** @description Streamable HTTP endpoint of the MCP server. */
+            url: string;
+            /** Format: date-time */
+            created_at: string;
+        };
+        ConnectorView: components["schemas"]["Connector"] & {
+            /** @description Whether a token is stored. The token itself is never returned. */
+            has_token: boolean;
+            /** @description Whether the connector is signed in with OAuth. */
+            signed_in: boolean;
+            sign_in: components["schemas"]["SignIn"];
+            /**
+             * @description Client id of the operator's own OAuth app, if set (else dynamic
+             *     client registration is used).
+             */
+            client_id?: string | null;
+            /** @description Whether that app's client secret is stored. Never returned. */
+            has_client_secret: boolean;
+            /** @description Scopes asked for at sign-in; empty: the server's choice. */
+            scopes: string[];
+            /** @description The authorization server the own OAuth app belongs to. */
+            issuer?: string | null;
+            /** @description Register this redirect URI with the provider for an own OAuth app. */
+            redirect_uri: string;
+        };
+        /** @description Messages two agents exchanged. */
+        Conversation: {
+            /** @description The two agents, ordered by id. */
+            a: components["schemas"]["AgentId"];
+            b: components["schemas"]["AgentId"];
+            /**
+             * Format: int32
+             * @description Messages in both directions.
+             */
+            messages: number;
+            /** @description The most recent one. */
+            last: components["schemas"]["MailMessage"];
+        };
+        CreateAgent: {
+            /**
+             * @description 1-32 chars, `a-z0-9-`, starts with a letter. Unique; can be changed later
+             *     with `PATCH` (other agents address it by id, or by its current name).
+             * @example alice
+             */
+            name: string;
+            /** @description One line shown in agent lists (max 280 bytes). */
+            description?: string;
+            /** @description System instructions (role) for the agent's model. */
+            instructions?: string;
+            character?: components["schemas"]["AvatarCharacter"] | null;
+            /**
+             * Format: uuid
+             * @description Model provider (`GET /v1/providers`); omitted: the daemon's
+             *     `ANTHROPIC_API_KEY`.
+             */
+            provider_id?: string | null;
+            /** @description Model id; omitted: the provider's default model. */
+            model?: string | null;
+        };
+        CreateConnector: {
+            /**
+             * @description 1-16 chars, `a-z0-9-`, starts with a letter; prefixes the tools.
+             * @example github
+             */
+            name: string;
+            /**
+             * @description Streamable HTTP endpoint of the MCP server.
+             * @example https://api.githubcopilot.com/mcp/
+             */
+            url: string;
+            /**
+             * @description Sent as `Authorization: Bearer <token>`. Kept in the daemon's secret store;
+             *     never returned.
+             */
+            token?: string | null;
+            /**
+             * @description Client id of your own OAuth app, for servers without dynamic client
+             *     registration (e.g. Google). Register `redirect_uri` with it.
+             */
+            client_id?: string | null;
+            /** @description That app's client secret. Kept in the daemon's secret store; never returned. */
+            client_secret?: string | null;
+            /** @description Scopes to ask for at sign-in (space-separated entries are split). */
+            scopes?: string[];
+            /**
+             * @description The authorization server the app belongs to (e.g. `https://accounts.google.com`);
+             *     needed with `client_id`. Sign-ins through any other server are refused.
+             */
+            issuer?: string | null;
+        };
+        CreateProvider: {
+            /**
+             * @description Unique display name (1-64 bytes).
+             * @example openai-work
+             */
+            name: string;
+            kind: components["schemas"]["ProviderKind"];
+            /** @description Upstream override; required for `openai_compatible`. */
+            base_url?: string | null;
+            /** @description Required for `bedrock` and `vertex`. */
+            region?: string | null;
+            /** @description Google Cloud project; required for `vertex`. */
+            project?: string | null;
+            default_model?: string | null;
+            /** @description Kept in the daemon's secret store; never returned. */
+            api_key?: string | null;
+        };
+        CreateRoutine: {
+            /**
+             * @description Unique per agent, 1-64 bytes.
+             * @example morning-digest
+             */
+            name: string;
+            /**
+             * @description 5-field cron expression or alias (`@hourly`, `@daily`, ...).
+             * @example 0 9 * * 1-5
+             */
+            schedule: string;
+            /** @description Message the agent receives on every run. */
+            prompt: string;
+            /** @description IANA time zone; defaults to the daemon's (see `/v1/health`). */
+            timezone?: string | null;
+            /** @description Default true. */
+            enabled?: boolean | null;
+        };
+        /** @description A device code the operator enters at `verification_url`. */
+        DeviceCode: {
+            verification_url: string;
+            user_code: string;
+        };
+        /** @description JSON body of every non-2xx UI API response. */
+        ErrorBody: {
+            /**
+             * @description Stable code: `bad_request`, `unauthorized`, `not_found`, `conflict`, `rate_limited`,
+             *     `not_implemented`, `sandbox_error`, `upstream_error` or `internal`.
+             */
+            error: string;
+            /** @description Human-readable description. */
+            message: string;
+        };
+        /** @description Exit code and captured output of a command. */
+        ExecOutput: {
+            /** Format: int64 */
+            exit_code: number;
+            stdout: string;
+            stderr: string;
+            /** @description True if output was cut at [`MAX_EXEC_OUTPUT`]. */
+            truncated: boolean;
+        };
+        ExecReq: {
+            /**
+             * @description argv; must not be empty.
+             * @example [
+             *       "sh",
+             *       "-c",
+             *       "ls"
+             *     ]
+             */
+            cmd: string[];
+            workdir?: string | null;
+        };
+        Health: {
+            name: string;
+            version: string;
+            backend: string;
+            driver: string;
+            /**
+             * @description Whether agents make real model calls through the proxy (any driver
+             *     but `mock`); each still needs a provider or `ANTHROPIC_API_KEY`.
+             */
+            model_proxy: boolean;
+            /**
+             * Format: int64
+             * @description Seconds idle before a sandbox is stopped (cold sleep); null: never.
+             */
+            idle_timeout_s?: number | null;
+            /** @description Default time zone for new routines. */
+            timezone: string;
+            /** @description Whether the sandbox backend can start agents now (Docker: the engine answers). */
+            sandbox_ready: boolean;
+            /** @description Why the backend is not ready, for the operator; null when ready. */
+            sandbox_error?: string | null;
+        };
+        Interrupted: {
+            /** @description The interrupted turn, or null if the agent was idle. */
+            turn_id?: string | null;
+        };
+        /** @description A language a model speaks. */
+        LanguageOption: {
+            code: string;
+            name: string;
+        };
+        /**
+         * @description How live speech is cut into messages.
+         * @enum {string}
+         */
+        LiveMode: "dictation" | "call";
+        LiveRequest: {
+            mode: components["schemas"]["LiveMode"];
+            /**
+             * Format: int32
+             * @description Sample rate of the 16-bit mono PCM the app sends: 8000, 16000,
+             *     22050, 24000, 44100 or 48000.
+             */
+            sample_rate: number;
+        };
+        LiveSession: {
+            /**
+             * @description The provider's WebSocket with a single-use token (valid 15 minutes,
+             *     one session of at most 10 minutes); the real key never leaves the daemon.
+             */
+            url: string;
+        };
+        /** @description Sign-in progress per provider (in memory; a restart forgets pending ones). */
+        LoginStatus: {
+            /** @enum {string} */
+            state: "none";
+        } | {
+            /** @enum {string} */
+            state: "pending";
+        } | {
+            /** @enum {string} */
+            state: "signed_in";
+        } | {
+            error: string;
+            /** @enum {string} */
+            state: "failed";
+        };
+        /** @description One message in an agent's mailbox. */
+        MailMessage: {
+            /** Format: int64 */
+            id: number;
+            sender: components["schemas"]["Sender"];
+            recipient: components["schemas"]["AgentId"];
+            /**
+             * @description Text; mentions of agents are stored as `<@agent-id>` tokens (see
+             *     `ferrobot_core::mention`), so render them with the current names.
+             */
+            body: string;
+            /** Format: int64 */
+            reply_to?: number | null;
+            /**
+             * @description `true`: wakes the recipient and goes first; `false`: waits for its next turn
+             *     without waking it; `null` (default): queues and wakes.
+             */
+            priority?: boolean | null;
+            status: components["schemas"]["MailStatus"];
+            /** Format: int32 */
+            attempts: number;
+            /** Format: date-time */
+            created_at: string;
+        };
+        /**
+         * @description Delivery state: `pending`, `in_flight`, `delivered`; back to `pending` when a runner
+         *     disconnects mid-turn, `failed` after too many attempts.
+         * @enum {string}
+         */
+        MailStatus: "pending" | "in_flight" | "delivered" | "failed";
+        /** @description One long-term memory, an agent's own or global. */
+        MemoryEntry: {
+            key: string;
+            content: string;
+            /** Format: date-time */
+            updated_at: string;
+            /** @description Global memory only: the agent that wrote it; absent = the operator. */
+            author?: string | null;
+        };
+        /** @description One model a picker offers. */
+        ModelInfo: {
+            /** @description The id an agent or provider uses as its `model`. */
+            id: string;
+            /** @description Display name, when the provider gives one. */
+            name?: string | null;
+        };
+        /** @description Models to offer for a provider. Any other id can still be typed. */
+        ModelList: {
+            models: components["schemas"]["ModelInfo"][];
+            source: components["schemas"]["ModelSource"];
+        };
+        /** @description A text-to-speech model of the account. */
+        ModelOption: {
+            model_id: string;
+            name: string;
+            languages: components["schemas"]["LanguageOption"][];
+        };
+        /**
+         * @description Where a model list comes from.
+         * @enum {string}
+         */
+        ModelSource: "provider" | "suggested";
+        OAuthStart: {
+            /** @description Open this in a browser on the daemon's computer to sign in. */
+            authorization_url: string;
+        };
+        PostMessage: {
+            /**
+             * @description 1..32768 bytes after trimming. `@name` mentions of existing agents are
+             *     stored as `<@agent-id>` tokens.
+             */
+            body: string;
+        };
+        /**
+         * @description What an agent is doing right now, for status badges.
+         * @enum {string}
+         */
+        Presence: "working" | "awake" | "starting" | "sleeping" | "error";
+        /** @description USD per 1M tokens. */
+        Price: {
+            /** Format: double */
+            input: number;
+            /** Format: double */
+            output: number;
+            /**
+             * Format: double
+             * @description `null`: unknown; calls with cache reads then cost an unknown amount.
+             */
+            cache_read?: number | null;
+            /**
+             * Format: double
+             * @description `null`: unknown; calls with cache writes then cost an unknown amount.
+             */
+            cache_write?: number | null;
+        };
+        /** @description One model's price and where it comes from. */
+        PriceEntry: components["schemas"]["Price"] & {
+            provider_kind: components["schemas"]["ProviderKind"];
+            /** @description API model id, as agents send it. */
+            model: string;
+            /** @description When the price was read off the source, or set by the operator (`YYYY-MM-DD`). */
+            checked?: string | null;
+            /** @description The provider's pricing page; `null` for the operator's own price. */
+            source?: string | null;
+        };
+        /**
+         * @description A configured model provider. Its credential lives in the daemon's secret
+         *     store, never here.
+         */
+        Provider: {
+            /** Format: uuid */
+            id: string;
+            /** @description Unique display name, e.g. `openai-work`. */
+            name: string;
+            kind: components["schemas"]["ProviderKind"];
+            /** @description Upstream override; `null` uses the kind's default. */
+            base_url?: string | null;
+            /** @description Bedrock / Vertex region, e.g. `us-east-1`, `us-east5`, `global`. */
+            region?: string | null;
+            /** @description Google Cloud project (Vertex). */
+            project?: string | null;
+            /** @description Model for agents that do not pick one. */
+            default_model?: string | null;
+            /** Format: date-time */
+            created_at: string;
+        };
+        /**
+         * @description The API family of a provider. Decides the runner driver, the upstream
+         *     URL and how the daemon's model proxy adds the credential.
+         * @enum {string}
+         */
+        ProviderKind: "anthropic" | "openai" | "gemini" | "bedrock" | "vertex" | "openrouter" | "ollama" | "openai_compatible" | "codex" | "gemini_cli";
+        ProviderView: components["schemas"]["Provider"] & {
+            /** @description Whether an API key is stored. The key itself is never returned. */
+            has_key: boolean;
+        };
+        PutMemory: {
+            /** @description 1-128 bytes; an existing key is overwritten. */
+            key: string;
+            content: string;
+        };
+        /** @description One question on a card. */
+        Question: {
+            /** @description Unique within the card; defaults to `q1`, `q2`, ... */
+            id?: string;
+            /** @description The question text. */
+            prompt: string;
+            kind: components["schemas"]["QuestionKind"];
+            /** @description Options for `single` and `multi` (2..12). Empty for `text`. */
+            choices?: components["schemas"]["Choice"][];
+            /** @description `single`/`multi`: also offer a free-text "other" answer. */
+            allow_custom?: boolean;
+        };
+        /** @description The answer to one question. */
+        QuestionAnswer: {
+            question_id: string;
+            /** @description Selected choice values (`single`: at most one). */
+            values?: string[];
+            /** @description Free text (`text` questions, or "other" when `allow_custom`). */
+            custom?: string | null;
+        };
+        /** @description Payload of a `question_answered` event. A card is answered at most once. */
+        QuestionAnswered: {
+            /**
+             * Format: int64
+             * @description Id of the `question` event.
+             */
+            question: number;
+            answers: components["schemas"]["QuestionAnswer"][];
+            /**
+             * Format: int64
+             * @description The user message that carried the answer to the agent; `null` for
+             *     approval cards (the decision goes to the waiting tool call).
+             */
+            message_id?: number | null;
+        };
+        /** @description A card with one or more questions, answered together. */
+        QuestionCard: {
+            /** @description Optional heading. */
+            title?: string | null;
+            /** @description 1..8 questions, shown in order. */
+            questions: components["schemas"]["Question"][];
+        };
+        /** @description Payload of a `question` event: the card as shown in the chat. */
+        QuestionEvent: {
+            /**
+             * Format: int32
+             * @description Card format version (currently 1).
+             */
+            version: number;
+            card: components["schemas"]["QuestionCard"];
+            approval?: components["schemas"]["Approval"] | null;
+        };
+        /**
+         * @description How a question is answered.
+         * @enum {string}
+         */
+        QuestionKind: "single" | "multi" | "text";
+        /** @description A prompt an agent receives on a cron schedule. */
+        Routine: {
+            /** Format: int64 */
+            id: number;
+            agent_id: components["schemas"]["AgentId"];
+            name: string;
+            /** @description Cron expression (5 fields, minute granularity) or an alias like `@hourly`. */
+            schedule: string;
+            /** @description IANA time zone the schedule is evaluated in, e.g. `Europe/Berlin`. */
+            timezone: string;
+            /** @description Message sent to the agent on every run. */
+            prompt: string;
+            enabled: boolean;
+            /**
+             * Format: date-time
+             * @description Next scheduled run; null while disabled.
+             */
+            next_run_at?: string | null;
+            /** Format: date-time */
+            last_run_at?: string | null;
+            /** Format: date-time */
+            created_at: string;
+        };
+        /** @description One execution of a routine: the message it queued and how that went. */
+        RoutineRun: {
+            /** Format: int64 */
+            id: number;
+            /** Format: int64 */
+            routine_id: number;
+            /** Format: int64 */
+            message_id?: number | null;
+            trigger: components["schemas"]["RunTrigger"];
+            status?: components["schemas"]["MailStatus"] | null;
+            /** @description Last delivery error, if any. */
+            error?: string | null;
+            /** Format: date-time */
+            created_at: string;
+        };
+        /** @description A routine plus a readable form of its schedule. */
+        RoutineView: components["schemas"]["Routine"] & {
+            /** @description English description of the schedule, e.g. "At 09:00 on Monday through Friday". */
+            schedule_text: string;
+        };
+        /**
+         * @description What started a run.
+         * @enum {string}
+         */
+        RunTrigger: "schedule" | "manual";
+        SandboxInfo: {
+            /** @description Backend kind, e.g. `docker`; null before provisioning. */
+            backend?: string | null;
+            /** @description Backend-specific id (container id, ...). */
+            sandbox_id?: string | null;
+            state?: components["schemas"]["SandboxState"] | null;
+            presence: components["schemas"]["Presence"];
+            connected: boolean;
+            /**
+             * Format: int64
+             * @description Seconds since the last activity; pauses at `warm_after_s`, stops at
+             *     `idle_timeout_s`.
+             */
+            idle_s: number;
+            /**
+             * Format: int64
+             * @description Warm sleep (pause) after this long idle; `null`: never.
+             */
+            warm_after_s?: number | null;
+            /**
+             * Format: int64
+             * @description Cold sleep (stop) after this long idle; `null`: never.
+             */
+            idle_timeout_s?: number | null;
+            /** @description Whether the backend can snapshot and restore. */
+            snapshots_supported: boolean;
+        };
+        /**
+         * @description A sandbox's state as its backend reports it.
+         * @enum {string}
+         */
+        SandboxState: "running" | "paused" | "stopped" | "missing";
+        /** @description Who sent a mailbox message. */
+        Sender: {
+            /** @enum {string} */
+            kind: "user";
+        } | {
+            /** @description Another agent, via the `send_message` MCP tool. */
+            id: components["schemas"]["AgentId"];
+            /** @enum {string} */
+            kind: "agent";
+        } | {
+            /**
+             * Format: int64
+             * @description A scheduled routine (by routine id).
+             */
+            id: number;
+            /** @enum {string} */
+            kind: "routine";
+        };
+        SetPrice: components["schemas"]["Price"] & {
+            provider_kind: components["schemas"]["ProviderKind"];
+            /** @description API model id, as agents send it. */
+            model: string;
+        };
+        SharedFileView: {
+            name: string;
+            /** Format: int64 */
+            size: number;
+            /** @description The text, for UTF-8 files up to 2 MiB; otherwise `null`. */
+            content?: string | null;
+            /**
+             * @description For .html and .htm files: the page (relative to the daemon), sandboxed, with
+             *     no access to the app or the operator token.
+             */
+            page_url?: string | null;
+            /**
+             * @description The file itself (relative to the daemon), a signed link that works for
+             *     30 minutes: pages and PDFs open inline, other files download. Add
+             *     `&download=1` to always download.
+             */
+            url: string;
+        };
+        /**
+         * @description Where a connector stands with OAuth.
+         * @enum {string}
+         */
+        SignIn: "signed_out" | "signed_in" | "expired";
+        /**
+         * @description How deeply a sandbox sleeps.
+         * @enum {string}
+         */
+        SleepLevel: "warm" | "cold" | "archived";
+        /** @description A snapshot of an agent's sandbox. */
+        SnapshotRecord: {
+            /** Format: int64 */
+            id: number;
+            agent_id: components["schemas"]["AgentId"];
+            /** @description Backend that created it, e.g. `docker`. */
+            backend: string;
+            /** @description Backend-specific reference (e.g. an image tag). */
+            snapshot_ref: string;
+            label: string;
+            /** @description What the snapshot covers. */
+            scope: string;
+            /** Format: date-time */
+            created_at: string;
+        };
+        SnapshotReq: {
+            /** @description Free-form label (default `manual`, max 64 bytes). */
+            label?: string;
+        };
+        SpeechRequest: {
+            /** @description What to say: 1-4096 characters. */
+            text: string;
+            agent_id?: components["schemas"]["AgentId"] | null;
+        };
+        /** @description One recorded event in an agent's chat. */
+        StoredEvent: {
+            /** Format: int64 */
+            id: number;
+            agent_id: components["schemas"]["AgentId"];
+            turn_id?: string | null;
+            kind: string;
+            /** @description The event body; for runner events this is a `TurnEvent`. */
+            payload: Record<string, never>;
+            /** Format: date-time */
+            created_at: string;
+        };
+        /** @description What was said. Both providers answer `{"text": ...}` (plus fields we ignore). */
+        Transcript: {
+            text: string;
+        };
+        /** @description Pushed to every UI WebSocket client. */
+        UiEvent: {
+            event: components["schemas"]["StoredEvent"];
+            /** @enum {string} */
+            type: "event";
+        } | {
+            agent_id: components["schemas"]["AgentId"];
+            turn_id: string;
+            text: string;
+            /** @enum {string} */
+            type: "delta";
+        } | {
+            agent: components["schemas"]["AgentView"];
+            /** @enum {string} */
+            type: "agent";
+        } | {
+            agent_id: components["schemas"]["AgentId"];
+            /** @enum {string} */
+            type: "agent_deleted";
+        } | {
+            message: components["schemas"]["MailMessage"];
+            /** @enum {string} */
+            type: "message";
+        } | {
+            agent_id: components["schemas"]["AgentId"];
+            /** @enum {string} */
+            type: "memory_changed";
+        } | {
+            /** @enum {string} */
+            type: "global_memory_changed";
+        } | {
+            agent_id: components["schemas"]["AgentId"];
+            /** @enum {string} */
+            type: "routines_changed";
+        } | {
+            agents: components["schemas"]["AgentId"][];
+            /** @enum {string} */
+            type: "call";
+        };
+        /** @description Partial profile update. Omitted fields stay unchanged. */
+        UpdateAgent: {
+            /**
+             * @description New name (same rules as on create). The agent keeps its id, sandbox,
+             *     disk, memory and history.
+             * @example ada
+             */
+            name?: string | null;
+            description?: string | null;
+            /** @description New system instructions; a connected runner applies them from its next turn. */
+            instructions?: string | null;
+            character?: components["schemas"]["AvatarCharacter"] | null;
+            /**
+             * Format: uuid
+             * @description New model provider; `null` goes back to the daemon's default. Changing
+             *     provider or model restarts the agent's computer (its disk is kept).
+             */
+            provider_id?: string | null;
+            /** @description New model id; `null` goes back to the provider's default model. */
+            model?: string | null;
+            /** @description Pin to the top of the agent list (or unpin). */
+            pinned?: boolean | null;
+        };
+        UpdateConnector: {
+            name?: string | null;
+            url?: string | null;
+            /** @description New token; `null` removes the stored one. */
+            token?: string | null;
+            /**
+             * @description Own OAuth app; `null` goes back to dynamic client registration.
+             *     Changing the app signs the connector out.
+             */
+            client_id?: string | null;
+            /**
+             * @description `null` removes the stored client secret. Changing the URL, client id
+             *     or issuer without sending a new secret removes it too.
+             */
+            client_secret?: string | null;
+            scopes?: string[] | null;
+            /** @description Issuer of the own OAuth app. */
+            issuer?: string | null;
+        };
+        UpdateProvider: {
+            name?: string | null;
+            /** @description `null` goes back to the kind's default upstream. */
+            base_url?: string | null;
+            region?: string | null;
+            project?: string | null;
+            default_model?: string | null;
+            /** @description New API key; `null` removes the stored one. */
+            api_key?: string | null;
+        };
+        /** @description Partial update; omitted fields stay unchanged. */
+        UpdateRoutine: {
+            name?: string | null;
+            schedule?: string | null;
+            prompt?: string | null;
+            timezone?: string | null;
+            enabled?: boolean | null;
+        };
+        UpdateVoice: components["schemas"]["VoiceSettings"] & {
+            /**
+             * @description New API key for `provider`; `null` removes it, omitted keeps it. Kept in the
+             *     daemon's secret store; never returned.
+             */
+            api_key?: string | null;
+        };
+        UsageGroup: components["schemas"]["UsageTotals"] & {
+            /**
+             * @description UTC date, agent id, provider id (`default`: the daemon's key) or
+             *     `<provider kind>/<model>`.
+             */
+            key: string;
+            /** @description Date, agent name, provider name or model id. */
+            label: string;
+        };
+        UsageReport: {
+            totals: components["schemas"]["UsageTotals"];
+            groups: components["schemas"]["UsageGroup"][];
+        };
+        /** @description Sums for a time range or group. Costs are estimates from the price table. */
+        UsageTotals: {
+            /** Format: int64 */
+            calls: number;
+            /**
+             * Format: int64
+             * @description Input tokens without cache reads and writes.
+             */
+            input_tokens: number;
+            /** Format: int64 */
+            output_tokens: number;
+            /** Format: int64 */
+            cache_read_tokens: number;
+            /** Format: int64 */
+            cache_write_tokens: number;
+            /**
+             * Format: double
+             * @description Estimated USD; `null` when no call here could be priced.
+             */
+            cost_usd?: number | null;
+            /**
+             * Format: int64
+             * @description Calls with tokens but no known price (not in `cost_usd`).
+             */
+            unknown_cost_calls: number;
+            /**
+             * Format: int64
+             * @description Successful calls whose API reported no tokens.
+             */
+            not_tracked_calls: number;
+        };
+        VoiceCatalog: {
+            /** @description The account's voices (`ElevenLabs`); empty for other providers. */
+            voices: components["schemas"]["VoiceOption"][];
+            /** @description Text-to-speech models of the account (`ElevenLabs`); empty otherwise. */
+            tts_models: components["schemas"]["ModelOption"][];
+        };
+        /** @description An `ElevenLabs` voice the operator can pick. */
+        VoiceOption: {
+            voice_id: string;
+            name: string;
+            /** @description `premade`, `cloned`, `generated`, `professional`, ... */
+            category?: string | null;
+            /** @description Languages the voice is verified for (codes), else its `language` label. */
+            languages: string[];
+            accent?: string | null;
+            gender?: string | null;
+            preview_url?: string | null;
+        };
+        /**
+         * @description A speech and transcription provider.
+         * @enum {string}
+         */
+        VoiceProvider: "elevenlabs" | "openrouter";
+        VoiceProviderView: {
+            kind: components["schemas"]["VoiceProvider"];
+            /** @description Whether an API key is stored. The key itself is never returned. */
+            has_key: boolean;
+            default_tts_model: string;
+            /** @description `null`: no default; pick a voice of your account. */
+            default_voice?: string | null;
+            default_stt_model: string;
+        };
+        /** @description Voice settings (no secrets), stored as JSON under the `voice` setting. */
+        VoiceSettings: {
+            /** @description `false`: voice is switched off; no speech, dictation or calls. */
+            enabled?: boolean;
+            provider?: components["schemas"]["VoiceProvider"] | null;
+            /** @description Text-to-speech model; `null`: the provider's default. */
+            tts_model?: string | null;
+            /**
+             * @description Voice id (`ElevenLabs`) or name (`OpenRouter`); `null`: the
+             *     provider's default. Letters, digits, `.`, `_` and `-`.
+             */
+            voice?: string | null;
+            /** @description Speech-to-text model; `null`: the provider's default. */
+            stt_model?: string | null;
+            /**
+             * @description Voices by agent id, so agents in a call sound different; the others
+             *     speak with `voice`.
+             */
+            agent_voices?: {
+                [key: string]: string;
+            };
+            /**
+             * Format: float
+             * @description Speaking speed, 0.7-1.2 (`ElevenLabs`); `null`: normal.
+             */
+            speed?: number | null;
+            /**
+             * @description Language of speech and dictation, ISO 639-1 or 639-3 (`de`, `fil`);
+             *     `null`: detected.
+             */
+            language?: string | null;
+        };
+        VoiceView: components["schemas"]["VoiceSettings"] & {
+            /** @description Every provider with its defaults and whether its key is stored. */
+            providers: components["schemas"]["VoiceProviderView"][];
+        };
     };
-    UpdateConnector: {
-      name?: string | null;
-      url?: string | null;
-      /** @description New token; `null` removes the stored one. */
-      token?: string | null;
-      /**
-       * @description Own OAuth app; `null` goes back to dynamic client registration.
-       *     Changing the app signs the connector out.
-       */
-      client_id?: string | null;
-      /**
-       * @description `null` removes the stored client secret. Changing the URL, client id
-       *     or issuer without sending a new secret removes it too.
-       */
-      client_secret?: string | null;
-      scopes?: string[] | null;
-      /** @description Issuer of the own OAuth app. */
-      issuer?: string | null;
-    };
-    UpdateProvider: {
-      name?: string | null;
-      /** @description `null` goes back to the kind's default upstream. */
-      base_url?: string | null;
-      region?: string | null;
-      project?: string | null;
-      default_model?: string | null;
-      /** @description New API key; `null` removes the stored one. */
-      api_key?: string | null;
-    };
-    /** @description Partial update; omitted fields stay unchanged. */
-    UpdateRoutine: {
-      name?: string | null;
-      schedule?: string | null;
-      prompt?: string | null;
-      timezone?: string | null;
-      enabled?: boolean | null;
-    };
-    UpdateVoice: components["schemas"]["VoiceSettings"] & {
-      /**
-       * @description New API key for `provider`; `null` removes it, omitted keeps it.
-       *     Stored in the OS keychain; never returned.
-       */
-      api_key?: string | null;
-    };
-    UsageGroup: components["schemas"]["UsageTotals"] & {
-      /**
-       * @description UTC date, agent id, provider id (`default`: the daemon's key) or
-       *     `<provider kind>/<model>`.
-       */
-      key: string;
-      /** @description Date, agent name, provider name or model id. */
-      label: string;
-    };
-    UsageReport: {
-      totals: components["schemas"]["UsageTotals"];
-      groups: components["schemas"]["UsageGroup"][];
-    };
-    /** @description Sums for a time range or group. Costs are estimates from the price table. */
-    UsageTotals: {
-      /** Format: int64 */
-      calls: number;
-      /**
-       * Format: int64
-       * @description Input tokens without cache reads and writes.
-       */
-      input_tokens: number;
-      /** Format: int64 */
-      output_tokens: number;
-      /** Format: int64 */
-      cache_read_tokens: number;
-      /** Format: int64 */
-      cache_write_tokens: number;
-      /**
-       * Format: double
-       * @description Estimated USD; `null` when no call here could be priced.
-       */
-      cost_usd?: number | null;
-      /**
-       * Format: int64
-       * @description Calls with tokens but no known price (not in `cost_usd`).
-       */
-      unknown_cost_calls: number;
-      /**
-       * Format: int64
-       * @description Successful calls whose API reported no tokens.
-       */
-      not_tracked_calls: number;
-    };
-    VoiceCatalog: {
-      /** @description The account's voices (`ElevenLabs`); empty for other providers. */
-      voices: components["schemas"]["VoiceOption"][];
-      /** @description Text-to-speech models of the account (`ElevenLabs`); empty otherwise. */
-      tts_models: components["schemas"]["ModelOption"][];
-    };
-    /** @description An `ElevenLabs` voice the operator can pick. */
-    VoiceOption: {
-      voice_id: string;
-      name: string;
-      /** @description `premade`, `cloned`, `generated`, `professional`, ... */
-      category?: string | null;
-      /** @description Languages the voice is verified for (codes), else its `language` label. */
-      languages: string[];
-      accent?: string | null;
-      gender?: string | null;
-      preview_url?: string | null;
-    };
-    /** @enum {string} */
-    VoiceProvider: "elevenlabs" | "openrouter";
-    VoiceProviderView: {
-      kind: components["schemas"]["VoiceProvider"];
-      /** @description Whether an API key is stored. The key itself is never returned. */
-      has_key: boolean;
-      default_tts_model: string;
-      /** @description `null`: no default; pick a voice of your account. */
-      default_voice?: string | null;
-      default_stt_model: string;
-    };
-    /** @description Voice settings (no secrets), stored as JSON under the `voice` setting. */
-    VoiceSettings: {
-      /** @description `false`: voice is switched off; no speech, dictation or calls. */
-      enabled?: boolean;
-      provider?: components["schemas"]["VoiceProvider"] | null;
-      /** @description Text-to-speech model; `null`: the provider's default. */
-      tts_model?: string | null;
-      /**
-       * @description Voice id (`ElevenLabs`) or name (`OpenRouter`); `null`: the
-       *     provider's default. Letters, digits, `.`, `_` and `-`.
-       */
-      voice?: string | null;
-      /** @description Speech-to-text model; `null`: the provider's default. */
-      stt_model?: string | null;
-      /**
-       * @description Voices by agent id, so agents in a call sound different; the others
-       *     speak with `voice`.
-       */
-      agent_voices?: {
-        [key: string]: string;
-      };
-      /**
-       * Format: float
-       * @description Speaking speed, 0.7-1.2 (`ElevenLabs`); `null`: normal.
-       */
-      speed?: number | null;
-      /**
-       * @description Language of speech and dictation, ISO 639-1 or 639-3 (`de`, `fil`);
-       *     `null`: detected.
-       */
-      language?: string | null;
-    };
-    VoiceView: components["schemas"]["VoiceSettings"] & {
-      /** @description Every provider with its defaults and whether its key is stored. */
-      providers: components["schemas"]["VoiceProviderView"][];
-    };
-  };
-  responses: never;
-  parameters: never;
-  requestBodies: never;
-  headers: never;
-  pathItems: never;
+    responses: never;
+    parameters: never;
+    requestBodies: never;
+    headers: never;
+    pathItems: never;
 }
 export type $defs = Record<string, never>;
 export interface operations {
-  page: {
-    parameters: {
-      query?: {
-        /** @description Expiry of the link (unix seconds), from `url`. */
-        exp?: number;
-        /** @description Signature of the link, from `url`. */
-        sig?: string;
-        /** @description Any value: send the file as a download. */
-        download?: string;
-      };
-      header?: never;
-      path: {
-        /** @description Agent id (UUID) */
-        id: string;
-        /** @description Id of the `file` event */
-        file_id: number;
-      };
-      cookie?: never;
-    };
-    requestBody?: never;
-    responses: {
-      /** @description The file */
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/octet-stream": number[];
-        };
-      };
-      /** @description Missing or wrong API token */
-      401: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["ErrorBody"];
-        };
-      };
-      /** @description Unknown file */
-      404: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["ErrorBody"];
-        };
-      };
-    };
-  };
-  list_agents: {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    requestBody?: never;
-    responses: {
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["AgentView"][];
-        };
-      };
-      /** @description Missing or wrong API token */
-      401: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["ErrorBody"];
-        };
-      };
-    };
-  };
-  create_agent: {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    requestBody: {
-      content: {
-        "application/json": components["schemas"]["CreateAgent"];
-      };
-    };
-    responses: {
-      201: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["AgentView"];
-        };
-      };
-      /** @description Invalid name or texts */
-      400: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["ErrorBody"];
-        };
-      };
-      /** @description Missing or wrong API token */
-      401: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["ErrorBody"];
-        };
-      };
-      /** @description Name already taken, or the agent limit (`FERROBOT_MAX_AGENTS`) is reached */
-      409: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["ErrorBody"];
-        };
-      };
-      /** @description Sandbox backend error */
-      502: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["ErrorBody"];
-        };
-      };
-    };
-  };
-  get_agent: {
-    parameters: {
-      query?: never;
-      header?: never;
-      path: {
-        /** @description Agent id (UUID) */
-        id: string;
-      };
-      cookie?: never;
-    };
-    requestBody?: never;
-    responses: {
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["AgentView"];
-        };
-      };
-      /** @description Missing or wrong API token */
-      401: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["ErrorBody"];
-        };
-      };
-      /** @description Unknown agent */
-      404: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["ErrorBody"];
-        };
-      };
-    };
-  };
-  delete_agent: {
-    parameters: {
-      query?: {
-        /**
-         * @description Keep the agent's persistent disk (home volume) and snapshot images.
-         *     By default they are deleted with the agent.
-         */
-        keep_data?: boolean;
-      };
-      header?: never;
-      path: {
-        /** @description Agent id (UUID) */
-        id: string;
-      };
-      cookie?: never;
-    };
-    requestBody?: never;
-    responses: {
-      /** @description Deleted */
-      204: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content?: never;
-      };
-      /** @description Missing or wrong API token */
-      401: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["ErrorBody"];
-        };
-      };
-      /** @description Unknown agent */
-      404: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["ErrorBody"];
-        };
-      };
-      /** @description Sandbox backend error */
-      502: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["ErrorBody"];
-        };
-      };
-    };
-  };
-  update_agent: {
-    parameters: {
-      query?: never;
-      header?: never;
-      path: {
-        /** @description Agent id (UUID) */
-        id: string;
-      };
-      cookie?: never;
-    };
-    requestBody: {
-      content: {
-        "application/json": components["schemas"]["UpdateAgent"];
-      };
-    };
-    responses: {
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["AgentView"];
-        };
-      };
-      400: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["ErrorBody"];
-        };
-      };
-      /** @description Missing or wrong API token */
-      401: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["ErrorBody"];
-        };
-      };
-      /** @description Unknown agent */
-      404: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["ErrorBody"];
-        };
-      };
-      /** @description Name already taken */
-      409: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["ErrorBody"];
-        };
-      };
-    };
-  };
-  get_avatar: {
-    parameters: {
-      query?: never;
-      header?: never;
-      path: {
-        /** @description Agent id (UUID) */
-        id: string;
-      };
-      cookie?: never;
-    };
-    requestBody?: never;
-    responses: {
-      /** @description The image */
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "image/*": number[];
-        };
-      };
-      /** @description Missing or wrong API token */
-      401: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["ErrorBody"];
-        };
-      };
-      /** @description Unknown agent or no avatar */
-      404: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["ErrorBody"];
-        };
-      };
-    };
-  };
-  put_avatar: {
-    parameters: {
-      query?: never;
-      header?: never;
-      path: {
-        /** @description Agent id (UUID) */
-        id: string;
-      };
-      cookie?: never;
-    };
-    /** @description PNG, JPEG, WebP or GIF, at most 512 KiB */
-    requestBody: {
-      content: {
-        "image/*": number[];
-      };
-    };
-    responses: {
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["AgentView"];
-        };
-      };
-      /** @description Not a supported image */
-      400: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["ErrorBody"];
-        };
-      };
-      /** @description Missing or wrong API token */
-      401: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["ErrorBody"];
-        };
-      };
-      /** @description Unknown agent */
-      404: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["ErrorBody"];
-        };
-      };
-    };
-  };
-  delete_avatar: {
-    parameters: {
-      query?: never;
-      header?: never;
-      path: {
-        /** @description Agent id (UUID) */
-        id: string;
-      };
-      cookie?: never;
-    };
-    requestBody?: never;
-    responses: {
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["AgentView"];
-        };
-      };
-      /** @description Missing or wrong API token */
-      401: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["ErrorBody"];
-        };
-      };
-      /** @description Unknown agent */
-      404: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["ErrorBody"];
-        };
-      };
-    };
-  };
-  agent_connectors: {
-    parameters: {
-      query?: never;
-      header?: never;
-      path: {
-        /** @description Agent id (UUID) */
-        id: string;
-      };
-      cookie?: never;
-    };
-    requestBody?: never;
-    responses: {
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": string[];
-        };
-      };
-      /** @description Missing or wrong API token */
-      401: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["ErrorBody"];
-        };
-      };
-      /** @description Unknown agent */
-      404: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["ErrorBody"];
-        };
-      };
-    };
-  };
-  set_agent_connectors: {
-    parameters: {
-      query?: never;
-      header?: never;
-      path: {
-        /** @description Agent id (UUID) */
-        id: string;
-      };
-      cookie?: never;
-    };
-    requestBody: {
-      content: {
-        "application/json": string[];
-      };
-    };
-    responses: {
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": string[];
-        };
-      };
-      /** @description Missing or wrong API token */
-      401: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["ErrorBody"];
-        };
-      };
-      /** @description Unknown agent or connector */
-      404: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["ErrorBody"];
-        };
-      };
-    };
-  };
-  list_events: {
-    parameters: {
-      query?: {
-        /** @description Return events with an id greater than this (default 0). */
-        after?: number;
-      };
-      header?: never;
-      path: {
-        /** @description Agent id (UUID) */
-        id: string;
-      };
-      cookie?: never;
-    };
-    requestBody?: never;
-    responses: {
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["StoredEvent"][];
-        };
-      };
-      /** @description Missing or wrong API token */
-      401: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["ErrorBody"];
-        };
-      };
-      /** @description Unknown agent */
-      404: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["ErrorBody"];
-        };
-      };
-    };
-  };
-  exec: {
-    parameters: {
-      query?: never;
-      header?: never;
-      path: {
-        /** @description Agent id (UUID) */
-        id: string;
-      };
-      cookie?: never;
-    };
-    requestBody: {
-      content: {
-        "application/json": components["schemas"]["ExecReq"];
-      };
-    };
-    responses: {
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["ExecOutput"];
-        };
-      };
-      400: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["ErrorBody"];
-        };
-      };
-      /** @description Missing or wrong API token */
-      401: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["ErrorBody"];
-        };
-      };
-      /** @description Unknown agent */
-      404: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["ErrorBody"];
-        };
-      };
-      /** @description No sandbox */
-      409: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["ErrorBody"];
-        };
-      };
-      /** @description Sandbox backend error */
-      502: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["ErrorBody"];
-        };
-      };
-    };
-  };
-  shared_file: {
-    parameters: {
-      query?: never;
-      header?: never;
-      path: {
-        /** @description Agent id (UUID) */
-        id: string;
-        /** @description Id of the `file` event */
-        file_id: number;
-      };
-      cookie?: never;
-    };
-    requestBody?: never;
-    responses: {
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["SharedFileView"];
-        };
-      };
-      /** @description Missing or wrong API token */
-      401: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["ErrorBody"];
-        };
-      };
-      /** @description Unknown agent or file */
-      404: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["ErrorBody"];
-        };
-      };
-    };
-  };
-  interrupt: {
-    parameters: {
-      query?: never;
-      header?: never;
-      path: {
-        /** @description Agent id (UUID) */
-        id: string;
-      };
-      cookie?: never;
-    };
-    requestBody?: never;
-    responses: {
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["Interrupted"];
-        };
-      };
-      /** @description Missing or wrong API token */
-      401: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["ErrorBody"];
-        };
-      };
-      /** @description Unknown agent */
-      404: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["ErrorBody"];
-        };
-      };
-    };
-  };
-  list_memory: {
-    parameters: {
-      query?: {
-        /** @description Full-text search; empty lists the most recently updated entries. */
-        q?: string;
-        /** @description 1-200, default 100. */
-        limit?: number;
-      };
-      header?: never;
-      path: {
-        /** @description Agent id (UUID) */
-        id: string;
-      };
-      cookie?: never;
-    };
-    requestBody?: never;
-    responses: {
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["MemoryEntry"][];
-        };
-      };
-      /** @description Missing or wrong API token */
-      401: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["ErrorBody"];
-        };
-      };
-      /** @description Unknown agent */
-      404: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["ErrorBody"];
-        };
-      };
-    };
-  };
-  put_memory: {
-    parameters: {
-      query?: never;
-      header?: never;
-      path: {
-        /** @description Agent id (UUID) */
-        id: string;
-      };
-      cookie?: never;
-    };
-    requestBody: {
-      content: {
-        "application/json": components["schemas"]["PutMemory"];
-      };
-    };
-    responses: {
-      /** @description Stored */
-      204: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content?: never;
-      };
-      400: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["ErrorBody"];
-        };
-      };
-      /** @description Missing or wrong API token */
-      401: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["ErrorBody"];
-        };
-      };
-      /** @description Unknown agent */
-      404: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["ErrorBody"];
-        };
-      };
-    };
-  };
-  delete_memory: {
-    parameters: {
-      query?: never;
-      header?: never;
-      path: {
-        /** @description Agent id (UUID) */
-        id: string;
-        /** @description Memory key */
-        key: string;
-      };
-      cookie?: never;
-    };
-    requestBody?: never;
-    responses: {
-      /** @description Deleted */
-      204: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content?: never;
-      };
-      /** @description Missing or wrong API token */
-      401: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["ErrorBody"];
-        };
-      };
-      /** @description Unknown agent or key */
-      404: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["ErrorBody"];
-        };
-      };
-    };
-  };
-  list_messages: {
-    parameters: {
-      query?: never;
-      header?: never;
-      path: {
-        /** @description Agent id (UUID) */
-        id: string;
-      };
-      cookie?: never;
-    };
-    requestBody?: never;
-    responses: {
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["MailMessage"][];
-        };
-      };
-      /** @description Missing or wrong API token */
-      401: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["ErrorBody"];
-        };
-      };
-      /** @description Unknown agent */
-      404: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["ErrorBody"];
-        };
-      };
-    };
-  };
-  post_message: {
-    parameters: {
-      query?: never;
-      header?: never;
-      path: {
-        /** @description Agent id (UUID) */
-        id: string;
-      };
-      cookie?: never;
-    };
-    requestBody: {
-      content: {
-        "application/json": components["schemas"]["PostMessage"];
-      };
-    };
-    responses: {
-      /** @description Queued for delivery */
-      202: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["MailMessage"];
-        };
-      };
-      400: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["ErrorBody"];
-        };
-      };
-      /** @description Missing or wrong API token */
-      401: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["ErrorBody"];
-        };
-      };
-      /** @description Unknown agent */
-      404: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["ErrorBody"];
-        };
-      };
-    };
-  };
-  answer_question: {
-    parameters: {
-      query?: never;
-      header?: never;
-      path: {
-        /** @description Agent id (UUID) */
-        id: string;
-        /** @description Id of the `question` event */
-        qid: number;
-      };
-      cookie?: never;
-    };
-    requestBody: {
-      content: {
-        "application/json": components["schemas"]["AnswerQuestion"];
-      };
-    };
-    responses: {
-      /** @description Answer queued for the agent */
-      202: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["QuestionAnswered"];
-        };
-      };
-      /** @description Answers do not fit the card */
-      400: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["ErrorBody"];
-        };
-      };
-      /** @description Missing or wrong API token */
-      401: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["ErrorBody"];
-        };
-      };
-      /** @description Unknown agent or question */
-      404: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["ErrorBody"];
-        };
-      };
-      /** @description Already answered */
-      409: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["ErrorBody"];
-        };
-      };
-    };
-  };
-  mark_read: {
-    parameters: {
-      query?: never;
-      header?: never;
-      path: {
-        /** @description Agent id (UUID) */
-        id: string;
-      };
-      cookie?: never;
-    };
-    requestBody?: never;
-    responses: {
-      /** @description Marked as read */
-      204: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content?: never;
-      };
-      /** @description Missing or wrong API token */
-      401: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["ErrorBody"];
-        };
-      };
-      /** @description Unknown agent */
-      404: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["ErrorBody"];
-        };
-      };
-    };
-  };
-  list_routines: {
-    parameters: {
-      query?: never;
-      header?: never;
-      path: {
-        /** @description Agent id (UUID) */
-        id: string;
-      };
-      cookie?: never;
-    };
-    requestBody?: never;
-    responses: {
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["RoutineView"][];
-        };
-      };
-      /** @description Missing or wrong API token */
-      401: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["ErrorBody"];
-        };
-      };
-      /** @description Unknown agent */
-      404: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["ErrorBody"];
-        };
-      };
-    };
-  };
-  create_routine: {
-    parameters: {
-      query?: never;
-      header?: never;
-      path: {
-        /** @description Agent id (UUID) */
-        id: string;
-      };
-      cookie?: never;
-    };
-    requestBody: {
-      content: {
-        "application/json": components["schemas"]["CreateRoutine"];
-      };
-    };
-    responses: {
-      201: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["RoutineView"];
-        };
-      };
-      /** @description Invalid schedule, time zone or texts */
-      400: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["ErrorBody"];
-        };
-      };
-      /** @description Missing or wrong API token */
-      401: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["ErrorBody"];
-        };
-      };
-      /** @description Unknown agent */
-      404: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["ErrorBody"];
-        };
-      };
-      /** @description Name already used by this agent */
-      409: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["ErrorBody"];
-        };
-      };
-    };
-  };
-  sandbox_info: {
-    parameters: {
-      query?: never;
-      header?: never;
-      path: {
-        /** @description Agent id (UUID) */
-        id: string;
-      };
-      cookie?: never;
-    };
-    requestBody?: never;
-    responses: {
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["SandboxInfo"];
-        };
-      };
-      /** @description Missing or wrong API token */
-      401: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["ErrorBody"];
-        };
-      };
-      /** @description Unknown agent */
-      404: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["ErrorBody"];
-        };
-      };
-    };
-  };
-  destroy_sandbox: {
-    parameters: {
-      query?: never;
-      header?: never;
-      path: {
-        /** @description Agent id (UUID) */
-        id: string;
-      };
-      cookie?: never;
-    };
-    requestBody?: never;
-    responses: {
-      /** @description Sandbox removed */
-      204: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content?: never;
-      };
-      /** @description Missing or wrong API token */
-      401: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["ErrorBody"];
-        };
-      };
-      /** @description Unknown agent */
-      404: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["ErrorBody"];
-        };
-      };
-      /** @description No sandbox */
-      409: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["ErrorBody"];
-        };
-      };
-      /** @description Sandbox backend error */
-      502: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["ErrorBody"];
-        };
-      };
-    };
-  };
-  list_snapshots: {
-    parameters: {
-      query?: never;
-      header?: never;
-      path: {
-        /** @description Agent id (UUID) */
-        id: string;
-      };
-      cookie?: never;
-    };
-    requestBody?: never;
-    responses: {
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["SnapshotRecord"][];
-        };
-      };
-      /** @description Missing or wrong API token */
-      401: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["ErrorBody"];
-        };
-      };
-      /** @description Unknown agent */
-      404: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["ErrorBody"];
-        };
-      };
-    };
-  };
-  create_snapshot: {
-    parameters: {
-      query?: never;
-      header?: never;
-      path: {
-        /** @description Agent id (UUID) */
-        id: string;
-      };
-      cookie?: never;
-    };
-    requestBody: {
-      content: {
-        "application/json": components["schemas"]["SnapshotReq"];
-      };
-    };
-    responses: {
-      201: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["SnapshotRecord"];
-        };
-      };
-      400: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["ErrorBody"];
-        };
-      };
-      /** @description Missing or wrong API token */
-      401: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["ErrorBody"];
-        };
-      };
-      /** @description Unknown agent */
-      404: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["ErrorBody"];
-        };
-      };
-      /** @description No sandbox */
-      409: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["ErrorBody"];
-        };
-      };
-      /** @description Backend cannot snapshot */
-      501: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["ErrorBody"];
-        };
-      };
-      /** @description Sandbox backend error */
-      502: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["ErrorBody"];
-        };
-      };
-    };
-  };
-  delete_snapshot: {
-    parameters: {
-      query?: never;
-      header?: never;
-      path: {
-        /** @description Agent id (UUID) */
-        id: string;
-        /** @description Snapshot id */
-        sid: number;
-      };
-      cookie?: never;
-    };
-    requestBody?: never;
-    responses: {
-      /** @description Deleted */
-      204: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content?: never;
-      };
-      /** @description Missing or wrong API token */
-      401: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["ErrorBody"];
-        };
-      };
-      /** @description Unknown agent or snapshot */
-      404: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["ErrorBody"];
-        };
-      };
-      /** @description Backend cannot delete snapshots */
-      501: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["ErrorBody"];
-        };
-      };
-      /** @description Sandbox backend error */
-      502: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["ErrorBody"];
-        };
-      };
-    };
-  };
-  restore_snapshot: {
-    parameters: {
-      query?: never;
-      header?: never;
-      path: {
-        /** @description Agent id (UUID) */
-        id: string;
-        /** @description Snapshot id */
-        sid: number;
-      };
-      cookie?: never;
-    };
-    requestBody?: never;
-    responses: {
-      /** @description Restored and running */
-      204: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content?: never;
-      };
-      /** @description Missing or wrong API token */
-      401: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["ErrorBody"];
-        };
-      };
-      /** @description Unknown agent or snapshot */
-      404: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["ErrorBody"];
-        };
-      };
-      /** @description No sandbox or wrong backend */
-      409: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["ErrorBody"];
-        };
-      };
-      /** @description Backend cannot restore */
-      501: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["ErrorBody"];
-        };
-      };
-      /** @description Sandbox backend error */
-      502: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["ErrorBody"];
-        };
-      };
-    };
-  };
-  stop: {
-    parameters: {
-      query?: {
-        /**
-         * @description `cold` (default) stops the sandbox; `warm` pauses it, keeping memory;
-         *     `archived` moves it to object storage (a wake restores it). Backends
-         *     that cannot pause or archive answer 501.
-         */
-        level?: components["schemas"]["SleepLevel"];
-      };
-      header?: never;
-      path: {
-        /** @description Agent id (UUID) */
-        id: string;
-      };
-      cookie?: never;
-    };
-    requestBody?: never;
-    responses: {
-      /** @description Sleeping */
-      204: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content?: never;
-      };
-      /** @description Missing or wrong API token */
-      401: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["ErrorBody"];
-        };
-      };
-      /** @description Unknown agent */
-      404: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["ErrorBody"];
-        };
-      };
-      /** @description The backend cannot pause or archive */
-      501: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["ErrorBody"];
-        };
-      };
-      /** @description Sandbox backend error */
-      502: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["ErrorBody"];
-        };
-      };
-    };
-  };
-  wake: {
-    parameters: {
-      query?: never;
-      header?: never;
-      path: {
-        /** @description Agent id (UUID) */
-        id: string;
-      };
-      cookie?: never;
-    };
-    requestBody?: never;
-    responses: {
-      /** @description Running */
-      204: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content?: never;
-      };
-      /** @description Missing or wrong API token */
-      401: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["ErrorBody"];
-        };
-      };
-      /** @description Unknown agent */
-      404: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["ErrorBody"];
-        };
-      };
-      /** @description Sandbox backend error */
-      502: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["ErrorBody"];
-        };
-      };
-    };
-  };
-  get_call: {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    requestBody?: never;
-    responses: {
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["CallView"];
-        };
-      };
-      /** @description Missing or wrong API token */
-      401: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["ErrorBody"];
-        };
-      };
-    };
-  };
-  put_call: {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    requestBody: {
-      content: {
-        "application/json": components["schemas"]["CallView"];
-      };
-    };
-    responses: {
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["CallView"];
-        };
-      };
-      /** @description More than 4 agents */
-      400: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["ErrorBody"];
-        };
-      };
-      /** @description Missing or wrong API token */
-      401: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["ErrorBody"];
-        };
-      };
-      /** @description Unknown agent */
-      404: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["ErrorBody"];
-        };
-      };
-      /** @description Voice is switched off */
-      409: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["ErrorBody"];
-        };
-      };
-    };
-  };
-  post_call_message: {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    requestBody: {
-      content: {
-        "application/json": components["schemas"]["CallMessage"];
-      };
-    };
-    responses: {
-      /** @description Queued, one message per agent */
-      202: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["MailMessage"][];
-        };
-      };
-      400: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["ErrorBody"];
-        };
-      };
-      /** @description Missing or wrong API token */
-      401: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["ErrorBody"];
-        };
-      };
-      /** @description No voice call */
-      409: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["ErrorBody"];
-        };
-      };
-    };
-  };
-  list_connectors: {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    requestBody?: never;
-    responses: {
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["ConnectorView"][];
-        };
-      };
-      /** @description Missing or wrong API token */
-      401: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["ErrorBody"];
-        };
-      };
-    };
-  };
-  create_connector: {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    requestBody: {
-      content: {
-        "application/json": components["schemas"]["CreateConnector"];
-      };
-    };
-    responses: {
-      201: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["ConnectorView"];
-        };
-      };
-      400: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["ErrorBody"];
-        };
-      };
-      /** @description Missing or wrong API token */
-      401: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["ErrorBody"];
-        };
-      };
-      /** @description Name already taken */
-      409: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["ErrorBody"];
-        };
-      };
-    };
-  };
-  delete_connector: {
-    parameters: {
-      query?: never;
-      header?: never;
-      path: {
-        /** @description Connector id (UUID) */
-        id: string;
-      };
-      cookie?: never;
-    };
-    requestBody?: never;
-    responses: {
-      /** @description Deleted */
-      204: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content?: never;
-      };
-      /** @description Missing or wrong API token */
-      401: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["ErrorBody"];
-        };
-      };
-      /** @description Unknown connector */
-      404: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["ErrorBody"];
-        };
-      };
-    };
-  };
-  update_connector: {
-    parameters: {
-      query?: never;
-      header?: never;
-      path: {
-        /** @description Connector id (UUID) */
-        id: string;
-      };
-      cookie?: never;
-    };
-    requestBody: {
-      content: {
-        "application/json": components["schemas"]["UpdateConnector"];
-      };
-    };
-    responses: {
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["ConnectorView"];
-        };
-      };
-      400: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["ErrorBody"];
-        };
-      };
-      /** @description Missing or wrong API token */
-      401: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["ErrorBody"];
-        };
-      };
-      /** @description Unknown connector */
-      404: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["ErrorBody"];
-        };
-      };
-      /** @description Name already taken */
-      409: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["ErrorBody"];
-        };
-      };
-    };
-  };
-  start_oauth: {
-    parameters: {
-      query?: never;
-      header?: never;
-      path: {
-        /** @description Connector id (UUID) */
-        id: string;
-      };
-      cookie?: never;
-    };
-    requestBody?: never;
-    responses: {
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["OAuthStart"];
-        };
-      };
-      /** @description Uses a token, or the server offers no usable OAuth */
-      400: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["ErrorBody"];
-        };
-      };
-      /** @description Missing or wrong API token */
-      401: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["ErrorBody"];
-        };
-      };
-      /** @description Unknown connector */
-      404: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["ErrorBody"];
-        };
-      };
-    };
-  };
-  sign_out: {
-    parameters: {
-      query?: never;
-      header?: never;
-      path: {
-        /** @description Connector id (UUID) */
-        id: string;
-      };
-      cookie?: never;
-    };
-    requestBody?: never;
-    responses: {
-      /** @description Signed out */
-      204: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content?: never;
-      };
-      /** @description Missing or wrong API token */
-      401: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["ErrorBody"];
-        };
-      };
-      /** @description Unknown connector */
-      404: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["ErrorBody"];
-        };
-      };
-    };
-  };
-  list_conversations: {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    requestBody?: never;
-    responses: {
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["Conversation"][];
-        };
-      };
-      /** @description Missing or wrong API token */
-      401: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["ErrorBody"];
-        };
-      };
-    };
-  };
-  conversation_thread: {
-    parameters: {
-      query?: never;
-      header?: never;
-      path: {
-        /** @description Agent id (UUID) */
-        a: string;
-        /** @description Agent id (UUID) */
-        b: string;
-      };
-      cookie?: never;
-    };
-    requestBody?: never;
-    responses: {
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["MailMessage"][];
-        };
-      };
-      /** @description Missing or wrong API token */
-      401: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["ErrorBody"];
-        };
-      };
-      /** @description Malformed agent id */
-      404: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["ErrorBody"];
-        };
-      };
-    };
-  };
-  health: {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    requestBody?: never;
-    responses: {
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["Health"];
-        };
-      };
-    };
-  };
-  list_global_memory: {
-    parameters: {
-      query?: {
-        /** @description Full-text search; empty lists the most recently updated entries. */
-        q?: string;
-        /** @description 1-200, default 100. */
-        limit?: number;
-      };
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    requestBody?: never;
-    responses: {
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["MemoryEntry"][];
-        };
-      };
-      /** @description Missing or wrong API token */
-      401: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["ErrorBody"];
-        };
-      };
-    };
-  };
-  put_global_memory: {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    requestBody: {
-      content: {
-        "application/json": components["schemas"]["PutMemory"];
-      };
-    };
-    responses: {
-      /** @description Stored */
-      204: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content?: never;
-      };
-      400: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["ErrorBody"];
-        };
-      };
-      /** @description Missing or wrong API token */
-      401: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["ErrorBody"];
-        };
-      };
-    };
-  };
-  delete_global_memory: {
-    parameters: {
-      query?: never;
-      header?: never;
-      path: {
-        /** @description Memory key */
-        key: string;
-      };
-      cookie?: never;
-    };
-    requestBody?: never;
-    responses: {
-      /** @description Deleted */
-      204: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content?: never;
-      };
-      /** @description Missing or wrong API token */
-      401: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["ErrorBody"];
-        };
-      };
-      /** @description Unknown key */
-      404: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["ErrorBody"];
-        };
-      };
-    };
-  };
-  oauth_callback: {
-    parameters: {
-      query?: {
-        state?: string;
-        code?: string;
-        /** @description RFC 9207 issuer, checked when present. */
-        iss?: string;
-      };
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    requestBody?: never;
-    responses: {
-      /** @description Signed in (HTML page) */
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "text/html": string;
-        };
-      };
-      /** @description Unknown, used, expired or failed sign-in (HTML page) */
-      400: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "text/html": string;
-        };
-      };
-      /** @description Missing or wrong API token */
-      401: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["ErrorBody"];
-        };
-      };
-    };
-  };
-  kind_models: {
-    parameters: {
-      query?: never;
-      header?: never;
-      path: {
-        /** @description Provider kind */
-        kind: components["schemas"]["ProviderKind"];
-      };
-      cookie?: never;
-    };
-    requestBody?: never;
-    responses: {
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["ModelList"];
-        };
-      };
-      /** @description Missing or wrong API token */
-      401: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["ErrorBody"];
-        };
-      };
-      /** @description Unknown kind */
-      404: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["ErrorBody"];
-        };
-      };
-    };
-  };
-  list_providers: {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    requestBody?: never;
-    responses: {
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["ProviderView"][];
-        };
-      };
-      /** @description Missing or wrong API token */
-      401: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["ErrorBody"];
-        };
-      };
-    };
-  };
-  create_provider: {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    requestBody: {
-      content: {
-        "application/json": components["schemas"]["CreateProvider"];
-      };
-    };
-    responses: {
-      201: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["ProviderView"];
-        };
-      };
-      400: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["ErrorBody"];
-        };
-      };
-      /** @description Missing or wrong API token */
-      401: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["ErrorBody"];
-        };
-      };
-      /** @description Name already taken */
-      409: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["ErrorBody"];
-        };
-      };
-    };
-  };
-  delete_provider: {
-    parameters: {
-      query?: never;
-      header?: never;
-      path: {
-        /** @description Provider id (UUID) */
-        id: string;
-      };
-      cookie?: never;
-    };
-    requestBody?: never;
-    responses: {
-      /** @description Deleted */
-      204: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content?: never;
-      };
-      /** @description Missing or wrong API token */
-      401: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["ErrorBody"];
-        };
-      };
-      /** @description Unknown provider */
-      404: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["ErrorBody"];
-        };
-      };
-      /** @description Agents still use it */
-      409: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["ErrorBody"];
-        };
-      };
-    };
-  };
-  update_provider: {
-    parameters: {
-      query?: never;
-      header?: never;
-      path: {
-        /** @description Provider id (UUID) */
-        id: string;
-      };
-      cookie?: never;
-    };
-    requestBody: {
-      content: {
-        "application/json": components["schemas"]["UpdateProvider"];
-      };
-    };
-    responses: {
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["ProviderView"];
-        };
-      };
-      400: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["ErrorBody"];
-        };
-      };
-      /** @description Missing or wrong API token */
-      401: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["ErrorBody"];
-        };
-      };
-      /** @description Unknown provider */
-      404: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["ErrorBody"];
-        };
-      };
-      /** @description Name already taken */
-      409: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["ErrorBody"];
-        };
-      };
-    };
-  };
-  chatgpt_login_status: {
-    parameters: {
-      query?: never;
-      header?: never;
-      path: {
-        /** @description Provider id (UUID) */
-        id: string;
-      };
-      cookie?: never;
-    };
-    requestBody?: never;
-    responses: {
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["LoginStatus"];
-        };
-      };
-      /** @description Missing or wrong API token */
-      401: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["ErrorBody"];
-        };
-      };
-      /** @description Unknown provider */
-      404: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["ErrorBody"];
-        };
-      };
-      /** @description Not a codex provider */
-      409: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["ErrorBody"];
-        };
-      };
-    };
-  };
-  start_chatgpt_login: {
-    parameters: {
-      query?: never;
-      header?: never;
-      path: {
-        /** @description Provider id (UUID) */
-        id: string;
-      };
-      cookie?: never;
-    };
-    requestBody?: never;
-    responses: {
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["DeviceCode"];
-        };
-      };
-      /** @description Missing or wrong API token */
-      401: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["ErrorBody"];
-        };
-      };
-      /** @description Unknown provider */
-      404: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["ErrorBody"];
-        };
-      };
-      /** @description Not a codex provider */
-      409: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["ErrorBody"];
-        };
-      };
-      /** @description codex failed on the daemon host */
-      502: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["ErrorBody"];
-        };
-      };
-    };
-  };
-  provider_models: {
-    parameters: {
-      query?: never;
-      header?: never;
-      path: {
-        /** @description Provider id (UUID) */
-        id: string;
-      };
-      cookie?: never;
-    };
-    requestBody?: never;
-    responses: {
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["ModelList"];
-        };
-      };
-      /** @description Missing or wrong API token */
-      401: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["ErrorBody"];
-        };
-      };
-      /** @description Unknown provider */
-      404: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["ErrorBody"];
-        };
-      };
-    };
-  };
-  delete_routine: {
-    parameters: {
-      query?: never;
-      header?: never;
-      path: {
-        /** @description Routine id */
-        rid: number;
-      };
-      cookie?: never;
-    };
-    requestBody?: never;
-    responses: {
-      /** @description Deleted */
-      204: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content?: never;
-      };
-      /** @description Missing or wrong API token */
-      401: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["ErrorBody"];
-        };
-      };
-      /** @description Unknown routine */
-      404: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["ErrorBody"];
-        };
-      };
-    };
-  };
-  update_routine: {
-    parameters: {
-      query?: never;
-      header?: never;
-      path: {
-        /** @description Routine id */
-        rid: number;
-      };
-      cookie?: never;
-    };
-    requestBody: {
-      content: {
-        "application/json": components["schemas"]["UpdateRoutine"];
-      };
-    };
-    responses: {
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["RoutineView"];
-        };
-      };
-      400: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["ErrorBody"];
-        };
-      };
-      /** @description Missing or wrong API token */
-      401: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["ErrorBody"];
-        };
-      };
-      /** @description Unknown routine */
-      404: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["ErrorBody"];
-        };
-      };
-      /** @description Name already used by this agent */
-      409: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["ErrorBody"];
-        };
-      };
-    };
-  };
-  run_routine: {
-    parameters: {
-      query?: never;
-      header?: never;
-      path: {
-        /** @description Routine id */
-        rid: number;
-      };
-      cookie?: never;
-    };
-    requestBody?: never;
-    responses: {
-      /** @description Prompt queued */
-      202: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["MailMessage"];
-        };
-      };
-      /** @description Missing or wrong API token */
-      401: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["ErrorBody"];
-        };
-      };
-      /** @description Unknown routine */
-      404: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["ErrorBody"];
-        };
-      };
-    };
-  };
-  list_runs: {
-    parameters: {
-      query?: never;
-      header?: never;
-      path: {
-        /** @description Routine id */
-        rid: number;
-      };
-      cookie?: never;
-    };
-    requestBody?: never;
-    responses: {
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["RoutineRun"][];
-        };
-      };
-      /** @description Missing or wrong API token */
-      401: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["ErrorBody"];
-        };
-      };
-      /** @description Unknown routine */
-      404: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["ErrorBody"];
-        };
-      };
-    };
-  };
-  get_usage: {
-    parameters: {
-      query?: {
-        /** @description Start, inclusive (RFC 3339). */
-        from?: string;
-        /** @description End, exclusive (RFC 3339). */
-        to?: string;
-        /** @description Only this agent (id). */
-        agent?: string;
-        /** @description Only this provider (id), or `default` for the daemon's own key. */
-        provider?: string;
-        /** @description Only this model id. */
-        model?: string;
-        /** @description `day` (UTC date, the default), `agent`, `provider` or `model`. */
-        group_by?: string;
-      };
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    requestBody?: never;
-    responses: {
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["UsageReport"];
-        };
-      };
-      /** @description Bad filter */
-      400: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["ErrorBody"];
-        };
-      };
-      /** @description Missing or wrong API token */
-      401: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["ErrorBody"];
-        };
-      };
-    };
-  };
-  get_prices: {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    requestBody?: never;
-    responses: {
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["PriceEntry"][];
-        };
-      };
-      /** @description Missing or wrong API token */
-      401: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["ErrorBody"];
-        };
-      };
-    };
-  };
-  put_prices: {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    requestBody: {
-      content: {
-        "application/json": components["schemas"]["SetPrice"][];
-      };
-    };
-    responses: {
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["PriceEntry"][];
-        };
-      };
-      400: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["ErrorBody"];
-        };
-      };
-      /** @description Missing or wrong API token */
-      401: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["ErrorBody"];
-        };
-      };
-    };
-  };
-  get_voice: {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    requestBody?: never;
-    responses: {
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["VoiceView"];
-        };
-      };
-      /** @description Missing or wrong API token */
-      401: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["ErrorBody"];
-        };
-      };
-    };
-  };
-  put_voice: {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    requestBody: {
-      content: {
-        "application/json": components["schemas"]["UpdateVoice"];
-      };
-    };
-    responses: {
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["VoiceView"];
-        };
-      };
-      400: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["ErrorBody"];
-        };
-      };
-      /** @description Missing or wrong API token */
-      401: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["ErrorBody"];
-        };
-      };
-    };
-  };
-  catalog: {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    requestBody?: never;
-    responses: {
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["VoiceCatalog"];
-        };
-      };
-      /** @description Missing or wrong API token */
-      401: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["ErrorBody"];
-        };
-      };
-      /** @description Voice off, not set up or no key */
-      409: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["ErrorBody"];
-        };
-      };
-      /** @description The provider failed */
-      502: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["ErrorBody"];
-        };
-      };
-    };
-  };
-  live: {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    requestBody: {
-      content: {
-        "application/json": components["schemas"]["LiveRequest"];
-      };
-    };
-    responses: {
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["LiveSession"];
-        };
-      };
-      /** @description Unsupported sample rate */
-      400: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["ErrorBody"];
-        };
-      };
-      /** @description Missing or wrong API token */
-      401: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["ErrorBody"];
-        };
-      };
-      /** @description Voice off, not set up, no key, or not ElevenLabs */
-      409: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["ErrorBody"];
-        };
-      };
-      /** @description Limit for this minute reached */
-      429: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["ErrorBody"];
-        };
-      };
-      /** @description The provider failed */
-      502: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["ErrorBody"];
-        };
-      };
-    };
-  };
-  speech: {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    requestBody: {
-      content: {
-        "application/json": components["schemas"]["SpeechRequest"];
-      };
-    };
-    responses: {
-      /** @description Audio, streamed */
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "audio/mpeg": number[];
-        };
-      };
-      /** @description Empty or too long */
-      400: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["ErrorBody"];
-        };
-      };
-      /** @description Missing or wrong API token */
-      401: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["ErrorBody"];
-        };
-      };
-      /** @description Voice not set up, or no key or voice */
-      409: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["ErrorBody"];
-        };
-      };
-      /** @description Limit for this minute reached */
-      429: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["ErrorBody"];
-        };
-      };
-      /** @description The provider failed */
-      502: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["ErrorBody"];
-        };
-      };
-    };
-  };
-  transcription: {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    /** @description webm, ogg, mp4/m4a, mp3, wav or flac; at most 10 MiB */
-    requestBody: {
-      content: {
-        "audio/*": number[];
-      };
-    };
-    responses: {
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["Transcript"];
-        };
-      };
-      /** @description Empty or unsupported audio */
-      400: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["ErrorBody"];
-        };
-      };
-      /** @description Missing or wrong API token */
-      401: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["ErrorBody"];
-        };
-      };
-      /** @description Voice not set up or no key */
-      409: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["ErrorBody"];
-        };
-      };
-      /** @description Over 10 MiB */
-      413: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content?: never;
-      };
-      /** @description Limit for this minute reached */
-      429: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["ErrorBody"];
-        };
-      };
-      /** @description The provider failed */
-      502: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["ErrorBody"];
-        };
-      };
-    };
-  };
-  ui_ws: {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    requestBody?: never;
-    responses: {
-      /** @description Switching protocols; then one `UiEvent` per text frame */
-      101: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content?: never;
-      };
-      /** @description Missing or wrong API token */
-      401: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["ErrorBody"];
-        };
-      };
-    };
-  };
+    page: {
+        parameters: {
+            query?: {
+                /** @description Expiry of the link (unix seconds), from `url`. */
+                exp?: number;
+                /** @description Signature of the link, from `url`. */
+                sig?: string;
+                /** @description Any value: send the file as a download. */
+                download?: string;
+            };
+            header?: never;
+            path: {
+                /** @description Agent id (UUID) */
+                id: string;
+                /** @description Id of the `file` event */
+                file_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The file */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/octet-stream": number[];
+                };
+            };
+            /** @description Missing or wrong API token */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Unknown file */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+        };
+    };
+    list_agents: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AgentView"][];
+                };
+            };
+            /** @description Missing or wrong API token */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+        };
+    };
+    create_agent: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CreateAgent"];
+            };
+        };
+        responses: {
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AgentView"];
+                };
+            };
+            /** @description Invalid name or texts */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Missing or wrong API token */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Name already taken, or the agent limit (`FERROBOT_MAX_AGENTS`) is reached */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Sandbox backend error */
+            502: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+        };
+    };
+    get_agent: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Agent id (UUID) */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AgentView"];
+                };
+            };
+            /** @description Missing or wrong API token */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Unknown agent */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+        };
+    };
+    delete_agent: {
+        parameters: {
+            query?: {
+                /**
+                 * @description Keep the agent's persistent disk (home volume) and snapshot images.
+                 *     By default they are deleted with the agent.
+                 */
+                keep_data?: boolean;
+            };
+            header?: never;
+            path: {
+                /** @description Agent id (UUID) */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Deleted */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Missing or wrong API token */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Unknown agent */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Sandbox backend error */
+            502: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+        };
+    };
+    update_agent: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Agent id (UUID) */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["UpdateAgent"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AgentView"];
+                };
+            };
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Missing or wrong API token */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Unknown agent */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Name already taken */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+        };
+    };
+    get_avatar: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Agent id (UUID) */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The image */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "image/*": number[];
+                };
+            };
+            /** @description Missing or wrong API token */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Unknown agent or no avatar */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+        };
+    };
+    put_avatar: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Agent id (UUID) */
+                id: string;
+            };
+            cookie?: never;
+        };
+        /** @description PNG, JPEG, WebP or GIF, at most 512 KiB */
+        requestBody: {
+            content: {
+                "image/*": number[];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AgentView"];
+                };
+            };
+            /** @description Not a supported image */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Missing or wrong API token */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Unknown agent */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+        };
+    };
+    delete_avatar: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Agent id (UUID) */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AgentView"];
+                };
+            };
+            /** @description Missing or wrong API token */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Unknown agent */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+        };
+    };
+    agent_connectors: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Agent id (UUID) */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": string[];
+                };
+            };
+            /** @description Missing or wrong API token */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Unknown agent */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+        };
+    };
+    set_agent_connectors: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Agent id (UUID) */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": string[];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": string[];
+                };
+            };
+            /** @description Missing or wrong API token */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Unknown agent or connector */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+        };
+    };
+    list_events: {
+        parameters: {
+            query?: {
+                /** @description Return events with an id greater than this (default 0). */
+                after?: number;
+            };
+            header?: never;
+            path: {
+                /** @description Agent id (UUID) */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["StoredEvent"][];
+                };
+            };
+            /** @description Missing or wrong API token */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Unknown agent */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+        };
+    };
+    exec: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Agent id (UUID) */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ExecReq"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ExecOutput"];
+                };
+            };
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Missing or wrong API token */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Unknown agent */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description No sandbox */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Sandbox backend error */
+            502: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+        };
+    };
+    shared_file: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Agent id (UUID) */
+                id: string;
+                /** @description Id of the `file` event */
+                file_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SharedFileView"];
+                };
+            };
+            /** @description Missing or wrong API token */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Unknown agent or file */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+        };
+    };
+    interrupt: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Agent id (UUID) */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Interrupted"];
+                };
+            };
+            /** @description Missing or wrong API token */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Unknown agent */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+        };
+    };
+    list_memory: {
+        parameters: {
+            query?: {
+                /** @description Full-text search; empty lists the most recently updated entries. */
+                q?: string;
+                /** @description 1-200, default 100. */
+                limit?: number;
+            };
+            header?: never;
+            path: {
+                /** @description Agent id (UUID) */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MemoryEntry"][];
+                };
+            };
+            /** @description Missing or wrong API token */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Unknown agent */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+        };
+    };
+    put_memory: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Agent id (UUID) */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PutMemory"];
+            };
+        };
+        responses: {
+            /** @description Stored */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Missing or wrong API token */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Unknown agent */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+        };
+    };
+    delete_memory: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Agent id (UUID) */
+                id: string;
+                /** @description Memory key */
+                key: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Deleted */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Missing or wrong API token */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Unknown agent or key */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+        };
+    };
+    list_messages: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Agent id (UUID) */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MailMessage"][];
+                };
+            };
+            /** @description Missing or wrong API token */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Unknown agent */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+        };
+    };
+    post_message: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Agent id (UUID) */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PostMessage"];
+            };
+        };
+        responses: {
+            /** @description Queued for delivery */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MailMessage"];
+                };
+            };
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Missing or wrong API token */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Unknown agent */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+        };
+    };
+    answer_question: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Agent id (UUID) */
+                id: string;
+                /** @description Id of the `question` event */
+                qid: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AnswerQuestion"];
+            };
+        };
+        responses: {
+            /** @description Answer queued for the agent */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["QuestionAnswered"];
+                };
+            };
+            /** @description Answers do not fit the card */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Missing or wrong API token */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Unknown agent or question */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Already answered */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+        };
+    };
+    mark_read: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Agent id (UUID) */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Marked as read */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Missing or wrong API token */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Unknown agent */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+        };
+    };
+    list_routines: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Agent id (UUID) */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RoutineView"][];
+                };
+            };
+            /** @description Missing or wrong API token */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Unknown agent */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+        };
+    };
+    create_routine: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Agent id (UUID) */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CreateRoutine"];
+            };
+        };
+        responses: {
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RoutineView"];
+                };
+            };
+            /** @description Invalid schedule, time zone or texts */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Missing or wrong API token */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Unknown agent */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Name already used by this agent */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+        };
+    };
+    sandbox_info: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Agent id (UUID) */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SandboxInfo"];
+                };
+            };
+            /** @description Missing or wrong API token */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Unknown agent */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+        };
+    };
+    destroy_sandbox: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Agent id (UUID) */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Sandbox removed */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Missing or wrong API token */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Unknown agent */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description No sandbox */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Sandbox backend error */
+            502: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+        };
+    };
+    list_snapshots: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Agent id (UUID) */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SnapshotRecord"][];
+                };
+            };
+            /** @description Missing or wrong API token */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Unknown agent */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+        };
+    };
+    create_snapshot: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Agent id (UUID) */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SnapshotReq"];
+            };
+        };
+        responses: {
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SnapshotRecord"];
+                };
+            };
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Missing or wrong API token */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Unknown agent */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description No sandbox */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Backend cannot snapshot */
+            501: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Sandbox backend error */
+            502: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+        };
+    };
+    delete_snapshot: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Agent id (UUID) */
+                id: string;
+                /** @description Snapshot id */
+                sid: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Deleted */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Missing or wrong API token */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Unknown agent or snapshot */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Backend cannot delete snapshots */
+            501: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Sandbox backend error */
+            502: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+        };
+    };
+    restore_snapshot: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Agent id (UUID) */
+                id: string;
+                /** @description Snapshot id */
+                sid: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Restored and running */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Missing or wrong API token */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Unknown agent or snapshot */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description No sandbox or wrong backend */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Backend cannot restore */
+            501: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Sandbox backend error */
+            502: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+        };
+    };
+    stop: {
+        parameters: {
+            query?: {
+                /**
+                 * @description `cold` (default) stops, `warm` pauses, `archived` moves the sandbox to object storage.
+                 *     Backends without pause or archive answer 501; Firecracker stops instead of archiving.
+                 */
+                level?: components["schemas"]["SleepLevel"];
+            };
+            header?: never;
+            path: {
+                /** @description Agent id (UUID) */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Sleeping */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Missing or wrong API token */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Unknown agent */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description The backend cannot pause or archive */
+            501: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Sandbox backend error */
+            502: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+        };
+    };
+    wake: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Agent id (UUID) */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Running */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Missing or wrong API token */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Unknown agent */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Sandbox backend error */
+            502: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+        };
+    };
+    get_call: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CallView"];
+                };
+            };
+            /** @description Missing or wrong API token */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+        };
+    };
+    put_call: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CallView"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CallView"];
+                };
+            };
+            /** @description More than 4 agents */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Missing or wrong API token */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Unknown agent */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Voice is switched off */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+        };
+    };
+    post_call_message: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CallMessage"];
+            };
+        };
+        responses: {
+            /** @description Queued, one message per agent */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MailMessage"][];
+                };
+            };
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Missing or wrong API token */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description No voice call */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+        };
+    };
+    list_connectors: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ConnectorView"][];
+                };
+            };
+            /** @description Missing or wrong API token */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+        };
+    };
+    create_connector: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CreateConnector"];
+            };
+        };
+        responses: {
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ConnectorView"];
+                };
+            };
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Missing or wrong API token */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Name already taken */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+        };
+    };
+    delete_connector: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Connector id (UUID) */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Deleted */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Missing or wrong API token */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Unknown connector */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+        };
+    };
+    update_connector: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Connector id (UUID) */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["UpdateConnector"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ConnectorView"];
+                };
+            };
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Missing or wrong API token */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Unknown connector */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Name already taken */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+        };
+    };
+    start_oauth: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Connector id (UUID) */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OAuthStart"];
+                };
+            };
+            /** @description Uses a token, or the server offers no usable OAuth */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Missing or wrong API token */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Unknown connector */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+        };
+    };
+    sign_out: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Connector id (UUID) */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Signed out */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Missing or wrong API token */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Unknown connector */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+        };
+    };
+    list_conversations: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Conversation"][];
+                };
+            };
+            /** @description Missing or wrong API token */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+        };
+    };
+    conversation_thread: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Agent id (UUID) */
+                a: string;
+                /** @description Agent id (UUID) */
+                b: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MailMessage"][];
+                };
+            };
+            /** @description Missing or wrong API token */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Malformed agent id */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+        };
+    };
+    health: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Health"];
+                };
+            };
+        };
+    };
+    list_global_memory: {
+        parameters: {
+            query?: {
+                /** @description Full-text search; empty lists the most recently updated entries. */
+                q?: string;
+                /** @description 1-200, default 100. */
+                limit?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MemoryEntry"][];
+                };
+            };
+            /** @description Missing or wrong API token */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+        };
+    };
+    put_global_memory: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PutMemory"];
+            };
+        };
+        responses: {
+            /** @description Stored */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Missing or wrong API token */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+        };
+    };
+    delete_global_memory: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Memory key */
+                key: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Deleted */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Missing or wrong API token */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Unknown key */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+        };
+    };
+    oauth_callback: {
+        parameters: {
+            query?: {
+                state?: string;
+                code?: string;
+                /** @description RFC 9207 issuer, checked when present. */
+                iss?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Signed in (HTML page) */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "text/html": string;
+                };
+            };
+            /** @description Unknown, used, expired or failed sign-in (HTML page) */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "text/html": string;
+                };
+            };
+            /** @description Missing or wrong API token */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+        };
+    };
+    kind_models: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Provider kind */
+                kind: components["schemas"]["ProviderKind"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ModelList"];
+                };
+            };
+            /** @description Missing or wrong API token */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Unknown kind */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+        };
+    };
+    list_providers: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProviderView"][];
+                };
+            };
+            /** @description Missing or wrong API token */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+        };
+    };
+    create_provider: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CreateProvider"];
+            };
+        };
+        responses: {
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProviderView"];
+                };
+            };
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Missing or wrong API token */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Name already taken */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+        };
+    };
+    delete_provider: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Provider id (UUID) */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Deleted */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Missing or wrong API token */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Unknown provider */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Agents still use it */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+        };
+    };
+    update_provider: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Provider id (UUID) */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["UpdateProvider"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProviderView"];
+                };
+            };
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Missing or wrong API token */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Unknown provider */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Name already taken */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+        };
+    };
+    chatgpt_login_status: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Provider id (UUID) */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LoginStatus"];
+                };
+            };
+            /** @description Missing or wrong API token */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Unknown provider */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Not a codex provider */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+        };
+    };
+    start_chatgpt_login: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Provider id (UUID) */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DeviceCode"];
+                };
+            };
+            /** @description Missing or wrong API token */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Unknown provider */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Not a codex provider */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description codex failed on the daemon host */
+            502: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+        };
+    };
+    provider_models: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Provider id (UUID) */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ModelList"];
+                };
+            };
+            /** @description Missing or wrong API token */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Unknown provider */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+        };
+    };
+    delete_routine: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Routine id */
+                rid: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Deleted */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Missing or wrong API token */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Unknown routine */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+        };
+    };
+    update_routine: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Routine id */
+                rid: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["UpdateRoutine"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RoutineView"];
+                };
+            };
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Missing or wrong API token */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Unknown routine */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Name already used by this agent */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+        };
+    };
+    run_routine: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Routine id */
+                rid: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Prompt queued */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MailMessage"];
+                };
+            };
+            /** @description Missing or wrong API token */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Unknown routine */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+        };
+    };
+    list_runs: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Routine id */
+                rid: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RoutineRun"][];
+                };
+            };
+            /** @description Missing or wrong API token */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Unknown routine */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+        };
+    };
+    get_usage: {
+        parameters: {
+            query?: {
+                /** @description Start, inclusive (RFC 3339). */
+                from?: string;
+                /** @description End, exclusive (RFC 3339). */
+                to?: string;
+                /** @description Only this agent (id). */
+                agent?: string;
+                /** @description Only this provider (id), or `default` for the daemon's own key. */
+                provider?: string;
+                /** @description Only this model id. */
+                model?: string;
+                /** @description `day` (UTC date, the default), `agent`, `provider` or `model`. */
+                group_by?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["UsageReport"];
+                };
+            };
+            /** @description Bad filter */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Missing or wrong API token */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+        };
+    };
+    get_prices: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PriceEntry"][];
+                };
+            };
+            /** @description Missing or wrong API token */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+        };
+    };
+    put_prices: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SetPrice"][];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PriceEntry"][];
+                };
+            };
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Missing or wrong API token */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+        };
+    };
+    get_voice: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["VoiceView"];
+                };
+            };
+            /** @description Missing or wrong API token */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+        };
+    };
+    put_voice: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["UpdateVoice"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["VoiceView"];
+                };
+            };
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Missing or wrong API token */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+        };
+    };
+    catalog: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["VoiceCatalog"];
+                };
+            };
+            /** @description Missing or wrong API token */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Voice off, not set up or no key */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description The provider failed */
+            502: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+        };
+    };
+    live: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["LiveRequest"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LiveSession"];
+                };
+            };
+            /** @description Unsupported sample rate */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Missing or wrong API token */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Voice off, not set up, no key, or not ElevenLabs */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Limit for this minute reached */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description The provider failed */
+            502: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+        };
+    };
+    speech: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SpeechRequest"];
+            };
+        };
+        responses: {
+            /** @description Audio, streamed */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "audio/mpeg": number[];
+                };
+            };
+            /** @description Empty or too long */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Missing or wrong API token */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Voice off, not set up, or no key or voice */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Limit for this minute reached */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description The provider failed */
+            502: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+        };
+    };
+    transcription: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description webm, ogg, mp4/m4a, mp3, wav or flac; at most 10 MiB */
+        requestBody: {
+            content: {
+                "audio/*": number[];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Transcript"];
+                };
+            };
+            /** @description Empty or unsupported audio */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Missing or wrong API token */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Voice off, not set up or no key */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Over 10 MiB */
+            413: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Limit for this minute reached */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description The provider failed */
+            502: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+        };
+    };
+    ui_ws: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Switching protocols; then one `UiEvent` per text frame */
+            101: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Missing or wrong API token */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+        };
+    };
 }

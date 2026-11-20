@@ -29,9 +29,8 @@ pub enum DaemonFrame {
         sender_name: String,
         body: String,
     },
-    /// A message that arrived while turn `turn_id` runs, for runners whose
-    /// driver takes messages mid-turn (`hello.steering`). Unless
-    /// `turn_done.steered` lists it, it is queued again for the next turn.
+    /// A message that arrived during turn `turn_id` (only with `hello.steering`); queued again
+    /// unless `turn_done.steered` lists it.
     Steer {
         turn_id: String,
         message_id: i64,
@@ -59,7 +58,7 @@ pub enum RunnerFrame {
     Hello {
         protocol_version: u32,
         runner_version: String,
-        /// `claude` or `mock`.
+        /// `claude`, `openai`, `codex`, `acp` or `mock`.
         driver: String,
         /// Session id persisted on the sandbox disk, if any.
         session_id: Option<String>,
@@ -122,6 +121,7 @@ pub enum TurnEvent {
     },
 }
 
+/// How a turn ended.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(utoipa::ToSchema))]
 #[serde(rename_all = "snake_case")]
