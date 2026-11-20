@@ -32,6 +32,8 @@ OLLAMA_MODEL=${OLLAMA_MODEL:-qwen2.5:3b}
 TOKEN=smoke-live-operator-token-0123456789
 FAILED=0
 KEY=${ANTHROPIC_API_KEY:-}
+# A shell variable from here on: no child process (docker, curl, cargo) inherits it.
+unset ANTHROPIC_API_KEY
 if [ -z "$KEY" ] && [ -t 0 ]; then
   read -rsp "Anthropic API key (hidden; Enter skips Claude): " KEY
   echo
