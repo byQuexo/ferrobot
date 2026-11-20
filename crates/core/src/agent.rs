@@ -126,6 +126,8 @@ pub enum AgentStatus {
     Paused,
     /// Sandbox stopped (disk kept). Messages queue up until it wakes.
     Stopped,
+    /// Sandbox moved to object storage; waking restores it.
+    Archived,
     /// Sandbox creation or start failed; see daemon logs.
     Failed,
 }
@@ -137,6 +139,7 @@ impl AgentStatus {
             Self::Running => "running",
             Self::Paused => "paused",
             Self::Stopped => "stopped",
+            Self::Archived => "archived",
             Self::Failed => "failed",
         }
     }
@@ -151,6 +154,7 @@ impl FromStr for AgentStatus {
             "running" => Ok(Self::Running),
             "paused" => Ok(Self::Paused),
             "stopped" => Ok(Self::Stopped),
+            "archived" => Ok(Self::Archived),
             "failed" => Ok(Self::Failed),
             other => Err(CoreError::UnknownVariant {
                 kind: "agent status",

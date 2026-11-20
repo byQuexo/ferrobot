@@ -75,6 +75,9 @@ pub enum SleepLevel {
     Warm,
     /// Stopped: processes end and memory is freed; the disk is kept.
     Cold,
+    /// Moved to object storage: nothing is left on the host. The next
+    /// `create` for the same name restores it.
+    Archived,
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
@@ -131,7 +134,8 @@ pub trait SandboxBackend: Send + Sync + std::fmt::Debug {
         false
     }
 
-    /// Creates (or adopts) and starts the sandbox.
+    /// Creates (or adopts) and starts the sandbox. A sandbox archived with
+    /// `sleep(Archived)` comes back from its archive.
     async fn create(&self, spec: &SandboxSpec) -> Result<SandboxHandle, SandboxError>;
 
     /// Runs a command to completion and captures its output.
@@ -206,7 +210,17 @@ pub trait SandboxBackend: Send + Sync + std::fmt::Debug {
                 backend: self.kind(),
                 operation: "pause",
             }),
+            SleepLevel::Archived => Err(SandboxError::NotImplemented {
+                backend: self.kind(),
+                operation: "archive",
+            }),
         }
+    }
+
+    /// Deletes the archive of sandbox `name`, if any.
+    async fn delete_archive(&self, name: &str) -> Result<(), SandboxError> {
+        let _ = name;
+        Ok(())
     }
 
     /// Stops the sandbox, keeping its disk.

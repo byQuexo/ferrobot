@@ -590,7 +590,7 @@ export interface components {
          * @description Lifecycle state of an agent's sandbox as tracked by the daemon.
          * @enum {string}
          */
-        AgentStatus: "created" | "running" | "paused" | "stopped" | "failed";
+        AgentStatus: "created" | "running" | "paused" | "stopped" | "archived" | "failed";
         /** @description An agent plus live state. */
         AgentView: components["schemas"]["Agent"] & {
             /** @description Whether the agent's runner is connected right now. */
@@ -1035,7 +1035,7 @@ export interface components {
          * @description How deeply a sandbox sleeps.
          * @enum {string}
          */
-        SleepLevel: "warm" | "cold";
+        SleepLevel: "warm" | "cold" | "archived";
         SnapshotRecord: {
             /** Format: int64 */
             id: number;
@@ -2458,8 +2458,9 @@ export interface operations {
         parameters: {
             query?: {
                 /**
-                 * @description `cold` (default) stops the sandbox; `warm` pauses it, keeping memory,
-                 *     where the backend can (otherwise it sleeps cold).
+                 * @description `cold` (default) stops the sandbox; `warm` pauses it, keeping memory;
+                 *     `archived` moves it to object storage (a wake restores it). Backends
+                 *     that cannot pause or archive answer 501.
                  */
                 level?: components["schemas"]["SleepLevel"];
             };
@@ -2497,7 +2498,7 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorBody"];
                 };
             };
-            /** @description The backend cannot pause (`level=warm`) */
+            /** @description The backend cannot pause or archive */
             501: {
                 headers: {
                     [name: string]: unknown;

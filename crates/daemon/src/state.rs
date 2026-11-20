@@ -33,6 +33,9 @@ pub struct Settings {
     /// Stop an agent's sandbox (cold sleep) after this long without activity
     /// (`None`: never).
     pub idle_timeout: Option<Duration>,
+    /// Move a sleeping agent's sandbox to object storage after this long
+    /// without activity (`None`: never).
+    pub archive_timeout: Option<Duration>,
     /// How often the supervisor checks idle and crashed sandboxes.
     pub supervisor_interval: Duration,
     /// Default IANA time zone for new routines.
@@ -69,6 +72,7 @@ impl Settings {
             turn_timeout: Duration::from_secs(600),
             warm_timeout: None,
             idle_timeout: None,
+            archive_timeout: None,
             supervisor_interval: Duration::from_secs(15),
             default_timezone: "UTC".into(),
             api_token: None,

@@ -210,6 +210,11 @@ pub async fn sleep(
     let status = match reached {
         SleepLevel::Warm => AgentStatus::Paused,
         SleepLevel::Cold => AgentStatus::Stopped,
+        SleepLevel::Archived => {
+            // The archived image still carries the old token in its env: retire it.
+            state.store.set_agent_token(id, &new_token()).await?;
+            AgentStatus::Archived
+        }
     };
     if agent.status != status {
         state
@@ -233,6 +238,7 @@ pub async fn delete(state: &AppState, id: AgentId, purge_disk: bool) -> Result<(
         state.backend.destroy(&handle, purge_disk).await?;
     }
     if purge_disk {
+        state.backend.delete_archive(&agent.sandbox_name).await?;
         for snap in state.store.list_snapshots(id).await? {
             if let Err(e) = state.backend.delete_snapshot(&snap.snapshot_ref).await {
                 tracing::warn!(snapshot = %snap.snapshot_ref, error = %e, "cannot delete snapshot");
@@ -381,6 +387,16 @@ pub async fn reconcile(state: &AppState) {
             }
             // Sleeping agents with something queued get woken; otherwise make
             // sure the sandbox sleeps as deeply as the agent's status says.
+            (AgentStatus::Archived, _) => {
+                let queued = state
+                    .store
+                    .has_waking_messages(agent.id)
+                    .await
+                    .unwrap_or(false);
+                if queued && let Err(e) = wake(state, agent.id).await {
+                    tracing::warn!(agent = %agent.name, error = %e, "reconcile: wake failed");
+                }
+            }
             (status @ (AgentStatus::Paused | AgentStatus::Stopped), live) => {
                 let level = match status {
                     AgentStatus::Paused if live == Some(SandboxState::Paused) => None,

@@ -33,10 +33,10 @@ pub async fn check_all(state: &AppState) {
             return;
         }
     };
-    for agent in agents
-        .into_iter()
-        .filter(|a| matches!(a.status, AgentStatus::Running | AgentStatus::Paused))
-    {
+    for agent in agents.into_iter().filter(|a| {
+        matches!(a.status, AgentStatus::Running | AgentStatus::Paused)
+            || (a.status == AgentStatus::Stopped && state.settings.archive_timeout.is_some())
+    }) {
         if let Err(e) = check(state, &agent).await {
             tracing::warn!(agent = %agent.name, error = %e, "supervisor check failed");
         }
@@ -49,6 +49,19 @@ async fn check(state: &AppState, agent: &Agent) -> Result<(), crate::error::ApiE
         return Ok(());
     };
     let idle = Instant::now().duration_since(state.hub.last_activity(id));
+    if agent.status == AgentStatus::Stopped {
+        if state.settings.archive_timeout.is_some_and(|t| idle >= t)
+            && !state.store.has_queued_messages(id).await?
+        {
+            tracing::info!(agent = %agent.name, "idle, archiving");
+            match lifecycle::sleep(state, id, "idle", SleepLevel::Archived).await {
+                // Backends without archive support keep the stopped sandbox.
+                Err(ApiError::Sandbox(SandboxError::NotImplemented { .. })) => {}
+                other => other?,
+            }
+        }
+        return Ok(());
+    }
     if agent.status == AgentStatus::Paused {
         // A paused sandbox is asleep on purpose, never a crash; it only goes colder.
         if state.settings.idle_timeout.is_some_and(|t| idle >= t)

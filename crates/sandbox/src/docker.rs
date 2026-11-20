@@ -10,9 +10,9 @@ use bollard::exec::{StartExecOptions, StartExecResults};
 use bollard::models::{ContainerCreateBody, ExecConfig, HostConfig};
 use bollard::query_parameters::{
     CommitContainerOptionsBuilder, CreateContainerOptionsBuilder,
-    DownloadFromContainerOptionsBuilder, InspectContainerOptions, RemoveContainerOptionsBuilder,
-    RemoveImageOptionsBuilder, RemoveVolumeOptions, StopContainerOptionsBuilder,
-    UploadToContainerOptionsBuilder,
+    DownloadFromContainerOptionsBuilder, ImportImageOptionsBuilder, InspectContainerOptions,
+    RemoveContainerOptionsBuilder, RemoveImageOptionsBuilder, RemoveVolumeOptions,
+    StopContainerOptionsBuilder, UploadToContainerOptionsBuilder,
 };
 use bytes::Bytes;
 use futures_util::{StreamExt, TryStreamExt};
@@ -26,6 +26,8 @@ use crate::{
 
 const KIND: &str = "docker";
 const LABEL_MANAGED: &str = "dev.ferrobot.managed";
+/// Image repository for archived sandboxes (separate from snapshots).
+const ARCHIVE_REPO: &str = "ferrobot-archive";
 
 /// Configuration for [`DockerBackend`].
 #[derive(Debug, Clone)]
@@ -128,6 +130,114 @@ impl DockerBackend {
         }
     }
 
+    /// Unpacks a home-directory tar (as `snapshot` stores it) into the container.
+    async fn upload_home(&self, id: &str, archive: Bytes) -> Result<(), SandboxError> {
+        let parent = std::path::Path::new(&self.config.home_dir)
+            .parent()
+            .and_then(|p| p.to_str())
+            .unwrap_or("/");
+        let options = UploadToContainerOptionsBuilder::default()
+            .path(parent)
+            .copy_uidgid("true")
+            .build();
+        self.docker
+            .upload_to_container(id, Some(options), bollard::body_full(archive))
+            .await?;
+        Ok(())
+    }
+
+    fn archive_keys(name: &str) -> (ObjectPath, ObjectPath) {
+        (
+            ObjectPath::from(format!("archives/{name}/image.tar")),
+            ObjectPath::from(format!("archives/{name}/home.tar")),
+        )
+    }
+
+    /// Moves a sandbox into the store: its committed image and home directory
+    /// go to `archives/<name>/`; container, volume and image are removed.
+    async fn archive_sandbox(&self, sandbox: &SandboxHandle) -> Result<(), SandboxError> {
+        let id = Self::check(sandbox)?;
+        let store = self
+            .config
+            .snapshot_store
+            .as_deref()
+            .ok_or(SandboxError::NotImplemented {
+                backend: KIND,
+                operation: "archive (no object store configured)",
+            })?;
+        let info = self
+            .docker
+            .inspect_container(id, None::<InspectContainerOptions>)
+            .await
+            .map_err(|e| not_found_or(e, id))?;
+        let full = info.name.unwrap_or_default();
+        let name = full
+            .trim_start_matches('/')
+            .strip_prefix(&self.config.name_prefix)
+            .ok_or_else(|| SandboxError::Other(format!("{full} is not a ferrobot sandbox")))?
+            .to_owned();
+        let (image_key, home_key) = Self::archive_keys(&name);
+        let home = DownloadFromContainerOptionsBuilder::default()
+            .path(&self.config.home_dir)
+            .build();
+        put_stream(
+            store,
+            &home_key,
+            self.docker.download_from_container(id, Some(home)),
+        )
+        .await?;
+        let options = CommitContainerOptionsBuilder::default()
+            .container(id)
+            .repo(ARCHIVE_REPO)
+            .tag(&name)
+            .comment("ferrobot archive")
+            .build();
+        self.docker
+            .commit_container(options, bollard::models::ContainerConfig::default())
+            .await?;
+        let image = format!("{ARCHIVE_REPO}:{name}");
+        // shortcut: saves the whole image (base layers too, ~1 GiB); upgrade to
+        // shipping only the container's diff once archives pile up.
+        put_stream(store, &image_key, self.docker.export_image(&image)).await?;
+        self.destroy(sandbox, true).await?;
+        let force = RemoveImageOptionsBuilder::default().force(true).build();
+        self.docker.remove_image(&image, Some(force), None).await?;
+        Ok(())
+    }
+
+    /// Brings an archived sandbox back (image, then home), if `spec.name` has one.
+    async fn unarchive(&self, spec: &SandboxSpec) -> Result<Option<String>, SandboxError> {
+        let Some(store) = self.config.snapshot_store.as_deref() else {
+            return Ok(None);
+        };
+        let (image_key, home_key) = Self::archive_keys(&spec.name);
+        let image_tar = match store.get(&image_key).await {
+            Ok(found) => found.into_stream(),
+            Err(object_store::Error::NotFound { .. }) => return Ok(None),
+            Err(e) => return Err(e.into()),
+        };
+        let mut load = self.docker.import_image_stream(
+            ImportImageOptionsBuilder::default().quiet(true).build(),
+            image_tar,
+            None,
+        );
+        while let Some(step) = load.next().await {
+            if let Some(error) = step?.error_detail.and_then(|d| d.message) {
+                return Err(SandboxError::Other(format!(
+                    "loading archived image: {error}"
+                )));
+            }
+        }
+        let id = self
+            .create_container(spec, &format!("{ARCHIVE_REPO}:{}", spec.name))
+            .await?;
+        self.upload_home(&id, store.get(&home_key).await?.bytes().await?)
+            .await?;
+        self.ensure_started(&id).await?;
+        self.delete_archive(&spec.name).await?;
+        Ok(Some(id))
+    }
+
     /// Creates (or adopts) the container for `spec` from `image` without starting it.
     async fn create_container(
         &self,
@@ -193,6 +303,29 @@ impl DockerBackend {
     }
 }
 
+/// Streams `chunks` into the store as one object (multipart, aborted on error).
+async fn put_stream<S>(
+    store: &dyn ObjectStore,
+    key: &ObjectPath,
+    mut chunks: S,
+) -> Result<(), SandboxError>
+where
+    S: futures_util::Stream<Item = Result<Bytes, bollard::errors::Error>> + Unpin,
+{
+    let mut upload = object_store::WriteMultipart::new(store.put_multipart(key).await?);
+    while let Some(chunk) = chunks.next().await {
+        match chunk {
+            Ok(chunk) => upload.write(&chunk),
+            Err(e) => {
+                upload.abort().await?;
+                return Err(e.into());
+            }
+        }
+    }
+    upload.finish().await?;
+    Ok(())
+}
+
 fn not_found_or(err: bollard::errors::Error, id: &str) -> SandboxError {
     match err {
         bollard::errors::Error::DockerResponseServerError {
@@ -245,8 +378,13 @@ impl SandboxBackend for DockerBackend {
     }
 
     async fn create(&self, spec: &SandboxSpec) -> Result<SandboxHandle, SandboxError> {
-        let id = self.create_container(spec, &self.config.image).await?;
-        self.ensure_started(&id).await?;
+        let id = if let Some(id) = self.unarchive(spec).await? {
+            id
+        } else {
+            let id = self.create_container(spec, &self.config.image).await?;
+            self.ensure_started(&id).await?;
+            id
+        };
         Ok(SandboxHandle {
             backend: KIND.into(),
             id,
@@ -429,23 +567,44 @@ impl SandboxBackend for DockerBackend {
         self.destroy(sandbox, archive.is_some()).await?;
         let id = self.create_container(spec, image).await?;
         if let Some(archive) = archive {
-            let parent = std::path::Path::new(&self.config.home_dir)
-                .parent()
-                .and_then(|p| p.to_str())
-                .unwrap_or("/");
-            let options = UploadToContainerOptionsBuilder::default()
-                .path(parent)
-                .copy_uidgid("true")
-                .build();
-            self.docker
-                .upload_to_container(&id, Some(options), bollard::body_full(archive))
-                .await?;
+            self.upload_home(&id, archive).await?;
         }
         self.ensure_started(&id).await?;
         Ok(SandboxHandle {
             backend: KIND.into(),
             id,
         })
+    }
+
+    async fn delete_archive(&self, name: &str) -> Result<(), SandboxError> {
+        // 409: a restored container still uses the image; it goes with a later purge.
+        match self
+            .docker
+            .remove_image(
+                &format!("{ARCHIVE_REPO}:{name}"),
+                None::<bollard::query_parameters::RemoveImageOptions>,
+                None,
+            )
+            .await
+        {
+            Ok(_)
+            | Err(bollard::errors::Error::DockerResponseServerError {
+                status_code: 404 | 409,
+                ..
+            }) => {}
+            Err(e) => return Err(e.into()),
+        }
+        let Some(store) = self.config.snapshot_store.as_deref() else {
+            return Ok(());
+        };
+        let (image_key, home_key) = Self::archive_keys(name);
+        for key in [image_key, home_key] {
+            match store.delete(&key).await {
+                Ok(()) | Err(object_store::Error::NotFound { .. }) => {}
+                Err(e) => return Err(e.into()),
+            }
+        }
+        Ok(())
     }
 
     async fn delete_snapshot(&self, snapshot: &str) -> Result<(), SandboxError> {
@@ -476,9 +635,16 @@ impl SandboxBackend for DockerBackend {
         sandbox: &SandboxHandle,
         level: SleepLevel,
     ) -> Result<SleepLevel, SandboxError> {
-        if level == SleepLevel::Cold {
-            self.stop(sandbox).await?;
-            return Ok(level);
+        match level {
+            SleepLevel::Cold => {
+                self.stop(sandbox).await?;
+                return Ok(level);
+            }
+            SleepLevel::Archived => {
+                self.archive_sandbox(sandbox).await?;
+                return Ok(level);
+            }
+            SleepLevel::Warm => {}
         }
         let id = Self::check(sandbox)?;
         match self.docker.pause_container(id).await {

@@ -1726,7 +1726,7 @@
           {
             "name": "level",
             "in": "query",
-            "description": "`cold` (default) stops the sandbox; `warm` pauses it, keeping memory,\nwhere the backend can (otherwise it sleeps cold).",
+            "description": "`cold` (default) stops the sandbox; `warm` pauses it, keeping memory;\n`archived` moves it to object storage (a wake restores it). Backends\nthat cannot pause or archive answer 501.",
             "required": false,
             "schema": {
               "$ref": "#/components/schemas/SleepLevel"
@@ -1758,7 +1758,7 @@
             }
           },
           "501": {
-            "description": "The backend cannot pause (`level=warm`)",
+            "description": "The backend cannot pause or archive",
             "content": {
               "application/json": {
                 "schema": {
@@ -2691,6 +2691,7 @@
           "running",
           "paused",
           "stopped",
+          "archived",
           "failed"
         ]
       },
@@ -3856,7 +3857,8 @@
         "description": "How deeply a sandbox sleeps.",
         "enum": [
           "warm",
-          "cold"
+          "cold",
+          "archived"
         ]
       },
       "SnapshotRecord": {

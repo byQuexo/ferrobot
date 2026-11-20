@@ -33,6 +33,8 @@ struct StatefulBackend {
     envs: Mutex<HashMap<String, BTreeMap<String, String>>>,
     states: Mutex<HashMap<String, SandboxState>>,
     log: Mutex<Vec<String>>,
+    /// Sandbox names whose disk went to the archive.
+    archived: Mutex<std::collections::HashSet<String>>,
 }
 
 impl StatefulBackend {
@@ -56,6 +58,9 @@ impl SandboxBackend for StatefulBackend {
         "fake"
     }
     async fn create(&self, spec: &SandboxSpec) -> Result<SandboxHandle, SandboxError> {
+        if self.archived.lock().unwrap().remove(&spec.name) {
+            self.log(format!("unarchive {}", spec.name));
+        }
         self.envs
             .lock()
             .unwrap()
@@ -102,11 +107,18 @@ impl SandboxBackend for StatefulBackend {
         self.log(format!("restore {} {snapshot}", h.id));
         self.create(spec).await
     }
+    async fn delete_archive(&self, name: &str) -> Result<(), SandboxError> {
+        self.log(format!("delete_archive {name}"));
+        Ok(())
+    }
     async fn delete_snapshot(&self, snapshot: &str) -> Result<(), SandboxError> {
         self.log(format!("delete_snapshot {snapshot}"));
         Ok(())
     }
     async fn wake(&self, h: &SandboxHandle) -> Result<(), SandboxError> {
+        if self.archived.lock().unwrap().contains(&h.id) {
+            return Err(SandboxError::NotFound(h.id.clone()));
+        }
         self.set(&h.id, SandboxState::Running);
         self.log(format!("wake {}", h.id));
         Ok(())
@@ -118,6 +130,10 @@ impl SandboxBackend for StatefulBackend {
     ) -> Result<SleepLevel, SandboxError> {
         if level == SleepLevel::Cold {
             self.stop(h).await?;
+        } else if level == SleepLevel::Archived {
+            self.states.lock().unwrap().remove(&h.id);
+            self.archived.lock().unwrap().insert(h.id.clone());
+            self.log(format!("archive {}", h.id));
         } else {
             self.set(&h.id, SandboxState::Paused);
             self.log(format!("pause {}", h.id));
@@ -1730,4 +1746,64 @@ async fn gemini_cli_agents_reach_the_gemini_api_through_the_proxy() {
     assert_eq!(seen["goog_key"], "AIza-real-gemini-key");
     let (status, _) = model_call(&d, "/model/v1beta/models", ("x-goog-api-key", "wrong")).await;
     assert_eq!(status, 401);
+}
+
+#[tokio::test]
+async fn idle_sleeping_agents_are_archived_and_restored_on_wake() {
+    let backend = Arc::new(StatefulBackend::default());
+    let d = start_with(backend.clone(), None, "127.0.0.1:0", |s| {
+        s.idle_timeout = Some(Duration::from_millis(100));
+        s.archive_timeout = Some(Duration::from_millis(400));
+    })
+    .await;
+    let id = create(&d, json!({"name": "arlo"})).await["id"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    let old_token = backend.token("arlo");
+    let status = || async {
+        http(&d.ui, "GET", &format!("/v1/agents/{id}"), None)
+            .await
+            .1
+    };
+
+    tokio::time::sleep(Duration::from_millis(200)).await;
+    ferrobot_daemon::supervisor::check_all(&d.state).await;
+    assert_eq!(status().await["status"], "stopped");
+    tokio::time::sleep(Duration::from_millis(300)).await;
+    ferrobot_daemon::supervisor::check_all(&d.state).await;
+    let a = status().await;
+    assert_eq!(
+        (&a["status"], &a["presence"]),
+        (&json!("archived"), &json!("sleeping"))
+    );
+    assert!(backend.calls().contains(&"archive arlo".to_owned()));
+    assert!(
+        d.state
+            .store
+            .agent_by_token(&old_token)
+            .await
+            .unwrap()
+            .is_none(),
+        "the token inside the archived image is retired"
+    );
+
+    // A message brings it back from the archive with a fresh token.
+    let (status_code, _) = http(
+        &d.ui,
+        "POST",
+        &format!("/v1/agents/{id}/messages"),
+        Some(json!({"body": "back"})),
+    )
+    .await;
+    assert_eq!(status_code, 202);
+    eventually("unarchive", Duration::from_secs(5), || async {
+        (status().await["status"] == "running").then_some(())
+    })
+    .await;
+    assert!(backend.calls().contains(&"unarchive arlo".to_owned()));
+    assert_ne!(backend.token("arlo"), old_token);
+
+    http(&d.ui, "DELETE", &format!("/v1/agents/{id}"), None).await;
+    assert!(backend.calls().contains(&"delete_archive arlo".to_owned()));
 }

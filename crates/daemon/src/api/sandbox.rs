@@ -66,8 +66,9 @@ pub(crate) async fn sandbox_info(
 #[derive(Debug, Deserialize, IntoParams)]
 #[into_params(parameter_in = Query)]
 pub(crate) struct StopQuery {
-    /// `cold` (default) stops the sandbox; `warm` pauses it, keeping memory,
-    /// where the backend can (otherwise it sleeps cold).
+    /// `cold` (default) stops the sandbox; `warm` pauses it, keeping memory;
+    /// `archived` moves it to object storage (a wake restores it). Backends
+    /// that cannot pause or archive answer 501.
     #[serde(default)]
     #[param(value_type = Option<SleepLevel>)]
     level: Option<SleepLevel>,
@@ -79,7 +80,7 @@ pub(crate) struct StopQuery {
     params(("id" = String, Path, description = "Agent id (UUID)"), StopQuery),
     responses((status = 204, description = "Sleeping"),
         (status = 404, description = "Unknown agent", body = ErrorBody),
-        (status = 501, description = "The backend cannot pause (`level=warm`)", body = ErrorBody),
+        (status = 501, description = "The backend cannot pause or archive", body = ErrorBody),
         (status = 502, description = "Sandbox backend error", body = ErrorBody)))]
 pub(crate) async fn stop(
     State(state): State<AppState>,

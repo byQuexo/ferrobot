@@ -121,6 +121,11 @@ struct Cli {
     /// pause stop it instead.
     #[arg(long, env = "FERROBOT_WARM_AFTER", default_value_t = 300)]
     warm_after: u64,
+    /// Seconds without activity before a sleeping agent's sandbox is moved
+    /// to object storage (`--storage-url`; Docker only, 0 disables). A wake
+    /// restores it.
+    #[arg(long, env = "FERROBOT_ARCHIVE_AFTER", default_value_t = 0)]
+    archive_after: u64,
     /// Seconds without activity before an agent's sandbox is stopped (cold
     /// sleep, 0 disables). Messages and routines wake it again.
     #[arg(long, env = "FERROBOT_IDLE_TIMEOUT", default_value_t = 900)]
@@ -204,6 +209,8 @@ async fn main() -> Result<()> {
     settings.turn_timeout = Duration::from_secs(cli.turn_timeout);
     settings.idle_timeout = (cli.idle_timeout > 0).then(|| Duration::from_secs(cli.idle_timeout));
     settings.warm_timeout = (cli.warm_after > 0).then(|| Duration::from_secs(cli.warm_after));
+    settings.archive_timeout =
+        (cli.archive_after > 0).then(|| Duration::from_secs(cli.archive_after));
     // Check often enough that short idle timeouts are honoured promptly.
     if let Some(first) = settings
         .warm_timeout

@@ -123,6 +123,7 @@
         "running",
         "paused",
         "stopped",
+        "archived",
         "failed"
       ],
       "type": "string"
