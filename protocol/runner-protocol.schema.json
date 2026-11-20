@@ -148,7 +148,7 @@
           "type": "object"
         },
         {
-          "description": "The operator changed the agent's name or instructions; applies from\nthe next turn.",
+          "description": "The operator changed the agent's name, instructions or connectors;\napplies from the next turn.",
           "properties": {
             "agent_name": {
               "$ref": "#/$defs/AgentName"

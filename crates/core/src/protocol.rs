@@ -46,8 +46,8 @@ pub enum DaemonFrame {
     },
     /// Abort the running turn, if it matches.
     Interrupt { turn_id: String },
-    /// The operator changed the agent's name or instructions; applies from
-    /// the next turn.
+    /// The operator changed the agent's name, instructions or connectors;
+    /// applies from the next turn.
     Configure {
         agent_name: AgentName,
         instructions: String,

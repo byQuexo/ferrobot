@@ -1,22 +1,26 @@
 // Claude through the Claude Agent SDK. The SDK runs its own agent loop; we
 // wire in the daemon's MCP server, a permission policy, an audit hook,
-// streaming, interrupts and session resume.
+// streaming, interrupts, session resume and steering (messages that arrive
+// mid-turn go into the running query through the SDK's streaming input).
 //
 // Model traffic: the daemon starts the sandbox with ANTHROPIC_BASE_URL
 // pointing at its model proxy and ANTHROPIC_API_KEY set to this agent's
 // token, so the real key never enters the sandbox. The SDK reads both from
 // the environment.
+import { randomUUID } from "node:crypto";
+
 import {
   query as sdkQuery,
   type CanUseTool,
   type HookCallback,
   type Options,
   type SDKMessage,
+  type SDKUserMessage,
 } from "@anthropic-ai/claude-agent-sdk";
 
 import { log } from "../log.ts";
 import { decide } from "../permissions.ts";
-import type { TurnEvent } from "../protocol.ts";
+import type { SteerFrame, TurnEvent } from "../protocol.ts";
 import type { SessionStore } from "../session.ts";
 import type { ModelDriver, TurnContext, TurnResult } from "./types.ts";
 import { TurnAbortedError } from "./types.ts";
@@ -25,7 +29,10 @@ import { TurnAbortedError } from "./types.ts";
 export const MAX_TOOL_OUTPUT = 4000;
 
 /** The subset of the SDK's `query` the driver uses (injectable for tests). */
-export type QueryFn = (args: { prompt: string; options: Options }) => AsyncIterable<SDKMessage>;
+export type QueryFn = (args: {
+  prompt: AsyncIterable<SDKUserMessage>;
+  options: Options;
+}) => AsyncIterable<SDKMessage>;
 
 export interface ClaudeDriverOptions {
   mcpUrl: URL;
@@ -74,6 +81,54 @@ export function systemAppend(agentName: string, instructions: string): string {
 export function turnPrompt(ctx: Pick<TurnContext, "turn">): string {
   const { turn } = ctx;
   return `Message #${String(turn.message_id)} from ${turn.sender_name}:\n\n${turn.body}`;
+}
+
+/** A message that arrived during the turn, as the model sees it. */
+export function latePrompt(m: SteerFrame): string {
+  return `Message #${String(m.message_id)} from ${m.sender_name}, sent while you were working:\n\n${m.body}`;
+}
+
+/** The SDK's streaming input for one turn; ends with `end()`. */
+class Inbox implements AsyncIterable<SDKUserMessage> {
+  #items: SDKUserMessage[] = [];
+  #wake: (() => void) | null = null;
+  #ended = false;
+
+  /** Queues a user message and returns its uuid. */
+  push(text: string): string {
+    const uuid = randomUUID();
+    // client_composed: the text is delivered as written (no slash commands
+    // or @-mentions from what another agent typed); "next" folds a message
+    // into the running turn between tool rounds.
+    this.#items.push({
+      type: "user",
+      message: { role: "user", content: text },
+      parent_tool_use_id: null,
+      uuid,
+      priority: "next",
+      client_composed: true,
+    });
+    this.#wake?.();
+    return uuid;
+  }
+
+  end(): void {
+    this.#ended = true;
+    this.#wake?.();
+  }
+
+  async *[Symbol.asyncIterator](): AsyncIterator<SDKUserMessage> {
+    for (;;) {
+      const next = this.#items.shift();
+      if (next) {
+        yield next;
+        continue;
+      }
+      if (this.#ended) return;
+      await new Promise<void>((resolve) => { this.#wake = resolve; });
+      this.#wake = null;
+    }
+  }
 }
 
 /** Builds the SDK options for one turn (pure; checked against the SDK's `Options`). */
@@ -192,6 +247,7 @@ export function mapSdkMessage(message: SDKMessage): Mapped {
 
 export class ClaudeDriver implements ModelDriver {
   readonly name = "claude";
+  readonly steering = true;
   readonly #opts: ClaudeDriverOptions;
   readonly #query: QueryFn;
 
@@ -249,8 +305,22 @@ export class ClaudeDriver implements ModelDriver {
     let sessionId = resume;
     let result: string | null = null;
     let emitted = 0;
+    const inbox = new Inbox();
+    // Every message pushed must be answered before the query may end.
+    const open = new Set([inbox.push(turnPrompt(ctx))]);
+    const steer = (): void => {
+      for (const m of ctx.takeMessages?.() ?? []) open.add(inbox.push(latePrompt(m)));
+    };
     try {
-      for await (const message of this.#query({ prompt: turnPrompt(ctx), options })) {
+      for await (const message of this.#query({ prompt: inbox, options })) {
+        if (message.type === "result") {
+          const consumed = message.user_message_uuids;
+          if (consumed) for (const id of consumed) open.delete(id);
+          // An older CLI does not say what it consumed: take it as all.
+          else open.clear();
+        }
+        steer();
+        if (message.type === "result" && open.size === 0) inbox.end();
         const mapped = mapSdkMessage(message);
         sessionId = mapped.sessionId ?? sessionId;
         for (const event of mapped.events) {
@@ -270,6 +340,7 @@ export class ClaudeDriver implements ModelDriver {
       }
       throw err;
     } finally {
+      inbox.end();
       ctx.signal.removeEventListener("abort", onAbort);
     }
     if (aborted(ctx.signal)) throw new TurnAbortedError("interrupted");

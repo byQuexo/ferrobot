@@ -399,7 +399,7 @@ store used for the run) or the daemon's own env.
 
 - None of the UI changes in the Tauri window (Activities tab, step line,
   Markdown, link opening); steering and the new prompt lines with a real
-  model; Claude, Codex and Gemini CLI do not steer yet.
+  model; Codex and Gemini CLI do not steer (Claude does since item 6).
 
 ## Hardening after the external review
 
@@ -411,6 +411,15 @@ store used for the run) or the daemon's own env.
   or a `../` key 404 on both routes. Not checked: the Tauri window with the
   new links (the URL shape changed; FileViewer appends `&download=1`).
 - **Item 2 (Settings Debug):** done; test `debug_never_shows_the_api_key_or_token`.
+- **Item 6 (steering, tool refresh):** Claude steers via the SDK's streaming
+  input; Codex and Gemini documented as not steering. A connector assignment
+  re-sends `configure`; Codex and Gemini start a fresh process next turn.
+  Tested with a fake SDK `query()` (late message folded in with
+  `priority: "next"` and `client_composed`, input ends once all are answered,
+  a message after the answer keeps the query open) and fake Codex/Gemini
+  binaries (a reconfigure starts a new process); the daemon sends `configure`
+  on assignment. Not tested against the real Claude CLI (does it fold
+  `"next"` messages as documented?), Codex or Gemini.
 - **Item 3 (archives):** encrypted with AES-256-GCM, key in the keychain;
   non-local `--storage-url` refused without the key; old token rotated
   (401 on `/mcp`) and blanked in committed images. Tested: seal round trip at

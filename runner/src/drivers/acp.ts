@@ -272,6 +272,7 @@ export class AcpDriver implements ModelDriver {
   #conn: Connection | null = null;
   #caps = { loadSession: false, mcpHttp: false };
   #session: Session | null = null;
+  #stale = false;
 
   constructor(opts: AcpDriverOptions) {
     this.#opts = opts;
@@ -291,8 +292,15 @@ export class AcpDriver implements ModelDriver {
     return Promise.resolve();
   }
 
+  reconfigure(): void {
+    this.#stale = true;
+  }
+
   async #start(): Promise<Connection> {
-    if (this.#conn?.alive) return this.#conn;
+    if (this.#conn?.alive && !this.#stale) return this.#conn;
+    // A fresh agent process lists the MCP tools anew; the session loads by id.
+    this.#conn?.kill();
+    this.#stale = false;
     this.#session = null;
     const { bin, model, workspaceDir, homeDir } = this.#opts;
     // GOOGLE_GEMINI_BASE_URL alone would make Gemini pick its "gateway" auth, which headless mode rejects.
