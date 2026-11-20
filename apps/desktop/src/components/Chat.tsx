@@ -535,7 +535,13 @@ function Item(props: { item: DisplayItem; agent: Agent; files?: ChatFiles }): JS
             <div class="a2a-head">
               <CalendarClock size={16} />
               <span>
-                Routine <strong>{item.routine}</strong>
+                {item.routine === null ? (
+                  "A routine"
+                ) : (
+                  <>
+                    Routine <strong>{item.routine}</strong>
+                  </>
+                )}
               </span>
               <span class="spacer" />
               <span class="meta">{clockTime(item.at)}</span>

@@ -5,7 +5,7 @@ import type { MailMessage, QuestionAnswered, QuestionCard, StoredEvent } from ".
 export type TimelineItem =
   | { type: "user"; key: string; at: string; text: string; status: MailMessage["status"] }
   | { type: "incoming"; key: string; at: string; text: string; from: string; peerId: string }
-  | { type: "routine"; key: string; at: string; text: string; routine: string }
+  | { type: "routine"; key: string; at: string; text: string; routine: string | null }
   | { type: "outgoing"; key: string; at: string; text: string; to: string; peerId: string }
   | { type: "assistant"; key: string; at: string; text: string; streaming: boolean }
   | {
@@ -95,7 +95,7 @@ export function buildTimeline(
           peerId: m.sender.id,
         });
       } else {
-        const routine = names.routines.get(m.sender.id) ?? `#${String(m.sender.id)}`;
+        const routine = names.routines.get(m.sender.id) ?? null;
         push({ type: "routine", key, at: m.created_at, text: m.body, routine });
       }
     } else if (m.sender.kind === "agent" && m.sender.id === agentId) {
