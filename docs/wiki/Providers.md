@@ -75,6 +75,13 @@ Notes per kind:
 - **Ollama** needs no key. Ollama must listen on the daemon's computer (or
   set `base_url`).
 
+## Voice providers
+
+Voice (calls and dictation) uses its own providers, separate from the model
+providers: ElevenLabs (speech and live transcription) or OpenRouter (speech
+and transcription models). Their keys are set under Settings → Voice and
+stay in the daemon's secret store like model keys.
+
 ## Not supported
 
 - **Claude subscription logins** (signing in with a Claude account instead of

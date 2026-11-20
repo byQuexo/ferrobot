@@ -65,7 +65,11 @@ fn bundled_daemon() -> Option<PathBuf> {
 fn start_daemon(bin: &Path, data_dir: &Path) -> std::io::Result<Child> {
     std::fs::create_dir_all(data_dir)?;
     let log = std::fs::File::create(data_dir.join("daemon.log"))?;
-    Command::new(bin)
+    let mut daemon = Command::new(bin);
+    // Without this a console window opens next to the app, and closing it kills the daemon.
+    #[cfg(windows)]
+    std::os::windows::process::CommandExt::creation_flags(&mut daemon, 0x0800_0000);
+    daemon
         .args([
             "--backend",
             "docker",
