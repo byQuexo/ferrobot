@@ -27,6 +27,7 @@ pub enum DaemonFrame {
     /// Run one turn for a mailbox message.
     Turn {
         turn_id: String,
+        /// `0`: a new agent's greeting turn, which has no mailbox message.
         message_id: i64,
         sender: Sender,
         /// Display name of the sender (`user` or the agent name).

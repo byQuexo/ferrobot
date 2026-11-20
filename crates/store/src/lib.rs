@@ -17,6 +17,7 @@ mod providers;
 mod routines;
 mod settings;
 mod snapshots;
+mod tasks;
 mod util;
 
 use std::path::Path;
@@ -31,6 +32,7 @@ pub use mailbox::AgentPair;
 pub use memory::MemoryEntry;
 pub use routines::{NewRoutine, Routine, RoutineRun, RunTrigger};
 pub use snapshots::SnapshotRecord;
+pub use tasks::Task;
 
 /// Maximum delivery attempts before a message is marked failed.
 pub const MAX_DELIVERY_ATTEMPTS: u32 = 3;

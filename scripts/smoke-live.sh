@@ -32,6 +32,8 @@ OLLAMA_MODEL=${OLLAMA_MODEL:-qwen2.5:3b}
 TOKEN=smoke-live-operator-token-0123456789
 FAILED=0
 KEY=${ANTHROPIC_API_KEY:-}
+# A shell variable from here on: no child process (docker, curl, cargo) inherits it.
+unset ANTHROPIC_API_KEY
 if [ -z "$KEY" ] && [ -t 0 ]; then
   read -rsp "Anthropic API key (hidden; Enter skips Claude): " KEY
   echo
@@ -54,7 +56,8 @@ stop_daemon() {
 # Whether the keychain holds a provider's key (macOS; elsewhere unknown).
 in_keychain() {
   command -v security >/dev/null || return 2
-  security find-generic-password -s ferrobot -a "provider:$1" >/dev/null 2>&1
+  # `security` exits 44 for a missing item: normalise to 1.
+  security find-generic-password -s ferrobot -a "provider:$1" >/dev/null 2>&1 || return 1
 }
 cleanup() {
   stop_daemon

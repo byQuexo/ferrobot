@@ -41,6 +41,7 @@ pub async fn check_all(state: &AppState) {
             tracing::warn!(agent = %agent.name, error = %e, "supervisor check failed");
         }
     }
+    crate::tasks::nudge(state).await;
 }
 
 async fn check(state: &AppState, agent: &Agent) -> Result<(), crate::error::ApiError> {

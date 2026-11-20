@@ -111,6 +111,18 @@ impl Store {
         .await
     }
 
+    /// Whether `agent` has any event of `kind`.
+    pub async fn has_event(&self, agent: AgentId, kind: &'static str) -> Result<bool, StoreError> {
+        self.with(move |c| {
+            Ok(c.query_row(
+                "SELECT EXISTS (SELECT 1 FROM events WHERE agent_id = ?1 AND kind = ?2)",
+                params![agent.to_string(), kind],
+                |r| r.get(0),
+            )?)
+        })
+        .await
+    }
+
     /// Events of `agent` with id greater than `after` (oldest first).
     pub async fn events_after(
         &self,

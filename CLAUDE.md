@@ -87,6 +87,8 @@ Principles:
 - `crates/daemon/src/storage.rs` — object storage (`object_store`) for snapshot
   archives, `--storage-url` (default: the data dir; `s3://` for S3/R2).
 - `crates/daemon/src/lifecycle.rs`, `supervisor.rs`, `scheduler.rs`, `runner_ws.rs`.
+- `crates/daemon/src/tasks.rs` — tracked tasks: automatic report and reminder;
+  `crates/store/src/tasks.rs` — task state from `task` events and the mailbox.
 - `crates/mcp/src/tools.rs` — MCP tools; `crates/mcp/src/lib.rs` — `MailboxNotifier`.
 - `crates/store/src/migrations.rs` — schema migrations.
 - `crates/core/src/question.rs` — question/approval cards.
@@ -109,6 +111,10 @@ Principles:
 - UI text is English, short and plain.
 
 ## Commands
+
+GitHub Actions minutes are limited: run these gates locally before a merge
+(including the Tauri shell's clippy when `src-tauri` changed). CI runs only
+the Rust and TypeScript checks on PRs; E2E runs by hand ("Run workflow").
 
 Rust (repo root):
 ```
@@ -198,12 +204,11 @@ daemon, `docker ps -a` must be empty of ferrobot containers.
 - No provider has been run against its real upstream (no keys used).
 - Codex 0.166.0 is in the runner image; a live Codex turn ran against Ollama's
   Responses API, not against OpenAI (no key in the environment).
-- The Claude driver ran in Docker against a fake Anthropic upstream only; a
-  real Anthropic call still needs a key.
-- The provider dialogs were checked in a browser against a real daemon, not in
-  the Tauri window; the real OS keychain path has never run.
-- A live Claude run (`--driver claude`) has never been tested; neither has
-  Claude steering (`scripts/smoke-live.sh` covers the plain turn).
+- A live Claude turn passed (`scripts/smoke-live.sh`, 2026-11-20, macOS): an
+  Anthropic provider with its key in the macOS Keychain, a tool call in a
+  Docker sandbox, no trace of the key in the sandbox, logs or data dir.
+  Claude steering is still untested against the real API; the Windows
+  Credential Manager path has never run.
 - Voice never called ElevenLabs or OpenRouter for real (fake upstream only),
   and the microphone was never used in the Tauri window.
 

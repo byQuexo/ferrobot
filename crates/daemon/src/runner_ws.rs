@@ -9,15 +9,19 @@ use axum::http::{HeaderMap, StatusCode, header};
 use axum::response::{IntoResponse, Response};
 use axum::routing::get;
 use ferrobot_core::protocol::{DaemonFrame, RunnerFrame, TurnEvent, TurnOutcome};
-use ferrobot_core::{Agent, AgentId, MailMessage, PROTOCOL_VERSION, Sender};
+use ferrobot_core::{Agent, AgentId, MailMessage, MailStatus, PROTOCOL_VERSION, Sender};
 use futures_util::{SinkExt, StreamExt};
 use serde_json::json;
 use tokio::sync::mpsc;
 
-use crate::{AppState, UiEvent};
+use crate::{AppState, UiEvent, tasks};
 
 const HELLO_TIMEOUT: Duration = Duration::from_secs(10);
 const STORE_RETRY: Duration = Duration::from_secs(1);
+
+/// Opens a new agent's first turn ([`crate::Settings::greet_new_agents`]).
+pub const GREETING: &str = "[ferrobot] You were just created. Begin your reply with a short \
+    greeting to your operator, one or two lines: who you are and what you will do now.";
 
 pub fn router() -> Router<AppState> {
     Router::new().route("/runner/ws", get(upgrade))
@@ -52,6 +56,7 @@ async fn upgrade(
 struct Done {
     turn_id: String,
     outcome: TurnOutcome,
+    result: Option<String>,
     error: Option<String>,
     steered: Vec<i64>,
 }
@@ -205,6 +210,7 @@ async fn handle_frame(state: &AppState, agent: &Agent, done_tx: &mpsc::Sender<Do
                 .send(Done {
                     turn_id,
                     outcome,
+                    result,
                     error,
                     steered,
                 })
@@ -256,6 +262,11 @@ async fn dispatch_loop(
     mut done_rx: mpsc::Receiver<Done>,
 ) {
     let notify = state.hub.notify_handle(agent);
+    if greeting_due(&state, agent).await
+        && !run_turn(&state, agent, &conn, &notify, &mut done_rx, None).await
+    {
+        return;
+    }
     loop {
         let msg = match state.store.claim_next_message(agent).await {
             Ok(Some(msg)) => msg,
@@ -269,10 +280,19 @@ async fn dispatch_loop(
                 continue;
             }
         };
-        if !run_turn(&state, agent, &conn, &notify, &mut done_rx, msg).await {
+        if !run_turn(&state, agent, &conn, &notify, &mut done_rx, Some(msg)).await {
             return;
         }
     }
+}
+
+/// An operator-created agent with nothing to do yet greets in a turn of its own.
+async fn greeting_due(state: &AppState, agent: AgentId) -> bool {
+    let store = &state.store;
+    state.settings.greet_new_agents
+        && matches!(store.get_agent(agent).await, Ok(a) if a.created_by.is_none())
+        && matches!(store.has_event(agent, "message_in").await, Ok(false))
+        && matches!(store.has_queued_messages(agent).await, Ok(false))
 }
 
 /// Hands the operator's messages that arrived during a turn to that turn.
@@ -338,24 +358,31 @@ async fn settle_steered(state: &AppState, steered: Vec<i64>, done: Option<&Done>
     }
 }
 
-/// Runs one turn. Returns false when the connection is gone.
+/// Runs one turn; `None` is a new agent's greeting turn, which has no
+/// message. Returns false when the connection is gone.
 async fn run_turn(
     state: &AppState,
     agent: AgentId,
     conn: &Conn,
     notify: &tokio::sync::Notify,
     done_rx: &mut mpsc::Receiver<Done>,
-    msg: MailMessage,
+    msg: Option<MailMessage>,
 ) -> bool {
     let (conn_id, out) = (conn.id, &conn.out);
     let turn_id = uuid::Uuid::new_v4().to_string();
-    let from = sender_name(state, msg.sender).await;
+    let first = state.settings.greet_new_agents
+        && matches!(state.store.has_event(agent, "message_in").await, Ok(false));
+    let (sender, from) = match &msg {
+        Some(m) => (m.sender, sender_name(state, m.sender).await),
+        None => (Sender::User, "ferrobot".to_owned()),
+    };
+    let body = msg.as_ref().map_or("", |m| m.body.as_str());
     state
         .record(
             agent,
             Some(turn_id.clone()),
             "message_in",
-            json!({ "message_id": msg.id, "from": from, "sender": msg.sender, "body": msg.body, "attempt": msg.attempts }),
+            json!({ "message_id": msg.as_ref().map(|m| m.id), "from": from, "sender": sender, "body": body, "attempt": msg.as_ref().map(|m| m.attempts) }),
         )
         .await;
     state
@@ -363,12 +390,20 @@ async fn run_turn(
         .set_current_turn(agent, conn_id, Some(turn_id.clone()));
     state.hub.touch(agent);
     state.publish_agent(agent).await;
+    let mut body = state.render_mentions(body).await;
+    if first {
+        body = if body.is_empty() {
+            GREETING.to_owned()
+        } else {
+            format!("{GREETING}\n\n{body}")
+        };
+    }
     let frame = DaemonFrame::Turn {
         turn_id: turn_id.clone(),
-        message_id: msg.id,
-        sender: msg.sender,
+        message_id: msg.as_ref().map_or(0, |m| m.id),
+        sender,
         sender_name: from,
-        body: state.render_mentions(&msg.body).await,
+        body,
     };
     if out.send(frame).await.is_err() {
         return false; // reader cleanup requeues
@@ -392,35 +427,49 @@ async fn run_turn(
     state.hub.set_current_turn(agent, conn_id, None);
     state.hub.touch(agent);
     settle_steered(state, steered, result.as_ref()).await;
+    if result.is_none() {
+        tracing::warn!(%agent, turn = %turn_id, "turn timed out, interrupting");
+        let _ = out.send(DaemonFrame::Interrupt { turn_id }).await;
+    }
+    if let Some(msg) = msg {
+        settle(state, agent, &msg, result).await;
+    }
+    state.publish_agent(agent).await;
+    true
+}
 
+/// Settles the turn's message. A task's end is reported first, so the
+/// supervisor never sees it finished without an answer.
+async fn settle(state: &AppState, agent: AgentId, msg: &MailMessage, result: Option<Done>) {
     let store_result = match result {
         // An interrupt is the operator's decision: do not redeliver.
         Some(Done {
-            outcome: TurnOutcome::Completed | TurnOutcome::Interrupted,
+            outcome: outcome @ (TurnOutcome::Completed | TurnOutcome::Interrupted),
+            result,
             ..
-        }) => state.store.complete_message(msg.id).await,
-        Some(Done { error, .. }) => state
-            .store
-            .fail_message(msg.id, error.unwrap_or_else(|| "turn failed".into()))
-            .await
-            .map(|_| ()),
-        None => {
-            tracing::warn!(%agent, turn = %turn_id, "turn timed out, interrupting");
-            let _ = out.send(DaemonFrame::Interrupt { turn_id }).await;
-            state
-                .store
-                .fail_message(msg.id, "turn timed out".into())
-                .await
-                .map(|_| ())
+        }) => {
+            tasks::report(state, agent, msg, outcome, result.as_deref()).await;
+            state.store.complete_message(msg.id).await
+        }
+        failed => {
+            let error = match failed {
+                Some(Done { error, .. }) => error.unwrap_or_else(|| "turn failed".into()),
+                None => "turn timed out".into(),
+            };
+            match state.store.fail_message(msg.id, error.clone()).await {
+                Ok(MailStatus::Failed) => {
+                    tasks::report(state, agent, msg, TurnOutcome::Failed, Some(&error)).await;
+                    Ok(())
+                }
+                other => other.map(|_| ()),
+            }
         }
     };
     if let Err(e) = store_result {
         tracing::error!(error = %e, message = msg.id, "failed to settle message");
     }
     state.publish_message(msg.id).await;
-    state.publish_agent(agent).await;
     if let Sender::Routine(_) = msg.sender {
         state.publish(UiEvent::RoutinesChanged { agent_id: agent });
     }
-    true
 }

@@ -483,12 +483,30 @@ store used for the run) or the daemon's own env.
   daemon's Docker e2e; all green. Not run on Tim's Mac: Docker Desktop
   stopped answering after the disk filled up and did not come back after a
   restart.
-- **Real Claude turn: not run.** `ANTHROPIC_API_KEY` is not in this
-  session's environment, and the key must not go through the transcript.
-  `scripts/smoke-live.sh` runs it from Tim's own terminal.
-- **Ollama turn: not run.** Ollama is installed but was not running and has
-  no model pulled; the script needs `OLLAMA_MODEL` (default `qwen2.5:3b`).
-- **Key leak check: written, not yet run live.** `smoke-live.sh` counts
+- **Live smoke test passed (2026-11-20, third run, `SKIP_BUILD=1`).** Tim
+  stored his Anthropic key through Settings (Keychain); the script got it from
+  the Keychain with `security` (never printed) and gave it to a throwaway
+  daemon as a new Anthropic provider. Results: provider reports the key, key
+  is in the macOS Keychain; Claude turn `completed` with a tool call, the
+  nonce file in the sandbox and the nonce in its answer; `qwen2.5:3b` on
+  Ollama passed as well this time; the real key was in none of: both
+  containers' config/env, runtime env, root filesystem, home volume and
+  logs, the daemon log, the data dir. Not checked in that run: that deleting
+  the provider removes its Keychain entry (the check misread `security`'s
+  exit code 44 and printed nothing; fixed afterwards, not re-run).
+- **Ollama turn: run twice on Tim's Mac (2026-11-20, M2 Air, 16 GB, Ollama
+  0.40.16, `OLLAMA_CONTEXT_LENGTH=32768`), Claude part skipped (no key yet).**
+  The path works: a Docker sandbox, the OpenAI-compatible driver, the
+  daemon's model proxy to local Ollama, a shell tool call, the nonce file in
+  the sandbox, clean-up (no containers or volumes left). Both runs still FAIL
+  the script's answer check, which is the models' limit, not ferrobot's:
+  - `qwen2.5:3b`: turn `completed`, but it called `send_message` to an agent
+    "user" (`agent not found: user`) and answered without the file's content.
+  - `qwen3:4b`: wrote the file, then thought at about 23 tokens/s for longer
+    than the script's 180 s, so no `turn_done` arrived in time.
+  For real agent work on this machine use a cloud model (see the Ollama
+  notes); a local model this size is only good for checking the plumbing.
+- **Key leak check: ran live in the passing run above.** `smoke-live.sh` counts
   matches of the real key over the whole stream of: container config and
   env, runtime env, root filesystem, home volume, container logs, daemon log
   and data dir; a source that cannot be read fails the check. Self-tested
@@ -505,3 +523,31 @@ store used for the run) or the daemon's own env.
   contains a fresh nonce, a `tool_use` event and the nonce in the sandbox
   file; it rebuilds the runner image first and reads the data dir only
   after the daemon stopped.
+
+## Agent collaboration (`feat/agent-collaboration`)
+
+- **Done:** mail from an agent wakes a sleeping one (now tested); tracked
+  tasks (`assign_task`, `create_agent` with `task`, `list_tasks`) with an
+  automatic report when the delegate's turn ends and one reminder from the
+  supervisor; memorable names asked for in the prompt and `create_agent`;
+  a greeting to the operator at the start of a new agent's first turn, in a
+  turn of its own for operator-created agents. Design in `docs/decisions.md`.
+  No migration; the runner protocol only documents `message_id: 0`.
+- **Tested** (in-process daemon, fake runner frames, real MCP tools):
+  `agent_mail_wakes_sleeping_agents` (paused, stopped and archived agents
+  woken by `send_message`, tool descriptions), `tasks_report_back_once_and_never_loop`
+  (report without a reply, none when the delegate replied, one reminder
+  only, a reply threaded to the reminder counts, `list_tasks`, the
+  assigner's turns on answers send nothing back),
+  `new_agents_greet_the_operator_first` (greeting turn, greeting before a
+  queued message, greets once, no own turn for agent-created agents). Runner:
+  the prompt lines (`systemAppend`). Live, with the real `ferrobotd`, the
+  local backend and the mock driver: an operator-created agent's greeting
+  turn runs, shows as its first chat text and counts as unread; its next
+  turn has no greeting.
+- **Not tested:** a real model with any of it: whether models end task turns
+  with their answer, keep `reply_to` for the final answer, pick memorable
+  names and greet in one or two lines. `smoke-docker.sh` was not run (it
+  binds 7878/7879). Not handled: a delegate that hands part of its task to a
+  third agent gets that agent's answer as a normal message, so its final
+  answer to the first assigner then depends on the model again.

@@ -1,5 +1,5 @@
 use ferrobot_core::question::{QUESTION_CARD_VERSION, QuestionCard, QuestionEvent};
-use ferrobot_core::{AgentId, AgentName, AvatarCharacter, MailMessage, Sender, mention};
+use ferrobot_core::{Agent, AgentId, AgentName, AvatarCharacter, MailMessage, Sender, mention};
 use ferrobot_store::StoreError;
 use rmcp::handler::server::tool::{Extension, ToolCallContext};
 use rmcp::handler::server::wrapper::{Json, Parameters};
@@ -92,8 +92,39 @@ pub struct SendMessageResult {
 }
 
 #[derive(Debug, Deserialize, JsonSchema)]
+pub struct AssignTaskArgs {
+    /// Agent id (from `list_agents`) or current name of the agent to do it.
+    pub to: String,
+    /// The task, with everything the agent needs to know.
+    pub task: String,
+}
+
+#[derive(Debug, Serialize, JsonSchema)]
+pub struct TaskInfo {
+    /// Task id (the id of the task message).
+    pub id: i64,
+    /// The other agent: who gave you the task, or who works on yours.
+    pub agent: String,
+    /// `queued`, `working`, `done` (an answer came back), `open` (its turn
+    /// ended without an answer) or `failed`.
+    pub status: String,
+    /// The task text, shortened.
+    pub task: String,
+}
+
+#[derive(Debug, Serialize, JsonSchema)]
+pub struct TaskList {
+    /// Tasks you gave other agents, newest first.
+    pub given: Vec<TaskInfo>,
+    /// Tasks other agents gave you, newest first.
+    pub received: Vec<TaskInfo>,
+}
+
+#[derive(Debug, Deserialize, JsonSchema)]
 pub struct CreateAgentArgs {
-    /// Name of the new agent: 1-32 chars, `a-z0-9-`, starts with a letter.
+    /// A short, memorable name that fits the role, like `scout` (research),
+    /// `forge` (building), `ledger` (numbers) or `echo` (comms), not
+    /// `research-agent`. 1-32 chars, lowercase `a-z0-9-`, starts with a letter.
     pub name: String,
     /// One line describing its role, shown to the operator and in agent lists.
     pub description: String,
@@ -103,8 +134,9 @@ pub struct CreateAgentArgs {
     /// Optional character avatar look; omitted: derived from the new id.
     pub character: Option<AvatarCharacter>,
     /// The task to start on, with everything the new agent needs to know.
-    /// Sent as your first message to it, so it starts right away and
-    /// reports back to you. Omitted: it stays idle until you message it.
+    /// Sent as your first message to it, so it starts right away; its answer
+    /// comes back to you automatically. Omitted: it stays idle until you
+    /// message it.
     pub task: Option<String>,
 }
 
@@ -267,6 +299,7 @@ fn check_body(body: &str) -> Result<&str, ErrorData> {
 
 impl FerrobotTools {
     /// Queues mail from agent `from`, with `@name` mentions stored as tokens.
+    /// A `task` gets its answer sent back automatically.
     async fn enqueue(
         &self,
         from: AgentId,
@@ -274,6 +307,7 @@ impl FerrobotTools {
         body: &str,
         reply_to: Option<i64>,
         priority: Option<bool>,
+        task: bool,
     ) -> Result<MailMessage, ErrorData> {
         let store = &self.state.store;
         let agents = store.list_agents().await.map_err(store_err)?;
@@ -283,16 +317,20 @@ impl FerrobotTools {
                 .find(|a| a.name.as_str() == name)
                 .map(|a| a.id)
         });
-        let msg = store
-            .enqueue_message_with_priority(Sender::Agent(from), to, body, reply_to, priority)
-            .await
-            .map_err(store_err)?;
+        let msg = if task {
+            store.enqueue_task(from, to, body).await
+        } else {
+            store
+                .enqueue_message_with_priority(Sender::Agent(from), to, body, reply_to, priority)
+                .await
+        }
+        .map_err(store_err)?;
         self.state.notifier.message_enqueued(&msg);
         Ok(msg)
     }
 
     /// An agent by id or `@name`.
-    async fn agent(&self, to: &str) -> Result<ferrobot_core::Agent, ErrorData> {
+    async fn agent(&self, to: &str) -> Result<Agent, ErrorData> {
         let to = to.trim().trim_start_matches('@');
         let store = &self.state.store;
         // Ids are stable; names are unique, so a name lookup is unambiguous.
@@ -304,6 +342,18 @@ impl FerrobotTools {
             store.get_agent_by_name(name).await
         }
         .map_err(store_err)
+    }
+
+    /// Another agent, by id or current name.
+    async fn recipient(&self, me: AgentId, to: &str) -> Result<Agent, ErrorData> {
+        let recipient = self.agent(to).await?;
+        if recipient.id == me {
+            return Err(ErrorData::invalid_params(
+                "cannot send a message to yourself",
+                None,
+            ));
+        }
+        Ok(recipient)
     }
 
     fn notify_memory(&self, agent: AgentId, global: Option<bool>) {
@@ -345,7 +395,8 @@ impl FerrobotTools {
 
     #[tool(
         description = "Send an asynchronous message to another agent's mailbox. \
-        The recipient handles it in its own turn; replies arrive later as new messages."
+        The recipient handles it in its own turn; replies arrive later as new messages. \
+        It wakes a sleeping recipient (unless `priority` is false)."
     )]
     async fn send_message(
         &self,
@@ -354,14 +405,8 @@ impl FerrobotTools {
     ) -> ToolResult<SendMessageResult> {
         let me = &caller(&parts)?.0;
         let body = check_body(&args.body)?;
+        let recipient = self.recipient(me.id, &args.to).await?;
         let store = &self.state.store;
-        let recipient = self.agent(&args.to).await?;
-        if recipient.id == me.id {
-            return Err(ErrorData::invalid_params(
-                "cannot send a message to yourself",
-                None,
-            ));
-        }
         if let Some(reply_to) = args.reply_to {
             let original = store.get_message(reply_to).await.map_err(store_err)?;
             if original.recipient != me.id && original.sender != Sender::Agent(me.id) {
@@ -372,13 +417,90 @@ impl FerrobotTools {
             }
         }
         let msg = self
-            .enqueue(me.id, recipient.id, body, args.reply_to, args.priority)
+            .enqueue(
+                me.id,
+                recipient.id,
+                body,
+                args.reply_to,
+                args.priority,
+                false,
+            )
             .await?;
         Ok(Json(SendMessageResult {
             message_id: msg.id,
             queued_for: recipient.name.to_string(),
             agent_id: recipient.id.to_string(),
         }))
+    }
+
+    #[tool(
+        description = "Give another agent a task. It starts on it (a sleeping agent wakes up); \
+        when its turn on the task ends, its answer comes back to you as a message automatically, \
+        even while you sleep. Include everything it needs to know. Returns the task id."
+    )]
+    async fn assign_task(
+        &self,
+        Extension(parts): Extension<http::request::Parts>,
+        Parameters(args): Parameters<AssignTaskArgs>,
+    ) -> ToolResult<SendMessageResult> {
+        let me = caller(&parts)?.0.id;
+        let task = check_body(&args.task)?;
+        let recipient = self.recipient(me, &args.to).await?;
+        let msg = self
+            .enqueue(me, recipient.id, task, None, None, true)
+            .await?;
+        Ok(Json(SendMessageResult {
+            message_id: msg.id,
+            queued_for: recipient.name.to_string(),
+            agent_id: recipient.id.to_string(),
+        }))
+    }
+
+    #[tool(
+        description = "List the tasks you gave other agents and the tasks you were given, \
+        with their status."
+    )]
+    async fn list_tasks(
+        &self,
+        Extension(parts): Extension<http::request::Parts>,
+    ) -> ToolResult<TaskList> {
+        let me = caller(&parts)?.0.id;
+        let store = &self.state.store;
+        let tasks = store.tasks(me, 50).await.map_err(store_err)?;
+        let agents = store.list_agents().await.map_err(store_err)?;
+        let name_of = |id: AgentId| {
+            agents
+                .iter()
+                .find(|a| a.id == id)
+                .map_or_else(|| "a deleted agent".to_owned(), |a| a.name.to_string())
+        };
+        let mut list = TaskList {
+            given: Vec::new(),
+            received: Vec::new(),
+        };
+        for t in tasks {
+            let Some(assigner) = t.assigner() else {
+                continue;
+            };
+            let received = t.message.recipient == me;
+            let text = mention::render(&t.message.body, |id| Some(name_of(id)));
+            let info = TaskInfo {
+                id: t.message.id,
+                agent: name_of(if received {
+                    assigner
+                } else {
+                    t.message.recipient
+                }),
+                status: t.status().to_owned(),
+                task: text.chars().take(200).collect(),
+            };
+            if received {
+                list.received.push(info);
+            } else {
+                list.given.push(info);
+            }
+        }
+        Ok(Json(list))
     }
 
     #[tool(
@@ -403,7 +525,7 @@ impl FerrobotTools {
             && store.get_agent(creator).await.is_ok()
         {
             let msg = self
-                .enqueue(me, creator, &card_text(&card), None, None)
+                .enqueue(me, creator, &card_text(&card), None, None, false)
                 .await?;
             return Ok(Json(AskUserResult {
                 question_id: msg.id,
@@ -433,7 +555,7 @@ impl FerrobotTools {
     }
 
     #[tool(
-        description = "Create a new agent. The operator first sees an approval card with its name and role; this call waits for their decision. Returns `created` with the new agent's id, or `declined` (operator said no or did not answer in time). Pass `task` to brief it: it is sent as your first message, the agent starts right away and reports back to you. Fails if the name is invalid or taken, or the agent limit is reached."
+        description = "Create a new agent. Give it a short, memorable name that fits its role, like `scout` for research, `forge` for building, `ledger` for numbers or `echo` for comms, not `research-agent`. The operator first sees an approval card with its name and role; this call waits for their decision. Returns `created` with the new agent's id, or `declined` (operator said no or did not answer in time). Pass `task` to brief it: it is sent as your first message, the agent starts right away and its answer comes back to you automatically. Fails if the name is invalid or taken, or the agent limit is reached."
     )]
     async fn create_agent(
         &self,
@@ -461,10 +583,10 @@ impl FerrobotTools {
             AgentRequestOutcome::Created { id, name } => {
                 let note = match &task {
                     Some(task) => {
-                        let msg = self.enqueue(me, id, task, None, None).await?;
+                        let msg = self.enqueue(me, id, task, None, None, true).await?;
                         format!(
                             "Created \"{name}\" and sent it the task as message #{}. \
-                             It reports back to you.",
+                             Its answer comes back to you automatically.",
                             msg.id
                         )
                     }
@@ -698,7 +820,7 @@ fn context_caller(context: &RequestContext<RoleServer>) -> Option<AgentId> {
 #[allow(clippy::unused_async_trait_impl)]
 #[tool_handler(
     name = "ferrobot",
-    instructions = "Mailbox, memory, question-card and agent-creation tools for ferrobot agents, plus the tools of the connectors your operator gave you (named `<connector>__<tool>`). Messages and answers are asynchronous."
+    instructions = "Mailbox, task, memory, question-card and agent-creation tools for ferrobot agents, plus the tools of the connectors your operator gave you (named `<connector>__<tool>`). Messages and answers are asynchronous."
 )]
 impl ServerHandler for FerrobotTools {
     async fn list_tools(
