@@ -153,7 +153,7 @@ sudo scripts/firecracker/build-rootfs.sh   # Linux only; see scripts/firecracker
 
 Runner (`runner/`): `npm ci && npm run lint && npm run format:check && npm run typecheck && npm test && npm run build`
 
-Desktop (`apps/desktop/`): `npm ci && npm run check:api && npm run typecheck && npm test && npm run build`;
+Desktop (`apps/desktop/`): `npm ci && npm run lint && npm run format:check && npm run check:api && npm run typecheck && npm test && npm run build`;
 Tauri shell: `cd src-tauri && cargo fmt --check && cargo clippy --all-targets -- -D warnings`.
 The built `dist/` is embedded at compile time: run `npm run build` before
 `cargo build` in `src-tauri`.

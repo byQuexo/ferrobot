@@ -60,7 +60,7 @@ npm ci && npm run lint && npm run format:check && npm run typecheck && npm test 
 Desktop (`apps/desktop/`):
 
 ```bash
-npm ci && npm run check:api && npm run typecheck && npm test && npm run build
+npm ci && npm run lint && npm run format:check && npm run check:api && npm run typecheck && npm test && npm run build
 cd src-tauri && cargo fmt --check && cargo clippy --all-targets -- -D warnings
 ```
 
