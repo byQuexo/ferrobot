@@ -189,11 +189,9 @@ the code and this file together.
   reference: `create` looks for an archive first. A new agent with the same
   name as an agent deleted with `keep_data=true` would get its archive, the
   same way it would get its kept home volume today.
-- **No encryption yet:** Tim scoped this step to a local FS target. Before
-  pointing `--storage-url` at S3/R2 for archives, add encryption (needs a key
-  decision: OS keychain like provider keys is the obvious place).
-- **Old token retired on archive** instead of stripping env from the image:
-  `docker commit` copies the container env into the image config.
+- **Encrypted at rest** since the hardening pass (see item 3 below).
+- **Old token retired on archive**, and blanked in the image config
+  (`docker commit` copies the container env into it).
 
 ## F2: guest agent
 
@@ -386,3 +384,28 @@ the code and this file together.
   `[REDACTED]` for `anthropic_api_key` and `api_token`. It destructures every
   field, so a new field does not compile until someone decides whether it is
   secret. `AppState`'s derived `Debug` goes through it.
+- **Item 3: archives and snapshot home tars are encrypted** before they
+  reach `--storage-url` (`ferrobot_sandbox::seal`): AES-256-GCM (ring) over
+  64 KiB chunks, STREAM-style nonces (random 7-byte prefix per write,
+  counter, last-chunk flag) and the object key as AAD, so a dropped,
+  reordered or appended chunk, or an archive moved to another agent's path,
+  fails to open. Images stream through it (about 1.3 GB, never in memory).
+  The key is `archive-key` in the secret store, made on first start and
+  never replaced: a stored value that is not a key stops the daemon instead
+  of orphaning every archive.
+- **Remote storage needs the key.** With an `s3://` (or any non-local)
+  `--storage-url` the daemon refuses to start without the key; with the
+  local data dir it warns and writes plaintext (the disk is the daemon's
+  anyway). Objects without the header (written before this change) are read
+  only from a local store; a remote store refuses them, so nobody with
+  bucket write access can swap in an unencrypted image.
+- **The retired token:** rotated on archive (tested: the old token gets 401
+  on `/mcp`) and blanked in committed images (`ENV FERROBOT_AGENT_TOKEN=`;
+  the container env sets the current one). Not stripped: files in the home
+  directory (e.g. tool configs) may still contain the old, dead token.
+- **Not encrypted:** files agents share (`artifacts/`). They are small,
+  meant to be read and served, and the review scoped this to archives; with
+  S3 they would sit there in the clear. Snapshot images stay in the local
+  Docker engine and are not encrypted either.
+- **Losing the key loses the archives.** It lives in the OS keychain (or
+  `secrets.json` with `--secret-store file`); there is no export or escrow.

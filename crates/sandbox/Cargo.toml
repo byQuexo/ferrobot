@@ -28,6 +28,8 @@ hyper = { workspace = true, features = ["client", "http1"] }
 hyper-util = { workspace = true, features = ["tokio"] }
 object_store = { workspace = true, features = ["tokio"] }
 reqwest.workspace = true
+# Already in the tree via rustls: AES-256-GCM for archives at rest.
+ring = "0.17"
 serde.workspace = true
 serde_json.workspace = true
 tar.workspace = true

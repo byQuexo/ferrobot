@@ -19,6 +19,7 @@ use futures_util::{StreamExt, TryStreamExt};
 use object_store::path::Path as ObjectPath;
 use object_store::{ObjectStore, ObjectStoreExt};
 
+use crate::seal::{Opener, SealKey, Sealer};
 use crate::{
     ExecOutput, ExecRequest, MAX_FILE_BYTES, SandboxBackend, SandboxError, SandboxHandle,
     SandboxPath, SandboxSpec, SandboxState, SleepLevel, SnapshotRef, capture,
@@ -28,6 +29,9 @@ const KIND: &str = "docker";
 const LABEL_MANAGED: &str = "dev.ferrobot.managed";
 /// Image repository for archived sandboxes (separate from snapshots).
 const ARCHIVE_REPO: &str = "ferrobot-archive";
+/// The daemon's per-sandbox token; blanked in committed images (it is
+/// retired on archive anyway, and the container env sets the current one).
+const BLANK_TOKEN: &str = "ENV FERROBOT_AGENT_TOKEN=";
 
 /// Configuration for [`DockerBackend`].
 #[derive(Debug, Clone)]
@@ -46,6 +50,11 @@ pub struct DockerConfig {
     /// commit` does not capture), as `snapshots/<tag>.tar`. `None`: snapshots
     /// cover the root filesystem only.
     pub snapshot_store: Option<Arc<dyn ObjectStore>>,
+    /// Encrypts what goes to `snapshot_store`. `None`: written in the clear
+    /// (the daemon allows that for a local store only).
+    pub archive_key: Option<SealKey>,
+    /// Reads unencrypted objects (written before encryption). Local stores only.
+    pub accept_plaintext: bool,
 }
 
 impl Default for DockerConfig {
@@ -58,6 +67,8 @@ impl Default for DockerConfig {
             pids_limit: 512,
             snapshot_repo: "ferrobot-snapshot".into(),
             snapshot_store: None,
+            archive_key: None,
+            accept_plaintext: true,
         }
     }
 }
@@ -146,6 +157,35 @@ impl DockerBackend {
         Ok(())
     }
 
+    fn sealer(&self, key: &ObjectPath) -> Result<Option<Sealer>, SandboxError> {
+        self.config
+            .archive_key
+            .as_ref()
+            .map(|k| Sealer::new(k, key.as_ref()))
+            .transpose()
+    }
+
+    fn opener(&self, key: &ObjectPath) -> Opener {
+        Opener::new(
+            self.config.archive_key.as_ref(),
+            key.as_ref(),
+            self.config.accept_plaintext,
+        )
+    }
+
+    /// Reads a whole object from the store and decrypts it.
+    async fn get_opened(
+        &self,
+        store: &dyn ObjectStore,
+        key: &ObjectPath,
+    ) -> Result<Bytes, SandboxError> {
+        let bytes = store.get(key).await?.bytes().await?;
+        let mut opener = self.opener(key);
+        let mut plain = opener.push(&bytes)?;
+        plain.extend(opener.finish()?);
+        Ok(plain.into())
+    }
+
     fn archive_keys(name: &str) -> (ObjectPath, ObjectPath) {
         (
             ObjectPath::from(format!("archives/{name}/image.tar")),
@@ -184,6 +224,7 @@ impl DockerBackend {
             store,
             &home_key,
             self.docker.download_from_container(id, Some(home)),
+            self.sealer(&home_key)?,
         )
         .await?;
         let options = CommitContainerOptionsBuilder::default()
@@ -191,6 +232,7 @@ impl DockerBackend {
             .repo(ARCHIVE_REPO)
             .tag(&name)
             .comment("ferrobot archive")
+            .changes(BLANK_TOKEN)
             .build();
         self.docker
             .commit_container(options, bollard::models::ContainerConfig::default())
@@ -198,7 +240,13 @@ impl DockerBackend {
         let image = format!("{ARCHIVE_REPO}:{name}");
         // shortcut: saves the whole image (base layers too, ~1 GiB); upgrade to
         // shipping only the container's diff once archives pile up.
-        put_stream(store, &image_key, self.docker.export_image(&image)).await?;
+        put_stream(
+            store,
+            &image_key,
+            self.docker.export_image(&image),
+            self.sealer(&image_key)?,
+        )
+        .await?;
         self.destroy(sandbox, true).await?;
         let force = RemoveImageOptionsBuilder::default().force(true).build();
         self.docker.remove_image(&image, Some(force), None).await?;
@@ -212,7 +260,7 @@ impl DockerBackend {
         };
         let (image_key, home_key) = Self::archive_keys(&spec.name);
         let image_tar = match store.get(&image_key).await {
-            Ok(found) => found.into_stream(),
+            Ok(found) => opened_stream(self.opener(&image_key), found.into_stream()),
             Err(object_store::Error::NotFound { .. }) => return Ok(None),
             Err(e) => return Err(e.into()),
         };
@@ -231,7 +279,7 @@ impl DockerBackend {
         let id = self
             .create_container(spec, &format!("{ARCHIVE_REPO}:{}", spec.name))
             .await?;
-        self.upload_home(&id, store.get(&home_key).await?.bytes().await?)
+        self.upload_home(&id, self.get_opened(store, &home_key).await?)
             .await?;
         self.ensure_started(&id).await?;
         self.delete_archive(&spec.name).await?;
@@ -303,27 +351,61 @@ impl DockerBackend {
     }
 }
 
-/// Streams `chunks` into the store as one object (multipart, aborted on error).
+/// Streams `chunks` into the store as one object (multipart, aborted on
+/// error), encrypted when a sealer is given.
 async fn put_stream<S>(
     store: &dyn ObjectStore,
     key: &ObjectPath,
     mut chunks: S,
+    mut sealer: Option<Sealer>,
 ) -> Result<(), SandboxError>
 where
     S: futures_util::Stream<Item = Result<Bytes, bollard::errors::Error>> + Unpin,
 {
     let mut upload = object_store::WriteMultipart::new(store.put_multipart(key).await?);
     while let Some(chunk) = chunks.next().await {
-        match chunk {
-            Ok(chunk) => upload.write(&chunk),
+        let out = match (chunk, sealer.as_mut()) {
+            (Ok(chunk), Some(s)) => s.push(&chunk),
+            (Ok(chunk), None) => Ok(chunk.to_vec()),
+            (Err(e), _) => Err(e.into()),
+        };
+        match out {
+            Ok(bytes) => upload.write(&bytes),
             Err(e) => {
                 upload.abort().await?;
-                return Err(e.into());
+                return Err(e);
             }
         }
     }
+    if let Some(s) = sealer {
+        upload.write(&s.finish()?);
+    }
     upload.finish().await?;
     Ok(())
+}
+
+/// Decrypts an object as it streams from the store.
+fn opened_stream(
+    opener: Opener,
+    chunks: futures_util::stream::BoxStream<'static, object_store::Result<Bytes>>,
+) -> impl futures_util::Stream<Item = Result<Bytes, SandboxError>> + Send + 'static {
+    futures_util::stream::try_unfold(
+        (Some(opener), chunks),
+        |(mut opener, mut chunks)| async move {
+            loop {
+                let Some(o) = opener.as_mut() else {
+                    return Ok(None);
+                };
+                let plain = match chunks.next().await {
+                    Some(chunk) => o.push(&chunk?)?,
+                    None => opener.take().map_or(Ok(Vec::new()), Opener::finish)?,
+                };
+                if !plain.is_empty() || opener.is_none() {
+                    return Ok(Some((Bytes::from(plain), (opener, chunks))));
+                }
+            }
+        },
+    )
 }
 
 fn not_found_or(err: bollard::errors::Error, id: &str) -> SandboxError {
@@ -530,13 +612,20 @@ impl SandboxBackend for DockerBackend {
                 .map_err(|e| not_found_or(e, id))?;
             // shortcut: the whole home archive is buffered and sent as one PUT (S3 caps
             // that at 5 GiB); switch to `put_multipart` once homes get that large.
-            store.put(key, chunks.concat().into()).await?;
+            let mut tar = chunks.concat();
+            if let Some(mut sealer) = self.sealer(key)? {
+                let mut sealed = sealer.push(&tar)?;
+                sealed.extend(sealer.finish()?);
+                tar = sealed;
+            }
+            store.put(key, tar.into()).await?;
         }
         let options = CommitContainerOptionsBuilder::default()
             .container(id)
             .repo(&self.config.snapshot_repo)
             .tag(&tag)
             .comment("ferrobot snapshot")
+            .changes(BLANK_TOKEN)
             .build();
         self.docker
             .commit_container(options, bollard::models::ContainerConfig::default())
@@ -566,10 +655,10 @@ impl SandboxBackend for DockerBackend {
             .await
             .map_err(|e| not_found_or(e, image))?;
         let archive = match self.archive(image) {
-            Some((store, key)) => match store.get(&key).await {
-                Ok(found) => Some(found.bytes().await?),
-                Err(object_store::Error::NotFound { .. }) => None,
-                Err(e) => return Err(e.into()),
+            Some((store, key)) => match self.get_opened(store, &key).await {
+                Ok(found) => Some(found),
+                Err(SandboxError::Storage(object_store::Error::NotFound { .. })) => None,
+                Err(e) => return Err(e),
             },
             None => None,
         };

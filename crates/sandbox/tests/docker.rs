@@ -7,6 +7,7 @@
 use std::collections::BTreeMap;
 use std::sync::Arc;
 
+use ferrobot_sandbox::seal::SealKey;
 use ferrobot_sandbox::{
     DockerBackend, DockerConfig, ExecRequest, SandboxBackend, SandboxPath, SandboxSpec,
     SandboxState, SleepLevel,
@@ -150,16 +151,18 @@ async fn warm_sleep_round_trip(backend: &DockerBackend, h: &ferrobot_sandbox::Sa
 #[tokio::test]
 async fn archive_moves_the_sandbox_into_the_store_and_back() {
     let store_dir = tempfile::tempdir().unwrap();
-    let backend = DockerBackend::connect(DockerConfig {
+    let store: Arc<dyn object_store::ObjectStore> =
+        Arc::new(object_store::local::LocalFileSystem::new_with_prefix(store_dir.path()).unwrap());
+    let config = |key: u8| DockerConfig {
         image: std::env::var("FERROBOT_TEST_IMAGE")
             .unwrap_or_else(|_| "ferrobot-runner:dev".into()),
         name_prefix: "ferrobot-test-".into(),
-        snapshot_store: Some(Arc::new(
-            object_store::local::LocalFileSystem::new_with_prefix(store_dir.path()).unwrap(),
-        )),
+        snapshot_store: Some(Arc::clone(&store)),
+        archive_key: Some(SealKey::new(&[key; 32])),
+        accept_plaintext: false,
         ..DockerConfig::default()
-    })
-    .expect("docker client");
+    };
+    let backend = DockerBackend::connect(config(3)).expect("docker client");
     let name = format!("arch{}", std::process::id());
     let spec = SandboxSpec {
         name: name.clone(),
@@ -184,9 +187,38 @@ async fn archive_moves_the_sandbox_into_the_store_and_back() {
     assert_eq!(level, SleepLevel::Archived);
     assert_eq!(backend.state(&h).await.unwrap(), SandboxState::Missing);
     let archived = store_dir.path().join("archives").join(&name);
-    assert!(archived.join("image.tar").exists() && archived.join("home.tar").exists());
+    for part in ["image.tar", "home.tar"] {
+        let mut head = [0u8; 8];
+        std::io::Read::read_exact(
+            &mut std::fs::File::open(archived.join(part)).unwrap(),
+            &mut head,
+        )
+        .unwrap();
+        assert_eq!(&head, b"FBSEAL01", "{part} is encrypted");
+    }
+    let home = std::fs::read(archived.join("home.tar")).unwrap();
+    assert!(!home.windows(20).any(|w| w == b"survives the archive"));
+
+    let wrong_key = DockerBackend::connect(config(4)).unwrap();
+    assert!(wrong_key.create(&spec).await.is_err(), "wrong key");
+    assert!(
+        archived.join("image.tar").exists(),
+        "a failed restore keeps the archive"
+    );
 
     let h = backend.create(&spec).await.expect("restore from archive");
+    let env = backend
+        .exec(
+            &h,
+            &ExecRequest::new(["sh", "-c", "echo $FERROBOT_AGENT_TOKEN"]),
+        )
+        .await
+        .unwrap();
+    assert_eq!(
+        env.stdout.trim(),
+        "test",
+        "the current token comes from the container"
+    );
     assert_eq!(backend.state(&h).await.unwrap(), SandboxState::Running);
     assert_eq!(
         backend.read_file(&h, &note).await.unwrap(),

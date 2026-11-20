@@ -1113,6 +1113,7 @@ dependencies = [
  "hyper-util",
  "object_store",
  "reqwest",
+ "ring",
  "serde",
  "serde_json",
  "tar",
