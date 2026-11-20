@@ -23,7 +23,7 @@ import { dateTime, duration, presenceLabel, relativeTime } from "../lib/format.t
 import { buildTimeline, type TimelineItem } from "../lib/timeline.ts";
 import { Avatar } from "./Avatar.tsx";
 import { ToolCard } from "./Chat.tsx";
-import { Button, Empty, IconButton, Switch } from "./ui.tsx";
+import { Button, Empty, IconButton, Skeleton, Switch } from "./ui.tsx";
 
 type Tab = "profile" | "computer" | "routines" | "memory" | "activities";
 
@@ -163,7 +163,7 @@ function Computer(props: { agent: Agent }): JSX.Element {
     setBusy(false);
   };
 
-  if (!info) return <p class="muted pad">Loading…</p>;
+  if (!info) return <Skeleton lines={5} />;
   const paused = props.agent.status === "paused";
   const archived = props.agent.status === "archived";
   const asleep = paused || archived || props.agent.status === "stopped";
@@ -272,7 +272,7 @@ function Routines(props: { agent: Agent }): JSX.Element {
     });
   }, [id]);
 
-  if (!routines) return <p class="muted pad">Loading…</p>;
+  if (!routines) return <Skeleton lines={4} />;
   return (
     <div class="stack">
       {routines.length === 0 && !adding && (
@@ -483,6 +483,7 @@ export function Memory(props: { agent: Agent | null }): JSX.Element {
               : "Facts every agent can recall. Agents save them here with their memory tools; you can add some too."}
         </Empty>
       )}
+      {entries === null && <Skeleton lines={4} />}
       <ul class="memories">
         {entries?.map((m) => (
           <li key={m.key} class="card memory">
@@ -524,7 +525,8 @@ function Activities(props: { agent: Agent }): JSX.Element {
     .filter((i): i is Extract<TimelineItem, { type: "tool" | "error" }> => i.type === "tool" || i.type === "error")
     .reverse();
 
-  if (events && items.length === 0) {
+  if (!events) return <Skeleton lines={4} />;
+  if (items.length === 0) {
     return (
       <Empty icon={<Activity size={28} />} title="No activity yet">
         Commands, file edits, messages and other tool calls of {props.agent.name} show up here.

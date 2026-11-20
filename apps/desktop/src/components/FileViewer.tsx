@@ -4,7 +4,7 @@ import { useEffect, useState } from "preact/hooks";
 import type { SharedFile } from "../api.ts";
 import { useApp } from "../context.ts";
 import { RichText } from "./RichText.tsx";
-import { Button, Dialog } from "./ui.tsx";
+import { Button, Dialog, Skeleton } from "./ui.tsx";
 
 export function fileSize(bytes: number): string {
   if (bytes < 1024) return `${String(bytes)} B`;
@@ -25,7 +25,7 @@ export function FileViewer(props: { agent: string; file: number; onClose: () => 
   }, [props.agent, props.file]);
 
   const close = <Button onClick={props.onClose}>Close</Button>;
-  if (!file) return <Dialog title="Opening…" onClose={props.onClose} footer={close}><p class="muted">Loading…</p></Dialog>;
+  if (!file) return <Dialog title="Opening…" onClose={props.onClose} footer={close} wide><Skeleton lines={8} /></Dialog>;
   let body: JSX.Element;
   if (file.page_url) {
     // No allow-same-origin: the page cannot reach the app, its storage or the token.

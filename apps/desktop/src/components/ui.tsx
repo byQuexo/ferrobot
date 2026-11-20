@@ -93,6 +93,15 @@ export function Dialog(props: {
   );
 }
 
+/** Placeholder lines while something loads. */
+export function Skeleton(props: { lines?: number }): JSX.Element {
+  return (
+    <div class="skeleton" aria-busy="true" aria-label="Loading">
+      {Array.from({ length: props.lines ?? 3 }, (_, i) => <span key={i} class="skeleton-line" />)}
+    </div>
+  );
+}
+
 export function Empty(props: { icon: ComponentChildren; title: string; children?: ComponentChildren }): JSX.Element {
   return (
     <div class="empty">
