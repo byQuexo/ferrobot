@@ -943,3 +943,28 @@ slop, so polish mode: palette, accent, logo, layout and features stay.
   the daemon holds the token; CLIs in the sandbox will be keyless (Tim,
   2026-11-20). A credential-swapping proxy for OAuth CLIs is a later option,
   only for CLIs without an MCP server.
+
+## Connector checks
+
+- **The status is a real connection.** The row's state comes from a check: the
+  daemon connects with the connector's current auth (token, else OAuth tokens,
+  else none) through the same client code agents use, lists the tools and
+  keeps `ok` (tools agents can use), `needs_sign_in` or `failed`. Bounded by
+  15 s; kept in memory only (`check: null` after a restart or a change).
+- **Auth answers:** a 401/403 (with or without a `WWW-Authenticate`
+  challenge) means `needs_sign_in` when no credential was sent, also for
+  servers that take a token: the operator signs in or adds one in Vault. With
+  a stored token it is `failed` ("the server rejected the token"): the sign-in
+  button refuses token connectors.
+- **Errors in our words.** `error` is one of a few fixed texts plus at most an
+  HTTP status number; never the server's text or a URL, which can echo a
+  token or hold a key. The raw error goes to the log.
+- **When it runs:** inline after `POST /v1/connectors`, every PATCH (also the
+  Vault token and client secret edits) and sign-out, so the response holds the
+  result; in the background after an OAuth sign-in (the browser page does not
+  wait) and an approved add-connector card; on demand with
+  `POST /v1/connectors/{id}/check`. A check never starts a sign-in: an
+  OAuth connector that is not signed in connects without auth, so no metadata
+  discovery or dynamic registration happens.
+- **UI:** the Connectors screen checks rows without a result when it opens and
+  after a browser sign-in; no retry button (not asked for).

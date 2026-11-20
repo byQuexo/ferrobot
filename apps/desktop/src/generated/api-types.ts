@@ -444,7 +444,10 @@ export interface paths {
         /** Configured connectors, by name. */
         get: operations["list_connectors"];
         put?: never;
-        /** Adds a connector. Agents get its tools once they are assigned it. */
+        /**
+         * Adds a connector and checks it (see `POST /v1/connectors/{id}/check`). Agents get its tools
+         *     once they are assigned it.
+         */
         post: operations["create_connector"];
         delete?: never;
         options?: never;
@@ -469,8 +472,29 @@ export interface paths {
         delete: operations["delete_connector"];
         options?: never;
         head?: never;
-        /** Edits a connector. Open sessions with it are closed. */
+        /** Edits a connector. Open sessions with it are closed and it is checked again. */
         patch: operations["update_connector"];
+        trace?: never;
+    };
+    "/v1/connectors/{id}/check": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Connects to the connector with its current token or sign-in, lists its tools and keeps the
+         *     outcome as the connector's `check`. Never starts a sign-in. Runs on its own after adding or
+         *     changing a connector and after a sign-in.
+         */
+        post: operations["check_connector"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
         trace?: never;
     };
     "/v1/connectors/{id}/oauth": {
@@ -489,7 +513,7 @@ export interface paths {
         post: operations["start_oauth"];
         /**
          * Signs a connector out: asks the server to revoke its tokens (RFC 7009)
-         *     when it offers that, then forgets them here either way.
+         *     when it offers that, then forgets them here either way and checks it again.
          */
         delete: operations["sign_out"];
         options?: never;
@@ -1085,6 +1109,11 @@ export interface components {
          * @enum {string}
          */
         CharacterEyes: "dots" | "ovals" | "wide" | "visor";
+        /**
+         * @description What a connection check found.
+         * @enum {string}
+         */
+        CheckStatus: "ok" | "needs_sign_in" | "failed";
         /** @description One selectable option. */
         Choice: {
             /** @description Shown to the user. */
@@ -1111,6 +1140,19 @@ export interface components {
          * @enum {string}
          */
         ConnectorAuth: "token" | "oauth" | "none";
+        /** @description The outcome of connecting to a connector as the daemon and listing its tools. */
+        ConnectorCheck: {
+            status: components["schemas"]["CheckStatus"];
+            /** @description Tools agents can use (with `ok`). */
+            tools?: number | null;
+            /** @description Why it failed (with `failed`), in ferrobot's words, never the server's. */
+            error?: string | null;
+            /**
+             * Format: date-time
+             * @description When the check started.
+             */
+            at: string;
+        };
         ConnectorView: components["schemas"]["Connector"] & {
             /** @description Whether a token is stored. The token itself is never returned. */
             has_token: boolean;
@@ -1130,6 +1172,7 @@ export interface components {
             issuer?: string | null;
             /** @description Register this redirect URI with the provider for an own OAuth app. */
             redirect_uri: string;
+            check?: components["schemas"]["ConnectorCheck"] | null;
         };
         /** @description Messages two agents exchanged. */
         Conversation: {
@@ -3858,6 +3901,46 @@ export interface operations {
             };
             /** @description Name already taken */
             409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+        };
+    };
+    check_connector: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Connector id (UUID) */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ConnectorCheck"];
+                };
+            };
+            /** @description Missing or wrong API token */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Unknown connector */
+            404: {
                 headers: {
                     [name: string]: unknown;
                 };

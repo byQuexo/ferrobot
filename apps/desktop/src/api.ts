@@ -30,6 +30,7 @@ export type ProviderKind = Schemas["ProviderKind"];
 export type CreateProvider = Schemas["CreateProvider"];
 export type UpdateProvider = Schemas["UpdateProvider"];
 export type Connector = Schemas["ConnectorView"];
+export type ConnectorCheck = Schemas["ConnectorCheck"];
 export type SharedFile = Schemas["SharedFileView"];
 export type CreateConnector = Schemas["CreateConnector"];
 export type UpdateConnector = Schemas["UpdateConnector"];
@@ -156,6 +157,8 @@ export class DaemonClient {
     this.#request("POST", `/v1/connectors/${id}/oauth`);
   signOutConnector = (id: string): Promise<void> =>
     this.#request("DELETE", `/v1/connectors/${id}/oauth`);
+  checkConnector = (id: string): Promise<ConnectorCheck> =>
+    this.#request("POST", `/v1/connectors/${id}/check`);
   agentConnectors = (id: string): Promise<string[]> =>
     this.#request("GET", `/v1/agents/${id}/connectors`);
   setAgentConnectors = (id: string, ids: string[]): Promise<string[]> =>

@@ -93,6 +93,7 @@ pub const QUESTION_CARD_FILE: &str = "question-card.v1.schema.json";
         api::connectors::set_agent_connectors,
         api::connectors::start_oauth,
         api::connectors::sign_out,
+        api::connectors::check_connector,
         api::connectors::oauth_callback,
         api::voice::get_voice,
         api::voice::put_voice,

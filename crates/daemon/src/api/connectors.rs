@@ -17,7 +17,7 @@ use uuid::Uuid;
 
 use super::agents::explicit;
 use super::{ApiResult, parse_id};
-use crate::connectors::secret_key;
+use crate::connectors::{ConnectorCheck, check, check_soon, secret_key};
 use crate::error::{ApiError, ErrorBody};
 use crate::state::UiEvent;
 use crate::{AppState, oauth};
@@ -42,6 +42,9 @@ pub(crate) struct ConnectorView {
     issuer: Option<String>,
     /// Register this redirect URI with the provider for an own OAuth app.
     redirect_uri: String,
+    /// The last connection check; `null` until one ran since the daemon
+    /// started or the connector changed.
+    check: Option<ConnectorCheck>,
 }
 
 async fn view(state: &AppState, connector: Connector) -> Result<ConnectorView, ApiError> {
@@ -55,6 +58,7 @@ async fn view(state: &AppState, connector: Connector) -> Result<ConnectorView, A
     let client = oauth::client_config(state, connector.id)
         .await
         .map_err(|e| ApiError::Internal(format!("secret store: {e}")))?;
+    let check = state.connectors.check(connector.id);
     Ok(ConnectorView {
         connector,
         has_token,
@@ -65,6 +69,7 @@ async fn view(state: &AppState, connector: Connector) -> Result<ConnectorView, A
         scopes: client.scopes,
         issuer: client.issuer,
         redirect_uri: oauth::redirect_uri(state),
+        check,
     })
 }
 
@@ -198,7 +203,8 @@ pub(crate) struct CreateConnector {
     issuer: Option<String>,
 }
 
-/// Adds a connector. Agents get its tools once they are assigned it.
+/// Adds a connector and checks it (see `POST /v1/connectors/{id}/check`). Agents get its tools
+/// once they are assigned it.
 #[utoipa::path(post, path = "/v1/connectors", tag = "connectors",
     request_body = CreateConnector,
     responses((status = 201, body = ConnectorView),
@@ -224,6 +230,7 @@ pub(crate) async fn create_connector(
     };
     check_app(&mut client)?;
     let connector = add(&state, connector, token, &client).await?;
+    check(&state, &connector).await;
     Ok((StatusCode::CREATED, Json(view(&state, connector).await?)))
 }
 
@@ -355,6 +362,7 @@ pub(crate) async fn answer_card(
         };
         connector.validate().map_err(ApiError::BadRequest)?;
         let connector = add(state, connector, token, &oauth::ClientConfig::default()).await?;
+        check_soon(state, connector.clone());
         if state.store.get_agent(*requester).await.is_ok() {
             let mut ids: Vec<Uuid> = state
                 .store
@@ -431,7 +439,7 @@ pub(crate) struct UpdateConnector {
     issuer: Option<Option<String>>,
 }
 
-/// Edits a connector. Open sessions with it are closed.
+/// Edits a connector. Open sessions with it are closed and it is checked again.
 #[utoipa::path(patch, path = "/v1/connectors/{id}", tag = "connectors",
     params(("id" = String, Path, description = "Connector id (UUID)")),
     request_body = UpdateConnector,
@@ -496,6 +504,7 @@ pub(crate) async fn update_connector(
         None => {}
     }
     state.connectors.evict_connector(id).await;
+    check(&state, &c).await;
     Ok(Json(view(&state, c).await?))
 }
 
@@ -609,7 +618,7 @@ pub(crate) async fn start_oauth(
 }
 
 /// Signs a connector out: asks the server to revoke its tokens (RFC 7009)
-/// when it offers that, then forgets them here either way.
+/// when it offers that, then forgets them here either way and checks it again.
 #[utoipa::path(delete, path = "/v1/connectors/{id}/oauth", tag = "connectors",
     params(("id" = String, Path, description = "Connector id (UUID)")),
     responses((status = 204, description = "Signed out"),
@@ -620,7 +629,23 @@ pub(crate) async fn sign_out(
 ) -> Result<StatusCode, ApiError> {
     let c = state.store.get_connector(parse_cid(&id)?).await?;
     oauth::sign_out(&state, &c).await?;
+    check(&state, &c).await;
     Ok(StatusCode::NO_CONTENT)
+}
+
+/// Connects to the connector with its current token or sign-in, lists its tools and keeps the
+/// outcome as the connector's `check`. Never starts a sign-in. Runs on its own after adding or
+/// changing a connector and after a sign-in.
+#[utoipa::path(post, path = "/v1/connectors/{id}/check", tag = "connectors",
+    params(("id" = String, Path, description = "Connector id (UUID)")),
+    responses((status = 200, body = ConnectorCheck),
+        (status = 404, description = "Unknown connector", body = ErrorBody)))]
+pub(crate) async fn check_connector(
+    State(state): State<AppState>,
+    Path(id): Path<String>,
+) -> ApiResult<ConnectorCheck> {
+    let c = state.store.get_connector(parse_cid(&id)?).await?;
+    Ok(Json(check(&state, &c).await))
 }
 
 #[derive(Debug, Deserialize, utoipa::IntoParams)]
@@ -646,6 +671,11 @@ pub(crate) async fn oauth_callback(
         Some(csrf) => oauth::finish(&state, csrf, q.code.as_deref(), q.iss.as_deref()).await,
         None => Err("This page needs a sign-in to finish."),
     };
+    if let Ok(id) = outcome
+        && let Ok(c) = state.store.get_connector(id).await
+    {
+        check_soon(&state, c);
+    }
     let (status, text) = match outcome {
         Ok(_) => (
             StatusCode::OK,

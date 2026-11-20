@@ -157,6 +157,10 @@ fn integrations() -> Router<AppState> {
             "/v1/connectors/{id}/oauth",
             post(connectors::start_oauth).delete(connectors::sign_out),
         )
+        .route(
+            "/v1/connectors/{id}/check",
+            post(connectors::check_connector),
+        )
         .route("/v1/oauth/callback", get(connectors::oauth_callback))
         .route("/v1/voice", get(voice::get_voice).put(voice::put_voice))
         .route("/v1/voice/speech", post(voice::speech))
