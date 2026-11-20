@@ -26,7 +26,7 @@ use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
 
 pub use docker::{DockerBackend, DockerConfig};
-pub use error::SandboxError;
+pub use error::{MAX_FILE_BYTES, SandboxError};
 pub use firecracker::{FirecrackerBackend, FirecrackerConfig};
 pub use local::{LocalProcessBackend, LocalProcessConfig};
 pub use path::SandboxPath;
@@ -134,6 +134,12 @@ pub trait SandboxBackend: Send + Sync + std::fmt::Debug {
         false
     }
 
+    /// The runner's home directory as a [`SandboxPath`] prefix; its
+    /// workspace is `<home>/workspace`.
+    fn home(&self) -> String {
+        "/home/node".into()
+    }
+
     /// Creates (or adopts) and starts the sandbox. A sandbox archived with
     /// `sleep(Archived)` comes back from its archive.
     async fn create(&self, spec: &SandboxSpec) -> Result<SandboxHandle, SandboxError>;
@@ -145,6 +151,7 @@ pub trait SandboxBackend: Send + Sync + std::fmt::Debug {
         req: &ExecRequest,
     ) -> Result<ExecOutput, SandboxError>;
 
+    /// Reads a file of at most [`MAX_FILE_BYTES`] ([`SandboxError::TooLarge`]).
     async fn read_file(
         &self,
         sandbox: &SandboxHandle,

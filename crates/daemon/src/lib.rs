@@ -15,6 +15,7 @@ pub mod auth;
 pub mod codex;
 pub mod connectors;
 pub mod error;
+pub mod files;
 pub mod hub;
 pub mod lifecycle;
 pub mod oauth;

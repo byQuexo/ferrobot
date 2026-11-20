@@ -33,6 +33,7 @@ export type ProviderKind = Schemas["ProviderKind"];
 export type CreateProvider = Schemas["CreateProvider"];
 export type UpdateProvider = Schemas["UpdateProvider"];
 export type Connector = Schemas["ConnectorView"];
+export type SharedFile = Schemas["SharedFileView"];
 export type CreateConnector = Schemas["CreateConnector"];
 export type UpdateConnector = Schemas["UpdateConnector"];
 export type DeviceCode = Schemas["DeviceCode"];
@@ -145,6 +146,8 @@ export class DaemonClient {
   send = (id: string, body: string): Promise<MailMessage> =>
     this.#request("POST", `/v1/agents/${id}/messages`, { body });
   markRead = (id: string): Promise<void> => this.#request("POST", `/v1/agents/${id}/read`);
+  sharedFile = (agent: string, file: number): Promise<SharedFile> =>
+    this.#request("GET", `/v1/agents/${agent}/files/${String(file)}`);
   interrupt = (id: string): Promise<unknown> => this.#request("POST", `/v1/agents/${id}/interrupt`);
   answerQuestion = (id: string, question: number, answers: QuestionAnswer[]): Promise<QuestionAnswered> =>
     this.#request("POST", `/v1/agents/${id}/questions/${String(question)}/answer`, { answers });

@@ -81,7 +81,10 @@ impl SandboxBackend for StatefulBackend {
         })
     }
     async fn read_file(&self, _: &SandboxHandle, p: &SandboxPath) -> Result<Vec<u8>, SandboxError> {
-        Err(SandboxError::NotFound(p.to_string()))
+        if p.as_str().contains("missing") {
+            return Err(SandboxError::NotFound(p.to_string()));
+        }
+        Ok(format!("content of {p}").into_bytes())
     }
     async fn write_file(
         &self,
@@ -2258,4 +2261,83 @@ async fn messages_reach_a_running_turn_when_the_runner_can_take_them() {
         (json!("delivered"), json!("delivered"))
     );
     assert_eq!(status(trains), "in_flight");
+}
+
+#[tokio::test]
+async fn agents_share_files_that_open_from_storage() {
+    let backend = Arc::new(StatefulBackend::default());
+    let d = start(backend.clone(), None, "127.0.0.1:0").await;
+    let ann = create(&d, json!({"name": "ann"})).await["id"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    let ann_id: AgentId = ann.parse().unwrap();
+
+    let plan = d.state.share_file(ann_id, "plan.md".into()).await.unwrap();
+    assert_eq!(plan.name, "plan.md");
+    let (status, file) = http(
+        &d.ui,
+        "GET",
+        &format!("/v1/agents/{ann}/files/{}", plan.id),
+        None,
+    )
+    .await;
+    assert_eq!(status, 200, "{file}");
+    assert_eq!(file["content"], "content of /home/node/workspace/plan.md");
+    assert!(file["page_url"].is_null());
+    let err = d
+        .state
+        .share_file(ann_id, "missing.md".into())
+        .await
+        .unwrap_err();
+    assert!(err.contains("no file"), "{err}");
+    let err = d
+        .state
+        .share_file(ann_id, "../etc/passwd".into())
+        .await
+        .unwrap_err();
+    assert!(err.contains("not allowed"), "{err}");
+
+    // An .html file opens as a sandboxed page, without the operator token.
+    let page = d
+        .state
+        .share_file(ann_id, "~/out/report.html".into())
+        .await
+        .unwrap();
+    let (_, file) = http(
+        &d.ui,
+        "GET",
+        &format!("/v1/agents/{ann}/files/{}", page.id),
+        None,
+    )
+    .await;
+    let url = file["page_url"].as_str().unwrap().to_owned();
+    let no_token = [("Authorization", "")];
+    let (status, headers, body) = http_raw(&d.ui, "GET", &url, &no_token, b"").await;
+    assert_eq!(status, 200);
+    assert_eq!(
+        String::from_utf8_lossy(&body),
+        "content of /home/node/out/report.html"
+    );
+    let csp = headers
+        .iter()
+        .find(|(k, _)| k.eq_ignore_ascii_case("content-security-policy"))
+        .map(|(_, v)| v.clone())
+        .unwrap();
+    assert!(
+        csp.starts_with("sandbox allow-scripts;") && csp.contains("connect-src 'none'"),
+        "{csp}"
+    );
+    let guessed = format!("{}0", &url[..url.len() - 1]);
+    let (status, _, _) = http_raw(&d.ui, "GET", &guessed, &no_token, b"").await;
+    assert_eq!(status, 404, "the view key is the capability");
+    let md_page = format!("/artifacts/{ann}/{}/x", plan.id);
+    let (status, _, _) = http_raw(&d.ui, "GET", &md_page, &no_token, b"").await;
+    assert_eq!(status, 404);
+
+    // Deleting the agent deletes its files.
+    let (status, _) = http(&d.ui, "DELETE", &format!("/v1/agents/{ann}"), None).await;
+    assert_eq!(status, 204);
+    let left = d.state.settings.storage.list(None).count().await;
+    assert_eq!(left, 0);
 }

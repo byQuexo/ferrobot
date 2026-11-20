@@ -61,6 +61,8 @@ pub struct Settings {
     /// The UI API as a browser on this computer reaches it; OAuth sign-ins
     /// redirect here.
     pub ui_url: String,
+    /// Object storage for files agents share (`--storage-url`).
+    pub storage: Arc<dyn object_store::ObjectStore>,
 }
 
 impl Settings {
@@ -89,6 +91,7 @@ impl Settings {
             codex_home: std::env::temp_dir().join("ferrobot-codex"),
             chatgpt_upstream: crate::codex::CHATGPT_CODEX_UPSTREAM.into(),
             ui_url: "http://127.0.0.1:7878".into(),
+            storage: Arc::new(object_store::memory::InMemory::new()),
         }
     }
 }
@@ -301,6 +304,15 @@ impl ferrobot_mcp::MailboxNotifier for AppState {
                 .await
                 .map_err(|e| e.to_string())
         })
+    }
+
+    fn share_file(
+        &self,
+        agent: AgentId,
+        path: String,
+    ) -> ferrobot_mcp::BoxFuture<Result<ferrobot_mcp::SharedFile, String>> {
+        let state = self.clone();
+        Box::pin(async move { crate::files::share(&state, agent, &path).await })
     }
 
     fn connector_tools(&self, agent: AgentId) -> ferrobot_mcp::BoxFuture<Vec<rmcp::model::Tool>> {

@@ -96,6 +96,8 @@ pub const QUESTION_CARD_FILE: &str = "question-card.v1.schema.json";
         api::connectors::start_oauth,
         api::connectors::sign_out,
         api::connectors::oauth_callback,
+        api::files::shared_file,
+        api::files::page,
         api::ws::ui_ws,
     ),
     components(schemas(UiEvent, QuestionEvent, QuestionAnswered, ferrobot_sandbox::SleepLevel)),

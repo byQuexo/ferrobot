@@ -19,6 +19,77 @@
     }
   ],
   "paths": {
+    "/artifacts/{id}/{file_id}/{view}": {
+      "get": {
+        "tags": [
+          "chat"
+        ],
+        "summary": "An .html file an agent shared, as a page. Needs no operator token: a\nframe cannot send one, and the random `view` key is the capability. The\npage runs sandboxed (opaque origin: no app, cookies or token) and cannot\nmake network requests.",
+        "operationId": "page",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "Agent id (UUID)",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "file_id",
+            "in": "path",
+            "description": "Id of the `file` event",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          },
+          {
+            "name": "view",
+            "in": "path",
+            "description": "The file's view key (from `page_url`)",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The page",
+            "content": {
+              "text/html": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or wrong API token",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Unknown page",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/v1/agents": {
       "get": {
         "tags": [
@@ -757,6 +828,67 @@
           },
           "502": {
             "description": "Sandbox backend error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/agents/{id}/files/{file_id}": {
+      "get": {
+        "tags": [
+          "chat"
+        ],
+        "summary": "A file the agent shared (`file` event id), from storage.",
+        "operationId": "shared_file",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "Agent id (UUID)",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "file_id",
+            "in": "path",
+            "description": "Id of the `file` event",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SharedFileView"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or wrong API token",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Unknown agent or file",
             "content": {
               "application/json": {
                 "schema": {
@@ -4595,6 +4727,37 @@
           }
         ],
         "description": "Who sent a mailbox message."
+      },
+      "SharedFileView": {
+        "type": "object",
+        "required": [
+          "name",
+          "size"
+        ],
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "size": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0
+          },
+          "content": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "The text, for UTF-8 files up to 2 MiB; otherwise `null`."
+          },
+          "page_url": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "For .html files: where the page opens (relative to the daemon), in a\nsandboxed frame without access to the app or the operator token."
+          }
+        }
       },
       "SleepLevel": {
         "type": "string",

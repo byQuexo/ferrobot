@@ -109,7 +109,8 @@ async fn tools_act_as_the_authenticated_agent() {
             "read_mailbox",
             "recall",
             "remember",
-            "send_message"
+            "send_message",
+            "share_file"
         ]
     );
 

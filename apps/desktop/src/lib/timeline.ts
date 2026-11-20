@@ -19,6 +19,7 @@ export type TimelineItem =
       denied: string | null;
     }
   | { type: "question"; key: string; at: string; id: number; card: QuestionCard; answered: QuestionAnswered | null }
+  | { type: "file"; key: string; at: string; id: number; name: string; size: number }
   | { type: "error"; key: string; at: string; text: string }
   | { type: "system"; key: string; at: string; text: string };
 
@@ -140,6 +141,9 @@ export function buildTimeline(
         }
         break;
       }
+      case "file":
+        push({ type: "file", key, at: e.created_at, id: e.id, name: str(p["name"]), size: Number(p["size"] ?? 0) });
+        break;
       case "tool_denied":
         push({
           type: "tool",
@@ -244,5 +248,15 @@ export function groupExchanges(items: readonly TimelineItem[]): DisplayItem[] {
   }
   close();
   out.push(...calls);
+  return out;
+}
+
+/** Files shared in a chat by name (latest wins), so mentions can open them. */
+export function sharedFiles(events: readonly StoredEvent[]): Map<string, number> {
+  const out = new Map<string, number>();
+  for (const e of events) {
+    const name = (e.payload as Payload)["name"];
+    if (e.kind === "file" && typeof name === "string") out.set(name, e.id);
+  }
   return out;
 }

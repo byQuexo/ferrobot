@@ -117,6 +117,11 @@ impl SandboxBackend for LocalProcessBackend {
         KIND
     }
 
+    // Sandbox paths map below the sandbox dir; the runner's home is `<dir>/home`.
+    fn home(&self) -> String {
+        "/home".into()
+    }
+
     async fn create(&self, spec: &SandboxSpec) -> Result<SandboxHandle, SandboxError> {
         let handle = SandboxHandle {
             backend: KIND.into(),
@@ -176,10 +181,15 @@ impl SandboxBackend for LocalProcessBackend {
         path: &SandboxPath,
     ) -> Result<Vec<u8>, SandboxError> {
         let p = self.host_path(sandbox, path)?;
-        tokio::fs::read(&p).await.map_err(|e| match e.kind() {
+        let not_found = |e: std::io::Error| match e.kind() {
             std::io::ErrorKind::NotFound => SandboxError::NotFound(path.to_string()),
             _ => e.into(),
-        })
+        };
+        let len = tokio::fs::metadata(&p).await.map_err(not_found)?.len();
+        if usize::try_from(len).map_or(true, |n| n > crate::MAX_FILE_BYTES) {
+            return Err(SandboxError::TooLarge(path.to_string()));
+        }
+        tokio::fs::read(&p).await.map_err(not_found)
     }
 
     async fn write_file(

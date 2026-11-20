@@ -203,6 +203,8 @@ async fn main() -> Result<()> {
         .map_err(|e| anyhow::anyhow!("--timezone: {e}"))?;
     let mut settings = Settings::new(sandbox_daemon_url);
     settings.ui_url = browser_url(cli.listen);
+    settings.storage =
+        storage::open(cli.storage_url.as_deref(), &cli.data_dir).context("--storage-url")?;
     settings.driver = cli.driver.as_str().into();
     settings.anthropic_api_key = anthropic_api_key;
     settings.anthropic_upstream = cli.anthropic_upstream.trim_end_matches('/').to_owned();

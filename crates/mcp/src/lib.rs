@@ -39,6 +39,15 @@ pub struct AgentRequest {
     pub character: Option<AvatarCharacter>,
 }
 
+/// A file an agent shared with the operator (`share_file` tool).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SharedFile {
+    /// Id of the `file` event in the agent's chat.
+    pub id: i64,
+    pub name: String,
+    pub size: u64,
+}
+
 /// How a [`AgentRequest`] ended.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum AgentRequestOutcome {
@@ -63,6 +72,12 @@ pub trait MailboxNotifier: Send + Sync + 'static {
     fn connector_tools(&self, agent: AgentId) -> BoxFuture<Vec<rmcp::model::Tool>> {
         let _ = agent;
         Box::pin(async { Vec::new() })
+    }
+    /// Copies a file from the agent's computer into storage and shows it in
+    /// its chat. `Err` carries a message for the agent.
+    fn share_file(&self, agent: AgentId, path: String) -> BoxFuture<Result<SharedFile, String>> {
+        let _ = (agent, path);
+        Box::pin(async { Err("sharing files is not supported here".to_owned()) })
     }
     /// Calls a connector tool as `agent`. `Err` carries a message for the agent.
     fn call_connector_tool(

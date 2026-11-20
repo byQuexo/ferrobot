@@ -5,7 +5,7 @@ import { DaemonClient, type MailMessage, type StoredEvent } from "../src/api.ts"
 import { hash } from "../src/lib/avatar.ts";
 import { characterOf, deriveCharacter, moodOf, rerollCharacter } from "../src/lib/character.ts";
 import { relativeTime, stepLabel, toolLabel } from "../src/lib/format.ts";
-import { buildTimeline } from "../src/lib/timeline.ts";
+import { buildTimeline, sharedFiles } from "../src/lib/timeline.ts";
 import { parseBlocks, parseInline } from "../src/lib/markdown.ts";
 
 const ME = "11111111-1111-4111-8111-111111111111";
@@ -99,6 +99,16 @@ describe("buildTimeline", () => {
     assert.ok(incoming?.type === "incoming" && incoming.from === "bob");
     const routine = items[6];
     assert.ok(routine?.type === "routine" && routine.routine === "digest");
+  });
+
+  it("shows shared files and finds them by name", () => {
+    const events = [
+      ev(1, "file", { name: "plan.md", size: 2048 }, "2026-01-01T12:00:00Z", "t1"),
+      ev(2, "file", { name: "plan.md", size: 4096 }, "2026-01-01T12:05:00Z", "t2"),
+    ];
+    const items = buildTimeline(ME, [], events, new Map(), names);
+    assert.deepEqual(items.map((i) => (i.type === "file" ? [i.id, i.name, i.size] : null)), [[1, "plan.md", 2048], [2, "plan.md", 4096]]);
+    assert.equal(sharedFiles(events).get("plan.md"), 2, "the latest version wins");
   });
 
   it("shows one notice when sleep deepens", () => {

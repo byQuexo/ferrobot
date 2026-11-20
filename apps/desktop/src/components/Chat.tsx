@@ -1,6 +1,7 @@
 import type { JSX } from "preact";
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "preact/hooks";
 import {
+  FileText,
   AlertTriangle,
   ArrowDownLeft,
   ArrowUpRight,
@@ -18,10 +19,11 @@ import {
 import type { Agent, MailMessage, Routine, StoredEvent } from "../api.ts";
 import { useApp } from "../context.ts";
 import { clockTime, presenceLabel, stepLabel, toolLabel } from "../lib/format.ts";
-import { buildTimeline, groupExchanges, type DisplayItem, type Exchange, type TimelineItem } from "../lib/timeline.ts";
+import { buildTimeline, groupExchanges, sharedFiles, type DisplayItem, type Exchange, type TimelineItem } from "../lib/timeline.ts";
+import { fileSize } from "./FileViewer.tsx";
 import { Avatar } from "./Avatar.tsx";
 import { QuestionCardView } from "./QuestionCard.tsx";
-import { RichText } from "./RichText.tsx";
+import { RichText, type ChatFiles } from "./RichText.tsx";
 import { Button, IconButton } from "./ui.tsx";
 
 
@@ -109,7 +111,8 @@ export function Chat(props: {
     const last = all.filter((i) => i.type === "tool").pop();
     const running = last?.type === "tool" && last.output === null && last.denied === null;
     const nameOf = (agentId: string): string | undefined => agents.get(agentId)?.name;
-    return { shown, step: running ? stepLabel(last.name, last.input, nameOf) : "Thinking" };
+    const files: ChatFiles = { agent: id, byName: sharedFiles(events) };
+    return { shown, files, step: running ? stepLabel(last.name, last.input, nameOf) : "Thinking" };
   }, [id, messages, events, live, agents, routines]);
 
   // Keep the view pinned to the bottom unless the user scrolled up.
@@ -166,7 +169,7 @@ export function Chat(props: {
           </div>
         )}
         {items.shown.map((item) => (
-          <Item key={item.key} item={item} agent={agent} />
+          <Item key={item.key} item={item} agent={agent} files={items.files} />
         ))}
         {working && !items.shown.some((i) => i.type === "assistant" && i.streaming) && (
           <div class="row row-agent">
@@ -218,9 +221,9 @@ function ExchangeHint(props: { item: Exchange; agent: Agent }): JSX.Element {
   );
 }
 
-function Item(props: { item: DisplayItem; agent: Agent }): JSX.Element {
+function Item(props: { item: DisplayItem; agent: Agent; files?: ChatFiles }): JSX.Element {
   const { item, agent } = props;
-  const { agents } = useApp();
+  const { agents, openFile } = useApp();
   switch (item.type) {
     case "exchange":
       return <ExchangeHint item={item} agent={agent} />;
@@ -245,8 +248,19 @@ function Item(props: { item: DisplayItem; agent: Agent }): JSX.Element {
               <strong>{agent.name}</strong>
               {!item.streaming && <span class="meta">{clockTime(item.at)}</span>}
             </span>
-            <RichText text={item.text} />
+            <RichText text={item.text} files={props.files} />
           </div>
+        </div>
+      );
+    case "file":
+      return (
+        <div class="row row-agent">
+          <Avatar agent={agent} size={28} />
+          <button type="button" class="file-card" onClick={() => { openFile(agent.id, item.id); }}>
+            <FileText size={18} />
+            <span class="file-name">{item.name}</span>
+            <span class="meta">{fileSize(item.size)} · {clockTime(item.at)}</span>
+          </button>
         </div>
       );
     case "incoming":

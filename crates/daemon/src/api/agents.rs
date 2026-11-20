@@ -232,6 +232,9 @@ pub(crate) async fn delete_agent(
     let id = parse_id(&id)?;
     lifecycle::delete(&state, id, !q.keep_data).await?;
     state.connectors.evict_agent(id).await;
+    if !q.keep_data {
+        crate::files::forget_agent(&state, id).await;
+    }
     Ok(StatusCode::NO_CONTENT)
 }
 

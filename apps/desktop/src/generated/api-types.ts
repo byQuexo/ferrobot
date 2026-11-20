@@ -4,6 +4,28 @@
  */
 
 export interface paths {
+    "/artifacts/{id}/{file_id}/{view}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * An .html file an agent shared, as a page. Needs no operator token: a
+         *     frame cannot send one, and the random `view` key is the capability. The
+         *     page runs sandboxed (opaque origin: no app, cookies or token) and cannot
+         *     make network requests.
+         */
+        get: operations["page"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/agents": {
         parameters: {
             query?: never;
@@ -112,6 +134,23 @@ export interface paths {
          *     Wakes the computer if it sleeps.
          */
         post: operations["exec"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/agents/{id}/files/{file_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** A file the agent shared (`file` event id), from storage. */
+        get: operations["shared_file"];
+        put?: never;
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -1204,6 +1243,18 @@ export interface components {
             /** @enum {string} */
             kind: "routine";
         };
+        SharedFileView: {
+            name: string;
+            /** Format: int64 */
+            size: number;
+            /** @description The text, for UTF-8 files up to 2 MiB; otherwise `null`. */
+            content?: string | null;
+            /**
+             * @description For .html files: where the page opens (relative to the daemon), in a
+             *     sandboxed frame without access to the app or the operator token.
+             */
+            page_url?: string | null;
+        };
         /**
          * @description How deeply a sandbox sleeps.
          * @enum {string}
@@ -1327,6 +1378,51 @@ export interface components {
 }
 export type $defs = Record<string, never>;
 export interface operations {
+    page: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Agent id (UUID) */
+                id: string;
+                /** @description Id of the `file` event */
+                file_id: number;
+                /** @description The file's view key (from `page_url`) */
+                view: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The page */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "text/html": string;
+                };
+            };
+            /** @description Missing or wrong API token */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Unknown page */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+        };
+    };
     list_agents: {
         parameters: {
             query?: never;
@@ -1892,6 +1988,48 @@ export interface operations {
             };
             /** @description Sandbox backend error */
             502: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+        };
+    };
+    shared_file: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Agent id (UUID) */
+                id: string;
+                /** @description Id of the `file` event */
+                file_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SharedFileView"];
+                };
+            };
+            /** @description Missing or wrong API token */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Unknown agent or file */
+            404: {
                 headers: {
                     [name: string]: unknown;
                 };

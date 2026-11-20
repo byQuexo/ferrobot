@@ -333,3 +333,26 @@ the code and this file together.
 - **Desktop links** (Markdown, sign-in pages) open in the system browser; the
   window itself only navigates within the app, so the injected operator
   token never reaches another page.
+
+## Shared files and HTML pages
+
+- **Agents hand files over with `share_file`.** The daemon copies the file
+  (up to 10 MB) from the sandbox into object storage
+  (`artifacts/<agent>/<uuid>`, the same store as snapshots; local FS by
+  default) and records a `file` event, shown as a file card in the chat.
+  The copy outlives sleep, archive and the sandbox; deleting the agent
+  (without keeping data) deletes its files. Bare names resolve like the
+  agent's tools see them (`<home>/workspace/<name>`); the backend reports its
+  home (`SandboxBackend::home`).
+- **Reads are capped** at 32 MiB in every backend (`read_file`), so a file an
+  agent names cannot exhaust the daemon.
+- **Markdown and text open inline; `.html` opens as a page** at
+  `/artifacts/<agent>/<file>/<view>`: outside `/v1` (a frame cannot send the
+  operator token), authorized by a random 128-bit view key, served with
+  `Content-Security-Policy: sandbox allow-scripts` (opaque origin), inline and
+  https scripts/styles allowed, `connect-src 'none'`, no forms. The app frames
+  it with `sandbox="allow-scripts"` and no same-origin, so the page cannot
+  reach the app, its storage or the token. Risk left: a page can still show
+  misleading content (phishing-like UI) inside ferrobot.
+- File names in an agent's message (in backticks) open the shared file of
+  that name in the chat; the latest share wins.

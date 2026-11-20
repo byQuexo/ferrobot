@@ -123,8 +123,10 @@ pub async fn require_token(State(state): State<AppState>, req: Request, next: Ne
         return next.run(req).await;
     };
     // The OAuth callback is a browser redirect without the token; its single-use `state` authorizes it.
+    // Shared pages load in a frame, which cannot send it; their random view key authorizes them.
     let open = ["/v1/health", "/v1/oauth/callback"];
-    if req.method() == Method::OPTIONS || open.contains(&req.uri().path()) {
+    let path = req.uri().path();
+    if req.method() == Method::OPTIONS || open.contains(&path) || path.starts_with("/artifacts/") {
         return next.run(req).await;
     }
     match presented(&req) {

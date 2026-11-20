@@ -120,6 +120,21 @@ pub struct CreateAgentResult {
 }
 
 #[derive(Debug, Deserialize, JsonSchema)]
+pub struct ShareFileArgs {
+    /// The file on your computer: relative to your workspace (`plan.md`),
+    /// below your home (`~/out/report.html`) or absolute.
+    pub path: String,
+}
+
+#[derive(Debug, Serialize, JsonSchema)]
+pub struct ShareFileResult {
+    pub file_id: i64,
+    pub name: String,
+    pub size: u64,
+    pub note: String,
+}
+
+#[derive(Debug, Deserialize, JsonSchema)]
 pub struct ReadMailboxArgs {
     /// How many recent messages to return (default 20, max 100).
     pub limit: Option<u32>,
@@ -452,6 +467,35 @@ impl FerrobotTools {
                 name: request.name,
                 note: format!("Not created: {reason}"),
             },
+        }))
+    }
+
+    #[tool(
+        description = "Give your operator a file you made, up to 10 MB: it is copied and shown in your \
+        chat as a file they can open. Markdown and text are shown as text; an .html file opens as a \
+        page inside ferrobot (scripts and styles inline or from https:, no network requests from the \
+        page). Mention the file by name in your reply."
+    )]
+    async fn share_file(
+        &self,
+        Extension(parts): Extension<http::request::Parts>,
+        Parameters(args): Parameters<ShareFileArgs>,
+    ) -> ToolResult<ShareFileResult> {
+        let me = caller(&parts)?.0.id;
+        let shared = self
+            .state
+            .notifier
+            .share_file(me, args.path)
+            .await
+            .map_err(|e| ErrorData::invalid_params(e, None))?;
+        Ok(Json(ShareFileResult {
+            file_id: shared.id,
+            note: format!(
+                "Shared {}; your operator sees it in your chat.",
+                shared.name
+            ),
+            name: shared.name,
+            size: shared.size,
         }))
     }
 
