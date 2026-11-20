@@ -226,6 +226,9 @@ export class DaemonClient {
 
   voice = (): Promise<VoiceView> => this.#request("GET", "/v1/voice");
   updateVoice = (req: UpdateVoice): Promise<VoiceView> => this.#request("PUT", "/v1/voice", req);
+  /** Stores (or with `null` removes) one speech provider's key; the chosen provider stays. */
+  updateVoiceKey = (provider: VoiceProvider, api_key: string | null): Promise<VoiceView> =>
+    this.#request("PUT", `/v1/voice/keys/${provider}`, { api_key });
   /** `text` spoken by the configured voice, or by `agent`'s own one (usually mp3). */
   speech = async (text: string, agent?: string): Promise<Blob> =>
     (await this.#fetch("POST", "/v1/voice/speech", { text, agent_id: agent ?? null })).blob();

@@ -5,7 +5,12 @@ use axum::Json;
 use axum::extract::{Path, Query, State};
 use axum::http::{StatusCode, header};
 use axum::response::{Html, IntoResponse, Response};
-use ferrobot_core::Connector;
+use std::fmt::Write as _;
+
+use ferrobot_core::question::{
+    Approval, QuestionAnswer, QuestionAnswered, QuestionCard, QuestionEvent, approves, take_secret,
+};
+use ferrobot_core::{AgentId, Connector, ConnectorAuth, Sender};
 use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;
 use uuid::Uuid;
@@ -14,6 +19,7 @@ use super::agents::explicit;
 use super::{ApiResult, parse_id};
 use crate::connectors::secret_key;
 use crate::error::{ApiError, ErrorBody};
+use crate::state::UiEvent;
 use crate::{AppState, oauth};
 
 #[derive(Debug, Serialize, ToSchema)]
@@ -217,6 +223,17 @@ pub(crate) async fn create_connector(
         issuer: clean_issuer(req.issuer)?,
     };
     check_app(&mut client)?;
+    let connector = add(&state, connector, token, &client).await?;
+    Ok((StatusCode::CREATED, Json(view(&state, connector).await?)))
+}
+
+/// Stores a validated connector with its token and OAuth app.
+async fn add(
+    state: &AppState,
+    connector: Connector,
+    token: Option<String>,
+    client: &oauth::ClientConfig,
+) -> Result<Connector, ApiError> {
     let connector = state.store.create_connector(connector).await?;
     if let Some(token) = token {
         state
@@ -225,8 +242,164 @@ pub(crate) async fn create_connector(
             .set(&secret_key(connector.id), &token)
             .await?;
     }
-    oauth::set_client_config(&state, connector.id, &client).await?;
-    Ok((StatusCode::CREATED, Json(view(&state, connector).await?)))
+    oauth::set_client_config(state, connector.id, client).await?;
+    Ok(connector)
+}
+
+/// Shows the operator a card to add the connector an agent asked for, in the chat they use for
+/// it. Nothing exists until they approve; Auto mode does not skip it (it takes a key).
+pub(crate) async fn request_card(
+    state: &AppState,
+    requester: AgentId,
+    request: ferrobot_mcp::ConnectorRequest,
+) -> Result<i64, ApiError> {
+    let connector = Connector {
+        id: Uuid::nil(),
+        name: request.name,
+        url: request.url,
+        created_at: time::OffsetDateTime::now_utc(),
+    };
+    connector.validate().map_err(ApiError::BadRequest)?;
+    if state
+        .store
+        .list_connectors()
+        .await?
+        .iter()
+        .any(|c| c.name == connector.name)
+    {
+        return Err(ApiError::Conflict(format!(
+            "a connector named {} already exists",
+            connector.name
+        )));
+    }
+    if !request.reason.is_empty() {
+        printable(&request.reason, "reason", 300)?;
+    }
+    let who = state.store.get_agent(requester).await?.name;
+    let host = reqwest::Url::parse(&connector.url)
+        .ok()
+        .and_then(|u| u.host_str().map(str::to_owned))
+        .ok_or_else(|| ApiError::BadRequest("url needs a host".into()))?;
+    let Connector { name, url, .. } = connector;
+    let mut prompt = format!("Add the connector \"{name}\" and give it to {who}?\nURL: {url}");
+    match request.auth {
+        ConnectorAuth::Token => {
+            let _ = write!(
+                prompt,
+                "\nThe token goes only to {host}; {who} never sees it."
+            );
+        }
+        ConnectorAuth::Oauth => {
+            prompt.push_str("\nSign in under Settings → Connectors after adding it.");
+        }
+        ConnectorAuth::None => {}
+    }
+    if !request.reason.is_empty() {
+        let _ = write!(prompt, "\nWhy: {}", request.reason);
+    }
+    let card = QuestionEvent::add_connector(
+        format!("{who} wants to add a connector"),
+        prompt,
+        Approval::AddConnector {
+            name,
+            url,
+            auth: request.auth,
+            requester,
+        },
+    );
+    let payload = serde_json::to_value(&card).map_err(|e| ApiError::Internal(e.to_string()))?;
+    let chat = crate::agents::chat_of(state, requester).await?;
+    let event = state
+        .store
+        .append_event(chat, None, "question".into(), payload)
+        .await?;
+    let qid = event.id;
+    state.publish(UiEvent::Event { event });
+    Ok(qid)
+}
+
+/// The operator's answer to an add-connector card: approved, the connector is created with the
+/// typed token and given to the agent that asked. The token never reaches an event, a message
+/// or the agent; the returned answers hold none.
+pub(crate) async fn answer_card(
+    state: &AppState,
+    chat: AgentId,
+    qid: i64,
+    card: &QuestionCard,
+    approval: &Approval,
+    mut answers: Vec<QuestionAnswer>,
+) -> Result<QuestionAnswered, ApiError> {
+    let Approval::AddConnector {
+        name,
+        url,
+        auth,
+        requester,
+    } = approval
+    else {
+        return Err(ApiError::Internal("not an add-connector card".into()));
+    };
+    let token = take_secret(card, &mut answers);
+    let note = if approves(&answers) {
+        let token = match auth {
+            ConnectorAuth::Token if token.is_none() => {
+                return Err(ApiError::BadRequest("enter the token, or decline".into()));
+            }
+            ConnectorAuth::Token => clean_token(token)?,
+            ConnectorAuth::Oauth | ConnectorAuth::None => None,
+        };
+        let connector = Connector {
+            id: Uuid::new_v4(),
+            name: name.clone(),
+            url: url.clone(),
+            created_at: time::OffsetDateTime::now_utc(),
+        };
+        connector.validate().map_err(ApiError::BadRequest)?;
+        let connector = add(state, connector, token, &oauth::ClientConfig::default()).await?;
+        if state.store.get_agent(*requester).await.is_ok() {
+            let mut ids: Vec<Uuid> = state
+                .store
+                .agent_connectors(*requester)
+                .await?
+                .into_iter()
+                .map(|c| c.id)
+                .collect();
+            ids.push(connector.id);
+            assign(state, *requester, ids).await?;
+        }
+        if *auth == ConnectorAuth::Oauth {
+            format!(
+                "The operator added the connector \"{name}\" ({url}) and gave it to you. Its tools \
+                 work once they sign in to it under Settings."
+            )
+        } else {
+            format!(
+                "The operator added the connector \"{name}\" ({url}) and gave it to you. Its tools \
+                 ({name}__...) work from your next turn."
+            )
+        }
+    } else {
+        format!("The operator declined adding the connector \"{name}\".")
+    };
+    let message_id = if state.store.get_agent(*requester).await.is_ok() {
+        let msg = state
+            .store
+            .enqueue_message(Sender::User, *requester, note, None)
+            .await?;
+        state.message_arrived(*requester);
+        let id = msg.id;
+        state.publish(UiEvent::Message { message: msg });
+        Some(id)
+    } else {
+        None
+    };
+    let answered = QuestionAnswered {
+        question: qid,
+        answers,
+        message_id,
+    };
+    let payload = serde_json::to_value(&answered).map_err(|e| ApiError::Internal(e.to_string()))?;
+    state.record(chat, None, "question_answered", payload).await;
+    Ok(answered)
 }
 
 #[derive(Debug, Deserialize, ToSchema)]
@@ -379,6 +552,11 @@ pub(crate) async fn set_agent_connectors(
 ) -> ApiResult<Vec<Uuid>> {
     let id = parse_id(&id)?;
     state.store.get_agent(id).await?;
+    Ok(Json(assign(&state, id, ids).await?))
+}
+
+/// Replaces an agent's connectors and lets its open sessions and runner pick them up.
+async fn assign(state: &AppState, id: AgentId, ids: Vec<Uuid>) -> Result<Vec<Uuid>, ApiError> {
     state.store.set_agent_connectors(id, ids).await?;
     state.connectors.evict_agent(id).await;
     // Codex and Gemini list tools once per process: tell the runner.
@@ -391,7 +569,7 @@ pub(crate) async fn set_agent_connectors(
         },
     );
     let connectors = state.store.agent_connectors(id).await?;
-    Ok(Json(connectors.into_iter().map(|c| c.id).collect()))
+    Ok(connectors.into_iter().map(|c| c.id).collect())
 }
 
 #[derive(Debug, Serialize, ToSchema)]

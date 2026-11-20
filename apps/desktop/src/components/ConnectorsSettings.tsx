@@ -1,9 +1,27 @@
 import type { JSX } from "preact";
 import { useEffect, useState } from "preact/hooks";
-import { KeyRound, LogIn, LogOut, Plus, Settings2, Trash2 } from "lucide-preact";
+import {
+  BookOpen,
+  Bug,
+  Check,
+  Cloud,
+  Code,
+  CreditCard,
+  Database,
+  ListTodo,
+  LogIn,
+  LogOut,
+  NotebookText,
+  Plus,
+  Search,
+  Settings2,
+  Sparkles,
+  Trash2,
+} from "lucide-preact";
 
 import type { Connector } from "../api.ts";
 import { useApp } from "../context.ts";
+import { CATALOG, type CatalogEntry, isAdded } from "../lib/catalog.ts";
 import { Button, IconButton } from "./ui.tsx";
 
 const STATUS: Record<Connector["sign_in"], string> = {
@@ -19,20 +37,18 @@ const dotOf = (c: Connector): string =>
       ? "p-starting"
       : "p-sleeping";
 
-/** Client id, secret, issuer and scopes of an own OAuth app (empty secret keeps the stored one). */
+/** Client id, issuer and scopes of an own OAuth app; its client secret lives in Vault. */
 interface AppDraft {
   clientId: string;
-  clientSecret: string;
   issuer: string;
   scopes: string;
 }
 
-const EMPTY_APP: AppDraft = { clientId: "", clientSecret: "", issuer: "", scopes: "" };
+const EMPTY_APP: AppDraft = { clientId: "", issuer: "", scopes: "" };
 
 function AppFields(props: {
   draft: AppDraft;
   onChange: (d: AppDraft) => void;
-  secretStored: boolean;
   redirectUri: string;
 }): JSX.Element {
   const { draft, onChange } = props;
@@ -64,18 +80,6 @@ function AppFields(props: {
         </span>
       </label>
       <label>
-        Client secret
-        <input
-          type="password"
-          autoComplete="off"
-          placeholder={props.secretStored ? "Stored; leave empty to keep it" : ""}
-          value={draft.clientSecret}
-          onInput={(e) => {
-            onChange({ ...draft, clientSecret: e.currentTarget.value });
-          }}
-        />
-      </label>
-      <label>
         Scopes (optional)
         <input
           value={draft.scopes}
@@ -87,7 +91,8 @@ function AppFields(props: {
         />
         <span class="hint">
           For providers without automatic registration (Google, GitHub, Slack): create an OAuth app
-          there and add this redirect URI: <code>{props.redirectUri}</code>
+          there and add this redirect URI: <code>{props.redirectUri}</code>. Its client secret goes
+          in Vault.
         </span>
       </label>
     </>
@@ -96,16 +101,33 @@ function AppFields(props: {
 
 const scopesOf = (text: string): string[] => text.split(/\s+/).filter(Boolean);
 
-/** Add, re-token, sign in and remove connectors. Tokens and secrets go to the daemon’s keychain and never come back. */
-export function ConnectorsSettings(): JSX.Element {
+const KIND_ICONS: Record<CatalogEntry["kind"], typeof Code> = {
+  work: ListTodo,
+  notes: NotebookText,
+  code: Code,
+  errors: Bug,
+  data: Database,
+  cloud: Cloud,
+  money: CreditCard,
+  docs: BookOpen,
+  search: Search,
+  ai: Sparkles,
+};
+
+const AUTH_LABELS: Record<CatalogEntry["auth"], string> = {
+  oauth: "Sign in",
+  token: "Token",
+  none: "No sign-in",
+};
+
+/** Add, sign in and remove connectors; their tokens and client secrets live in Vault. */
+export function ConnectorsSettings(props: { onVault: () => void }): JSX.Element {
   const { client, toast } = useApp();
   const [connectors, setConnectors] = useState<Connector[]>([]);
   const [name, setName] = useState("");
   const [url, setUrl] = useState("");
-  const [token, setToken] = useState("");
   const [ownApp, setOwnApp] = useState(false);
   const [app, setApp] = useState<AppDraft>(EMPTY_APP);
-  const [retoken, setRetoken] = useState<{ id: string; token: string } | null>(null);
   const [editApp, setEditApp] = useState<({ id: string } & AppDraft) | null>(null);
   const [signIn, setSignIn] = useState<{ id: string; url: string } | null>(null);
   const [adding, setAdding] = useState(false);
@@ -158,16 +180,26 @@ export function ConnectorsSettings(): JSX.Element {
       setSignIn({ id: c.id, url: authorization_url });
     });
 
+  const addFromCatalog = (e: CatalogEntry): Promise<void> =>
+    run(async () => {
+      const c = await client.createConnector({ name: e.name, url: e.url });
+      if (e.auth === "oauth") {
+        const { authorization_url } = await client.startConnectorOAuth(c.id);
+        window.open(authorization_url, "_blank", "noopener");
+        setSignIn({ id: c.id, url: authorization_url });
+      } else if (e.auth === "token") {
+        props.onVault();
+      }
+    });
+
   const add = (): Promise<void> =>
     run(async () => {
       await client.createConnector({
         name: name.trim(),
         url: url.trim(),
-        token: token.trim() || null,
         ...(ownApp
           ? {
               client_id: app.clientId.trim() || null,
-              client_secret: app.clientSecret.trim() || null,
               issuer: app.issuer.trim() || null,
               scopes: scopesOf(app.scopes),
             }
@@ -175,7 +207,6 @@ export function ConnectorsSettings(): JSX.Element {
       });
       setName("");
       setUrl("");
-      setToken("");
       setApp(EMPTY_APP);
       setOwnApp(false);
       setAdding(false);
@@ -229,7 +260,6 @@ export function ConnectorsSettings(): JSX.Element {
                       : {
                           id: c.id,
                           clientId: c.client_id ?? "",
-                          clientSecret: "",
                           issuer: c.issuer ?? "",
                           scopes: c.scopes.join(" "),
                         },
@@ -237,14 +267,6 @@ export function ConnectorsSettings(): JSX.Element {
                 }}
               >
                 <Settings2 size={16} />
-              </IconButton>
-              <IconButton
-                label={`Replace the token of ${c.name}`}
-                onClick={() => {
-                  setRetoken({ id: c.id, token: "" });
-                }}
-              >
-                <KeyRound size={16} />
               </IconButton>
               <IconButton
                 label={`Delete ${c.name}`}
@@ -273,9 +295,6 @@ export function ConnectorsSettings(): JSX.Element {
                       await client.updateConnector(c.id, {
                         client_id: draft.clientId.trim() || null,
                         issuer: draft.issuer.trim() || null,
-                        ...(draft.clientSecret.trim()
-                          ? { client_secret: draft.clientSecret.trim() }
-                          : {}),
                         scopes: scopesOf(draft.scopes),
                       });
                       setEditApp(null);
@@ -287,12 +306,11 @@ export function ConnectorsSettings(): JSX.Element {
                     onChange={(d) => {
                       setEditApp({ ...d, id: c.id });
                     }}
-                    secretStored={c.has_client_secret}
                     redirectUri={c.redirect_uri}
                   />
                   <span class="hint">
-                    Changing the client ID or issuer signs the connector out and needs the secret
-                    again.
+                    Changing the client ID or issuer signs the connector out and removes its client
+                    secret from Vault.
                   </span>
                   <div>
                     <Button small type="submit" disabled={busy}>
@@ -301,33 +319,43 @@ export function ConnectorsSettings(): JSX.Element {
                   </div>
                 </form>
               )}
-              {retoken?.id === c.id && (
-                <form
-                  class="provider-rekey"
-                  onSubmit={(e) => {
-                    e.preventDefault();
-                    void run(async () => {
-                      await client.updateConnector(c.id, { token: retoken.token.trim() || null });
-                      setRetoken(null);
-                    });
-                  }}
-                >
-                  <input
-                    type="password"
-                    autoComplete="off"
-                    placeholder="New token (empty removes it)"
-                    value={retoken.token}
-                    onInput={(e) => {
-                      setRetoken({ id: c.id, token: e.currentTarget.value });
-                    }}
-                  />
-                  <Button small type="submit" disabled={busy}>
-                    Save token
-                  </Button>
-                </form>
-              )}
             </li>
           ))}
+        </ul>
+      </section>
+      <section class="settings-section">
+        <h3 class="form-head">Catalog</h3>
+        <p class="muted small">Popular MCP servers run by their vendors. Add one, then sign in.</p>
+        <ul class="catalog">
+          {CATALOG.map((e) => {
+            const Icon = KIND_ICONS[e.kind];
+            const added = isAdded(e, connectors);
+            return (
+              <li key={e.name} class="catalog-card">
+                <div class="catalog-head">
+                  <span class="catalog-icon" aria-hidden="true">
+                    <Icon size={16} />
+                  </span>
+                  <b>{e.title}</b>
+                  <span class="spacer" />
+                  <span class="muted small">{AUTH_LABELS[e.auth]}</span>
+                </div>
+                <p class="muted small">{e.about}</p>
+                {e.setup && <p class="hint">{e.setup}</p>}
+                <div>
+                  {added ? (
+                    <span class="muted small catalog-added">
+                      <Check size={14} /> Added
+                    </span>
+                  ) : (
+                    <Button small disabled={busy} onClick={() => void addFromCatalog(e)}>
+                      <Plus size={16} /> Add <span class="sr-only">{e.title}</span>
+                    </Button>
+                  )}
+                </div>
+              </li>
+            );
+          })}
         </ul>
       </section>
       <section class="settings-section">
@@ -358,21 +386,6 @@ export function ConnectorsSettings(): JSX.Element {
                 }}
               />
             </label>
-            <label>
-              Token (optional)
-              <input
-                type="password"
-                autoComplete="off"
-                value={token}
-                onInput={(e) => {
-                  setToken(e.currentTarget.value);
-                }}
-              />
-              <span class="hint">
-                Sent as a Bearer token. Leave it empty to sign in with OAuth after adding. Stored in
-                the keychain of the daemon’s computer; agents never see it.
-              </span>
-            </label>
             <label class="check">
               <input
                 type="checkbox"
@@ -383,14 +396,14 @@ export function ConnectorsSettings(): JSX.Element {
               />
               Use my own OAuth app
             </label>
-            {ownApp && (
-              <AppFields
-                draft={app}
-                onChange={setApp}
-                secretStored={false}
-                redirectUri={redirectUri}
-              />
-            )}
+            {ownApp && <AppFields draft={app} onChange={setApp} redirectUri={redirectUri} />}
+            <span class="hint">
+              After adding it, put its token in{" "}
+              <button type="button" class="text-link" onClick={props.onVault}>
+                Vault
+              </button>{" "}
+              or sign in with OAuth.
+            </span>
             <div class="form-actions">
               <Button
                 variant="primary"

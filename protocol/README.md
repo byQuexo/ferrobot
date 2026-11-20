@@ -121,6 +121,18 @@ With Auto mode on (`GET`/`PUT /v1/settings`, `auto_mode`) there is no card: the
 agent is created at once and an `agent_created` event (`{name, id, by, auto: true}`,
 `by` the requester's name) is recorded where the card would have gone.
 
+**Connector cards.** **`add_connector`** (`name`, `url`, `auth`: `token`,
+`oauth` or `none`, optional `reason`) records an approval card with
+`{"kind": "add_connector", name, url, auth, requester}` in the chat the
+operator uses for the requester and returns its id without waiting; Auto mode
+never skips it. For `token` the card has a second question `token` of kind
+`secret`, a hidden field only daemon cards carry (`ask_user` refuses it).
+Approving needs that field (`400` without it): the daemon creates the
+connector with the token, gives it to the requester and queues it a `user`
+message with the outcome (also on decline). The token is taken out of the
+answers before anything is stored or sent: `question_answered` and the
+answer response never hold it, and it only ever goes to the URL on the card.
+
 **Relation to A2UI.** We checked Google's open
 [A2UI](https://github.com/a2ui-project/a2ui) (Apache-2.0) as a base: the
 current spec is **v1.0** ([spec](https://a2ui.org/specification/v1.0-a2ui/),
@@ -140,6 +152,7 @@ small own schema instead, designed to map 1:1 onto A2UI v1.0 later:
 | `single` question | `ChoicePicker`, `variant: "mutuallyExclusive"`, `options: [{label, value}]` |
 | `multi` question | `ChoicePicker`, `variant: "multipleSelection"` |
 | `text` question / `allow_custom` | `TextField` (`variant: "shortText"`) |
+| `secret` question (daemon cards only) | `TextField` (`variant: "obscured"`) |
 | send button | `Button` (`variant: "primary"`) with an `action` event |
 | `QuestionAnswer` (`values`, `custom`) | the action `context` (selected values, text) |
 | `question_answered` | the renderer → agent `action` message |

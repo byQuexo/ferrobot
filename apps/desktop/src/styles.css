@@ -106,6 +106,14 @@ b, strong { font-weight: 600; }
 ::selection { background: var(--accent-soft); }
 
 .spacer { flex: 1; }
+.sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+.catalog { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 12px; margin: 12px 0 0; padding: 0; list-style: none; }
+.catalog-card { display: flex; flex-direction: column; gap: 8px; padding: 12px; border: 1px solid var(--border); border-radius: 12px; background: var(--surface); }
+.catalog-card p { margin: 0; }
+.catalog-head { display: flex; align-items: center; gap: 8px; }
+.catalog-icon { display: inline-flex; padding: 6px; border-radius: 8px; background: var(--accent-soft); color: var(--accent); }
+.catalog-added { display: inline-flex; align-items: center; gap: 4px; }
+.catalog-card > :last-child { margin-top: auto; }
 .grow { flex: 1; min-width: 0; }
 .muted { color: var(--muted); }
 .small { font-size: 12px; }
@@ -331,6 +339,10 @@ textarea { resize: vertical; min-height: 40px; line-height: 1.5; }
 .rich blockquote { margin: 0 0 8px; padding: 0 12px; border-left: 3px solid var(--border-strong); color: var(--text-2); }
 .rich hr { border: none; border-top: 1px solid var(--border); margin: 12px 0; }
 .rich a { color: var(--accent); text-decoration: underline; text-underline-offset: 2px; }
+.rich a.link-chip { display: inline-flex; align-items: center; gap: 4px; max-width: 100%; padding: 0 8px 0 6px; border-radius: 999px; background: var(--accent-soft); font-size: 0.92em; text-decoration: none; }
+.rich a.link-chip:hover { text-decoration: underline; }
+.link-chip svg { flex: none; }
+.link-chip span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .md-table { overflow-x: auto; margin: 0 0 8px; }
 .file-link { display: inline-flex; align-items: center; gap: 4px; padding: 1px 4px; border: none; border-radius: 4px; background: var(--accent-soft); color: var(--accent); font: inherit; font-family: var(--mono, ui-monospace, monospace); font-size: 0.92em; cursor: pointer; }
 .file-link:hover { text-decoration: underline; }
@@ -653,7 +665,8 @@ textarea { resize: vertical; min-height: 40px; line-height: 1.5; }
 .qcard-title { font-weight: 500; color: var(--text-2); }
 .qcard-step { font-variant-numeric: tabular-nums; }
 .qcard-done { display: inline-flex; align-items: center; gap: 4px; color: var(--ok); font-weight: 500; }
-.qcard-prompt { display: flex; align-items: flex-start; gap: 8px; margin: 0; font-size: 14px; line-height: 24px; font-weight: 500; }
+.qcard-prompt { display: flex; align-items: flex-start; gap: 8px; margin: 0; font-size: 14px; line-height: 24px; font-weight: 500; white-space: pre-line; overflow-wrap: anywhere; }
+.qcard-secret { display: flex; flex-direction: column; gap: 4px; font-size: 13px; font-weight: 500; }
 .qcard-prompt svg { flex: none; margin-top: 4px; color: var(--accent); }
 .qcard-choices { display: flex; flex-direction: column; gap: 8px; }
 .choice {
@@ -673,7 +686,7 @@ textarea { resize: vertical; min-height: 40px; line-height: 1.5; }
 .qcard-foot { display: flex; align-items: center; gap: 8px; }
 .qcard.locked { gap: 8px; background: var(--surface-2); box-shadow: none; }
 .qcard-summary { display: flex; flex-direction: column; gap: 4px; margin: 0; font-size: 13px; }
-.qcard-summary dt { color: var(--muted); }
+.qcard-summary dt { color: var(--muted); white-space: pre-line; overflow-wrap: anywhere; }
 .qcard-summary dd { margin: 0; font-weight: 500; }
 
 /* Settings page */

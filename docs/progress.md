@@ -767,6 +767,8 @@ store used for the run) or the daemon's own env.
   status-dot rows, add forms behind a button, hairline sections, 36 px nav
   rows, the switch in the accent. Voice copy names the phone button. The
   five info tabs fit on one row, and the theme control no longer overlaps.
+- Bare URLs in chat show as a link chip with a shortened label
+  (`feat/link-chips`); the full URL is in the tooltip and accessible name.
 
 **Checked visually**
 
@@ -979,3 +981,56 @@ store used for the run) or the daemon's own env.
 - Desktop unit test: the `agent_created` notice in `buildTimeline`.
 - Not tested: the Settings switch in a browser or the Tauri window; Auto mode
   with a real model calling `create_agent`.
+
+## Vault and connector cards (`feat/vault`)
+
+**Done**
+
+- Settings, Vault: every stored key in one place (provider keys, connector
+  tokens and OAuth client secrets, voice keys) with add, replace and remove;
+  the key fields left Model providers, Connectors and Voice, which link to
+  Vault. `PUT /v1/voice/keys/{provider}` sets a voice key without switching
+  the chosen provider. No migration.
+- MCP tool `add_connector` (`name`, `url`, `auth`: `token`/`oauth`/`none`,
+  `reason`): an approval card with the URL, the host the token goes to and,
+  for `token`, a hidden field. Approving creates the connector, stores the
+  token and gives it to the agent; the agent gets an outcome message (also on
+  decline). Auto mode never skips it. `ask_user` refuses secret fields and its
+  description says never to ask for keys.
+- Question cards: kind `secret` (daemon cards only), shown as a password
+  field on the last step; the answered card says "Saved in Vault". Card
+  prompts keep their line breaks. `protocol/` and the desktop types are
+  regenerated.
+
+**Tested**
+
+- Rust: `agents_get_connectors_through_a_card_whose_token_they_never_see`
+  (card in Auto mode, URL and host on the card, 400 without the token, 202,
+  409 on a second answer, the connector assigned, the token reaching the
+  upstream, and the token absent from the tool result, the answer, events,
+  messages and the UI event stream; secret fields refused in `ask_user`, a
+  taken name refused, decline creates nothing),
+  `voice_keys_change_without_switching_the_provider`, and the core unit test
+  `secret_fields_stay_out_of_agent_cards_and_answers`.
+- Not tested: a real model calling `add_connector`; the Vault and the card in
+  the Tauri window.
+
+## MCP catalog (`feat/mcp-catalog`)
+
+**Done**
+
+- Settings, Connectors: a catalog of 17 vendor-run MCP servers with a one-line
+  description and sign-in kind. "Add" creates the connector and, for OAuth,
+  opens the sign-in right away; GitHub goes on to Vault for its token. Entries
+  already added show "Added".
+
+**Tested**
+
+- Desktop unit tests: every entry is a valid connector name and HTTPS URL, no
+  duplicates; "added" by name or URL.
+- Live, through a throwaway daemon: the five keyless servers (Context7,
+  DeepWiki, Microsoft Learn, Cloudflare docs, Exa) listed their tools to an
+  agent through `/mcp`. Viewed the catalog in Chromium (light theme).
+- Not tested: a real OAuth sign-in with any catalog server (dynamic
+  registration with a loopback redirect is advertised but unproven per
+  server); the Tauri window.

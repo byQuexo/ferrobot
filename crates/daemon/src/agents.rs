@@ -181,7 +181,7 @@ fn shorten(s: &str, max: usize) -> String {
 
 /// The agent at the top of `id`'s creation chain, created by the operator:
 /// its chat is where the operator talks.
-async fn chat_of(state: &AppState, id: AgentId) -> Result<AgentId, ApiError> {
+pub(crate) async fn chat_of(state: &AppState, id: AgentId) -> Result<AgentId, ApiError> {
     let mut current = id;
     for _ in 0..16 {
         match state.store.get_agent(current).await?.created_by {
