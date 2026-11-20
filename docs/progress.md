@@ -1076,6 +1076,13 @@ store used for the run) or the daemon's own env.
   reported with step, error and log; a retry rebuilds and restarts; a third
   update during the restart gets 409.
 - Desktop unit test: what a status poll means (wait, done, restarted).
-- Not tested: a real pull, rebuild and re-exec; the Settings page in a browser
-  or the Tauri window; an update check against a real release (private repo,
-  no signing secrets); the release workflow (not run); Windows.
+- By hand, a throwaway checkout with a local origin and a stand-in daemon
+  crate: the real daemon reported "up to date" for an empty pull; after a new
+  upstream commit it ran the pull, the npm steps and both cargo builds, then
+  exec'd the rebuilt binary with the same PID and arguments.
+- In Chromium (Vite): the source-build view and the wrong-branch refusal.
+- Not tested: a real daemon re-execing into a real new one; the Tauri shell
+  (never built or launched: plugin registration, the injected flags, the
+  daemon stopping through the resource); an update check against a real
+  release (private repo, no signing secrets); the release workflow (not run);
+  Windows.
