@@ -24,12 +24,14 @@ done
 acurl() { curl -sf -H "Authorization: Bearer $(cat "$DATA/api-token")" "$@"; }
 cleanup() {
   if [ -f "$DATA/api-token" ]; then
+    acurl "$API/v1/usage" | python3 -c 'import json,sys; t=json.load(sys.stdin)["totals"]; print("model calls:", t["calls"], "cost (USD):", t["cost_usd"])' || true
     for id in $(acurl "$API/v1/agents" | python3 -c 'import json,sys; print(" ".join(a["id"] for a in json.load(sys.stdin)))' || true); do
       acurl -o /dev/null -X DELETE "$API/v1/agents/$id" || true
     done
   fi
   kill -TERM ${UI_PID:-} ${PID:-} 2>/dev/null || true
   wait 2>/dev/null || true
+  rm -f "$DATA/secrets.json"
   if [ "${DEMO_KEEP:-}" = 1 ]; then echo "kept $DATA"; else rm -rf "$DATA"; fi
 }
 trap cleanup EXIT
@@ -45,8 +47,6 @@ for _ in $(seq 100); do curl -sf "$API/v1/health" >/dev/null && curl -sf "http:/
 mkdir -p "$DATA/frames"
 DEMO_API=$API DEMO_UI=http://localhost:$UI_PORT DEMO_TOKEN_FILE=$DATA/api-token DEMO_FRAMES=$DATA/frames \
   node scripts/demo/record.mjs
-
-acurl "$API/v1/usage" | python3 -c 'import json,sys; t=json.load(sys.stdin)["totals"]; print("model calls:", t["calls"], "cost (USD):", t["cost_usd"])'
 
 # Variable frame durations (waits sped up) -> constant 30 fps.
 ffmpeg -loglevel error -y -f concat -safe 0 -i "$DATA/frames/frames.txt" \

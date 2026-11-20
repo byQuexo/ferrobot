@@ -4,7 +4,7 @@
 import { execFileSync } from "node:child_process";
 import { existsSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { createRequire } from "node:module";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import { setTimeout as sleep } from "node:timers/promises";
 
 const { DEMO_API: API, DEMO_UI: UI, DEMO_FRAMES: FRAMES } = process.env;
@@ -27,8 +27,8 @@ const LEAD_ROLE = `You lead launches for the ferrobot team. Keep replies short a
 When asked for the v0.1 launch post:
 1. Say in one sentence how you will split the work.
 2. Call create_agent twice, one after the other:
-   - name "scout", description "Research", instructions "Dig up facts fast and write them down.", task: "Recall the team memory release-v0.1. With bash, write its highlights as short bullets to notes/whats-new.md, then run ls -l notes and wc -l notes/whats-new.md. Answer with the highlights in five short lines."
-   - name "quill", description "Writing", instructions "Write short, warm launch copy.", task: "Recall the team memory release-v0.1. With write_file, write a launch post of about 120 words to drafts/launch-post.md: a title line, two short paragraphs, one closing line. Then run wc -w drafts/launch-post.md with bash. Answer with the post."
+   - name "scout", description "Research", instructions "Dig up facts fast and write them down. Work quietly: your final answer goes back on its own.", task: "Recall the team memory release-v0.1. With bash, write its highlights as short bullets to notes/whats-new.md, then run ls -l notes and wc -l notes/whats-new.md. Answer with the highlights in five short lines."
+   - name "quill", description "Writing", instructions "Write short, warm launch copy. Work quietly: your final answer goes back on its own.", task: "Recall the team memory release-v0.1. With write_file, write a launch post of about 120 words to drafts/launch-post.md: a title line, two short paragraphs, one closing line. Then run wc -w drafts/launch-post.md with bash. Answer with the post."
 3. End your turn; their answers come back to you on their own.
 When a task answer arrives and you do not have both answers yet, reply in one short line and end your turn.
 When you have both answers: write launch-post.md with quill's post, adding anything from scout's highlights it missed, call share_file with launch-post.md, then reply in two short sentences.`;
@@ -68,12 +68,17 @@ async function readKey() {
   return key;
 }
 
+// Kept to check the logs for leaks without holding the whole key.
+let keyPrefix = "";
+
 async function setup() {
+  const key = await readKey();
+  keyPrefix = key.slice(0, 12);
   const provider = await api("POST", "/v1/providers", {
     name: KIND,
     kind: KIND,
     default_model: MODEL,
-    api_key: await readKey(),
+    api_key: key,
     ...(process.env.DEMO_BASE_URL ? { base_url: process.env.DEMO_BASE_URL } : {}),
   });
   const settings = await api("GET", "/v1/settings");
@@ -295,8 +300,11 @@ async function main() {
 
     // 2. The lead answers and asks to create its teammates; approve the two it was told to make.
     const chat = page.locator(".chat");
-    await waitFor(chat.locator(".bubble-agent").first());
-    await zoom(chat.locator(".bubble-agent").first(), 1.5);
+    // The first reply may be a create_agent call without any text.
+    await waitFor(chat.locator(".bubble-agent, form.qcard").first());
+    if (await chat.locator(".bubble-agent").count()) {
+      await zoom(chat.locator(".bubble-agent").first(), 1.5);
+    }
     let approved = 0;
     for (let cards = 0; approved < TEAM.length && cards < 4; cards++) {
       const card = chat.locator("form.qcard").first();
@@ -331,6 +339,7 @@ async function main() {
     await zoom(page.locator("aside.info .computer"), 1.5);
     await pause(1600);
     await zoom(null);
+    await click(page.getByLabel("Hide details"));
 
     await open("quill");
     await waitFor(lastTool("write_file"));
@@ -345,7 +354,7 @@ async function main() {
     await open("atlas");
     const file = page.locator(".chat button.file-card").last();
     await waitFor(file);
-    await pause(400);
+    await finished("atlas");
     await zoom(page.locator(".chat .bubble-agent").last(), 1.5);
     await pause(2200);
     await zoom(null);
@@ -362,6 +371,11 @@ async function main() {
     await page.screenshot({ path: join(FRAMES, "last.png") }).catch(() => undefined);
     if (frames.length) writeConcat(now());
     await browser.close();
+    const dir = dirname(process.env.DEMO_TOKEN_FILE ?? "");
+    const leaks = ["daemon.log", "vite.log"].filter(
+      (log) => keyPrefix && readFileSync(join(dir, log), "utf8").includes(keyPrefix),
+    );
+    console.log(`logs containing the key: ${String(leaks.length)}`);
   }
 }
 
