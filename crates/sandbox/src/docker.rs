@@ -29,9 +29,25 @@ const KIND: &str = "docker";
 const LABEL_MANAGED: &str = "dev.ferrobot.managed";
 /// Image repository for archived sandboxes (separate from snapshots).
 const ARCHIVE_REPO: &str = "ferrobot-archive";
-/// The daemon's per-sandbox token; blanked in committed images (it is
-/// retired on archive anyway, and the container env sets the current one).
-const BLANK_TOKEN: &str = "ENV FERROBOT_AGENT_TOKEN=";
+const TOKEN_VAR: &str = "FERROBOT_AGENT_TOKEN";
+
+/// `ENV` change blanking every variable that holds the agent token: a committed image keeps the
+/// container env, and the token also travels as e.g. `ANTHROPIC_API_KEY`.
+fn blank_token_env(env: &[String]) -> String {
+    let token = env
+        .iter()
+        .find_map(|kv| kv.strip_prefix(TOKEN_VAR)?.strip_prefix('='))
+        .filter(|t| !t.is_empty());
+    let mut names = vec![TOKEN_VAR];
+    names.extend(
+        env.iter()
+            .filter_map(|kv| kv.split_once('='))
+            .filter(|(name, value)| *name != TOKEN_VAR && Some(*value) == token)
+            .map(|(name, _)| name),
+    );
+    let pairs: Vec<String> = names.iter().map(|n| format!("{n}=")).collect();
+    format!("ENV {}", pairs.join(" "))
+}
 
 /// Configuration for [`DockerBackend`].
 #[derive(Debug, Clone)]
@@ -222,12 +238,18 @@ impl DockerBackend {
             self.sealer(&home_key)?,
         )
         .await?;
+        let blank = blank_token_env(
+            info.config
+                .and_then(|c| c.env)
+                .as_deref()
+                .unwrap_or_default(),
+        );
         let options = CommitContainerOptionsBuilder::default()
             .container(id)
             .repo(ARCHIVE_REPO)
             .tag(&name)
             .comment("ferrobot archive")
-            .changes(BLANK_TOKEN)
+            .changes(&blank)
             .build();
         self.docker
             .commit_container(options, bollard::models::ContainerConfig::default())
@@ -615,12 +637,21 @@ impl SandboxBackend for DockerBackend {
             }
             store.put(key, tar.into()).await?;
         }
+        let env = self
+            .docker
+            .inspect_container(id, None::<InspectContainerOptions>)
+            .await
+            .map_err(|e| not_found_or(e, id))?
+            .config
+            .and_then(|c| c.env)
+            .unwrap_or_default();
+        let blank = blank_token_env(&env);
         let options = CommitContainerOptionsBuilder::default()
             .container(id)
             .repo(&self.config.snapshot_repo)
             .tag(&tag)
             .comment("ferrobot snapshot")
-            .changes(BLANK_TOKEN)
+            .changes(&blank)
             .build();
         self.docker
             .commit_container(options, bollard::models::ContainerConfig::default())
@@ -828,6 +859,27 @@ impl SandboxBackend for DockerBackend {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn every_variable_holding_the_token_is_blanked() {
+        let env = [
+            "FERROBOT_AGENT_TOKEN=tok",
+            "ANTHROPIC_API_KEY=tok",
+            "GEMINI_API_KEY=tok",
+            "AWS_BEARER_TOKEN_BEDROCK=tok",
+            "FERROBOT_DRIVER=mock",
+            "PATH=/usr/bin",
+        ]
+        .map(String::from);
+        assert_eq!(
+            super::blank_token_env(&env),
+            "ENV FERROBOT_AGENT_TOKEN= ANTHROPIC_API_KEY= GEMINI_API_KEY= AWS_BEARER_TOKEN_BEDROCK="
+        );
+        assert_eq!(
+            super::blank_token_env(&["FERROBOT_AGENT_TOKEN=".into(), "X=".into()]),
+            "ENV FERROBOT_AGENT_TOKEN="
+        );
+    }
+
     use super::*;
 
     #[test]

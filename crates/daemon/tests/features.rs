@@ -2571,6 +2571,10 @@ async fn agents_share_files_that_open_from_storage() {
         "{csp}"
     );
     assert!(!csp.contains("https:"), "no remote origins: {csp}");
+    assert!(
+        !csp.contains("allow-same-origin"),
+        "pages keep an opaque origin: {csp}"
+    );
     let get = |url: String| {
         let ui = d.ui.clone();
         async move { http_raw(&ui, "GET", &url, &no_token, b"").await.0 }
