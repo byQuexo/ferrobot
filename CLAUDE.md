@@ -195,12 +195,11 @@ daemon, `docker ps -a` must be empty of ferrobot containers.
 - No provider has been run against its real upstream (no keys used).
 - Codex 0.166.0 is in the runner image; a live Codex turn ran against Ollama's
   Responses API, not against OpenAI (no key in the environment).
-- The Claude driver ran in Docker against a fake Anthropic upstream only; a
-  real Anthropic call still needs a key.
-- The provider dialogs were checked in a browser against a real daemon, not in
-  the Tauri window; the real OS keychain path has never run.
-- A live Claude run (`--driver claude`) has never been tested; neither has
-  Claude steering (`scripts/smoke-live.sh` covers the plain turn).
+- A live Claude turn passed (`scripts/smoke-live.sh`, 2026-11-20, macOS): an
+  Anthropic provider with its key in the macOS Keychain, a tool call in a
+  Docker sandbox, no trace of the key in the sandbox, logs or data dir.
+  Claude steering is still untested against the real API; the Windows
+  Credential Manager path has never run.
 
 ## Next up: Firecracker
 
