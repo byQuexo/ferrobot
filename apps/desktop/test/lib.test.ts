@@ -568,6 +568,10 @@ describe("usage", () => {
       ["b", "c", "a"],
     );
     assert.deepEqual(
+      sortGroups(rows, "cost_usd", false).map((g) => g.label),
+      ["c", "b", "a"],
+    );
+    assert.deepEqual(
       sortGroups(rows, "label", false).map((g) => g.label),
       ["a", "b", "c"],
     );
