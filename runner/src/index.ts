@@ -38,8 +38,12 @@ async function main(): Promise<void> {
       session_id: runner.sessionId,
       steering: driver.steering === true,
     }),
-    onFrame: (frame) => { runner.handle(frame); },
-    onDisconnect: () => { runner.abortCurrent(); },
+    onFrame: (frame) => {
+      runner.handle(frame);
+    },
+    onDisconnect: () => {
+      runner.abortCurrent();
+    },
   });
   runner = new Runner(
     { driver, session, agentName: config.agentName, send: (f) => link.send(f) },
@@ -49,14 +53,22 @@ async function main(): Promise<void> {
   log.info("runner starting", { agent: config.agentName, driver: driver.name });
   link.start();
 
-  const shutdown = (signal: string): void => {
+  const shutdown = async (signal: string): Promise<void> => {
     log.info("shutting down", { signal });
     runner.abortCurrent();
     link.close();
-    void driver.close().finally(() => process.exit(0));
+    try {
+      await driver.close();
+    } finally {
+      process.exit(0);
+    }
   };
-  process.once("SIGTERM", () => { shutdown("SIGTERM"); });
-  process.once("SIGINT", () => { shutdown("SIGINT"); });
+  process.once("SIGTERM", () => {
+    void shutdown("SIGTERM");
+  });
+  process.once("SIGINT", () => {
+    void shutdown("SIGINT");
+  });
 }
 
 function createDriver(config: RunnerConfig, session: SessionStore): ModelDriver {
@@ -102,9 +114,11 @@ function createDriver(config: RunnerConfig, session: SessionStore): ModelDriver 
   }
 }
 
-main().catch((err: unknown) => {
+try {
+  await main();
+} catch (err) {
   log.error(err instanceof ConfigError ? "invalid configuration" : "fatal", {
     error: errorMessage(err),
   });
   process.exit(1);
-});
+}

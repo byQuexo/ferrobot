@@ -2,6 +2,12 @@
 //!
 //! Regenerate after changing an API type:
 //! `FERROBOT_UPDATE_SPECS=1 cargo test -p ferrobot-daemon --test specs`
+#![allow(
+    clippy::unwrap_used,
+    clippy::expect_used,
+    clippy::panic,
+    reason = "test code"
+)]
 
 use std::path::PathBuf;
 

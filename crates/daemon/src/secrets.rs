@@ -1,5 +1,5 @@
-//! Provider credentials. They live in the OS keychain (or, for headless CI
-//! only, a plaintext file) and never in SQLite, a sandbox, a log or an event.
+//! Provider keys, connector and sign-in tokens, link and archive keys: kept in the OS keychain
+//! (headless CI only: a plaintext file), never in SQLite, a sandbox, a log or an event.
 
 use std::collections::BTreeMap;
 use std::path::PathBuf;
@@ -84,9 +84,8 @@ impl SecretStore {
         .await
     }
 
-    /// A random 32-byte key kept under `key`, made on first use. A stored
-    /// value that is not such a key is an error: replacing it would lose
-    /// whatever the old key protects.
+    /// A random 32-byte key kept under `key`, made on first use. A stored value that is not such
+    /// a key is an error: replacing it would lose whatever the old key protects.
     pub async fn key32(&self, key: &str) -> Result<[u8; 32], String> {
         if let Some(hex) = self.get(key).await.map_err(|e| e.to_string())? {
             let mut bytes = [0; 32];

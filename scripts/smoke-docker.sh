@@ -1,25 +1,20 @@
 #!/usr/bin/env bash
-# End-to-end smoke test of the real `ferrobotd` binary with the Docker backend
-# and the mock driver (no API key needed). Requires Docker/Podman and the
-# runner image: docker build -f runner/Dockerfile -t ferrobot-runner:dev .
-#
-# Checks: two sandboxed agents talk through the mailbox; memory, routines and
-# profiles over the API; idle auto-sleep and wake-on-message; snapshot and
-# restore of an agent's computer; persistence across a daemon restart; the
-# operator token; renaming; deleting an agent removes its disk.
-# Cleans up after itself.
+# Smoke test of the real ferrobotd with Docker and the mock driver (no key); needs the runner image
+# (docker build -f runner/Dockerfile -t ferrobot-runner:dev .). Ports: FERROBOT_SMOKE_PORT, FERROBOT_SMOKE_AGENT_PORT.
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
-API=${FERROBOT_API:-http://127.0.0.1:7878}
+PORT=${FERROBOT_SMOKE_PORT:-7878}
+AGENT_PORT=${FERROBOT_SMOKE_AGENT_PORT:-7879}
+API=http://127.0.0.1:$PORT
 DATA=$(mktemp -d)
 BIN=target/debug/ferrobotd
 IDLE=${FERROBOT_SMOKE_IDLE:-4}
 cargo build -q -p ferrobot-daemon
 
 start() {
-  "$BIN" --data-dir "$DATA" --backend docker --driver mock --idle-timeout "$IDLE" \
-    --timezone UTC --agent-listen 0.0.0.0:7879 >>"$DATA/daemon.log" 2>&1 &
+  "$BIN" --data-dir "$DATA" --secret-store file --backend docker --driver mock --idle-timeout "$IDLE" \
+    --timezone UTC --listen "127.0.0.1:$PORT" --agent-listen "0.0.0.0:$AGENT_PORT" >>"$DATA/daemon.log" 2>&1 &
   PID=$!
   for _ in $(seq 50); do curl -sf "$API/v1/health" >/dev/null && return; sleep 0.2; done
   echo "daemon did not start"; cat "$DATA/daemon.log"; exit 1

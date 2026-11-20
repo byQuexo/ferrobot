@@ -195,7 +195,6 @@ pub(crate) async fn answer_question(
         )));
     }
     if question.approval.is_some() {
-        // Approval card: the decision goes to the waiting tool call.
         let answered = QuestionAnswered {
             question: qid,
             answers: req.answers,

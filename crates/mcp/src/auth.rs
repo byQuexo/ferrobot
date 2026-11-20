@@ -40,11 +40,8 @@ async fn authenticate(State(state): State<McpState>, mut req: Request, next: Nex
     }
 }
 
-/// Axum router serving the MCP endpoint at `/` (nest it, e.g. under `/mcp`).
-///
-/// Host-header checks are disabled because sandboxes reach the daemon under
-/// varying names (`host.docker.internal`, `127.0.0.1`, ...); every request is
-/// authenticated with a per-agent bearer token instead.
+/// Axum router serving the MCP endpoint at `/` (nest it, e.g. under `/mcp`). Host-header checks
+/// are off since sandboxes use varying host names; a per-agent bearer token authenticates instead.
 pub fn router(state: McpState) -> Router {
     let tools_state = state.clone();
     let mut config = StreamableHttpServerConfig::default().disable_allowed_hosts();

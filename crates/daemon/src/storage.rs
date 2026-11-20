@@ -1,5 +1,5 @@
-//! Object storage for blobs that live outside SQLite and the sandbox disks:
-//! snapshot archives today, later artifacts and archived sandboxes.
+//! Object storage for blobs outside SQLite and the sandbox disks: snapshot and sandbox
+//! archives, and files agents share.
 
 use std::path::Path;
 use std::sync::Arc;
@@ -38,11 +38,8 @@ pub async fn archive_key(
     }
 }
 
-/// Opens the store at `url`, or the data directory when `url` is `None`.
-///
-/// `s3://bucket/prefix` reads credentials, region and endpoint from the
-/// standard `AWS_*` variables (Cloudflare R2: `AWS_ENDPOINT` plus
-/// `AWS_REGION=auto`); `file:///abs/dir` and `memory://` work as well.
+/// Opens the store at `url` (`s3://`, `file://`, `memory://`), or the data directory when `None`.
+/// S3 reads `AWS_*` variables; Cloudflare R2 needs `AWS_ENDPOINT` and `AWS_REGION=auto`.
 pub fn open(url: Option<&str>, data_dir: &Path) -> object_store::Result<Arc<dyn ObjectStore>> {
     let Some(url) = url else {
         // Keys like `snapshots/<tag>.tar` keep the layout of older releases.

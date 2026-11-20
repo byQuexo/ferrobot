@@ -2,10 +2,8 @@ use std::fmt;
 
 use crate::SandboxError;
 
-/// An absolute, normalized path inside a sandbox.
-///
-/// Rejects relative paths, `..`/`.` components, empty components and NUL
-/// bytes, so a path can be safely mapped onto a host directory.
+/// An absolute, normalized path inside a sandbox. Rejects relative paths, `.`/`..`, empty
+/// components and NUL bytes, so it maps safely onto a host directory.
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct SandboxPath(String);
 

@@ -1,15 +1,6 @@
-// Deterministic stand-in for a model. It exercises the real plumbing
-// (protocol, MCP tools, mailbox) without an API key. Grammar:
-//
-//   @<agent> <text>         send <text> to <agent> via send_message
-//   remember <key>: <text>  store a memory
-//   recall <query>          search memories
-//   ask <q>; <q>; ...       show a question card via ask_user. Each <q> is
-//                           "Prompt: a | b" (single choice), "Prompt+: a | b"
-//                           (multiple choice) or "Prompt" (free text); a
-//                           trailing "| ..." choice allows a custom answer
-//   anything else           echo; if it came from another agent (and is not
-//                           already a reply), answer it with "re: <text>"
+// Deterministic stand-in for a model that drives the real plumbing without a key. Grammar (seed-demo.sh,
+// smoke tests): `@agent text`, `remember key: text`, `recall query`, `ask Q: a | b; Q+: a | ...; Q`
+// (single, multiple with custom answer, free text); else echo, and agents get one "re: text" reply.
 import type { FerrobotMcp } from "../mcp-client.ts";
 import type { ModelDriver, TurnContext, TurnResult } from "./types.ts";
 import { TurnAbortedError } from "./types.ts";
@@ -31,8 +22,12 @@ export interface MockQuestion {
 
 function parseQuestion(text: string): MockQuestion {
   const m = /^([^:]+?)(\+)?:\s*(.+)$/.exec(text.trim());
-  if (!m?.[1] || !m[3]) return { prompt: text.trim(), kind: "text", choices: [], allow_custom: false };
-  const labels = m[3].split("|").map((s) => s.trim()).filter(Boolean);
+  if (!m?.[1] || !m[3])
+    return { prompt: text.trim(), kind: "text", choices: [], allow_custom: false };
+  const labels = m[3]
+    .split("|")
+    .map((s) => s.trim())
+    .filter(Boolean);
   const custom = labels.at(-1) === "...";
   return {
     prompt: m[1].trim(),
@@ -42,7 +37,7 @@ function parseQuestion(text: string): MockQuestion {
   };
 }
 
-/** Pure parser so the mock's behaviour is unit-testable. */
+/** Parses a message body into the mock's action. */
 export function planMockAction(
   body: string,
   senderKind: "user" | "agent" | "routine",
@@ -56,7 +51,14 @@ export function planMockAction(
     return { kind: "remember", key: remember[1].trim(), content: remember[2].trim() };
   }
   const ask = /^ask\s+([\s\S]+)$/i.exec(text);
-  if (ask?.[1]) return { kind: "ask", questions: ask[1].split(";").filter((q) => q.trim()).map(parseQuestion) };
+  if (ask?.[1])
+    return {
+      kind: "ask",
+      questions: ask[1]
+        .split(";")
+        .filter((q) => q.trim())
+        .map(parseQuestion),
+    };
   const recall = /^recall\s+([\s\S]+)$/i.exec(text);
   if (recall?.[1]) return { kind: "recall", query: recall[1].trim() };
   if (senderKind === "agent" && !/^re:/i.test(text)) {
@@ -126,7 +128,6 @@ export class MockDriver implements ModelDriver {
         result = `[mock ${ctx.agentName}] got "${turn.body}" from ${turn.sender_name}`;
         break;
     }
-    // Stream the answer word by word like a real model would.
     for (const piece of streamPieces(result)) {
       if (ctx.signal.aborted) throw new TurnAbortedError("interrupted");
       emit({ kind: "assistant_delta", text: piece });

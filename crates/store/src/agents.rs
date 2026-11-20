@@ -276,7 +276,7 @@ impl Store {
         .await
     }
 
-    /// Updates name, description and/or instructions.
+    /// Applies `patch`; a rename onto a taken name is a [`StoreError::Conflict`].
     pub async fn update_agent_profile(
         &self,
         id: AgentId,

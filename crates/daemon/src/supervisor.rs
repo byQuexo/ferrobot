@@ -86,7 +86,6 @@ async fn check(state: &AppState, agent: &Agent) -> Result<(), crate::error::ApiE
     }
     let working = state.hub.is_working(id);
     let connected = state.hub.is_connected(id);
-    // Health: a running sandbox whose runner never connected is restarted.
     if !connected
         && state
             .hub
