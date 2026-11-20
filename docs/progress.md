@@ -656,3 +656,24 @@ store used for the run) or the daemon's own env.
 - The script never ran (the wiki needs a public repo or a paid plan, and a
   first page created on GitHub before its git repository exists); checked
   with `bash -n` only.
+
+## Release prep 8: repository settings (`chore/github-settings`)
+
+**Done**
+
+- `docs/launch/github-settings.md` and `scripts/apply-github-settings.sh`
+  (dry run unless `--yes`, refuses on a private repo or a
+  `pull_request_target` workflow that touches PR code): ruleset for `main`
+  (no deletion or force push, PR with one approval, stale approvals
+  dismissed, code owner review, every PR job required, linear history, admin
+  bypass for a solo maintainer), approval for outside contributors' workflow
+  runs, read-only default token.
+- CI: a `Changes` job replaces `paths-ignore`, so docs-only PRs skip the real
+  jobs instead of leaving required checks pending forever.
+
+**Not verified**
+
+- Nothing ran against GitHub. `actor_id 5` (admin role) and the check names
+  as ruleset contexts are taken from docs, not tried. Linear history means
+  switching from merge commits to squash merges before the ruleset goes on.
+- The new `Changes` job has not run on GitHub (Actions minutes are used up).
