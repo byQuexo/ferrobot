@@ -18,6 +18,7 @@ interface Sent {
   body: {
     model: string;
     stream: boolean;
+    stream_options?: { include_usage: boolean };
     messages: ChatMessage[];
     tools: { type: string; function: { name: string; description: string; parameters: unknown } }[];
   };
@@ -115,7 +116,8 @@ function context(overrides: Partial<TurnContext> = {}): { ctx: TurnContext; even
 
 describe("OpenAIDriver", () => {
   it("streams text and sends model, token, tools and messages", async () => {
-    const { driver, sent } = setup({ replies: [[text("Hel"), text("lo ü")]] });
+    const usage = { choices: [], usage: { prompt_tokens: 9, completion_tokens: 2 } };
+    const { driver, sent } = setup({ replies: [[text("Hel"), text("lo ü"), usage]] });
     const { ctx, events } = context();
     const out = await driver.runTurn(ctx);
     assert.deepEqual(events, [
@@ -130,6 +132,7 @@ describe("OpenAIDriver", () => {
     assert.equal(req.headers["Authorization"], "Bearer agent-token");
     assert.equal(req.body.model, "gpt-test");
     assert.equal(req.body.stream, true);
+    assert.deepEqual(req.body.stream_options, { include_usage: true });
     assert.deepEqual(
       req.body.tools.map((t) => t.function.name),
       ["bash", "read_file", "write_file"],

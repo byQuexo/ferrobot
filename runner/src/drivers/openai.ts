@@ -226,7 +226,14 @@ export class OpenAIDriver implements ModelDriver {
           "Content-Type": "application/json",
           Authorization: `Bearer ${this.#opts.token}`,
         },
-        body: JSON.stringify({ model: this.#opts.model, stream: true, messages, tools }),
+        // The daemon reads token usage from the last chunk; it has no choices, so the loop skips it.
+        body: JSON.stringify({
+          model: this.#opts.model,
+          stream: true,
+          stream_options: { include_usage: true },
+          messages,
+          tools,
+        }),
         signal: ctx.signal,
       },
     );
