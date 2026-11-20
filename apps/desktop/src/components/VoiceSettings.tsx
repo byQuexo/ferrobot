@@ -3,7 +3,8 @@ import { useEffect, useState } from "preact/hooks";
 
 import type { UpdateVoice, VoiceCatalog, VoiceProvider, VoiceView } from "../api.ts";
 import { useApp } from "../context.ts";
-import { Button, Switch } from "./ui.tsx";
+import { withSaved } from "../lib/models.ts";
+import { Button, Choice, Switch } from "./ui.tsx";
 
 const LABELS: Record<VoiceProvider, string> = { elevenlabs: "ElevenLabs", openrouter: "OpenRouter" };
 const STT_MODELS = ["scribe_v3", "scribe_v2"];
@@ -34,38 +35,6 @@ export function languagesOf(catalog: VoiceCatalog | null, model: string | null |
   return listed?.length ? listed.map((l) => [l.code, l.name || l.code]) : COMMON_LANGUAGES;
 }
 
-/** A pick from `options`, or anything typed after choosing "Custom…". */
-export function Choice(props: {
-  value: string;
-  options: [string, string][];
-  placeholder: string;
-  onChange: (v: string) => void;
-}): JSX.Element {
-  const known = props.value === "" || props.options.some(([v]) => v === props.value);
-  const [custom, setCustom] = useState(!known);
-  if (custom) {
-    return (
-      <span class="choice">
-        <input value={props.value} spellcheck={false} placeholder={props.placeholder} onInput={(e) => { props.onChange(e.currentTarget.value); }} />
-        <Button small variant="ghost" onClick={() => { setCustom(false); props.onChange(""); }}>List</Button>
-      </span>
-    );
-  }
-  return (
-    <select
-      value={props.value}
-      onChange={(e) => {
-        const v = e.currentTarget.value;
-        if (v === "\u0000custom") setCustom(true);
-        else props.onChange(v);
-      }}
-    >
-      <option value="">{props.placeholder}</option>
-      {props.options.map(([v, label]) => <option key={v} value={v}>{label}</option>)}
-      <option value={"\u0000custom"}>Custom…</option>
-    </select>
-  );
-}
 
 /** Speech provider, key, voice, models, language and speed. The key goes to the daemon’s keychain and never comes back. */
 export function VoiceSettings(): JSX.Element {
@@ -184,18 +153,18 @@ export function VoiceSettings(): JSX.Element {
       <section class="settings-section form">
         <label>
           Voice
-          <Choice value={voice} options={voices} placeholder={info?.default_voice ?? (ready ? "Pick a voice" : "Default")} onChange={setVoice} />
+          <Choice value={voice} options={withSaved(voices, voice)} placeholder={info?.default_voice ?? (ready ? "Pick a voice" : "Default")} onChange={setVoice} />
           {provider === "elevenlabs" && !ready && <span class="hint">Save your key to pick from your ElevenLabs voices.</span>}
         </label>
         <label>
           Speech model
-          <Choice value={ttsModel} options={models} placeholder={info?.default_tts_model ?? "Default"} onChange={setTtsModel} />
+          <Choice value={ttsModel} options={withSaved(models, ttsModel)} placeholder={info?.default_tts_model ?? "Default"} onChange={setTtsModel} />
         </label>
         <label>
           Transcription model
           <Choice
             value={sttModel}
-            options={provider === "elevenlabs" ? STT_MODELS.map((m) => [m, m]) : []}
+            options={provider === "elevenlabs" ? withSaved(STT_MODELS.map((m) => [m, m]), sttModel) : []}
             placeholder={info?.default_stt_model ?? "Default"}
             onChange={setSttModel}
           />
@@ -225,7 +194,7 @@ export function VoiceSettings(): JSX.Element {
               {a.name}
               <Choice
                 value={agentVoices[a.id] ?? ""}
-                options={voices}
+                options={withSaved(voices, agentVoices[a.id] ?? "")}
                 placeholder="Same as above"
                 onChange={(v) => { setAgentVoices({ ...agentVoices, [a.id]: v }); }}
               />
