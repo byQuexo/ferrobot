@@ -785,7 +785,7 @@ store used for the run) or the daemon's own env.
   `feature/voice`, before the model routes, so the field fell back to text.
 - A stored voice key with a real catalog.
 
-## Usage: model calls, tokens and cost (`feat/usage-tab`)
+## Release prep 6: usage and cost (`feat/usage`)
 
 **Done**
 
@@ -815,13 +815,18 @@ store used for the run) or the daemon's own env.
   does not break the turn. Desktop: range math, UTC days, sorting, CSV.
 - The view was checked in a browser (`vite preview`) against a real daemon
   with seeded rows: totals, chart, tables, price edit.
+- Live, Ollama only (2026-11-20, after rebasing on main): a real daemon in
+  Docker with a runner image built from this branch, an Ollama provider,
+  `qwen2.5:3b`, one tool-using turn: two usage rows with input, output and
+  cache-read tokens from Ollama's own usage fields, cost 0.
 
 **Not tested**
 
-- Any real upstream: no Anthropic, OpenAI, Gemini or Codex response has
-  been metered. The live smoke test must be re-run (proxy and runner
-  changed).
+- No cloud upstream: no Anthropic, OpenAI, Gemini or Codex response has
+  been metered. The live smoke test (`scripts/smoke-live.sh`, needs Tim's key
+  and the keychain) must be re-run, since the proxy and runner changed.
 - Gemini native and Codex Responses only against unit fixtures; whether
   strict OpenAI-compatible servers accept `stream_options`.
-- CSV export in the Tauri window (see decisions: it cannot save downloads).
+- CSV export in the Tauri window: the shell's download handler saves blob
+  downloads to Downloads (release prep 7), never tried in the window.
 

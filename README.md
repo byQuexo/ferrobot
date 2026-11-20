@@ -97,6 +97,11 @@ run on the mock driver; they were seeded with `scripts/seed-demo.sh`.
   model are chosen per agent. Keys live in the OS keychain and never enter a
   sandbox: sandboxes call the daemon's model proxy with their own agent token
   and the daemon adds the real credential.
+- **Usage and cost:** the proxy counts every model call's tokens from the
+  provider's own usage fields (never estimated) and the Usage view shows
+  calls, tokens and estimated cost per day, provider, model and agent, with
+  CSV export. Prices come from `config/pricing.toml` (each with its source and
+  date) and can be overridden; local models cost nothing.
 - **Sleep levels:** idle sandboxes are paused (warm, Docker), then stopped
   (cold), and optionally archived to object storage; a message wakes them.
 - **Persistence:** agents, conversations, memory, routines, snapshots and

@@ -813,9 +813,7 @@ slop, so polish mode: palette, accent, logo, layout and features stay.
   A ChatGPT sign-in is not billed per token, so its cost is overstated.
 - **Days are UTC dates.** The view's ranges start at local midnight, so the
   first day bar can hold only a few hours.
-- **CSV export is a Blob download.** It works in a browser; the Tauri window
-  cancels it (wry has no download handler set, and FileViewer's way, a
-  signed daemon link for the system browser, does not fit a file built in
-  the page). Options: `on_download` in the shell limited to the app's own
-  blob URLs, or a signed CSV link from the daemon.
+- **CSV export is a Blob download.** It works in a browser; in the Tauri
+  window the shell's `on_download` handler saves blob URLs to the Downloads
+  folder and refuses other downloads (untried in the window so far).
 
