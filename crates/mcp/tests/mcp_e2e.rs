@@ -2,7 +2,7 @@
 
 use std::sync::{Arc, Mutex};
 
-use ferrobot_core::{AgentId, AgentName, MailMessage, MailStatus};
+use ferrobot_core::{AgentId, AgentName, MailMessage, MailStatus, Sender};
 use ferrobot_mcp::{MailboxNotifier, McpState};
 use ferrobot_store::{NewAgent, Store};
 use rmcp::ServiceExt;
@@ -12,8 +12,9 @@ use rmcp::transport::StreamableHttpClientTransport;
 use rmcp::transport::streamable_http_client::StreamableHttpClientTransportConfig;
 use serde_json::{Value, json};
 
+/// Enqueued mail, and the existing agent that `create_agent` "creates".
 #[derive(Default)]
-struct Recorder(Mutex<Vec<(AgentId, i64)>>);
+struct Recorder(Mutex<Vec<(AgentId, i64)>>, Mutex<Option<AgentId>>);
 
 impl MailboxNotifier for Recorder {
     fn message_enqueued(&self, message: &MailMessage) {
@@ -25,6 +26,7 @@ impl MailboxNotifier for Recorder {
         _requester: AgentId,
         request: ferrobot_mcp::AgentRequest,
     ) -> ferrobot_mcp::BoxFuture<Result<ferrobot_mcp::AgentRequestOutcome, String>> {
+        let existing = *self.1.lock().unwrap();
         Box::pin(async move {
             match request.name.as_str() {
                 "taken" => Err("agent name taken is taken".into()),
@@ -32,7 +34,7 @@ impl MailboxNotifier for Recorder {
                     reason: "the operator declined".into(),
                 }),
                 _ => Ok(ferrobot_mcp::AgentRequestOutcome::Created {
-                    id: AgentId::new(),
+                    id: existing.unwrap_or_default(),
                     name: request.name,
                 }),
             }
@@ -260,6 +262,29 @@ async fn tools_act_as_the_authenticated_agent() {
     .unwrap();
     assert_eq!(made["status"], "created");
     assert!(made["agent_id"].is_string());
+    assert!(made["note"].as_str().unwrap().contains("idle"), "{made}");
+
+    // A task is sent as the creator's first message to the new agent.
+    *recorder.1.lock().unwrap() = Some(ids[1]);
+    recorder.0.lock().unwrap().clear();
+    let briefed = call(
+        &alice,
+        "create_agent",
+        json!({"name": "helper", "description": "Helps", "task": " Plan the trip, ask @alice. "}),
+    )
+    .await
+    .unwrap();
+    let brief = store.inbox(ids[1], 1).await.unwrap().pop().unwrap();
+    assert_eq!(*recorder.0.lock().unwrap(), [(ids[1], brief.id)]);
+    assert_eq!(brief.sender, Sender::Agent(ids[0]));
+    assert_eq!(brief.body, format!("Plan the trip, ask <@{}>.", ids[0]));
+    assert!(
+        briefed["note"]
+            .as_str()
+            .unwrap()
+            .contains(&format!("message #{}", brief.id)),
+        "{briefed}"
+    );
     let no = call(
         &alice,
         "create_agent",

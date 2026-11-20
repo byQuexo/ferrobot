@@ -1,5 +1,5 @@
 use ferrobot_core::question::{QUESTION_CARD_VERSION, QuestionCard, QuestionEvent};
-use ferrobot_core::{AgentId, AgentName, AvatarCharacter, Sender, mention};
+use ferrobot_core::{AgentId, AgentName, AvatarCharacter, MailMessage, Sender, mention};
 use ferrobot_store::StoreError;
 use rmcp::handler::server::tool::Extension;
 use rmcp::handler::server::wrapper::{Json, Parameters};
@@ -98,6 +98,10 @@ pub struct CreateAgentArgs {
     pub instructions: String,
     /// Optional character avatar look; omitted: derived from the new id.
     pub character: Option<AvatarCharacter>,
+    /// The task to start on, with everything the new agent needs to know.
+    /// Sent as your first message to it, so it starts right away and
+    /// reports back to you. Omitted: it stays idle until you message it.
+    pub task: Option<String>,
 }
 
 #[derive(Debug, Serialize, JsonSchema)]
@@ -176,6 +180,47 @@ pub struct Ack {
     pub ok: bool,
 }
 
+fn check_body(body: &str) -> Result<&str, ErrorData> {
+    let body = body.trim();
+    if body.is_empty() {
+        return Err(ErrorData::invalid_params("body must not be empty", None));
+    }
+    if body.len() > MAX_MESSAGE_BYTES {
+        return Err(ErrorData::invalid_params(
+            format!("body exceeds {MAX_MESSAGE_BYTES} bytes"),
+            None,
+        ));
+    }
+    Ok(body)
+}
+
+impl FerrobotTools {
+    /// Queues mail from agent `from`, with `@name` mentions stored as tokens.
+    async fn enqueue(
+        &self,
+        from: AgentId,
+        to: AgentId,
+        body: &str,
+        reply_to: Option<i64>,
+        priority: Option<bool>,
+    ) -> Result<MailMessage, ErrorData> {
+        let store = &self.state.store;
+        let agents = store.list_agents().await.map_err(store_err)?;
+        let body = mention::normalize(body, |name| {
+            agents
+                .iter()
+                .find(|a| a.name.as_str() == name)
+                .map(|a| a.id)
+        });
+        let msg = store
+            .enqueue_message_with_priority(Sender::Agent(from), to, body, reply_to, priority)
+            .await
+            .map_err(store_err)?;
+        self.state.notifier.message_enqueued(&msg);
+        Ok(msg)
+    }
+}
+
 #[tool_router]
 impl FerrobotTools {
     pub fn new(state: McpState) -> Self {
@@ -214,16 +259,7 @@ impl FerrobotTools {
         Parameters(args): Parameters<SendMessageArgs>,
     ) -> ToolResult<SendMessageResult> {
         let me = &caller(&parts)?.0;
-        let body = args.body.trim();
-        if body.is_empty() {
-            return Err(ErrorData::invalid_params("body must not be empty", None));
-        }
-        if body.len() > MAX_MESSAGE_BYTES {
-            return Err(ErrorData::invalid_params(
-                format!("body exceeds {MAX_MESSAGE_BYTES} bytes"),
-                None,
-            ));
-        }
+        let body = check_body(&args.body)?;
         let to = args.to.trim().trim_start_matches('@');
         let store = &self.state.store;
         // Ids are stable; names are unique, so a name lookup is unambiguous.
@@ -250,24 +286,9 @@ impl FerrobotTools {
                 ));
             }
         }
-        let agents = store.list_agents().await.map_err(store_err)?;
-        let body = mention::normalize(body, |name| {
-            agents
-                .iter()
-                .find(|a| a.name.as_str() == name)
-                .map(|a| a.id)
-        });
-        let msg = store
-            .enqueue_message_with_priority(
-                Sender::Agent(me.id),
-                recipient.id,
-                body,
-                args.reply_to,
-                args.priority,
-            )
-            .await
-            .map_err(store_err)?;
-        self.state.notifier.message_enqueued(&msg);
+        let msg = self
+            .enqueue(me.id, recipient.id, body, args.reply_to, args.priority)
+            .await?;
         Ok(Json(SendMessageResult {
             message_id: msg.id,
             queued_for: recipient.name.to_string(),
@@ -309,7 +330,7 @@ impl FerrobotTools {
     }
 
     #[tool(
-        description = "Create a new agent. The operator first sees an approval card with its name and role; this call waits for their decision. Returns `created` with the new agent's id, or `declined` (operator said no or did not answer in time). Fails if the name is invalid or taken, or the agent limit is reached."
+        description = "Create a new agent. The operator first sees an approval card with its name and role; this call waits for their decision. Returns `created` with the new agent's id, or `declined` (operator said no or did not answer in time). Pass `task` to brief it: it is sent as your first message, the agent starts right away and reports back to you. Fails if the name is invalid or taken, or the agent limit is reached."
     )]
     async fn create_agent(
         &self,
@@ -317,6 +338,10 @@ impl FerrobotTools {
         Parameters(args): Parameters<CreateAgentArgs>,
     ) -> ToolResult<CreateAgentResult> {
         let me = caller(&parts)?.0.id;
+        let task = match args.task.as_deref().map(str::trim) {
+            Some(t) if !t.is_empty() => Some(check_body(t)?.to_owned()),
+            _ => None,
+        };
         let request = AgentRequest {
             name: args.name.trim().to_owned(),
             description: args.description,
@@ -330,12 +355,28 @@ impl FerrobotTools {
             .await
             .map_err(|e| ErrorData::invalid_params(e, None))?;
         Ok(Json(match outcome {
-            AgentRequestOutcome::Created { id, name } => CreateAgentResult {
-                status: "created".into(),
-                agent_id: Some(id.to_string()),
-                note: format!("Created \"{name}\". It is starting; message it with send_message."),
-                name,
-            },
+            AgentRequestOutcome::Created { id, name } => {
+                let note = match &task {
+                    Some(task) => {
+                        let msg = self.enqueue(me, id, task, None, None).await?;
+                        format!(
+                            "Created \"{name}\" and sent it the task as message #{}. \
+                             It reports back to you.",
+                            msg.id
+                        )
+                    }
+                    None => format!(
+                        "Created \"{name}\". It has no task and stays idle until you \
+                         message it with send_message."
+                    ),
+                };
+                CreateAgentResult {
+                    status: "created".into(),
+                    agent_id: Some(id.to_string()),
+                    note,
+                    name,
+                }
+            }
             AgentRequestOutcome::Declined { reason } => CreateAgentResult {
                 status: "declined".into(),
                 agent_id: None,
