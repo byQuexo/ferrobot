@@ -56,7 +56,8 @@ stop_daemon() {
 # Whether the keychain holds a provider's key (macOS; elsewhere unknown).
 in_keychain() {
   command -v security >/dev/null || return 2
-  security find-generic-password -s ferrobot -a "provider:$1" >/dev/null 2>&1
+  # `security` exits 44 for a missing item: normalise to 1.
+  security find-generic-password -s ferrobot -a "provider:$1" >/dev/null 2>&1 || return 1
 }
 cleanup() {
   stop_daemon

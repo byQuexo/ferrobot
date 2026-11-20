@@ -483,9 +483,17 @@ store used for the run) or the daemon's own env.
   daemon's Docker e2e; all green. Not run on Tim's Mac: Docker Desktop
   stopped answering after the disk filled up and did not come back after a
   restart.
-- **Real Claude turn: not run.** `ANTHROPIC_API_KEY` is not in this
-  session's environment, and the key must not go through the transcript.
-  `scripts/smoke-live.sh` runs it from Tim's own terminal.
+- **Live smoke test passed (2026-11-20, third run, `SKIP_BUILD=1`).** Tim
+  stored his Anthropic key through Settings (Keychain); the script got it from
+  the Keychain with `security` (never printed) and gave it to a throwaway
+  daemon as a new Anthropic provider. Results: provider reports the key, key
+  is in the macOS Keychain; Claude turn `completed` with a tool call, the
+  nonce file in the sandbox and the nonce in its answer; `qwen2.5:3b` on
+  Ollama passed as well this time; the real key was in none of: both
+  containers' config/env, runtime env, root filesystem, home volume and
+  logs, the daemon log, the data dir. Not checked in that run: that deleting
+  the provider removes its Keychain entry (the check misread `security`'s
+  exit code 44 and printed nothing; fixed afterwards, not re-run).
 - **Ollama turn: run twice on Tim's Mac (2026-11-20, M2 Air, 16 GB, Ollama
   0.40.16, `OLLAMA_CONTEXT_LENGTH=32768`), Claude part skipped (no key yet).**
   The path works: a Docker sandbox, the OpenAI-compatible driver, the
@@ -498,7 +506,7 @@ store used for the run) or the daemon's own env.
     than the script's 180 s, so no `turn_done` arrived in time.
   For real agent work on this machine use a cloud model (see the Ollama
   notes); a local model this size is only good for checking the plumbing.
-- **Key leak check: written, not yet run live.** `smoke-live.sh` counts
+- **Key leak check: ran live in the passing run above.** `smoke-live.sh` counts
   matches of the real key over the whole stream of: container config and
   env, runtime env, root filesystem, home volume, container logs, daemon log
   and data dir; a source that cannot be read fails the check. Self-tested
