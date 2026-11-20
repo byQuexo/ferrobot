@@ -401,3 +401,7 @@ store used for the run) or the daemon's own env.
 - None of the UI changes in the Tauri window (Activities tab, step line,
   Markdown, link opening); steering and the new prompt lines with a real
   model; Claude, Codex and Gemini CLI do not steer yet.
+
+## Hardening after the external review
+
+- **Item 2 (Settings Debug):** done; test `debug_never_shows_the_api_key_or_token`.
