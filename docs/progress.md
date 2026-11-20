@@ -494,6 +494,13 @@ store used for the run) or the daemon's own env.
   and data dir; a source that cannot be read fails the check. Self-tested
   against known inputs (found, absent, unreadable, key at the end of a large
   stream).
+- **The Claude turn goes through the OS keychain:** the script asks for the
+  key (hidden, not in the shell history), creates an Anthropic provider over
+  stdin, checks the key is in the keychain (macOS: `security`), runs the
+  agent on it with no `ANTHROPIC_API_KEY` in the daemon's environment, and
+  checks that deleting the provider removes the keychain entry. That is the
+  first run of the real keychain path; Windows (Credential Manager) still
+  has none, the script is bash.
 - **What the script asserts per agent:** a completed `turn_done` whose result
   contains a fresh nonce, a `tool_use` event and the nonce in the sandbox
   file; it rebuilds the runner image first and reads the data dir only
