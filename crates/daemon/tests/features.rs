@@ -2659,7 +2659,8 @@ async fn connectors_use_an_own_oauth_app_refresh_and_revoke() {
         .as_str()
         .unwrap()
         .to_owned();
-    let body = json!({"name": "app", "url": url, "client_id": "client-app",
+    let issuer = url.trim_end_matches("/mcp").to_owned();
+    let body = json!({"name": "app", "url": url, "client_id": "client-app", "issuer": issuer,
                       "client_secret": "app-secret", "scopes": ["mail.read mail.read", "mail.compose"]});
     let (status, conn) = http(&d.ui, "POST", "/v1/connectors", Some(body)).await;
     assert_eq!(status, 201, "{conn}");
@@ -2743,10 +2744,38 @@ async fn connectors_use_an_own_oauth_app_refresh_and_revoke() {
     let (_, all) = http(&d.ui, "GET", "/v1/connectors", None).await;
     assert_eq!(all[0]["sign_in"], "signed_out");
 
-    // A secret without a client id is refused; a new app signs the connector out.
-    let bad = json!({"name": "x", "url": url, "client_secret": "s"});
-    let (status, _) = http(&d.ui, "POST", "/v1/connectors", Some(bad)).await;
-    assert_eq!(status, 400);
+    // An own app needs its issuer; a server naming another one gets nothing.
+    for bad in [
+        json!({"name": "x", "url": url, "client_secret": "s"}),
+        json!({"name": "x", "url": url, "client_id": "c"}),
+        json!({"name": "x", "url": url, "client_id": "c", "issuer": "http://evil.example"}),
+        json!({"name": "x", "url": url, "scopes": (0..40).map(|i| format!("s{i}")).collect::<Vec<_>>()}),
+    ] {
+        let (status, _) = http(&d.ui, "POST", "/v1/connectors", Some(bad.clone())).await;
+        assert_eq!(status, 400, "{bad}");
+    }
+    let body = json!({"name": "mixup", "url": url, "client_id": "client-app",
+                      "client_secret": "app-secret", "issuer": "https://accounts.google.com"});
+    let (_, mixup) = http(&d.ui, "POST", "/v1/connectors", Some(body)).await;
+    let (status, err) = http(
+        &d.ui,
+        "POST",
+        &format!("/v1/connectors/{}/oauth", mixup["id"].as_str().unwrap()),
+        None,
+    )
+    .await;
+    assert_eq!(status, 400, "{err}");
+    assert!(err["message"].as_str().unwrap().contains("issuer"), "{err}");
+
+    // A new client id without a new secret drops the old app's secret.
+    let (_, conn) = http(
+        &d.ui,
+        "PATCH",
+        &format!("/v1/connectors/{id}"),
+        Some(json!({"client_id": "other-app"})),
+    )
+    .await;
+    assert_eq!(conn["has_client_secret"], false, "{conn}");
     let (status, conn) = http(
         &d.ui,
         "PATCH",

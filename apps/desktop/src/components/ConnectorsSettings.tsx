@@ -12,12 +12,15 @@ const STATUS: Record<Connector["sign_in"], string> = {
   signed_out: "not signed in",
 };
 
-/** Client id, secret and scopes of an own OAuth app (empty secret keeps the stored one). */
+/** Client id, secret, issuer and scopes of an own OAuth app (empty secret keeps the stored one). */
 interface AppDraft {
   clientId: string;
   clientSecret: string;
+  issuer: string;
   scopes: string;
 }
+
+const EMPTY_APP: AppDraft = { clientId: "", clientSecret: "", issuer: "", scopes: "" };
 
 function AppFields(props: { draft: AppDraft; onChange: (d: AppDraft) => void; secretStored: boolean; redirectUri: string }): JSX.Element {
   const { draft, onChange } = props;
@@ -26,6 +29,11 @@ function AppFields(props: { draft: AppDraft; onChange: (d: AppDraft) => void; se
       <label>
         OAuth client ID
         <input value={draft.clientId} autoComplete="off" spellcheck={false} onInput={(e) => { onChange({ ...draft, clientId: e.currentTarget.value }); }} />
+      </label>
+      <label>
+        Issuer
+        <input value={draft.issuer} spellcheck={false} placeholder="https://accounts.google.com" onInput={(e) => { onChange({ ...draft, issuer: e.currentTarget.value }); }} />
+        <span class="hint">The provider’s sign-in server. Sign-ins through any other server are refused.</span>
       </label>
       <label>
         Client secret
@@ -59,7 +67,7 @@ export function ConnectorsSettings(): JSX.Element {
   const [url, setUrl] = useState("");
   const [token, setToken] = useState("");
   const [ownApp, setOwnApp] = useState(false);
-  const [app, setApp] = useState<AppDraft>({ clientId: "", clientSecret: "", scopes: "" });
+  const [app, setApp] = useState<AppDraft>(EMPTY_APP);
   const [retoken, setRetoken] = useState<{ id: string; token: string } | null>(null);
   const [editApp, setEditApp] = useState<({ id: string } & AppDraft) | null>(null);
   const [signIn, setSignIn] = useState<{ id: string; url: string } | null>(null);
@@ -112,13 +120,18 @@ export function ConnectorsSettings(): JSX.Element {
         url: url.trim(),
         token: token.trim() || null,
         ...(ownApp
-          ? { client_id: app.clientId.trim() || null, client_secret: app.clientSecret.trim() || null, scopes: scopesOf(app.scopes) }
+          ? {
+              client_id: app.clientId.trim() || null,
+              client_secret: app.clientSecret.trim() || null,
+              issuer: app.issuer.trim() || null,
+              scopes: scopesOf(app.scopes),
+            }
           : {}),
       });
       setName("");
       setUrl("");
       setToken("");
-      setApp({ clientId: "", clientSecret: "", scopes: "" });
+      setApp(EMPTY_APP);
       setOwnApp(false);
     });
 
@@ -151,7 +164,7 @@ export function ConnectorsSettings(): JSX.Element {
               <IconButton
                 label={`OAuth app of ${c.name}`}
                 onClick={() => {
-                  setEditApp(editApp?.id === c.id ? null : { id: c.id, clientId: c.client_id ?? "", clientSecret: "", scopes: c.scopes.join(" ") });
+                  setEditApp(editApp?.id === c.id ? null : { id: c.id, clientId: c.client_id ?? "", clientSecret: "", issuer: c.issuer ?? "", scopes: c.scopes.join(" ") });
                 }}
               >
                 <Settings2 size={15} />
@@ -177,6 +190,7 @@ export function ConnectorsSettings(): JSX.Element {
                     void run(() =>
                       client.updateConnector(c.id, {
                         client_id: draft.clientId.trim() || null,
+                        issuer: draft.issuer.trim() || null,
                         ...(draft.clientSecret.trim() ? { client_secret: draft.clientSecret.trim() } : {}),
                         scopes: scopesOf(draft.scopes),
                       }),
@@ -184,7 +198,7 @@ export function ConnectorsSettings(): JSX.Element {
                   }}
                 >
                   <AppFields draft={editApp} onChange={(d) => { setEditApp({ ...d, id: c.id }); }} secretStored={c.has_client_secret} redirectUri={c.redirect_uri} />
-                  <span class="hint">Changing the client ID signs the connector out.</span>
+                  <span class="hint">Changing the client ID or issuer signs the connector out and needs the secret again.</span>
                   <div>
                     <Button small type="submit" disabled={busy}>Save OAuth app</Button>
                   </div>

@@ -32,6 +32,8 @@ pub(crate) struct ConnectorView {
     has_client_secret: bool,
     /// Scopes asked for at sign-in; empty: the server's choice.
     scopes: Vec<String>,
+    /// The authorization server the own OAuth app belongs to.
+    issuer: Option<String>,
     /// Register this redirect URI with the provider for an own OAuth app.
     redirect_uri: String,
 }
@@ -55,6 +57,7 @@ async fn view(state: &AppState, connector: Connector) -> Result<ConnectorView, A
         client_id: client.client_id,
         has_client_secret: client.client_secret.is_some(),
         scopes: client.scopes,
+        issuer: client.issuer,
         redirect_uri: oauth::redirect_uri(state),
     })
 }
@@ -73,13 +76,49 @@ fn clean_scopes(scopes: &[String]) -> Result<Vec<String>, ApiError> {
     for scope in scopes.iter().flat_map(|s| s.split_whitespace()) {
         printable(scope, "a scope", 256)?;
         if !out.iter().any(|s| s == scope) {
+            if out.len() == 32 {
+                return Err(ApiError::BadRequest("at most 32 scopes".into()));
+            }
             out.push(scope.to_owned());
         }
     }
-    if out.len() > 32 {
-        return Err(ApiError::BadRequest("at most 32 scopes".into()));
-    }
     Ok(out)
+}
+
+/// An issuer is an https URL (http only on this machine), no query.
+fn clean_issuer(value: Option<String>) -> Result<Option<String>, ApiError> {
+    let Some(issuer) = clean_field(value, "issuer", 512)? else {
+        return Ok(None);
+    };
+    let bad = || {
+        ApiError::BadRequest("issuer must be an https URL like https://accounts.google.com".into())
+    };
+    let url = url::Url::parse(&issuer).map_err(|_| bad())?;
+    let local = matches!(url.host_str(), Some("127.0.0.1" | "localhost" | "[::1]"));
+    if !(url.scheme() == "https" || url.scheme() == "http" && local)
+        || url.query().is_some()
+        || url.fragment().is_some()
+    {
+        return Err(bad());
+    }
+    Ok(Some(issuer))
+}
+
+/// A client secret needs a client id, and an own app needs its issuer.
+fn check_app(client: &mut oauth::ClientConfig) -> Result<(), ApiError> {
+    if client.client_id.is_none() {
+        if client.client_secret.is_some() {
+            return Err(ApiError::BadRequest(
+                "a client_secret needs a client_id".into(),
+            ));
+        }
+        client.issuer = None;
+    } else if client.issuer.is_none() {
+        return Err(ApiError::BadRequest(
+            "an own OAuth app needs its issuer (e.g. https://accounts.google.com)".into(),
+        ));
+    }
+    Ok(())
 }
 
 /// Trimmed, `None` when empty, checked.
@@ -147,6 +186,11 @@ pub(crate) struct CreateConnector {
     /// Scopes to ask for at sign-in (space-separated entries are split).
     #[serde(default)]
     scopes: Vec<String>,
+    /// The authorization server the app belongs to (e.g.
+    /// `https://accounts.google.com`); needed with `client_id`. Sign-ins
+    /// through any other server are refused.
+    #[serde(default)]
+    issuer: Option<String>,
 }
 
 /// Adds a connector. Agents get its tools once they are assigned it.
@@ -167,16 +211,13 @@ pub(crate) async fn create_connector(
     };
     connector.validate().map_err(ApiError::BadRequest)?;
     let token = clean_token(req.token)?;
-    let client = oauth::ClientConfig {
+    let mut client = oauth::ClientConfig {
         client_id: clean_field(req.client_id, "client_id", 512)?,
         client_secret: clean_field(req.client_secret, "client_secret", 4096)?,
         scopes: clean_scopes(&req.scopes)?,
+        issuer: clean_issuer(req.issuer)?,
     };
-    if client.client_secret.is_some() && client.client_id.is_none() {
-        return Err(ApiError::BadRequest(
-            "a client_secret needs a client_id".into(),
-        ));
-    }
+    check_app(&mut client)?;
     let connector = state.store.create_connector(connector).await?;
     if let Some(token) = token {
         state
@@ -206,11 +247,16 @@ pub(crate) struct UpdateConnector {
     #[serde(default, deserialize_with = "explicit")]
     #[schema(value_type = Option<String>)]
     client_id: Option<Option<String>>,
-    /// `null` removes the stored client secret.
+    /// `null` removes the stored client secret. Changing the URL, client id
+    /// or issuer without sending a new secret removes it too.
     #[serde(default, deserialize_with = "explicit")]
     #[schema(value_type = Option<String>)]
     client_secret: Option<Option<String>>,
     scopes: Option<Vec<String>>,
+    /// Issuer of the own OAuth app.
+    #[serde(default, deserialize_with = "explicit")]
+    #[schema(value_type = Option<String>)]
+    issuer: Option<Option<String>>,
 }
 
 /// Edits a connector. Open sessions with it are closed.
@@ -244,6 +290,16 @@ pub(crate) async fn update_connector(
     if let Some(v) = req.client_id {
         client.client_id = clean_field(v, "client_id", 512)?;
     }
+    if let Some(v) = req.issuer {
+        client.issuer = clean_issuer(v)?;
+    }
+    let moved = c.url != old_url
+        || client.client_id != old_client.client_id
+        || client.issuer != old_client.issuer;
+    // The old app's secret must not go to a new server or app.
+    if moved {
+        client.client_secret = None;
+    }
     if let Some(v) = req.client_secret {
         client.client_secret = clean_field(v, "client_secret", 4096)?;
     }
@@ -253,13 +309,13 @@ pub(crate) async fn update_connector(
     if let Some(scopes) = req.scopes {
         client.scopes = clean_scopes(&scopes)?;
     }
+    check_app(&mut client)?;
     state.store.update_connector(c.clone()).await?;
     if client != old_client {
         oauth::set_client_config(&state, id, &client).await?;
     }
     // OAuth tokens belong to the old server or OAuth app.
-    if c.url != old_url || client.client_id != old_client.client_id {
-        // OAuth tokens belong to the old server.
+    if moved {
         state
             .settings
             .secrets
@@ -276,7 +332,8 @@ pub(crate) async fn update_connector(
     Ok(Json(view(&state, c).await?))
 }
 
-/// Deletes a connector, its token and its assignments.
+/// Deletes a connector, its token and its assignments; OAuth tokens are
+/// revoked at the server when it offers that.
 #[utoipa::path(delete, path = "/v1/connectors/{id}", tag = "connectors",
     params(("id" = String, Path, description = "Connector id (UUID)")),
     responses((status = 204, description = "Deleted"),
@@ -286,19 +343,16 @@ pub(crate) async fn delete_connector(
     Path(id): Path<String>,
 ) -> Result<StatusCode, ApiError> {
     let id = parse_cid(&id)?;
-    state.store.delete_connector(id).await?;
+    let c = state.store.get_connector(id).await?;
+    // Secrets first: if the keychain fails, the connector stays to retry.
+    oauth::sign_out(&state, &c).await?;
     state.settings.secrets.delete(&secret_key(id)).await?;
     state
         .settings
         .secrets
         .delete(&oauth::client_key(id))
         .await?;
-    state
-        .settings
-        .secrets
-        .delete(&oauth::secret_key(id))
-        .await?;
-    state.oauth.forget(id).await;
+    state.store.delete_connector(id).await?;
     state.connectors.evict_connector(id).await;
     Ok(StatusCode::NO_CONTENT)
 }

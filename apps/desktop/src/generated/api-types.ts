@@ -427,7 +427,10 @@ export interface paths {
         get?: never;
         put?: never;
         post?: never;
-        /** Deletes a connector, its token and its assignments. */
+        /**
+         * Deletes a connector, its token and its assignments; OAuth tokens are
+         *     revoked at the server when it offers that.
+         */
         delete: operations["delete_connector"];
         options?: never;
         head?: never;
@@ -856,6 +859,8 @@ export interface components {
             has_client_secret: boolean;
             /** @description Scopes asked for at sign-in; empty: the server's choice. */
             scopes: string[];
+            /** @description The authorization server the own OAuth app belongs to. */
+            issuer?: string | null;
             /** @description Register this redirect URI with the provider for an own OAuth app. */
             redirect_uri: string;
         };
@@ -918,6 +923,12 @@ export interface components {
             client_secret?: string | null;
             /** @description Scopes to ask for at sign-in (space-separated entries are split). */
             scopes?: string[];
+            /**
+             * @description The authorization server the app belongs to (e.g.
+             *     `https://accounts.google.com`); needed with `client_id`. Sign-ins
+             *     through any other server are refused.
+             */
+            issuer?: string | null;
         };
         CreateProvider: {
             /**
@@ -1395,9 +1406,14 @@ export interface components {
              *     Changing the app signs the connector out.
              */
             client_id?: string | null;
-            /** @description `null` removes the stored client secret. */
+            /**
+             * @description `null` removes the stored client secret. Changing the URL, client id
+             *     or issuer without sending a new secret removes it too.
+             */
             client_secret?: string | null;
             scopes?: string[] | null;
+            /** @description Issuer of the own OAuth app. */
+            issuer?: string | null;
         };
         UpdateProvider: {
             name?: string | null;

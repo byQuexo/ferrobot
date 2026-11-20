@@ -427,3 +427,32 @@ store used for the run) or the daemon's own env.
   runs, no `auth.json` left on disk afterwards, an old sign-in moves over,
   deleting the provider deletes it. Not tested with the real Codex CLI
   (assumes it writes `auth.json` before `account/login/completed`).
+
+
+## Connector OAuth apps, review fixes (`feature/connector-oauth-clients`)
+
+**Done**
+
+- Own OAuth app per connector (client id, secret, scopes, issuer), Google
+  offline access, `expired` sign-ins, revocation on sign-out (RFC 7009) and
+  on delete, Settings page, model row in the profile.
+- Review findings fixed: issuer binding against AS mix-up; revocation checks
+  the issuer and stays out of the LAN; secret dropped on URL/client
+  id/issuer change; scope cap checked as it fills (was O(n²) before the cap);
+  sign-ins started before a change are discarded; no duplicate Google
+  parameters.
+
+**Tested**
+
+- `connectors_use_an_own_oauth_app_refresh_and_revoke`: sign-in with the own
+  app, refresh with the secret, rejected refresh shows `expired`, sign-out,
+  no revocation over http, missing or http issuer refused, 40 scopes refused,
+  a server whose issuer is not the app's gets no sign-in, a new client id
+  drops the secret. Unit tests: issuer check, internal addresses, a
+  revocation URL on 127.0.0.1 refused unless the connector is local, Google
+  parameters.
+
+**Not tested**
+
+- Revocation against a real https server; Google itself (needs Tim's
+  Workspace preview and OAuth client); the Settings page in the Tauri window.

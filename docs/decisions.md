@@ -442,3 +442,19 @@ the code and this file together.
   the tokens locally.
 - Sign in opens the system browser directly; the connector list shows the
   redirect URI to register with an own app.
+- **An own app is bound to an issuer** the operator enters (e.g.
+  `https://accounts.google.com`). Sign-in, refresh and revocation are refused
+  when the server's metadata names another issuer; rmcp checks that the
+  metadata was served by that issuer (RFC 8414). Without this, a hostile MCP
+  server could point the authorization endpoint at Google and the token
+  endpoint at itself and receive the code, the PKCE verifier and the client
+  secret (found by the OAuth review, verified against a fake server).
+- **Revocation only to the issuer that issued the tokens** (stored issuer =
+  discovered issuer), to an address resolved once, pinned and checked: no
+  private, loopback, link-local or CGNAT address unless the connector itself
+  lives on this machine or in the LAN.
+- **A changed URL, client id or issuer drops the stored client secret**
+  unless the same request sends a new one, and a sign-in that was started
+  before such a change is discarded when the browser comes back.
+- **Deleting a connector revokes its tokens** (like sign-out) and removes
+  its secrets before the row, so a keychain error leaves it to retry.

@@ -2209,7 +2209,7 @@
         "tags": [
           "connectors"
         ],
-        "summary": "Deletes a connector, its token and its assignments.",
+        "summary": "Deletes a connector, its token and its assignments; OAuth tokens are\nrevoked at the server when it offers that.",
         "operationId": "delete_connector",
         "parameters": [
           {
@@ -3720,6 +3720,13 @@
                 },
                 "description": "Scopes asked for at sign-in; empty: the server's choice."
               },
+              "issuer": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "description": "The authorization server the own OAuth app belongs to."
+              },
               "redirect_uri": {
                 "type": "string",
                 "description": "Register this redirect URI with the provider for an own OAuth app."
@@ -3848,6 +3855,13 @@
               "type": "string"
             },
             "description": "Scopes to ask for at sign-in (space-separated entries are split)."
+          },
+          "issuer": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "The authorization server the app belongs to (e.g.\n`https://accounts.google.com`); needed with `client_id`. Sign-ins\nthrough any other server are refused."
           }
         }
       },
@@ -5201,7 +5215,7 @@
               "string",
               "null"
             ],
-            "description": "`null` removes the stored client secret."
+            "description": "`null` removes the stored client secret. Changing the URL, client id\nor issuer without sending a new secret removes it too."
           },
           "scopes": {
             "type": [
@@ -5211,6 +5225,13 @@
             "items": {
               "type": "string"
             }
+          },
+          "issuer": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Issuer of the own OAuth app."
           }
         }
       },
