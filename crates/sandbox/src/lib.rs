@@ -18,6 +18,7 @@ mod error;
 mod firecracker;
 mod local;
 mod path;
+pub mod seal;
 mod sprites;
 
 use std::collections::BTreeMap;

@@ -1813,6 +1813,15 @@ async fn gemini_cli_agents_reach_the_gemini_api_through_the_proxy() {
     assert_eq!(status, 401);
 }
 
+async fn mcp_status(agents: &str, token: &str) -> u16 {
+    let bearer = format!("Bearer {token}");
+    let headers = [
+        ("Authorization", bearer.as_str()),
+        ("Content-Type", "application/json"),
+    ];
+    http_raw(agents, "POST", "/mcp", &headers, b"{}").await.0
+}
+
 #[tokio::test]
 async fn idle_sleeping_agents_are_archived_and_restored_on_wake() {
     let backend = Arc::new(StatefulBackend::default());
@@ -1826,6 +1835,7 @@ async fn idle_sleeping_agents_are_archived_and_restored_on_wake() {
         .unwrap()
         .to_owned();
     let old_token = backend.token("arlo");
+    assert_ne!(mcp_status(&d.agents, &old_token).await, 401);
     let status = || async {
         http(&d.ui, "GET", &format!("/v1/agents/{id}"), None)
             .await
@@ -1851,6 +1861,11 @@ async fn idle_sleeping_agents_are_archived_and_restored_on_wake() {
             .unwrap()
             .is_none(),
         "the token inside the archived image is retired"
+    );
+    assert_eq!(
+        mcp_status(&d.agents, &old_token).await,
+        401,
+        "the archived token no longer opens /mcp"
     );
 
     // A message brings it back from the archive with a fresh token.

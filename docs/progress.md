@@ -283,8 +283,7 @@ store used for the run) or the daemon's own env.
 
 **Open**
 
-- No encryption at rest (the roadmap wants it for S3/R2); only a local FS
-  target was used. The archived image still holds the (retired) agent token.
+- ~~No encryption at rest~~ (done in the hardening pass, item 3).
 - Each archive saves the whole image (~1.3 GB); see the `shortcut:` comment.
 - Firecracker archive (snapshot + disk) is part of F4b/F4c on KVM.
 
@@ -412,3 +411,13 @@ store used for the run) or the daemon's own env.
   or a `../` key 404 on both routes. Not checked: the Tauri window with the
   new links (the URL shape changed; FileViewer appends `&download=1`).
 - **Item 2 (Settings Debug):** done; test `debug_never_shows_the_api_key_or_token`.
+- **Item 3 (archives):** encrypted with AES-256-GCM, key in the keychain;
+  non-local `--storage-url` refused without the key; old token rotated
+  (401 on `/mcp`) and blanked in committed images. Tested: seal round trip at
+  every chunk boundary and in any piece sizes; wrong key, other object path,
+  dropped/appended chunk, flipped byte, missing key all fail; plaintext only
+  where allowed; key made once, a corrupt key never replaced; `Debug` of the
+  key redacted. The Docker archive test (`docker-tests`) now checks the
+  header on disk, no plaintext in `home.tar`, a wrong key failing without
+  consuming the archive, and the restored token; it runs in CI's Docker
+  job, not locally (the Docker engine was down after the disk filled up).

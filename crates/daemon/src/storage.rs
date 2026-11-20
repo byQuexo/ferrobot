@@ -4,9 +4,39 @@
 use std::path::Path;
 use std::sync::Arc;
 
+use ferrobot_sandbox::seal::SealKey;
 use object_store::ObjectStore;
 use object_store::local::LocalFileSystem;
 use object_store::prefix::PrefixStore;
+
+use crate::secrets::SecretStore;
+
+/// Secret store entry of the key archives are encrypted with.
+const ARCHIVE_KEY: &str = "archive-key";
+
+/// Whether `--storage-url` keeps blobs on this machine.
+pub fn is_local(url: Option<&str>) -> bool {
+    url.is_none_or(|u| u.starts_with("file://") || u.starts_with("memory://"))
+}
+
+/// The key archives are encrypted with. Without a usable secret store a
+/// local store gets plaintext archives; a remote one is refused.
+pub async fn archive_key(
+    url: Option<&str>,
+    secrets: &SecretStore,
+) -> Result<Option<SealKey>, String> {
+    match secrets.key32(ARCHIVE_KEY).await {
+        Ok(key) => Ok(Some(SealKey::new(&key))),
+        Err(e) if is_local(url) => {
+            tracing::warn!(error = %e, "no archive key: archives are stored unencrypted");
+            Ok(None)
+        }
+        Err(e) => Err(format!(
+            "archives in remote storage must be encrypted, but the key is unavailable: {e} \
+             (use --secret-store file on hosts without a keychain)"
+        )),
+    }
+}
 
 /// Opens the store at `url`, or the data directory when `url` is `None`.
 ///
@@ -66,6 +96,29 @@ mod tests {
         roundtrip(open(Some("memory://"), dir.path()).unwrap().as_ref()).await;
         // Builds offline; requests would go to the bucket.
         open(Some("s3://bucket/ferrobot"), dir.path()).unwrap();
+    }
+
+    #[tokio::test]
+    async fn remote_storage_needs_the_archive_key() {
+        let secrets = SecretStore::default();
+        let key = archive_key(Some("s3://b/p"), &secrets).await.unwrap();
+        assert!(key.is_some());
+        assert_eq!(
+            secrets.key32(ARCHIVE_KEY).await.unwrap(),
+            secrets.key32(ARCHIVE_KEY).await.unwrap(),
+            "made once, then kept"
+        );
+
+        let dir = tempfile::tempdir().unwrap();
+        let broken = SecretStore::file(dir.path().to_path_buf());
+        assert!(archive_key(Some("s3://b/p"), &broken).await.is_err());
+        assert!(archive_key(None, &broken).await.unwrap().is_none());
+        assert!(is_local(Some("file:///x")) && is_local(Some("memory://")));
+        assert!(!is_local(Some("s3://b/p")));
+
+        let corrupt = SecretStore::default();
+        corrupt.set(ARCHIVE_KEY, "not hex").await.unwrap();
+        assert!(corrupt.key32(ARCHIVE_KEY).await.is_err(), "never replaced");
     }
 
     #[test]

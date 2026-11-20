@@ -118,21 +118,7 @@ async fn link_key(state: &AppState) -> Result<ring::hmac::Key, String> {
     state
         .link_key
         .get_or_try_init(|| async {
-            let secrets = &state.settings.secrets;
-            let stored = secrets.get(LINK_KEY).await.map_err(|e| e.to_string())?;
-            let bytes = match stored.and_then(|hex| hex::decode(hex).ok()) {
-                Some(bytes) if bytes.len() == 32 => bytes,
-                _ => {
-                    let mut bytes = vec![0; 32];
-                    ring::rand::SecureRandom::fill(&ring::rand::SystemRandom::new(), &mut bytes)
-                        .map_err(|_| "no system randomness".to_owned())?;
-                    secrets
-                        .set(LINK_KEY, &hex::encode(&bytes))
-                        .await
-                        .map_err(|e| e.to_string())?;
-                    bytes
-                }
-            };
+            let bytes = state.settings.secrets.key32(LINK_KEY).await?;
             Ok::<_, String>(ring::hmac::Key::new(ring::hmac::HMAC_SHA256, &bytes))
         })
         .await

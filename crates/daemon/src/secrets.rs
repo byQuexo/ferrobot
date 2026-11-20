@@ -84,6 +84,25 @@ impl SecretStore {
         .await
     }
 
+    /// A random 32-byte key kept under `key`, made on first use. A stored
+    /// value that is not such a key is an error: replacing it would lose
+    /// whatever the old key protects.
+    pub async fn key32(&self, key: &str) -> Result<[u8; 32], String> {
+        if let Some(hex) = self.get(key).await.map_err(|e| e.to_string())? {
+            let mut bytes = [0; 32];
+            hex::decode_to_slice(hex.trim(), &mut bytes)
+                .map_err(|_| format!("{key} in the secret store is not a 32-byte key"))?;
+            return Ok(bytes);
+        }
+        let mut bytes = [0; 32];
+        ring::rand::SecureRandom::fill(&ring::rand::SystemRandom::new(), &mut bytes)
+            .map_err(|_| "no system randomness".to_owned())?;
+        self.set(key, &hex::encode(bytes))
+            .await
+            .map_err(|e| e.to_string())?;
+        Ok(bytes)
+    }
+
     /// Removes a secret; a missing one is not an error.
     pub async fn delete(&self, key: &str) -> Result<(), ApiError> {
         let key = key.to_owned();
