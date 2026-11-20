@@ -614,6 +614,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/provider-kinds/{kind}/models": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** The built-in model list for a provider kind, e.g. before the provider exists. */
+        get: operations["kind_models"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/providers": {
         parameters: {
             query?: never;
@@ -669,6 +686,27 @@ export interface paths {
          *     The tokens stay with the host's Codex; agents never see them.
          */
         post: operations["start_chatgpt_login"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/providers/{id}/models": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Models to offer for a provider: its own list, fetched with the stored key
+         *     (cached for a few minutes), or a short built-in list when it has none or
+         *     the fetch fails. The key is never returned.
+         */
+        get: operations["provider_models"];
+        put?: never;
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -1260,12 +1298,29 @@ export interface components {
             /** @description Global memory only: the agent that wrote it; absent = the operator. */
             author?: string | null;
         };
+        /** @description One model a picker offers. */
+        ModelInfo: {
+            /** @description The id an agent or provider uses as its `model`. */
+            id: string;
+            /** @description Display name, when the provider gives one. */
+            name?: string | null;
+        };
+        /** @description Models to offer for a provider. Any other id can still be typed. */
+        ModelList: {
+            models: components["schemas"]["ModelInfo"][];
+            source: components["schemas"]["ModelSource"];
+        };
         /** @description A text-to-speech model of the account. */
         ModelOption: {
             model_id: string;
             name: string;
             languages: components["schemas"]["LanguageOption"][];
         };
+        /**
+         * @description Where a model list comes from.
+         * @enum {string}
+         */
+        ModelSource: "provider" | "suggested";
         OAuthStart: {
             /** @description Open this in a browser on the daemon's computer to sign in. */
             authorization_url: string;
@@ -3957,6 +4012,46 @@ export interface operations {
             };
         };
     };
+    kind_models: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Provider kind */
+                kind: components["schemas"]["ProviderKind"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ModelList"];
+                };
+            };
+            /** @description Missing or wrong API token */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Unknown kind */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+        };
+    };
     list_providers: {
         parameters: {
             query?: never;
@@ -4241,6 +4336,46 @@ export interface operations {
             };
             /** @description codex failed on the daemon host */
             502: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+        };
+    };
+    provider_models: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Provider id (UUID) */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ModelList"];
+                };
+            };
+            /** @description Missing or wrong API token */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Unknown provider */
+            404: {
                 headers: {
                     [name: string]: unknown;
                 };

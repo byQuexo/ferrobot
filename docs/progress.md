@@ -720,3 +720,41 @@ store used for the run) or the daemon's own env.
   minutes; macOS runners cost ten times the minutes on a private repo and are
   free once the repo is public). `ubuntu-24.04-arm` runners are free for
   public repos only.
+
+## Model picker (`feat/model-picker`)
+
+**Done**
+
+- `GET /v1/providers/{id}/models` (the provider's list, or suggestions) and
+  `GET /v1/provider-kinds/{kind}/models` (suggestions only); spec and desktop
+  types regenerated.
+- A model dropdown with "Custom…" for the provider's default model (add
+  form) and the agent's model (new agent, edit, and the profile's Change,
+  which opens the same dialog).
+
+**Tested**
+
+- Parser table test, one fixture per list format (Anthropic, OpenAI,
+  OpenRouter, Ollama, Gemini).
+- Feature test against a fake upstream: the Anthropic key arrives as
+  `x-api-key` with `anthropic-version` and `limit=1000`, the OpenAI key as a
+  bearer, no key in any response; a wrong key and a closed port fall back to
+  suggestions; failures are not cached; an edit drops the cache; the kind
+  route, and 404 for an unknown kind.
+- Desktop unit test for the picker's options (`modelOptions`).
+- In a browser against a real `ferrobotd` (temp data dir, file secret store,
+  a fake list server): the live list for an OpenAI-compatible provider,
+  suggestions for an unreachable one, "Custom…" focuses a text field, "List"
+  keeps the typed id; the add form switches lists with the kind.
+- Gates: fmt, clippy `-D warnings`, `cargo test --workspace`, core check,
+  specs; desktop `check:api`, typecheck, test, build. Runner untouched.
+
+**Not tested**
+
+- No real provider list was fetched (no keys): Anthropic, OpenAI, OpenRouter,
+  Ollama, Gemini (does its list carry `models/`?) and Codex with a key need a
+  live check.
+- The Bedrock `global.anthropic.claude-*` ids on `bedrock-runtime`, and
+  whether the runner's Codex and Gemini CLI accept the suggested GPT-6 and
+  Gemini 4 ids.
+- The Tauri window (browser only); the Tauri shell gate (no change there).

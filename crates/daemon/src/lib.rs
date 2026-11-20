@@ -19,6 +19,7 @@ pub mod error;
 pub mod files;
 pub mod hub;
 pub mod lifecycle;
+pub mod models;
 pub mod oauth;
 pub mod proxy;
 pub mod runner_ws;

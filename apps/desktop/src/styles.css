@@ -527,6 +527,8 @@ textarea { resize: vertical; min-height: 40px; line-height: 1.5; }
 .form .field .choice { font-size: 13.5px; font-weight: 400; }
 .hint { font-weight: 400; color: var(--muted); font-size: 12px; }
 .hint.bad { color: var(--err); }
+.choice-custom { display: flex; gap: 6px; align-items: center; }
+.choice-custom input { flex: 1; }
 .form-head { margin: 6px 0 0; font-size: 13px; font-weight: 700; color: var(--text); }
 .provider-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
 .provider-row { display: flex; flex-wrap: wrap; align-items: center; gap: 4px; padding: 8px 10px; border: 1px solid var(--border); border-radius: var(--radius-sm); }

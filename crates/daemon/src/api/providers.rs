@@ -13,6 +13,7 @@ use super::ApiResult;
 use super::agents::explicit;
 use crate::codex::{self, DeviceCode, LoginStatus};
 use crate::error::{ApiError, ErrorBody};
+use crate::models::{self, ModelList};
 use crate::proxy::secret_key;
 use crate::{AppState, lifecycle};
 
@@ -187,6 +188,7 @@ pub(crate) async fn update_provider(
         Some(None) => state.settings.secrets.delete(&secret_key(id)).await?,
         None => {}
     }
+    models::forget(&state, id);
     let baked_into_env = (&old.region, &old.project, &old.default_model)
         != (&new.region, &new.project, &new.default_model);
     if baked_into_env {
@@ -211,6 +213,7 @@ pub(crate) async fn delete_provider(
 ) -> Result<StatusCode, ApiError> {
     let id = parse_pid(&id)?;
     state.store.delete_provider(id).await?;
+    models::forget(&state, id);
     state.settings.secrets.delete(&secret_key(id)).await?;
     codex::forget(&state, id)
         .await
@@ -260,4 +263,31 @@ pub(crate) async fn chatgpt_login_status(
 ) -> ApiResult<LoginStatus> {
     let id = codex_provider(&state, &id).await?;
     Ok(Json(codex::login_status(&state, id).await))
+}
+
+/// Models to offer for a provider: its own list, fetched with the stored key
+/// (cached for a few minutes), or a short built-in list when it has none or
+/// the fetch fails. The key is never returned.
+#[utoipa::path(get, path = "/v1/providers/{id}/models", tag = "providers",
+    params(("id" = String, Path, description = "Provider id (UUID)")),
+    responses((status = 200, body = ModelList),
+        (status = 404, description = "Unknown provider", body = ErrorBody)))]
+pub(crate) async fn provider_models(
+    State(state): State<AppState>,
+    Path(id): Path<String>,
+) -> ApiResult<ModelList> {
+    let provider = state.store.get_provider(parse_pid(&id)?).await?;
+    Ok(Json(models::list(&state, &provider).await))
+}
+
+/// The built-in model list for a provider kind, e.g. before the provider exists.
+#[utoipa::path(get, path = "/v1/provider-kinds/{kind}/models", tag = "providers",
+    params(("kind" = ProviderKind, Path, description = "Provider kind")),
+    responses((status = 200, body = ModelList),
+        (status = 404, description = "Unknown kind", body = ErrorBody)))]
+pub(crate) async fn kind_models(Path(kind): Path<String>) -> ApiResult<ModelList> {
+    let kind = kind
+        .parse()
+        .map_err(|_| ApiError::NotFound(format!("provider kind {kind} not found")))?;
+    Ok(Json(models::suggested(kind)))
 }

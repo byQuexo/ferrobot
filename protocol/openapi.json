@@ -2920,6 +2920,57 @@
         }
       }
     },
+    "/v1/provider-kinds/{kind}/models": {
+      "get": {
+        "tags": [
+          "providers"
+        ],
+        "summary": "The built-in model list for a provider kind, e.g. before the provider exists.",
+        "operationId": "kind_models",
+        "parameters": [
+          {
+            "name": "kind",
+            "in": "path",
+            "description": "Provider kind",
+            "required": true,
+            "schema": {
+              "$ref": "#/components/schemas/ProviderKind"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ModelList"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or wrong API token",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Unknown kind",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/v1/providers": {
       "get": {
         "tags": [
@@ -3262,6 +3313,57 @@
           },
           "502": {
             "description": "codex failed on the daemon host",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/providers/{id}/models": {
+      "get": {
+        "tags": [
+          "providers"
+        ],
+        "summary": "Models to offer for a provider: its own list, fetched with the stored key\n(cached for a few minutes), or a short built-in list when it has none or\nthe fetch fails. The key is never returned.",
+        "operationId": "provider_models",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "Provider id (UUID)",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ModelList"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or wrong API token",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Unknown provider",
             "content": {
               "application/json": {
                 "schema": {
@@ -4888,6 +4990,45 @@
           }
         }
       },
+      "ModelInfo": {
+        "type": "object",
+        "description": "One model a picker offers.",
+        "required": [
+          "id"
+        ],
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "The id an agent or provider uses as its `model`."
+          },
+          "name": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Display name, when the provider gives one."
+          }
+        }
+      },
+      "ModelList": {
+        "type": "object",
+        "description": "Models to offer for a provider. Any other id can still be typed.",
+        "required": [
+          "models",
+          "source"
+        ],
+        "properties": {
+          "models": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ModelInfo"
+            }
+          },
+          "source": {
+            "$ref": "#/components/schemas/ModelSource"
+          }
+        }
+      },
       "ModelOption": {
         "type": "object",
         "description": "A text-to-speech model of the account.",
@@ -4910,6 +5051,14 @@
             }
           }
         }
+      },
+      "ModelSource": {
+        "type": "string",
+        "description": "Where a model list comes from.",
+        "enum": [
+          "provider",
+          "suggested"
+        ]
       },
       "OAuthStart": {
         "type": "object",
