@@ -1,6 +1,7 @@
 //! The operator's voice call with agents. The operator's words reach every agent in the call;
-//! what an agent says reaches the others as a new turn, at most [`MAX_AGENT_TURNS`] times in a
-//! row, then the rest waits for the operator's next words.
+//! what an agent says to another agent by name reaches it as a new turn, at most
+//! [`MAX_AGENT_TURNS`] times in a row, then the rest waits for the operator's next words.
+//! Chats show only what was said; the call note and what an agent missed go to its model.
 
 use std::collections::{HashMap, VecDeque};
 use std::sync::{MutexGuard, PoisonError};
@@ -19,9 +20,12 @@ const PASS: &str = "(pass)";
 /// Leads every call message, so agents talk like on the phone.
 pub(crate) const CALL_NOTE: &str = "(Voice call: your reply is read aloud. Talk like a person on \
     the phone: one to three short spoken sentences, the solution first, no lists, links or \
-    markdown. If something needs research or longer thinking, say so in one sentence and do it \
-    after the call in your chat. Reply exactly (pass) when you have nothing to add. Call hang_up \
-    when the conversation is done.)\n\n";
+    markdown. Never repeat what you or others already said. To ask another agent in the call, \
+    address it as @name; answer an agent only when it asked you. If something needs research or \
+    longer thinking, say so in one sentence and do it after the call in your chat. Reply exactly \
+    (pass) when you have nothing to add. Call hang_up when the conversation is done.)\n\n";
+/// Model-facing call messages waiting for their turn; more than this forgets the oldest.
+const MAX_PROMPTS: usize = 256;
 /// What one agent said, as passed on to the others (characters).
 const MAX_LINE_CHARS: usize = 1500;
 /// Lines waiting for one agent; the oldest go first (bytes).
@@ -40,6 +44,10 @@ pub struct Call {
     agent_turns: usize,
     /// Agents that hung up; they go when their turn ends, so their goodbye is heard.
     leaving: Vec<AgentId>,
+    /// (host, guest) invited during the host's running turn: the guest has the invite already.
+    just_invited: Vec<(AgentId, AgentId)>,
+    /// (recipient, words in the chat, message for its model), oldest first, until handed over.
+    prompts: VecDeque<(AgentId, String, String)>,
 }
 
 fn is_pass(text: &str) -> bool {
@@ -71,6 +79,7 @@ impl Call {
         }
     }
 
+    /// The operator's words as each agent's model gets them.
     fn messages(&mut self, text: &str) -> Vec<(AgentId, String)> {
         self.agent_turns = 0;
         let mut out = Vec::new();
@@ -87,26 +96,59 @@ impl Call {
         out
     }
 
-    /// After `agent` finished a turn: every other agent with something new to hear gets it as
-    /// a turn, unless agents already took [`MAX_AGENT_TURNS`] in a row.
-    fn passed_on(&mut self, agent: AgentId) -> Vec<(AgentId, String)> {
+    /// After `agent` finished a turn: each other agent it addressed by name gets what it has not
+    /// heard yet as a turn, unless agents already took [`MAX_AGENT_TURNS`] in a row. Returns
+    /// (agent, words for the chat, message for its model).
+    fn passed_on(&mut self, agent: AgentId) -> Vec<(AgentId, String, String)> {
+        let invited: Vec<AgentId> = self
+            .just_invited
+            .iter()
+            .filter(|(host, _)| *host == agent)
+            .map(|(_, guest)| *guest)
+            .collect();
+        self.just_invited.retain(|(host, _)| *host != agent);
         if !self.agents.contains(&agent) || self.agent_turns >= MAX_AGENT_TURNS {
             return Vec::new();
         }
+        let own = format!("<@{agent}>: ");
         let mut out = Vec::new();
         for other in self.agents.clone() {
-            if other == agent {
+            let mention = format!("<@{other}>");
+            let addressed = |q: &VecDeque<String>| {
+                q.iter()
+                    .any(|l| l.strip_prefix(&own).is_some_and(|t| t.contains(&mention)))
+            };
+            if other == agent
+                || invited.contains(&other)
+                || !self.heard.get(&other).is_some_and(addressed)
+            {
                 continue;
             }
-            if let Some(heard) = self.heard.remove(&other).filter(|q| !q.is_empty()) {
-                let heard = Vec::from(heard).join("\n");
-                out.push((other, format!("{CALL_NOTE}{HEARD_INTRO}{heard}")));
-            }
+            let heard = self.heard.remove(&other).unwrap_or_default();
+            let words: Vec<&str> = heard.iter().filter_map(|l| l.strip_prefix(&own)).collect();
+            let words = words.join("\n");
+            let heard = Vec::from(heard).join("\n");
+            out.push((other, words, format!("{CALL_NOTE}{HEARD_INTRO}{heard}")));
         }
         if !out.is_empty() {
             self.agent_turns += 1;
         }
         out
+    }
+
+    fn remember(&mut self, agent: AgentId, words: &str, prompt: String) {
+        if self.prompts.len() >= MAX_PROMPTS {
+            self.prompts.pop_front();
+        }
+        self.prompts.push_back((agent, words.to_owned(), prompt));
+    }
+
+    fn take_prompt(&mut self, agent: AgentId, words: &str) -> Option<String> {
+        let at = self
+            .prompts
+            .iter()
+            .position(|(a, w, _)| *a == agent && w == words)?;
+        self.prompts.remove(at).map(|(_, _, p)| p)
     }
 }
 
@@ -137,6 +179,8 @@ impl AppState {
             call.leaving.retain(|a| agents.contains(a));
             if agents.is_empty() {
                 call.agent_turns = 0;
+                call.just_invited.clear();
+                call.prompts.clear();
             }
             call.agents.clone_from(&agents);
         }
@@ -168,9 +212,23 @@ impl AppState {
         Ok(call.agents.first() == Some(&agent))
     }
 
+    /// Keeps what the call message `words` to `agent` says to its model; call before queuing it.
+    pub fn remember_call_prompt(&self, agent: AgentId, words: &str, prompt: String) {
+        self.call().remember(agent, words, prompt);
+    }
+
+    /// The model's version of the message `words` to `agent`, if it is a call message.
+    pub fn call_prompt(&self, agent: AgentId, words: &str) -> Option<String> {
+        self.call().take_prompt(agent, words)
+    }
+
     /// At the end of `agent`'s turn: applies its hang-up, or (for a completed turn) what the
-    /// others should hear now as a turn of their own.
-    pub fn call_turn_done(&self, agent: AgentId, completed: bool) -> Vec<(AgentId, String)> {
+    /// agents it addressed should hear now as a turn of their own: (agent, words, prompt).
+    pub fn call_turn_done(
+        &self,
+        agent: AgentId,
+        completed: bool,
+    ) -> Vec<(AgentId, String, String)> {
         let rest = {
             let mut call = self.call();
             if !call.leaving.contains(&agent) {
@@ -215,15 +273,17 @@ impl AppState {
                 return Err(format!("a call has at most {MAX_CALL_AGENTS} agents"));
             }
             call.agents.push(guest);
+            call.just_invited.push((host, guest));
         }
-        let body = format!(
+        let prompt = format!(
             "{CALL_NOTE}{topic}\n\n(<@{host}> invited you into this voice call with the operator. \
              Talk to them and the others directly in your reply; do not use send_message for the \
-             call. What the others say reaches you as new messages.)"
+             call. What the others say to you reaches you as new messages.)"
         );
+        self.remember_call_prompt(guest, topic, prompt);
         match self
             .store
-            .enqueue_message(Sender::Agent(host), guest, body, None)
+            .enqueue_message(Sender::Agent(host), guest, topic.to_owned(), None)
             .await
         {
             Ok(message) => {
@@ -283,16 +343,25 @@ mod tests {
         };
         call.hear(a, PASS);
         assert!(call.passed_on(a).is_empty(), "a pass is not passed on");
+        call.hear(a, "Nice weather.");
+        assert!(call.passed_on(a).is_empty(), "nobody was addressed");
+        call.messages("ok");
         for turn in 0..MAX_AGENT_TURNS {
             let (from, to) = if turn % 2 == 0 { (a, b) } else { (b, a) };
-            call.hear(from, &format!("line {turn}"));
+            let said = format!("line {turn}, <@{to}>?");
+            call.hear(from, &said);
             let out = call.passed_on(from);
             assert_eq!(out.len(), 1);
-            assert_eq!(out[0].0, to);
-            assert!(out[0].1.starts_with(CALL_NOTE));
-            assert!(out[0].1.ends_with(&format!(": line {turn}")));
+            let (who, words, prompt) = &out[0];
+            assert_eq!(
+                (*who, words.as_str()),
+                (to, said.as_str()),
+                "the chat shows the words"
+            );
+            assert!(prompt.starts_with(CALL_NOTE), "the model gets the note");
+            assert!(prompt.ends_with(&format!("<@{from}>: {said}")));
         }
-        call.hear(a, "one too many");
+        call.hear(a, &format!("one too many, <@{b}>"));
         assert!(
             call.passed_on(a).is_empty(),
             "the call waits for the operator"
@@ -302,12 +371,35 @@ mod tests {
             out[1].1.contains("one too many"),
             "kept for the operator's next words"
         );
-        call.hear(b, "again");
+        call.hear(b, &format!("again, <@{a}>"));
         assert_eq!(
             call.passed_on(b).len(),
             1,
             "the operator's words reset the count"
         );
+
+        call.just_invited.push((a, b));
+        call.hear(a, &format!("<@{b}> joins us now."));
+        assert!(
+            call.passed_on(a).is_empty(),
+            "the guest has the invite already"
+        );
+        assert_eq!(call.just_invited, []);
+    }
+
+    #[test]
+    fn prompts_wait_for_their_message_once() {
+        let (a, b) = (id(1), id(2));
+        let mut call = Call::default();
+        call.remember(a, "hi", "note + hi".into());
+        call.remember(a, "hi", "note + hi again".into());
+        assert_eq!(call.take_prompt(b, "hi"), None);
+        assert_eq!(call.take_prompt(a, "hi").as_deref(), Some("note + hi"));
+        assert_eq!(
+            call.take_prompt(a, "hi").as_deref(),
+            Some("note + hi again")
+        );
+        assert_eq!(call.take_prompt(a, "hi"), None);
     }
 
     #[test]

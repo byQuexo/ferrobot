@@ -1262,3 +1262,23 @@ store used for the run) or the daemon's own env.
   turned off, and all of them with every group on.
 - Not tested: a real model turn with a narrowed profile; the Tools section was
   not viewed in a browser or the Tauri window.
+
+## Voice call fixes (`fix/voice-call-loop`)
+
+**Done**
+
+- Chats show only the spoken words of call messages; the call note and the
+  missed lines reach the model at hand-off.
+- Agents' lines start another agent's turn only when they name it; a guest
+  skips the inviting turn's announcement.
+- The OpenAI-compatible driver drops reasoning streamed into the reply
+  (`<think>…</think>`, `Thinking: …</think:…>`).
+
+**Tested**
+
+- Rust: `voice_calls_let_agents_answer_each_other_and_hang_up` (bodies are the
+  words, the runner's turn carries the note, a named agent gets the line),
+  unit tests for addressed hand-offs, the invite case and prompt hand-off.
+- Runner: `think filter` tests (any chunking, plain answers pass at once,
+  unclosed blocks).
+- Not tested: a real call with Tencent's model after the fix.

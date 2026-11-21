@@ -264,10 +264,11 @@ async fn handle_frame(state: &AppState, agent: &Agent, done_tx: &mpsc::Sender<Do
                 )
                 .await;
             let completed = matches!(outcome, TurnOutcome::Completed);
-            for (to, body) in state.call_turn_done(agent.id, completed) {
+            for (to, words, prompt) in state.call_turn_done(agent.id, completed) {
+                state.remember_call_prompt(to, &words, prompt);
                 match state
                     .store
-                    .enqueue_message(Sender::Agent(agent.id), to, body, None)
+                    .enqueue_message(Sender::Agent(agent.id), to, words, None)
                     .await
                 {
                     Ok(message) => {
@@ -401,7 +402,9 @@ async fn steer(
             message_id: msg.id,
             sender: msg.sender,
             sender_name: from,
-            body: state.render_mentions(&msg.body).await,
+            body: state
+                .render_mentions(&state.call_prompt(agent, &msg.body).unwrap_or(msg.body))
+                .await,
         };
         if out.send(frame).await.is_err() {
             return; // reader cleanup requeues
@@ -463,7 +466,10 @@ async fn run_turn(
         .set_current_turn(agent, conn_id, Some(turn_id.clone()));
     state.hub.touch(agent);
     state.publish_agent(agent).await;
-    let mut body = state.render_mentions(body).await;
+    let prompt = msg.as_ref().and_then(|m| state.call_prompt(agent, &m.body));
+    let mut body = state
+        .render_mentions(prompt.as_deref().unwrap_or(body))
+        .await;
     if first {
         body = if body.is_empty() {
             GREETING.to_owned()

@@ -1146,7 +1146,7 @@ export interface components {
         BuildStatus: "idle" | "building" | "ready" | "failed";
         CallMessage: {
             /**
-             * @description 1..19859 bytes after trimming, counting `@name` mentions as their
+             * @description 1..19718 bytes after trimming, counting `@name` mentions as their
              *     stored `<@agent-id>` tokens (the rest of a message is left for what
              *     the others said).
              */

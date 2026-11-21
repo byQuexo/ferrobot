@@ -1143,8 +1143,8 @@ slop, so polish mode: palette, accent, logo, layout and features stay.
   so its goodbye is still spoken. The host (the agent the operator called)
   ends the call for everyone; an invited agent leaves.
 - **Single-agent calls** go through `POST /v1/call/messages` too, so the host
-  gets the call note; the operator's call messages lose 365 bytes to it (limit
-  now 19,859).
+  gets the call note; the operator's call messages lose its length to it (limit
+  now 19,718).
 
 ## Tool profiles
 
@@ -1218,3 +1218,22 @@ slop, so polish mode: palette, accent, logo, layout and features stay.
   allowed on the card.
 - **Not done:** the drivers' prompt still names every ferrobot tool; a narrowed
   agent that calls a missing one is told it is turned off for it.
+
+## Voice calls: words in the chat, addressed hand-offs, no spoken reasoning
+
+- **The chat shows what was said.** Call messages are stored with the spoken
+  words only; the call note and what an agent missed are kept in memory per
+  (recipient, words) and swapped in when the message is handed to the runner
+  (turn or steer). Stored before the message is queued, so a fast hand-off
+  cannot miss it; a daemon restart ends the call and forgets them.
+- **Only addressed agents answer.** An agent's line reaches another agent as a
+  turn only when it names it (`@name`, stored as `<@id>`); the call note says to
+  answer an agent only when asked and never to repeat. A guest does not get the
+  host's announcement from the turn that invited it (it has the invite). The
+  four-in-a-row cap stays. This stopped two agents restating themselves at each
+  other (Tim's call, 2026-11-21).
+- **Reasoning in the reply is held back.** Some OpenAI-compatible models
+  (Tencent's hy4-flash via OpenRouter) stream their reasoning into `content`,
+  ending with `</think…>`; the driver drops everything up to that tag, so it is
+  neither shown nor spoken. An unclosed `<think>` is dropped; a bare
+  "Thinking:" without a closing tag is kept (it may be the answer).
