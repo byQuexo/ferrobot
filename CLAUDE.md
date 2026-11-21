@@ -42,7 +42,8 @@ runner/          TypeScript runner inside each sandbox: drives the model
                  drivers/mock.ts)
 apps/desktop/    Preact + Vite UI in a Tauri shell (own Cargo workspace)
 protocol/        generated OpenAPI + JSON Schemas, fixtures, README (the contract)
-scripts/         seed-demo.sh, smoke-docker.sh, smoke-live.sh
+scripts/         seed-demo.sh, smoke-docker.sh, smoke-live.sh, demo/ (README videos,
+                 clips and screenshots: scripts/demo/README.md)
 ```
 
 Principles:
@@ -246,8 +247,6 @@ daemon, `docker ps -a` must be empty of ferrobot containers.
 
 - Approval timeout (300 s) is untested with the real Claude MCP client (it may
   time out tool calls earlier).
-- `docs/screenshots/light-conversation.png` shows a raw mock-driver bubble
-  (`ask Which day ...`).
 - Docker e2e, `smoke-docker.sh` and the Docker sandbox test passed on
   `feature/firecracker-client` (macOS, Docker Desktop); runner image rebuilt.
 - Firecracker: no microVM has booted; every `TODO(kvm)` needs a KVM host.

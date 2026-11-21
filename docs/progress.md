@@ -1404,3 +1404,41 @@ store used for the run) or the daemon's own env.
 - Desktop: the speaker streams from links and drops voices on hang-up; the
   first-clause rule (20 characters, spaced comma, code blocks).
 - Not tested: real ElevenLabs streaming in the Tauri window (WKWebView).
+
+## Demo videos, clips and screenshots (`docs/demo-assets`)
+
+Replaces the mock-driver demo from "Release prep 4".
+
+**Done**
+
+- `docs/assets/demo.{gif,mp4}` (hero, 46 s): researcher (created on screen,
+  DeepWiki on, Web off) reads the backon docs through the DeepWiki connector,
+  asks "Async (tokio) or blocking?" on a card, hands the build to builder,
+  which runs `cargo run` in its sandbox and shows its masked environment;
+  researcher shares an HTML report (opened through its signed link); then the
+  Usage view. Cuts for X (40 s) and LinkedIn (58 s) in `docs/launch/media/`.
+- Clips in `docs/assets/clips/`: `key-card` (an `add_connector` token card for
+  `mcp.example.com`, the hidden field, then Vault shows the token stored),
+  `routine` (an agent-made routine through its approval card), `memory`
+  (`recall` of a stored note), `usage-csv` (the export and the CSV as saved).
+- `docs/screenshots/`: light and dark question card, call room, Vault and
+  Usage, from real agents; the old mock screenshots are gone.
+- `docs/launch/voice-room-script.md` for the voice room video Tim records.
+
+**How**
+
+- `scripts/demo/record.sh <scene>` with `scripts/demo/record.mjs` (scenes)
+  and `lib.mjs` (cursor, zooms, captions, the "2x" badge, segments, encodes);
+  see `scripts/demo/README.md`. Real Claude Sonnet 5.5 turns on a throwaway
+  daemon; waits for the model play at 2x under the badge with the middle of
+  long waits cut; off-camera setup (roles, builder's Rust warm-up) is cut.
+- The runner image has no C linker, so the scenes add `gcc` and `libc6-dev`
+  as CLI packages (`/v1/clis`) and `warm-rust.sh` installs a minimal Rust and
+  compiles tokio and backon in builder's sandbox before the take.
+
+**Tested**
+
+- Keyless dry runs (mock driver) up to the first model reply; the keyed takes
+  as described. The Usage totals in the hero and screenshots include every
+  take of that day on the demo daemon, not one run.
+- Not tested: the clips' and screenshots' scenes in the keyless mode.
