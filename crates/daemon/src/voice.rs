@@ -418,6 +418,17 @@ pub enum LiveMode {
 /// Sample rates `ElevenLabs` takes as raw 16-bit mono PCM.
 const LIVE_RATES: [u32; 6] = [8000, 16000, 22050, 24000, 44100, 48000];
 
+/// Agent names as the realtime transcription's `keyterms`, spoken the way they read
+/// (`team-lead` → `team lead`); `ElevenLabs` takes at most 50 of up to 20 characters.
+pub fn keyterms<'a>(names: impl IntoIterator<Item = &'a str>) -> Vec<String> {
+    names
+        .into_iter()
+        .map(|n| n.replace(['-', '_'], " "))
+        .filter(|n| n.chars().count() <= 20)
+        .take(50)
+        .collect()
+}
+
 /// A request for a single-use token of the realtime transcription.
 pub fn live_token(http: &reqwest::Client, base: &str, key: &str) -> reqwest::RequestBuilder {
     let base = base.trim_end_matches('/');
@@ -435,6 +446,7 @@ pub fn live_url(
     mode: LiveMode,
     sample_rate: u32,
     language: Option<&str>,
+    keyterms: &[String],
 ) -> Result<String, String> {
     if !LIVE_RATES.contains(&sample_rate) {
         return Err(format!("sample_rate must be one of {LIVE_RATES:?}"));
@@ -459,6 +471,9 @@ pub fn live_url(
         };
         if let Some(lang) = language {
             q.append_pair("language_code", lang);
+        }
+        for term in keyterms {
+            q.append_pair("keyterms", term);
         }
     }
     Ok(url.into())
@@ -694,9 +709,20 @@ mod tests {
             LiveMode::Call,
             16000,
             Some("de"),
+            &keyterms(["builder", "team-lead", "a-very-long-agent-name-here"]),
         )
         .unwrap();
         let u = url::Url::parse(&url).unwrap();
+        let terms: Vec<_> = u
+            .query_pairs()
+            .filter(|(k, _)| k == "keyterms")
+            .map(|(_, v)| v.into_owned())
+            .collect();
+        assert_eq!(
+            terms,
+            ["builder", "team lead"],
+            "spoken form, at most 20 characters"
+        );
         assert_eq!(
             (u.scheme(), u.path()),
             ("wss", "/v1/speech-to-text/realtime")
@@ -710,13 +736,20 @@ mod tests {
             "short thinking pauses are not a turn"
         );
         assert_eq!(q["language_code"], "de");
-        let dictation =
-            live_url("http://127.0.0.1:9", "t", LiveMode::Dictation, 48000, None).unwrap();
+        let dictation = live_url(
+            "http://127.0.0.1:9",
+            "t",
+            LiveMode::Dictation,
+            48000,
+            None,
+            &[],
+        )
+        .unwrap();
         assert!(
             dictation.starts_with("ws://127.0.0.1:9/")
                 && dictation.contains("commit_strategy=manual")
         );
-        assert!(live_url("https://x", "t", LiveMode::Call, 11025, None).is_err());
+        assert!(live_url("https://x", "t", LiveMode::Call, 11025, None, &[]).is_err());
         let r = live_token(&reqwest::Client::new(), "https://api.elevenlabs.io/", "xi")
             .build()
             .unwrap();
