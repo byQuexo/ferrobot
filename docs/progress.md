@@ -774,8 +774,8 @@ store used for the run) or the daemon's own env.
 
 - Chat, agent list and Settings (providers, connectors, voice, appearance)
   in light and dark, in Chrome against a throwaway `ferrobotd` (local
-  backend, mock driver, file secret store); before and after shots in
-  `docs/assets/ui-polish/`.
+  backend, mock driver, file secret store); the before and after shots were
+  removed later as outdated (current screenshots: `docs/screenshots/`).
 - Gates: desktop `check:api`, typecheck, test, build.
 
 **Not checked**
