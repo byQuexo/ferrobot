@@ -292,9 +292,15 @@ pub async fn start_login(state: &AppState, provider: Uuid) -> Result<DeviceCode,
             },
             Err(error) => LoginStatus::Failed { error },
         };
-        let mut codex = state.codex.lock().await;
-        codex.tokens.remove(&provider);
-        codex.logins.insert(provider, status);
+        let signed_in = status == LoginStatus::SignedIn;
+        {
+            let mut codex = state.codex.lock().await;
+            codex.tokens.remove(&provider);
+            codex.logins.insert(provider, status);
+        }
+        if signed_in {
+            crate::credentials::clear_provider(&state, provider).await;
+        }
     });
     Ok(DeviceCode {
         verification_url,

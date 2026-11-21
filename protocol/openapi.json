@@ -1426,6 +1426,57 @@
         }
       }
     },
+    "/v1/agents/{id}/retry": {
+      "post": {
+        "tags": [
+          "chat"
+        ],
+        "summary": "Clears the agent's credential problem so its waiting messages run; if the credential is\nstill broken, the next model call sets it again.",
+        "operationId": "retry",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "Agent id (UUID)",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AgentView"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or wrong API token",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Unknown agent",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/v1/agents/{id}/routines": {
       "get": {
         "tags": [
@@ -4934,6 +4985,17 @@
                   "null"
                 ],
                 "description": "Relative URL of the avatar image, if one was uploaded."
+              },
+              "credential_error": {
+                "oneOf": [
+                  {
+                    "$ref": "#/components/schemas/CredentialError",
+                    "description": "Set while the agent's model credential is missing or rejected; its turns wait."
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
               }
             }
           }
@@ -5565,6 +5627,36 @@
             "description": "Default true."
           }
         }
+      },
+      "CredentialError": {
+        "type": "object",
+        "description": "A model credential problem found by the model proxy. The agent's messages wait until the\noperator changes its provider or model, stores a key or retries. Kept in memory: after a\nrestart the next model call finds it again.",
+        "required": [
+          "kind",
+          "reason",
+          "since"
+        ],
+        "properties": {
+          "kind": {
+            "$ref": "#/components/schemas/CredentialProblem"
+          },
+          "reason": {
+            "type": "string",
+            "description": "What is wrong and where to fix it; never contains the key."
+          },
+          "since": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      },
+      "CredentialProblem": {
+        "type": "string",
+        "description": "What is wrong with an agent's model credential.",
+        "enum": [
+          "missing",
+          "rejected"
+        ]
       },
       "DeviceCode": {
         "type": "object",

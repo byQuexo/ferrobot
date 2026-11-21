@@ -28,9 +28,10 @@ import type {
   StoredEvent,
 } from "../api.ts";
 import { useApp } from "../context.ts";
-import { dateTime, duration, presenceLabel, relativeTime } from "../lib/format.ts";
+import { dateTime, duration, presenceLabel, relativeTime, statusOf } from "../lib/format.ts";
 import { buildTimeline, type TimelineItem } from "../lib/timeline.ts";
 import { Avatar } from "./Avatar.tsx";
+import { CredentialFix } from "./CredentialFix.tsx";
 import { ToolCard } from "./Chat.tsx";
 import { KIND_LABELS } from "./ProvidersSettings.tsx";
 import { Button, Empty, IconButton, Skeleton, Switch } from "./ui.tsx";
@@ -50,6 +51,7 @@ export function InfoPanel(props: {
   tab: Tab;
   onTab: (t: Tab) => void;
   onEdit: () => void;
+  onVault: () => void;
   onDeleted: () => void;
 }): JSX.Element {
   return (
@@ -73,7 +75,12 @@ export function InfoPanel(props: {
       </div>
       <div class="info-body">
         {props.tab === "profile" && (
-          <Profile agent={props.agent} onEdit={props.onEdit} onDeleted={props.onDeleted} />
+          <Profile
+            agent={props.agent}
+            onEdit={props.onEdit}
+            onVault={props.onVault}
+            onDeleted={props.onDeleted}
+          />
         )}
         {props.tab === "computer" && <Computer agent={props.agent} />}
         {props.tab === "routines" && <Routines agent={props.agent} />}
@@ -85,9 +92,15 @@ export function InfoPanel(props: {
 }
 export type { Tab as InfoTab };
 
-function Profile(props: { agent: Agent; onEdit: () => void; onDeleted: () => void }): JSX.Element {
+function Profile(props: {
+  agent: Agent;
+  onEdit: () => void;
+  onVault: () => void;
+  onDeleted: () => void;
+}): JSX.Element {
   const { client, run, agents, health } = useApp();
   const a = props.agent;
+  const status = statusOf(a);
   const creator = a.created_by ? agents.get(a.created_by) : undefined;
   const [confirm, setConfirm] = useState(false);
   const [providers, setProviders] = useState<Provider[] | null>(null);
@@ -105,7 +118,15 @@ function Profile(props: { agent: Agent; onEdit: () => void; onDeleted: () => voi
       <p class="muted center">{a.description || "No description yet."}</p>
       <div class="kv">
         <span>Status</span>
-        <span class={`status-chip p-${a.presence}`}>{presenceLabel(a.presence)}</span>
+        <span class="model-line">
+          <span class={`status-chip p-${status.presence}`}>{status.label}</span>
+          {a.credential_error && (
+            <>
+              <span class="muted">{a.credential_error.reason}</span>
+              <CredentialFix agent={a} onEdit={props.onEdit} onVault={props.onVault} />
+            </>
+          )}
+        </span>
         <span>Model</span>
         <span class="model-line">
           <span class="mono">{model}</span>

@@ -8,6 +8,7 @@ pub mod call;
 pub mod clis;
 pub mod codex;
 pub mod connectors;
+pub mod credentials;
 pub mod error;
 pub mod files;
 pub mod hub;

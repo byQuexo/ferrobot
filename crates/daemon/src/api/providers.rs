@@ -198,6 +198,7 @@ pub(crate) async fn update_provider(
             }
         }
     }
+    crate::credentials::clear_provider(&state, id).await;
     Ok(Json(view(&state, new).await?))
 }
 

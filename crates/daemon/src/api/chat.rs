@@ -11,6 +11,7 @@ use utoipa::{IntoParams, ToSchema};
 
 use super::{ApiResult, MAX_TEXT_BYTES, parse_id};
 use crate::error::{ApiError, ErrorBody};
+use crate::views::AgentView;
 use crate::{AppState, UiEvent};
 
 #[derive(Debug, Deserialize, ToSchema)]
@@ -263,4 +264,20 @@ pub(crate) async fn interrupt(
     Ok(Json(Interrupted {
         turn_id: state.hub.interrupt(id),
     }))
+}
+
+/// Clears the agent's credential problem so its waiting messages run; if the credential is
+/// still broken, the next model call sets it again.
+#[utoipa::path(post, path = "/v1/agents/{id}/retry", tag = "chat",
+    params(("id" = String, Path, description = "Agent id (UUID)")),
+    responses((status = 200, body = AgentView),
+        (status = 404, description = "Unknown agent", body = ErrorBody)))]
+pub(crate) async fn retry(
+    State(state): State<AppState>,
+    Path(id): Path<String>,
+) -> ApiResult<AgentView> {
+    let id = parse_id(&id)?;
+    state.store.get_agent(id).await?;
+    crate::credentials::clear(&state, id).await;
+    Ok(Json(crate::views::agent_view(&state, id).await?))
 }

@@ -1395,3 +1395,37 @@ slop, so polish mode: palette, accent, logo, layout and features stay.
   sentence. Measured before (Tencent via OpenRouter): ~4.2 s model time per
   answer, mostly reasoning, which this does not change (Tim chose streaming
   only).
+
+## Credential problems hold an agent's turns
+
+- **Found in the proxy, per agent.** A missing daemon key (agent on the
+  default), a provider without a key and an unusable `ChatGPT` sign-in mark the
+  agent `missing`; an upstream 401 on a call that carried a credential marks it
+  `rejected`. A 403 counts only on Bedrock, where AWS answers bad keys with it;
+  elsewhere a 403 is moderation (OpenRouter), a missing permission (Anthropic)
+  or a disabled API (Gemini). A failed `gcloud` token and a provider without an
+  upstream stay plain 400s. The reason is a fixed sentence saying where to fix
+  it, never the key or the upstream's body (Tim, 2026-11-21: a chat wall of
+  identical "API Error: 400 the daemon has no Anthropic key").
+- **In memory, set synchronously.** The hub holds `CredentialError {kind,
+  reason, since}` before the proxy answers, so the failing turn already sees it
+  when it settles; a restart forgets it and the next call finds it again. The
+  agent view gains `credential_error` (null when fine) instead of a new
+  `presence` value, so clients matching on presence keep working.
+- **Turns wait, messages stay queued.** The dispatch loop waits while the
+  problem stands; the turn that hit it ends once and its message is requeued
+  without using up an attempt. The first report records one `credential_error`
+  event (turn id in the payload, not on the event, so a room turn's notice still
+  reaches the chat); the UI shows it instead of that turn's error. The Claude
+  driver fails a turn only on an error result subtype, and the SDK writes a
+  refused call as an "API Error: 400 …" answer (the bubbles in Tim's
+  screenshot), so the turn may end *completed*. A completed turn that set the
+  problem therefore counts as failed: no task report, the message is requeued,
+  and the UI hides the answers written after the notice.
+- **Cleared by anything that may fix it:** an agent PATCH of provider or model
+  (after the computer is recreated, so the old runner cannot start a turn with
+  the old settings), any provider PATCH (Vault saves keys through it) for the
+  agents on it, a completed `ChatGPT` sign-in, and `POST /v1/agents/{id}/retry`
+  for fixes made elsewhere (`gcloud auth login`, a key re-enabled upstream).
+  Clearing wakes the agent when messages wait. A daemon key only arrives with a
+  restart, which clears the state anyway.
