@@ -12,9 +12,9 @@
 [![macOS](https://img.shields.io/badge/macOS-universal-lightgrey?logo=apple)](#download)
 [![Windows](https://img.shields.io/badge/Windows-x64-lightgrey?logo=windows)](#download)
 
-</div>
-
 ![ferrobot demo: researcher reads the backon docs through the DeepWiki connector, asks you a question and hands the build to builder, which runs cargo on its own computer; then a shared report and the cost in Usage](docs/assets/demo.gif)
+
+</div>
 
 https://github.com/user-attachments/assets/3cbf0815-14ef-46f9-9320-c421fa614b9e
 
