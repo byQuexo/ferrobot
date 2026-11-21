@@ -17,7 +17,7 @@ skipped** (left out on purpose).
 | Phase | Status | Notes |
 | --- | --- | --- |
 | L0 Providers, keychain, per-agent model | done | The keychain path ran once, on macOS; Windows and Linux never. |
-| L1 OpenAI-compatible driver | done | Live tool-using turns against Ollama only. |
+| L1 OpenAI-compatible driver | done | Live tool-using turns against Ollama and OpenRouter. |
 | L2 Bedrock and Vertex | partial | Written; request shapes checked by capture. No call to AWS or Google Cloud yet. |
 | L3 Codex driver and ChatGPT sign-in | done | A live turn ran against Ollama's Responses API. No OpenAI key used; a real ChatGPT sign-in was never tried. |
 | L4 ACP driver (Gemini CLI) | done | Tested against a fake Gemini API only. |
@@ -40,17 +40,26 @@ tested against fakes on a machine without KVM.
 | F4d Move warm agents to cold under memory pressure | open | Optional. |
 | F5 Image pipeline and KVM tests | partial | The rootfs build script exists; no KVM runner in CI. |
 
+## Product
+
+| Phase | Status | Notes |
+| --- | --- | --- |
+| Vault | done | Every key in one place; agents ask for a connector token on a card whose value they never see. |
+| MCP catalog and connection check | done | Keyless servers ran live; an OAuth sign-in with a catalog server has not been tried. |
+| CLIs in the sandbox image | done | Docker only; keyless CLIs only. |
+| Tool scopes per agent | done | Enforced in the daemon; built-in tools switched off per driver. |
+| Routines made by agents | done | With an approval card unless Auto mode is on. |
+| Voice calls and call rooms | done | Used live on macOS with ElevenLabs. |
+| Update button | partial | The source-build path ran in a throwaway checkout; the release updater has never run against a real release. |
+| Usage chart and reported cost | done | OpenRouter calls count at the cost OpenRouter reports. |
+
 ## Release
 
 | Phase | Status | Notes |
 | --- | --- | --- |
-| v0.1.0 | in progress | The [[Usage tab|Usage-and-Costs]], desktop downloads for macOS and Windows that bundle the daemon, voice calls, delegated tasks, the model picker. |
+| v0.1.0 | in progress | Desktop downloads for macOS and Windows that bundle the daemon; the Windows build has not run on real hardware. |
 
-## Later
-
-Not scheduled: a file browser and terminal in the agent's info panel, computer
-use inside sandboxes (a virtual desktop, browser automation, screenshots in
-the timeline), and a native macOS app on the same `/v1` API.
+Ideas beyond this list are on [[Ideas]].
 
 ## Help wanted
 

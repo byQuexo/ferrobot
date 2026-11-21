@@ -17,5 +17,6 @@ The project is early. Large parts have never run against the real thing: see
 - [[Sandbox Backends|Sandbox-Backends]]: Docker, local, Firecracker; sleep and archives
 - [[Usage and Costs|Usage-and-Costs]]: token counts and cost estimates (in progress)
 - [[Roadmap]]: status per phase and where help is wanted
+- [[Ideas]]: what came up but is not scheduled
 - [[Conventions]]: how code and commits are written here
 - [[FAQ]]

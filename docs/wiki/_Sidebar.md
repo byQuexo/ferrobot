@@ -14,4 +14,5 @@
 **Project**
 
 - [[Roadmap]]
+- [[Ideas]]
 - [[Conventions]]
