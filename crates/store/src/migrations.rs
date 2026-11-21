@@ -238,6 +238,8 @@ const MIGRATIONS: &[&str] = &[
     ",
     // v14: the USD a call cost as the upstream reported it (OpenRouter's `usage.cost`)
     "ALTER TABLE usage ADD COLUMN cost_usd REAL;",
+    // v15: the tool groups an agent may use, a JSON array; NULL = every group
+    "ALTER TABLE agents ADD COLUMN tools TEXT;",
 ];
 
 pub(crate) fn run(conn: &mut Connection) -> Result<(), StoreError> {
@@ -394,5 +396,25 @@ mod tests {
             })
             .unwrap();
         assert_eq!((tokens, cost), (10, None), "old rows have no reported cost");
+    }
+
+    #[test]
+    fn v14_agents_keep_every_tool() {
+        let mut conn = Connection::open_in_memory().unwrap();
+        for sql in &MIGRATIONS[..14] {
+            conn.execute_batch(sql).unwrap();
+        }
+        conn.pragma_update(None, "user_version", 14).unwrap();
+        conn.execute_batch(
+            "INSERT INTO agents (id, name, instructions, status, created_at)
+             VALUES ('00000000-0000-4000-8000-000000000001', 'alice', 'x', 'running',
+                     '2026-01-01T00:00:00Z');",
+        )
+        .unwrap();
+        run(&mut conn).unwrap();
+        let tools: Option<String> = conn
+            .query_row("SELECT tools FROM agents", [], |r| r.get(0))
+            .unwrap();
+        assert_eq!(tools, None, "NULL: existing agents keep every tool group");
     }
 }

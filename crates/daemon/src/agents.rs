@@ -4,10 +4,11 @@
 use std::fmt::Write as _;
 use std::time::Duration;
 
+use ferrobot_core::protocol::DaemonFrame;
 use ferrobot_core::question::{
     APPROVE, Approval, DECLINE, QuestionAnswer, QuestionAnswered, QuestionEvent,
 };
-use ferrobot_core::{Agent, AgentId, AgentName, AvatarCharacter};
+use ferrobot_core::{Agent, AgentId, AgentName, AvatarCharacter, Connector, ToolGroup};
 use ferrobot_mcp::AgentRequestOutcome;
 use ferrobot_store::{AgentPatch, NewAgent};
 
@@ -34,6 +35,11 @@ pub struct AgentSpec {
     /// daemon default for the operator).
     pub provider_id: Option<uuid::Uuid>,
     pub model: Option<String>,
+    /// `None`: every group from the operator, the creator's own from an agent.
+    pub tools: Option<Vec<ToolGroup>>,
+    /// Names of the creator's connectors; `None`: all of them. The operator assigns
+    /// connectors separately.
+    pub connectors: Option<Vec<String>>,
 }
 
 impl From<ferrobot_mcp::AgentRequest> for AgentSpec {
@@ -45,8 +51,74 @@ impl From<ferrobot_mcp::AgentRequest> for AgentSpec {
             character: r.character,
             provider_id: None,
             model: None,
+            tools: r.tools,
+            connectors: r.connectors,
         }
     }
+}
+
+/// The new agent's tools and connectors. From an agent they are at most its own, checked
+/// here on every path (approval card or Auto mode) so a request can never widen them.
+async fn profile(
+    state: &AppState,
+    spec: &AgentSpec,
+    creator: Option<AgentId>,
+) -> Result<(Vec<ToolGroup>, Vec<Connector>), ApiError> {
+    let Some(creator) = creator else {
+        let tools = spec.tools.clone().unwrap_or_else(ToolGroup::all);
+        return Ok((ToolGroup::normalize(tools), Vec::new()));
+    };
+    let own = state.store.get_agent(creator).await?.tools;
+    let tools = ToolGroup::normalize(spec.tools.clone().unwrap_or_else(|| own.clone()));
+    let wider: Vec<&str> = tools
+        .iter()
+        .filter(|g| !own.contains(g))
+        .map(|g| g.as_str())
+        .collect();
+    if !wider.is_empty() {
+        return Err(ApiError::BadRequest(format!(
+            "a new agent gets at most your own tools; you do not have: {}",
+            wider.join(", ")
+        )));
+    }
+    let mine = state.store.agent_connectors(creator).await?;
+    let connectors = match &spec.connectors {
+        None => mine,
+        Some(names) => names
+            .iter()
+            .map(|n| {
+                mine.iter()
+                    .find(|c| c.name == n.trim())
+                    .cloned()
+                    .ok_or_else(|| ApiError::BadRequest(format!("you have no connector {n}")))
+            })
+            .collect::<Result<_, _>>()?,
+    };
+    Ok((tools, connectors))
+}
+
+/// Lets the agent's connector sessions and runner pick up a changed profile.
+pub(crate) async fn reconfigure(state: &AppState, id: AgentId) -> Result<(), ApiError> {
+    state.connectors.evict_agent(id).await;
+    let agent = state.store.get_agent(id).await?;
+    let old_runner = state
+        .hub
+        .runner_protocol(id)
+        .is_some_and(|v| v < ferrobot_core::PROTOCOL_VERSION)
+        || state.hub.is_refused(id);
+    if old_runner && !crate::runner_ws::fits_old_runner(&agent.tools) {
+        // An older runner would ignore the tools: a new computer gets the current runner.
+        return lifecycle::recreate(state, id).await;
+    }
+    state.hub.send(
+        id,
+        DaemonFrame::Configure {
+            agent_name: agent.name,
+            instructions: agent.instructions,
+            tools: agent.tools,
+        },
+    );
+    Ok(())
 }
 
 /// Checks that the provider exists and that a model is known where the
@@ -131,6 +203,7 @@ pub async fn create(
         _ => (spec.provider_id, spec.model.clone()),
     };
     let model = check_model(state, provider_id, model.as_deref()).await?;
+    let (tools, connectors) = profile(state, &spec, created_by).await?;
     let mut agent = {
         // Serialize creations so the limit holds under concurrency.
         let _guard = state.creating.lock().await;
@@ -145,26 +218,26 @@ pub async fn create(
             })
             .await?
     };
-    if spec.character.is_some() || provider_id.is_some() || model.is_some() {
-        state
-            .store
-            .update_agent_profile(
-                agent.id,
-                AgentPatch {
-                    character: Some(spec.character),
-                    provider_id: Some(provider_id),
-                    model: Some(model.clone()),
-                    ..AgentPatch::default()
-                },
-            )
-            .await?;
-        agent.character = spec.character;
-        agent.provider_id = provider_id;
-        agent.model = model;
-    }
-    if let Some(creator) = created_by {
-        let inherited = state.store.agent_connectors(creator).await?;
-        let ids = inherited.into_iter().map(|c| c.id).collect();
+    // Before provisioning: the agent has no token yet, so nothing runs with every tool.
+    state
+        .store
+        .update_agent_profile(
+            agent.id,
+            AgentPatch {
+                character: Some(spec.character),
+                provider_id: Some(provider_id),
+                model: Some(model.clone()),
+                tools: Some(tools.clone()),
+                ..AgentPatch::default()
+            },
+        )
+        .await?;
+    agent.character = spec.character;
+    agent.provider_id = provider_id;
+    agent.model = model;
+    agent.tools = tools;
+    if !connectors.is_empty() {
+        let ids = connectors.into_iter().map(|c| c.id).collect();
         state.store.set_agent_connectors(agent.id, ids).await?;
     }
     lifecycle::provision(state, &agent).await?;
@@ -192,6 +265,35 @@ pub(crate) async fn chat_of(state: &AppState, id: AgentId) -> Result<AgentId, Ap
     Ok(current)
 }
 
+/// The approval card's text: everything the new agent gets, so nothing is approved unseen.
+fn card_prompt(
+    name: &AgentName,
+    description: &str,
+    instructions: &str,
+    tools: &[ToolGroup],
+    connectors: &[Connector],
+) -> String {
+    let mut prompt = format!("Create the agent \"{name}\"?");
+    if !description.is_empty() {
+        let _ = write!(prompt, "\nRole: {description}");
+    }
+    if !instructions.trim().is_empty() {
+        let _ = write!(prompt, "\nInstructions: {}", shorten(instructions, 600));
+    }
+    let tools: Vec<&str> = tools.iter().map(|g| g.as_str()).collect();
+    let tools = if tools.is_empty() {
+        "none".to_owned()
+    } else {
+        tools.join(", ")
+    };
+    let _ = write!(prompt, "\nTools: {tools}");
+    if !connectors.is_empty() {
+        let names: Vec<&str> = connectors.iter().map(|c| c.name.as_str()).collect();
+        let _ = write!(prompt, "\nConnectors: {}", names.join(", "));
+    }
+    prompt
+}
+
 /// Shows the operator an approval card in the chat they use for the
 /// requester (its top creator's), waits for the decision (or
 /// [`crate::Settings::approval_timeout`]) and creates the agent if approved.
@@ -199,9 +301,13 @@ pub(crate) async fn chat_of(state: &AppState, id: AgentId) -> Result<AgentId, Ap
 pub async fn request(
     state: &AppState,
     requester: AgentId,
-    spec: AgentSpec,
+    mut spec: AgentSpec,
 ) -> Result<AgentRequestOutcome, ApiError> {
     let (name, description) = check(state, &spec).await?;
+    // Pinned now, so the agent gets what the card shows even if the requester changes meanwhile.
+    let (tools, connectors) = profile(state, &spec, Some(requester)).await?;
+    spec.tools = Some(tools.clone());
+    spec.connectors = Some(connectors.iter().map(|c| c.name.clone()).collect());
     let chat = chat_of(state, requester).await?;
     // Unreadable settings fail closed: the operator gets the card.
     if crate::api::settings::load(state)
@@ -219,23 +325,7 @@ pub async fn request(
             name: agent.name.to_string(),
         });
     }
-    let mut prompt = format!("Create the agent \"{name}\"?");
-    if !description.is_empty() {
-        let _ = write!(prompt, "\nRole: {description}");
-    }
-    // Everything the new agent gets, so nothing is approved unseen.
-    if !spec.instructions.trim().is_empty() {
-        let _ = write!(
-            prompt,
-            "\nInstructions: {}",
-            shorten(&spec.instructions, 600)
-        );
-    }
-    let inherited = state.store.agent_connectors(requester).await?;
-    if !inherited.is_empty() {
-        let names: Vec<&str> = inherited.iter().map(|c| c.name.as_str()).collect();
-        let _ = write!(prompt, "\nConnectors: {}", names.join(", "));
-    }
+    let prompt = card_prompt(&name, &description, &spec.instructions, &tools, &connectors);
     let title = if chat == requester {
         "Approval needed".to_owned()
     } else {

@@ -179,6 +179,31 @@ describe("buildOptions", () => {
       url: "http://host.docker.internal:7879/mcp",
       headers: { Authorization: "Bearer tok" },
     });
+    assert.equal(options.disallowedTools, undefined, "no profile: every built-in tool");
+  });
+
+  it("removes the tools of turned-off groups from the model's context", () => {
+    const disallowed = (tools: string[]): string[] | undefined =>
+      buildOptions({
+        ctx: { agentName: "ada", instructions: "", tools },
+        workspaceDir: "/w",
+        mcpUrl: new URL("http://d/mcp"),
+        token: "tok",
+        model: undefined,
+        resume: null,
+        abortController: new AbortController(),
+        canUseTool: () => Promise.resolve({ behavior: "allow", updatedInput: {} }),
+        audit: () => Promise.resolve({ continue: true }),
+      }).disallowedTools;
+    assert.equal(disallowed(["team", "shell", "files", "web"]), undefined);
+    const noShellNoWeb = disallowed(["team", "files"]) ?? [];
+    for (const tool of ["Bash", "Monitor", "WebFetch", "WebSearch", "Agent", "Workflow"]) {
+      assert.ok(noShellNoWeb.includes(tool), tool);
+    }
+    for (const tool of ["Read", "Write", "Edit", "mcp__ferrobot__send_message"]) {
+      assert.ok(!noShellNoWeb.includes(tool), tool);
+    }
+    assert.ok((disallowed(["shell"]) ?? []).includes("Read"));
   });
 });
 

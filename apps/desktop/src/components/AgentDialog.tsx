@@ -1,8 +1,8 @@
 import type { JSX } from "preact";
 import { useEffect, useRef, useState } from "preact/hooks";
-import { Check, Dices, ImageUp, RotateCcw, X } from "lucide-preact";
+import { Dices, ImageUp, RotateCcw, X } from "lucide-preact";
 
-import type { Agent, Connector, Provider } from "../api.ts";
+import type { Agent, Connector, Provider, ProviderKind, ToolGroup } from "../api.ts";
 import { useApp } from "../context.ts";
 import {
   BODIES,
@@ -18,9 +18,27 @@ import { CharacterFace } from "./Character.tsx";
 import { Avatar } from "./Avatar.tsx";
 import { ModelPicker } from "./ModelPicker.tsx";
 import { KIND_LABELS } from "./ProvidersSettings.tsx";
-import { Button, Dialog } from "./ui.tsx";
+import { Button, Dialog, Switch } from "./ui.tsx";
 
 const NAME = /^[a-z][a-z0-9-]{0,31}$/;
+
+const TOOL_GROUPS: readonly [ToolGroup, string, string][] = [
+  ["team", "Team", "Message teammates and give them tasks"],
+  ["memory", "Memory", "Remember and recall notes"],
+  ["operator", "Operator", "Ask you questions, share files, bring teammates into calls"],
+  ["create_agents", "Create agents", "Ask to create new agents"],
+  ["add_connectors", "Add connectors", "Ask you to add connectors"],
+  ["routines", "Routines", "Set up its own routines"],
+  ["shell", "Shell", "Run commands and every CLI on its computer"],
+  ["files", "Files", "Read and edit files"],
+  ["web", "Web", "Fetch pages and search the web"],
+];
+const ALL_TOOLS = TOOL_GROUPS.map(([g]) => g);
+
+/** Models driven by ferrobot's own loop for OpenAI-compatible APIs have no web tools. */
+function hasWebTools(kind: ProviderKind): boolean {
+  return ["anthropic", "bedrock", "vertex", "codex", "gemini_cli"].includes(kind);
+}
 
 /** Create (no `agent`) or edit an agent's profile. */
 export function AgentDialog(props: {
@@ -43,7 +61,11 @@ export function AgentDialog(props: {
   const [connectors, setConnectors] = useState<Connector[]>([]);
   const [given, setGiven] = useState<string[] | null>(editing ? null : []);
   const [picked, setPicked] = useState<string[]>([]);
+  const [tools, setTools] = useState<ToolGroup[]>(editing?.tools ?? ALL_TOOLS);
   const chosen = providers.find((p) => p.id === providerId);
+  const groups = TOOL_GROUPS.filter(
+    ([g]) => g !== "web" || hasWebTools(chosen?.kind ?? "anthropic"),
+  );
   const modelChanged =
     !editing ||
     providerId !== (editing.provider_id ?? null) ||
@@ -111,6 +133,7 @@ export function AgentDialog(props: {
               ? { character: same(look, deriveCharacter(editing.id)) ? null : look }
               : {}),
             ...(modelChanged ? { provider_id: providerId, model: model.trim() || null } : {}),
+            tools,
           })
         : await client.createAgent({
             name,
@@ -119,6 +142,7 @@ export function AgentDialog(props: {
             character: look,
             provider_id: providerId,
             model: model.trim() || null,
+            tools,
           });
       if (given && (picked.length !== given.length || picked.some((id) => !given.includes(id)))) {
         await client.setAgentConnectors(agent.id, picked);
@@ -337,32 +361,42 @@ export function AgentDialog(props: {
             </span>
           )}
         </label>
-        {connectors.length > 0 && given && (
-          <div class="field">
-            <span>Connectors</span>
-            <div class="qcard-choices">
-              {connectors.map((c) => {
-                const on = picked.includes(c.id);
-                return (
-                  <button
-                    key={c.id}
-                    type="button"
-                    class={`choice multi${on ? " on" : ""}`}
-                    role="checkbox"
-                    aria-checked={on}
-                    onClick={() => {
-                      togglePick(c.id);
-                    }}
-                  >
-                    <span class="choice-mark">{on && <Check size={12} />}</span>
-                    {c.name}
-                  </button>
-                );
-              })}
-            </div>
-            <span class="hint">The agent can use these connectors’ tools from its next turn.</span>
-          </div>
-        )}
+        <div class="field">
+          <span>Tools</span>
+          {groups.map(([group, label, what]) => (
+            <span key={group} class="field-row">
+              <span>
+                {label} <span class="hint">{what}</span>
+              </span>
+              <Switch
+                checked={tools.includes(group)}
+                label={label}
+                onChange={(on) => {
+                  setTools((t) => (on ? [...t, group] : t.filter((g) => g !== group)));
+                }}
+              />
+            </span>
+          ))}
+          {given &&
+            connectors.map((c) => (
+              <span key={c.id} class="field-row">
+                <span>
+                  {c.name} <span class="hint">Connector</span>
+                </span>
+                <Switch
+                  checked={picked.includes(c.id)}
+                  label={c.name}
+                  onChange={() => {
+                    togglePick(c.id);
+                  }}
+                />
+              </span>
+            ))}
+          <span class="hint">
+            Changes apply from its next turn. With Shell on, it can still read files and reach the
+            web through commands.
+          </span>
+        </div>
         <button type="submit" hidden />
       </form>
     </Dialog>

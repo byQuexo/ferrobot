@@ -198,7 +198,8 @@ async fn connect_runner(agents: &str, token: &str) -> Ws {
     connect_runner_with(agents, token, false).await
 }
 
-async fn connect_runner_with(agents: &str, token: &str, steering: bool) -> Ws {
+/// A runner connection right after its `hello`.
+async fn open_runner(agents: &str, token: &str, protocol_version: u32, steering: bool) -> Ws {
     let mut req = format!("ws://{agents}/runner/ws")
         .into_client_request()
         .unwrap();
@@ -206,7 +207,7 @@ async fn connect_runner_with(agents: &str, token: &str, steering: bool) -> Ws {
         .insert("authorization", format!("Bearer {token}").parse().unwrap());
     let (mut ws, _) = tokio_tungstenite::connect_async(req).await.unwrap();
     let hello = RunnerFrame::Hello {
-        protocol_version: ferrobot_core::PROTOCOL_VERSION,
+        protocol_version,
         runner_version: "test".into(),
         driver: "fake".into(),
         session_id: None,
@@ -215,6 +216,11 @@ async fn connect_runner_with(agents: &str, token: &str, steering: bool) -> Ws {
     ws.send(Message::text(serde_json::to_string(&hello).unwrap()))
         .await
         .unwrap();
+    ws
+}
+
+async fn connect_runner_with(agents: &str, token: &str, steering: bool) -> Ws {
+    let mut ws = open_runner(agents, token, ferrobot_core::PROTOCOL_VERSION, steering).await;
     assert!(matches!(
         next_frame(&mut ws).await,
         DaemonFrame::Welcome { .. }
@@ -284,6 +290,7 @@ async fn profile_avatar_unread_and_memory() {
         DaemonFrame::Configure {
             agent_name,
             instructions,
+            ..
         } => {
             assert_eq!(
                 (agent_name.as_str(), instructions.as_str()),
@@ -1427,7 +1434,164 @@ fn agent_request(name: &str) -> ferrobot_mcp::AgentRequest {
         description: "Writes release notes".into(),
         instructions: String::new(),
         character: None,
+        tools: None,
+        connectors: None,
     }
+}
+
+#[tokio::test]
+async fn tool_profiles_bind_new_agents_and_reach_the_runner() {
+    use ferrobot_core::ToolGroup::{CreateAgents, Files, Memory, Shell, Team, Web};
+    use ferrobot_mcp::{AgentRequest, AgentRequestOutcome};
+    let backend = Arc::new(StatefulBackend::default());
+    let d = start_with(backend.clone(), None, "127.0.0.1:0", |s| {
+        s.approval_timeout = Duration::from_secs(5);
+    })
+    .await;
+
+    // The operator sets any profile; omitted means every group.
+    let ada = create(
+        &d,
+        json!({"name": "ada", "tools": ["files", "team", "memory", "create_agents"]}),
+    )
+    .await;
+    assert_eq!(
+        ada["tools"],
+        json!(["team", "memory", "create_agents", "files"])
+    );
+    let max = create(&d, json!({"name": "max"})).await;
+    assert_eq!(max["tools"].as_array().unwrap().len(), 9, "{max}");
+    let ada = ada["id"].as_str().unwrap().to_owned();
+    let ada_id: AgentId = ada.parse().unwrap();
+
+    // A change reaches the connected runner with the tools.
+    let mut ws = connect_runner(&d.agents, &backend.token("ada")).await;
+    let tools = json!({"tools": ["team", "memory", "create_agents", "files", "shell"]});
+    let (status, patched) = http(&d.ui, "PATCH", &format!("/v1/agents/{ada}"), Some(tools)).await;
+    assert_eq!(status, 200, "{patched}");
+    match next_frame(&mut ws).await {
+        DaemonFrame::Configure { tools, .. } => {
+            assert_eq!(tools, [Team, Memory, CreateAgents, Shell, Files]);
+        }
+        other => panic!("expected configure, got {other:?}"),
+    }
+
+    // Wider than the creator's own is refused before the operator is asked, also for connectors.
+    let wider = AgentRequest {
+        tools: Some(vec![Team, Web]),
+        ..agent_request("scout")
+    };
+    let err = d.state.request_agent(ada_id, wider).await.unwrap_err();
+    assert!(err.contains("you do not have: web"), "{err}");
+    let foreign = AgentRequest {
+        connectors: Some(vec!["github".into()]),
+        ..agent_request("scout")
+    };
+    let err = d.state.request_agent(ada_id, foreign).await.unwrap_err();
+    assert!(err.contains("github"), "{err}");
+    assert!(
+        !events(&d, &ada)
+            .await
+            .iter()
+            .any(|e| e["kind"] == "question"),
+        "no card"
+    );
+
+    // Narrower: the card lists the tools and the new agent gets exactly those.
+    let st = d.state.clone();
+    let narrow = AgentRequest {
+        tools: Some(vec![Memory]),
+        ..agent_request("scout")
+    };
+    let req = tokio::spawn(async move { st.request_agent(ada_id, narrow).await });
+    let qid = approval_card(&d, &ada, 0).await;
+    let card = events(&d, &ada)
+        .await
+        .into_iter()
+        .find(|e| e["id"] == qid)
+        .unwrap();
+    let prompt = card["payload"]["card"]["questions"][0]["prompt"].clone();
+    assert!(
+        prompt.as_str().unwrap().contains("\nTools: memory"),
+        "{prompt}"
+    );
+    assert_eq!(decide(&d, &ada, qid, "approve").await.0, 202);
+    let AgentRequestOutcome::Created { id: scout, .. } = req.await.unwrap().unwrap() else {
+        panic!("expected created");
+    };
+    let (_, view) = http(&d.ui, "GET", &format!("/v1/agents/{scout}"), None).await;
+    assert_eq!(view["tools"], json!(["memory"]));
+
+    // Auto mode skips the card, not the rule; omitted is the creator's own profile.
+    let auto = json!({"auto_mode": true});
+    assert_eq!(http(&d.ui, "PUT", "/v1/settings", Some(auto)).await.0, 200);
+    let wider = AgentRequest {
+        tools: Some(vec![Web]),
+        ..agent_request("echo")
+    };
+    assert!(d.state.request_agent(ada_id, wider).await.is_err());
+    let AgentRequestOutcome::Created { id: echo, .. } = d
+        .state
+        .request_agent(ada_id, agent_request("echo"))
+        .await
+        .unwrap()
+    else {
+        panic!("expected created");
+    };
+    let (_, view) = http(&d.ui, "GET", &format!("/v1/agents/{echo}"), None).await;
+    assert_eq!(view["tools"], a_tools(&d, &ada).await);
+    // Narrowing the creator later leaves its agents as they are.
+    let narrower = json!({"tools": ["team"]});
+    let path = format!("/v1/agents/{ada}");
+    assert_eq!(http(&d.ui, "PATCH", &path, Some(narrower)).await.0, 200);
+    let (_, view) = http(&d.ui, "GET", &format!("/v1/agents/{echo}"), None).await;
+    assert_eq!(view["tools"].as_array().unwrap().len(), 5, "{view}");
+
+    // A runner from before tool profiles still serves an agent with every built-in tool.
+    let max = max["id"].as_str().unwrap().to_owned();
+    let mut old = open_runner(&d.agents, &backend.token("max"), 1, false).await;
+    assert!(matches!(
+        next_frame(&mut old).await,
+        DaemonFrame::Welcome { .. }
+    ));
+    // Turning one off replaces its computer instead of trusting the old runner with it.
+    let no_shell = json!({"tools": ["team", "memory", "files", "web"]});
+    let path = format!("/v1/agents/{max}");
+    assert_eq!(http(&d.ui, "PATCH", &path, Some(no_shell)).await.0, 200);
+    let calls = backend.calls();
+    assert!(
+        calls.contains(&"destroy max purge=false".to_owned()),
+        "{calls:?}"
+    );
+    // An old runner on the new computer is refused, with a notice in the chat.
+    let mut old = open_runner(&d.agents, &backend.token("max"), 1, false).await;
+    let quiet = tokio::time::timeout(Duration::from_millis(300), old.next()).await;
+    assert!(quiet.is_err(), "no welcome: {quiet:?}");
+    let notice = eventually("refusal notice", Duration::from_secs(5), || async {
+        events(&d, &max)
+            .await
+            .into_iter()
+            .find(|e| e["kind"] == "runner_refused")
+    })
+    .await;
+    assert!(
+        notice["payload"]["reason"]
+            .as_str()
+            .unwrap()
+            .contains("older runner"),
+        "{notice}"
+    );
+    let (_, view) = http(&d.ui, "GET", &path, None).await;
+    assert_eq!(view["connected"], false);
+    // The current runner is welcome.
+    connect_runner(&d.agents, &backend.token("max")).await;
+}
+
+async fn a_tools(d: &Daemon, id: &str) -> Value {
+    http(&d.ui, "GET", &format!("/v1/agents/{id}"), None)
+        .await
+        .1["tools"]
+        .clone()
 }
 
 /// Id of the newest pending approval card in the agent's chat.
@@ -2720,6 +2884,8 @@ async fn connectors_lend_upstream_tools_to_assigned_agents_only() {
         character: None,
         provider_id: None,
         model: None,
+        tools: None,
+        connectors: None,
     };
     let cal = ferrobot_daemon::agents::create(&d.state, spec, Some(ann.parse().unwrap()))
         .await
@@ -3829,6 +3995,8 @@ async fn new_agents_greet_the_operator_first() {
         character: None,
         provider_id: None,
         model: None,
+        tools: None,
+        connectors: None,
     };
     let ivy = ferrobot_daemon::agents::create(&d.state, spec, Some(gia))
         .await

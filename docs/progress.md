@@ -1165,3 +1165,43 @@ store used for the run) or the daemon's own env.
   answer, a taken name and an invalid schedule refused, decline creates
   nothing, Auto mode creates at once); the MCP tool list test.
 - Not tested: a real model calling `create_routine`.
+
+## Tool profiles (`feat/tool-scopes`)
+
+**Done**
+
+- `ToolGroup` (core) and `tools` on the agent: in the agent view, `POST` and
+  `PATCH /v1/agents`, `create_agent` (`tools`, `connectors`). Migration v15
+  (`agents.tools`, NULL = every group).
+- MCP: `tools/list` filtered and `tools/call` refused outside the profile.
+- Subset rule in `agents::create` (approval and Auto mode) and before the card;
+  the card lists the tools and connectors.
+- Runner protocol v2: `tools` in `welcome` and `configure`; a change evicts the
+  agent's connector sessions and sends `configure` (now also restarting Codex
+  and Gemini). v1 runners only for agents with every built-in tool; otherwise
+  refused with a chat notice, and a change recreates the sandbox.
+- Drivers turn off shell, files and web: Claude `disallowedTools`, the
+  OpenAI-compatible loop's own tools, Codex `config.toml` features, Gemini
+  `tools.exclude`; sub-agent tools go while any is off.
+- Desktop: a Tools section in the agent dialog (one switch per group, Web only
+  where the model has web tools, connectors by name); the timeline shows
+  `runner_refused`.
+
+**Tested**
+
+- Rust: `tools_outside_the_profile_are_hidden_and_refused` and
+  `every_tool_has_a_group` (MCP), `tool_profiles_bind_new_agents_and_reach_the_runner`
+  (operator profiles, `configure` with tools, wider tools or a foreign connector
+  refused before any card, the card's `Tools:` line, Auto mode, a narrowed
+  creator keeps its agents, a v1 runner welcome with every built-in tool,
+  recreated on narrowing and refused with a notice after), the v14 migration
+  test and the store roundtrip.
+- Runner (`node --test`): per driver that turned-off tools are not offered
+  (Claude options, OpenAI request, Codex `config.toml`, Gemini settings) and are
+  refused when asked for or called anyway; `configure` reaches the driver.
+- Live, against a capture server: the real Claude driver (macOS, SDK 0.3.328)
+  and the real Codex and Gemini drivers in `ferrobot-runner:dev` (Codex 0.166,
+  Gemini CLI 0.67) offered no shell, file, web or sub-agent tools for the groups
+  turned off, and all of them with every group on.
+- Not tested: a real model turn with a narrowed profile; the Tools section was
+  not viewed in a browser or the Tauri window.

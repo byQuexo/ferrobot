@@ -162,7 +162,9 @@ small own schema instead, designed to map 1:1 onto A2UI v1.0 later:
 - HTTP paths are prefixed with `/v1`. Breaking changes get a new prefix; adding
   optional fields or new endpoints does not.
 - The runner protocol carries `protocol_version` in `hello`/`welcome`
-  (`ferrobot_core::PROTOCOL_VERSION`).
+  (`ferrobot_core::PROTOCOL_VERSION`). Version 2 added `tools` to `welcome` and
+  `configure`; the daemon still accepts a version 1 runner, but only for an agent
+  with every built-in tool group (`shell`, `files`, `web`) on.
 - Clients should ignore unknown fields and unknown `type` values in `UiEvent`.
 
 ## Writing another client

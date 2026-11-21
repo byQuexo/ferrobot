@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 
-use ferrobot_core::{Agent, AgentId, AgentName, AgentStatus, AvatarCharacter};
+use ferrobot_core::{Agent, AgentId, AgentName, AgentStatus, AvatarCharacter, ToolGroup};
 use rusqlite::{OptionalExtension, Row, params};
 use sha2::{Digest, Sha256};
 
@@ -31,6 +31,7 @@ pub struct AgentPatch {
     /// `Some(None)` goes back to the provider's default model.
     pub model: Option<Option<String>>,
     pub pinned: Option<bool>,
+    pub tools: Option<Vec<ToolGroup>>,
 }
 
 /// An avatar image as stored.
@@ -47,7 +48,7 @@ pub fn hash_token(token: &str) -> String {
 
 const COLUMNS: &str = "id, name, instructions, status, backend, sandbox_id, session_id, created_at, \
                        description, avatar_rev, COALESCE(sandbox_name, name), character, created_by, \
-                       provider_id, model, pinned";
+                       provider_id, model, pinned, tools";
 
 fn from_row(row: &Row<'_>) -> Result<Agent, StoreError> {
     let id: String = row.get(0)?;
@@ -57,7 +58,9 @@ fn from_row(row: &Row<'_>) -> Result<Agent, StoreError> {
     let character: Option<String> = row.get(11)?;
     let created_by: String = row.get(12)?;
     let provider_id: Option<String> = row.get(13)?;
+    let tools: Option<String> = row.get(16)?;
     Ok(Agent {
+        tools: tools.map_or_else(ToolGroup::all, |t| parse_tools(&t)),
         provider_id: provider_id
             .map(|id| uuid::Uuid::parse_str(&id))
             .transpose()
@@ -84,6 +87,27 @@ fn from_row(row: &Row<'_>) -> Result<Agent, StoreError> {
         session_id: row.get(6)?,
         created_at: parse_ts(&created)?,
     })
+}
+
+/// Groups this build does not know (written by a newer daemon) are dropped: narrower, not wider.
+fn parse_tools(json: &str) -> Vec<ToolGroup> {
+    let names: Vec<serde_json::Value> = serde_json::from_str(json).unwrap_or_default();
+    let groups = names
+        .into_iter()
+        .filter_map(|n| serde_json::from_value(n).ok())
+        .collect();
+    ToolGroup::normalize(groups)
+}
+
+/// `tools` as stored: NULL for every group, so groups added later reach those agents too.
+fn tools_column(tools: Vec<ToolGroup>) -> Result<Option<String>, StoreError> {
+    let tools = ToolGroup::normalize(tools);
+    if tools == ToolGroup::all() {
+        return Ok(None);
+    }
+    serde_json::to_string(&tools)
+        .map(Some)
+        .map_err(StoreError::corrupt)
 }
 
 /// `created_by` value of agents the operator created.
@@ -115,6 +139,7 @@ impl Store {
             sandbox_id: None,
             session_id: None,
             pinned: false,
+            tools: ToolGroup::all(),
             created_at: now(),
         };
         let mut row = agent;
@@ -295,6 +320,8 @@ impl Store {
             .map(|c| serde_json::to_string(&c))
             .transpose()
             .map_err(StoreError::corrupt)?;
+        let set_tools = patch.tools.is_some();
+        let tools = patch.tools.map(tools_column).transpose()?.flatten();
         self.update_agent(id, move |c, id| {
             c.execute(
                 "UPDATE agents SET name = COALESCE(?2, name),
@@ -303,7 +330,8 @@ impl Store {
                                    character = CASE WHEN ?5 THEN ?6 ELSE character END,
                                    provider_id = CASE WHEN ?7 THEN ?8 ELSE provider_id END,
                                    model = CASE WHEN ?9 THEN ?10 ELSE model END,
-                                   pinned = COALESCE(?11, pinned)
+                                   pinned = COALESCE(?11, pinned),
+                                   tools = CASE WHEN ?12 THEN ?13 ELSE tools END
                  WHERE id = ?1",
                 params![
                     id,
@@ -316,7 +344,9 @@ impl Store {
                     provider_id,
                     set_model,
                     model,
-                    patch.pinned
+                    patch.pinned,
+                    set_tools,
+                    tools
                 ],
             )
         })
@@ -553,5 +583,30 @@ mod tests {
         assert_eq!(store.unread_counts().await.unwrap()[&a.id], 2);
         store.mark_read(a.id).await.unwrap();
         assert_eq!(store.unread_counts().await.unwrap(), none);
+    }
+
+    #[tokio::test]
+    async fn tools_roundtrip_and_every_group_stays_null() {
+        let store = Store::open_in_memory().unwrap();
+        let a = store.create_agent(new("alice")).await.unwrap();
+        assert_eq!(a.tools, ToolGroup::all());
+        let set = |tools: Vec<ToolGroup>| AgentPatch {
+            tools: Some(tools),
+            ..AgentPatch::default()
+        };
+        let narrow = vec![ToolGroup::Shell, ToolGroup::Team, ToolGroup::Team];
+        store.update_agent_profile(a.id, set(narrow)).await.unwrap();
+        let tools = store.get_agent(a.id).await.unwrap().tools;
+        assert_eq!(tools, [ToolGroup::Team, ToolGroup::Shell]);
+        store
+            .update_agent_profile(a.id, set(ToolGroup::all()))
+            .await
+            .unwrap();
+        let stored: Option<String> = store
+            .with(move |c| Ok(c.query_row("SELECT tools FROM agents", [], |r| r.get(0))?))
+            .await
+            .unwrap();
+        assert_eq!(stored, None);
+        assert_eq!(parse_tools(r#"["team","later_group"]"#), [ToolGroup::Team]);
     }
 }

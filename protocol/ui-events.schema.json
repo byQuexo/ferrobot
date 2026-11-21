@@ -95,6 +95,13 @@
         },
         "status": {
           "$ref": "#/$defs/AgentStatus"
+        },
+        "tools": {
+          "description": "Tool groups the agent may use; its connectors are its assignment.",
+          "items": {
+            "$ref": "#/$defs/ToolGroup"
+          },
+          "type": "array"
         }
       },
       "required": [
@@ -387,6 +394,21 @@
         "created_at"
       ],
       "type": "object"
+    },
+    "ToolGroup": {
+      "description": "A group of tools an agent can have on or off. The first six are ferrobot's own MCP tools\n(enforced by the daemon), the last three the model's built-in tools (enforced by the runner).",
+      "enum": [
+        "team",
+        "memory",
+        "operator",
+        "create_agents",
+        "add_connectors",
+        "routines",
+        "shell",
+        "files",
+        "web"
+      ],
+      "type": "string"
     },
     "UiEvent": {
       "description": "Pushed to every UI WebSocket client.",

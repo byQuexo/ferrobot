@@ -177,7 +177,7 @@ pub enum UiEvent {
         text: String,
     },
     /// An agent was created or changed (profile, presence, unread count).
-    Agent { agent: AgentView },
+    Agent { agent: Box<AgentView> },
     /// An agent was deleted.
     AgentDeleted { agent_id: AgentId },
     /// A mailbox message was queued or changed status.
@@ -299,7 +299,9 @@ impl AppState {
     /// Pushes the agent's current view (profile, presence, unread) to the UI.
     pub async fn publish_agent(&self, agent: AgentId) {
         match crate::views::agent_view(self, agent).await {
-            Ok(agent) => self.publish(UiEvent::Agent { agent }),
+            Ok(agent) => self.publish(UiEvent::Agent {
+                agent: Box::new(agent),
+            }),
             Err(e) => tracing::debug!(error = %e, %agent, "cannot publish agent"),
         }
     }

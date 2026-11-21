@@ -9,6 +9,7 @@ pub mod mention;
 pub mod protocol;
 pub mod provider;
 pub mod question;
+pub mod tools;
 
 pub use agent::{
     Agent, AgentId, AgentName, AgentStatus, AvatarCharacter, CharacterBody, CharacterEyes,
@@ -17,9 +18,10 @@ pub use connector::{Connector, ConnectorAuth};
 pub use error::CoreError;
 pub use mail::{MailMessage, MailStatus, Sender};
 pub use provider::{Provider, ProviderKind, UpstreamAuth};
+pub use tools::ToolGroup;
 
 /// Human-readable project name (also set in the workspace `Cargo.toml` and README).
 pub const PROJECT_NAME: &str = "ferrobot";
 
 /// Version of the daemon <-> runner protocol. Bumped on breaking changes.
-pub const PROTOCOL_VERSION: u32 = 1;
+pub const PROTOCOL_VERSION: u32 = 2;
