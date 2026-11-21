@@ -4,7 +4,13 @@ use time::{OffsetDateTime, UtcOffset};
 use crate::StoreError;
 
 pub(crate) fn now() -> OffsetDateTime {
-    OffsetDateTime::now_utc()
+    to_micros(OffsetDateTime::now_utc())
+}
+
+/// Drops what `fmt_ts` cannot store, so a row built in memory equals the one read back.
+fn to_micros(ts: OffsetDateTime) -> OffsetDateTime {
+    ts.replace_nanosecond(ts.microsecond() * 1_000)
+        .unwrap_or(ts)
 }
 
 /// Fixed-width UTC RFC 3339, so SQLite's text comparison orders timestamps correctly.
@@ -48,5 +54,17 @@ mod tests {
         assert_eq!(parse_ts(&b).unwrap(), later);
         let elsewhere = whole.to_offset(UtcOffset::from_hms(1, 0, 0).unwrap());
         assert_eq!(fmt_ts(elsewhere), a);
+    }
+
+    #[test]
+    fn now_keeps_only_what_is_stored() {
+        let ns = OffsetDateTime::from_unix_timestamp(1_795_694_400)
+            .unwrap()
+            .replace_nanosecond(123_456_789)
+            .unwrap();
+        let stored = to_micros(ns);
+        assert_eq!(stored.nanosecond(), 123_456_000);
+        assert_eq!(parse_ts(&fmt_ts(ns)).unwrap(), stored);
+        assert_eq!(now().nanosecond() % 1_000, 0);
     }
 }
