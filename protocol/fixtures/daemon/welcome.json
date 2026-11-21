@@ -1,8 +1,19 @@
 {
   "type": "welcome",
-  "protocol_version": 1,
+  "protocol_version": 2,
   "agent_id": "0b5c2a0e-8f5e-4a51-9d6e-3f1f6f0c9a11",
   "agent_name": "alice",
   "instructions": "You coordinate work with other agents.",
-  "resume_session_id": null
+  "resume_session_id": null,
+  "tools": [
+    "team",
+    "memory",
+    "operator",
+    "create_agents",
+    "add_connectors",
+    "routines",
+    "shell",
+    "files",
+    "web"
+  ]
 }

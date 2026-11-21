@@ -1,6 +1,6 @@
 //! Tracks connected runners and wakes their dispatch loops.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex, MutexGuard};
 use std::time::Instant;
@@ -14,6 +14,8 @@ struct Conn {
     id: u64,
     out: mpsc::Sender<DaemonFrame>,
     current_turn: Option<String>,
+    /// The runner's `protocol_version`.
+    protocol: u32,
 }
 
 /// Registry of live runner connections plus one wake-up signal per agent.
@@ -33,6 +35,8 @@ struct Inner {
     started: HashMap<AgentId, Instant>,
     /// Serializes sandbox lifecycle operations per agent.
     lifecycle: HashMap<AgentId, Arc<tokio::sync::Mutex<()>>>,
+    /// Agents whose runner was refused since it last connected.
+    refused: HashSet<AgentId>,
 }
 
 impl Hub {
@@ -51,7 +55,7 @@ impl Hub {
 
     /// Registers a connection, replacing (and thereby closing) an older one.
     /// Returns the connection id used for unregistering.
-    pub fn register(&self, agent: AgentId, out: mpsc::Sender<DaemonFrame>) -> u64 {
+    pub fn register(&self, agent: AgentId, out: mpsc::Sender<DaemonFrame>, protocol: u32) -> u64 {
         let id = self.next_id.fetch_add(1, Ordering::Relaxed);
         let mut inner = self.lock();
         inner.activity.insert(agent, Instant::now());
@@ -61,9 +65,29 @@ impl Hub {
                 id,
                 out,
                 current_turn: None,
+                protocol,
             },
         );
         id
+    }
+
+    /// The connected runner's protocol version.
+    pub fn runner_protocol(&self, agent: AgentId) -> Option<u32> {
+        self.lock().conns.get(&agent).map(|c| c.protocol)
+    }
+
+    /// Records whether the agent's runner was refused; true if that changed.
+    pub fn set_refused(&self, agent: AgentId, refused: bool) -> bool {
+        let mut inner = self.lock();
+        if refused {
+            inner.refused.insert(agent)
+        } else {
+            inner.refused.remove(&agent)
+        }
+    }
+
+    pub fn is_refused(&self, agent: AgentId) -> bool {
+        self.lock().refused.contains(&agent)
     }
 
     /// Removes the connection if it is still the registered one.
@@ -155,6 +179,7 @@ impl Hub {
         inner.notifies.remove(&agent);
         inner.activity.remove(&agent);
         inner.started.remove(&agent);
+        inner.refused.remove(&agent);
     }
 
     /// Wakes the agent's dispatch loop (no-op if nothing is waiting yet; the

@@ -1061,6 +1061,8 @@ export interface components {
             session_id?: string | null;
             /** @description Pinned to the top of the operator's agent list. */
             pinned?: boolean;
+            /** @description Tool groups the agent may use; its connectors are its assignment. */
+            tools?: components["schemas"]["ToolGroup"][];
             /** Format: date-time */
             created_at: string;
         };
@@ -1272,6 +1274,11 @@ export interface components {
             provider_id?: string | null;
             /** @description Model id; omitted: the provider's default model. */
             model?: string | null;
+            /**
+             * @description Tool groups the agent may use; omitted: all. Connectors are assigned with
+             *     `PUT /v1/agents/{id}/connectors`.
+             */
+            tools?: components["schemas"]["ToolGroup"][] | null;
         };
         CreateConnector: {
             /**
@@ -1815,6 +1822,12 @@ export interface components {
             /** Format: date-time */
             created_at: string;
         };
+        /**
+         * @description A group of tools an agent can have on or off. The first six are ferrobot's own MCP tools
+         *     (enforced by the daemon), the last three the model's built-in tools (enforced by the runner).
+         * @enum {string}
+         */
+        ToolGroup: "team" | "memory" | "operator" | "create_agents" | "add_connectors" | "routines" | "shell" | "files" | "web";
         /** @description What was said. Both providers answer `{"text": ...}` (plus fields we ignore). */
         Transcript: {
             text: string;
@@ -1880,6 +1893,11 @@ export interface components {
             model?: string | null;
             /** @description Pin to the top of the agent list (or unpin). */
             pinned?: boolean | null;
+            /**
+             * @description Tool groups the agent may use (any; the subset rule binds only agents creating
+             *     agents). A connected runner applies them from its next turn.
+             */
+            tools?: components["schemas"]["ToolGroup"][] | null;
         };
         /** @description A new CLI package list. */
         UpdateClis: {

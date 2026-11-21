@@ -3,7 +3,7 @@
 
 use serde::{Deserialize, Serialize};
 
-use crate::{AgentId, AgentName, Sender};
+use crate::{AgentId, AgentName, Sender, ToolGroup};
 
 /// Frames sent from the daemon to a runner.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -18,6 +18,8 @@ pub enum DaemonFrame {
         instructions: String,
         /// Session to resume, if the daemon knows one.
         resume_session_id: Option<String>,
+        /// The agent's tool groups; the runner turns off the built-in ones not listed.
+        tools: Vec<ToolGroup>,
     },
     /// Run one turn for a mailbox message.
     Turn {
@@ -41,11 +43,12 @@ pub enum DaemonFrame {
     },
     /// Abort the running turn, if it matches.
     Interrupt { turn_id: String },
-    /// The operator changed the agent's name, instructions or connectors;
+    /// The operator changed the agent's name, instructions, tools or connectors;
     /// applies from the next turn.
     Configure {
         agent_name: AgentName,
         instructions: String,
+        tools: Vec<ToolGroup>,
     },
 }
 

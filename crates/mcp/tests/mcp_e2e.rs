@@ -410,6 +410,58 @@ async fn tools_act_as_the_authenticated_agent() {
 }
 
 #[tokio::test]
+async fn tools_outside_the_profile_are_hidden_and_refused() {
+    use ferrobot_core::ToolGroup;
+    let store = Store::open_in_memory().unwrap();
+    let a = store
+        .create_agent(NewAgent {
+            created_by: None,
+            name: AgentName::parse("carl").unwrap(),
+            description: String::new(),
+            instructions: String::new(),
+        })
+        .await
+        .unwrap();
+    store.set_agent_token(a.id, "tok-c").await.unwrap();
+    let patch = ferrobot_store::AgentPatch {
+        tools: Some(vec![ToolGroup::Memory, ToolGroup::Shell]),
+        ..Default::default()
+    };
+    store.update_agent_profile(a.id, patch).await.unwrap();
+    let url = serve(McpState {
+        store: store.clone(),
+        notifier: Arc::new(Recorder::default()),
+    })
+    .await;
+
+    let carl = client(&url, "tok-c").await;
+    let mut names: Vec<_> = carl
+        .list_all_tools()
+        .await
+        .unwrap()
+        .into_iter()
+        .map(|t| t.name.to_string())
+        .collect();
+    names.sort();
+    assert_eq!(names, ["forget", "recall", "remember"]);
+    call(&carl, "remember", json!({"key": "k", "content": "v"}))
+        .await
+        .unwrap();
+    // Unlisted is not enough: a model can call a tool by name.
+    let err = call(&carl, "list_agents", json!({})).await.unwrap_err();
+    assert!(err.contains("list_agents is turned off for you"), "{err}");
+    let err = call(
+        &carl,
+        "create_agent",
+        json!({"name": "x", "description": "y"}),
+    )
+    .await
+    .unwrap_err();
+    assert!(err.contains("turned off"), "{err}");
+    carl.cancel().await.unwrap();
+}
+
+#[tokio::test]
 async fn rejects_missing_or_unknown_tokens() {
     let store = Store::open_in_memory().unwrap();
     let url = serve(McpState {

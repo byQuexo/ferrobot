@@ -33,6 +33,10 @@ pub struct AgentRequest {
     pub description: String,
     pub instructions: String,
     pub character: Option<AvatarCharacter>,
+    /// At most the requester's own; `None`: the same as its own.
+    pub tools: Option<Vec<ferrobot_core::ToolGroup>>,
+    /// Names of the requester's connectors to give it; `None`: all of them.
+    pub connectors: Option<Vec<String>>,
 }
 
 /// An agent's request to add a connector (`add_connector` tool).

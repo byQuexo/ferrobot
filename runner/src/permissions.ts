@@ -21,6 +21,39 @@ const DESTRUCTIVE_SHELL: readonly { pattern: RegExp; reason: string }[] = [
 
 const FILE_TOOLS = new Set(["Read", "Write", "Edit", "MultiEdit", "NotebookEdit"]);
 
+/** Tool groups built into the model's harness; the runner turns them off. */
+export type BuiltinGroup = "shell" | "files" | "web";
+const BUILTIN_GROUPS: readonly BuiltinGroup[] = ["shell", "files", "web"];
+
+/** The Claude Agent SDK's built-in tools per group (checked against SDK 0.3.328's tool list). */
+export const CLAUDE_TOOLS: Readonly<Record<BuiltinGroup, readonly string[]>> = {
+  shell: ["Bash", "Monitor", "PowerShell"],
+  files: [
+    "Read",
+    "Write",
+    "Edit",
+    "MultiEdit",
+    "NotebookEdit",
+    "Glob",
+    "Grep",
+    "LSP",
+    "EnterWorktree",
+    "ExitWorktree",
+  ],
+  web: ["WebFetch", "WebSearch"],
+};
+/** Sub-agents run their own tools, so they go whenever a built-in group is off. */
+export const CLAUDE_SUBAGENT_TOOLS: readonly string[] = ["Agent", "Workflow"];
+
+/** The built-in groups a profile turns off; no profile: none. */
+export function offGroups(tools: readonly string[] | undefined): ReadonlySet<BuiltinGroup> {
+  return new Set(tools ? BUILTIN_GROUPS.filter((g) => !tools.includes(g)) : []);
+}
+
+function groupOf(toolName: string): BuiltinGroup | undefined {
+  return BUILTIN_GROUPS.find((g) => CLAUDE_TOOLS[g].includes(toolName));
+}
+
 function isInside(root: string, target: string): boolean {
   const rel = relative(resolve(root), resolve(root, target));
   return rel === "" || (!rel.startsWith("..") && !isAbsolute(rel));
@@ -31,9 +64,22 @@ function stringField(input: Record<string, unknown>, key: string): string | unde
   return typeof value === "string" ? value : undefined;
 }
 
-/** Decides whether a tool call may run; file tools must stay inside `home`. */
-export function decide(toolName: string, input: Record<string, unknown>, home: string): Decision {
+/** Decides whether a tool call may run (Claude's tool names); file tools must stay inside
+ * `home` and tools of `off` groups never run. */
+export function decide(
+  toolName: string,
+  input: Record<string, unknown>,
+  home: string,
+  off: ReadonlySet<BuiltinGroup> = new Set(),
+): Decision {
   if (toolName.startsWith("mcp__ferrobot__")) return { allow: true };
+  const group = groupOf(toolName);
+  if (group && off.has(group)) {
+    return { allow: false, reason: `blocked: ${group} is turned off for this agent` };
+  }
+  if (off.size > 0 && CLAUDE_SUBAGENT_TOOLS.includes(toolName)) {
+    return { allow: false, reason: "blocked: sub-agents are off while a built-in tool is off" };
+  }
 
   if (toolName === "Bash") {
     const command = stringField(input, "command") ?? "";
