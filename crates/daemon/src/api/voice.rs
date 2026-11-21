@@ -482,7 +482,11 @@ pub(crate) async fn live(
         ));
     }
     // Fails before the provider is asked for a token.
-    voice::live_url(&r.base, "-", req.mode, req.sample_rate, None).map_err(ApiError::BadRequest)?;
+    voice::live_url(&r.base, "-", req.mode, req.sample_rate, None, &[])
+        .map_err(ApiError::BadRequest)?;
+    // Agent names are what generic transcription gets wrong most ("builder" → "Biller").
+    let agents = state.store.list_agents().await?;
+    let keyterms = voice::keyterms(agents.iter().map(|a| a.name.as_str()));
     spend(&state, 0, 1)?;
     let token: serde_json::Value = send(voice::live_token(&state.http, &r.base, &r.key))
         .await?
@@ -498,6 +502,7 @@ pub(crate) async fn live(
         req.mode,
         req.sample_rate,
         r.settings.language.as_deref(),
+        &keyterms,
     )
     .map_err(ApiError::BadRequest)?;
     Ok(Json(LiveSession { url }))

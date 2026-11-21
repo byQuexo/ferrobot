@@ -6547,7 +6547,15 @@
           },
           "body": {
             "type": "string",
-            "description": "The words; mentions are `<@agent-id>` tokens."
+            "description": "The words; mentions are `<@agent-id>` tokens. With `invited`, the topic that agent got."
+          },
+          "invited": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "uuid",
+            "description": "The agent this line brought into the call; `null` for words said."
           },
           "created_at": {
             "type": "string",

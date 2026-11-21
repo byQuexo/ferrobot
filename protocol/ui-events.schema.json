@@ -384,7 +384,7 @@
       "description": "One thing said in a room, by the operator (`user`) or an agent.",
       "properties": {
         "body": {
-          "description": "The words; mentions are `<@agent-id>` tokens.",
+          "description": "The words; mentions are `<@agent-id>` tokens. With `invited`, the topic that agent got.",
           "type": "string"
         },
         "created_at": {
@@ -394,6 +394,14 @@
         "id": {
           "format": "int64",
           "type": "integer"
+        },
+        "invited": {
+          "description": "The agent this line brought into the call; `null` for words said.",
+          "format": "uuid",
+          "type": [
+            "string",
+            "null"
+          ]
         },
         "room_id": {
           "format": "int64",

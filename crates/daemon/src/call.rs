@@ -372,7 +372,7 @@ impl AppState {
             }
             return Some(sent);
         };
-        self.add_line(room, Sender::User, text).await;
+        self.add_line(room, Sender::User, text, None).await;
         call.operator_said(text);
         Some(self.hand_on(&mut call).await.into_iter().collect())
     }
@@ -423,7 +423,8 @@ impl AppState {
     pub async fn call_turn_done(&self, agent: AgentId, turn: &str, outcome: TurnOutcome) {
         let mut call = self.call().await;
         if let (Some(room), Some((speaker, words))) = (call.room, call.end_turn(turn, outcome)) {
-            self.add_line(room, Sender::Agent(speaker), &words).await;
+            self.add_line(room, Sender::Agent(speaker), &words, None)
+                .await;
             call.agent_said(speaker, &words);
         }
         if call.leaving.contains(&agent) {
@@ -467,7 +468,8 @@ impl AppState {
         let Some(room) = call.room else {
             return Err("the call has no room".into());
         };
-        self.add_line(room, Sender::Agent(host), topic).await;
+        self.add_line(room, Sender::Agent(host), topic, Some(guest))
+            .await;
         call.heard
             .entry(guest)
             .or_default()
@@ -490,10 +492,10 @@ impl AppState {
         Ok(())
     }
 
-    async fn add_line(&self, room: i64, speaker: Sender, body: &str) {
+    async fn add_line(&self, room: i64, speaker: Sender, body: &str, invited: Option<AgentId>) {
         match self
             .store
-            .add_room_line(room, speaker, body.to_owned())
+            .add_room_line(room, speaker, body.to_owned(), invited)
             .await
         {
             Ok(line) => self.publish(UiEvent::RoomLine { line }),

@@ -1777,8 +1777,13 @@ export interface components {
             /** Format: int64 */
             room_id: number;
             speaker: components["schemas"]["Sender"];
-            /** @description The words; mentions are `<@agent-id>` tokens. */
+            /** @description The words; mentions are `<@agent-id>` tokens. With `invited`, the topic that agent got. */
             body: string;
+            /**
+             * Format: uuid
+             * @description The agent this line brought into the call; `null` for words said.
+             */
+            invited?: string | null;
             /** Format: date-time */
             created_at: string;
         };

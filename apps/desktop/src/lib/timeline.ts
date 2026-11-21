@@ -58,6 +58,7 @@ const SYSTEM_TEXT: Record<string, (p: Payload) => string> = {
 /**
  * An agent's chat without its call room messages and the turns they started (their events
  * and streaming text): those belong to the room. Cards and files have no turn and stay.
+ * `roomTurn` says whether the newest turn is one of them.
  */
 export function withoutRoomTurns(
   messages: readonly MailMessage[],
@@ -67,9 +68,12 @@ export function withoutRoomTurns(
   messages: MailMessage[];
   events: StoredEvent[];
   live: Map<string, string>;
+  roomTurn: boolean;
 } {
   const inRoom = new Set<string>();
+  let newest = "";
   for (const e of events) {
+    if (e.turn_id) newest = e.turn_id;
     if (e.kind === "message_in" && e.turn_id && (e.payload as Payload)["room_id"] != null)
       inRoom.add(e.turn_id);
   }
@@ -77,6 +81,7 @@ export function withoutRoomTurns(
     messages: messages.filter((m) => m.room_id == null),
     events: events.filter((e) => !e.turn_id || !inRoom.has(e.turn_id)),
     live: new Map([...live].filter(([turn]) => !inRoom.has(turn))),
+    roomTurn: inRoom.has(newest),
   };
 }
 

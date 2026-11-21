@@ -155,6 +155,7 @@ export function Chat(props: {
     return {
       shown,
       files,
+      roomTurn: chat.roomTurn,
       step: last?.type === "tool" ? stepLabel(last.name, last.input, nameOf) : "Getting started",
     };
   }, [id, messages, events, live, agents, routines]);
@@ -265,14 +266,16 @@ export function Chat(props: {
         {items.shown.map((item) => (
           <Item key={item.key} item={item} agent={agent} files={items.files} />
         ))}
-        {working && !items.shown.some((i) => i.type === "assistant" && i.streaming) && (
-          <div class="row row-agent">
-            <Avatar agent={agent} size={28} mood="working" />
-            <div class="step-now" role="status">
-              {items.step}…
+        {working &&
+          !items.roomTurn &&
+          !items.shown.some((i) => i.type === "assistant" && i.streaming) && (
+            <div class="row row-agent">
+              <Avatar agent={agent} size={28} mood="working" />
+              <div class="step-now" role="status">
+                {items.step}…
+              </div>
             </div>
-          </div>
-        )}
+          )}
       </div>
 
       <Composer

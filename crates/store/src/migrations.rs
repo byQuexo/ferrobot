@@ -265,6 +265,8 @@ const MIGRATIONS: &[&str] = &[
     ALTER TABLE messages ADD COLUMN room_id INTEGER REFERENCES rooms(id);
     CREATE INDEX events_turn ON events(turn_id) WHERE turn_id IS NOT NULL;
     ",
+    // v17: the agent a room line invited (the line is the topic it got); NULL = words said
+    "ALTER TABLE room_lines ADD COLUMN invited TEXT;",
 ];
 
 pub(crate) fn run(conn: &mut Connection) -> Result<(), StoreError> {
@@ -474,5 +476,25 @@ mod tests {
             )
             .unwrap();
         assert_eq!(rooms, 0);
+    }
+
+    #[test]
+    fn v16_room_lines_stay_words_said() {
+        let mut conn = Connection::open_in_memory().unwrap();
+        for sql in &MIGRATIONS[..16] {
+            conn.execute_batch(sql).unwrap();
+        }
+        conn.pragma_update(None, "user_version", 16).unwrap();
+        conn.execute_batch(
+            "INSERT INTO rooms (created_at) VALUES ('2026-01-01T00:00:00Z');
+             INSERT INTO room_lines (room_id, speaker, body, created_at)
+             VALUES (1, 'user', 'hi', '2026-01-01T00:00:00Z');",
+        )
+        .unwrap();
+        run(&mut conn).unwrap();
+        let invited: Option<String> = conn
+            .query_row("SELECT invited FROM room_lines", [], |r| r.get(0))
+            .unwrap();
+        assert_eq!(invited, None);
     }
 }

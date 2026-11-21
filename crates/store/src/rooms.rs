@@ -31,8 +31,11 @@ pub struct RoomLine {
     pub id: i64,
     pub room_id: i64,
     pub speaker: Sender,
-    /// The words; mentions are `<@agent-id>` tokens.
+    /// The words; mentions are `<@agent-id>` tokens. With `invited`, the topic that agent got.
     pub body: String,
+    /// The agent this line brought into the call; `null` for words said.
+    #[cfg_attr(feature = "schema", schema(value_type = Option<String>, format = Uuid))]
+    pub invited: Option<AgentId>,
     #[serde(with = "time::serde::rfc3339")]
     #[cfg_attr(feature = "schema", schema(value_type = String, format = DateTime))]
     pub created_at: OffsetDateTime,
@@ -75,6 +78,10 @@ fn line(row: &Row<'_>) -> Result<RoomLine, StoreError> {
         speaker: row.get::<_, String>(2)?.parse()?,
         body: row.get(3)?,
         created_at: parse_ts(&row.get::<_, String>(4)?)?,
+        invited: row
+            .get::<_, Option<String>>(5)?
+            .map(|id| id.parse())
+            .transpose()?,
     })
 }
 
@@ -152,19 +159,26 @@ impl Store {
         .await
     }
 
-    /// Stores something said in the room.
+    /// Stores something said in the room, or with `invited` the topic of an invitation.
     pub async fn add_room_line(
         &self,
         id: i64,
         speaker: Sender,
         body: String,
+        invited: Option<AgentId>,
     ) -> Result<RoomLine, StoreError> {
         self.with(move |c| {
             c.query_row(
-                "INSERT INTO room_lines (room_id, speaker, body, created_at)
-                 VALUES (?1, ?2, ?3, ?4)
-                 RETURNING id, room_id, speaker, body, created_at",
-                params![id, speaker.to_string(), body, fmt_ts(now())],
+                "INSERT INTO room_lines (room_id, speaker, body, created_at, invited)
+                 VALUES (?1, ?2, ?3, ?4, ?5)
+                 RETURNING id, room_id, speaker, body, created_at, invited",
+                params![
+                    id,
+                    speaker.to_string(),
+                    body,
+                    fmt_ts(now()),
+                    invited.map(|a| a.to_string())
+                ],
                 |row| Ok(line(row)),
             )?
         })
@@ -192,7 +206,7 @@ impl Store {
     pub async fn room_lines(&self, id: i64, limit: u32) -> Result<Vec<RoomLine>, StoreError> {
         self.with(move |c| {
             let mut stmt = c.prepare(
-                "SELECT * FROM (SELECT id, room_id, speaker, body, created_at FROM room_lines
+                "SELECT * FROM (SELECT id, room_id, speaker, body, created_at, invited FROM room_lines
                  WHERE room_id = ?1 ORDER BY id DESC LIMIT ?2) ORDER BY id",
             )?;
             let mut rows = stmt.query(params![id, limit])?;
@@ -238,16 +252,16 @@ mod tests {
         let r = store.add_room_member(r.id, ann).await.unwrap();
         assert_eq!(r.members, [ann, bob, cy], "joined order, once each");
         store
-            .add_room_line(r.id, Sender::User, "hi all".into())
+            .add_room_line(r.id, Sender::User, "hi all".into(), None)
             .await
             .unwrap();
         let said = store
-            .add_room_line(r.id, Sender::Agent(bob), "hi".into())
+            .add_room_line(r.id, Sender::Agent(bob), "hi".into(), Some(cy))
             .await
             .unwrap();
         assert_eq!(
-            (said.speaker, said.body.as_str()),
-            (Sender::Agent(bob), "hi")
+            (said.speaker, said.body.as_str(), said.invited),
+            (Sender::Agent(bob), "hi", Some(cy))
         );
         let lines = store.room_lines(r.id, 1).await.unwrap();
         assert_eq!(lines, [said], "the newest within the limit");

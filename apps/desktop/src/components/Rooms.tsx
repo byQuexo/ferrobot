@@ -119,6 +119,15 @@ export function RoomView(props: { id: number }): JSX.Element {
               </div>
             );
           const from = agents.get(l.speaker.id);
+          if (l.invited)
+            return (
+              <div key={l.id} class="row row-center">
+                <div class="notice">
+                  {from?.name ?? "An agent"} invited {nameOf(l.invited) ?? "an agent"} ·{" "}
+                  {clockTime(l.created_at)}
+                </div>
+              </div>
+            );
           return (
             <div key={l.id} class="row row-agent">
               {from && <Avatar agent={from} size={28} />}

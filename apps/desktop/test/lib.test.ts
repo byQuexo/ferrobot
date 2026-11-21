@@ -254,6 +254,10 @@ describe("buildTimeline", () => {
       ["user", "assistant", "question", "assistant"],
     );
     assert.ok(items[3]?.type === "assistant" && items[3].text === "streaming here");
+    assert.equal(chat.roomTurn, true);
+    const room = ev(12, "message_in", { message_id: 2, room_id: 3 }, "2026-01-01T10:01:01Z", "t2");
+    const after = ev(17, "message_in", { message_id: 4 }, "2026-01-01T10:02:00Z", "t3");
+    assert.equal(withoutRoomTurns([], [room, after], new Map()).roomTurn, false);
   });
 
   it("shows a credential problem once, instead of its turn's error", () => {
