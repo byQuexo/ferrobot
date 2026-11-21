@@ -54,31 +54,42 @@ const SYSTEM_TEXT: Record<string, (p: Payload) => string> = {
   runner_refused: (p) => str(p["reason"]),
 };
 
-/** Turns started by a call room message: they belong to the room, not the agent's chat. */
-export function roomTurns(events: readonly StoredEvent[]): Set<string> {
-  const out = new Set<string>();
+/**
+ * An agent's chat without its call room messages and the turns they started (their events
+ * and streaming text): those belong to the room. Cards and files have no turn and stay.
+ */
+export function withoutRoomTurns(
+  messages: readonly MailMessage[],
+  events: readonly StoredEvent[],
+  live: ReadonlyMap<string, string>,
+): {
+  messages: MailMessage[];
+  events: StoredEvent[];
+  live: Map<string, string>;
+} {
+  const inRoom = new Set<string>();
   for (const e of events) {
     if (e.kind === "message_in" && e.turn_id && (e.payload as Payload)["room_id"] != null)
-      out.add(e.turn_id);
+      inRoom.add(e.turn_id);
   }
-  return out;
+  return {
+    messages: messages.filter((m) => m.room_id == null),
+    events: events.filter((e) => !e.turn_id || !inRoom.has(e.turn_id)),
+    live: new Map([...live].filter(([turn]) => !inRoom.has(turn))),
+  };
 }
 
 /**
  * Builds the chat for `agentId`. `live` holds streamed text of turns whose
- * final `assistant_text` has not arrived yet. Call room messages and turns are left out.
+ * final `assistant_text` has not arrived yet.
  */
 export function buildTimeline(
   agentId: string,
-  allMessages: readonly MailMessage[],
-  allEvents: readonly StoredEvent[],
-  allLive: ReadonlyMap<string, string>,
+  messages: readonly MailMessage[],
+  events: readonly StoredEvent[],
+  live: ReadonlyMap<string, string>,
   names: Names,
 ): TimelineItem[] {
-  const inRoom = roomTurns(allEvents);
-  const messages = allMessages.filter((m) => m.room_id == null);
-  const events = allEvents.filter((e) => !e.turn_id || !inRoom.has(e.turn_id));
-  const live = [...allLive].filter(([turn]) => !inRoom.has(turn));
   const items: { item: TimelineItem; order: number }[] = [];
   let order = 0;
   const push = (item: TimelineItem): void => {

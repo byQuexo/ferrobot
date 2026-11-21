@@ -5,7 +5,7 @@ import { DaemonClient, type MailMessage, type StoredEvent } from "../src/api.ts"
 import { hash } from "../src/lib/avatar.ts";
 import { characterOf, deriveCharacter, moodOf, rerollCharacter } from "../src/lib/character.ts";
 import { linkLabel, relativeTime, stepLabel, toolLabel } from "../src/lib/format.ts";
-import { buildTimeline, sharedFiles } from "../src/lib/timeline.ts";
+import { buildTimeline, sharedFiles, withoutRoomTurns } from "../src/lib/timeline.ts";
 import {
   CallScript,
   callChanged,
@@ -208,8 +208,7 @@ describe("buildTimeline", () => {
 
   it("leaves call room messages and turns out of the chat, but keeps cards and files", () => {
     const fromRoom = msg(2, { kind: "user" }, ME, "in the room", "2026-01-01T10:01:00Z");
-    const items = buildTimeline(
-      ME,
+    const chat = withoutRoomTurns(
       [
         msg(1, { kind: "user" }, ME, "just me", "2026-01-01T10:00:00Z"),
         { ...fromRoom, room_id: 3 },
@@ -227,8 +226,8 @@ describe("buildTimeline", () => {
         ["t2", "streaming in the room"],
         ["t3", "streaming here"],
       ]),
-      names,
     );
+    const items = buildTimeline(ME, chat.messages, chat.events, chat.live, names);
     assert.deepEqual(
       items.map((i) => i.type),
       ["user", "assistant", "question", "assistant"],

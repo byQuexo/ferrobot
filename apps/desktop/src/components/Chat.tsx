@@ -29,6 +29,7 @@ import {
   buildTimeline,
   groupExchanges,
   sharedFiles,
+  withoutRoomTurns,
   type DisplayItem,
   type Exchange,
   type TimelineItem,
@@ -136,7 +137,8 @@ export function Chat(props: {
       agents: new Map([...agents.values()].map((a) => [a.id, a.name])),
       routines: new Map(routines.map((r) => [r.id, r.name])),
     };
-    const all = buildTimeline(id, messages, events, live, names);
+    const chat = withoutRoomTurns(messages, events, live);
+    const all = buildTimeline(id, chat.messages, chat.events, chat.live, names);
     // Tool calls and turn errors live on the Activities tab; the chat shows the conversation.
     const shown = groupExchanges(all.filter((i) => i.type !== "tool" && i.type !== "error"));
     // The current activity: the newest step since the message being worked on.
