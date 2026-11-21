@@ -427,9 +427,9 @@ export interface paths {
         get?: never;
         put?: never;
         /**
-         * Sends the operator's message to every agent in the call, each with what the others said
-         *     since its last turn and the call instructions. In a room it is also a line there, and its
-         *     messages (`room_id` set) stay out of the agents' chats.
+         * Sends the operator's message to the call with the call instructions. Without a room every
+         *     agent gets it as a turn. In a room it is a line, and the agents take it one at a time, host
+         *     first, each with what it has not heard yet; their messages (`room_id` set) stay out of chats.
          */
         post: operations["post_call_message"];
         delete?: never;
@@ -1187,7 +1187,7 @@ export interface components {
         BuildStatus: "idle" | "building" | "ready" | "failed";
         CallMessage: {
             /**
-             * @description 1..19441 bytes after trimming, counting `@name` mentions as their
+             * @description 1..19316 bytes after trimming, counting `@name` mentions as their
              *     stored `<@agent-id>` tokens (the rest of a message is left for what
              *     the others said).
              */
@@ -1952,6 +1952,7 @@ export interface components {
             agents: components["schemas"]["AgentId"][];
             /** Format: int64 */
             room_id?: number | null;
+            hung_up?: components["schemas"]["AgentId"] | null;
             /** @enum {string} */
             type: "call";
         } | {
@@ -3900,7 +3901,7 @@ export interface operations {
             };
         };
         responses: {
-            /** @description Queued, one message per agent */
+            /** @description Queued: one message per agent, or in a room the next speaker's (none while an agent still speaks) */
             202: {
                 headers: {
                     [name: string]: unknown;

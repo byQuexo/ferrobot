@@ -212,6 +212,7 @@ fn ui_events_validate_against_schema() {
         UiEvent::Call {
             agents: vec![agent.id],
             room_id: Some(3),
+            hung_up: Some(agent.id),
         },
         UiEvent::Room {
             room: Room {

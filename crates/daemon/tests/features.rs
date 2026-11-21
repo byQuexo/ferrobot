@@ -4406,8 +4406,18 @@ async fn quiet(ws: &mut Ws) {
     assert!(next.is_err(), "no turn expected: {next:?}");
 }
 
+async fn invite(client: &McpClient, agent: &str, topic: &str) {
+    let args = json!({"agent": agent, "topic": topic});
+    let request = rmcp::model::CallToolRequestParams::new("invite_to_call")
+        .with_arguments(args.as_object().cloned().unwrap());
+    let result = client.call_tool(request).await.unwrap();
+    assert_ne!(result.is_error, Some(true), "{result:?}");
+}
+
 #[tokio::test]
-async fn calls_with_two_agents_move_into_a_room_where_everyone_hears_and_decides() {
+async fn calls_with_two_agents_move_into_a_room_where_agents_speak_one_at_a_time() {
+    use ferrobot_core::protocol::TurnOutcome::Interrupted;
+    use ferrobot_daemon::UiEvent;
     use rmcp::model::CallToolRequestParams;
     let backend = Arc::new(StatefulBackend::default());
     let d = start(backend.clone(), None, "127.0.0.1:0").await;
@@ -4433,34 +4443,41 @@ async fn calls_with_two_agents_move_into_a_room_where_everyone_hears_and_decides
             sent.as_array().unwrap().clone()
         }
     };
+    let ask = json!({"questions": [{"prompt": "Notes", "kind": "text"}]});
 
-    // One on one: the call stays in ann's chat and opens no room.
+    // One on one: the call stays in ann's chat and opens no room; questions are asked out loud.
     let (status, started) = http(&d.ui, "PUT", "/v1/call", Some(json!({"agents": [ann]}))).await;
     assert_eq!(status, 200);
     assert_eq!(started, json!({"agents": [ann], "room_id": null}));
+    let mcp = mcp_as(&d, backend.token("ann")).await;
+    let refused = mcp
+        .call_tool(
+            CallToolRequestParams::new("ask_user")
+                .with_arguments(ask.as_object().cloned().unwrap()),
+        )
+        .await;
+    assert!(
+        format!("{refused:?}").contains("ask out loud"),
+        "{refused:?}"
+    );
     assert_eq!(say("Hello ann").await[0]["room_id"], Value::Null);
     let mut ann_ws = connect_runner(&d.agents, &backend.token("ann")).await;
-    let body = say_turn(&mut ann_ws, "Hi!").await;
+    let (ann_turn, _, body) = next_turn(&mut ann_ws).await;
     assert!(body.starts_with("(Voice call:"), "{body}");
-    assert!(
-        body.contains("(You host the call."),
-        "the host's note: {body}"
-    );
+    for part in [
+        "Speak the operator's language.",
+        "ask the operator out loud, never with ask_user",
+        "(You host the call.",
+        "(tell it to speak this call's language)",
+    ] {
+        assert!(body.contains(part), "{part}: {body}");
+    }
     assert!(body.ends_with("The operator: Hello ann"), "{body}");
     assert_eq!(received(&d, ann).await.len(), 1, "in ann's chat");
     assert_eq!(http(&d.ui, "GET", "/v1/rooms", None).await.1, json!([]));
 
-    // ann brings bob in: the call moves into a room, and the topic is its first line.
-    let mcp = mcp_as(&d, backend.token("ann")).await;
-    let args = json!({"agent": "@bob", "topic": "Is the deploy done?"});
-    let result = mcp
-        .call_tool(
-            CallToolRequestParams::new("invite_to_call")
-                .with_arguments(args.as_object().unwrap().clone()),
-        )
-        .await
-        .unwrap();
-    assert_ne!(result.is_error, Some(true), "{result:?}");
+    // ann brings bob in during its turn: a room opens, and bob speaks after ann's announcement.
+    invite(&mcp, "@bob", "Is the deploy done?").await;
     let (agents, room) = d.state.call_view().await;
     assert_eq!(agents, [ann, bob]);
     let room = room.expect("a room with the second agent");
@@ -4477,33 +4494,33 @@ async fn calls_with_two_agents_move_into_a_room_where_everyone_hears_and_decides
     );
     assert_eq!(room_lines(&d, room).await, [topic]);
     assert!(
-        received(&d, bob).await.is_empty(),
-        "room turns stay out of chats"
-    );
-    assert_eq!(room_mail(&d, bob).await, 1);
-    assert!(
         d.state.invite_to_call(cy, dot, "x").await.is_err(),
         "cy is not in the call"
     );
-
-    // bob listens first; its answer is a line, and ann hears it in a turn of its own.
     let mut bob_ws = connect_runner(&d.agents, &backend.token("bob")).await;
+    quiet(&mut bob_ws).await;
+    assert_eq!(room_mail(&d, bob).await, 0, "bob waits for ann's turn");
+    answer(&mut ann_ws, ann_turn, "Bob joins us now.").await;
     let body = say_turn(&mut bob_ws, "Hi. Deploy is green.").await;
-    assert!(
-        body.starts_with("(Voice call:") && !body.contains("You host"),
-        "{body}"
-    );
+    assert!(!body.contains("You host"), "{body}");
     assert!(
         body.contains("@ann invited you into this call. Listen first: say at most a short hello"),
         "{body}"
     );
     assert!(body.ends_with("@ann: Is the deploy done?"), "{body}");
+    assert!(
+        received(&d, bob).await.is_empty(),
+        "room turns stay out of chats"
+    );
+
+    // ann hears bob in a room turn and passes: no line, nobody else is due.
     let body = say_turn(&mut ann_ws, "Pass.").await;
     assert!(body.contains("(You host the call."), "{body}");
     assert!(body.ends_with("@bob: Hi. Deploy is green."), "{body}");
     turns_done(&d, ann, 2).await;
-    assert_eq!(room_lines(&d, room).await.len(), 2, "a pass is no line");
-    assert_eq!(room_mail(&d, bob).await, 1, "and wakes nobody");
+    let lines = room_lines(&d, room).await;
+    assert_eq!(lines.len(), 2, "one-on-one words and passes make no line");
+    assert_eq!(room_mail(&d, bob).await, 1);
     let ann_in = events(&d, &ann.to_string()).await;
     let ann_in: Vec<_> = ann_in
         .iter()
@@ -4522,100 +4539,155 @@ async fn calls_with_two_agents_move_into_a_room_where_everyone_hears_and_decides
     assert_eq!(unread(ann).await, 1, "only the one-on-one turn");
     assert_eq!(unread(bob).await, 0, "room turns are not in the chat");
 
-    // The operator: a line, and a turn for everyone; then agents answer each other up to the cap.
+    // The operator: everyone is due, host first, one at a time, each hearing the one before.
     let sent = say("Thanks. What's next?").await;
-    assert_eq!(sent.len(), 2);
-    assert!(sent.iter().all(|m| m["room_id"] == room));
+    assert_eq!(sent.len(), 1);
+    assert_eq!(
+        (&sent[0]["recipient"], &sent[0]["room_id"]),
+        (&json!(ann), &json!(room))
+    );
     assert_eq!(received(&d, ann).await.len(), 1, "not in ann's chat");
-    let (bob_turn, _, body) = next_turn(&mut bob_ws).await;
+    let (ann_turn, _, body) = next_turn(&mut ann_ws).await;
     assert!(
         body.ends_with("The operator: Thanks. What's next?"),
         "{body}"
     );
-    let body = say_turn(&mut ann_ws, "a1").await;
-    assert!(!body.contains("Deploy is green"), "heard once: {body}");
-    lines_reach(&d, room, 4).await;
-    answer(&mut bob_ws, bob_turn, "b1").await;
-    lines_reach(&d, room, 5).await;
-    let (ann_turn, _, body) = next_turn(&mut ann_ws).await;
-    assert!(body.ends_with("@bob: b1"), "{body}");
-    assert!(say_turn(&mut bob_ws, "b2").await.ends_with("@ann: a1"));
-    lines_reach(&d, room, 6).await;
-    answer(&mut ann_ws, ann_turn, "a2").await;
-    lines_reach(&d, room, 7).await;
-    let (ann_turn, _, _) = next_turn(&mut ann_ws).await;
-    assert!(say_turn(&mut bob_ws, "b3").await.ends_with("@ann: a2"));
+    quiet(&mut bob_ws).await;
+    answer(&mut ann_ws, ann_turn, "a1").await;
+    let body = say_turn(&mut bob_ws, "b1").await;
+    assert!(
+        body.ends_with("The operator: Thanks. What's next?\n@ann: a1"),
+        "bob hears ann first: {body}"
+    );
+    assert!(say_turn(&mut ann_ws, "a2").await.ends_with("@bob: b1"));
+    assert!(say_turn(&mut bob_ws, "b2").await.ends_with("@ann: a2"));
+    assert!(say_turn(&mut ann_ws, "a3").await.ends_with("@bob: b2"));
     lines_reach(&d, room, 8).await;
-    answer(&mut ann_ws, ann_turn, "a3").await;
-    lines_reach(&d, room, 9).await;
     quiet(&mut ann_ws).await;
     quiet(&mut bob_ws).await;
 
-    // The operator's words wake everyone with what waited, and the count restarts.
+    // The operator's words bring what waited; an interrupted turn waits for the operator.
     say("Go on.").await;
-    let (ann_turn, _, body) = next_turn(&mut ann_ws).await;
-    assert!(body.ends_with("@bob: b3\nThe operator: Go on."), "{body}");
-    let body = say_turn(&mut bob_ws, "b4").await;
-    assert!(body.ends_with("@ann: a3\nThe operator: Go on."), "{body}");
-    lines_reach(&d, room, 11).await;
-    answer_with(
-        &mut ann_ws,
-        ann_turn,
-        "cut off",
-        ferrobot_core::protocol::TurnOutcome::Interrupted,
+    assert!(
+        say_turn(&mut ann_ws, "a4")
+            .await
+            .ends_with("The operator: Go on.")
+    );
+    let (bob_turn, _, body) = next_turn(&mut bob_ws).await;
+    assert!(
+        body.ends_with("@ann: a3\nThe operator: Go on.\n@ann: a4"),
+        "{body}"
+    );
+    answer_with(&mut bob_ws, bob_turn, "cut off", Interrupted).await;
+    turns_done(&d, bob, 4).await;
+    assert_eq!(room_lines(&d, room).await.len(), 10, "interrupted: no line");
+    quiet(&mut ann_ws).await;
+
+    // A third agent joins while ann holds the floor: cy hears ann's announcement first.
+    say("Ask cy about it.").await;
+    let (ann_turn, _, _) = next_turn(&mut ann_ws).await;
+    invite(&mcp, "@cy", "Can you check the logs?").await;
+    let mut cy_ws = connect_runner(&d.agents, &backend.token("cy")).await;
+    quiet(&mut cy_ws).await;
+    answer(&mut ann_ws, ann_turn, "cy joins us.").await;
+    let body = say_turn(&mut cy_ws, "(pass)").await;
+    assert!(body.contains("@ann invited you into this call."), "{body}");
+    assert!(
+        body.ends_with("@ann: Can you check the logs?\n@ann: cy joins us."),
+        "{body}"
+    );
+    say_turn(&mut bob_ws, "(pass)").await;
+    lines_reach(&d, room, 13).await;
+
+    // bob leaves after its goodbye; the host's goodbye ends the call, and the event names it.
+    let left = call(
+        &mcp_as(&d, backend.token("bob")).await,
+        "hang_up",
+        json!({}),
     )
     .await;
-    assert!(say_turn(&mut ann_ws, "(pass)").await.ends_with("@bob: b4"));
-    turns_done(&d, ann, 7).await;
-    assert_eq!(room_lines(&d, room).await.len(), 11, "interrupted: no line");
-
-    // bob hangs up and leaves after its goodbye; the host's goodbye ends the call and the room.
-    assert_eq!(
-        call(
-            &mcp_as(&d, backend.token("bob")).await,
-            "hang_up",
-            json!({})
-        )
-        .await["ends_call"],
-        false
-    );
+    assert_eq!(left["ends_call"], false);
     say("Bye all").await;
+    say_turn(&mut ann_ws, "See you.").await;
     say_turn(&mut bob_ws, "Bye!").await;
     eventually("bob left", Duration::from_secs(5), || async {
-        (d.state.call_view().await == (vec![ann], Some(room))).then_some(())
+        (d.state.call_view().await == (vec![ann, cy], Some(room))).then_some(())
     })
     .await;
+    say_turn(&mut cy_ws, "Bye.").await;
+    let (ann_turn, _, _) = next_turn(&mut ann_ws).await;
     assert_eq!(d.state.hang_up(ann).await, Ok(true));
-    say_turn(&mut ann_ws, "Goodbye.").await;
+    let mut ui = d.state.ui.subscribe();
+    answer(&mut ann_ws, ann_turn, "Goodbye.").await;
     eventually("the call ended", Duration::from_secs(5), || async {
         (d.state.call_view().await == (vec![], None)).then_some(())
     })
     .await;
+    let mut ended_by = None;
+    while let Ok(event) = ui.try_recv() {
+        if let UiEvent::Call {
+            agents, hung_up, ..
+        } = event
+            && agents.is_empty()
+        {
+            ended_by = hung_up;
+        }
+    }
+    assert_eq!(ended_by, Some(ann));
     let (_, transcript) = http(&d.ui, "GET", &format!("/v1/rooms/{room}"), None).await;
     assert_ne!(transcript["ended_at"], Value::Null, "{transcript}");
-    assert_eq!(transcript["members"], json!([ann, bob]));
+    assert_eq!(transcript["members"], json!([ann, bob, cy]));
     let words: Vec<_> = transcript["lines"]
         .as_array()
         .unwrap()
         .iter()
         .map(|l| l["body"].clone())
         .collect();
-    assert_eq!(&words[words.len() - 3..], ["Bye all", "Bye!", "Goodbye."]);
+    assert_eq!(
+        &words[words.len() - 5..],
+        ["Bye all", "See you.", "Bye!", "Bye.", "Goodbye."]
+    );
     assert!(d.state.hang_up(bob).await.is_err(), "no call to hang up");
     quiet(&mut bob_ws).await;
+    quiet(&mut cy_ws).await;
 
-    // At most four agents; an empty call ends it, and its room.
+    // The operator hangs up: the running room turn is cut off and adds nothing; queued ones drop.
     let put = |agents: Vec<AgentId>| {
         let ui = d.ui.clone();
         async move { http(&ui, "PUT", "/v1/call", Some(json!({ "agents": agents }))).await }
     };
+    let second = put(vec![ann, bob]).await.1["room_id"].as_i64().unwrap();
+    say("Next topic.").await;
+    let (ann_turn, _, _) = next_turn(&mut ann_ws).await;
+    assert_eq!(put(vec![]).await.0, 200);
+    match next_frame(&mut ann_ws).await {
+        DaemonFrame::Interrupt { turn_id } => assert_eq!(turn_id, ann_turn),
+        other => panic!("expected the turn cut off, got {other:?}"),
+    }
+    answer(&mut ann_ws, ann_turn, "late words").await;
+    turns_done(&d, ann, 10).await;
+    assert_eq!(room_lines(&d, second).await.len(), 1, "only the operator's");
+    put(vec![dot, eve]).await;
+    say("Anyone?").await;
+    assert_eq!(
+        room_mail(&d, dot).await,
+        1,
+        "dot's turn waits for its runner"
+    );
+    put(vec![]).await;
+    let dot_mail = d.state.store.inbox(dot, 10).await.unwrap();
+    assert!(
+        dot_mail
+            .iter()
+            .all(|m| m.status != ferrobot_core::MailStatus::Pending),
+        "{dot_mail:?}"
+    );
+
+    // At most four agents; an empty call ends it, and its room; questions are back.
     assert_eq!(put(vec![ann, bob, cy, dot, eve]).await.0, 400);
     let (status, full) = put(vec![ann, bob, cy, dot]).await;
     assert_eq!(status, 200);
-    assert!(
-        full["room_id"].as_i64().is_some_and(|r| r != room),
-        "{full}"
-    );
+    assert!(full["room_id"].as_i64().is_some(), "{full}");
     assert!(
         d.state.invite_to_call(ann, eve, "x").await.is_err(),
         "call is full"
@@ -4638,6 +4710,7 @@ async fn calls_with_two_agents_move_into_a_room_where_everyone_hears_and_decides
     )
     .await;
     assert_eq!(status, 409);
+    assert!(call(&mcp, "ask_user", ask).await["question_id"].is_i64());
 }
 
 #[tokio::test]
@@ -4660,7 +4733,7 @@ async fn message_limits_count_mentions_as_stored() {
     let at_limit = |limit: usize, name: &str| format!("@{name} {}", "x".repeat(limit - 5));
     for (name, accepted) in [("zed", true), ("bob", false)] {
         let expected = if accepted { 202 } else { 400 };
-        for (path, limit) in [(chat.as_str(), 32 * 1024), ("/v1/call/messages", 19441)] {
+        for (path, limit) in [(chat.as_str(), 32 * 1024), ("/v1/call/messages", 19316)] {
             let body = json!({"body": at_limit(limit, name)});
             let (status, _) = http(&d.ui, "POST", path, Some(body)).await;
             assert_eq!(status, expected, "{path} @{name}");

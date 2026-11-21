@@ -173,6 +173,25 @@ impl Hub {
         Some(turn_id)
     }
 
+    /// The turn `agent`'s runner is working on, if any.
+    pub fn current_turn(&self, agent: AgentId) -> Option<String> {
+        self.lock().conns.get(&agent)?.current_turn.clone()
+    }
+
+    /// Asks the runner to abort `turn`, if that is the turn it is working on.
+    pub fn interrupt_turn(&self, agent: AgentId, turn: &str) {
+        let inner = self.lock();
+        if let Some(conn) = inner
+            .conns
+            .get(&agent)
+            .filter(|c| c.current_turn.as_deref() == Some(turn))
+        {
+            let _ = conn.out.try_send(DaemonFrame::Interrupt {
+                turn_id: turn.to_owned(),
+            });
+        }
+    }
+
     pub fn forget(&self, agent: AgentId) {
         let mut inner = self.lock();
         inner.conns.remove(&agent);
