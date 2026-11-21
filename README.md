@@ -14,9 +14,9 @@
 
 </div>
 
-![ferrobot in action: agents in the desktop app](docs/assets/demo.gif)
+![ferrobot demo: researcher reads the backon docs through the DeepWiki connector, asks you a question and hands the build to builder, which runs cargo on its own computer; then a shared report and the cost in Usage](docs/assets/demo.gif)
 
-Also as [MP4](docs/assets/demo.mp4) · Voice room video: coming soon
+Also as [MP4](docs/assets/demo.mp4) (real Claude Sonnet 5.5 turns; waits sped up 2x, long ones shortened) · Voice room video: coming soon ([script](docs/launch/voice-room-script.md))
 
 ## Why ferrobot
 
@@ -40,13 +40,15 @@ which adds the real key.
   including local Ollama, OpenAI Codex, Gemini CLI, OpenRouter, Amazon
   Bedrock and Google Vertex AI.
 - **MCP connectors.** Remote MCP servers with token or OAuth sign-in, a catalog
-  of vendor servers and keyless ones, and a first connection check.
-- **Routines.** Prompts on a cron schedule; agents can set up their own.
+  of vendor servers and keyless ones, and a first connection check. Agents ask
+  for a token on a card with a hidden field ([clip](docs/assets/clips/key-card.mp4)).
+- **Routines.** Prompts on a cron schedule; agents can set up their own after
+  you approve a card ([clip](docs/assets/clips/routine.mp4)).
 - **Memory.** Per-agent memory with full-text search, plus a global memory
-  every agent can read.
+  every agent can read ([clip](docs/assets/clips/memory.mp4)).
 - **Usage and costs.** Tokens and estimated costs per agent, model and
-  provider, a daily chart and CSV export; OpenRouter calls at the cost it
-  reports.
+  provider, a daily chart and CSV export ([clip](docs/assets/clips/usage-csv.mp4));
+  OpenRouter calls at the cost it reports.
 - **Voice.** Calls with an agent, read aloud as it streams; several agents
   share a call room and talk to each other.
 - **Files and share links.** Files from an agent's computer, shared with
