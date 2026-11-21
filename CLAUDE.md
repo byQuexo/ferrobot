@@ -91,8 +91,9 @@ Principles:
 - `crates/daemon/src/voice.rs`, `api/voice.rs` — voice: speech and
   transcription for the operator's chat via ElevenLabs or OpenRouter (keys
   in the keychain as `voice:<provider>`); `call.rs` — the operator's voice
-  call (agents invite teammates and answer each other up to four times in a
-  row; `hang_up` takes effect when the agent's turn ends);
+  call (agents invite teammates and answer an agent that addresses them by
+  name, up to four times in a row; chats show only the spoken words, the call
+  note goes to the model; `hang_up` takes effect when the agent's turn ends);
   `apps/desktop/src/lib/voice.ts` — playback and recording in the UI;
   `lib/call-session.ts` — the call in the UI (outlives the chat),
   `lib/call.ts` — its sentence, barge-in and call-event rules.

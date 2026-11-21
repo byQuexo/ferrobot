@@ -523,7 +523,7 @@ pub(crate) async fn put_call(
 
 #[derive(Debug, Deserialize, ToSchema)]
 pub(crate) struct CallMessage {
-    /// 1..19859 bytes after trimming, counting `@name` mentions as their
+    /// 1..19718 bytes after trimming, counting `@name` mentions as their
     /// stored `<@agent-id>` tokens (the rest of a message is left for what
     /// the others said).
     body: String,
@@ -552,10 +552,11 @@ pub(crate) async fn post_call_message(
         return Err(ApiError::Conflict("there is no voice call".into()));
     }
     let mut sent = Vec::new();
-    for (agent, text) in parts {
+    for (agent, prompt) in parts {
+        state.remember_call_prompt(agent, &body, prompt);
         match state
             .store
-            .enqueue_message(Sender::User, agent, text, None)
+            .enqueue_message(Sender::User, agent, body.clone(), None)
             .await
         {
             Ok(message) => {

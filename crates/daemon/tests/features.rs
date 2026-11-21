@@ -4352,9 +4352,10 @@ async fn voice_calls_let_agents_answer_each_other_and_hang_up() {
     let invite = received(&d, bob).await;
     assert_eq!(invite.len(), 1);
     assert_eq!(invite[0]["sender"], json!({"kind": "agent", "id": ann}));
-    let invite = invite[0]["body"].as_str().unwrap();
-    assert!(invite.starts_with("(Voice call:"), "{invite}");
-    assert!(invite.contains("Is the deploy done?"), "{invite}");
+    assert_eq!(
+        invite[0]["body"], "Is the deploy done?",
+        "the chat shows only the words"
+    );
     assert!(
         d.state.invite_to_call(cy, dot, "x").await.is_err(),
         "cy is not in the call"
@@ -4362,14 +4363,19 @@ async fn voice_calls_let_agents_answer_each_other_and_hang_up() {
 
     // bob answers in its turn: spoken, and passed on to ann as a turn of its own.
     let mut ws = connect_runner(&d.agents, &backend.token("bob")).await;
-    let DaemonFrame::Turn { turn_id, .. } = next_frame(&mut ws).await else {
+    let DaemonFrame::Turn { turn_id, body, .. } = next_frame(&mut ws).await else {
         panic!("expected the invite as a turn");
     };
+    assert!(
+        body.starts_with("(Voice call:"),
+        "the model gets the note: {body}"
+    );
+    assert!(body.contains("Is the deploy done?"), "{body}");
     for frame in [
         RunnerFrame::Event {
             turn_id: turn_id.clone(),
             event: TurnEvent::AssistantText {
-                text: "Deploy is green.".into(),
+                text: "Deploy is green, @ann.".into(),
             },
         },
         RunnerFrame::TurnDone {
@@ -4404,12 +4410,11 @@ async fn voice_calls_let_agents_answer_each_other_and_hang_up() {
     })
     .await;
     assert_eq!(heard[0]["sender"], json!({"kind": "agent", "id": bob}));
-    let heard = heard[0]["body"].as_str().unwrap();
-    assert!(heard.starts_with("(Voice call:"), "{heard}");
-    assert!(
-        heard.ends_with(&format!("<@{bob}>: Deploy is green.")),
-        "{heard}"
-    );
+    let words = heard[0]["body"].as_str().unwrap();
+    assert_eq!(words, format!("Deploy is green, <@{ann}>."));
+    let prompt = d.state.call_prompt(ann, words).unwrap();
+    assert!(prompt.starts_with("(Voice call:"), "{prompt}");
+    assert!(prompt.ends_with(&format!("<@{bob}>: {words}")), "{prompt}");
 
     // The operator speaks: everyone hears it, ann also hears bob, once.
     let say = |body: &'static str| {
@@ -4437,14 +4442,15 @@ async fn voice_calls_let_agents_answer_each_other_and_hang_up() {
     };
     let sent = say("Thanks. What's next?").await;
     for agent in [ann, bob] {
-        let body = sent[&agent.to_string()].as_str().unwrap();
-        assert!(body.starts_with("(Voice call:"), "{body}");
-        assert!(
-            body.ends_with("\n\nThe operator: Thanks. What's next?"),
-            "{body}"
-        );
-        assert!(!body.contains("Deploy is green"), "heard once: {body}");
+        assert_eq!(sent[&agent.to_string()], "Thanks. What's next?");
     }
+    let prompt = d.state.call_prompt(ann, "Thanks. What's next?").unwrap();
+    assert!(prompt.starts_with("(Voice call:"), "{prompt}");
+    assert!(
+        prompt.ends_with("The operator: Thanks. What's next?"),
+        "{prompt}"
+    );
+    assert!(!prompt.contains("Deploy is green"), "heard once: {prompt}");
 
     // bob hangs up: it leaves once its turn (with the goodbye) ends; the host ends the call.
     let as_bob = mcp_as(&d, backend.token("bob")).await;
@@ -4455,9 +4461,14 @@ async fn voice_calls_let_agents_answer_each_other_and_hang_up() {
         [ann, bob],
         "not before its turn ends"
     );
-    let DaemonFrame::Turn { turn_id, .. } = next_frame(&mut ws).await else {
+    let DaemonFrame::Turn { turn_id, body, .. } = next_frame(&mut ws).await else {
         panic!("expected the operator's words as a turn");
     };
+    assert!(body.starts_with("(Voice call:"), "{body}");
+    assert!(
+        body.ends_with("The operator: Thanks. What's next?"),
+        "{body}"
+    );
     let done = RunnerFrame::TurnDone {
         turn_id,
         outcome: TurnOutcome::Completed,
@@ -4524,7 +4535,7 @@ async fn message_limits_count_mentions_as_stored() {
     let at_limit = |limit: usize, name: &str| format!("@{name} {}", "x".repeat(limit - 5));
     for (name, accepted) in [("zed", true), ("bob", false)] {
         let expected = if accepted { 202 } else { 400 };
-        for (path, limit) in [(chat.as_str(), 32 * 1024), ("/v1/call/messages", 19859)] {
+        for (path, limit) in [(chat.as_str(), 32 * 1024), ("/v1/call/messages", 19718)] {
             let body = json!({"body": at_limit(limit, name)});
             let (status, _) = http(&d.ui, "POST", path, Some(body)).await;
             assert_eq!(status, expected, "{path} @{name}");

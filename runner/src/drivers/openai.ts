@@ -9,6 +9,7 @@ import { errorMessage, log } from "../log.ts";
 import type { FerrobotMcp } from "../mcp-client.ts";
 import { decide, offGroups, type BuiltinGroup, type Decision } from "../permissions.ts";
 import { aborted, clip, latePrompt, systemAppend, turnPrompt } from "./claude.ts";
+import { ThinkFilter } from "./think.ts";
 import type { ModelDriver, TurnContext, TurnResult } from "./types.ts";
 import { TurnAbortedError } from "./types.ts";
 
@@ -267,15 +268,18 @@ export class OpenAIDriver implements ModelDriver {
       throw new Error(`model request failed with ${res.status}: ${errorSnippet(await res.text())}`);
     }
     let text = "";
+    const think = new ThinkFilter();
+    const shown = (piece: string): void => {
+      if (!piece) return;
+      text += piece;
+      ctx.emit({ kind: "assistant_delta", text: piece });
+    };
     const parts: { id: string; name: string; args: string }[] = [];
     for await (const data of sseData(res.body)) {
       const chunk = JSON.parse(data) as StreamChunk;
       if (chunk.error !== undefined) throw new Error(`model stream failed: ${errorSnippet(data)}`);
       const delta = chunk.choices?.[0]?.delta;
-      if (delta?.content) {
-        text += delta.content;
-        ctx.emit({ kind: "assistant_delta", text: delta.content });
-      }
+      if (delta?.content) shown(think.push(delta.content));
       delta?.tool_calls?.forEach((piece, position) => {
         const part = (parts[piece.index ?? position] ??= { id: "", name: "", args: "" });
         part.id ||= piece.id ?? "";
@@ -283,6 +287,7 @@ export class OpenAIDriver implements ModelDriver {
         part.args += piece.function?.arguments ?? "";
       });
     }
+    shown(think.finish());
     const calls = parts
       .filter((p) => p.name)
       .map((p) => ({
