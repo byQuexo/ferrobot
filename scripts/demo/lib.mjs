@@ -44,7 +44,7 @@ function overlay() {
     const style = document.createElement("style");
     style.textContent = `
       html:has(#app), body:has(#app) { overflow: hidden !important; }
-      #app { transform-origin: 0 0; transition: transform 1100ms cubic-bezier(.45,.05,.2,1); }
+      #app { transform-origin: 0 0; transition: transform 800ms cubic-bezier(.45,.05,.2,1); }
       .toast, .toasts { display: none !important; }
       #demo-cursor, #demo-ring, #demo-cap, #demo-badge { position: fixed; pointer-events: none; z-index: 2147483647; }
       #demo-cursor { left: 0; top: 0; width: 26px; height: 26px; filter: drop-shadow(0 2px 3px rgba(0,0,0,.35)); }
@@ -209,7 +209,7 @@ export async function studio(framesDir) {
       await page.evaluate(() => window.__demo.badge(false)).catch(() => undefined);
     }
   };
-  const glide = async (locator, ms = 750) => {
+  const glide = async (locator, ms = 600) => {
     const b = await locator.boundingBox();
     await page.evaluate(
       ([cx, cy, d]) => window.__demo.move(cx, cy, d),
@@ -270,7 +270,7 @@ export async function studio(framesDir) {
     zoom: async (locator, scale) => {
       const rect = locator ? await locator.evaluate((el) => window.__demo.layoutRect(el)) : null;
       await page.evaluate(([r, sc]) => window.__demo.zoom(r, sc), [rect, scale]);
-      await pause(1150);
+      await pause(850);
     },
     start: () => screencast(true),
     async finish() {

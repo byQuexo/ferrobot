@@ -14,8 +14,9 @@ DEMO_API=http://127.0.0.1:17990 DEMO_TOKEN_FILE=<data dir>/api-token scripts/dem
 - **Keyless dry runs**: without `DEMO_API`, it starts its own daemon with the mock driver on 17992.
   The story then stops at the first model reply; use it to check the clicks and the encode.
 - **Scenes:** `hero` writes `docs/assets/demo.{mp4,gif}` and the X and LinkedIn cuts in
-  `docs/launch/media/`; `connector`, `routine`, `memory` and `usage` write
-  `docs/assets/clips/<scene>.mp4`. Record `hero` first, because the clips reuse its `researcher`.
+  `docs/launch/media/`; `keycard`, `routine`, `memory` and `usage` write the clips in
+  `docs/assets/clips/`; `shots` writes light and dark screenshots to `docs/screenshots/`. Record
+  `hero` first, because the others reuse its agents, and `usage` and `shots` last.
 - **Re-encoding:** with `DEMO_KEEP=1` the frames dir stays, and
   `node scripts/demo/record.mjs encode <scene> <frames dir>` encodes it again (for example after
   tuning a cut in `CUTS`).

@@ -21,7 +21,7 @@ const RESEARCHER = `You research how to do things and brief your teammates. Keep
 const BUILDER = `You write and run code on your own computer. Keep chat replies short.
 Rust is installed: start every shell command that uses cargo with \`. ~/.cargo/env && \`.
 For a coding task: create the project in a new folder in your workspace, write Cargo.toml (edition 2021, exactly the dependency versions you are given) and src/main.rs, run cargo run, and fix errors until it works.
-After it runs, show the operator which credentials your computer holds, with exactly this command: ${ENV_CHECK}
+After it runs, show the operator which credentials your computer holds: run exactly this as its own command, nothing chained: ${ENV_CHECK}
 Answer with the code and the program's output, nothing else.`;
 
 const CUTS = {
@@ -30,18 +30,18 @@ const CUTS = {
       name: "hero",
       mp4: "docs/assets/demo.mp4",
       width: 1280,
-      holdMax: 1.4,
-      waitMax: 1.2,
+      holdMax: 0.9,
+      waitMax: 0.8,
       skip: ["builder-create"],
-      gif: { file: "docs/assets/demo.gif", width: 800, fps: 9 },
+      gif: { file: "docs/assets/demo.gif", width: 800, fps: 8 },
     },
     {
       name: "x",
       mp4: "docs/launch/media/demo-x.mp4",
       width: 1280,
-      holdMax: 1.4,
-      waitMax: 1.2,
-      skip: ["builder-create"],
+      holdMax: 0.9,
+      waitMax: 0.8,
+      skip: ["create", "builder-create"],
     },
     {
       name: "linkedin",
@@ -52,11 +52,16 @@ const CUTS = {
     },
   ],
 };
-for (const clip of ["connector", "routine", "memory", "usage"]) {
+for (const [clip, file] of [
+  ["keycard", "key-card"],
+  ["routine", "routine"],
+  ["memory", "memory"],
+  ["usage", "usage-csv"],
+]) {
   CUTS[clip] = [
     {
       name: clip,
-      mp4: `docs/assets/clips/${clip}.mp4`,
+      mp4: `docs/assets/clips/${file}.mp4`,
       width: 960,
       crf: 27,
       holdMax: 2,
@@ -121,9 +126,10 @@ function moves(k) {
       .locator(`button.agent-row[title^="${name} ·"], button.pinned-agent[title^="${name} ·"]`)
       .first();
   const chat = () => page().locator("section.chat");
+  // Tool calls live on the info panel's Activities tab, newest first.
   const tool = (name, summary) => {
-    let cards = chat()
-      .locator(".tool-card.t-ok")
+    let cards = page()
+      .locator("aside.info .tool-card.t-ok")
       .filter({ has: page().locator(".tool-name", { hasText: name }) });
     if (summary)
       cards = cards.filter({ has: page().locator(".tool-summary", { hasText: summary }) });
@@ -133,6 +139,12 @@ function moves(k) {
     row,
     chat,
     tool,
+    activities: async () => {
+      if (!(await page().locator("aside.info").isVisible())) {
+        await k.click(chat().getByRole("button", { name: "Show details" }));
+      }
+      await k.click(page().getByRole("tab", { name: "Activities" }));
+    },
     open: async (name) => {
       await k.click(row(name));
       await page().locator(`section.chat[aria-label="Chat with ${name}"]`).waitFor();
@@ -146,9 +158,10 @@ function moves(k) {
       await k.click(chat().getByLabel("Send"));
       await k.zoom(null);
     },
+    /** Opens a tool card and zooms on its result. */
     expand: async (card) => {
       await k.click(card.locator(".tool-head"));
-      await k.zoom(card, 1.35);
+      await k.zoom(card.locator(".tool-body pre").last(), 1.35);
     },
     newAgent: async (name, description, switches = []) => {
       await k.click(page().locator('.sidebar .brand [aria-label="New agent"]'));
@@ -179,9 +192,11 @@ async function hero(k) {
   }
 
   await k.start();
-  await k.hold(800);
-  await k.caption("Two agents, each with its own computer");
-  await m.newAgent("researcher", "Finds answers in the docs", ["deepwiki", "Web"]);
+  await k.optional("create", async () => {
+    await k.hold(600);
+    await k.caption("Two agents, each with its own computer");
+    await m.newAgent("researcher", "Finds answers in the docs", ["deepwiki", "Web"]);
+  });
   await k.optional("builder-create", () =>
     k.fast(() => m.newAgent("builder", "Writes and runs code")),
   );
@@ -201,48 +216,47 @@ async function hero(k) {
     // A running turn keeps its prompt: the ask must not land in the greeting turn, before the role.
     for (const name of ["researcher", "builder"]) await greeted(name);
     await m.open("researcher");
+    await m.activities();
     await k.caption(null);
   });
 
   await k.caption("Ask researcher");
-  await m.say(ASK, 22);
+  await m.say(ASK, 16);
   await k.caption("It reads the backon docs through the DeepWiki connector");
   const wiki = m.tool("deepwiki__").first();
   await k.wait(wiki);
   await k.zoom(wiki, 1.35);
-  await k.hold(1800);
-  await k.zoom(null);
+  await k.hold(1300);
 
   const card = m.chat().locator("form.qcard").first();
   await k.wait(card);
   await k.caption("…and asks you when it matters");
-  await k.zoom(card, 1.5);
-  await k.hold(1200);
+  await k.zoom(card, 1.45);
+  await k.hold(900);
   await k.click(card.getByRole("radio", { name: /tokio/i }));
   await k.click(card.getByRole("button", { name: "Send answers" }));
-  await k.zoom(null);
 
   await k.caption("It hands the build to builder");
   const handoff = m.tool("assign_task").first();
   await k.wait(handoff);
   await k.zoom(handoff, 1.4);
-  await k.hold(1500);
+  await k.hold(1000);
   await k.zoom(null);
 
   await m.open("builder");
   await k.caption("builder writes the code and runs cargo on its own computer");
-  const envCard = m.tool("Bash", "env | grep").last();
+  const envCard = m.tool("Bash", "env | grep").first();
   await k.wait(envCard);
-  const run = m.tool("Bash", "cargo run").last();
+  const run = m.tool("Bash", "cargo run").first();
   await m.expand(run);
-  await k.hold(2500);
+  await k.hold(2000);
+  // Click at zoom 1: a target outside the zoomed view makes Playwright scroll under the transform.
   await k.zoom(null);
-  await k.click(run.locator(".tool-head"));
   await k.caption(
     "ANTHROPIC_API_KEY here is the agent's own token. The real key never enters the sandbox.",
   );
   await m.expand(envCard);
-  await k.hold(3200);
+  await k.pause(3000);
   await k.zoom(null);
 
   await m.open("researcher");
@@ -253,16 +267,16 @@ async function hero(k) {
     await finished("researcher");
   });
   await k.zoom(m.chat().locator(".bubble-agent").last(), 1.4);
-  await k.hold(1800);
+  await k.hold(1300);
   await k.zoom(null);
   const app = page();
   const popup = app.context().waitForEvent("page");
   await k.click(file);
   await k.follow(await popup);
   await k.caption("The report opens from a signed share link");
-  await k.hold(3500);
+  await k.hold(2500);
   await k.page.mouse.wheel(0, 500);
-  await k.hold(1500);
+  await k.hold(1200);
   const share = k.page;
   await k.follow(app);
   await share.close();
@@ -271,7 +285,7 @@ async function hero(k) {
   await k.click(app.getByRole("button", { name: "Usage", exact: true }));
   await k.click(app.locator(".chips button", { hasText: "Today" }));
   await k.zoom(app.locator(".usage-page .usage-totals"), 1.4);
-  await k.hold(3000);
+  await k.hold(2500);
   await k.zoom(null);
   await k.caption(null);
   await k.hold(800);
@@ -294,21 +308,36 @@ async function researcherChat(k) {
   return m;
 }
 
-async function connector(k) {
+// A reserved name (RFC 2606): no vendor, and the connection check fails honestly.
+const DOCS_URL = "https://mcp.example.com/mcp";
+
+async function keycard(k) {
   const m = await researcherChat(k);
+  const page = k.page;
   await k.start();
-  await k.caption("Agents ask before they add a connector");
-  await m.say(
-    "Add the Linear connector (https://mcp.linear.app/mcp) so you can read our issues.",
-    18,
-  );
+  await k.caption("An agent asks for a token for a new connector");
+  await m.say(`Add our docs search connector at ${DOCS_URL}. It needs a token.`, 18);
   const card = m.chat().locator("form.qcard").last();
   await k.wait(card);
-  await k.zoom(card, 1.45);
-  await k.hold(3500);
+  await k.zoom(card, 1.4);
+  await k.hold(1500);
+  await k.caption("You type it into a hidden field");
+  await k.click(card.getByRole("radio", { name: "Approve" }));
+  const field = card.locator(".qcard-secret input");
+  await k.click(field);
+  await k.type(field, "demo-token-not-real", 45);
+  await k.hold(500);
+  await k.click(card.getByRole("button", { name: "Send answers" }));
+  await k.zoom(null);
+  await k.caption("It goes straight to Vault; the agent never sees it");
+  await k.click(page.getByRole("button", { name: "Settings", exact: true }));
+  await k.click(page.locator("button.settings-tab", { hasText: "Vault" }));
+  const section = page.locator(".settings-section", { hasText: "Connectors" });
+  await section.waitFor();
+  await k.zoom(section, 1.4);
+  await k.hold(2800);
   await k.offscreen(async () => {
-    await card.getByRole("radio", { name: "Decline" }).click();
-    await card.getByRole("button", { name: "Send answers" }).click();
+    await page.getByRole("button", { name: "Close settings" }).click();
     await finished("researcher");
   });
 }
@@ -317,29 +346,89 @@ async function routine(k) {
   const m = await researcherChat(k);
   const page = k.page;
   await k.start();
-  await k.caption("Routines run a prompt on a schedule");
+  await k.caption("Ask an agent for a reminder");
+  await m.say("Remind me every morning at 9 to check the build.", 25);
+  const card = m.chat().locator("form.qcard").last();
+  await k.wait(card);
+  await k.caption("It asks before it sets up a routine");
+  await k.zoom(card, 1.4);
+  await k.hold(1800);
+  await k.click(card.getByRole("radio", { name: "Approve" }));
+  await k.click(card.getByRole("button", { name: "Send answers" }));
+  await k.zoom(null);
+  await k.caption("The routine is in its Routines tab");
   await k.click(m.chat().getByRole("button", { name: "Show details" }));
   await k.click(page.getByRole("tab", { name: "Routines" }));
-  await k.click(page.getByRole("button", { name: "New routine" }));
-  const form = page.locator("aside.info form.card.form");
-  await k.zoom(form, 1.35);
-  await k.type(form.getByPlaceholder("morning-digest"), "backon-releases", 30);
-  await k.click(form.locator(".chips button", { hasText: "Fridays at 18:00" }));
-  await form.locator("label", { hasText: "Time zone" }).locator("input").fill("UTC");
-  await k.type(
-    form.getByPlaceholder("Summarize what changed since yesterday."),
-    "Check backon for new releases and tell me what changed.",
-    14,
-  );
-  await k.click(form.getByRole("button", { name: "Create routine" }));
-  await k.zoom(null);
-  await k.hold(2500);
+  const list = page.locator("aside.info");
+  await k.wait(list.getByRole("button", { name: "Run now" }).first());
+  await k.zoom(list, 1.3);
+  await k.hold(2800);
   await k.offscreen(async () => {
-    const rid = (await api("GET", `/v1/agents/${(await agentNamed("researcher")).id}/routines`))[0]
-      ?.id;
-    if (rid) await api("DELETE", `/v1/routines/${String(rid)}`);
+    const { id } = await agentNamed("researcher");
+    for (const r of await api("GET", `/v1/agents/${id}/routines`)) {
+      await api("DELETE", `/v1/routines/${String(r.id)}`);
+    }
     await page.getByRole("button", { name: "Hide details" }).click();
+    await finished("researcher");
   });
+}
+
+/** Still screenshots for docs/screenshots, light and dark (1x, no cursor or captions). */
+async function shots(k) {
+  const page = k.page;
+  await page.addStyleTag({
+    content: "#demo-cursor, #demo-ring, #demo-cap, #demo-badge { display: none !important; }",
+  });
+  const snap = async (name) => {
+    for (const scheme of ["light", "dark"]) {
+      await page.emulateMedia({ colorScheme: scheme });
+      await page.waitForTimeout(500);
+      await page.screenshot({ path: `docs/screenshots/${scheme}-${name}.png`, scale: "css" });
+    }
+    await page.emulateMedia({ colorScheme: "light" });
+  };
+  const m = await researcherChat(k);
+  const composer = m.chat().locator("form.composer textarea");
+  await composer.fill(
+    "Find out how to stop a backon retry early, then have builder write an example.",
+  );
+  await composer.press("Enter");
+  await m.chat().locator("form.qcard").last().waitFor({ timeout: WAIT_MS });
+  await finished("researcher");
+  await snap("question-card");
+
+  const team = (await agents()).filter((a) => ["researcher", "builder"].includes(a.name));
+  if (team.length === 2) {
+    await api("PUT", "/v1/call", { agents: team.map((a) => a.id) });
+    await api("POST", "/v1/call/messages", {
+      body: "Quick check before we ship: does the retry example still build?",
+    });
+    for (let i = 0; i < WAIT_MS / 1000; i++) {
+      const [room] = await api("GET", "/v1/rooms");
+      const lines = room ? (await api("GET", `/v1/rooms/${String(room.id)}`)).lines : [];
+      if (lines.filter((l) => l.speaker.kind === "agent").length >= 2) break;
+      await sleep(1000);
+    }
+    for (const a of team) await finished(a.name);
+    await page.locator('section[aria-label="Calls"] button.convo-row').first().click();
+    await page.waitForTimeout(800);
+    await snap("call-room");
+    await api("PUT", "/v1/call", { agents: [] });
+  }
+
+  await page.getByRole("button", { name: "Settings", exact: true }).click();
+  await page.locator("button.settings-tab", { hasText: "Vault" }).click();
+  await page.locator(".settings-section").first().waitFor();
+  await snap("vault");
+  await page.locator("button.settings-tab", { hasText: "Connectors" }).click();
+  await page.locator("ul.catalog").waitFor();
+  await snap("catalog");
+  await page.getByRole("button", { name: "Close settings" }).click();
+
+  await page.getByRole("button", { name: "Usage", exact: true }).click();
+  await page.locator(".chips button", { hasText: "Today" }).click();
+  await page.locator(".usage-page .usage-totals").waitFor();
+  await snap("usage");
 }
 
 const RETRY_POLICY =
@@ -352,7 +441,8 @@ async function memory(k) {
   await k.start();
   await k.caption("Agents remember, and recall it when it matters");
   await m.say("What retry policy did we settle on?", 25);
-  const recall = m.tool("recall").last();
+  await m.activities();
+  const recall = m.tool("recall").first();
   await k.wait(recall);
   await k.zoom(recall, 1.4);
   await k.hold(1200);
@@ -384,7 +474,7 @@ async function usage(k) {
   await k.hold(3000);
 }
 
-const SCENES = { hero, connector, routine, memory, usage };
+const SCENES = { hero, keycard, routine, memory, usage, shots };
 
 async function main() {
   const [scene, encodeScene, encodeDir] = process.argv.slice(2);
@@ -406,7 +496,7 @@ async function main() {
     take = await k.finish();
     writeFileSync(join(dir, "take.json"), JSON.stringify(take));
   }
-  for (const cut of CUTS[scene]) encode(take, dir, cut);
+  for (const cut of CUTS[scene] ?? []) encode(take, dir, cut);
 }
 
 await main();
