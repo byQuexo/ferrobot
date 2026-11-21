@@ -1416,7 +1416,12 @@ slop, so polish mode: palette, accent, logo, layout and features stay.
   problem stands; the turn that hit it ends once and its message is requeued
   without using up an attempt. The first report records one `credential_error`
   event (turn id in the payload, not on the event, so a room turn's notice still
-  reaches the chat); the UI shows it instead of that turn's error.
+  reaches the chat); the UI shows it instead of that turn's error. The Claude
+  driver fails a turn only on an error result subtype, and the SDK writes a
+  refused call as an "API Error: 400 …" answer (the bubbles in Tim's
+  screenshot), so the turn may end *completed*. A completed turn that set the
+  problem therefore counts as failed: no task report, the message is requeued,
+  and the UI hides the answers written after the notice.
 - **Cleared by anything that may fix it:** an agent PATCH of provider or model
   (after the computer is recreated, so the old runner cannot start a turn with
   the old settings), any provider PATCH (Vault saves keys through it) for the

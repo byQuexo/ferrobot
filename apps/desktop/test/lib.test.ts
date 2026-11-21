@@ -257,25 +257,34 @@ describe("buildTimeline", () => {
   });
 
   it("shows a credential problem once, instead of its turn's error", () => {
+    const at = "2026-01-01T12:00:00Z";
+    const notice = (id: number, turn: string): StoredEvent => ({
+      ...ev(id, "credential_error", { kind: "missing", reason: "no key", turn_id: turn }, at),
+      turn_id: null,
+    });
     const items = buildTimeline(
       ME,
       [],
       [
-        ev(
-          1,
-          "credential_error",
-          { kind: "missing", reason: "the daemon has no Anthropic key", turn_id: "t1" },
-          "2026-01-01T12:00:00Z",
-        ),
-        ev(2, "turn_done", { outcome: "failed", error: "API Error: 400" }, "2026-01-01T12:00:01Z"),
-        ev(3, "turn_done", { outcome: "failed", error: "boom" }, "2026-01-01T12:01:00Z", "t2"),
+        ev(1, "assistant_text", { text: "Looking." }, at, "t1"),
+        notice(2, "t1"),
+        ev(3, "assistant_text", { text: "API Error: 400 no key" }, at, "t1"),
+        ev(4, "turn_done", { outcome: "completed", result: "API Error: 400 no key" }, at, "t1"),
+        notice(5, "t2"),
+        ev(6, "turn_done", { outcome: "failed", error: "API Error: 400" }, at, "t2"),
+        ev(7, "turn_done", { outcome: "failed", error: "boom" }, at, "t3"),
       ],
       new Map(),
       names,
     );
     assert.deepEqual(
-      items.map((i) => (i.type === "error" ? i.text : i.type)),
-      ["Key missing: the daemon has no Anthropic key. Messages wait until it is fixed.", "boom"],
+      items.map((i) => (i.type === "error" || i.type === "assistant" ? i.text : i.type)),
+      [
+        "Looking.",
+        "Key missing: no key. Messages wait until it is fixed.",
+        "Key missing: no key. Messages wait until it is fixed.",
+        "boom",
+      ],
     );
   });
 

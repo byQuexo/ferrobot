@@ -2051,15 +2051,20 @@ async fn credential_problems_hold_turns_until_fixed() {
     quiet(&mut ws).await;
     assert!(pending(vec![second, third]).await);
 
-    // A retry that did not fix it sets the problem again on the next call.
+    // A retry that did not fix it sets the problem again on the next call; the Claude SDK
+    // ends such a turn as completed with the error as its answer, and the message still waits.
     let (status, view) = http(&d.ui, "POST", &format!("/v1/agents/{id}/retry"), None).await;
     assert_eq!((status, &view["credential_error"]), (200, &Value::Null));
     let (turn, message, _) = next_turn(&mut ws).await;
     assert_eq!(message, second);
     assert_eq!(call(backend.token("kim")).await.0, 401);
-    fail(&mut ws, turn, "API Error: 401 invalid key").await;
+    finish(&mut ws, turn, Some("API Error: 401 invalid key")).await;
     assert_eq!(agent().await["credential_error"]["kind"], "rejected");
     quiet(&mut ws).await;
+    assert!(
+        pending(vec![second, third]).await,
+        "a completed turn does not deliver it"
+    );
 
     // Storing a good key (Vault saves through the provider) clears it.
     set_key("good-key").await;

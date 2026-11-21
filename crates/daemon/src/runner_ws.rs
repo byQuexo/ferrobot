@@ -501,7 +501,7 @@ async fn run_turn(
 
     let deadline = tokio::time::Instant::now() + state.settings.turn_timeout;
     let mut steered = Vec::new();
-    let result = loop {
+    let mut result = loop {
         tokio::select! {
             done = tokio::time::timeout_at(deadline, done_rx.recv()) => match done {
                 Ok(Some(report)) if report.turn_id == turn_id => break Some(report),
@@ -516,6 +516,14 @@ async fn run_turn(
     };
     state.hub.set_current_turn(agent, conn_id, None);
     state.hub.touch(agent);
+    // The Claude SDK reports a refused model call as a completed turn whose answer is the error.
+    if state.hub.credential_error(agent).is_some()
+        && let Some(done) = result
+            .as_mut()
+            .filter(|d| d.outcome == TurnOutcome::Completed)
+    {
+        done.outcome = TurnOutcome::Failed;
+    }
     settle_steered(state, steered, result.as_ref()).await;
     if result.is_none() {
         tracing::warn!(%agent, turn = %turn_id, "turn timed out, interrupting");

@@ -140,19 +140,24 @@ export function buildTimeline(
 
   const tools = new Map<string, Extract<TimelineItem, { type: "tool" }>>();
   const finished = new Set<string>();
-  // A turn that hit a credential problem shows the problem's notice instead of its error.
-  const credentialTurns = new Set(
-    events.flatMap((e) => {
+  // A turn that hit a credential problem shows the problem's notice instead of its error, which
+  // the Claude SDK also writes as the turn's answer.
+  const credentialTurns = new Map(
+    events.flatMap((e): [string, number][] => {
       const turn = (e.payload as Payload)["turn_id"];
-      return e.kind === "credential_error" && typeof turn === "string" ? [turn] : [];
+      return e.kind === "credential_error" && typeof turn === "string" ? [[turn, e.id]] : [];
     }),
   );
   for (const e of events) {
     const p = e.payload as unknown as Payload;
     const key = `e${String(e.id)}`;
+    const afterCredentialError = e.turn_id
+      ? e.id > (credentialTurns.get(e.turn_id) ?? e.id)
+      : false;
     switch (e.kind) {
       case "assistant_text":
         if (e.turn_id) finished.add(e.turn_id);
+        if (afterCredentialError) break;
         push({ type: "assistant", key, at: e.created_at, text: str(p["text"]), streaming: false });
         break;
       case "question": {
@@ -223,7 +228,7 @@ export function buildTimeline(
         });
         break;
       case "turn_done":
-        if (p["outcome"] === "failed" && e.turn_id && credentialTurns.has(e.turn_id)) break;
+        if (p["outcome"] === "failed" && afterCredentialError) break;
         if (p["outcome"] === "failed") {
           push({
             type: "error",
