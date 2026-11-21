@@ -16,7 +16,7 @@
 
 </div>
 
-https://github.com/user-attachments/assets/3cbf0815-14ef-46f9-9320-c421fa614b9e
+Also as [MP4](docs/assets/demo.mp4) (real Claude Sonnet 5.5 turns; waits sped up 2x, long ones shortened) · [Voice room video](docs/assets/voice-room.mp4), with sound
 
 ## Why ferrobot
 
@@ -109,8 +109,8 @@ You need Rust (stable), Node.js 24 and Docker.
 ```sh
 docker build -f runner/Dockerfile -t ferrobot-runner:dev .
 cargo build -p ferrobot-daemon
-./target/debug/ferrobotd --backend docker --driver mock   # no key needed
-cd apps/desktop && npm ci && npm run tauri dev            # the app
+./target/debug/ferrobotd --backend docker --driver mock --agent-listen 0.0.0.0:7879   # no key needed
+cd apps/desktop && npm ci && npm run tauri dev                                        # the app
 ```
 
 Details, tests and the release build: [Getting Started](../../wiki/Getting-Started)
