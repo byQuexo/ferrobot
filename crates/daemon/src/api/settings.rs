@@ -17,7 +17,13 @@ const SETTING: &str = "general";
 pub(crate) struct GeneralSettings {
     /// Agents create agents without an approval card. The agent limit still applies.
     pub auto_mode: bool,
+    /// How agents name the agents they create, in the operator's words (e.g. "Greek gods");
+    /// `null`: short role names. 1-300 characters.
+    pub agent_names: Option<String>,
 }
+
+/// Longest naming convention.
+const MAX_AGENT_NAMES: usize = 300;
 
 pub(crate) async fn load(state: &AppState) -> Result<GeneralSettings, ApiError> {
     match state.store.get_setting(SETTING).await? {
@@ -37,12 +43,30 @@ pub(crate) async fn get_settings(State(state): State<AppState>) -> ApiResult<Gen
 /// Replaces the daemon-wide settings.
 #[utoipa::path(put, path = "/v1/settings", tag = "settings",
     request_body = GeneralSettings,
-    responses((status = 200, body = GeneralSettings)))]
+    responses((status = 200, body = GeneralSettings),
+        (status = 400, description = "Naming convention too long", body = crate::error::ErrorBody)))]
 pub(crate) async fn put_settings(
     State(state): State<AppState>,
-    Json(settings): Json<GeneralSettings>,
+    Json(mut settings): Json<GeneralSettings>,
 ) -> ApiResult<GeneralSettings> {
+    settings.agent_names = settings
+        .agent_names
+        .map(|n| n.trim().to_owned())
+        .filter(|n| !n.is_empty());
+    if settings
+        .agent_names
+        .as_deref()
+        .is_some_and(|n| n.chars().count() > MAX_AGENT_NAMES || n.chars().any(char::is_control))
+    {
+        return Err(ApiError::BadRequest(format!(
+            "agent_names must be 1-{MAX_AGENT_NAMES} printable characters"
+        )));
+    }
+    let renamed = load(&state).await?.agent_names != settings.agent_names;
     let raw = serde_json::to_string(&settings).map_err(|e| ApiError::Internal(e.to_string()))?;
     state.store.put_setting(SETTING, raw).await?;
+    if renamed {
+        crate::agents::reconfigure_creators(&state).await;
+    }
     Ok(Json(settings))
 }

@@ -97,6 +97,50 @@ async fn profile(
     Ok((tools, connectors))
 }
 
+/// The agent's instructions as its runner gets them: with the operator's naming convention
+/// when it may create agents.
+pub(crate) async fn runner_instructions(state: &AppState, agent: &Agent) -> String {
+    let names = crate::api::settings::load(state)
+        .await
+        .ok()
+        .and_then(|s| s.agent_names);
+    match names {
+        Some(names) if agent.tools.contains(&ToolGroup::CreateAgents) => {
+            let lead = if agent.instructions.trim().is_empty() {
+                String::new()
+            } else {
+                format!("{}\n\n", agent.instructions.trim_end())
+            };
+            format!(
+                "{lead}Name the agents you create like this (the operator's convention): {names}"
+            )
+        }
+        _ => agent.instructions.clone(),
+    }
+}
+
+/// Sends every agent that may create agents its instructions with the current naming
+/// convention.
+pub(crate) async fn reconfigure_creators(state: &AppState) {
+    let Ok(agents) = state.store.list_agents().await else {
+        return;
+    };
+    for agent in agents
+        .into_iter()
+        .filter(|a| a.tools.contains(&ToolGroup::CreateAgents))
+    {
+        let instructions = runner_instructions(state, &agent).await;
+        state.hub.send(
+            agent.id,
+            DaemonFrame::Configure {
+                agent_name: agent.name,
+                instructions,
+                tools: agent.tools,
+            },
+        );
+    }
+}
+
 /// Lets the agent's connector sessions and runner pick up a changed profile.
 pub(crate) async fn reconfigure(state: &AppState, id: AgentId) -> Result<(), ApiError> {
     state.connectors.evict_agent(id).await;
@@ -110,11 +154,12 @@ pub(crate) async fn reconfigure(state: &AppState, id: AgentId) -> Result<(), Api
         // An older runner would ignore the tools: a new computer gets the current runner.
         return lifecycle::recreate(state, id).await;
     }
+    let instructions = runner_instructions(state, &agent).await;
     state.hub.send(
         id,
         DaemonFrame::Configure {
             agent_name: agent.name,
-            instructions: agent.instructions,
+            instructions,
             tools: agent.tools,
         },
     );

@@ -618,7 +618,7 @@ impl FerrobotTools {
     }
 
     #[tool(
-        description = "Create a new agent. Give it a short, memorable name that fits its role, like `scout` for research, `forge` for building, `ledger` for numbers or `echo` for comms, not `research-agent`. Unless the operator turned on Auto mode, they first see an approval card with its name and role and this call waits for their decision. Returns `created` with the new agent's id, or `declined` (operator said no or did not answer in time). Pass `task` to brief it: it is sent as your first message, the agent starts right away and its answer comes back to you automatically. Pass `tools` and `connectors` to give it fewer tools than you have; it never gets more. Fails if the name is invalid or taken, or the agent limit is reached."
+        description = "Create a new agent. Give it a short, memorable name that fits its role, like `scout` for research, `forge` for building, `ledger` for numbers or `echo` for comms, not `research-agent`; if your instructions give the operator's naming convention, follow it. Unless the operator turned on Auto mode, they first see an approval card with its name and role and this call waits for their decision. Returns `created` with the new agent's id, or `declined` (operator said no or did not answer in time). Pass `task` to brief it: it is sent as your first message, the agent starts right away and its answer comes back to you automatically. Pass `tools` and `connectors` to give it fewer tools than you have; it never gets more. Fails if the name is invalid or taken, or the agent limit is reached."
     )]
     async fn create_agent(
         &self,

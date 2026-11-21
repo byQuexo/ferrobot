@@ -1435,6 +1435,12 @@ export interface components {
              * @default false
              */
             auto_mode: boolean;
+            /**
+             * @description How agents name the agents they create, in the operator's words (e.g. "Greek gods");
+             *     `null`: short role names. 1-300 characters.
+             * @default null
+             */
+            agent_names: string | null;
         };
         Health: {
             name: string;
@@ -5242,6 +5248,15 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["GeneralSettings"];
+                };
+            };
+            /** @description Naming convention too long */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
                 };
             };
             /** @description Missing or wrong API token */
