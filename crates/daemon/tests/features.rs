@@ -2369,11 +2369,8 @@ async fn upstream_mcp() -> (String, Arc<Mutex<Vec<String>>>) {
     upstream_with("secret", |_| axum::Router::new()).await
 }
 
-/// [`upstream_mcp`] accepting `token`, plus `extra` routes on the same origin.
-async fn upstream_with(
-    token: &str,
-    extra: impl FnOnce(&str) -> axum::Router,
-) -> (String, Arc<Mutex<Vec<String>>>) {
+/// ferrobot's own MCP server at `/mcp`, accepting only `Bearer <token>`.
+async fn mcp_upstream_app(token: &str) -> axum::Router {
     let store = ferrobot_store::Store::open_in_memory().unwrap();
     let up = store
         .create_agent(ferrobot_store::NewAgent {
@@ -2385,18 +2382,43 @@ async fn upstream_with(
         .await
         .unwrap();
     store.set_agent_token(up.id, token).await.unwrap();
+    axum::Router::new().nest(
+        "/mcp",
+        ferrobot_mcp::router(ferrobot_mcp::McpState {
+            store,
+            notifier: Arc::new(Quiet),
+        }),
+    )
+}
+
+/// [`upstream_mcp`] that needs no token: it adds the one it accepts itself.
+async fn keyless_upstream() -> String {
+    let app = mcp_upstream_app("open")
+        .await
+        .layer(axum::middleware::from_fn(
+            |mut req: axum::extract::Request, next: axum::middleware::Next| async move {
+                let open = axum::http::HeaderValue::from_static("Bearer open");
+                req.headers_mut().insert("authorization", open);
+                next.run(req).await
+            },
+        ));
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let url = format!("http://{}/mcp", listener.local_addr().unwrap());
+    tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });
+    url
+}
+
+/// [`upstream_mcp`] accepting `token`, plus `extra` routes on the same origin.
+async fn upstream_with(
+    token: &str,
+    extra: impl FnOnce(&str) -> axum::Router,
+) -> (String, Arc<Mutex<Vec<String>>>) {
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
     let base = format!("http://{}", listener.local_addr().unwrap());
     let seen = Arc::new(Mutex::new(Vec::new()));
     let record = seen.clone();
-    let app = axum::Router::new()
-        .nest(
-            "/mcp",
-            ferrobot_mcp::router(ferrobot_mcp::McpState {
-                store,
-                notifier: Arc::new(Quiet),
-            }),
-        )
+    let app = mcp_upstream_app(token)
+        .await
         .merge(extra(&base))
         .layer(axum::middleware::from_fn(
             move |req: axum::extract::Request, next: axum::middleware::Next| {
@@ -2651,6 +2673,17 @@ async fn connectors_sign_in_with_oauth() {
     let (_, all) = http(&d.ui, "GET", "/v1/connectors", None).await;
     assert_eq!(all[0]["signed_in"], true);
     assert!(!all.to_string().contains("at-1") && !all.to_string().contains("rt-1"));
+    // The sign-in is checked on its own, with the new token.
+    let check = eventually(
+        "the check after signing in",
+        Duration::from_secs(10),
+        || async {
+            let (_, all) = http(&d.ui, "GET", "/v1/connectors", None).await;
+            (!all[0]["check"].is_null()).then(|| all[0]["check"].clone())
+        },
+    )
+    .await;
+    assert_eq!(check["status"], "ok", "{check}");
 
     // ann uses the upstream with the OAuth access token.
     let as_ann = mcp_as(&d, backend.token("ann")).await;
@@ -2666,6 +2699,7 @@ async fn connectors_sign_in_with_oauth() {
     assert_eq!(status, 204);
     let (_, all) = http(&d.ui, "GET", "/v1/connectors", None).await;
     assert_eq!(all[0]["signed_in"], false);
+    assert_eq!(all[0]["check"]["status"], "needs_sign_in", "{all}");
     let tools = as_ann.list_all_tools().await.unwrap();
     assert!(!tools.iter().any(|t| t.name.starts_with("up__")));
     as_ann.cancel().await.unwrap();
@@ -2678,6 +2712,121 @@ async fn connectors_sign_in_with_oauth() {
     let path = format!("/v1/connectors/{}/oauth", conn["id"].as_str().unwrap());
     let (status, body) = http(&d.ui, "POST", &path, None).await;
     assert_eq!(status, 400, "{body}");
+}
+
+async fn add_connector(d: &Daemon, body: Value) -> Value {
+    let (status, conn) = http(&d.ui, "POST", "/v1/connectors", Some(body)).await;
+    assert_eq!(status, 201, "{conn}");
+    conn
+}
+
+#[tokio::test]
+async fn connectors_are_checked_when_added_changed_or_asked() {
+    use rmcp::ServiceExt;
+    use rmcp::transport::StreamableHttpClientTransport;
+    let d = start(Arc::new(StatefulBackend::default()), None, "127.0.0.1:0").await;
+
+    // A keyless server: connected, with the tools agents get.
+    let open = keyless_upstream().await;
+    let direct = ().serve(StreamableHttpClientTransport::from_uri(open.as_str()));
+    let want = direct.await.unwrap().list_all_tools().await.unwrap().len();
+    let conn = add_connector(&d, json!({"name": "open", "url": open})).await;
+    assert_eq!(conn["check"]["status"], "ok", "{conn}");
+    assert_eq!(conn["check"]["tools"], json!(want));
+    assert!(conn["check"]["at"].is_string());
+
+    // A server that wants a token and has none needs a sign-in (or a token in Vault); a wrong
+    // token is a failure, never an echo of it. Fixing the token checks it again.
+    let (url, _) = upstream_mcp().await;
+    let conn = add_connector(&d, json!({"name": "locked", "url": url})).await;
+    assert_eq!(conn["check"]["status"], "needs_sign_in", "{conn}");
+    let id = conn["id"].as_str().unwrap();
+    let path = format!("/v1/connectors/{id}");
+    let (_, conn) = http(&d.ui, "PATCH", &path, Some(json!({"token": "tok-wrong"}))).await;
+    assert_eq!(conn["check"]["status"], "failed", "{conn}");
+    let error = conn["check"]["error"].as_str().unwrap();
+    assert!(error.contains("rejected the token") && !error.contains("tok-wrong"));
+    let (_, conn) = http(&d.ui, "PATCH", &path, Some(json!({"token": "secret"}))).await;
+    assert_eq!(conn["check"]["status"], "ok", "{conn}");
+
+    // An OAuth server that is not signed in: no discovery, no registration, no sign-in.
+    let hits = Arc::new(Mutex::new(Vec::<String>::new()));
+    let log = hits.clone();
+    let (url, _) = upstream_with("at-1", move |base| {
+        fake_auth_server(base, Arc::default()).layer(axum::middleware::from_fn(
+            move |req: axum::extract::Request, next: axum::middleware::Next| {
+                log.lock().unwrap().push(req.uri().path().to_owned());
+                next.run(req)
+            },
+        ))
+    })
+    .await;
+    let conn = add_connector(&d, json!({"name": "oauth", "url": url})).await;
+    assert_eq!(conn["check"]["status"], "needs_sign_in", "{conn}");
+    assert_eq!(*hits.lock().unwrap(), Vec::<String>::new());
+
+    // Unreachable: failed at once, well within the bound.
+    let port = tokio::net::TcpListener::bind("127.0.0.1:0")
+        .await
+        .unwrap()
+        .local_addr()
+        .unwrap()
+        .port();
+    let started = std::time::Instant::now();
+    let gone = format!("http://127.0.0.1:{port}/mcp");
+    let conn = add_connector(&d, json!({"name": "gone", "url": gone})).await;
+    assert!(started.elapsed() < Duration::from_secs(15));
+    assert_eq!(conn["check"]["status"], "failed", "{conn}");
+    assert_eq!(conn["check"]["error"], "cannot reach the server");
+
+    // A server that echoes the token, at a URL holding a key: neither reaches the error.
+    let (base, _) = upstream_with("unused", |_| {
+        axum::Router::new().route(
+            "/echo",
+            axum::routing::post(|headers: HeaderMap| async move {
+                let auth = headers["authorization"].to_str().unwrap().to_owned();
+                (axum::http::StatusCode::BAD_REQUEST, auth)
+            }),
+        )
+    })
+    .await;
+    let echo = base.replace("/mcp", "/echo?key=sekrit");
+    let body = json!({"name": "echo", "url": echo, "token": "tok-zebra"});
+    let conn = add_connector(&d, body).await;
+    let id = conn["id"].as_str().unwrap();
+    assert_eq!(conn["check"]["status"], "failed", "{conn}");
+    for check in [
+        conn["check"].clone(),
+        http(&d.ui, "POST", &format!("/v1/connectors/{id}/check"), None)
+            .await
+            .1,
+    ] {
+        assert_eq!(check["error"], "the server answered HTTP 400", "{check}");
+        let text = check.to_string();
+        assert!(
+            !text.contains("tok-zebra") && !text.contains("sekrit"),
+            "{text}"
+        );
+    }
+
+    // On demand; the last result shows in the list.
+    let (status, check) = http(
+        &d.ui,
+        "POST",
+        &format!("/v1/connectors/{}/check", AgentId::new()),
+        None,
+    )
+    .await;
+    assert_eq!(status, 404, "{check}");
+    let (_, all) = http(&d.ui, "GET", "/v1/connectors", None).await;
+    let statuses: Vec<&Value> = all
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|c| &c["check"]["status"])
+        .collect();
+    assert_eq!(statuses.len(), 5, "{all}");
+    assert!(statuses.iter().all(|s| !s.is_null()), "{all}");
 }
 
 #[tokio::test]

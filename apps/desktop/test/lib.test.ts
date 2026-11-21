@@ -7,6 +7,7 @@ import { characterOf, deriveCharacter, moodOf, rerollCharacter } from "../src/li
 import { linkLabel, relativeTime, stepLabel, toolLabel } from "../src/lib/format.ts";
 import { buildTimeline, sharedFiles } from "../src/lib/timeline.ts";
 import { CATALOG, isAdded } from "../src/lib/catalog.ts";
+import { checkDot, checkLabel } from "../src/lib/connectors.ts";
 import { parseBlocks, parseInline } from "../src/lib/markdown.ts";
 import { modelOptions, withSaved } from "../src/lib/models.ts";
 import { moveId, orderAgents } from "../src/lib/order.ts";
@@ -22,7 +23,7 @@ import {
   toCsv,
   zoneDays,
 } from "../src/lib/usage.ts";
-import type { UsageGroup } from "../src/api.ts";
+import type { Connector, UsageGroup } from "../src/api.ts";
 
 const ME = "11111111-1111-4111-8111-111111111111";
 const BOB = "22222222-2222-4222-8222-222222222222";
@@ -727,5 +728,46 @@ describe("catalog", () => {
     assert.equal(isAdded(linear, [{ name: "work", url: linear.url }]), true);
     assert.equal(isAdded(linear, [{ name: "linear", url: "https://x" }]), true);
     assert.equal(isAdded(linear, [{ name: "other", url: "https://x" }]), false);
+  });
+});
+
+describe("connector status", () => {
+  const base: Connector = {
+    id: ME,
+    name: "context7",
+    url: "https://mcp.context7.com/mcp",
+    created_at: "2026-11-21T10:00:00Z",
+    has_token: false,
+    signed_in: false,
+    sign_in: "signed_out",
+    has_client_secret: false,
+    scopes: [],
+    redirect_uri: "http://127.0.0.1:7878/v1/oauth/callback",
+  };
+  const at = "2026-11-21T10:00:01Z";
+
+  it("comes from the last check, never from the sign-in alone", () => {
+    const cases: [Connector, string, string][] = [
+      [base, "not checked yet", "p-sleeping"],
+      [{ ...base, check: { status: "ok", tools: 2, at } }, "connected · 2 tools", "p-awake"],
+      [{ ...base, check: { status: "ok", tools: 1, at } }, "connected · 1 tool", "p-awake"],
+      [{ ...base, check: { status: "needs_sign_in", at } }, "needs sign-in", "p-starting"],
+      [
+        { ...base, sign_in: "expired", check: { status: "needs_sign_in", at } },
+        "sign-in expired, sign in again",
+        "p-starting",
+      ],
+      [
+        { ...base, check: { status: "failed", error: "cannot reach the server", at } },
+        "failed: cannot reach the server",
+        "p-error",
+      ],
+    ];
+    for (const [c, label, dot] of cases) {
+      assert.equal(checkLabel(c, false), label);
+      assert.equal(checkDot(c, false), dot);
+      assert.ok(!checkLabel(c, false).includes("not signed in"));
+    }
+    assert.equal(checkLabel(base, true), "checking…");
   });
 });

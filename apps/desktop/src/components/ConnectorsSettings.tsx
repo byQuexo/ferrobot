@@ -22,20 +22,8 @@ import {
 import type { Connector } from "../api.ts";
 import { useApp } from "../context.ts";
 import { CATALOG, type CatalogEntry, isAdded } from "../lib/catalog.ts";
+import { checkDot, checkLabel } from "../lib/connectors.ts";
 import { Button, IconButton } from "./ui.tsx";
-
-const STATUS: Record<Connector["sign_in"], string> = {
-  signed_in: "signed in",
-  expired: "sign-in expired, sign in again",
-  signed_out: "not signed in",
-};
-
-const dotOf = (c: Connector): string =>
-  c.has_token || c.sign_in === "signed_in"
-    ? "p-awake"
-    : c.sign_in === "expired"
-      ? "p-starting"
-      : "p-sleeping";
 
 /** Client id, issuer and scopes of an own OAuth app; its client secret lives in Vault. */
 interface AppDraft {
@@ -132,7 +120,9 @@ export function ConnectorsSettings(props: { onVault: () => void }): JSX.Element 
   const [signIn, setSignIn] = useState<{ id: string; url: string } | null>(null);
   const [adding, setAdding] = useState(false);
   const [busy, setBusy] = useState(false);
+  const [checking, setChecking] = useState<ReadonlySet<string>>(new Set());
   const redirectUri = connectors[0]?.redirect_uri ?? `${client.base}/v1/oauth/callback`;
+  const errorText = (err: unknown): string => (err instanceof Error ? err.message : String(err));
 
   const run = async (action: () => Promise<unknown>): Promise<void> => {
     setBusy(true);
@@ -140,14 +130,39 @@ export function ConnectorsSettings(props: { onVault: () => void }): JSX.Element 
       await action();
       setConnectors(await client.listConnectors());
     } catch (err) {
-      toast(err instanceof Error ? err.message : String(err));
+      toast(errorText(err));
     } finally {
       setBusy(false);
     }
   };
 
+  const recheck = async (id: string): Promise<void> => {
+    setChecking((ids) => new Set(ids).add(id));
+    try {
+      const check = await client.checkConnector(id);
+      setConnectors((all) => all.map((c) => (c.id === id ? { ...c, check } : c)));
+    } catch (err) {
+      toast(errorText(err));
+    } finally {
+      setChecking((ids) => new Set([...ids].filter((i) => i !== id)));
+    }
+  };
+
+  const toastIfFailed = (c: Connector): void => {
+    if (c.check?.status === "failed") toast(`${c.name} ${checkLabel(c, false)}`);
+  };
+
+  // A restarted daemon has no checks yet: check those rows without blocking the screen.
   useEffect(() => {
-    void run(() => Promise.resolve());
+    void (async () => {
+      try {
+        const all = await client.listConnectors();
+        setConnectors(all);
+        for (const c of all) if (!c.check) void recheck(c.id);
+      } catch (err) {
+        toast(errorText(err));
+      }
+    })();
   }, []);
 
   // While a browser sign-in is open, refresh until the daemon reports it done.
@@ -160,8 +175,10 @@ export function ConnectorsSettings(props: { onVault: () => void }): JSX.Element 
         (all) => {
           if (!live) return;
           setConnectors(all);
-          if (all.find((c) => c.id === signIn.id)?.sign_in === "signed_in") setSignIn(null);
-          else if (Date.now() - started < 600_000) setTimeout(poll, 2000);
+          if (all.find((c) => c.id === signIn.id)?.sign_in === "signed_in") {
+            setSignIn(null);
+            void recheck(signIn.id);
+          } else if (Date.now() - started < 600_000) setTimeout(poll, 2000);
         },
         () => undefined,
       );
@@ -183,7 +200,8 @@ export function ConnectorsSettings(props: { onVault: () => void }): JSX.Element 
   const addFromCatalog = (e: CatalogEntry): Promise<void> =>
     run(async () => {
       const c = await client.createConnector({ name: e.name, url: e.url });
-      if (e.auth === "oauth") {
+      toastIfFailed(c);
+      if (e.auth === "oauth" && c.check?.status === "needs_sign_in") {
         const { authorization_url } = await client.startConnectorOAuth(c.id);
         window.open(authorization_url, "_blank", "noopener");
         setSignIn({ id: c.id, url: authorization_url });
@@ -194,7 +212,7 @@ export function ConnectorsSettings(props: { onVault: () => void }): JSX.Element 
 
   const add = (): Promise<void> =>
     run(async () => {
-      await client.createConnector({
+      const c = await client.createConnector({
         name: name.trim(),
         url: url.trim(),
         ...(ownApp
@@ -205,6 +223,7 @@ export function ConnectorsSettings(props: { onVault: () => void }): JSX.Element 
             }
           : {}),
       });
+      toastIfFailed(c);
       setName("");
       setUrl("");
       setApp(EMPTY_APP);
@@ -224,16 +243,15 @@ export function ConnectorsSettings(props: { onVault: () => void }): JSX.Element 
         <ul class="provider-list">
           {connectors.map((c) => (
             <li key={c.id} class="provider-row">
-              <span class={`dot ${dotOf(c)}`} aria-hidden="true" />
+              <span class={`dot ${checkDot(c, checking.has(c.id))}`} aria-hidden="true" />
               <div class="provider-main">
                 <b>{c.name}</b>
                 <span class="muted small">
-                  {c.url}
-                  {c.has_token ? " · token stored" : ` · ${STATUS[c.sign_in]}`}
+                  {c.url} · {checkLabel(c, checking.has(c.id))}
                   {c.client_id ? " · own OAuth app" : ""}
                 </span>
               </div>
-              {!c.has_token && c.sign_in !== "signed_in" && (
+              {c.check?.status === "needs_sign_in" && (
                 <IconButton
                   label={`Sign in to ${c.name}`}
                   disabled={busy}

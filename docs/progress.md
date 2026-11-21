@@ -1053,6 +1053,34 @@ store used for the run) or the daemon's own env.
   registration with a loopback redirect is advertised but unproven per
   server); the Tauri window.
 
+## Connector checks (`fix/connector-check`)
+
+**Done**
+
+- Daemon: a connection check per connector (`ok` with its tool count,
+  `needs_sign_in`, `failed` with a safe reason), `check` on the connector view,
+  `POST /v1/connectors/{id}/check`; runs after adding, editing, signing in and
+  signing out.
+- Desktop: rows say "connected · N tools", "needs sign-in" (only then the
+  sign-in button), "failed: …" or "checking…"; unchecked rows are checked when
+  the screen opens; a failed add shows a toast. Keyless servers no longer say
+  "not signed in".
+
+**Tested**
+
+- Rust: `connectors_are_checked_when_added_changed_or_asked` (keyless upstream,
+  missing and wrong token, OAuth server not signed in with no discovery or
+  registration hits, unreachable port, a server echoing the token at a URL
+  with a key), the check after sign-in and sign-out in
+  `connectors_sign_in_with_oauth`, and the unit test
+  `failures_are_told_in_our_words_and_auth_asks_for_a_sign_in`. Desktop: the
+  status label and dot.
+- Live, through a throwaway daemon (local backend; Docker did not answer):
+  Context7 ok with 2 tools, DeepWiki ok with 3, Linear `needs_sign_in` with
+  nothing written to the secret store.
+- Not tested: the 15 s timeout against a server that never answers; the
+  screen in a browser or the Tauri window.
+
 ## CLIs in the sandbox image (`feat/sandbox-clis`)
 
 **Done**

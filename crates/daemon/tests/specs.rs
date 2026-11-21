@@ -85,6 +85,7 @@ fn every_routed_path_is_documented() {
         "/v1/connectors/{id}",
         "/v1/agents/{id}/connectors",
         "/v1/connectors/{id}/oauth",
+        "/v1/connectors/{id}/check",
         "/v1/oauth/callback",
         "/v1/agents/{id}/files/{file_id}",
         "/artifacts/{id}/{file_id}",
@@ -104,7 +105,7 @@ fn every_routed_path_is_documented() {
     }
     assert_eq!(
         documented.len(),
-        51,
+        52,
         "undocumented extra paths: {documented:?}"
     );
 }

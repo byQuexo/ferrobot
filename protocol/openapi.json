@@ -2409,7 +2409,7 @@
         "tags": [
           "connectors"
         ],
-        "summary": "Adds a connector. Agents get its tools once they are assigned it.",
+        "summary": "Adds a connector and checks it (see `POST /v1/connectors/{id}/check`). Agents get its tools\nonce they are assigned it.",
         "operationId": "create_connector",
         "requestBody": {
           "content": {
@@ -2511,7 +2511,7 @@
         "tags": [
           "connectors"
         ],
-        "summary": "Edits a connector. Open sessions with it are closed.",
+        "summary": "Edits a connector. Open sessions with it are closed and it is checked again.",
         "operationId": "update_connector",
         "parameters": [
           {
@@ -2575,6 +2575,57 @@
           },
           "409": {
             "description": "Name already taken",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/connectors/{id}/check": {
+      "post": {
+        "tags": [
+          "connectors"
+        ],
+        "summary": "Connects to the connector with its current token or sign-in, lists its tools and keeps the\noutcome as the connector's `check`. Never starts a sign-in. Runs on its own after adding or\nchanging a connector and after a sign-in.",
+        "operationId": "check_connector",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "Connector id (UUID)",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ConnectorCheck"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or wrong API token",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Unknown connector",
             "content": {
               "application/json": {
                 "schema": {
@@ -2650,7 +2701,7 @@
         "tags": [
           "connectors"
         ],
-        "summary": "Signs a connector out: asks the server to revoke its tokens (RFC 7009)\nwhen it offers that, then forgets them here either way.",
+        "summary": "Signs a connector out: asks the server to revoke its tokens (RFC 7009)\nwhen it offers that, then forgets them here either way and checks it again.",
         "operationId": "sign_out",
         "parameters": [
           {
@@ -4803,6 +4854,15 @@
           "visor"
         ]
       },
+      "CheckStatus": {
+        "type": "string",
+        "description": "What a connection check found.",
+        "enum": [
+          "ok",
+          "needs_sign_in",
+          "failed"
+        ]
+      },
       "Choice": {
         "type": "object",
         "description": "One selectable option.",
@@ -4889,6 +4949,39 @@
           "none"
         ]
       },
+      "ConnectorCheck": {
+        "type": "object",
+        "description": "The outcome of connecting to a connector as the daemon and listing its tools.",
+        "required": [
+          "status",
+          "at"
+        ],
+        "properties": {
+          "status": {
+            "$ref": "#/components/schemas/CheckStatus"
+          },
+          "tools": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "description": "Tools agents can use (with `ok`).",
+            "minimum": 0
+          },
+          "error": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Why it failed (with `failed`), in ferrobot's words, never the server's."
+          },
+          "at": {
+            "type": "string",
+            "format": "date-time",
+            "description": "When the check started."
+          }
+        }
+      },
       "ConnectorView": {
         "allOf": [
           {
@@ -4944,6 +5037,17 @@
               "redirect_uri": {
                 "type": "string",
                 "description": "Register this redirect URI with the provider for an own OAuth app."
+              },
+              "check": {
+                "oneOf": [
+                  {
+                    "$ref": "#/components/schemas/ConnectorCheck",
+                    "description": "The last connection check; `null` until one ran since the daemon\nstarted or the connector changed."
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
               }
             }
           }
