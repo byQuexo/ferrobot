@@ -9,7 +9,7 @@ use axum::http::{HeaderMap, StatusCode, header};
 use axum::response::{IntoResponse, Response};
 use axum::routing::get;
 use ferrobot_core::protocol::{DaemonFrame, RunnerFrame, TurnEvent, TurnOutcome};
-use ferrobot_core::{Agent, AgentId, MailMessage, MailStatus, PROTOCOL_VERSION, Sender};
+use ferrobot_core::{Agent, AgentId, MailMessage, MailStatus, PROTOCOL_VERSION, Sender, ToolGroup};
 use futures_util::{SinkExt, StreamExt};
 use serde_json::json;
 use tokio::sync::mpsc;
@@ -17,6 +17,10 @@ use tokio::sync::mpsc;
 use crate::{AppState, UiEvent, tasks};
 
 const HELLO_TIMEOUT: Duration = Duration::from_secs(10);
+/// Runners from before tool profiles; they get every built-in tool whatever the profile says.
+const OLDEST_RUNNER: u32 = 1;
+/// How long a refused runner is kept waiting: closed at once, it would reconnect within a second.
+const REFUSED_HOLD: Duration = Duration::from_secs(30);
 const STORE_RETRY: Duration = Duration::from_secs(1);
 
 /// Opens a new agent's first turn ([`crate::Settings::greet_new_agents`]).
@@ -69,18 +73,26 @@ async fn run_connection(state: AppState, agent: Agent, socket: WebSocket) {
         tracing::warn!(agent = %agent.name, "runner did not send hello in time");
         return;
     };
-    let (driver, session_id, steering) = match serde_json::from_str::<RunnerFrame>(&text) {
+    let (protocol, driver, session_id, steering) = match serde_json::from_str::<RunnerFrame>(&text)
+    {
         Ok(RunnerFrame::Hello {
             protocol_version,
             driver,
             session_id,
             steering,
             ..
-        }) if protocol_version == PROTOCOL_VERSION => (driver, session_id, steering),
+        }) if (OLDEST_RUNNER..=PROTOCOL_VERSION).contains(&protocol_version) => {
+            (protocol_version, driver, session_id, steering)
+        }
         other => {
             tracing::warn!(agent = %agent.name, ?other, "bad hello, closing");
             return;
         }
+    };
+    let (out_tx, mut out_rx) = mpsc::channel::<DaemonFrame>(32);
+    let conn_id = state.hub.register(agent.id, out_tx.clone(), protocol);
+    let Some(agent) = admit(&state, agent.id, conn_id, protocol, &mut stream).await else {
+        return;
     };
     if let Some(sid) = session_id.clone()
         && agent.session_id.as_deref() != Some(&sid)
@@ -93,13 +105,13 @@ async fn run_connection(state: AppState, agent: Agent, socket: WebSocket) {
         agent_name: agent.name.clone(),
         instructions: agent.instructions.clone(),
         resume_session_id: session_id.or(agent.session_id.clone()),
+        tools: agent.tools.clone(),
     };
     if send(&mut sink, &welcome).await.is_err() {
+        state.hub.unregister(agent.id, conn_id);
         return;
     }
 
-    let (out_tx, mut out_rx) = mpsc::channel::<DaemonFrame>(32);
-    let conn_id = state.hub.register(agent.id, out_tx.clone());
     if let Err(e) = state.store.requeue_in_flight(agent.id).await {
         tracing::error!(error = %e, "requeue failed");
     }
@@ -156,6 +168,55 @@ async fn run_connection(state: AppState, agent: Agent, socket: WebSocket) {
     state.publish_agent(agent.id).await;
 }
 
+/// The agent as it is now, unless this runner cannot serve it: then the operator is told once
+/// per streak and the line is held, so the runner does not retry at once.
+async fn admit<S>(
+    state: &AppState,
+    id: AgentId,
+    conn_id: u64,
+    protocol: u32,
+    stream: &mut S,
+) -> Option<Agent>
+where
+    S: futures_util::Stream<Item = Result<Message, axum::Error>> + Unpin,
+{
+    // Read after registering: a tools change either sees this runner or is seen here.
+    let agent = match state.store.get_agent(id).await {
+        Ok(a) => a,
+        Err(e) => {
+            tracing::error!(error = %e, "agent lookup failed");
+            state.hub.unregister(id, conn_id);
+            return None;
+        }
+    };
+    if protocol >= PROTOCOL_VERSION || fits_old_runner(&agent.tools) {
+        state.hub.set_refused(id, false);
+        return Some(agent);
+    }
+    state.hub.unregister(id, conn_id);
+    tracing::warn!(agent = %agent.name, "runner too old for the agent's tools, refused");
+    if state.hub.set_refused(id, true) {
+        let reason = "Offline: its computer runs an older runner that cannot turn off shell, \
+            files or web. Rebuild the runner image, then save its tools again.";
+        state
+            .record(id, None, "runner_refused", json!({ "reason": reason }))
+            .await;
+    }
+    let _ = tokio::time::timeout(REFUSED_HOLD, async {
+        while let Some(Ok(_)) = stream.next().await {}
+    })
+    .await;
+    None
+}
+
+/// A runner from before tool profiles can only serve agents with every built-in tool on.
+pub(crate) fn fits_old_runner(tools: &[ToolGroup]) -> bool {
+    ToolGroup::ALL
+        .iter()
+        .filter(|g| g.is_builtin())
+        .all(|g| tools.contains(g))
+}
+
 /// Handles one frame from the runner after the handshake.
 async fn handle_frame(state: &AppState, agent: &Agent, done_tx: &mpsc::Sender<Done>, text: &str) {
     match serde_json::from_str::<RunnerFrame>(text) {
@@ -202,6 +263,22 @@ async fn handle_frame(state: &AppState, agent: &Agent, done_tx: &mpsc::Sender<Do
                     json!({ "outcome": outcome, "result": result, "error": error }),
                 )
                 .await;
+            let completed = matches!(outcome, TurnOutcome::Completed);
+            for (to, body) in state.call_turn_done(agent.id, completed) {
+                match state
+                    .store
+                    .enqueue_message(Sender::Agent(agent.id), to, body, None)
+                    .await
+                {
+                    Ok(message) => {
+                        state.message_arrived(to);
+                        state.publish(UiEvent::Message { message });
+                    }
+                    Err(e) => {
+                        tracing::warn!(agent = %agent.name, error = %e, "call line not passed on");
+                    }
+                }
+            }
             let _ = done_tx
                 .send(Done {
                     turn_id,

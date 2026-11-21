@@ -5,7 +5,7 @@ import { join } from "node:path";
 import { after, describe, it } from "node:test";
 
 import { ConfigError, loadConfig } from "../src/config.ts";
-import { AcpDriver, selectGeminiApiKeyAuth, toolUse } from "../src/drivers/acp.ts";
+import { AcpDriver, writeGeminiSettings, toolUse } from "../src/drivers/acp.ts";
 import { systemAppend } from "../src/drivers/claude.ts";
 import { TurnAbortedError, type TurnContext } from "../src/drivers/types.ts";
 import type { TurnEvent } from "../src/protocol.ts";
@@ -413,6 +413,46 @@ describe("AcpDriver", () => {
     assert.equal(sent("initialize").length, 2);
   });
 
+  it("excludes turned-off tools from Gemini and refuses what it still asks for", async () => {
+    const { driver, script, sent, homeDir, answer } = setup();
+    script({
+      turns: [
+        [
+          toolCall("c1", "execute", "ls"),
+          ask({ toolCallId: "c1", title: "ls", kind: "execute", status: "pending" }),
+          toolCall("f1", "fetch", "https://example.com"),
+          ask({ toolCallId: "f1", kind: "fetch", title: "https://example.com" }),
+          chunk("ok"),
+        ],
+        [chunk("again")],
+      ],
+    });
+    const { ctx, events } = context({ tools: ["team", "files"] });
+    await driver.runTurn(ctx);
+    const excluded = (): string[] =>
+      (
+        JSON.parse(readFileSync(join(homeDir, ".gemini", "settings.json"), "utf8")) as {
+          tools: { exclude: string[] };
+        }
+      ).tools.exclude;
+    const exclude = excluded();
+    for (const tool of ["run_shell_command", "web_fetch", "google_web_search", "invoke_agent"]) {
+      assert.ok(exclude.includes(tool), tool);
+    }
+    assert.ok(!exclude.includes("read_file"));
+    assert.deepEqual(
+      events.flatMap((e) => (e.kind === "tool_denied" ? [e.reason] : [])),
+      ["blocked: shell is turned off for this agent", "blocked: web is turned off for this agent"],
+    );
+    assert.deepEqual(answer("srv-1")?.result, {
+      outcome: { outcome: "selected", optionId: "cancel" },
+    });
+    // A changed profile restarts Gemini, which reads its settings only at start.
+    await driver.runTurn(context().ctx);
+    assert.equal(sent("initialize").length, 2);
+    assert.deepEqual(excluded(), []);
+  });
+
   it("starts a fresh agent after a reconfigure (new tools)", async () => {
     const { driver, script, sent } = setup();
     script({ turns: [[chunk("one")], [chunk("two")]] });
@@ -441,7 +481,7 @@ describe("AcpDriver", () => {
   });
 });
 
-describe("selectGeminiApiKeyAuth", () => {
+describe("writeGeminiSettings", () => {
   const settingsFile = (home: string): string => join(home, ".gemini", "settings.json");
 
   it("merges the auth type into settings.json and keeps every other key", async () => {
@@ -457,7 +497,7 @@ describe("selectGeminiApiKeyAuth", () => {
         },
       }),
     );
-    await selectGeminiApiKeyAuth(home);
+    await writeGeminiSettings(home);
     assert.deepEqual(JSON.parse(readFileSync(settingsFile(home), "utf8")), {
       ui: { theme: "Dracula" },
       security: {
@@ -472,7 +512,7 @@ describe("selectGeminiApiKeyAuth", () => {
     mkdirSync(join(home, ".gemini"));
     const jsonc = '{\n  // my theme\n  "ui": { "theme": "Dracula" }\n}\n';
     writeFileSync(settingsFile(home), jsonc);
-    await assert.rejects(selectGeminiApiKeyAuth(home), /cannot update .*settings\.json/);
+    await assert.rejects(writeGeminiSettings(home), /cannot update .*settings\.json/);
     assert.equal(readFileSync(settingsFile(home), "utf8"), jsonc);
   });
 });

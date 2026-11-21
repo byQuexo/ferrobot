@@ -1125,3 +1125,96 @@ slop, so polish mode: palette, accent, logo, layout and features stay.
   it shows greyed.
 - **Not handled:** dictation during a call opens a second live session that
   hears the same words.
+
+## Voice calls that feel like a phone call
+
+- **Same agent, tuned for talk** (Tim, 2026-11-21), not a speech-to-speech
+  model: the agent keeps its tools, memory and sandbox in the call. Every call
+  message starts with a call note (spoken, one to three short sentences, the
+  solution first, no lists or links; longer work after the call in the chat;
+  `(pass)` when there is nothing to add; `hang_up` when done). The pause that
+  ends the operator's turn is 0.8 s instead of 1.2 s.
+- **Agents answer each other:** when an agent's turn in the call completes, the
+  other agents get what they have not heard yet as a turn of their own (from
+  that agent). At most four such turns in a row; then the lines wait for the
+  operator's next words, which reset the count. Interrupted or failed turns
+  and `(pass)` replies are not passed on.
+- **Hanging up:** the `hang_up` tool takes effect when the agent's turn ends,
+  so its goodbye is still spoken. The host (the agent the operator called)
+  ends the call for everyone; an invited agent leaves.
+- **Single-agent calls** go through `POST /v1/call/messages` too, so the host
+  gets the call note; the operator's call messages lose 365 bytes to it (limit
+  now 19,859).
+
+## Tool profiles
+
+- **Groups, not single tools.** Nine: six for ferrobot's MCP tools, `team`
+  (`list_agents`, `send_message`, `read_mailbox`, `assign_task`, `list_tasks`),
+  `memory` (`remember`, `recall`, `forget`), `operator` (`ask_user`,
+  `share_file`, `invite_to_call`, `hang_up`: everything that reaches the operator),
+  `create_agents`, `add_connectors`, `routines`; and three built into the
+  model's harness, `shell` (and with it every CLI in the image: one shared image
+  cannot hide single CLIs), `files`, `web`. The ids `create_agents` and
+  `add_connectors` keep them apart from the per-connector switches.
+- **A connector's switch is its assignment** (`/v1/agents/{id}/connectors`); the
+  profile has no second one. `create_agent` takes `connectors` (names, a subset
+  of the creator's) next to `tools`.
+- **Stored as the enabled set** in `agents.tools` (v15), NULL = every group: a
+  group added later reaches untouched agents but not narrowed ones. Saving
+  every group stores NULL again.
+- **ferrobot tools are enforced in the daemon:** `tools/list` filters and
+  `tools/call` refuses a tool outside the profile, since a model can call a name
+  it was never shown. A tool without a group is never offered (a test checks
+  every tool has one). Connector tools already check the assignment on both.
+- **Built-in tools are enforced by the runner**, per driver. Each was checked by
+  capturing the tool list the CLI sent to a fake upstream, with the real driver
+  code (Codex and Gemini inside the runner image):
+  - Claude (Agent SDK 0.3.328): `disallowedTools`. shell: `Bash`, `Monitor`,
+    `PowerShell`; files: `Read`, `Write`, `Edit`, `MultiEdit`, `NotebookEdit`,
+    `Glob`, `Grep`, `LSP`, `EnterWorktree`, `ExitWorktree`; web: `WebFetch`,
+    `WebSearch`. `canUseTool` refuses them too.
+  - OpenAI-compatible loop: its own `bash`, `read_file`, `write_file` are not
+    offered and are refused when called anyway. It has no web tool.
+  - Codex 0.166: `config.toml` `[features] shell_tool = false, unified_exec =
+    false` (`exec_command`, `write_stdin`), `view_image = false` for files
+    (Codex edits through its shell; no model we tried got `apply_patch`),
+    `web_search = "disabled"`. Approval requests are refused too but not relied
+    on: `on-request` with full access runs commands without asking.
+  - Gemini CLI 0.67 over ACP: `tools.exclude` in `~/.gemini/settings.json`
+    (`run_shell_command`, `list_background_processes`, `read_background_output`,
+    `read_file`, `read_many_files`, `write_file`, `replace`, `list_directory`,
+    `glob`, `grep_search`, `web_fetch`, `google_web_search`); permission
+    requests are refused too.
+  - Sub-agents (Claude `Agent`/`Workflow`, Codex `multi_agent`, Gemini
+    `invoke_agent`) are off while any built-in group is off: they run tools of
+    their own.
+  - Codex and Gemini read their config at start, so the driver restarts them
+    when the profile changes. `configure` now calls `reconfigure()`; before,
+    only `welcome` did, so connector changes never reached a running process.
+  - No driver needed the fallback of refusing a combination. With shell on,
+    files or web off only removes the dedicated tools; commands still read
+    files and reach the web, and the dialog says so.
+- **Old runners:** `PROTOCOL_VERSION` 2 carries `tools` in `welcome` and
+  `configure`. A sandbox keeps its runner until it is recreated (a rebuilt
+  `ferrobot-runner:dev` keeps its name, so `is_stale` does not notice), so a v1
+  runner is still welcome for an agent with all three built-in groups on: the
+  daemon enforces the rest either way. Otherwise its hello is refused and held
+  for 30 s (closed at once, it would reconnect within a second), with one
+  `runner_refused` notice in the chat per streak. A profile change while a v1
+  runner is connected or refused recreates the sandbox instead of sending a
+  `configure` it would ignore; the new container also picks up a rebuilt image.
+  The hello reads the agent after registering and the change checks the hub
+  after storing, so one always sees the other.
+- **Subset rule:** a new agent's tools and connectors are at most its creator's;
+  omitted means the creator's own. Checked in `agents::create` for every
+  agent-created agent (approval card and Auto mode alike) and before a card is
+  shown. The card lists `Tools:` and `Connectors:` and pins them, so the agent
+  never gets more than the card showed, even if its creator changes meanwhile.
+  The operator can set any profile (`POST`/`PATCH /v1/agents`).
+- **Two edge cases, on purpose:** narrowing a creator later does not shrink the
+  agents it already created; each profile stands alone and the operator narrows
+  them one by one. A connector the operator approves through `add_connector` is
+  given to the requester even when it is a sub-agent: a widening the operator
+  allowed on the card.
+- **Not done:** the drivers' prompt still names every ferrobot tool; a narrowed
+  agent that calls a missing one is told it is turned off for it.

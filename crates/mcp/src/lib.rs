@@ -33,6 +33,10 @@ pub struct AgentRequest {
     pub description: String,
     pub instructions: String,
     pub character: Option<AvatarCharacter>,
+    /// At most the requester's own; `None`: the same as its own.
+    pub tools: Option<Vec<ferrobot_core::ToolGroup>>,
+    /// Names of the requester's connectors to give it; `None`: all of them.
+    pub connectors: Option<Vec<String>>,
 }
 
 /// An agent's request to add a connector (`add_connector` tool).
@@ -146,6 +150,12 @@ pub trait MailboxNotifier: Send + Sync + 'static {
     ) -> BoxFuture<Result<RoutineRequestOutcome, String>> {
         let _ = (requester, request);
         Box::pin(async { Err("routines are not supported here".to_owned()) })
+    }
+    /// `agent` hangs up the voice call when its turn ends. `Ok(true)`: it was the host, so the
+    /// call ends for everyone. `Err` carries a message for the agent.
+    fn hang_up(&self, agent: AgentId) -> BoxFuture<Result<bool, String>> {
+        let _ = agent;
+        Box::pin(async { Err("voice calls are not supported here".to_owned()) })
     }
     /// Brings `guest` into the operator's voice call that `host` is in
     /// and sends it `topic`. `Err` carries a message for the agent.

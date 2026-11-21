@@ -161,6 +161,10 @@ fn ui_events_validate_against_schema() {
         sandbox_id: Some("ferrobot-alice".into()),
         session_id: None,
         pinned: false,
+        tools: vec![
+            ferrobot_core::ToolGroup::Team,
+            ferrobot_core::ToolGroup::Shell,
+        ],
         created_at: OffsetDateTime::UNIX_EPOCH,
     };
     let message = MailMessage {
@@ -184,13 +188,13 @@ fn ui_events_validate_against_schema() {
     };
     for ev in [
         UiEvent::Agent {
-            agent: AgentView {
+            agent: Box::new(AgentView {
                 agent: agent.clone(),
                 connected: true,
                 presence: Presence::Working,
                 unread: 3,
                 avatar_url: Some(format!("/v1/agents/{}/avatar?v=2", agent.id)),
-            },
+            }),
         },
         UiEvent::Delta {
             agent_id: agent.id,

@@ -91,10 +91,11 @@ Principles:
 - `crates/daemon/src/voice.rs`, `api/voice.rs` — voice: speech and
   transcription for the operator's chat via ElevenLabs or OpenRouter (keys
   in the keychain as `voice:<provider>`); `call.rs` — the operator's voice
-  call (agents invite teammates; replies reach the others only with the
-  operator's next message); `apps/desktop/src/lib/voice.ts` — playback and
-  recording in the UI; `lib/call-session.ts` — the call in the UI (outlives
-  the chat), `lib/call.ts` — its sentence, barge-in and call-event rules.
+  call (agents invite teammates and answer each other up to four times in a
+  row; `hang_up` takes effect when the agent's turn ends);
+  `apps/desktop/src/lib/voice.ts` — playback and recording in the UI;
+  `lib/call-session.ts` — the call in the UI (outlives the chat),
+  `lib/call.ts` — its sentence, barge-in and call-event rules.
 - `crates/daemon/src/storage.rs` — object storage (`object_store`) for snapshot
   archives, `--storage-url` (default: the data dir; `s3://` for S3/R2).
 - `crates/daemon/src/update.rs` — `/v1/update` status; `update/source.rs` — a
@@ -104,7 +105,7 @@ Principles:
   `crates/store/src/tasks.rs` — task state from `task` events and the mailbox.
 - `crates/mcp/src/tools.rs` — MCP tools; `crates/mcp/src/lib.rs` — `MailboxNotifier`.
 - `crates/store/src/migrations.rs` — schema migrations.
-- `crates/core/src/question.rs` — question/approval cards.
+- `crates/core/src/question.rs` — question/approval cards; `tools.rs` — tool groups.
 - `runner/src/index.ts`, `runner/src/runner.ts`, `runner/src/drivers/`.
 - `apps/desktop/src/app.tsx`, `src/api.ts`, `src/components/`, `src/lib/timeline.ts`.
 
@@ -190,11 +191,12 @@ daemon, `docker ps -a` must be empty of ferrobot containers.
 ## Migrations
 
 - `crates/store/src/migrations.rs`, tracked with `PRAGMA user_version`.
-- Forward-only, numbered v1..v14 (v7: `providers`, `agents.provider_id`/`model`; v8:
+- Forward-only, numbered v1..v15 (v7: `providers`, `agents.provider_id`/`model`; v8:
   `global_memories`; v9: `connectors`, `agent_connectors`; v10:
   `global_memories.author`; v11: `agents.pinned`; v12: `settings`, JSON by
   key, e.g. `voice`; v13: `usage`, one row per proxied model call; v14:
-  `usage.cost_usd`, OpenRouter's reported charge). Append a new entry
+  `usage.cost_usd`, OpenRouter's reported charge; v15: `agents.tools`, NULL =
+  every tool group). Append a new entry
   with a `// vN: ...` comment; **never edit or reorder existing ones**.
 - Every migration gets a test (upgrade an old DB, check defaults of existing
   rows). New columns on existing tables need a default.
@@ -222,6 +224,10 @@ daemon, `docker ps -a` must be empty of ferrobot containers.
   (300 s) creates nothing. Auto mode (`PUT /v1/settings`, operator opt-in)
   skips the card and leaves an `agent_created` notice; the agent limit applies either way.
   `create_routine` (an agent's own routine) follows the same rule, without waiting.
+- **Tool profiles are enforced, not just hidden.** The daemon filters and refuses
+  (`tools/call` too) ferrobot tools outside an agent's profile; the runner turns
+  off built-in groups per driver. A new agent's tools and connectors are at most
+  its creator's, checked in the daemon in every mode, Auto mode included.
 - **`FERROBOT_MAX_AGENTS`** (default 10) applies to `POST /v1/agents` and to
   `create_agent` (both through `daemon::agents::create`).
 - Question cards are answered at most once (`409` after).

@@ -30,6 +30,7 @@ export type ProviderKind = Schemas["ProviderKind"];
 export type CreateProvider = Schemas["CreateProvider"];
 export type UpdateProvider = Schemas["UpdateProvider"];
 export type Connector = Schemas["ConnectorView"];
+export type ToolGroup = Schemas["ToolGroup"];
 export type ConnectorCheck = Schemas["ConnectorCheck"];
 export type SharedFile = Schemas["SharedFileView"];
 export type CreateConnector = Schemas["CreateConnector"];

@@ -7,7 +7,7 @@ import { createInterface } from "node:readline";
 import { setTimeout as sleep } from "node:timers/promises";
 
 import { errorMessage, log } from "../log.ts";
-import { decide, type Decision } from "../permissions.ts";
+import { decide, offGroups, type BuiltinGroup, type Decision } from "../permissions.ts";
 import type { TurnEvent } from "../protocol.ts";
 import { aborted, clip, systemAppend, toolResultText, turnPrompt } from "./claude.ts";
 import type { ModelDriver, TurnContext, TurnResult } from "./types.ts";
@@ -70,12 +70,36 @@ export interface AcpDriverOptions {
   homeDir: string;
 }
 
-/** Selects Gemini's API-key auth in `~/.gemini/settings.json`, keeping every other setting. */
-export async function selectGeminiApiKeyAuth(homeDir: string): Promise<void> {
+/** Gemini CLI's built-in tools per group (checked against Gemini CLI 0.67's tool list). */
+const GEMINI_TOOLS: Readonly<Record<BuiltinGroup, readonly string[]>> = {
+  shell: ["run_shell_command", "list_background_processes", "read_background_output"],
+  files: [
+    "read_file",
+    "read_many_files",
+    "write_file",
+    "replace",
+    "list_directory",
+    "glob",
+    "grep_search",
+  ],
+  web: ["web_fetch", "google_web_search"],
+};
+/** Sub-agents run their own tools, so they go whenever a built-in group is off. */
+const GEMINI_SUBAGENT = "invoke_agent";
+const MANAGED = new Set([...Object.values(GEMINI_TOOLS).flat(), GEMINI_SUBAGENT]);
+
+/** Selects Gemini's API-key auth in `~/.gemini/settings.json` and excludes the tools of `off`
+ * groups (Gemini then does not offer them), keeping every other setting. */
+export async function writeGeminiSettings(
+  homeDir: string,
+  off: ReadonlySet<BuiltinGroup> = new Set(),
+): Promise<void> {
   const file = join(homeDir, ".gemini", "settings.json");
+  let raw = "";
   let settings: Params = {};
   try {
-    settings = object(JSON.parse(await readFile(file, "utf8")));
+    raw = await readFile(file, "utf8");
+    settings = object(JSON.parse(raw));
   } catch (err) {
     // An unparsable file may be valid JSONC; rewriting it would lose the operator's settings.
     if ((err as NodeJS.ErrnoException).code !== "ENOENT") {
@@ -84,10 +108,19 @@ export async function selectGeminiApiKeyAuth(homeDir: string): Promise<void> {
   }
   const security = object(settings["security"]);
   const auth = object(security["auth"]);
-  if (auth["selectedType"] === GEMINI_AUTH) return;
   settings["security"] = { ...security, auth: { ...auth, selectedType: GEMINI_AUTH } };
+  const tools = object(settings["tools"]);
+  const own = Array.isArray(tools["exclude"]) ? (tools["exclude"] as unknown[]) : [];
+  const exclude = [
+    ...own.filter((n) => typeof n !== "string" || !MANAGED.has(n)),
+    ...[...off].flatMap((g) => GEMINI_TOOLS[g]),
+    ...(off.size > 0 ? [GEMINI_SUBAGENT] : []),
+  ];
+  if (exclude.length > 0 || "tools" in settings) settings["tools"] = { ...tools, exclude };
+  const text = `${JSON.stringify(settings, null, 2)}\n`;
+  if (text === raw) return;
   await mkdir(dirname(file), { recursive: true });
-  await writeFile(file, `${JSON.stringify(settings, null, 2)}\n`);
+  await writeFile(file, text);
 }
 
 function object(value: unknown): Params {
@@ -129,20 +162,26 @@ function contentText(call: ToolCallUpdate): string {
     .join("\n");
 }
 
-function review(call: ToolCallUpdate, home: string): { name: string; verdict: Decision } {
+function review(
+  call: ToolCallUpdate,
+  home: string,
+  off: ReadonlySet<BuiltinGroup>,
+): { name: string; verdict: Decision } {
   const { name } = toolUse(call);
   const paths = (tool: string): Decision => {
     const files = pathsOf(call);
     if (files.length === 0) return { allow: false, reason: "blocked: file access without a path" };
     return (
-      files.map((file_path) => decide(tool, { file_path }, home)).find((v) => !v.allow) ?? {
+      files.map((file_path) => decide(tool, { file_path }, home, off)).find((v) => !v.allow) ?? {
         allow: true,
       }
     );
   };
   switch (call.kind ?? "other") {
     case "execute":
-      return { name, verdict: decide("Bash", { command: commandOf(call) }, home) };
+      return { name, verdict: decide("Bash", { command: commandOf(call) }, home, off) };
+    case "fetch":
+      return { name, verdict: decide("WebFetch", {}, home, off) };
     case "edit":
     case "delete":
     case "move":
@@ -296,6 +335,8 @@ export class AcpDriver implements ModelDriver {
   #caps = { loadSession: false, mcpHttp: false };
   #session: Session | null = null;
   #stale = false;
+  /** The off groups the running agent's settings were written for. */
+  #off = "";
 
   constructor(opts: AcpDriverOptions) {
     this.#opts = opts;
@@ -303,7 +344,7 @@ export class AcpDriver implements ModelDriver {
 
   async runTurn(ctx: TurnContext): Promise<TurnResult> {
     if (aborted(ctx.signal)) throw new TurnAbortedError("interrupted");
-    const conn = await this.#start();
+    const conn = await this.#start(offGroups(ctx.tools));
     const session = await this.#openSession(conn, ctx.sessionId);
     if (aborted(ctx.signal)) throw new TurnAbortedError("interrupted");
     return { result: await this.#turn(conn, session, ctx), sessionId: session.id };
@@ -319,15 +360,17 @@ export class AcpDriver implements ModelDriver {
     this.#stale = true;
   }
 
-  async #start(): Promise<Connection> {
-    if (this.#conn?.alive && !this.#stale) return this.#conn;
-    // A fresh agent process lists the MCP tools anew; the session loads by id.
+  async #start(off: ReadonlySet<BuiltinGroup>): Promise<Connection> {
+    const key = [...off].sort().join(",");
+    if (this.#conn?.alive && !this.#stale && this.#off === key) return this.#conn;
+    // A fresh agent process reads its settings and lists the MCP tools anew; the session loads by id.
     this.#conn?.kill();
     this.#stale = false;
+    this.#off = key;
     this.#session = null;
     const { bin, model, workspaceDir, homeDir } = this.#opts;
     // GOOGLE_GEMINI_BASE_URL alone would make Gemini pick its "gateway" auth, which headless mode rejects.
-    await selectGeminiApiKeyAuth(homeDir);
+    await writeGeminiSettings(homeDir, off);
     let conn: Connection;
     try {
       conn = await Connection.start(bin, ["--acp", "--model", model], workspaceDir, {
@@ -475,7 +518,11 @@ export class AcpDriver implements ModelDriver {
       if (method !== "session/request_permission" || params["sessionId"] !== session.id)
         return undefined;
       const asked = params["toolCall"] as ToolCallUpdate;
-      const { name, verdict } = review({ ...calls.get(asked.toolCallId), ...asked }, home);
+      const { name, verdict } = review(
+        { ...calls.get(asked.toolCallId), ...asked },
+        home,
+        offGroups(ctx.tools),
+      );
       const options = (params["options"] ?? []) as PermissionOption[];
       const pick = (kind: string): string | undefined =>
         options.find((o) => o.kind === kind)?.optionId;

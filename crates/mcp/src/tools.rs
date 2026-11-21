@@ -1,6 +1,7 @@
 use ferrobot_core::question::{QUESTION_CARD_VERSION, QuestionCard, QuestionEvent};
 use ferrobot_core::{
-    Agent, AgentId, AgentName, AvatarCharacter, ConnectorAuth, MailMessage, Sender, mention,
+    Agent, AgentId, AgentName, AvatarCharacter, ConnectorAuth, MailMessage, Sender, ToolGroup,
+    mention,
 };
 use ferrobot_store::StoreError;
 use rmcp::handler::server::tool::{Extension, ToolCallContext};
@@ -137,6 +138,10 @@ pub struct CreateAgentArgs {
     /// The task to start on, sent as your first message so it starts right away; its answer
     /// comes back to you automatically. Omitted: it stays idle until you message it.
     pub task: Option<String>,
+    /// Tool groups it gets, at most your own. Omitted: the same as yours.
+    pub tools: Option<Vec<ToolGroup>>,
+    /// Names of your connectors it gets. Omitted: all of yours.
+    pub connectors: Option<Vec<String>>,
 }
 
 #[derive(Debug, Serialize, JsonSchema)]
@@ -280,6 +285,13 @@ pub struct Memories {
 pub struct AskUserResult {
     /// Id of the card in your chat, or of the message to your creator.
     pub question_id: i64,
+    pub note: String,
+}
+
+#[derive(Debug, Serialize, JsonSchema)]
+pub struct HangUpResult {
+    /// True when you were the host, so the call ends for everyone.
+    pub ends_call: bool,
     pub note: String,
 }
 
@@ -600,7 +612,7 @@ impl FerrobotTools {
     }
 
     #[tool(
-        description = "Create a new agent. Give it a short, memorable name that fits its role, like `scout` for research, `forge` for building, `ledger` for numbers or `echo` for comms, not `research-agent`. Unless the operator turned on Auto mode, they first see an approval card with its name and role and this call waits for their decision. Returns `created` with the new agent's id, or `declined` (operator said no or did not answer in time). Pass `task` to brief it: it is sent as your first message, the agent starts right away and its answer comes back to you automatically. Fails if the name is invalid or taken, or the agent limit is reached."
+        description = "Create a new agent. Give it a short, memorable name that fits its role, like `scout` for research, `forge` for building, `ledger` for numbers or `echo` for comms, not `research-agent`. Unless the operator turned on Auto mode, they first see an approval card with its name and role and this call waits for their decision. Returns `created` with the new agent's id, or `declined` (operator said no or did not answer in time). Pass `task` to brief it: it is sent as your first message, the agent starts right away and its answer comes back to you automatically. Pass `tools` and `connectors` to give it fewer tools than you have; it never gets more. Fails if the name is invalid or taken, or the agent limit is reached."
     )]
     async fn create_agent(
         &self,
@@ -617,6 +629,8 @@ impl FerrobotTools {
             description: args.description,
             instructions: args.instructions,
             character: args.character,
+            tools: args.tools,
+            connectors: args.connectors,
         };
         if let Some(task) = &task {
             // Before the operator is asked, so a task too long as stored creates no agent.
@@ -760,6 +774,33 @@ impl FerrobotTools {
             ),
             name: shared.name,
             size: shared.size,
+        }))
+    }
+
+    #[tool(
+        description = "Hang up the voice call. If the operator called you, it ends for everyone; \
+        if you were invited, you leave. It takes effect when your turn ends, so say your short \
+        goodbye in your reply."
+    )]
+    async fn hang_up(
+        &self,
+        Extension(parts): Extension<http::request::Parts>,
+    ) -> ToolResult<HangUpResult> {
+        let me = caller(&parts)?.0.id;
+        let ends_call = self
+            .state
+            .notifier
+            .hang_up(me)
+            .await
+            .map_err(|e| ErrorData::invalid_params(e, None))?;
+        let note = if ends_call {
+            "The call ends for everyone when your turn ends."
+        } else {
+            "You leave the call when your turn ends."
+        };
+        Ok(Json(HangUpResult {
+            ends_call,
+            note: note.into(),
         }))
     }
 
@@ -934,9 +975,28 @@ impl FerrobotTools {
     }
 }
 
-fn context_caller(context: &RequestContext<RoleServer>) -> Option<AgentId> {
+fn context_caller(context: &RequestContext<RoleServer>) -> Option<&Agent> {
     let parts = context.extensions.get::<http::request::Parts>()?;
-    Some(parts.extensions.get::<Caller>()?.0.id)
+    Some(&parts.extensions.get::<Caller>()?.0)
+}
+
+/// The group of one of ferrobot's own tools; `None` (never offered) for a tool without one.
+pub(crate) fn group_of(tool: &str) -> Option<ToolGroup> {
+    Some(match tool {
+        "list_agents" | "send_message" | "read_mailbox" | "assign_task" | "list_tasks" => {
+            ToolGroup::Team
+        }
+        "remember" | "recall" | "forget" => ToolGroup::Memory,
+        "ask_user" | "share_file" | "invite_to_call" | "hang_up" => ToolGroup::Operator,
+        "create_agent" => ToolGroup::CreateAgents,
+        "add_connector" => ToolGroup::AddConnectors,
+        "create_routine" => ToolGroup::Routines,
+        _ => return None,
+    })
+}
+
+fn allowed(agent: &Agent, tool: &str) -> bool {
+    group_of(tool).is_some_and(|g| agent.tools.contains(&g))
 }
 
 #[allow(
@@ -953,10 +1013,12 @@ impl ServerHandler for FerrobotTools {
         _request: Option<PaginatedRequestParams>,
         context: RequestContext<RoleServer>,
     ) -> Result<ListToolsResult, ErrorData> {
+        let Some(me) = context_caller(&context) else {
+            return Ok(ListToolsResult::with_all_items(Vec::new()));
+        };
         let mut tools = Self::tool_router().list_all();
-        if let Some(me) = context_caller(&context) {
-            tools.extend(self.state.notifier.connector_tools(me).await);
-        }
+        tools.retain(|t| allowed(me, &t.name));
+        tools.extend(self.state.notifier.connector_tools(me.id).await);
         Ok(ListToolsResult::with_all_items(tools))
     }
 
@@ -965,19 +1027,42 @@ impl ServerHandler for FerrobotTools {
         request: CallToolRequestParams,
         context: RequestContext<RoleServer>,
     ) -> Result<CallToolResponse, ErrorData> {
+        let me = context_caller(&context)
+            .ok_or_else(|| ErrorData::invalid_request("unauthenticated", None))?;
         let router = Self::tool_router();
         if router.has_route(&request.name) {
+            // A model can call a tool by name without it being listed.
+            if !allowed(me, &request.name) {
+                return Err(ErrorData::invalid_params(
+                    format!("{} is turned off for you", request.name),
+                    None,
+                ));
+            }
             return router
                 .call(ToolCallContext::new(self, request, context))
                 .await;
         }
-        let me = context_caller(&context)
-            .ok_or_else(|| ErrorData::invalid_request("unauthenticated", None))?;
         self.state
             .notifier
-            .call_connector_tool(me, request.name.into_owned(), request.arguments)
+            .call_connector_tool(me.id, request.name.into_owned(), request.arguments)
             .await
             .map(Into::into)
             .map_err(|e| ErrorData::invalid_params(e, None))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn every_tool_has_a_group() {
+        for tool in FerrobotTools::tool_router().list_all() {
+            assert!(
+                group_of(&tool.name).is_some(),
+                "{} has no tool group",
+                tool.name
+            );
+        }
     }
 }

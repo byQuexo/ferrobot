@@ -38,6 +38,13 @@
                 "null"
               ]
             },
+            "tools": {
+              "description": "The agent's tool groups; the runner turns off the built-in ones not listed.",
+              "items": {
+                "$ref": "#/$defs/ToolGroup"
+              },
+              "type": "array"
+            },
             "type": {
               "enum": [
                 "welcome"
@@ -50,6 +57,7 @@
             "agent_id",
             "agent_name",
             "instructions",
+            "tools",
             "type"
           ],
           "type": "object"
@@ -149,13 +157,19 @@
           "type": "object"
         },
         {
-          "description": "The operator changed the agent's name, instructions or connectors;\napplies from the next turn.",
+          "description": "The operator changed the agent's name, instructions, tools or connectors;\napplies from the next turn.",
           "properties": {
             "agent_name": {
               "$ref": "#/$defs/AgentName"
             },
             "instructions": {
               "type": "string"
+            },
+            "tools": {
+              "items": {
+                "$ref": "#/$defs/ToolGroup"
+              },
+              "type": "array"
             },
             "type": {
               "enum": [
@@ -167,6 +181,7 @@
           "required": [
             "agent_name",
             "instructions",
+            "tools",
             "type"
           ],
           "type": "object"
@@ -352,6 +367,21 @@
           "type": "object"
         }
       ]
+    },
+    "ToolGroup": {
+      "description": "A group of tools an agent can have on or off. The first six are ferrobot's own MCP tools\n(enforced by the daemon), the last three the model's built-in tools (enforced by the runner).",
+      "enum": [
+        "team",
+        "memory",
+        "operator",
+        "create_agents",
+        "add_connectors",
+        "routines",
+        "shell",
+        "files",
+        "web"
+      ],
+      "type": "string"
     },
     "TurnEvent": {
       "description": "Observable steps of a turn, persisted and streamed to the UI.",

@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 
-import { decide } from "../src/permissions.ts";
+import { decide, offGroups } from "../src/permissions.ts";
 
 const home = "/home/node/workspace";
 
@@ -50,5 +50,16 @@ describe("permission policy", () => {
     assert.equal(decide("Read", { file_path: `${home}/a/b.txt` }, home).allow, true);
     assert.equal(decide("Read", { file_path: "/etc/passwd" }, home).allow, false);
     assert.equal(decide("Edit", { file_path: "../../.ssh/id_rsa" }, home).allow, false);
+  });
+
+  it("refuses tools of turned-off groups and sub-agents while one is off", () => {
+    const off = offGroups(["team", "files"]);
+    assert.deepEqual([...off].sort(), ["shell", "web"]);
+    assert.equal(decide("Bash", { command: "ls" }, home, off).allow, false);
+    assert.equal(decide("WebFetch", {}, home, off).allow, false);
+    assert.equal(decide("Agent", {}, home, off).allow, false);
+    assert.equal(decide("Read", { file_path: "a.md" }, home, off).allow, true);
+    assert.equal(decide("mcp__ferrobot__recall", {}, home, off).allow, true);
+    assert.equal(offGroups(undefined).size, 0, "no profile: nothing off");
   });
 });
