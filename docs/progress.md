@@ -1371,3 +1371,19 @@ store used for the run) or the daemon's own env.
   the agent's own instructions, none for an agent without the group, a later
   welcome carries it, clearing it).
 - Not tested: the dialog and the field in a browser or the Tauri window.
+
+## Missing model key (`fix/missing-model-key`)
+
+**Done**
+
+- Proxy: setup problems answer 400 instead of 503, so SDKs stop at once.
+- Agents: no "daemon key" agent on a daemon without `ANTHROPIC_API_KEY`
+  (Claude driver); `/v1/health` reports `anthropic_key`; the agent dialog and
+  profile show it.
+
+**Tested**
+
+- Rust: `providers_keep_keys_in_the_daemon` (switching to no provider refused
+  without a daemon key, `anthropic_key` false), the provider-key and old-runner
+  tests now expect 400.
+- Not tested: the Claude SDK's message for a 400 from a real turn.

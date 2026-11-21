@@ -1365,3 +1365,18 @@ slop, so polish mode: palette, accent, logo, layout and features stay.
   the agent-name rules (lowercase `a-z0-9-`).
 - **Rename** from an agent's right-click menu (`PATCH /v1/agents/{id}` with
   `name`); its computer and chat stay the same (`sandbox_name` does not change).
+
+## A missing model key fails at once and is caught early
+
+- **Setup problems are 400s.** The proxy answered a missing daemon key, a
+  provider without a key or upstream, a failed `gcloud` token or an unusable
+  provider with 503. The Claude SDK retries 5xx with backoff, so an agent went
+  silent for about three minutes before saying "API Error: 503 … usually
+  temporary" (Tim's call, 2026-11-21). These are now 400s with a plain message
+  saying what to set up; internal errors stay 500.
+- **No daemon-key agents without a key.** With the Claude driver and no
+  `ANTHROPIC_API_KEY`, creating an agent or switching one to no provider is
+  refused (400, "pick a model provider"). `/v1/health` gains `anthropic_key`;
+  the agent dialog marks the default option as not set up, disables it and
+  preselects the first provider for a new agent; the profile says so for an
+  existing agent.

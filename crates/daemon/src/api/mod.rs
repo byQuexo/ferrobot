@@ -218,6 +218,8 @@ pub(crate) struct Health {
     sandbox_ready: bool,
     /// Why the backend is not ready, for the operator; null when ready.
     sandbox_error: Option<String>,
+    /// Whether the daemon has its own `ANTHROPIC_API_KEY` for agents without a provider.
+    anthropic_key: bool,
 }
 
 /// Daemon identity and configuration summary.
@@ -245,5 +247,6 @@ pub(crate) async fn health(State(state): State<AppState>) -> Json<Health> {
         timezone: s.default_timezone.clone(),
         sandbox_ready: sandbox_error.is_none(),
         sandbox_error,
+        anthropic_key: s.anthropic_api_key.is_some(),
     })
 }
