@@ -239,6 +239,11 @@ export class DaemonClient {
   /** Stores (or with `null` removes) one speech provider's key; the chosen provider stays. */
   updateVoiceKey = (provider: VoiceProvider, api_key: string | null): Promise<VoiceView> =>
     this.#request("PUT", `/v1/voice/keys/${provider}`, { api_key });
+  /** A link that streams `text` spoken (usually mp3), so playback starts with the first bytes. */
+  speechUrl = (text: string, agent?: string): string =>
+    this.url(
+      `/v1/voice/speech?${new URLSearchParams({ text, ...(agent ? { agent_id: agent } : {}) }).toString()}`,
+    );
   /** `text` spoken by the configured voice, or by `agent`'s own one (usually mp3). */
   speech = async (text: string, agent?: string): Promise<Blob> =>
     (await this.#fetch("POST", "/v1/voice/speech", { text, agent_id: agent ?? null })).blob();

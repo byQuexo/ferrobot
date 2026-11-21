@@ -1380,3 +1380,18 @@ slop, so polish mode: palette, accent, logo, layout and features stay.
   the agent dialog marks the default option as not set up, disables it and
   preselects the first provider for a new agent; the profile says so for an
   existing agent.
+
+## Streaming speech in calls
+
+- **Play while it streams.** The daemon already streamed ElevenLabs' audio, but
+  the UI waited for the whole clip (`.blob()`). `GET /v1/voice/speech?text=…`
+  (same logic as the `POST`, the operator token as `access_token` like other
+  `GET` links) lets an audio element start with the first bytes; the speaker
+  loads at most two clips ahead and aborts dropped ones. The Tauri CSP's
+  `media-src` gains the daemon's address.
+- **The first clause goes early.** A reply's first spoken chunk may end at a
+  clause break (`,` `;` `:` or a spaced dash) once it has 20 characters, so
+  speech starts before the first sentence is written; the rest still goes by
+  sentence. Measured before (Tencent via OpenRouter): ~4.2 s model time per
+  answer, mostly reasoning, which this does not change (Tim chose streaming
+  only).

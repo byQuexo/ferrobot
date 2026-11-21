@@ -46,7 +46,7 @@ export class CallSession {
     this.#client = client;
     this.#toast = toast;
     this.#nameOf = nameOf;
-    this.#speaker = new Speaker(client.speech, (err) => {
+    this.#speaker = new Speaker(client.speechUrl, (err) => {
       toast(message(err));
     });
     this.#speaker.onSpeaking = (agent) => {

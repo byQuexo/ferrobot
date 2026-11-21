@@ -1007,7 +1007,11 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        get?: never;
+        /**
+         * The same speech as a link, so an audio element can play it while it streams (the operator
+         *     token goes in `access_token`, as for other `GET` links).
+         */
+        get: operations["speech_link"];
         put?: never;
         /**
          * Speaks `text` with the configured provider and voice. The audio
@@ -5673,6 +5677,76 @@ export interface operations {
                 };
             };
             /** @description Voice off, not set up, no key, or not ElevenLabs */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Limit for this minute reached */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description The provider failed */
+            502: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+        };
+    };
+    speech_link: {
+        parameters: {
+            query: {
+                /** @description What to say: 1-4096 characters. */
+                text: string;
+                /** @description Speak with this agent's voice, if it has one. */
+                agent_id?: components["schemas"]["AgentId"];
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Audio, streamed */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "audio/mpeg": number[];
+                };
+            };
+            /** @description Empty or too long */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Missing or wrong API token */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Voice off, not set up, or no key or voice */
             409: {
                 headers: {
                     [name: string]: unknown;

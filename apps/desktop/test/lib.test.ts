@@ -8,6 +8,7 @@ import { linkLabel, relativeTime, stepLabel, toolLabel } from "../src/lib/format
 import { buildTimeline, sharedFiles, withoutRoomTurns } from "../src/lib/timeline.ts";
 import {
   CallScript,
+  firstClause,
   callChanged,
   callClock,
   callTurn,
@@ -688,10 +689,10 @@ describe("voice call", () => {
       onended: (() => void) | null = null;
       onerror: (() => void) | null = null;
       onpause: (() => void) | null = null;
-      constructor() {
-        playing.push(this);
-      }
+      preload = "";
+      src = "";
       play(): Promise<void> {
+        playing.push(this);
         return Promise.resolve();
       }
       pause(): void {
@@ -703,7 +704,7 @@ describe("voice call", () => {
     try {
       const voices: (string | null)[] = [];
       const speaker = new Speaker(
-        () => Promise.resolve(new Blob(["x"])),
+        (text) => `/v1/voice/speech?text=${encodeURIComponent(text)}`,
         (err) => {
           throw err;
         },
@@ -721,9 +722,32 @@ describe("voice call", () => {
       await tick();
       assert.deepEqual(voices, ["a", "b", null], "a is cut off, b's goodbye plays");
       assert.equal(playing.length, 2);
+      assert.ok(playing[1]?.src.endsWith("text=b%20bye"), "streams b's goodbye from its link");
     } finally {
       global.Audio = before;
     }
+  });
+
+  it("starts speaking at the first clause of a long first sentence", () => {
+    const script = new CallScript();
+    const first = script.delta("a", "t1", "England is a strong alternative, especially in late");
+    assert.deepEqual(
+      first.map((l) => l.text),
+      ["England is a strong alternative,"],
+    );
+    const more = script.delta("a", "t1", " September, when the coast is at its best. Then more,");
+    assert.deepEqual(
+      more.map((l) => l.text),
+      ["especially in late September, when the coast is at its best."],
+      "only the first clause goes early",
+    );
+    assert.equal(firstClause("Short, then more"), null, "at least 20 characters first");
+    assert.equal(
+      firstClause("A price of 1,5 million euros or more"),
+      null,
+      "a comma needs a space",
+    );
+    assert.equal(firstClause("```js\nconst a = 1, b = 2;\n"), null);
   });
 
   it("cuts a long turn with a notice", () => {
