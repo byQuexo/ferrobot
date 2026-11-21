@@ -278,6 +278,7 @@ impl Store {
                 &routine.prompt,
                 None,
                 None,
+                None,
             )?;
             let ts = fmt_ts(now());
             tx.execute(

@@ -1144,7 +1144,7 @@ slop, so polish mode: palette, accent, logo, layout and features stay.
   ends the call for everyone; an invited agent leaves.
 - **Single-agent calls** go through `POST /v1/call/messages` too, so the host
   gets the call note; the operator's call messages lose its length to it (limit
-  now 19,718).
+  now 19,441, see "Call rooms").
 
 ## Tool profiles
 
@@ -1249,3 +1249,60 @@ slop, so polish mode: palette, accent, logo, layout and features stay.
   still never count as stale.
 - `(pass)` is also recognised without brackets or with a full stop ("pass",
   "Pass."), in the daemon and the UI.
+
+## Call rooms
+
+- **A call with two or more agents moves into a room** (Tim, 2026-11-21): a
+  group chat where the call happens, so the agents' own chats with the
+  operator stay clean. A one-on-one call stays in the agent's chat. The room
+  opens when a second agent joins (`invite_to_call` or `PUT /v1/call`), stays
+  until the call ends even if only the host is left, and is kept as history.
+  Its title is built from the members' current names ("Call · ann, bob"), so
+  nothing but ids is stored; an agent deleted since drops out of the title.
+- **Storage (v16):** `rooms` (created, ended), `room_members` (who joined,
+  in order), `room_lines` (speaker `user` or `agent:<id>`, words, time), and
+  `messages.room_id` for the mailbox messages that carry room turns. No agent
+  foreign keys, so a room outlives deleted agents. A restart ends rooms left
+  open (the call lives in memory).
+- **Everyone reads, each decides.** Every line (the operator's words or an
+  agent's reply) is queued for every other member and starts a turn there; the
+  agent speaks or replies `(pass)`. The prompt is built when the turn starts,
+  from everything that agent has not heard yet, so at most one room turn per
+  agent waits at a time and a turn with nothing new is skipped without
+  running. This replaces "answer only when named" inside rooms.
+- **The cap stays at four agent lines in a row**, now counted in lines, not
+  hand-offs; the operator's words reset it. Lines past the cap are still
+  stored (they were spoken) but wake nobody; they reach the others with the
+  operator's next words. Since each agent has at most one waiting turn, the
+  turns already queued can add one more line each, so after the operator
+  speaks there are at most 4 + (agents − 1) agent lines. Four kept: with two
+  agents it allows two exchanges each, and the pass rule keeps bigger rooms
+  shorter in practice.
+- **A line is a completed room turn's text**: its `assistant_text` blocks
+  (after the runner's think filter and mention normalising), joined, without
+  `(pass)` blocks. Interrupted or failed turns make no line, and nothing of an
+  agent's own-chat turns lands in the room.
+- **Steering stays inside its place**: the operator's words steer only into a
+  running turn of the same room (or, for chat messages, a chat turn).
+- **Out of the agent's chat:** `GET /v1/agents/{id}/messages`, conversations
+  between agents and unread counts leave room messages and room turns out
+  (room turns are marked by `room_id` in their `message_in` event). The UI
+  hides those turns' events and streaming text from the chat; the Activities
+  tab still lists their tool calls. Question cards and shared
+  files have no turn id and still show in the agent's chat, so a `create_agent`
+  approval asked for in a call is not lost.
+- **Call notes.** One note for every call message: spoken, short, everyone
+  hears every line, speak when asked or when adding something new, otherwise
+  `(pass)`, never repeat. The host also gets a host note: propose a specialist
+  or deeper work in one sentence, wait for the operator's yes, then
+  `create_agent` and `invite_to_call` it, or give it a background task;
+  it says first that an approval may show in its chat (the card waits there,
+  not in the room). An
+  invited agent first hears that it should listen: at most a short hello or
+  `(pass)`, then answer what it is asked. A room turn never gets the new-agent
+  greeting. The operator's call message limit is now 19,441 bytes.
+- **UI:** a "Calls" list in the sidebar (title and time), a room view with
+  the transcript ("You" or the agent's avatar and name, time) that updates
+  live, and a message box there while it is the running call's room. The call
+  window's chat button opens the room once there is one. In an agent's chat
+  during a room call, typed words go to that agent only.

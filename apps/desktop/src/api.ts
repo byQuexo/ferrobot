@@ -52,6 +52,10 @@ export type SetPrice = Schemas["SetPrice"];
 export type GeneralSettings = Schemas["GeneralSettings"];
 export type UpdateInfo = Schemas["UpdateInfo"];
 export type ClisView = Schemas["ClisView"];
+export type CallView = Schemas["CallView"];
+export type Room = Schemas["Room"];
+export type RoomLine = Schemas["RoomLine"];
+export type RoomTranscript = Schemas["RoomTranscript"];
 export type UsageGroupBy = "day" | "agent" | "provider" | "model";
 
 export class ApiError extends Error {
@@ -250,12 +254,14 @@ export class DaemonClient {
         sample_rate: sampleRate,
       })
     ).url;
-  /** Starts, changes or (empty) ends the voice call; returns who is in it. */
-  setCall = async (agents: string[]): Promise<string[]> =>
-    (await this.#request<{ agents: string[] }>("PUT", "/v1/call", { agents })).agents;
+  /** Starts, changes or (empty) ends the voice call; returns who is in it and its room. */
+  setCall = (agents: string[]): Promise<CallView> => this.#request("PUT", "/v1/call", { agents });
   /** The operator's message to everyone in the call. */
   sayInCall = (body: string): Promise<MailMessage[]> =>
     this.#request("POST", "/v1/call/messages", { body });
+  /** Rooms of calls with two or more agents, newest first. */
+  rooms = (): Promise<Room[]> => this.#request("GET", "/v1/rooms");
+  room = (id: number): Promise<RoomTranscript> => this.#request("GET", `/v1/rooms/${String(id)}`);
 
   /** `to` null means until now; `daily` adds each group's `days`. */
   usage = (

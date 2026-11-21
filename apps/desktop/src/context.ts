@@ -16,6 +16,8 @@ export interface AppContextValue {
   openAgent: (id: string) => void;
   /** Opens the read-only thread between two agents. */
   openConversation: (a: string, b: string) => void;
+  /** Opens a call room's transcript. */
+  openRoom: (id: number) => void;
   /** Opens a file an agent shared (its `file` event id). */
   openFile: (agent: string, file: number) => void;
   /** The operator's voice call; it outlives the chat it started in. */

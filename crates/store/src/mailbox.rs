@@ -7,7 +7,7 @@ use crate::util::{fmt_ts, now, parse_ts};
 use crate::{MAX_DELIVERY_ATTEMPTS, Store, StoreError};
 
 pub(crate) const COLUMNS: &str =
-    "id, sender, recipient, body, reply_to, status, attempts, created_at, priority";
+    "id, sender, recipient, body, reply_to, status, attempts, created_at, priority, room_id";
 
 fn priority_to_db(p: Option<bool>) -> i64 {
     match p {
@@ -50,6 +50,7 @@ pub(crate) fn from_row_at(row: &Row<'_>, o: usize) -> Result<MailMessage, StoreE
             0 => None,
             p => Some(p > 0),
         },
+        room_id: row.get(o + 9)?,
     })
 }
 
@@ -62,19 +63,21 @@ pub(crate) fn insert_message(
     body: &str,
     reply_to: Option<i64>,
     priority: Option<bool>,
+    room: Option<i64>,
 ) -> Result<MailMessage, StoreError> {
     let ts = fmt_ts(now());
     c.execute(
         "INSERT INTO messages (sender, recipient, body, reply_to, status, created_at, updated_at,
-                               priority)
-         VALUES (?1, ?2, ?3, ?4, 'pending', ?5, ?5, ?6)",
+                               priority, room_id)
+         VALUES (?1, ?2, ?3, ?4, 'pending', ?5, ?5, ?6, ?7)",
         params![
             sender.to_string(),
             recipient.to_string(),
             body,
             reply_to,
             ts,
-            priority_to_db(priority)
+            priority_to_db(priority),
+            room
         ],
     )
     .map_err(|e| match e {
@@ -118,7 +121,19 @@ impl Store {
         reply_to: Option<i64>,
         priority: Option<bool>,
     ) -> Result<MailMessage, StoreError> {
-        self.with(move |c| insert_message(c, sender, recipient, &body, reply_to, priority))
+        self.with(move |c| insert_message(c, sender, recipient, &body, reply_to, priority, None))
+            .await
+    }
+
+    /// Queues a turn of call room `room` for `recipient`; it stays out of the agent's chat.
+    pub async fn enqueue_room_message(
+        &self,
+        sender: Sender,
+        recipient: AgentId,
+        body: String,
+        room: i64,
+    ) -> Result<MailMessage, StoreError> {
+        self.with(move |c| insert_message(c, sender, recipient, &body, None, None, Some(room)))
             .await
     }
 
@@ -169,21 +184,24 @@ impl Store {
         &self,
         agent: AgentId,
     ) -> Result<Option<MailMessage>, StoreError> {
-        self.claim(agent, "").await
+        self.claim(agent, false, None).await
     }
 
-    /// [`Store::claim_next_message`] for messages from the operator only.
+    /// [`Store::claim_next_message`] for messages from the operator in `room` (`None`: the chat).
     pub async fn claim_next_user_message(
         &self,
         agent: AgentId,
+        room: Option<i64>,
     ) -> Result<Option<MailMessage>, StoreError> {
-        self.claim(agent, "AND sender = 'user'").await
+        self.claim(agent, true, room).await
     }
 
+    /// With `user_only`, only the operator's messages of `room` qualify.
     async fn claim(
         &self,
         agent: AgentId,
-        filter: &'static str,
+        user_only: bool,
+        room: Option<i64>,
     ) -> Result<Option<MailMessage>, StoreError> {
         self.with(move |c| {
             let tx = c.transaction()?;
@@ -192,10 +210,16 @@ impl Store {
                     &format!(
                         "UPDATE messages SET status = 'in_flight', attempts = attempts + 1, updated_at = ?2
                          WHERE id = (SELECT id FROM messages WHERE recipient = ?1 AND status = 'pending'
-                                     {filter} ORDER BY priority > 0 DESC, id LIMIT 1)
+                                     AND (?3 = 0 OR (sender = 'user' AND room_id IS ?4))
+                                     ORDER BY priority > 0 DESC, id LIMIT 1)
                          RETURNING {COLUMNS}"
                     ),
-                    params![agent.to_string(), fmt_ts(now())],
+                    params![
+                        agent.to_string(),
+                        fmt_ts(now()),
+                        user_only,
+                        room
+                    ],
                     |row| Ok(from_row(row)),
                 )
                 .optional()?
@@ -279,7 +303,7 @@ impl Store {
         .await
     }
 
-    /// All messages sent to or by `agent` (newest last), for the UI.
+    /// All messages sent to or by `agent` (newest last) except call room turns, for the UI.
     pub async fn conversation(
         &self,
         agent: AgentId,
@@ -288,7 +312,8 @@ impl Store {
         self.with(move |c| {
             let id = agent.to_string();
             let mut stmt = c.prepare(&format!(
-                "SELECT {COLUMNS} FROM (SELECT * FROM messages WHERE recipient = ?1 OR sender = ?2
+                "SELECT {COLUMNS} FROM (SELECT * FROM messages
+                 WHERE (recipient = ?1 OR sender = ?2) AND room_id IS NULL
                  ORDER BY id DESC LIMIT ?3) ORDER BY id"
             ))?;
             let mut rows = stmt.query(params![id, format!("agent:{id}"), limit])?;
@@ -301,13 +326,13 @@ impl Store {
         .await
     }
 
-    /// Every pair of agents that exchanged messages, most recent first.
+    /// Every pair of agents that exchanged messages outside call rooms, most recent first.
     pub async fn agent_pairs(&self) -> Result<Vec<AgentPair>, StoreError> {
         self.with(|c| {
             let mut stmt = c.prepare(&format!(
                 "WITH m AS (
                     SELECT *, substr(sender, 7) AS from_id FROM messages
-                    WHERE sender LIKE 'agent:%'
+                    WHERE sender LIKE 'agent:%' AND room_id IS NULL
                  ), p AS (
                     SELECT min(from_id, recipient) AS a, max(from_id, recipient) AS b,
                            count(*) AS n, max(id) AS last_id
@@ -339,7 +364,7 @@ impl Store {
         .await
     }
 
-    /// Messages between two agents in both directions (newest last).
+    /// Messages between two agents in both directions outside call rooms (newest last).
     pub async fn pair_thread(
         &self,
         a: AgentId,
@@ -349,7 +374,8 @@ impl Store {
         self.with(move |c| {
             let mut stmt = c.prepare(&format!(
                 "SELECT {COLUMNS} FROM (SELECT * FROM messages
-                 WHERE (sender = ?1 AND recipient = ?4) OR (sender = ?3 AND recipient = ?2)
+                 WHERE ((sender = ?1 AND recipient = ?4) OR (sender = ?3 AND recipient = ?2))
+                   AND room_id IS NULL
                  ORDER BY id DESC LIMIT ?5) ORDER BY id"
             ))?;
             let mut rows = stmt.query(params![

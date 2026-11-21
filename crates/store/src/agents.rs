@@ -403,13 +403,16 @@ impl Store {
         .await
     }
 
-    /// Unread finished turns per agent (only agents with unread > 0).
+    /// Unread finished turns per agent (only agents with unread > 0); call room turns are not in
+    /// the agent's chat, so they do not count.
     pub async fn unread_counts(&self) -> Result<HashMap<AgentId, u32>, StoreError> {
         self.with(|c| {
             let mut stmt = c.prepare(
                 "SELECT a.id, COUNT(e.id) FROM agents a
                  JOIN events e ON e.agent_id = a.id
                  WHERE e.id > a.last_read_event_id AND e.kind = 'turn_done'
+                   AND NOT EXISTS (SELECT 1 FROM events m WHERE m.turn_id = e.turn_id
+                       AND m.kind = 'message_in' AND json_extract(m.payload, '$.room_id') IS NOT NULL)
                  GROUP BY a.id",
             )?;
             let mut rows = stmt.query([])?;

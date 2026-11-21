@@ -806,8 +806,9 @@ impl FerrobotTools {
 
     #[tool(
         description = "Bring a teammate into your voice call with the operator, e.g. one that works on \
-        or knows the topic. Only while the operator is in a voice call with you. Everyone in the call \
-        hears the operator; your replies there are read aloud, so answer in your reply, not with send_message."
+        or knows the topic; for a new specialist, create_agent it first, then invite it. Only while \
+        the operator is in a voice call with you. Everyone in the call hears every line; your replies \
+        there are read aloud, so answer in your reply, not with send_message."
     )]
     async fn invite_to_call(
         &self,
@@ -824,7 +825,7 @@ impl FerrobotTools {
             .map_err(|e| ErrorData::invalid_params(e, None))?;
         Ok(Json(InviteToCallResult {
             note: format!(
-                "@{} joins the call and gets your topic now. What they say reaches you with the operator's next message.",
+                "@{} joins the call and hears your topic now; what they say reaches you in the call.",
                 guest.name
             ),
         }))

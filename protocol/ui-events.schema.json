@@ -258,6 +258,14 @@
             "null"
           ]
         },
+        "room_id": {
+          "description": "The call room whose turn this message carries; such messages stay out of the agent's chat.",
+          "format": "int64",
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
         "sender": {
           "$ref": "#/$defs/Sender"
         },
@@ -296,6 +304,72 @@
         "error"
       ],
       "type": "string"
+    },
+    "Room": {
+      "description": "A voice call with two or more agents; kept as history once the call ended.",
+      "properties": {
+        "created_at": {
+          "format": "date-time",
+          "type": "string"
+        },
+        "ended_at": {
+          "description": "When the call ended; `null` while it runs.",
+          "format": "date-time",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "id": {
+          "format": "int64",
+          "type": "integer"
+        },
+        "members": {
+          "description": "Every agent that took part, in the order they joined.",
+          "items": {
+            "$ref": "#/$defs/AgentId"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "id",
+        "members",
+        "created_at"
+      ],
+      "type": "object"
+    },
+    "RoomLine": {
+      "description": "One thing said in a room, by the operator (`user`) or an agent.",
+      "properties": {
+        "body": {
+          "description": "The words; mentions are `<@agent-id>` tokens.",
+          "type": "string"
+        },
+        "created_at": {
+          "format": "date-time",
+          "type": "string"
+        },
+        "id": {
+          "format": "int64",
+          "type": "integer"
+        },
+        "room_id": {
+          "format": "int64",
+          "type": "integer"
+        },
+        "speaker": {
+          "$ref": "#/$defs/Sender"
+        }
+      },
+      "required": [
+        "id",
+        "room_id",
+        "speaker",
+        "body",
+        "created_at"
+      ],
+      "type": "object"
     },
     "Sender": {
       "description": "Who sent a mailbox message.",
@@ -570,13 +644,20 @@
           "type": "object"
         },
         {
-          "description": "Who is in the operator's voice call changed (empty: it ended).",
+          "description": "Who is in the operator's voice call changed (empty: it ended). `room_id`: the call's room,\nonce a second agent joined.",
           "properties": {
             "agents": {
               "items": {
                 "$ref": "#/$defs/AgentId"
               },
               "type": "array"
+            },
+            "room_id": {
+              "format": "int64",
+              "type": [
+                "integer",
+                "null"
+              ]
             },
             "type": {
               "enum": [
@@ -587,6 +668,44 @@
           },
           "required": [
             "agents",
+            "type"
+          ],
+          "type": "object"
+        },
+        {
+          "description": "A call room opened, gained a member or ended.",
+          "properties": {
+            "room": {
+              "$ref": "#/$defs/Room"
+            },
+            "type": {
+              "enum": [
+                "room"
+              ],
+              "type": "string"
+            }
+          },
+          "required": [
+            "room",
+            "type"
+          ],
+          "type": "object"
+        },
+        {
+          "description": "Something was said in a call room.",
+          "properties": {
+            "line": {
+              "$ref": "#/$defs/RoomLine"
+            },
+            "type": {
+              "enum": [
+                "room_line"
+              ],
+              "type": "string"
+            }
+          },
+          "required": [
+            "line",
             "type"
           ],
           "type": "object"

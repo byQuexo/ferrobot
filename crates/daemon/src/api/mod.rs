@@ -176,6 +176,8 @@ fn integrations() -> Router<AppState> {
         .route("/v1/voice/live", post(voice::live))
         .route("/v1/call", get(voice::get_call).put(voice::put_call))
         .route("/v1/call/messages", post(voice::post_call_message))
+        .route("/v1/rooms", get(voice::list_rooms))
+        .route("/v1/rooms/{id}", get(voice::get_room))
         .route(
             "/v1/voice/transcription",
             post(voice::transcription).layer(axum::extract::DefaultBodyLimit::max(

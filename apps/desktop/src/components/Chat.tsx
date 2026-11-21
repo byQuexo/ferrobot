@@ -29,6 +29,7 @@ import {
   buildTimeline,
   groupExchanges,
   sharedFiles,
+  withoutRoomTurns,
   type DisplayItem,
   type Exchange,
   type TimelineItem,
@@ -62,9 +63,9 @@ export function Chat(props: {
   }, [client]);
   const voiceEnabled = voiceView?.enabled !== false;
   const inCall = callState !== null && !callState.ending && callState.agents.includes(id);
-  // Everyone in the call hears what the operator says; otherwise it goes to this agent only.
+  // A one-on-one call happens here; a call with a room is spoken to in the room.
   const send = (body: string): Promise<unknown> =>
-    inCall ? call.say(body) : client.send(id, body);
+    inCall && callState.room === null ? call.say(body) : client.send(id, body);
 
   useEffect(() => {
     let cancelled = false;
@@ -136,7 +137,8 @@ export function Chat(props: {
       agents: new Map([...agents.values()].map((a) => [a.id, a.name])),
       routines: new Map(routines.map((r) => [r.id, r.name])),
     };
-    const all = buildTimeline(id, messages, events, live, names);
+    const chat = withoutRoomTurns(messages, events, live);
+    const all = buildTimeline(id, chat.messages, chat.events, chat.live, names);
     // Tool calls and turn errors live on the Activities tab; the chat shows the conversation.
     const shown = groupExchanges(all.filter((i) => i.type !== "tool" && i.type !== "error"));
     // The current activity: the newest step since the message being worked on.
@@ -267,7 +269,12 @@ export function Chat(props: {
       </div>
 
       <Composer
-        agent={agent}
+        chat={id}
+        placeholder={
+          agent.presence === "sleeping"
+            ? `Message ${agent.name} — this wakes it up`
+            : `Message ${agent.name}`
+        }
         send={send}
         voice={voiceEnabled ? voiceView : null}
         onTalk={() => {
@@ -552,7 +559,7 @@ const joinText = (...parts: string[]): string =>
  * (ElevenLabs) or after stopping (other providers); nothing is sent until the operator sends it.
  */
 function MicButton(props: {
-  agent: Agent;
+  chat: string;
   voice: VoiceView;
   text: () => string;
   setText: (t: string) => void;
@@ -638,7 +645,7 @@ function MicButton(props: {
       void rec.current?.stop();
       rec.current = null;
     },
-    [props.agent.id],
+    [props.chat],
   );
 
   return (
@@ -676,8 +683,10 @@ function MicButton(props: {
   );
 }
 
-function Composer(props: {
-  agent: Agent;
+/** The message box of a chat or call room (`chat` is its id). */
+export function Composer(props: {
+  chat: string;
+  placeholder: string;
   send: (body: string) => Promise<unknown>;
   /** `null`: voice is off, no microphone. */
   voice: VoiceView | null;
@@ -691,7 +700,7 @@ function Composer(props: {
   const ref = useRef<HTMLTextAreaElement>(null);
   useEffect(() => {
     ref.current?.focus();
-  }, [props.agent.id]);
+  }, [props.chat]);
   useLayoutEffect(() => {
     const el = ref.current;
     if (!el) return;
@@ -707,7 +716,6 @@ function Composer(props: {
     setSending(false);
     if (ok) setText("");
   };
-  const asleep = props.agent.presence === "sleeping";
 
   return (
     <form
@@ -721,9 +729,7 @@ function Composer(props: {
         ref={ref}
         rows={1}
         value={text}
-        placeholder={
-          asleep ? `Message ${props.agent.name} — this wakes it up` : `Message ${props.agent.name}`
-        }
+        placeholder={props.placeholder}
         onInput={(e) => {
           setText(e.currentTarget.value);
         }}
@@ -736,7 +742,7 @@ function Composer(props: {
       />
       {props.voice && (
         <MicButton
-          agent={props.agent}
+          chat={props.chat}
           voice={props.voice}
           text={() => current.current}
           setText={setText}

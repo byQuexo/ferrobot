@@ -50,7 +50,8 @@ pub(crate) async fn post_message(
     Ok((StatusCode::ACCEPTED, Json(msg)))
 }
 
-/// The agent's conversation: messages to and from it, oldest first (last 200).
+/// The agent's conversation: messages to and from it, oldest first (last 200). Call room turns
+/// (`room_id` set) are left out; they are in the room.
 #[utoipa::path(get, path = "/v1/agents/{id}/messages", tag = "chat",
     params(("id" = String, Path, description = "Agent id (UUID)")),
     responses((status = 200, body = Vec<MailMessage>),
@@ -100,7 +101,8 @@ pub(crate) struct Conversation {
     last: MailMessage,
 }
 
-/// Agent-to-agent conversations (one per pair of agents), most recent first.
+/// Agent-to-agent conversations (one per pair of agents), most recent first; call room turns
+/// are left out.
 #[utoipa::path(get, path = "/v1/conversations", tag = "chat",
     responses((status = 200, body = Vec<Conversation>)))]
 pub(crate) async fn list_conversations(
@@ -121,7 +123,7 @@ pub(crate) async fn list_conversations(
 }
 
 /// Read-only thread between two agents: messages in both directions, oldest
-/// first (last 200). The order of `a` and `b` does not matter.
+/// first (last 200), without call room turns. The order of `a` and `b` does not matter.
 #[utoipa::path(get, path = "/v1/conversations/{a}/{b}", tag = "chat",
     params(("a" = String, Path, description = "Agent id (UUID)"),
         ("b" = String, Path, description = "Agent id (UUID)")),

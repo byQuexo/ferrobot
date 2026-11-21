@@ -107,6 +107,8 @@ pub const QUESTION_CARD_FILE: &str = "question-card.v1.schema.json";
         api::voice::get_call,
         api::voice::put_call,
         api::voice::post_call_message,
+        api::voice::list_rooms,
+        api::voice::get_room,
         api::settings::get_settings,
         api::settings::put_settings,
         api::usage::get_usage,

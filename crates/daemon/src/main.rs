@@ -178,6 +178,7 @@ async fn main() -> Result<()> {
     std::fs::create_dir_all(&cli.data_dir)
         .with_context(|| format!("creating {}", cli.data_dir.display()))?;
     let store = Store::open(cli.data_dir.join("ferrobot.db")).context("opening database")?;
+    store.end_open_rooms().await.context("ending old calls")?;
 
     let secrets = secret_store(&cli);
     let backend = make_backend(&cli, &secrets).await?;

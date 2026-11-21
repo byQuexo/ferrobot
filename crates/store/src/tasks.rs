@@ -92,7 +92,7 @@ impl Store {
     ) -> Result<MailMessage, StoreError> {
         self.with(move |c| {
             let tx = c.transaction()?;
-            let msg = insert_message(&tx, Sender::Agent(from), to, &body, None, None)?;
+            let msg = insert_message(&tx, Sender::Agent(from), to, &body, None, None, None)?;
             mark(&tx, to, "task", msg.id)?;
             tx.commit()?;
             Ok(msg)
@@ -161,7 +161,7 @@ impl Store {
         let (id, sender, delegate) = (task.message.id, task.message.sender, task.message.recipient);
         self.with(move |c| {
             let tx = c.transaction()?;
-            let msg = insert_message(&tx, sender, delegate, &body, Some(id), None)?;
+            let msg = insert_message(&tx, sender, delegate, &body, Some(id), None, None)?;
             mark(&tx, delegate, "task_nudged", id)?;
             tx.commit()?;
             Ok(msg)

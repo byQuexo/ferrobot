@@ -16,6 +16,7 @@ import { Settings, type SettingsSection } from "./components/Settings.tsx";
 import { Chat } from "./components/Chat.tsx";
 import { ConversationView, type Pair } from "./components/Conversations.tsx";
 import { InfoPanel, type InfoTab } from "./components/InfoPanel.tsx";
+import { RoomView } from "./components/Rooms.tsx";
 import { Sidebar } from "./components/Sidebar.tsx";
 import { Usage } from "./components/Usage.tsx";
 import { Button, Empty } from "./components/ui.tsx";
@@ -58,6 +59,7 @@ export function App(): JSX.Element {
     localStorage.getItem("ferrobot.selected"),
   );
   const [pair, setPair] = useState<Pair | null>(null);
+  const [room, setRoom] = useState<number | null>(null);
   const [dialog, setDialog] = useState<"create" | "edit" | null>(null);
   const [settings, setSettings] = useState<SettingsSection | null>(null);
   const [usage, setUsage] = useState(false);
@@ -178,6 +180,7 @@ export function App(): JSX.Element {
 
   const openAgent = useCallback((id: string) => {
     setPair(null);
+    setRoom(null);
     setSettings(null);
     setUsage(false);
     setSelected(id);
@@ -185,7 +188,14 @@ export function App(): JSX.Element {
   const openConversation = useCallback((a: string, b: string) => {
     setSettings(null);
     setUsage(false);
+    setRoom(null);
     setPair(a < b ? [a, b] : [b, a]);
+  }, []);
+  const openRoom = useCallback((id: number) => {
+    setSettings(null);
+    setUsage(false);
+    setPair(null);
+    setRoom(id);
   }, []);
   const [file, setFile] = useState<{ agent: string; file: number } | null>(null);
   const openFile = useCallback((agent: string, id: number) => {
@@ -200,12 +210,13 @@ export function App(): JSX.Element {
     run,
     openAgent,
     openConversation,
+    openRoom,
     openFile,
     call,
     callState,
   };
   const agent = selected ? agents.get(selected) : undefined;
-  const withInfo = agent && infoOpen && !pair && !settings && !usage;
+  const withInfo = agent && infoOpen && !pair && room === null && !settings && !usage;
 
   return (
     <AppContext.Provider value={ctx}>
@@ -216,8 +227,11 @@ export function App(): JSX.Element {
           pair={pair}
           onOpenPair={(p) => {
             setUsage(false);
+            setRoom(null);
             setPair(p);
           }}
+          room={room}
+          onOpenRoom={openRoom}
           onCreate={() => {
             setDialog("create");
           }}
@@ -252,6 +266,8 @@ export function App(): JSX.Element {
               setUsage(false);
             }}
           />
+        ) : room !== null ? (
+          <RoomView key={room} id={room} />
         ) : pair ? (
           <ConversationView key={pair.join()} pair={pair} />
         ) : agent ? (

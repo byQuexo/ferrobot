@@ -1296,3 +1296,32 @@ store used for the run) or the daemon's own env.
 - Unit tests for the id comparison (rebuilt base and CLI images stale, same id
   not, snapshots never) and the pass spellings; desktop `isPass` test.
 - Not run live yet: recreating real agents on the rebuilt runner image.
+
+## Call rooms (`feat/call-rooms`)
+
+**Done**
+
+- Calls with two or more agents move into a room (migration v16): members,
+  lines, `room_id` on the messages that carry room turns; `GET /v1/rooms`,
+  `GET /v1/rooms/{id}`; `room` and `room_line` events; `room_id` on the call
+  view and the `call` event.
+- Every line reaches every other member as a turn built from what it has not
+  heard; `(pass)` makes no line; four agent lines in a row, then the room
+  waits for the operator.
+- Host note (propose specialists, create and invite them) and listen-first
+  invites; `invite_to_call` mentions create-then-invite.
+- Desktop: Calls list, room view with live transcript and a message box while
+  live, the call window opens the room; room messages and turns are hidden
+  from agents' chats.
+
+**Tested**
+
+- Rust: `calls_with_two_agents_move_into_a_room_where_everyone_hears_and_decides`
+  (one-on-one stays in the chat, the invite opens a room, listen-first invite
+  prompt and host note, lines reach the others, pass and interrupted turns
+  make no line, the cap and its reset, unread counts, hang-up ends the room,
+  the room is readable after, at most four agents); store and migration
+  tests; unit tests for hearing, the cap and the prompt size.
+- Desktop: hiding room turns from the chat timeline, room titles, call state.
+- Not tested: a live call with real models and voices, the room view in the
+  Tauri window.

@@ -4,7 +4,7 @@ use std::time::Duration;
 
 use ferrobot_core::{AgentId, MailMessage};
 use ferrobot_sandbox::SandboxBackend;
-use ferrobot_store::{Store, StoredEvent};
+use ferrobot_store::{Room, RoomLine, Store, StoredEvent};
 use serde::Serialize;
 use tokio::sync::{Notify, broadcast, oneshot};
 
@@ -188,8 +188,16 @@ pub enum UiEvent {
     GlobalMemoryChanged,
     /// The agent's routines or their runs changed; refetch them.
     RoutinesChanged { agent_id: AgentId },
-    /// Who is in the operator's voice call changed (empty: it ended).
-    Call { agents: Vec<AgentId> },
+    /// Who is in the operator's voice call changed (empty: it ended). `room_id`: the call's room,
+    /// once a second agent joined.
+    Call {
+        agents: Vec<AgentId>,
+        room_id: Option<i64>,
+    },
+    /// A call room opened, gained a member or ended.
+    Room { room: Room },
+    /// Something was said in a call room.
+    RoomLine { line: RoomLine },
 }
 
 /// Shared daemon state. Cheap to clone.
@@ -224,8 +232,9 @@ pub struct AppState {
     pub model_lists: Arc<crate::models::ModelCache>,
     /// What speech and transcription may still spend this minute.
     pub voice: Arc<Mutex<crate::voice::Budget>>,
-    /// The operator's voice call (in memory: a restart ends it).
-    pub call: Arc<Mutex<crate::call::Call>>,
+    /// The operator's voice call (in memory: a restart ends it). Async, so a change and its
+    /// room's rows in the store happen as one step.
+    pub call: Arc<tokio::sync::Mutex<crate::call::Call>>,
     /// The running or last source update (in memory: the restarted daemon starts idle).
     pub update: Arc<Mutex<crate::update::UpdateInfo>>,
     /// Where the CLI image build stands.
@@ -396,8 +405,8 @@ impl ferrobot_mcp::MailboxNotifier for AppState {
     }
 
     fn hang_up(&self, agent: AgentId) -> ferrobot_mcp::BoxFuture<Result<bool, String>> {
-        let result = AppState::hang_up(self, agent);
-        Box::pin(async move { result })
+        let state = self.clone();
+        Box::pin(async move { state.hang_up(agent).await })
     }
 
     fn request_routine(
