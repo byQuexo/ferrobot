@@ -91,9 +91,11 @@ Principles:
 - `crates/daemon/src/voice.rs`, `api/voice.rs` — voice: speech and
   transcription for the operator's chat via ElevenLabs or OpenRouter (keys
   in the keychain as `voice:<provider>`); `call.rs` — the operator's voice
-  call (agents invite teammates and answer an agent that addresses them by
-  name, up to four times in a row; chats show only the spoken words, the call
-  note goes to the model; `hang_up` takes effect when the agent's turn ends);
+  call (one agent: in its chat; two or more: a room (`crates/store/src/rooms.rs`)
+  where every line reaches every other member as a turn and each speaks or
+  passes, four agent lines in a row at most; room messages carry `room_id` and
+  stay out of chats; the call note goes to the model at hand-off, the host
+  also gets the host note; `hang_up` takes effect when the agent's turn ends);
   `apps/desktop/src/lib/voice.ts` — playback and recording in the UI;
   `lib/call-session.ts` — the call in the UI (outlives the chat),
   `lib/call.ts` — its sentence, barge-in and call-event rules.
@@ -192,12 +194,13 @@ daemon, `docker ps -a` must be empty of ferrobot containers.
 ## Migrations
 
 - `crates/store/src/migrations.rs`, tracked with `PRAGMA user_version`.
-- Forward-only, numbered v1..v15 (v7: `providers`, `agents.provider_id`/`model`; v8:
+- Forward-only, numbered v1..v16 (v7: `providers`, `agents.provider_id`/`model`; v8:
   `global_memories`; v9: `connectors`, `agent_connectors`; v10:
   `global_memories.author`; v11: `agents.pinned`; v12: `settings`, JSON by
   key, e.g. `voice`; v13: `usage`, one row per proxied model call; v14:
   `usage.cost_usd`, OpenRouter's reported charge; v15: `agents.tools`, NULL =
-  every tool group). Append a new entry
+  every tool group; v16: `rooms`, `room_members`, `room_lines`,
+  `messages.room_id`, index `events_turn`). Append a new entry
   with a `// vN: ...` comment; **never edit or reorder existing ones**.
 - Every migration gets a test (upgrade an old DB, check defaults of existing
   rows). New columns on existing tables need a default.
