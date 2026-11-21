@@ -35,6 +35,8 @@ declare global {
   interface Window {
     /** Operator token injected by the desktop shell, if it found one. */
     __FERROBOT_TOKEN__?: string;
+    /** Set by the desktop shell: whether the app updater is set up and it started the daemon. */
+    __FERROBOT_SHELL__?: { updater: boolean; ownDaemon: boolean };
   }
 }
 

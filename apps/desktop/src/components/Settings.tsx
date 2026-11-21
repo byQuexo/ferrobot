@@ -10,6 +10,7 @@ import {
   Moon,
   Palette,
   Plug,
+  RefreshCw,
   Sun,
   Terminal,
   X,
@@ -22,12 +23,21 @@ import { ClisSettings } from "./ClisSettings.tsx";
 import { ConnectorsSettings } from "./ConnectorsSettings.tsx";
 import { Memory } from "./InfoPanel.tsx";
 import { ProvidersSettings } from "./ProvidersSettings.tsx";
+import { UpdatesSettings } from "./UpdatesSettings.tsx";
 import { VaultSettings } from "./VaultSettings.tsx";
 import { VoiceSettings } from "./VoiceSettings.tsx";
 import { IconButton, Switch } from "./ui.tsx";
 
 export type SettingsSection =
-  "providers" | "vault" | "agents" | "connectors" | "clis" | "memory" | "voice" | "appearance";
+  | "providers"
+  | "vault"
+  | "agents"
+  | "connectors"
+  | "clis"
+  | "memory"
+  | "voice"
+  | "appearance"
+  | "updates";
 
 const SECTIONS: [SettingsSection, string, string, typeof KeyRound][] = [
   ["providers", "Model providers", "The models your agents run on. Their keys live in Vault.", Cpu],
@@ -63,6 +73,7 @@ const SECTIONS: [SettingsSection, string, string, typeof KeyRound][] = [
     AudioLines,
   ],
   ["appearance", "Appearance", "How ferrobot looks on this computer.", Palette],
+  ["updates", "Updates", "The version ferrobot runs and how to get the latest.", RefreshCw],
 ];
 
 /** Auto mode; saved as soon as it is switched. */
@@ -154,6 +165,7 @@ export function Settings(props: {
         {props.section === "clis" && <ClisSettings />}
         {props.section === "memory" && <Memory agent={null} />}
         {props.section === "voice" && <VoiceSettings onVault={vault} />}
+        {props.section === "updates" && <UpdatesSettings />}
         {props.section === "appearance" && (
           <div class="form">
             <span class="field">

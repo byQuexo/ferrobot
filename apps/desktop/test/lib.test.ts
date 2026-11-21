@@ -11,6 +11,7 @@ import { checkDot, checkLabel } from "../src/lib/connectors.ts";
 import { parseBlocks, parseInline } from "../src/lib/markdown.ts";
 import { modelOptions, withSaved } from "../src/lib/models.ts";
 import { moveId, orderAgents } from "../src/lib/order.ts";
+import { pollOutcome } from "../src/lib/update.ts";
 import { liveEvent, pcm16Base64, speakable } from "../src/lib/voice.ts";
 import {
   chartMetric,
@@ -23,7 +24,7 @@ import {
   toCsv,
   zoneDays,
 } from "../src/lib/usage.ts";
-import type { Connector, UsageGroup } from "../src/api.ts";
+import type { Connector, UpdateInfo, UsageGroup } from "../src/api.ts";
 
 const ME = "11111111-1111-4111-8111-111111111111";
 const BOB = "22222222-2222-4222-8222-222222222222";
@@ -728,6 +729,23 @@ describe("catalog", () => {
     assert.equal(isAdded(linear, [{ name: "work", url: linear.url }]), true);
     assert.equal(isAdded(linear, [{ name: "linear", url: "https://x" }]), true);
     assert.equal(isAdded(linear, [{ name: "other", url: "https://x" }]), false);
+  });
+});
+
+describe("source update", () => {
+  it("relaunches only once a new daemon answers", () => {
+    const info = (state: UpdateInfo["state"]): UpdateInfo => ({
+      version: "0.1.0",
+      source_build: true,
+      state,
+      log: [],
+    });
+    assert.equal(pollOutcome(null), "wait");
+    assert.equal(pollOutcome(info("running")), "wait");
+    assert.equal(pollOutcome(info("restarting")), "wait");
+    assert.equal(pollOutcome(info("idle")), "restarted");
+    assert.equal(pollOutcome(info("failed")), "done");
+    assert.equal(pollOutcome(info("up_to_date")), "done");
   });
 });
 

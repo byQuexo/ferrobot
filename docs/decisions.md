@@ -945,6 +945,61 @@ slop, so polish mode: palette, accent, logo, layout and features stay.
   2026-11-20). A credential-swapping proxy for OAuth CLIs is a later option,
   only for CLIs without an MCP server.
 
+## Self-update
+
+- **Two paths, one button** (Settings, Updates). Release builds use Tauri's
+  updater: signed archives on GitHub Releases, found through `latest.json`.
+  Tim runs debug builds from his checkout, which no release can replace, so
+  there the daemon pulls `main`, rebuilds and restarts itself. The UI picks the
+  path from `GET /v1/update` (`source_build`) and a flag the shell injects.
+- **Source updates are debug-only** (`cfg(debug_assertions)`): a release
+  binary holds no code that runs git, npm or cargo or re-execs; its
+  `POST /v1/update` answers 404. Routes and spec are the same in both profiles.
+- **Which checkout:** the daemon's own path, `<repo>/target/debug/ferrobotd`,
+  with the daemon manifest and `.git` there. Refused (409): not on `main`, or
+  changed tracked files. Untracked files are fine; `--ff-only` keeps them.
+- **Steps**, explicit arguments, no shell: `git pull --ff-only` (the existing
+  `origin`; SSH in batch mode so a locked key fails within seconds, 2 min
+  limit), `npm ci` only if `apps/desktop/package-lock.json` changed or
+  `node_modules` is missing, `npm run build`, `cargo build -p ferrobot-daemon`,
+  `cargo build` in `src-tauri`. `ANTHROPIC_API_KEY` and `FERROBOT_API_TOKEN`
+  are removed from the steps' environment (npm runs install scripts).
+- **Up to date** means `HEAD` after the pull is the commit the daemon started
+  from, so a retry after a failed build still rebuilds.
+- **Restart:** Unix `exec` of the same path with the same arguments,
+  environment and directory, so data dir, ports and PID stay. Windows only
+  says to restart by hand. The UI polls `GET /v1/update`; status lives in
+  memory, so a fresh `idle` means the new daemon answers, and the app then
+  relaunches itself through the process plugin.
+- **The shell's daemon is a Tauri resource,** dropped on exit, on relaunch and
+  when the Windows updater ends the app with `process::exit`. That path skips
+  `RunEvent::Exit`; an exit handler would leave `ferrobotd.exe` running and
+  locked for the installer.
+- **The updater plugin loads only with a config** (`plugins.updater`, in
+  `tauri.release.conf.json`): it fails without one, so dev builds skip it and
+  the UI says updates aren't set up.
+- **Signing key:** Tim's pair; the private key stays in
+  `~/.tauri/ferrobot-updater.key`, the public key is in the release config. CI
+  reads `TAURI_SIGNING_PRIVATE_KEY` and `TAURI_SIGNING_PRIVATE_KEY_PASSWORD`
+  from repo secrets and builds without updater artifacts when they are missing
+  (the CLI fails otherwise). `requireSignedVersion` is on: the CLI signs the
+  version into the signature, so a tampered `latest.json` cannot pair a new
+  version with an older signed archive; no release predates it.
+  ```
+  cd apps/desktop && npm run tauri signer generate -- -w ~/.tauri/ferrobot-updater.key
+  # public key: ~/.tauri/ferrobot-updater.key.pub → plugins.updater.pubkey
+  gh secret set TAURI_SIGNING_PRIVATE_KEY --repo byQuexo/ferrobot < ~/.tauri/ferrobot-updater.key
+  gh secret set TAURI_SIGNING_PRIVATE_KEY_PASSWORD --repo byQuexo/ferrobot
+  ```
+- **macOS builds `app,dmg` in CI:** the updater archive (`.app.tar.gz`) comes
+  only from the `app` bundle.
+- **Versions:** the Tauri CLI refuses crate and npm packages on different
+  minors, so the shell moved to tauri 2.12, updater 2.14 and process 2.4. Those
+  crates need Rust 1.90: the shell's `rust-version` is 1.90, the core stays 1.88.
+- **Private repo:** `releases/latest/download/latest.json` answers 404 until
+  the repo is public and a release is published (drafts do not count); the
+  check then shows "Couldn't check: …".
+
 ## Connector checks
 
 - **The status is a real connection.** The row's state comes from a check: the

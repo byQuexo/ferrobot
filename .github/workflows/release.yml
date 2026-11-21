@@ -109,7 +109,8 @@ jobs:
           - name: macOS universal
             os: macos-latest
             triple: universal-apple-darwin
-            args: --target universal-apple-darwin --bundles dmg
+            # `app` makes the updater archive (.app.tar.gz); dmg alone does not.
+            args: --target universal-apple-darwin --bundles app,dmg
           - name: Windows
             os: windows-latest
             triple: x86_64-pc-windows-msvc
@@ -185,13 +186,28 @@ jobs:
           Set-Content -Path apps/desktop/src-tauri/tauri.signing.conf.json -Value $config
           "SIGNING_ARGS=--config src-tauri/tauri.signing.conf.json" >> $env:GITHUB_ENV
 
+      # The updater key signs the update archives that latest.json points at. Without it the
+      # build still runs, just without updater artifacts.
+      - name: Skip updater artifacts without the signing key
+        shell: bash
+        env:
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+        run: |
+          if [ -z "$TAURI_SIGNING_PRIVATE_KEY" ]; then
+            echo '{"bundle":{"createUpdaterArtifacts":false}}' > apps/desktop/src-tauri/tauri.no-updater.conf.json
+            echo "UPDATER_ARGS=--config src-tauri/tauri.no-updater.conf.json" >> "$GITHUB_ENV"
+          fi
+
       - uses: tauri-apps/tauri-action@v0
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
         with:
           projectPath: apps/desktop
           releaseId: ${{ needs.draft.outputs.id }}
-          args: ${{ matrix.args }} --config src-tauri/tauri.release.conf.json ${{ env.SIGNING_ARGS }}
+          includeUpdaterJson: true
+          args: ${{ matrix.args }} --config src-tauri/tauri.release.conf.json ${{ env.SIGNING_ARGS }} ${{ env.UPDATER_ARGS }}
 
   checksums:
     name: SHA256SUMS

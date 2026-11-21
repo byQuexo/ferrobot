@@ -6,7 +6,6 @@ use std::io::{Read, Write};
 use std::net::{SocketAddr, TcpStream};
 use std::path::{Path, PathBuf};
 use std::process::{Child, Command};
-use std::sync::Mutex;
 use std::time::{Duration, Instant};
 
 use tauri::Manager;
@@ -19,8 +18,17 @@ const RUNNER_IMAGE: &str = concat!(
     env!("CARGO_PKG_VERSION")
 );
 
-/// The daemon this shell started, stopped when the app exits.
-struct OwnDaemon(Mutex<Option<Child>>);
+/// The daemon this shell started. A resource, so it also stops when the Windows updater exits
+/// the app without the usual exit events.
+struct OwnDaemon(Child);
+
+impl tauri::Resource for OwnDaemon {}
+
+impl Drop for OwnDaemon {
+    fn drop(&mut self) {
+        stop_daemon(&mut self.0);
+    }
+}
 
 fn token(data_dir: &Path) -> Option<String> {
     let token = std::env::var("FERROBOT_API_TOKEN").ok().or_else(|| {
@@ -177,7 +185,14 @@ fn download(webview: &tauri::Webview, event: DownloadEvent<'_>) -> bool {
 
 fn main() {
     let app = tauri::Builder::default()
+        .plugin(tauri_plugin_process::init())
         .setup(|app| {
+            // Only release builds configure it (`tauri.release.conf.json`); without a config it fails.
+            let updater = app.config().plugins.0.contains_key("updater");
+            if updater {
+                app.handle()
+                    .plugin(tauri_plugin_updater::Builder::new().build())?;
+            }
             let bundled = bundled_daemon();
             let data_dir = if bundled.is_some() {
                 app.path().app_data_dir()?
@@ -187,13 +202,14 @@ fn main() {
                 )
             };
             let mut status = health();
+            let own_daemon = status.is_none() && bundled.is_some();
             if let (None, Some(bin)) = (&status, &bundled) {
                 let mut child = start_daemon(bin, &data_dir)?;
                 match wait_for_daemon(&mut child) {
                     Ok(body) => status = Some(body),
                     Err(e) => eprintln!("{e}"),
                 }
-                app.manage(OwnDaemon(Mutex::new(Some(child))));
+                app.resources_table().add(OwnDaemon(child));
             }
             let mut config = app
                 .config()
@@ -206,9 +222,12 @@ fn main() {
             if status.is_some_and(|body| body.contains("\"sandbox_ready\":false")) {
                 config.url = tauri::WebviewUrl::App("docker.html".into());
             }
-            let script = token(&data_dir)
+            let token = token(&data_dir)
                 .map(|t| format!("window.__FERROBOT_TOKEN__ = \"{t}\";"))
                 .unwrap_or_default();
+            let script = format!(
+                "window.__FERROBOT_SHELL__ = {{ updater: {updater}, ownDaemon: {own_daemon} }};{token}"
+            );
             tauri::WebviewWindowBuilder::from_config(app.handle(), &config)?
                 .initialization_script(&script)
                 .on_navigation(|url| {
@@ -226,20 +245,9 @@ fn main() {
                 .build()?;
             Ok(())
         })
-        .build(tauri::generate_context!());
-    let app = match app {
-        Ok(app) => app,
-        Err(e) => {
-            eprintln!("ferrobot desktop failed to start: {e}");
-            std::process::exit(1);
-        }
-    };
-    app.run(|handle, event| {
-        if let tauri::RunEvent::Exit = event
-            && let Some(own) = handle.try_state::<OwnDaemon>()
-            && let Some(mut child) = own.0.lock().ok().and_then(|mut c| c.take())
-        {
-            stop_daemon(&mut child);
-        }
-    });
+        .run(tauri::generate_context!());
+    if let Err(e) = app {
+        eprintln!("ferrobot desktop failed to start: {e}");
+        std::process::exit(1);
+    }
 }

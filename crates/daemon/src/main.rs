@@ -162,6 +162,10 @@ struct Cli {
 }
 
 #[tokio::main]
+#[allow(
+    clippy::too_many_lines,
+    reason = "startup wiring, one step after another"
+)]
 async fn main() -> Result<()> {
     tracing_subscriber::fmt()
         .with_env_filter(
@@ -232,6 +236,15 @@ async fn main() -> Result<()> {
     settings.secrets = secrets;
     settings.codex_bin.clone_from(&cli.codex_bin);
     settings.codex_home = ferrobot_daemon::codex::clean_home(cli.data_dir.join("codex"));
+    #[cfg(debug_assertions)]
+    {
+        settings.source_update = std::env::current_exe().ok().and_then(|exe| {
+            ferrobot_daemon::update::Source::detect(
+                exe,
+                Arc::new(ferrobot_daemon::update::Commands),
+            )
+        });
+    }
     let state = AppState::new(store, backend, settings);
 
     let ui = tokio::net::TcpListener::bind(cli.listen)

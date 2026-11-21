@@ -1053,6 +1053,40 @@ store used for the run) or the daemon's own env.
   registration with a loopback redirect is advertised but unproven per
   server); the Tauri window.
 
+## Self-update (`feat/self-update`)
+
+**Done**
+
+- Settings, Updates: version (and commit for source builds) and one
+  "Update and restart" button.
+- Release builds: Tauri's updater and process plugins; check, version and
+  notes, download with progress, install, relaunch. Updater config, public key
+  and `createUpdaterArtifacts` in `tauri.release.conf.json`; the release
+  workflow signs and uploads `latest.json` when the key secrets exist.
+- Source builds (debug only): `GET /v1/update` (version, commit, state, step,
+  log tail) and `POST /v1/update` (pull, rebuild, re-exec in the background).
+- The shell stops the daemon it started on every exit path, including the
+  Windows updater's.
+
+**Tested**
+
+- Unit test: only a clean `main` ferrobot checkout updates (temp git repos:
+  dirty tree, other branch, not ferrobot).
+- Daemon test with fake steps: both routes need the token; a failed build is
+  reported with step, error and log; a retry rebuilds and restarts; a third
+  update during the restart gets 409.
+- Desktop unit test: what a status poll means (wait, done, restarted).
+- By hand, a throwaway checkout with a local origin and a stand-in daemon
+  crate: the real daemon reported "up to date" for an empty pull; after a new
+  upstream commit it ran the pull, the npm steps and both cargo builds, then
+  exec'd the rebuilt binary with the same PID and arguments.
+- In Chromium (Vite): the source-build view and the wrong-branch refusal.
+- Not tested: a real daemon re-execing into a real new one; the Tauri shell
+  (never built or launched: plugin registration, the injected flags, the
+  daemon stopping through the resource); an update check against a real
+  release (private repo, no signing secrets); the release workflow (not run);
+  Windows.
+
 ## Connector checks (`fix/connector-check`)
 
 **Done**

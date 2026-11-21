@@ -24,6 +24,7 @@ pub mod state;
 pub mod storage;
 pub mod supervisor;
 pub mod tasks;
+pub mod update;
 pub mod usage;
 pub mod views;
 pub mod voice;

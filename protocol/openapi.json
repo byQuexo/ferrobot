@@ -3825,6 +3825,85 @@
         }
       }
     },
+    "/v1/update": {
+      "get": {
+        "tags": [
+          "system"
+        ],
+        "summary": "This daemon's version and, for a source build, the state of its update.",
+        "operationId": "get_update",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UpdateInfo"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or wrong API token",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "system"
+        ],
+        "summary": "Updates a source build (a debug build from a ferrobot checkout on a clean `main`): pulls,\nrebuilds the UI, daemon and desktop shell, then re-executes the daemon with the same\narguments. Runs in the background; poll `GET /v1/update`.",
+        "operationId": "start_update",
+        "responses": {
+          "202": {
+            "description": "Update started",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UpdateInfo"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or wrong API token",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not a source build",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "The checkout has changes or is not on main, or an update is running",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/v1/usage": {
       "get": {
         "tags": [
@@ -6875,6 +6954,57 @@
           }
         }
       },
+      "UpdateInfo": {
+        "type": "object",
+        "description": "This daemon's version and self-update status.",
+        "required": [
+          "version",
+          "source_build",
+          "state",
+          "log"
+        ],
+        "properties": {
+          "version": {
+            "type": "string",
+            "description": "Daemon version."
+          },
+          "source_build": {
+            "type": "boolean",
+            "description": "A debug build from a ferrobot checkout, which `POST /v1/update` can pull, rebuild and\nrestart. Release builds update through the desktop app."
+          },
+          "commit": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "The checkout's commit when this daemon started (source builds)."
+          },
+          "state": {
+            "$ref": "#/components/schemas/UpdateState"
+          },
+          "step": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "The command that is running or failed."
+          },
+          "error": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Why the update failed."
+          },
+          "log": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "The last lines of the steps' output."
+          }
+        }
+      },
       "UpdateProvider": {
         "type": "object",
         "properties": {
@@ -6953,6 +7083,17 @@
             ]
           }
         }
+      },
+      "UpdateState": {
+        "type": "string",
+        "description": "Where a source update stands.",
+        "enum": [
+          "idle",
+          "running",
+          "up_to_date",
+          "failed",
+          "restarting"
+        ]
       },
       "UpdateVoice": {
         "allOf": [
