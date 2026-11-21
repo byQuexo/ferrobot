@@ -4320,7 +4320,7 @@ async fn received(d: &Daemon, agent: AgentId) -> Vec<Value> {
 }
 
 #[tokio::test]
-async fn voice_calls_pass_lines_on_without_agents_waking_each_other() {
+async fn voice_calls_let_agents_answer_each_other_and_hang_up() {
     use ferrobot_core::protocol::{TurnEvent, TurnOutcome};
     use rmcp::model::CallToolRequestParams;
     let backend = Arc::new(StatefulBackend::default());
@@ -4335,9 +4335,9 @@ async fn voice_calls_pass_lines_on_without_agents_waking_each_other() {
     };
 
     // Voice on in ann's chat, then ann brings bob in with its tool.
-    let (status, call) = http(&d.ui, "PUT", "/v1/call", Some(json!({"agents": [ann]}))).await;
+    let (status, started) = http(&d.ui, "PUT", "/v1/call", Some(json!({"agents": [ann]}))).await;
     assert_eq!(status, 200);
-    assert_eq!(call["agents"], json!([ann.to_string()]));
+    assert_eq!(started["agents"], json!([ann.to_string()]));
     let mcp = mcp_as(&d, backend.token("ann")).await;
     let args = json!({"agent": "@bob", "topic": "Is the deploy done?"});
     let result = mcp
@@ -4352,18 +4352,15 @@ async fn voice_calls_pass_lines_on_without_agents_waking_each_other() {
     let invite = received(&d, bob).await;
     assert_eq!(invite.len(), 1);
     assert_eq!(invite[0]["sender"], json!({"kind": "agent", "id": ann}));
-    assert!(
-        invite[0]["body"]
-            .as_str()
-            .unwrap()
-            .starts_with("Is the deploy done?")
-    );
+    let invite = invite[0]["body"].as_str().unwrap();
+    assert!(invite.starts_with("(Voice call:"), "{invite}");
+    assert!(invite.contains("Is the deploy done?"), "{invite}");
     assert!(
         d.state.invite_to_call(cy, dot, "x").await.is_err(),
         "cy is not in the call"
     );
 
-    // bob answers in its turn: spoken, and kept for ann without mail or a turn.
+    // bob answers in its turn: spoken, and passed on to ann as a turn of its own.
     let mut ws = connect_runner(&d.agents, &backend.token("bob")).await;
     let DaemonFrame::Turn { turn_id, .. } = next_frame(&mut ws).await else {
         panic!("expected the invite as a turn");
@@ -4401,8 +4398,18 @@ async fn voice_calls_pass_lines_on_without_agents_waking_each_other() {
         },
     )
     .await;
-    assert!(received(&d, ann).await.is_empty(), "no mail to ann");
-    assert!(!d.state.store.has_queued_messages(ann).await.unwrap());
+    let heard = eventually("ann hears bob", Duration::from_secs(5), || async {
+        let mail = received(&d, ann).await;
+        (!mail.is_empty()).then_some(mail)
+    })
+    .await;
+    assert_eq!(heard[0]["sender"], json!({"kind": "agent", "id": bob}));
+    let heard = heard[0]["body"].as_str().unwrap();
+    assert!(heard.starts_with("(Voice call:"), "{heard}");
+    assert!(
+        heard.ends_with(&format!("<@{bob}>: Deploy is green.")),
+        "{heard}"
+    );
 
     // The operator speaks: everyone hears it, ann also hears bob, once.
     let say = |body: &'static str| {
@@ -4429,15 +4436,47 @@ async fn voice_calls_pass_lines_on_without_agents_waking_each_other() {
         }
     };
     let sent = say("Thanks. What's next?").await;
+    for agent in [ann, bob] {
+        let body = sent[&agent.to_string()].as_str().unwrap();
+        assert!(body.starts_with("(Voice call:"), "{body}");
+        assert!(
+            body.ends_with("\n\nThe operator: Thanks. What's next?"),
+            "{body}"
+        );
+        assert!(!body.contains("Deploy is green"), "heard once: {body}");
+    }
+
+    // bob hangs up: it leaves once its turn (with the goodbye) ends; the host ends the call.
+    let as_bob = mcp_as(&d, backend.token("bob")).await;
+    let left = call(&as_bob, "hang_up", json!({})).await;
+    assert_eq!(left["ends_call"], false);
     assert_eq!(
-        sent[&ann.to_string()],
-        format!(
-            "In the call since your last turn:\n<@{bob}>: Deploy is green.\n\nThe operator: Thanks. What's next?"
-        )
+        d.state.call_agents(),
+        [ann, bob],
+        "not before its turn ends"
     );
-    assert_eq!(sent[&bob.to_string()], "Thanks. What's next?");
-    let sent = say("Bye").await;
-    assert_eq!(sent[&ann.to_string()], "Bye", "passed on once");
+    let DaemonFrame::Turn { turn_id, .. } = next_frame(&mut ws).await else {
+        panic!("expected the operator's words as a turn");
+    };
+    let done = RunnerFrame::TurnDone {
+        turn_id,
+        outcome: TurnOutcome::Completed,
+        session_id: None,
+        result: Some("Bye!".into()),
+        error: None,
+        steered: vec![],
+    };
+    ws.send(Message::text(serde_json::to_string(&done).unwrap()))
+        .await
+        .unwrap();
+    eventually("bob left", Duration::from_secs(5), || async {
+        (d.state.call_agents() == [ann]).then_some(())
+    })
+    .await;
+    assert_eq!(d.state.hang_up(ann), Ok(true));
+    assert_eq!(d.state.call_turn_done(ann, false), []);
+    assert!(d.state.call_agents().is_empty(), "the host ended it");
+    assert!(d.state.hang_up(bob).is_err(), "no call to hang up");
 
     // At most four agents; an empty call ends it.
     let put = |agents: Vec<AgentId>| {
@@ -4485,7 +4524,7 @@ async fn message_limits_count_mentions_as_stored() {
     let at_limit = |limit: usize, name: &str| format!("@{name} {}", "x".repeat(limit - 5));
     for (name, accepted) in [("zed", true), ("bob", false)] {
         let expected = if accepted { 202 } else { 400 };
-        for (path, limit) in [(chat.as_str(), 32 * 1024), ("/v1/call/messages", 20224)] {
+        for (path, limit) in [(chat.as_str(), 32 * 1024), ("/v1/call/messages", 19859)] {
             let body = json!({"body": at_limit(limit, name)});
             let (status, _) = http(&d.ui, "POST", path, Some(body)).await;
             assert_eq!(status, expected, "{path} @{name}");

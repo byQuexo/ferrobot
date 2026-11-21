@@ -395,6 +395,11 @@ impl ferrobot_mcp::MailboxNotifier for AppState {
         })
     }
 
+    fn hang_up(&self, agent: AgentId) -> ferrobot_mcp::BoxFuture<Result<bool, String>> {
+        let result = AppState::hang_up(self, agent);
+        Box::pin(async move { result })
+    }
+
     fn request_routine(
         &self,
         requester: AgentId,

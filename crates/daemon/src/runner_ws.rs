@@ -263,6 +263,22 @@ async fn handle_frame(state: &AppState, agent: &Agent, done_tx: &mpsc::Sender<Do
                     json!({ "outcome": outcome, "result": result, "error": error }),
                 )
                 .await;
+            let completed = matches!(outcome, TurnOutcome::Completed);
+            for (to, body) in state.call_turn_done(agent.id, completed) {
+                match state
+                    .store
+                    .enqueue_message(Sender::Agent(agent.id), to, body, None)
+                    .await
+                {
+                    Ok(message) => {
+                        state.message_arrived(to);
+                        state.publish(UiEvent::Message { message });
+                    }
+                    Err(e) => {
+                        tracing::warn!(agent = %agent.name, error = %e, "call line not passed on");
+                    }
+                }
+            }
             let _ = done_tx
                 .send(Done {
                     turn_id,

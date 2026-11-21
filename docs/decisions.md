@@ -1075,12 +1075,32 @@ slop, so polish mode: palette, accent, logo, layout and features stay.
 - **Not added:** list, edit or delete tools for routines; the operator manages
   them in the Routines tab.
 
+## Voice calls that feel like a phone call
+
+- **Same agent, tuned for talk** (Tim, 2026-11-21), not a speech-to-speech
+  model: the agent keeps its tools, memory and sandbox in the call. Every call
+  message starts with a call note (spoken, one to three short sentences, the
+  solution first, no lists or links; longer work after the call in the chat;
+  `(pass)` when there is nothing to add; `hang_up` when done). The pause that
+  ends the operator's turn is 0.8 s instead of 1.2 s.
+- **Agents answer each other:** when an agent's turn in the call completes, the
+  other agents get what they have not heard yet as a turn of their own (from
+  that agent). At most four such turns in a row; then the lines wait for the
+  operator's next words, which reset the count. Interrupted or failed turns
+  and `(pass)` replies are not passed on.
+- **Hanging up:** the `hang_up` tool takes effect when the agent's turn ends,
+  so its goodbye is still spoken. The host (the agent the operator called)
+  ends the call for everyone; an invited agent leaves.
+- **Single-agent calls** go through `POST /v1/call/messages` too, so the host
+  gets the call note; the operator's call messages lose 365 bytes to it (limit
+  now 19,859).
+
 ## Tool profiles
 
 - **Groups, not single tools.** Nine: six for ferrobot's MCP tools, `team`
   (`list_agents`, `send_message`, `read_mailbox`, `assign_task`, `list_tasks`),
   `memory` (`remember`, `recall`, `forget`), `operator` (`ask_user`,
-  `share_file`, `invite_to_call`: everything that reaches the operator),
+  `share_file`, `invite_to_call`, `hang_up`: everything that reaches the operator),
   `create_agents`, `add_connectors`, `routines`; and three built into the
   model's harness, `shell` (and with it every CLI in the image: one shared image
   cannot hide single CLIs), `files`, `web`. The ids `create_agents` and

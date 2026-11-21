@@ -1,5 +1,6 @@
-//! The operator's voice call with agents. What an agent says reaches the others with the
-//! operator's next message, so agents in a call never start each other's turns.
+//! The operator's voice call with agents. The operator's words reach every agent in the call;
+//! what an agent says reaches the others as a new turn, at most [`MAX_AGENT_TURNS`] times in a
+//! row, then the rest waits for the operator's next words.
 
 use std::collections::{HashMap, VecDeque};
 use std::sync::{MutexGuard, PoisonError};
@@ -11,25 +12,43 @@ use crate::{AppState, UiEvent};
 
 /// Each operator message starts a turn for every agent in the call.
 pub const MAX_CALL_AGENTS: usize = 4;
+/// Turns agents start for each other in a row before the call waits for the operator.
+const MAX_AGENT_TURNS: usize = 4;
+/// What an agent replies when it has nothing to add; never passed on (nor spoken by the UI).
+const PASS: &str = "(pass)";
+/// Leads every call message, so agents talk like on the phone.
+pub(crate) const CALL_NOTE: &str = "(Voice call: your reply is read aloud. Talk like a person on \
+    the phone: one to three short spoken sentences, the solution first, no lists, links or \
+    markdown. If something needs research or longer thinking, say so in one sentence and do it \
+    after the call in your chat. Reply exactly (pass) when you have nothing to add. Call hang_up \
+    when the conversation is done.)\n\n";
 /// What one agent said, as passed on to the others (characters).
 const MAX_LINE_CHARS: usize = 1500;
 /// Lines waiting for one agent; the oldest go first (bytes).
 const MAX_HEARD_BYTES: usize = 12 * 1024;
 /// Longest operator message in a call, so the passed-on lines still fit.
-pub const MAX_CALL_TEXT_BYTES: usize = MAX_TEXT_BYTES - MAX_HEARD_BYTES - 256;
+pub const MAX_CALL_TEXT_BYTES: usize = MAX_TEXT_BYTES - MAX_HEARD_BYTES - CALL_NOTE.len() - 256;
 const HEARD_INTRO: &str = "In the call since your last turn:\n";
 const OPERATOR_INTRO: &str = "\n\nThe operator: ";
 
 #[derive(Debug, Default)]
 pub struct Call {
     agents: Vec<AgentId>,
-    /// What the others said since each agent's last operator message.
+    /// What the others said since each agent's last turn.
     heard: HashMap<AgentId, VecDeque<String>>,
+    /// Turns agents started for each other since the operator last spoke.
+    agent_turns: usize,
+    /// Agents that hung up; they go when their turn ends, so their goodbye is heard.
+    leaving: Vec<AgentId>,
+}
+
+fn is_pass(text: &str) -> bool {
+    text.trim().eq_ignore_ascii_case(PASS)
 }
 
 impl Call {
     fn hear(&mut self, agent: AgentId, text: &str) {
-        if !self.agents.contains(&agent) {
+        if !self.agents.contains(&agent) || is_pass(text) {
             return;
         }
         let text: String = text.chars().take(MAX_LINE_CHARS).collect();
@@ -53,16 +72,39 @@ impl Call {
     }
 
     fn messages(&mut self, text: &str) -> Vec<(AgentId, String)> {
+        self.agent_turns = 0;
         let mut out = Vec::new();
         for agent in &self.agents {
             let heard = self.heard.remove(agent).unwrap_or_default();
             let body = if heard.is_empty() {
-                text.to_owned()
+                format!("{CALL_NOTE}{}", OPERATOR_INTRO.trim_start())
             } else {
                 let heard = Vec::from(heard).join("\n");
-                format!("{HEARD_INTRO}{heard}{OPERATOR_INTRO}{text}")
+                format!("{CALL_NOTE}{HEARD_INTRO}{heard}{OPERATOR_INTRO}")
             };
-            out.push((*agent, body));
+            out.push((*agent, body + text));
+        }
+        out
+    }
+
+    /// After `agent` finished a turn: every other agent with something new to hear gets it as
+    /// a turn, unless agents already took [`MAX_AGENT_TURNS`] in a row.
+    fn passed_on(&mut self, agent: AgentId) -> Vec<(AgentId, String)> {
+        if !self.agents.contains(&agent) || self.agent_turns >= MAX_AGENT_TURNS {
+            return Vec::new();
+        }
+        let mut out = Vec::new();
+        for other in self.agents.clone() {
+            if other == agent {
+                continue;
+            }
+            if let Some(heard) = self.heard.remove(&other).filter(|q| !q.is_empty()) {
+                let heard = Vec::from(heard).join("\n");
+                out.push((other, format!("{CALL_NOTE}{HEARD_INTRO}{heard}")));
+            }
+        }
+        if !out.is_empty() {
+            self.agent_turns += 1;
         }
         out
     }
@@ -92,6 +134,10 @@ impl AppState {
         {
             let mut call = self.call();
             call.heard.retain(|a, _| agents.contains(a));
+            call.leaving.retain(|a| agents.contains(a));
+            if agents.is_empty() {
+                call.agent_turns = 0;
+            }
             call.agents.clone_from(&agents);
         }
         self.publish(UiEvent::Call { agents });
@@ -107,6 +153,46 @@ impl AppState {
     /// agent has not heard yet.
     pub fn call_messages(&self, text: &str) -> Vec<(AgentId, String)> {
         self.call().messages(text)
+    }
+
+    /// `agent` hangs up when its turn ends: the host (the agent the operator called) ends the
+    /// call, an invited agent leaves. `Ok(true)` for the host.
+    pub fn hang_up(&self, agent: AgentId) -> Result<bool, String> {
+        let mut call = self.call();
+        if !call.agents.contains(&agent) {
+            return Err("you are not in a voice call".into());
+        }
+        if !call.leaving.contains(&agent) {
+            call.leaving.push(agent);
+        }
+        Ok(call.agents.first() == Some(&agent))
+    }
+
+    /// At the end of `agent`'s turn: applies its hang-up, or (for a completed turn) what the
+    /// others should hear now as a turn of their own.
+    pub fn call_turn_done(&self, agent: AgentId, completed: bool) -> Vec<(AgentId, String)> {
+        let rest = {
+            let mut call = self.call();
+            if !call.leaving.contains(&agent) {
+                return if completed {
+                    call.passed_on(agent)
+                } else {
+                    Vec::new()
+                };
+            }
+            if call.agents.first() == Some(&agent) {
+                Vec::new()
+            } else {
+                call.agents
+                    .iter()
+                    .copied()
+                    .filter(|a| *a != agent)
+                    .collect()
+            }
+        };
+        // Fewer agents than before always fit.
+        let _ = self.set_call(rest);
+        Vec::new()
     }
 
     /// Brings `guest` into the call `host` is in, with mail from the
@@ -131,10 +217,9 @@ impl AppState {
             call.agents.push(guest);
         }
         let body = format!(
-            "{topic}\n\n(<@{host}> invited you into a voice call with the operator. Answer in \
-             your reply: it is read aloud to everyone in the call, so keep it short and spoken. \
-             Do not use send_message for the call. You hear the others with the operator's next \
-             message.)"
+            "{CALL_NOTE}{topic}\n\n(<@{host}> invited you into this voice call with the operator. \
+             Talk to them and the others directly in your reply; do not use send_message for the \
+             call. What the others say reaches you as new messages.)"
         );
         match self
             .store
@@ -185,8 +270,44 @@ mod tests {
         assert!(!call.heard.contains_key(&b), "nobody hears themselves");
         let out = call.messages("hi");
         assert!(out[0].1.ends_with("\n\nThe operator: hi"));
-        assert_eq!(out[1].1, "hi");
+        assert_eq!(out[1].1, format!("{CALL_NOTE}The operator: hi"));
         assert!(call.heard.is_empty());
+    }
+
+    #[test]
+    fn agents_answer_each_other_a_few_times_then_wait_for_the_operator() {
+        let (a, b) = (id(1), id(2));
+        let mut call = Call {
+            agents: vec![a, b],
+            ..Call::default()
+        };
+        call.hear(a, PASS);
+        assert!(call.passed_on(a).is_empty(), "a pass is not passed on");
+        for turn in 0..MAX_AGENT_TURNS {
+            let (from, to) = if turn % 2 == 0 { (a, b) } else { (b, a) };
+            call.hear(from, &format!("line {turn}"));
+            let out = call.passed_on(from);
+            assert_eq!(out.len(), 1);
+            assert_eq!(out[0].0, to);
+            assert!(out[0].1.starts_with(CALL_NOTE));
+            assert!(out[0].1.ends_with(&format!(": line {turn}")));
+        }
+        call.hear(a, "one too many");
+        assert!(
+            call.passed_on(a).is_empty(),
+            "the call waits for the operator"
+        );
+        let out = call.messages("go on");
+        assert!(
+            out[1].1.contains("one too many"),
+            "kept for the operator's next words"
+        );
+        call.hear(b, "again");
+        assert_eq!(
+            call.passed_on(b).len(),
+            1,
+            "the operator's words reset the count"
+        );
     }
 
     #[test]

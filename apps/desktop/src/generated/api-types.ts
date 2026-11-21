@@ -425,7 +425,7 @@ export interface paths {
         put?: never;
         /**
          * Sends the operator's message to every agent in the call, each with what the others said
-         *     since its last turn. Agents' replies never start each other's turns.
+         *     since its last turn and the call instructions.
          */
         post: operations["post_call_message"];
         delete?: never;
@@ -1146,7 +1146,7 @@ export interface components {
         BuildStatus: "idle" | "building" | "ready" | "failed";
         CallMessage: {
             /**
-             * @description 1..20224 bytes after trimming, counting `@name` mentions as their
+             * @description 1..19859 bytes after trimming, counting `@name` mentions as their
              *     stored `<@agent-id>` tokens (the rest of a message is left for what
              *     the others said).
              */

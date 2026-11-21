@@ -289,6 +289,13 @@ pub struct AskUserResult {
 }
 
 #[derive(Debug, Serialize, JsonSchema)]
+pub struct HangUpResult {
+    /// True when you were the host, so the call ends for everyone.
+    pub ends_call: bool,
+    pub note: String,
+}
+
+#[derive(Debug, Serialize, JsonSchema)]
 pub struct Ack {
     pub ok: bool,
 }
@@ -771,6 +778,33 @@ impl FerrobotTools {
     }
 
     #[tool(
+        description = "Hang up the voice call. If the operator called you, it ends for everyone; \
+        if you were invited, you leave. It takes effect when your turn ends, so say your short \
+        goodbye in your reply."
+    )]
+    async fn hang_up(
+        &self,
+        Extension(parts): Extension<http::request::Parts>,
+    ) -> ToolResult<HangUpResult> {
+        let me = caller(&parts)?.0.id;
+        let ends_call = self
+            .state
+            .notifier
+            .hang_up(me)
+            .await
+            .map_err(|e| ErrorData::invalid_params(e, None))?;
+        let note = if ends_call {
+            "The call ends for everyone when your turn ends."
+        } else {
+            "You leave the call when your turn ends."
+        };
+        Ok(Json(HangUpResult {
+            ends_call,
+            note: note.into(),
+        }))
+    }
+
+    #[tool(
         description = "Bring a teammate into your voice call with the operator, e.g. one that works on \
         or knows the topic. Only while the operator is in a voice call with you. Everyone in the call \
         hears the operator; your replies there are read aloud, so answer in your reply, not with send_message."
@@ -953,7 +987,7 @@ pub(crate) fn group_of(tool: &str) -> Option<ToolGroup> {
             ToolGroup::Team
         }
         "remember" | "recall" | "forget" => ToolGroup::Memory,
-        "ask_user" | "share_file" | "invite_to_call" => ToolGroup::Operator,
+        "ask_user" | "share_file" | "invite_to_call" | "hang_up" => ToolGroup::Operator,
         "create_agent" => ToolGroup::CreateAgents,
         "add_connector" => ToolGroup::AddConnectors,
         "create_routine" => ToolGroup::Routines,
