@@ -85,6 +85,16 @@ async function finished(name) {
     await sleep(500);
   }
 }
+/** Waits until a new agent's creation greeting turn has ended. */
+async function greeted(name) {
+  const { id } = await agentNamed(name);
+  for (let i = 0; i < WAIT_MS / 500; i++) {
+    const events = await api("GET", `/v1/agents/${id}/events`);
+    if (events.some((e) => e.kind === "assistant_text")) break;
+    await sleep(500);
+  }
+  await finished(name);
+}
 async function ensureClis() {
   const want = ["gcc", "libc6-dev"];
   let clis = await api("GET", "/v1/clis");
@@ -188,6 +198,8 @@ async function hero(k) {
       await connected(name);
     }
     await exec("builder", readFileSync(new URL("warm-rust.sh", import.meta.url), "utf8"));
+    // A running turn keeps its prompt: the ask must not land in the greeting turn, before the role.
+    for (const name of ["researcher", "builder"]) await greeted(name);
     await m.open("researcher");
     await k.caption(null);
   });

@@ -43,7 +43,7 @@ function overlay() {
     if (document.getElementById("demo-cursor")) return;
     const style = document.createElement("style");
     style.textContent = `
-      html, body { overflow: hidden !important; }
+      html:has(#app), body:has(#app) { overflow: hidden !important; }
       #app { transform-origin: 0 0; transition: transform 1100ms cubic-bezier(.45,.05,.2,1); }
       .toast, .toasts { display: none !important; }
       #demo-cursor, #demo-ring, #demo-cap, #demo-badge { position: fixed; pointer-events: none; z-index: 2147483647; }
