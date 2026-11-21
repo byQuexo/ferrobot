@@ -251,8 +251,9 @@ daemon, `docker ps -a` must be empty of ferrobot containers.
 - Docker e2e, `smoke-docker.sh` and the Docker sandbox test passed on
   `feature/firecracker-client` (macOS, Docker Desktop); runner image rebuilt.
 - Firecracker: no microVM has booted; every `TODO(kvm)` needs a KVM host.
-- Only Anthropic (Claude driver) and Ollama have run against a real
-  upstream; OpenAI, Gemini, OpenRouter, Bedrock and Vertex never have.
+- Anthropic (Claude driver), Ollama and OpenRouter (Tencent's hy4-flash, in
+  daily use since 2026-11-20) have run against a real upstream; OpenAI,
+  Gemini, Bedrock and Vertex never have.
 - Codex 0.166.0 is in the runner image; a live Codex turn ran against Ollama's
   Responses API, not against OpenAI (no key in the environment).
 - A live Claude turn passed (`scripts/smoke-live.sh`, 2026-11-20, macOS): an
@@ -260,8 +261,9 @@ daemon, `docker ps -a` must be empty of ferrobot containers.
   Docker sandbox, no trace of the key in the sandbox, logs or data dir.
   Claude steering is still untested against the real API; the Windows
   Credential Manager path has never run.
-- Voice never called ElevenLabs or OpenRouter for real (fake upstream only),
-  and the microphone was never used in the Tauri window.
+- Voice ran live with ElevenLabs in the Tauri window (calls, rooms, streamed
+  speech, live transcription; 2026-11-21); OpenRouter voice only against a
+  fake upstream.
 - The app updater never ran against a real release (private repo, no signing
   secrets yet), and its Windows install path is untested.
 
