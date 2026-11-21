@@ -434,6 +434,27 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/clis": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** The CLI packages in every agent's sandbox. */
+        get: operations["get_clis"];
+        /**
+         * Replaces the CLI packages and builds their image in the background. New sandboxes start
+         *     from it; existing ones switch when they next wake, keeping their home directory.
+         */
+        put: operations["put_clis"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/connectors": {
         parameters: {
             query?: never;
@@ -444,7 +465,10 @@ export interface paths {
         /** Configured connectors, by name. */
         get: operations["list_connectors"];
         put?: never;
-        /** Adds a connector. Agents get its tools once they are assigned it. */
+        /**
+         * Adds a connector and checks it (see `POST /v1/connectors/{id}/check`). Agents get its tools
+         *     once they are assigned it.
+         */
         post: operations["create_connector"];
         delete?: never;
         options?: never;
@@ -469,8 +493,29 @@ export interface paths {
         delete: operations["delete_connector"];
         options?: never;
         head?: never;
-        /** Edits a connector. Open sessions with it are closed. */
+        /** Edits a connector. Open sessions with it are closed and it is checked again. */
         patch: operations["update_connector"];
+        trace?: never;
+    };
+    "/v1/connectors/{id}/check": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Connects to the connector with its current token or sign-in, lists its tools and keeps the
+         *     outcome as the connector's `check`. Never starts a sign-in. Runs on its own after adding or
+         *     changing a connector and after a sign-in.
+         */
+        post: operations["check_connector"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
         trace?: never;
     };
     "/v1/connectors/{id}/oauth": {
@@ -489,7 +534,7 @@ export interface paths {
         post: operations["start_oauth"];
         /**
          * Signs a connector out: asks the server to revoke its tokens (RFC 7009)
-         *     when it offers that, then forgets them here either way.
+         *     when it offers that, then forgets them here either way and checks it again.
          */
         delete: operations["sign_out"];
         options?: never;
@@ -1071,6 +1116,13 @@ export interface components {
             requester: components["schemas"]["AgentId"];
             /** @enum {string} */
             kind: "add_connector";
+        } | {
+            name: string;
+            schedule: string;
+            prompt: string;
+            requester: components["schemas"]["AgentId"];
+            /** @enum {string} */
+            kind: "create_routine";
         };
         /**
          * @description A chosen character avatar look; without one, clients derive a look from the agent id.
@@ -1085,6 +1137,11 @@ export interface components {
              */
             hue: number;
         };
+        /**
+         * @description Where the image build stands.
+         * @enum {string}
+         */
+        BuildStatus: "idle" | "building" | "ready" | "failed";
         CallMessage: {
             /**
              * @description 1..20224 bytes after trimming, counting `@name` mentions as their
@@ -1107,12 +1164,27 @@ export interface components {
          * @enum {string}
          */
         CharacterEyes: "dots" | "ovals" | "wide" | "visor";
+        /**
+         * @description What a connection check found.
+         * @enum {string}
+         */
+        CheckStatus: "ok" | "needs_sign_in" | "failed";
         /** @description One selectable option. */
         Choice: {
             /** @description Shown to the user. */
             label: string;
             /** @description Stable value reported in the answer; defaults to the label. */
             value?: string;
+        };
+        /** @description The CLI packages and where their image build stands. */
+        ClisView: {
+            /** @description Debian packages added to the base image, sorted. */
+            packages: string[];
+            status: components["schemas"]["BuildStatus"];
+            /** @description Why the last build failed; null otherwise. */
+            error?: string | null;
+            /** @description Whether the sandbox backend can build images (Docker only). */
+            supported: boolean;
         };
         /** @description A remote MCP server whose tools assigned agents can use. */
         Connector: {
@@ -1133,6 +1205,19 @@ export interface components {
          * @enum {string}
          */
         ConnectorAuth: "token" | "oauth" | "none";
+        /** @description The outcome of connecting to a connector as the daemon and listing its tools. */
+        ConnectorCheck: {
+            status: components["schemas"]["CheckStatus"];
+            /** @description Tools agents can use (with `ok`). */
+            tools?: number | null;
+            /** @description Why it failed (with `failed`), in ferrobot's words, never the server's. */
+            error?: string | null;
+            /**
+             * Format: date-time
+             * @description When the check started.
+             */
+            at: string;
+        };
         ConnectorView: components["schemas"]["Connector"] & {
             /** @description Whether a token is stored. The token itself is never returned. */
             has_token: boolean;
@@ -1152,6 +1237,7 @@ export interface components {
             issuer?: string | null;
             /** @description Register this redirect URI with the provider for an own OAuth app. */
             redirect_uri: string;
+            check?: components["schemas"]["ConnectorCheck"] | null;
         };
         /** @description Messages two agents exchanged. */
         Conversation: {
@@ -1794,6 +1880,11 @@ export interface components {
             model?: string | null;
             /** @description Pin to the top of the agent list (or unpin). */
             pinned?: boolean | null;
+        };
+        /** @description A new CLI package list. */
+        UpdateClis: {
+            /** @description Debian package names, at most 32; empty: the plain base image. */
+            packages: string[];
         };
         UpdateConnector: {
             name?: string | null;
@@ -3736,6 +3827,93 @@ export interface operations {
             };
         };
     };
+    get_clis: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ClisView"];
+                };
+            };
+            /** @description Missing or wrong API token */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+        };
+    };
+    put_clis: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["UpdateClis"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ClisView"];
+                };
+            };
+            /** @description Not a Debian package name, or too many */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Missing or wrong API token */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description A build is running */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description The sandbox backend cannot build images */
+            501: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+        };
+    };
     list_connectors: {
         parameters: {
             query?: never;
@@ -3904,6 +4082,46 @@ export interface operations {
             };
             /** @description Name already taken */
             409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+        };
+    };
+    check_connector: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Connector id (UUID) */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ConnectorCheck"];
+                };
+            };
+            /** @description Missing or wrong API token */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Unknown connector */
+            404: {
                 headers: {
                     [name: string]: unknown;
                 };

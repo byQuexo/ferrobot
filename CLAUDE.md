@@ -85,6 +85,9 @@ Principles:
   agents through `/mcp` (tokens in the keychain, never in a sandbox), and the
   `add_connector` approval card with its hidden token field;
   `oauth.rs` — their OAuth sign-in (rmcp's client, loopback callback).
+- `crates/daemon/src/clis.rs`, `api/clis.rs` — CLIs: keyless Debian packages
+  built into one shared sandbox image (Docker, `build_image` in
+  `crates/sandbox`); `lifecycle::wake` recreates outdated sandboxes, home kept.
 - `crates/daemon/src/voice.rs`, `api/voice.rs` — voice: speech and
   transcription for the operator's chat via ElevenLabs or OpenRouter (keys
   in the keychain as `voice:<provider>`); `call.rs` — the operator's voice
@@ -217,6 +220,7 @@ daemon, `docker ps -a` must be empty of ferrobot containers.
   Approve/Decline card, the tool waits; decline or `FERROBOT_APPROVAL_TIMEOUT`
   (300 s) creates nothing. Auto mode (`PUT /v1/settings`, operator opt-in)
   skips the card and leaves an `agent_created` notice; the agent limit applies either way.
+  `create_routine` (an agent's own routine) follows the same rule, without waiting.
 - **`FERROBOT_MAX_AGENTS`** (default 10) applies to `POST /v1/agents` and to
   `create_agent` (both through `daemon::agents::create`).
 - Question cards are answered at most once (`409` after).

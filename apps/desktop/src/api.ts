@@ -30,6 +30,7 @@ export type ProviderKind = Schemas["ProviderKind"];
 export type CreateProvider = Schemas["CreateProvider"];
 export type UpdateProvider = Schemas["UpdateProvider"];
 export type Connector = Schemas["ConnectorView"];
+export type ConnectorCheck = Schemas["ConnectorCheck"];
 export type SharedFile = Schemas["SharedFileView"];
 export type CreateConnector = Schemas["CreateConnector"];
 export type UpdateConnector = Schemas["UpdateConnector"];
@@ -49,6 +50,7 @@ export type PriceEntry = Schemas["PriceEntry"];
 export type SetPrice = Schemas["SetPrice"];
 export type GeneralSettings = Schemas["GeneralSettings"];
 export type UpdateInfo = Schemas["UpdateInfo"];
+export type ClisView = Schemas["ClisView"];
 export type UsageGroupBy = "day" | "agent" | "provider" | "model";
 
 export class ApiError extends Error {
@@ -157,6 +159,8 @@ export class DaemonClient {
     this.#request("POST", `/v1/connectors/${id}/oauth`);
   signOutConnector = (id: string): Promise<void> =>
     this.#request("DELETE", `/v1/connectors/${id}/oauth`);
+  checkConnector = (id: string): Promise<ConnectorCheck> =>
+    this.#request("POST", `/v1/connectors/${id}/check`);
   agentConnectors = (id: string): Promise<string[]> =>
     this.#request("GET", `/v1/agents/${id}/connectors`);
   setAgentConnectors = (id: string, ids: string[]): Promise<string[]> =>
@@ -267,6 +271,10 @@ export class DaemonClient {
   /** Replaces all of the operator's own prices. */
   setPrices = (prices: SetPrice[]): Promise<PriceEntry[]> =>
     this.#request("PUT", "/v1/usage/prices", prices);
+  clis = (): Promise<ClisView> => this.#request("GET", "/v1/clis");
+  /** Saves the packages and starts building their image. */
+  updateClis = (packages: string[]): Promise<ClisView> =>
+    this.#request("PUT", "/v1/clis", { packages });
   settings = (): Promise<GeneralSettings> => this.#request("GET", "/v1/settings");
   updateSettings = (s: GeneralSettings): Promise<GeneralSettings> =>
     this.#request("PUT", "/v1/settings", s);

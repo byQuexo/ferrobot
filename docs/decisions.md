@@ -876,8 +876,9 @@ slop, so polish mode: palette, accent, logo, layout and features stay.
   and `ask_user` cards (questions, not approvals, still go to the operator).
 - **Fails closed:** an unreadable `general` setting counts as off, so the
   card shows.
-- **Only `create_agent`.** Each approval kind decides its own Auto mode
-  behaviour; `add_connector` (see Vault) always shows its card.
+- **Per approval kind.** Each kind decides its own Auto mode behaviour:
+  `create_agent` and `create_routine` skip their card, `add_connector` (see
+  Vault) always shows it.
 - **Agent-facing text** stays true in both modes (the tool list is static per
   connection): the tool description and the Claude prompt say the operator
   approves unless Auto mode is on.
@@ -998,3 +999,78 @@ slop, so polish mode: palette, accent, logo, layout and features stay.
 - **Private repo:** `releases/latest/download/latest.json` answers 404 until
   the repo is public and a release is published (drafts do not count); the
   check then shows "Couldn't check: …".
+
+## Connector checks
+
+- **The status is a real connection.** The row's state comes from a check: the
+  daemon connects with the connector's current auth (token, else OAuth tokens,
+  else none) through the same client code agents use, lists the tools and
+  keeps `ok` (tools agents can use), `needs_sign_in` or `failed`. Bounded by
+  15 s; kept in memory only (`check: null` after a restart or a change).
+- **Auth answers:** a 401/403 (with or without a `WWW-Authenticate`
+  challenge) means `needs_sign_in` when no credential was sent, also for
+  servers that take a token: the operator signs in or adds one in Vault. With
+  a stored token it is `failed` ("the server rejected the token"): the sign-in
+  button refuses token connectors.
+- **Errors in our words.** `error` is one of a few fixed texts plus at most an
+  HTTP status number; never the server's text or a URL, which can echo a
+  token or hold a key.
+- **When it runs:** inline after `POST /v1/connectors`, every PATCH (also the
+  Vault token and client secret edits) and sign-out, so the response holds the
+  result; in the background after an OAuth sign-in (the browser page does not
+  wait) and an approved add-connector card; on demand with
+  `POST /v1/connectors/{id}/check`. A check never starts a sign-in: an
+  OAuth connector that is not signed in connects without auth, so no metadata
+  discovery or dynamic registration happens.
+- **UI:** the Connectors screen checks rows without a result when it opens and
+  after a browser sign-in; no retry button (not asked for).
+
+## CLIs in the sandbox image
+
+- **One shared image** (Tim, 2026-11-20): Settings, CLIs picks keyless Debian
+  packages (a short catalog in the UI plus free-form names); the daemon stores
+  them in the `clis` setting (no migration) and the Docker backend builds
+  `FROM <configured image's id>` with them. CLIs that need a login (gh, aws,
+  gcloud, stripe) are out: keys never enter a sandbox, logged-in services go
+  through connectors. Per-agent choice waits for tool scopes (the shell group).
+- **Trust boundary:** names must follow Debian policy
+  (`^[a-z0-9][a-z0-9+.-]{1,62}$`, at most 32, `package_set` in
+  `crates/sandbox`), checked by the API and again by the backend. The
+  Dockerfile is rendered from validated tokens only: `RUN` in exec form,
+  `sh -c '... apt-get install ... "$@"' sh <packages>`, so a name is an argv
+  entry, never shell text. The build runs as root; the image ends with the base
+  image's own `USER` (node), so agents stay unprivileged.
+- **Tag** `ferrobot-runner:clis-<sha256(base id, packages)[..16]>`: the same
+  list on the same base reuses the image; a rebuilt base image gets a new tag.
+  On startup the daemon rebuilds (a cache hit unless the base changed), so a
+  rebuilt `ferrobot-runner:dev` reaches agents with CLIs. A failed build keeps
+  the previous image in use; one build at a time (`409` otherwise).
+- **Cleanup:** after each build every other `ferrobot-runner:clis-*` image is
+  removed without force; one a container still uses stays until a later build
+  or restart. Snapshot, archive and base images are never touched. An empty
+  list means the plain base image.
+- **Existing agents switch on their next wake.** The lifecycle never recreated
+  a container when its image changed (`create` adopts by name, `wake` starts
+  what exists). Now `wake` asks the backend `is_stale`: a container created
+  from the base or a CLI image other than the current one is destroyed without
+  its home volume and provisioned again (fresh token, same volume). Running
+  agents are not interrupted; they switch after their next sleep (warm sleep
+  after 5 minutes idle by default) or an explicit stop and wake. Sandboxes
+  restored from a snapshot or archive keep their root filesystem and are never
+  stale.
+- **Docker only:** other backends report `supported: false` and refuse a
+  non-empty list with `501`.
+
+## Routines made by agents
+
+- **`create_routine`** lets an agent schedule its own prompt (cron or alias, the
+  daemon's time zone), so "remind me every morning" works without the
+  operator opening the Routines tab. Only for itself: a routine for another
+  agent would let one agent drive another's model spend.
+- **Approval like `create_agent`:** a card in the chat the operator uses for the
+  agent (name, schedule in words, the message) unless Auto mode is on; each
+  routine is recurring model spend. The tool does not wait (like
+  `add_connector`): the outcome arrives as a message, and the card holds
+  everything needed, so it still works after a daemon restart.
+- **Not added:** list, edit or delete tools for routines; the operator manages
+  them in the Routines tab.

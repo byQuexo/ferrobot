@@ -171,7 +171,7 @@ pub async fn create(
     Ok(agent)
 }
 
-fn shorten(s: &str, max: usize) -> String {
+pub(crate) fn shorten(s: &str, max: usize) -> String {
     let s = s.trim();
     match s.char_indices().nth(max) {
         Some((i, _)) => format!("{}…", &s[..i]),

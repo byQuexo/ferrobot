@@ -22,6 +22,8 @@ First public release.
   for the operator, and `create_agent` behind an Approve/Decline card.
 - Auto mode (Settings, Agents): agents create teammates without an approval
   card and the chat notes it; the agent limit still applies.
+- CLIs (Settings, CLIs; Docker): keyless Debian packages such as jq, pandoc or
+  ffmpeg built into one shared sandbox image; agents get it on their next wake.
 - Memory per agent and a global memory, routines (cron with time zones),
   shared files and HTML pages behind signed, expiring links.
 - Model providers: Anthropic, OpenAI, Gemini, Amazon Bedrock, Google Vertex

@@ -15,7 +15,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::{
     AgentRequest, AgentRequestOutcome, Caller, ConnectorRequest, MAX_MEMORY_KEY_BYTES,
-    MAX_MESSAGE_BYTES, McpState,
+    MAX_MESSAGE_BYTES, McpState, RoutineRequest, RoutineRequestOutcome,
 };
 
 type ToolResult<T> = Result<Json<T>, ErrorData>;
@@ -146,6 +146,27 @@ pub struct CreateAgentResult {
     /// Id of the new agent (when created); use it in `send_message.to`.
     pub agent_id: Option<String>,
     pub name: String,
+    /// What happened, in words.
+    pub note: String,
+}
+
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct CreateRoutineArgs {
+    /// Short and unique among your routines, e.g. `morning-digest` (1-64 bytes).
+    pub name: String,
+    /// When it runs: a 5-field cron expression (`0 9 * * 1-5` = 09:00 Monday to Friday) or
+    /// `@hourly`, `@daily`, `@weekly`, in the operator's time zone.
+    pub schedule: String,
+    /// The message you receive on every run: what to do then.
+    pub prompt: String,
+}
+
+#[derive(Debug, Serialize, JsonSchema)]
+pub struct CreateRoutineResult {
+    /// `created` or `pending` (waiting for the operator).
+    pub status: String,
+    /// Id of the routine, when created.
+    pub routine_id: Option<i64>,
     /// What happened, in words.
     pub note: String,
 }
@@ -635,6 +656,47 @@ impl FerrobotTools {
                 agent_id: None,
                 name: request.name,
                 note: format!("Not created: {reason}"),
+            },
+        }))
+    }
+
+    #[tool(
+        description = "Create a routine for yourself: `prompt` reaches you as a message on \
+        `schedule`, so you can do recurring work or keep reminders. Unless the operator turned on \
+        Auto mode, they first see a card and this call returns `pending`; a message tells you \
+        whether they approved it. Returns `created` in Auto mode. Fails on an invalid schedule or a \
+        name you already use."
+    )]
+    async fn create_routine(
+        &self,
+        Extension(parts): Extension<http::request::Parts>,
+        Parameters(args): Parameters<CreateRoutineArgs>,
+    ) -> ToolResult<CreateRoutineResult> {
+        let me = caller(&parts)?.0.id;
+        let request = RoutineRequest {
+            name: args.name.trim().to_owned(),
+            schedule: args.schedule.trim().to_owned(),
+            prompt: args.prompt,
+        };
+        let name = request.name.clone();
+        let outcome = self
+            .state
+            .notifier
+            .request_routine(me, request)
+            .await
+            .map_err(|e| ErrorData::invalid_params(e, None))?;
+        Ok(Json(match outcome {
+            RoutineRequestOutcome::Created { id, when } => CreateRoutineResult {
+                status: "created".into(),
+                routine_id: Some(id),
+                note: format!("Created \"{name}\": {when}."),
+            },
+            RoutineRequestOutcome::Pending { .. } => CreateRoutineResult {
+                status: "pending".into(),
+                routine_id: None,
+                note: "Shown to the operator. A message tells you whether they approved it; \
+                       finish your turn now."
+                    .into(),
             },
         }))
     }

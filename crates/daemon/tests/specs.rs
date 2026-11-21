@@ -85,6 +85,7 @@ fn every_routed_path_is_documented() {
         "/v1/connectors/{id}",
         "/v1/agents/{id}/connectors",
         "/v1/connectors/{id}/oauth",
+        "/v1/connectors/{id}/check",
         "/v1/oauth/callback",
         "/v1/agents/{id}/files/{file_id}",
         "/artifacts/{id}/{file_id}",
@@ -99,12 +100,13 @@ fn every_routed_path_is_documented() {
         "/v1/usage/prices",
         "/v1/settings",
         "/v1/update",
+        "/v1/clis",
     ] {
         assert!(documented.contains(&path), "{path} missing from OpenAPI");
     }
     assert_eq!(
         documented.len(),
-        51,
+        53,
         "undocumented extra paths: {documented:?}"
     );
 }
