@@ -18,8 +18,6 @@
 
 https://github.com/user-attachments/assets/3cbf0815-14ef-46f9-9320-c421fa614b9e
 
-Voice room, with sound: [MP4](docs/assets/voice-room.mp4) (real Claude Sonnet 5.5 turns and ElevenLabs voices; waits sped up 2x, long ones shortened)
-
 ## Why ferrobot
 
 ferrobot is a small Rust daemon on your machine and a thin desktop app on top.
