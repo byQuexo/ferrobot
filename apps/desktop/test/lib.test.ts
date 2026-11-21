@@ -4,7 +4,7 @@ import { describe, it } from "node:test";
 import { DaemonClient, type MailMessage, type StoredEvent } from "../src/api.ts";
 import { hash } from "../src/lib/avatar.ts";
 import { characterOf, deriveCharacter, moodOf, rerollCharacter } from "../src/lib/character.ts";
-import { linkLabel, relativeTime, stepLabel, toolLabel } from "../src/lib/format.ts";
+import { linkLabel, relativeTime, statusOf, stepLabel, toolLabel } from "../src/lib/format.ts";
 import { buildTimeline, sharedFiles, withoutRoomTurns } from "../src/lib/timeline.ts";
 import {
   CallScript,
@@ -103,6 +103,25 @@ describe("avatar", () => {
 });
 
 describe("format", () => {
+  it("puts a credential problem over presence", () => {
+    const problem = (kind: "missing" | "rejected") => ({
+      kind,
+      reason: "provider oai has no API key: add it in Settings, Vault",
+      since: "2026-01-01T12:00:00Z",
+    });
+    assert.deepEqual(statusOf({ presence: "awake", credential_error: null }), {
+      presence: "awake",
+      label: "Awake",
+    });
+    assert.deepEqual(statusOf({ presence: "sleeping", credential_error: problem("missing") }), {
+      presence: "error",
+      label: "Key missing",
+    });
+    assert.equal(
+      statusOf({ presence: "awake", credential_error: problem("rejected") }).label,
+      "Key rejected",
+    );
+  });
   it("relative times", () => {
     const now = Date.parse("2026-01-01T12:00:00Z");
     assert.equal(relativeTime("2026-01-01T11:59:50Z", now), "just now");
@@ -239,6 +258,38 @@ describe("buildTimeline", () => {
     const room = ev(12, "message_in", { message_id: 2, room_id: 3 }, "2026-01-01T10:01:01Z", "t2");
     const after = ev(17, "message_in", { message_id: 4 }, "2026-01-01T10:02:00Z", "t3");
     assert.equal(withoutRoomTurns([], [room, after], new Map()).roomTurn, false);
+  });
+
+  it("shows a credential problem once, instead of its turn's error", () => {
+    const at = "2026-01-01T12:00:00Z";
+    const notice = (id: number, turn: string): StoredEvent => ({
+      ...ev(id, "credential_error", { kind: "missing", reason: "no key", turn_id: turn }, at),
+      turn_id: null,
+    });
+    const items = buildTimeline(
+      ME,
+      [],
+      [
+        ev(1, "assistant_text", { text: "Looking." }, at, "t1"),
+        notice(2, "t1"),
+        ev(3, "assistant_text", { text: "API Error: 400 no key" }, at, "t1"),
+        ev(4, "turn_done", { outcome: "completed", result: "API Error: 400 no key" }, at, "t1"),
+        notice(5, "t2"),
+        ev(6, "turn_done", { outcome: "failed", error: "API Error: 400" }, at, "t2"),
+        ev(7, "turn_done", { outcome: "failed", error: "boom" }, at, "t3"),
+      ],
+      new Map(),
+      names,
+    );
+    assert.deepEqual(
+      items.map((i) => (i.type === "error" || i.type === "assistant" ? i.text : i.type)),
+      [
+        "Looking.",
+        "Key missing: no key. Messages wait until it is fixed.",
+        "Key missing: no key. Messages wait until it is fixed.",
+        "boom",
+      ],
+    );
   });
 
   it("shows shared files and finds them by name", () => {

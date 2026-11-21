@@ -15,8 +15,9 @@ use futures_util::StreamExt;
 use ferrobot_core::{Provider, ProviderKind, UpstreamAuth};
 use ferrobot_store::{Tokens, UsageStatus};
 
-use crate::AppState;
 use crate::usage::{Call, Family, Meter};
+use crate::views::CredentialProblem;
+use crate::{AppState, credentials};
 
 /// Google access tokens live an hour; refresh well before.
 const GCLOUD_TOKEN_TTL: Duration = Duration::from_secs(45 * 60);
@@ -210,6 +211,8 @@ struct Route {
     chatgpt_account: Option<String>,
     /// `OpenRouter` gets caching and sticky routing added (see `openrouter_extras`).
     openrouter: bool,
+    /// The agent's status reason when the upstream refuses the credential.
+    rejected: String,
 }
 
 /// For `OpenRouter`: one session per agent (sticky routing keeps its calls on
@@ -257,40 +260,69 @@ pub fn secret_key(provider: uuid::Uuid) -> String {
 }
 
 /// Status and message for the agent when a request cannot be routed.
-type Failure = (StatusCode, String);
+struct Failure {
+    status: StatusCode,
+    message: String,
+    /// The credential is missing: the agent's turns wait for the operator (see `credentials`).
+    missing_key: bool,
+}
+
+impl Failure {
+    fn new(status: StatusCode, message: impl Into<String>) -> Self {
+        Self {
+            status,
+            message: message.into(),
+            missing_key: false,
+        }
+    }
+}
 
 /// A setup problem only the operator can fix: a client error, so SDKs fail at once instead of
 /// retrying for minutes as they do on 5xx.
 fn unconfigured(message: String) -> Failure {
-    (StatusCode::BAD_REQUEST, message)
+    Failure::new(StatusCode::BAD_REQUEST, message)
+}
+
+fn missing_key(message: String) -> Failure {
+    Failure {
+        missing_key: true,
+        ..unconfigured(message)
+    }
+}
+
+/// An agent without a provider: Anthropic with the daemon's key.
+fn daemon_route(state: &AppState, path: &str) -> Result<Route, Failure> {
+    if !path.starts_with("v1/") {
+        return Err(Failure::new(
+            StatusCode::NOT_FOUND,
+            "only /v1/ API paths are proxied",
+        ));
+    }
+    let Some(key) = state.settings.anthropic_api_key.clone() else {
+        return Err(missing_key(crate::agents::NO_DAEMON_KEY.into()));
+    };
+    Ok(Route {
+        api: Api::Anthropic,
+        upstream: state.settings.anthropic_upstream.clone(),
+        auth: UpstreamAuth::ApiKeyHeader,
+        secret: Some(key),
+        chatgpt_account: None,
+        openrouter: false,
+        rejected: "Anthropic rejected the daemon's key: pick a model provider for this agent"
+            .into(),
+    })
 }
 
 async fn route(state: &AppState, provider: Option<Provider>, path: &str) -> Result<Route, Failure> {
     let Some(provider) = provider else {
-        if !path.starts_with("v1/") {
-            return Err((
-                StatusCode::NOT_FOUND,
-                "only /v1/ API paths are proxied".into(),
-            ));
-        }
-        let Some(key) = state.settings.anthropic_api_key.clone() else {
-            return Err(unconfigured(crate::agents::NO_DAEMON_KEY.into()));
-        };
-        return Ok(Route {
-            api: Api::Anthropic,
-            upstream: state.settings.anthropic_upstream.clone(),
-            auth: UpstreamAuth::ApiKeyHeader,
-            secret: Some(key),
-            chatgpt_account: None,
-            openrouter: false,
-        });
+        return daemon_route(state, path);
     };
     let id = provider.id;
     let unavailable = unconfigured;
     if provider.kind == ProviderKind::Anthropic && !path.starts_with("v1/") {
-        return Err((
+        return Err(Failure::new(
             StatusCode::NOT_FOUND,
-            "only /v1/ API paths are proxied".into(),
+            "only /v1/ API paths are proxied",
         ));
     }
     // Bedrock model listings live on the control plane, invocations on the runtime.
@@ -328,12 +360,17 @@ async fn route(state: &AppState, provider: Option<Provider>, path: &str) -> Resu
             .secrets
             .get(&secret_key(id))
             .await
-            .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?,
+            .map_err(|e| Failure::new(StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?,
     };
+    let name = &provider.name;
     if secret.is_none() && provider.kind == ProviderKind::Codex {
-        let (token, account) = crate::codex::chatgpt_token(state, id)
-            .await
-            .map_err(unavailable)?;
+        let (token, account) = crate::codex::chatgpt_token(state, id).await.map_err(|e| {
+            tracing::warn!(provider = %name, error = %e, "no ChatGPT token");
+            missing_key(format!(
+                "provider {name} could not use its ChatGPT sign-in: sign in again in \
+                 Settings, Model providers, or add an API key in Vault"
+            ))
+        })?;
         return Ok(Route {
             api,
             upstream: state.settings.chatgpt_upstream.clone(),
@@ -341,14 +378,25 @@ async fn route(state: &AppState, provider: Option<Provider>, path: &str) -> Resu
             secret: Some(token),
             chatgpt_account: Some(account),
             openrouter: false,
+            rejected: format!(
+                "ChatGPT rejected the sign-in of provider {name}: sign in again in Settings, \
+                 Model providers"
+            ),
         });
     }
     if secret.is_none() && provider.kind.needs_key() {
-        return Err(unavailable(format!(
-            "provider {} has no API key: add it in Settings, Vault",
-            provider.name
+        return Err(missing_key(format!(
+            "provider {name} has no API key: add it in Settings, Vault"
         )));
     }
+    let rejected = if auth == UpstreamAuth::GcloudToken {
+        format!(
+            "Google rejected the access token for provider {name}: run `gcloud auth login` on \
+             the daemon host, then retry"
+        )
+    } else {
+        format!("provider {name} rejected its API key: replace it in Settings, Vault")
+    };
     Ok(Route {
         api,
         upstream,
@@ -356,6 +404,7 @@ async fn route(state: &AppState, provider: Option<Provider>, path: &str) -> Resu
         secret,
         chatgpt_account: None,
         openrouter: provider.kind == ProviderKind::Openrouter,
+        rejected,
     })
 }
 
@@ -450,7 +499,13 @@ async fn forward(
     }
     let route = match route(&state, provider, &path).await {
         Ok(route) => route,
-        Err((status, message)) => return refuse(call, status, &message),
+        Err(failure) => {
+            if failure.missing_key {
+                let reason = failure.message.clone();
+                credentials::set(&state, agent.id, CredentialProblem::Missing, reason).await;
+            }
+            return refuse(call, failure.status, &failure.message);
+        }
     };
     if !permitted(&route.api, request.method(), &path) {
         // Visible on the host: an SDK update may call an endpoint not listed yet.
@@ -484,20 +539,8 @@ async fn forward(
             upstream = upstream.header(name, value);
         }
     }
-    let (mut upstream, body) = openrouter_extras(upstream, &route, agent.id, body);
-    if let Some(secret) = route.secret {
-        upstream = match route.auth {
-            UpstreamAuth::ApiKeyHeader => upstream.header("x-api-key", secret),
-            UpstreamAuth::GoogApiKey => upstream.header("x-goog-api-key", secret),
-            UpstreamAuth::Bearer | UpstreamAuth::GcloudToken => {
-                upstream.header(header::AUTHORIZATION, format!("Bearer {secret}"))
-            }
-        };
-    }
-    if let Some(account) = route.chatgpt_account {
-        upstream = upstream.header("chatgpt-account-id", account);
-    }
-    upstream = upstream.body(body);
+    let (upstream, body) = openrouter_extras(upstream, &route, agent.id, body);
+    let upstream = with_credential(upstream, &route).body(body);
 
     tracing::debug!(agent = %agent.name, method = %parts.method, %path, "model request");
     let response = match upstream.send().await {
@@ -510,7 +553,38 @@ async fn forward(
             return error(StatusCode::BAD_GATEWAY, "model upstream unreachable");
         }
     };
+    if route.secret.is_some() && refuses_credential(&route.api, response.status()) {
+        let reason = route.rejected;
+        credentials::set(&state, agent.id, CredentialProblem::Rejected, reason).await;
+    }
     respond(response, family.map(|f| (f, call)))
+}
+
+/// Adds the route's real credential, which never leaves the daemon.
+fn with_credential(
+    mut upstream: reqwest::RequestBuilder,
+    route: &Route,
+) -> reqwest::RequestBuilder {
+    if let Some(secret) = &route.secret {
+        upstream = match route.auth {
+            UpstreamAuth::ApiKeyHeader => upstream.header("x-api-key", secret),
+            UpstreamAuth::GoogApiKey => upstream.header("x-goog-api-key", secret),
+            UpstreamAuth::Bearer | UpstreamAuth::GcloudToken => {
+                upstream.header(header::AUTHORIZATION, format!("Bearer {secret}"))
+            }
+        };
+    }
+    if let Some(account) = &route.chatgpt_account {
+        upstream = upstream.header("chatgpt-account-id", account);
+    }
+    upstream
+}
+
+/// Whether the upstream refused the credential. A 403 means that only on Bedrock (AWS answers
+/// bad keys with it); elsewhere it is moderation, a missing permission or a disabled API.
+fn refuses_credential(api: &Api, status: StatusCode) -> bool {
+    status == StatusCode::UNAUTHORIZED
+        || (status == StatusCode::FORBIDDEN && matches!(api, Api::Bedrock | Api::BedrockControl))
 }
 
 /// The upstream's response for the agent; a model run is metered as it streams.

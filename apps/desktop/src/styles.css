@@ -280,6 +280,7 @@ textarea { resize: vertical; min-height: 40px; line-height: 1.5; }
 .agent-row-top { display: flex; align-items: center; gap: 8px; }
 .agent-name { font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .agent-desc { color: var(--muted); font-size: 13px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.agent-desc.bad { color: var(--err); }
 .badge {
   min-width: 20px; height: 20px; padding: 0 4px; border-radius: 999px; display: grid; place-items: center;
   background: var(--accent); color: var(--accent-text); font-size: 12px; font-weight: 500; font-variant-numeric: tabular-nums;
@@ -512,6 +513,7 @@ textarea { resize: vertical; min-height: 40px; line-height: 1.5; }
 .model-line { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px; }
 .text-link { padding: 0; border: none; background: none; color: var(--accent); font: inherit; cursor: pointer; }
 .text-link:hover { text-decoration: underline; }
+.credential-fix { display: inline-flex; gap: 8px; margin-left: 4px; }
 .form label.check { flex-direction: row; align-items: center; gap: 8px; font-weight: 500; }
 .kv .status-chip { justify-self: start; }
 .created-by { display: inline-flex; align-items: center; gap: 8px; }

@@ -14,7 +14,7 @@ import {
 
 import type { Agent } from "../api.ts";
 import { useApp } from "../context.ts";
-import { presenceLabel } from "../lib/format.ts";
+import { statusOf } from "../lib/format.ts";
 import { loadOrder, moveId, orderAgents, saveOrder } from "../lib/order.ts";
 import { Avatar } from "./Avatar.tsx";
 import { CallWindow } from "./CallWindow.tsx";
@@ -387,6 +387,7 @@ function PinnedAgent(props: {
   row: RowHandlers;
 }): JSX.Element {
   const a = props.agent;
+  const status = statusOf(a);
   const { class: drop, ...row } = props.row;
   return (
     <div class={`pinned-agent-wrap${drop}`} {...row}>
@@ -394,12 +395,12 @@ function PinnedAgent(props: {
         type="button"
         class={`pinned-agent${props.active ? " active" : ""}`}
         aria-current={props.active ? "page" : undefined}
-        title={`${a.name} · ${presenceLabel(a.presence)}`}
+        title={`${a.name} · ${status.label}`}
         onClick={() => {
           props.onSelect(a.id);
         }}
       >
-        <Avatar agent={a} size={60} presence={a.presence} />
+        <Avatar agent={a} size={60} presence={status.presence} />
         <span class="pinned-name">{a.name}</span>
         {a.unread > 0 && (
           <span class="badge" aria-label={`${String(a.unread)} unread`}>
@@ -419,6 +420,7 @@ function AgentRow(props: {
   row: RowHandlers;
 }): JSX.Element {
   const a = props.agent;
+  const status = statusOf(a);
   const { class: drop, ...row } = props.row;
   return (
     <div class={`agent-row-wrap${drop}`} {...row}>
@@ -426,17 +428,21 @@ function AgentRow(props: {
         type="button"
         class={`agent-row${props.active ? " active" : ""}`}
         aria-current={props.active ? "page" : undefined}
-        title={`${a.name} · ${presenceLabel(a.presence)}`}
+        title={`${a.name} · ${status.label}`}
         onClick={() => {
           props.onSelect(a.id);
         }}
       >
-        <Avatar agent={a} size={40} presence={a.presence} />
+        <Avatar agent={a} size={40} presence={status.presence} />
         <span class="agent-row-text">
           <span class="agent-row-top">
             <span class="agent-name">{a.name}</span>
           </span>
-          <span class="agent-desc">{a.description || "No description"}</span>
+          {a.credential_error ? (
+            <span class="agent-desc bad">{status.label}</span>
+          ) : (
+            <span class="agent-desc">{a.description || "No description"}</span>
+          )}
         </span>
         {a.unread > 0 && (
           <span class="badge" aria-label={`${String(a.unread)} unread`}>

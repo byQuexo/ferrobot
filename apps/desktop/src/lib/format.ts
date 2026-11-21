@@ -1,4 +1,4 @@
-import type { Presence } from "../api.ts";
+import type { Agent, Presence } from "../api.ts";
 
 export function presenceLabel(p: Presence): string {
   switch (p) {
@@ -13,6 +13,20 @@ export function presenceLabel(p: Presence): string {
     case "error":
       return "Needs attention";
   }
+}
+
+export function credentialLabel(kind: "missing" | "rejected"): string {
+  return kind === "missing" ? "Key missing" : "Key rejected";
+}
+
+/** The agent's status dot and label: a model credential problem outranks presence. */
+export function statusOf(a: Pick<Agent, "presence" | "credential_error">): {
+  presence: Presence;
+  label: string;
+} {
+  return a.credential_error
+    ? { presence: "error", label: credentialLabel(a.credential_error.kind) }
+    : { presence: a.presence, label: presenceLabel(a.presence) };
 }
 
 /** "just now", "5 min ago", "3 h ago", "2 d ago"; future times as "in 5 min". */

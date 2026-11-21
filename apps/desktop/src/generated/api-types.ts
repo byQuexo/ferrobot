@@ -268,6 +268,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/agents/{id}/retry": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Clears the agent's credential problem so its waiting messages run; if the credential is
+         *     still broken, the next model call sets it again.
+         */
+        post: operations["retry"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/agents/{id}/routines": {
         parameters: {
             query?: never;
@@ -1139,6 +1159,7 @@ export interface components {
             unread: number;
             /** @description Relative URL of the avatar image, if one was uploaded. */
             avatar_url?: string | null;
+            credential_error?: components["schemas"]["CredentialError"] | null;
         };
         AnswerQuestion: {
             /** @description One answer per question of the card. */
@@ -1396,6 +1417,23 @@ export interface components {
             /** @description Default true. */
             enabled?: boolean | null;
         };
+        /**
+         * @description A model credential problem found by the model proxy. The agent's messages wait until the
+         *     operator changes its provider or model, stores a key or retries. Kept in memory: after a
+         *     restart the next model call finds it again.
+         */
+        CredentialError: {
+            kind: components["schemas"]["CredentialProblem"];
+            /** @description What is wrong and where to fix it; never contains the key. */
+            reason: string;
+            /** Format: date-time */
+            since: string;
+        };
+        /**
+         * @description What is wrong with an agent's model credential.
+         * @enum {string}
+         */
+        CredentialProblem: "missing" | "rejected";
         /** @description A device code the operator enters at `verification_url`. */
         DeviceCode: {
             verification_url: string;
@@ -3241,6 +3279,46 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content?: never;
+            };
+            /** @description Missing or wrong API token */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Unknown agent */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+        };
+    };
+    retry: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Agent id (UUID) */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AgentView"];
+                };
             };
             /** @description Missing or wrong API token */
             401: {

@@ -1854,9 +1854,10 @@ async fn auto_mode_creates_agents_without_a_card() {
     );
 }
 
-/// Fake upstream for any provider: echoes the method, path and credentials it saw.
+/// Fake upstream for any provider: echoes the method, path and credentials it saw, and
+/// refuses keys containing `bad-key` with a 401 that quotes them.
 async fn echo_upstream() -> String {
-    async fn handler(request: axum::extract::Request) -> axum::Json<Value> {
+    async fn handler(request: axum::extract::Request) -> axum::response::Response {
         let (parts, body) = request.into_parts();
         let header = |name: &str| {
             parts
@@ -1865,6 +1866,14 @@ async fn echo_upstream() -> String {
                 .and_then(|v| v.to_str().ok())
                 .map(str::to_owned)
         };
+        if let Some(bad) = [header("authorization"), header("x-api-key")]
+            .into_iter()
+            .flatten()
+            .find(|v| v.contains("bad-key"))
+        {
+            let err = json!({"error": {"message": format!("invalid key {bad}")}});
+            return (axum::http::StatusCode::UNAUTHORIZED, axum::Json(err)).into_response();
+        }
         let body: Value = axum::body::to_bytes(body, usize::MAX)
             .await
             .ok()
@@ -1882,6 +1891,7 @@ async fn echo_upstream() -> String {
             "accounts": parts.headers.get_all("chatgpt-account-id").iter()
                 .filter_map(|v| v.to_str().ok()).collect::<Vec<_>>(),
         }))
+        .into_response()
     }
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
     let addr = listener.local_addr().unwrap();
@@ -1893,6 +1903,184 @@ async fn echo_upstream() -> String {
 async fn model_call(d: &Daemon, path: &str, auth: (&str, &str)) -> (u16, Value) {
     let (status, _, out) = http_raw(&d.agents, "POST", path, &[auth], b"{}").await;
     (status, serde_json::from_slice(&out).unwrap_or(Value::Null))
+}
+
+/// Ends a fake runner's turn as failed with `error`.
+async fn fail(ws: &mut Ws, turn_id: String, error: &str) {
+    let done = RunnerFrame::TurnDone {
+        turn_id,
+        outcome: ferrobot_core::protocol::TurnOutcome::Failed,
+        session_id: None,
+        result: None,
+        error: Some(error.into()),
+        steered: vec![],
+    };
+    ws.send(Message::text(serde_json::to_string(&done).unwrap()))
+        .await
+        .unwrap();
+}
+
+#[tokio::test]
+async fn credential_problems_hold_turns_until_fixed() {
+    let upstream = echo_upstream().await;
+    let backend = Arc::new(StatefulBackend::default());
+    let d = start(backend.clone(), None, "127.0.0.1:0").await;
+    let id = create(&d, json!({"name": "kim"})).await["id"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    let mut ws = connect_runner(&d.agents, &backend.token("kim")).await;
+    let post = |body: &'static str| {
+        let path = format!("/v1/agents/{id}/messages");
+        let ui = d.ui.clone();
+        async move {
+            http(&ui, "POST", &path, Some(json!({"body": body})))
+                .await
+                .1["id"]
+                .as_i64()
+                .unwrap()
+        }
+    };
+    let agent = || async {
+        http(&d.ui, "GET", &format!("/v1/agents/{id}"), None)
+            .await
+            .1
+    };
+    let notices = || async {
+        events(&d, &id)
+            .await
+            .into_iter()
+            .filter(|e| e["kind"] == "credential_error")
+            .collect::<Vec<_>>()
+    };
+    let (d, id) = (&d, id.as_str());
+    let pending = |ids: Vec<i64>| async move {
+        let mail = mail(d, id).await;
+        ids.iter().all(|m| {
+            mail.iter()
+                .any(|x| x["id"] == *m && x["status"] == "pending")
+        })
+    };
+    let call = |token: String| async move {
+        let bearer = format!("Bearer {token}");
+        model_call(d, "/model/chat/completions", ("authorization", &bearer)).await
+    };
+    let claude_call = || async {
+        let token = backend.token("kim");
+        model_call(d, "/model/v1/messages", ("x-api-key", &token)).await
+    };
+
+    // On the daemon default without a daemon key: the first turn fails once, then turns wait.
+    let first = post("hello").await;
+    let (turn, message, _) = next_turn(&mut ws).await;
+    assert_eq!(message, first);
+    assert_eq!(agent().await["credential_error"], Value::Null);
+    let (status, _) = claude_call().await;
+    assert_eq!(status, 400);
+    let (status, _) = claude_call().await;
+    assert_eq!(status, 400);
+    fail(
+        &mut ws,
+        turn.clone(),
+        "API Error: 400 the daemon has no Anthropic key",
+    )
+    .await;
+    let problem = agent().await["credential_error"].clone();
+    assert_eq!(problem["kind"], "missing", "{problem}");
+    assert!(
+        problem["reason"]
+            .as_str()
+            .unwrap()
+            .contains("no Anthropic key")
+    );
+    let second = post("are you there?").await;
+    let third = post("hello?").await;
+    quiet(&mut ws).await;
+    assert!(pending(vec![first, second, third]).await, "messages wait");
+    let notes = notices().await;
+    assert_eq!(notes.len(), 1, "one notice: {notes:?}");
+    assert_eq!(notes[0]["turn_id"], Value::Null);
+    assert_eq!(notes[0]["payload"]["turn_id"], json!(turn));
+
+    // A provider with a key clears it, and the waiting messages run in order.
+    let (status, provider) = http(
+        &d.ui,
+        "POST",
+        "/v1/providers",
+        Some(
+            json!({"name": "oai", "kind": "openai", "base_url": format!("{upstream}/v1"),
+                    "default_model": "gpt-test", "api_key": "good-key"}),
+        ),
+    )
+    .await;
+    assert_eq!(status, 201, "{provider}");
+    let pid = provider["id"].as_str().unwrap().to_owned();
+    let (status, view) = http(
+        &d.ui,
+        "PATCH",
+        &format!("/v1/agents/{id}"),
+        Some(json!({"provider_id": pid})),
+    )
+    .await;
+    assert_eq!((status, &view["credential_error"]), (200, &Value::Null));
+    let (turn, message, _) = next_turn(&mut ws).await;
+    assert_eq!(message, first);
+    assert_eq!(call(backend.token("kim")).await.0, 200);
+    finish(&mut ws, turn, None).await;
+    let (turn, message, _) = next_turn(&mut ws).await;
+    assert_eq!(message, second);
+
+    // A key the provider refuses: "rejected", without the key or the upstream's words.
+    let set_key = |key: &'static str| {
+        let path = format!("/v1/providers/{pid}");
+        let ui = d.ui.clone();
+        async move {
+            let (status, _) = http(&ui, "PATCH", &path, Some(json!({"api_key": key}))).await;
+            assert_eq!(status, 200);
+        }
+    };
+    set_key("bad-key-123").await;
+    assert_eq!(call(backend.token("kim")).await.0, 401);
+    fail(&mut ws, turn, "API Error: 401 invalid key").await;
+    let problem = agent().await["credential_error"].clone();
+    assert_eq!(problem["kind"], "rejected", "{problem}");
+    assert_eq!(
+        problem["reason"],
+        "provider oai rejected its API key: replace it in Settings, Vault"
+    );
+    quiet(&mut ws).await;
+    assert!(pending(vec![second, third]).await);
+
+    // A retry that did not fix it sets the problem again on the next call; the Claude SDK
+    // ends such a turn as completed with the error as its answer, and the message still waits.
+    let (status, view) = http(&d.ui, "POST", &format!("/v1/agents/{id}/retry"), None).await;
+    assert_eq!((status, &view["credential_error"]), (200, &Value::Null));
+    let (turn, message, _) = next_turn(&mut ws).await;
+    assert_eq!(message, second);
+    assert_eq!(call(backend.token("kim")).await.0, 401);
+    finish(&mut ws, turn, Some("API Error: 401 invalid key")).await;
+    assert_eq!(agent().await["credential_error"]["kind"], "rejected");
+    quiet(&mut ws).await;
+    assert!(
+        pending(vec![second, third]).await,
+        "a completed turn does not deliver it"
+    );
+
+    // Storing a good key (Vault saves through the provider) clears it.
+    set_key("good-key").await;
+    let (turn, message, _) = next_turn(&mut ws).await;
+    assert_eq!(message, second);
+    assert_eq!(agent().await["credential_error"], Value::Null);
+    finish(&mut ws, turn, None).await;
+    let (turn, message, _) = next_turn(&mut ws).await;
+    assert_eq!(message, third);
+    finish(&mut ws, turn, None).await;
+    delivered(d, id, third).await;
+
+    assert_eq!(notices().await.len(), 3, "one notice per problem");
+    let everything = format!("{}{:?}", agent().await, events(d, id).await);
+    assert!(!everything.contains("bad-key"), "the key never shows");
+    assert!(!everything.contains("good-key"));
 }
 
 #[tokio::test]

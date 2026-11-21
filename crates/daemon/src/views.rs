@@ -23,6 +23,29 @@ pub enum Presence {
     Error,
 }
 
+/// What is wrong with an agent's model credential.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, ToSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum CredentialProblem {
+    /// No key or sign-in to call the model with.
+    Missing,
+    /// The provider refused the key or sign-in.
+    Rejected,
+}
+
+/// A model credential problem found by the model proxy. The agent's messages wait until the
+/// operator changes its provider or model, stores a key or retries. Kept in memory: after a
+/// restart the next model call finds it again.
+#[derive(Debug, Clone, Serialize, ToSchema)]
+pub struct CredentialError {
+    pub kind: CredentialProblem,
+    /// What is wrong and where to fix it; never contains the key.
+    pub reason: String,
+    #[serde(with = "time::serde::rfc3339")]
+    #[schema(value_type = String, format = DateTime)]
+    pub since: time::OffsetDateTime,
+}
+
 /// An agent plus live state.
 #[derive(Debug, Clone, Serialize, ToSchema)]
 pub struct AgentView {
@@ -35,6 +58,8 @@ pub struct AgentView {
     pub unread: u32,
     /// Relative URL of the avatar image, if one was uploaded.
     pub avatar_url: Option<String>,
+    /// Set while the agent's model credential is missing or rejected; its turns wait.
+    pub credential_error: Option<CredentialError>,
 }
 
 pub fn presence(agent: &Agent, connected: bool, working: bool) -> Presence {
@@ -56,6 +81,7 @@ pub fn view(state: &AppState, agent: Agent, unread: u32) -> AgentView {
             .then(|| format!("/v1/agents/{}/avatar?v={}", agent.id, agent.avatar_rev)),
         connected,
         unread,
+        credential_error: state.hub.credential_error(agent.id),
         agent,
     }
 }
