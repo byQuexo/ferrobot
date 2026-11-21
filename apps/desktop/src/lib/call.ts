@@ -46,6 +46,16 @@ function endsSentence(text: string, dot: number): boolean {
 const fences = (s: string): number => s.split("```").length - 1;
 
 /**
+ * A reply's first words up to a clause break (`,` `;` `:` or a spaced dash) once there are
+ * at least 20 characters, so speech can start before the first sentence is written.
+ */
+export function firstClause(text: string): { clause: string; rest: string } | null {
+  if (text.includes("```")) return null;
+  const m = /^([\s\S]{20,}?(?:[,;:]|\s[–—-]))\s/.exec(text);
+  return m?.[1] ? { clause: m[1].trim(), rest: text.slice(m[0].length) } : null;
+}
+
+/**
  * Splits streamed text into whole sentences and the unfinished rest. A sentence
  * ends at `.`, `!`, `?` or `…` followed by whitespace, or at a line break; never
  * inside a code block.
@@ -201,7 +211,11 @@ export class CallScript {
 
   #add(turn: string, t: Turn, text: string): Line[] {
     if (t.quiet) return [];
-    const { done, rest } = splitSentences(t.rest + text);
+    let { done, rest } = splitSentences(t.rest + text);
+    if (t.said === 0 && done.length === 0) {
+      const first = firstClause(rest);
+      if (first) [done, rest] = [[first.clause], first.rest];
+    }
     t.rest = rest;
     return this.#offer(turn, t, done);
   }

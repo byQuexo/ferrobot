@@ -1387,3 +1387,20 @@ store used for the run) or the daemon's own env.
   without a daemon key, `anthropic_key` false), the provider-key and old-runner
   tests now expect 400.
 - Not tested: the Claude SDK's message for a 400 from a real turn.
+
+## Streaming speech (`feat/streaming-speech`)
+
+**Done**
+
+- `GET /v1/voice/speech` streams speech for an audio element; the call speaker
+  plays from it (two clips ahead, dropped ones aborted); CSP `media-src` allows
+  the daemon.
+- The first clause of a reply is spoken as soon as it is written.
+
+**Tested**
+
+- Rust: the voice test streams speech from the link with the token in the
+  query and refuses it without.
+- Desktop: the speaker streams from links and drops voices on hang-up; the
+  first-clause rule (20 characters, spaced comma, code blocks).
+- Not tested: real ElevenLabs streaming in the Tauri window (WKWebView).

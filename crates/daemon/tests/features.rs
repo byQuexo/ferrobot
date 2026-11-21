@@ -4164,6 +4164,21 @@ async fn voice_speaks_and_listens_with_keys_kept_in_the_daemon() {
         json!({"text": "Hallo", "model_id": "eleven_flash_v2_5"})
     );
 
+    // The same speech as a link an audio element can stream, with the token in the query.
+    let link = format!(
+        "/v1/voice/speech?text=Gr%C3%BC%C3%9F%20dich&access_token={}",
+        common::TEST_TOKEN
+    );
+    let no_header = [("authorization", "")];
+    let (status, headers, audio) = http_raw(&d.ui, "GET", &link, &no_header, b"").await;
+    assert_eq!(status, 200);
+    assert!(headers.contains(&("content-type".into(), "audio/mpeg".into())));
+    assert_eq!(audio, b"ID3-fake-mp3");
+    let sent: Value = serde_json::from_str(last()["body"].as_str().unwrap()).unwrap();
+    assert_eq!(sent["text"], "Grüß dich");
+    let (status, _, _) = http_raw(&d.ui, "GET", "/v1/voice/speech?text=hi", &no_header, b"").await;
+    assert_eq!(status, 401, "the link still needs the token");
+
     let (status, _, out) = http_raw(
         &d.ui,
         "POST",

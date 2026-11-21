@@ -248,7 +248,8 @@ async fn send(request: reqwest::RequestBuilder) -> Result<reqwest::Response, Api
     )))
 }
 
-#[derive(Debug, Deserialize, ToSchema)]
+#[derive(Debug, Deserialize, ToSchema, utoipa::IntoParams)]
+#[into_params(parameter_in = Query)]
 pub(crate) struct SpeechRequest {
     /// What to say: 1-4096 characters.
     text: String,
@@ -271,6 +272,27 @@ pub(crate) async fn speech(
     State(state): State<AppState>,
     Json(req): Json<SpeechRequest>,
 ) -> Result<Response, ApiError> {
+    speak(&state, &req).await
+}
+
+/// The same speech as a link, so an audio element can play it while it streams (the operator
+/// token goes in `access_token`, as for other `GET` links).
+#[utoipa::path(get, path = "/v1/voice/speech", tag = "voice",
+    params(SpeechRequest),
+    responses(
+        (status = 200, description = "Audio, streamed", content_type = "audio/mpeg", body = Vec<u8>),
+        (status = 400, description = "Empty or too long", body = ErrorBody),
+        (status = 409, description = "Voice off, not set up, or no key or voice", body = ErrorBody),
+        (status = 429, description = "Limit for this minute reached", body = ErrorBody),
+        (status = 502, description = "The provider failed", body = ErrorBody)))]
+pub(crate) async fn speech_link(
+    State(state): State<AppState>,
+    axum::extract::Query(req): axum::extract::Query<SpeechRequest>,
+) -> Result<Response, ApiError> {
+    speak(&state, &req).await
+}
+
+async fn speak(state: &AppState, req: &SpeechRequest) -> Result<Response, ApiError> {
     let text = req.text.trim();
     let chars = text.chars().count();
     if chars == 0 || chars > MAX_SPEECH_CHARS {
@@ -278,7 +300,7 @@ pub(crate) async fn speech(
             "text must be 1-{MAX_SPEECH_CHARS} characters"
         )));
     }
-    let r = ready(&state).await?;
+    let r = ready(state).await?;
     let voice = r
         .settings
         .voice_of(r.provider, req.agent_id)
@@ -288,7 +310,7 @@ pub(crate) async fn speech(
         .tts_model
         .as_deref()
         .unwrap_or(r.provider.default_tts_model());
-    spend(&state, chars, 0)?;
+    spend(state, chars, 0)?;
     let speak = Speak {
         model,
         voice,

@@ -30,15 +30,15 @@ export function speakable(text: string, nameOf: (id: string) => string | undefin
 interface Queued {
   text: string;
   agent: string | undefined;
-  audio: Promise<Blob | null> | null;
+  audio: HTMLAudioElement | null;
 }
 
-/** Texts fetched ahead of the one playing; more would burst the speech provider. */
+/** Clips loading ahead of the one playing; more would burst the speech provider. */
 const PREFETCH = 2;
 
-/** Plays texts one after another, fetching each one's audio shortly before its turn. */
+/** Plays texts one after another, streaming each one's audio shortly before its turn. */
 export class Speaker {
-  readonly #fetch: (text: string, agent?: string) => Promise<Blob>;
+  readonly #urlOf: (text: string, agent?: string) => string;
   readonly #onError: (err: unknown) => void;
   /** Told whose voice starts playing, and `null` once nothing is left to play. */
   onSpeaking: (agent: string | null) => void = () => {};
@@ -52,11 +52,8 @@ export class Speaker {
   /** Set by `keepOnly`: no other voice is played until `stop`. */
   #keep: { agent: string | undefined } | null = null;
 
-  constructor(
-    fetchAudio: (text: string, agent?: string) => Promise<Blob>,
-    onError: (err: unknown) => void,
-  ) {
-    this.#fetch = fetchAudio;
+  constructor(urlOf: (text: string, agent?: string) => string, onError: (err: unknown) => void) {
+    this.#urlOf = urlOf;
     this.#onError = onError;
   }
 
@@ -89,6 +86,7 @@ export class Speaker {
   /** Drops every other voice at once, the one playing included; `agent`'s lines play on. */
   keepOnly(agent: string): void {
     this.#keep = { agent };
+    for (const q of this.#queue) if (q.agent !== agent) drop(q);
     this.#queue = this.#queue.filter((q) => q.agent === agent);
     if (this.#now && this.#now.agent !== agent) this.#audio?.pause();
   }
@@ -96,6 +94,7 @@ export class Speaker {
   stop(): void {
     this.#round++;
     this.#keep = null;
+    this.#queue.forEach(drop);
     this.#queue = [];
     this.#audio?.pause();
     this.#audio = null;
@@ -104,13 +103,15 @@ export class Speaker {
     this.#busy = false;
   }
 
+  #load(item: Queued): HTMLAudioElement {
+    const audio = new Audio();
+    audio.preload = "auto";
+    audio.src = this.#urlOf(item.text, item.agent);
+    return audio;
+  }
+
   #prefetch(): void {
-    for (const item of this.#queue.slice(0, PREFETCH)) {
-      item.audio ??= this.#fetch(item.text, item.agent).catch((err: unknown) => {
-        this.#onError(err);
-        return null;
-      });
-    }
+    for (const item of this.#queue.slice(0, PREFETCH)) item.audio ??= this.#load(item);
   }
 
   #ended(): void {
@@ -123,33 +124,29 @@ export class Speaker {
     const round = this.#round;
     this.#busy = true;
     while (round === this.#round) {
-      this.#prefetch();
       const next = this.#queue.shift();
       if (!next) break;
       this.#prefetch();
-      this.#now = next;
-      const blob = await next.audio;
-      if (round !== this.#round) break;
-      if (!blob || (this.#keep && this.#keep.agent !== next.agent)) {
-        this.#now = null;
+      if (this.#keep && this.#keep.agent !== next.agent) {
+        drop(next);
         continue;
       }
-      const url = URL.createObjectURL(blob);
-      const audio = new Audio(url);
+      this.#now = next;
+      const audio = next.audio ?? this.#load(next);
       this.#audio = audio;
       this.onSpeaking(next.agent ?? null);
       await new Promise<void>((resolve) => {
-        audio.onended =
-          audio.onerror =
-          audio.onpause =
-            () => {
-              resolve();
-            };
+        audio.onended = audio.onpause = () => {
+          resolve();
+        };
+        audio.onerror = () => {
+          this.#onError(new Error("Speech could not be played"));
+          resolve();
+        };
         audio.play().catch(() => {
           resolve();
         });
       });
-      URL.revokeObjectURL(url);
       if (round === this.#round) this.#ended();
     }
     if (round === this.#round) {
@@ -158,6 +155,12 @@ export class Speaker {
       this.onSpeaking(null);
     }
   }
+}
+
+/** Stops a dropped clip's download. */
+function drop(item: Queued): void {
+  if (item.audio) item.audio.src = "";
+  item.audio = null;
 }
 
 export interface Recording {

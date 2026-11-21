@@ -170,7 +170,10 @@ fn integrations() -> Router<AppState> {
         .route("/v1/oauth/callback", get(connectors::oauth_callback))
         .route("/v1/clis", get(clis::get_clis).put(clis::put_clis))
         .route("/v1/voice", get(voice::get_voice).put(voice::put_voice))
-        .route("/v1/voice/speech", post(voice::speech))
+        .route(
+            "/v1/voice/speech",
+            post(voice::speech).get(voice::speech_link),
+        )
         .route("/v1/voice/catalog", get(voice::catalog))
         .route("/v1/voice/keys/{provider}", put(voice::put_voice_key))
         .route("/v1/voice/live", post(voice::live))
