@@ -16,7 +16,7 @@
 
 ![ferrobot demo: researcher reads the backon docs through the DeepWiki connector, asks you a question and hands the build to builder, which runs cargo on its own computer; then a shared report and the cost in Usage](docs/assets/demo.gif)
 
-Also as [MP4](docs/assets/demo.mp4) (real Claude Sonnet 5.5 turns, waits at 2x) · Voice room video: coming soon ([script](docs/launch/voice-room-script.md))
+Also as [MP4](docs/assets/demo.mp4) (real Claude Sonnet 5.5 turns; waits sped up 2x, long ones shortened) · Voice room video: coming soon ([script](docs/launch/voice-room-script.md))
 
 ## Why ferrobot
 
