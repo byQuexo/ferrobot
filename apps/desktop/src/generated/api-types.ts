@@ -214,7 +214,10 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** The agent's conversation: messages to and from it, oldest first (last 200). */
+        /**
+         * The agent's conversation: messages to and from it, oldest first (last 200). Call room turns
+         *     (`room_id` set) are left out; they are in the room.
+         */
         get: operations["list_messages"];
         put?: never;
         /**
@@ -550,7 +553,10 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** Agent-to-agent conversations (one per pair of agents), most recent first. */
+        /**
+         * Agent-to-agent conversations (one per pair of agents), most recent first; call room turns
+         *     are left out.
+         */
         get: operations["list_conversations"];
         put?: never;
         post?: never;
@@ -569,7 +575,7 @@ export interface paths {
         };
         /**
          * Read-only thread between two agents: messages in both directions, oldest
-         *     first (last 200). The order of `a` and `b` does not matter.
+         *     first (last 200), without call room turns. The order of `a` and `b` does not matter.
          */
         get: operations["conversation_thread"];
         put?: never;
@@ -1181,7 +1187,7 @@ export interface components {
         BuildStatus: "idle" | "building" | "ready" | "failed";
         CallMessage: {
             /**
-             * @description 1..19480 bytes after trimming, counting `@name` mentions as their
+             * @description 1..19441 bytes after trimming, counting `@name` mentions as their
              *     stored `<@agent-id>` tokens (the rest of a message is left for what
              *     the others said).
              */

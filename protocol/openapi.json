@@ -1171,7 +1171,7 @@
         "tags": [
           "chat"
         ],
-        "summary": "The agent's conversation: messages to and from it, oldest first (last 200).",
+        "summary": "The agent's conversation: messages to and from it, oldest first (last 200). Call room turns\n(`room_id` set) are left out; they are in the room.",
         "operationId": "list_messages",
         "parameters": [
           {
@@ -2746,7 +2746,7 @@
         "tags": [
           "chat"
         ],
-        "summary": "Agent-to-agent conversations (one per pair of agents), most recent first.",
+        "summary": "Agent-to-agent conversations (one per pair of agents), most recent first; call room turns\nare left out.",
         "operationId": "list_conversations",
         "responses": {
           "200": {
@@ -2779,7 +2779,7 @@
         "tags": [
           "chat"
         ],
-        "summary": "Read-only thread between two agents: messages in both directions, oldest\nfirst (last 200). The order of `a` and `b` does not matter.",
+        "summary": "Read-only thread between two agents: messages in both directions, oldest\nfirst (last 200), without call room turns. The order of `a` and `b` does not matter.",
         "operationId": "conversation_thread",
         "parameters": [
           {
@@ -4986,7 +4986,7 @@
         "properties": {
           "body": {
             "type": "string",
-            "description": "1..19480 bytes after trimming, counting `@name` mentions as their\nstored `<@agent-id>` tokens (the rest of a message is left for what\nthe others said)."
+            "description": "1..19441 bytes after trimming, counting `@name` mentions as their\nstored `<@agent-id>` tokens (the rest of a message is left for what\nthe others said)."
           }
         }
       },

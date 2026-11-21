@@ -27,9 +27,9 @@ pub(crate) const CALL_NOTE: &str = "(Voice call: your reply is read aloud. Talk 
     your chat. Call hang_up when the conversation is done.)\n\n";
 /// Only the agent the operator called gets this.
 const HOST_NOTE: &str = "(You host the call. When a task needs a specialist or deeper work, \
-    propose it in one sentence and wait for the operator's yes. Then create_agent it and \
-    invite_to_call it for feedback, or give it a task to research in the background; its answer \
-    comes back to you.)\n\n";
+    propose it in one sentence and wait for the operator's yes. Then say an approval may show in \
+    your chat, create_agent it and invite_to_call it for feedback, or give it a task to research \
+    in the background; its answer comes back to you.)\n\n";
 /// What an invited agent hears first, after the host's name.
 const INVITED: &str = " invited you into this call. Listen first: say at most a short hello or \
     (pass), then answer what you are asked; use what you know when someone asks, not as an opening.";

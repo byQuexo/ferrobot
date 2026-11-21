@@ -532,7 +532,7 @@ pub(crate) async fn put_call(
 
 #[derive(Debug, Deserialize, ToSchema)]
 pub(crate) struct CallMessage {
-    /// 1..19480 bytes after trimming, counting `@name` mentions as their
+    /// 1..19441 bytes after trimming, counting `@name` mentions as their
     /// stored `<@agent-id>` tokens (the rest of a message is left for what
     /// the others said).
     body: String,

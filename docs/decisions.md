@@ -1144,7 +1144,7 @@ slop, so polish mode: palette, accent, logo, layout and features stay.
   ends the call for everyone; an invited agent leaves.
 - **Single-agent calls** go through `POST /v1/call/messages` too, so the host
   gets the call note; the operator's call messages lose its length to it (limit
-  now 19,480, see "Call rooms").
+  now 19,441, see "Call rooms").
 
 ## Tool profiles
 
@@ -1287,17 +1287,20 @@ slop, so polish mode: palette, accent, logo, layout and features stay.
 - **Out of the agent's chat:** `GET /v1/agents/{id}/messages`, conversations
   between agents and unread counts leave room messages and room turns out
   (room turns are marked by `room_id` in their `message_in` event). The UI
-  hides those turns' events and streaming text. Question cards and shared
+  hides those turns' events and streaming text from the chat; the Activities
+  tab still lists their tool calls. Question cards and shared
   files have no turn id and still show in the agent's chat, so a `create_agent`
   approval asked for in a call is not lost.
 - **Call notes.** One note for every call message: spoken, short, everyone
   hears every line, speak when asked or when adding something new, otherwise
   `(pass)`, never repeat. The host also gets a host note: propose a specialist
   or deeper work in one sentence, wait for the operator's yes, then
-  `create_agent` and `invite_to_call` it, or give it a background task. An
+  `create_agent` and `invite_to_call` it, or give it a background task;
+  it says first that an approval may show in its chat (the card waits there,
+  not in the room). An
   invited agent first hears that it should listen: at most a short hello or
   `(pass)`, then answer what it is asked. A room turn never gets the new-agent
-  greeting. The operator's call message limit is now 19,480 bytes.
+  greeting. The operator's call message limit is now 19,441 bytes.
 - **UI:** a "Calls" list in the sidebar (title and time), a room view with
   the transcript ("You" or the agent's avatar and name, time) that updates
   live, and a message box there while it is the running call's room. The call

@@ -4660,7 +4660,7 @@ async fn message_limits_count_mentions_as_stored() {
     let at_limit = |limit: usize, name: &str| format!("@{name} {}", "x".repeat(limit - 5));
     for (name, accepted) in [("zed", true), ("bob", false)] {
         let expected = if accepted { 202 } else { 400 };
-        for (path, limit) in [(chat.as_str(), 32 * 1024), ("/v1/call/messages", 19480)] {
+        for (path, limit) in [(chat.as_str(), 32 * 1024), ("/v1/call/messages", 19441)] {
             let body = json!({"body": at_limit(limit, name)});
             let (status, _) = http(&d.ui, "POST", path, Some(body)).await;
             assert_eq!(status, expected, "{path} @{name}");
