@@ -189,10 +189,12 @@ pub enum UiEvent {
     /// The agent's routines or their runs changed; refetch them.
     RoutinesChanged { agent_id: AgentId },
     /// Who is in the operator's voice call changed (empty: it ended). `room_id`: the call's room,
-    /// once a second agent joined.
+    /// once a second agent joined. `hung_up`: the agent whose hang-up this is; its goodbye may
+    /// still be playing.
     Call {
         agents: Vec<AgentId>,
         room_id: Option<i64>,
+        hung_up: Option<AgentId>,
     },
     /// A call room opened, gained a member or ended.
     Room { room: Room },
@@ -407,6 +409,11 @@ impl ferrobot_mcp::MailboxNotifier for AppState {
     fn hang_up(&self, agent: AgentId) -> ferrobot_mcp::BoxFuture<Result<bool, String>> {
         let state = self.clone();
         Box::pin(async move { state.hang_up(agent).await })
+    }
+
+    fn in_call(&self, agent: AgentId) -> ferrobot_mcp::BoxFuture<bool> {
+        let state = self.clone();
+        Box::pin(async move { state.in_call(agent).await })
     }
 
     fn request_routine(

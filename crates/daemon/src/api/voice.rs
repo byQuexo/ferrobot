@@ -47,7 +47,7 @@ fn internal(e: impl std::fmt::Display) -> ApiError {
     ApiError::Internal(format!("voice settings: {e}"))
 }
 
-async fn load(state: &AppState) -> Result<VoiceSettings, ApiError> {
+pub(crate) async fn load(state: &AppState) -> Result<VoiceSettings, ApiError> {
     match state.store.get_setting(SETTING).await? {
         Some(raw) => serde_json::from_str(&raw).map_err(internal),
         None => Ok(VoiceSettings::default()),
@@ -532,19 +532,20 @@ pub(crate) async fn put_call(
 
 #[derive(Debug, Deserialize, ToSchema)]
 pub(crate) struct CallMessage {
-    /// 1..19441 bytes after trimming, counting `@name` mentions as their
+    /// 1..19316 bytes after trimming, counting `@name` mentions as their
     /// stored `<@agent-id>` tokens (the rest of a message is left for what
     /// the others said).
     body: String,
 }
 
-/// Sends the operator's message to every agent in the call, each with what the others said
-/// since its last turn and the call instructions. In a room it is also a line there, and its
-/// messages (`room_id` set) stay out of the agents' chats.
+/// Sends the operator's message to the call with the call instructions. Without a room every
+/// agent gets it as a turn. In a room it is a line, and the agents take it one at a time, host
+/// first, each with what it has not heard yet; their messages (`room_id` set) stay out of chats.
 #[utoipa::path(post, path = "/v1/call/messages", tag = "voice",
     request_body = CallMessage,
     responses(
-        (status = 202, description = "Queued, one message per agent", body = Vec<MailMessage>),
+        (status = 202, description = "Queued: one message per agent, or in a room the next \
+            speaker's (none while an agent still speaks)", body = Vec<MailMessage>),
         (status = 400, body = ErrorBody),
         (status = 409, description = "No voice call", body = ErrorBody)))]
 pub(crate) async fn post_call_message(

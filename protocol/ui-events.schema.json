@@ -644,13 +644,23 @@
           "type": "object"
         },
         {
-          "description": "Who is in the operator's voice call changed (empty: it ended). `room_id`: the call's room,\nonce a second agent joined.",
+          "description": "Who is in the operator's voice call changed (empty: it ended). `room_id`: the call's room,\nonce a second agent joined. `hung_up`: the agent whose hang-up this is; its goodbye may\nstill be playing.",
           "properties": {
             "agents": {
               "items": {
                 "$ref": "#/$defs/AgentId"
               },
               "type": "array"
+            },
+            "hung_up": {
+              "oneOf": [
+                {
+                  "$ref": "#/$defs/AgentId"
+                },
+                {
+                  "type": "null"
+                }
+              ]
             },
             "room_id": {
               "format": "int64",

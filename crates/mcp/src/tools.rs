@@ -573,6 +573,12 @@ impl FerrobotTools {
         Parameters(mut card): Parameters<QuestionCard>,
     ) -> ToolResult<AskUserResult> {
         let me = caller(&parts)?.0.id;
+        if self.state.notifier.in_call(me).await {
+            return Err(ErrorData::invalid_params(
+                "You're in a voice call with the operator: ask out loud in your reply.",
+                None,
+            ));
+        }
         card.normalize()
             .map_err(|e| ErrorData::invalid_params(e, None))?;
         let store = &self.state.store;

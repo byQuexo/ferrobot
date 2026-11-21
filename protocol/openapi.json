@@ -2217,7 +2217,7 @@
         "tags": [
           "voice"
         ],
-        "summary": "Sends the operator's message to every agent in the call, each with what the others said\nsince its last turn and the call instructions. In a room it is also a line there, and its\nmessages (`room_id` set) stay out of the agents' chats.",
+        "summary": "Sends the operator's message to the call with the call instructions. Without a room every\nagent gets it as a turn. In a room it is a line, and the agents take it one at a time, host\nfirst, each with what it has not heard yet; their messages (`room_id` set) stay out of chats.",
         "operationId": "post_call_message",
         "requestBody": {
           "content": {
@@ -2231,7 +2231,7 @@
         },
         "responses": {
           "202": {
-            "description": "Queued, one message per agent",
+            "description": "Queued: one message per agent, or in a room the next speaker's (none while an agent still speaks)",
             "content": {
               "application/json": {
                 "schema": {
@@ -4986,7 +4986,7 @@
         "properties": {
           "body": {
             "type": "string",
-            "description": "1..19441 bytes after trimming, counting `@name` mentions as their\nstored `<@agent-id>` tokens (the rest of a message is left for what\nthe others said)."
+            "description": "1..19316 bytes after trimming, counting `@name` mentions as their\nstored `<@agent-id>` tokens (the rest of a message is left for what\nthe others said)."
           }
         }
       },
@@ -7024,7 +7024,7 @@
           },
           {
             "type": "object",
-            "description": "Who is in the operator's voice call changed (empty: it ended). `room_id`: the call's room,\nonce a second agent joined.",
+            "description": "Who is in the operator's voice call changed (empty: it ended). `room_id`: the call's room,\nonce a second agent joined. `hung_up`: the agent whose hang-up this is; its goodbye may\nstill be playing.",
             "required": [
               "agents",
               "type"
@@ -7042,6 +7042,16 @@
                   "null"
                 ],
                 "format": "int64"
+              },
+              "hung_up": {
+                "oneOf": [
+                  {
+                    "$ref": "#/components/schemas/AgentId"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
               },
               "type": {
                 "type": "string",

@@ -256,8 +256,7 @@ async fn handle_frame(state: &AppState, agent: &Agent, done_tx: &mpsc::Sender<Do
                 let _ = state.store.set_agent_session(agent.id, sid).await;
             }
             // First, so a recorded `turn_done` means the call already has the turn's line.
-            let completed = matches!(outcome, TurnOutcome::Completed);
-            state.call_turn_done(agent.id, &turn_id, completed).await;
+            state.call_turn_done(agent.id, &turn_id, outcome).await;
             state
                 .record(
                     agent.id,

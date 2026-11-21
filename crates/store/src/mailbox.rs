@@ -125,7 +125,8 @@ impl Store {
             .await
     }
 
-    /// Queues a turn of call room `room` for `recipient`; it stays out of the agent's chat.
+    /// Queues a turn of call room `room` for `recipient`; it stays out of the agent's chat and
+    /// goes before its other mail, since the room waits for it.
     pub async fn enqueue_room_message(
         &self,
         sender: Sender,
@@ -133,8 +134,10 @@ impl Store {
         body: String,
         room: i64,
     ) -> Result<MailMessage, StoreError> {
-        self.with(move |c| insert_message(c, sender, recipient, &body, None, None, Some(room)))
-            .await
+        self.with(move |c| {
+            insert_message(c, sender, recipient, &body, None, Some(true), Some(room))
+        })
+        .await
     }
 
     /// True if the agent has pending or in-flight messages.

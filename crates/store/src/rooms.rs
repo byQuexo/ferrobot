@@ -125,6 +125,22 @@ impl Store {
         .await
     }
 
+    /// Settles the room's queued turns so they never run; returns their message ids.
+    pub async fn cancel_room_messages(&self, id: i64) -> Result<Vec<i64>, StoreError> {
+        self.with(move |c| {
+            let ids = c
+                .prepare(
+                    "UPDATE messages SET status = 'delivered', last_error = 'the call ended',
+                                         updated_at = ?2
+                     WHERE room_id = ?1 AND status = 'pending' RETURNING id",
+                )?
+                .query_map(params![id, fmt_ts(now())], |r| r.get(0))?
+                .collect::<Result<_, _>>()?;
+            Ok(ids)
+        })
+        .await
+    }
+
     /// Ends every running room: calls live in the daemon's memory, so a restart ends them.
     pub async fn end_open_rooms(&self) -> Result<usize, StoreError> {
         self.with(|c| {
@@ -240,7 +256,11 @@ mod tests {
             .enqueue_room_message(Sender::Agent(bob), ann, "hi".into(), r.id)
             .await
             .unwrap();
-        assert_eq!(turn.room_id, Some(r.id));
+        assert_eq!(
+            (turn.room_id, turn.priority),
+            (Some(r.id), Some(true)),
+            "goes first"
+        );
         store
             .enqueue_message(Sender::Agent(bob), ann, "mail".into(), None)
             .await
@@ -262,6 +282,17 @@ mod tests {
             Some((op.id, MailStatus::InFlight))
         );
 
+        assert_eq!(
+            store.cancel_room_messages(r.id).await.unwrap(),
+            [turn.id],
+            "queued turns only; the running one ends by itself"
+        );
+        let next = store.claim_next_message(ann).await.unwrap();
+        assert_eq!(
+            next.map(|m| m.body).as_deref(),
+            Some("mail"),
+            "chat mail stays"
+        );
         assert_eq!(store.end_open_rooms().await.unwrap(), 1);
         let ended = store.end_room(r.id).await.unwrap();
         assert!(ended.ended_at.is_some());

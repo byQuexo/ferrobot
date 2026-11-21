@@ -157,6 +157,11 @@ pub trait MailboxNotifier: Send + Sync + 'static {
         let _ = agent;
         Box::pin(async { Err("voice calls are not supported here".to_owned()) })
     }
+    /// Whether `agent` is in the operator's voice call.
+    fn in_call(&self, agent: AgentId) -> BoxFuture<bool> {
+        let _ = agent;
+        Box::pin(async { false })
+    }
     /// Brings `guest` into the operator's voice call that `host` is in
     /// and sends it `topic`. `Err` carries a message for the agent.
     fn invite_to_call(

@@ -92,10 +92,12 @@ Principles:
   transcription for the operator's chat via ElevenLabs or OpenRouter (keys
   in the keychain as `voice:<provider>`); `call.rs` — the operator's voice
   call (one agent: in its chat; two or more: a room (`crates/store/src/rooms.rs`)
-  where every line reaches every other member as a turn and each speaks or
-  passes, four agent lines in a row at most; room messages carry `room_id` and
-  stay out of chats; the call note goes to the model at hand-off, the host
-  also gets the host note; `hang_up` takes effect when the agent's turn ends);
+  where every line is due for every other member and they take the floor one
+  at a time, host first, each speaking or passing, four agent lines in a row at
+  most; room messages carry `room_id` and stay out of chats; the call note goes
+  to the model at hand-off, the host also gets the host note; `hang_up` takes
+  effect when the agent's turn ends, and the call's end cuts off the room turn
+  holding the floor and drops queued ones; `ask_user` is refused in a call);
   `apps/desktop/src/lib/voice.ts` — playback and recording in the UI;
   `lib/call-session.ts` — the call in the UI (outlives the chat),
   `lib/call.ts` — its sentence, barge-in and call-event rules.
