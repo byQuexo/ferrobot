@@ -27,6 +27,8 @@ export class CallSession {
   readonly #speaker: Speaker;
   #script = new CallScript();
   #live: LiveSession | null = null;
+  /** A partial of the current utterance already counted as the operator's. */
+  #talking = false;
   #seen = new Set<number>();
   /** Bumped when a call starts or closes, so a late microphone or reply is dropped. */
   #round = 0;
@@ -169,15 +171,19 @@ export class CallSession {
   async #listen(round: number): Promise<void> {
     const live = await startLive((rate) => this.#client.voiceLive("call", rate), {
       partial: (text) => {
-        if (!this.#heard(text)) return;
+        if (!this.#talking && !this.#heard(text)) return;
+        this.#talking = true;
         this.caption = text;
         this.#emit();
       },
       committed: (text) => {
+        // After a barge-in the cut sentence is recent: a correction reusing its words would read as echo.
+        const counted = this.#talking;
+        this.#talking = false;
         this.caption = "";
         this.#emit();
         const said = text.trim();
-        if (said && this.#heard(said)) void this.say(said).catch(this.#fail);
+        if (said && (counted || this.#heard(said))) void this.say(said).catch(this.#fail);
       },
       error: (msg) => {
         this.#toast(`Listening stopped: ${msg}`);
@@ -225,6 +231,7 @@ export class CallSession {
   #stopListening(): void {
     void this.#live?.stop(false);
     this.#live = null;
+    this.#talking = false;
     this.caption = "";
     if (this.state?.hearing) this.state = { ...this.state, hearing: false };
     this.#emit();
