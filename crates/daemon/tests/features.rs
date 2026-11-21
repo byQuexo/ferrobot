@@ -1152,7 +1152,7 @@ async fn model_proxy_swaps_key_and_streams() {
         body,
     )
     .await;
-    assert_eq!(status, 503);
+    assert_eq!(status, 400, "a setup problem, not worth retrying");
     assert!(String::from_utf8_lossy(&out).contains("ferrobot_proxy_error"));
 }
 
@@ -2066,7 +2066,7 @@ async fn providers_keep_keys_in_the_daemon() {
     assert_eq!(status, 200);
     let bearer = format!("Bearer {token}");
     let (status, err) = model_call(&d, "/model/chat/completions", ("authorization", &bearer)).await;
-    assert_eq!(status, 503, "{err}");
+    assert_eq!(status, 400, "{err}");
 
     // Providers in use cannot be deleted; switching the model rebuilds the sandbox.
     let (status, _) = http(&d.ui, "DELETE", &format!("/v1/providers/{pid}"), None).await;
@@ -2093,14 +2093,26 @@ async fn providers_keep_keys_in_the_daemon() {
         env["FERROBOT_AGENT_TOKEN"], olly,
         "a new sandbox got a new token"
     );
-    let (status, _) = http(
+    // Without its own key the daemon cannot serve an agent without a provider.
+    let (status, err) = http(
         &d.ui,
         "PATCH",
         &format!("/v1/agents/{olly_id}"),
         Some(json!({"provider_id": null})),
     )
     .await;
-    assert_eq!(status, 200);
+    assert_eq!(status, 400, "{err}");
+    assert!(
+        err["message"]
+            .as_str()
+            .unwrap()
+            .contains("no Anthropic key"),
+        "{err}"
+    );
+    let (_, health) = http(&d.ui, "GET", "/v1/health", None).await;
+    assert_eq!(health["anthropic_key"], false);
+    let (status, _) = http(&d.ui, "DELETE", &format!("/v1/agents/{olly_id}"), None).await;
+    assert_eq!(status, 204);
     let (status, _) = http(&d.ui, "DELETE", &format!("/v1/providers/{pid}"), None).await;
     assert_eq!(status, 204);
     let (status, err) = http(

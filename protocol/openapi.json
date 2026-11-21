@@ -5586,7 +5586,8 @@
           "driver",
           "model_proxy",
           "timezone",
-          "sandbox_ready"
+          "sandbox_ready",
+          "anthropic_key"
         ],
         "properties": {
           "name": {
@@ -5628,6 +5629,10 @@
               "null"
             ],
             "description": "Why the backend is not ready, for the operator; null when ready."
+          },
+          "anthropic_key": {
+            "type": "boolean",
+            "description": "Whether the daemon has its own `ANTHROPIC_API_KEY` for agents without a provider."
           }
         }
       },

@@ -259,6 +259,12 @@ pub fn secret_key(provider: uuid::Uuid) -> String {
 /// Status and message for the agent when a request cannot be routed.
 type Failure = (StatusCode, String);
 
+/// A setup problem only the operator can fix: a client error, so SDKs fail at once instead of
+/// retrying for minutes as they do on 5xx.
+fn unconfigured(message: String) -> Failure {
+    (StatusCode::BAD_REQUEST, message)
+}
+
 async fn route(state: &AppState, provider: Option<Provider>, path: &str) -> Result<Route, Failure> {
     let Some(provider) = provider else {
         if !path.starts_with("v1/") {
@@ -268,10 +274,7 @@ async fn route(state: &AppState, provider: Option<Provider>, path: &str) -> Resu
             ));
         }
         let Some(key) = state.settings.anthropic_api_key.clone() else {
-            return Err((
-                StatusCode::SERVICE_UNAVAILABLE,
-                "the daemon has no ANTHROPIC_API_KEY configured".into(),
-            ));
+            return Err(unconfigured(crate::agents::NO_DAEMON_KEY.into()));
         };
         return Ok(Route {
             api: Api::Anthropic,
@@ -283,7 +286,7 @@ async fn route(state: &AppState, provider: Option<Provider>, path: &str) -> Resu
         });
     };
     let id = provider.id;
-    let unavailable = |msg: String| (StatusCode::SERVICE_UNAVAILABLE, msg);
+    let unavailable = unconfigured;
     if provider.kind == ProviderKind::Anthropic && !path.starts_with("v1/") {
         return Err((
             StatusCode::NOT_FOUND,
@@ -342,7 +345,7 @@ async fn route(state: &AppState, provider: Option<Provider>, path: &str) -> Resu
     }
     if secret.is_none() && provider.kind.needs_key() {
         return Err(unavailable(format!(
-            "provider {} has no API key; set one in the providers settings",
+            "provider {} has no API key: add it in Settings, Vault",
             provider.name
         )));
     }
@@ -379,8 +382,7 @@ async fn gcloud_token(state: &AppState) -> Result<String, Failure> {
         return Ok(token.clone());
     }
     let failed = || {
-        (
-            StatusCode::SERVICE_UNAVAILABLE,
+        unconfigured(
             "could not get a Google access token; run `gcloud auth login` on the daemon host"
                 .into(),
         )
@@ -439,7 +441,7 @@ async fn forward(
         Ok(provider) => provider,
         Err(e) => {
             let message = format!("provider: {e}");
-            return refuse(call, StatusCode::SERVICE_UNAVAILABLE, &message);
+            return refuse(call, StatusCode::BAD_REQUEST, &message);
         }
     };
     if !clean(&path) {

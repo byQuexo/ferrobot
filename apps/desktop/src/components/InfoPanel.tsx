@@ -86,7 +86,7 @@ export function InfoPanel(props: {
 export type { Tab as InfoTab };
 
 function Profile(props: { agent: Agent; onEdit: () => void; onDeleted: () => void }): JSX.Element {
-  const { client, run, agents } = useApp();
+  const { client, run, agents, health } = useApp();
   const a = props.agent;
   const creator = a.created_by ? agents.get(a.created_by) : undefined;
   const [confirm, setConfirm] = useState(false);
@@ -115,7 +115,9 @@ function Profile(props: { agent: Agent; onEdit: () => void; onDeleted: () => voi
               ? provider
                 ? `${provider.name} (${KIND_LABELS[provider.kind]})`
                 : "…"
-              : "Anthropic (daemon key)"}
+              : health?.anthropic_key === false
+                ? "Anthropic (daemon key, not set up: pick a provider)"
+                : "Anthropic (daemon key)"}
           </span>
           <button type="button" class="text-link" onClick={props.onEdit}>
             Change

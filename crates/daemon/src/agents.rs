@@ -168,6 +168,10 @@ pub(crate) async fn reconfigure(state: &AppState, id: AgentId) -> Result<(), Api
 
 /// Checks that the provider exists and that a model is known where the
 /// provider needs one. Returns the normalised model.
+/// Why an agent without a provider cannot reach a model on this daemon.
+pub(crate) const NO_DAEMON_KEY: &str = "the daemon has no Anthropic key: pick a model provider \
+    (add one in Settings, Model providers, with its key in Vault)";
+
 pub(crate) async fn check_model(
     state: &AppState,
     provider_id: Option<uuid::Uuid>,
@@ -176,6 +180,12 @@ pub(crate) async fn check_model(
     let model = model.map(str::trim).filter(|m| !m.is_empty());
     if model.is_some_and(|m| m.len() > 200) {
         return Err(ApiError::BadRequest("model exceeds 200 bytes".into()));
+    }
+    if provider_id.is_none()
+        && state.settings.driver == "claude"
+        && state.settings.anthropic_api_key.is_none()
+    {
+        return Err(ApiError::BadRequest(NO_DAEMON_KEY.into()));
     }
     if let Some(id) = provider_id {
         let provider = state

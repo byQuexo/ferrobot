@@ -1463,6 +1463,8 @@ export interface components {
             sandbox_ready: boolean;
             /** @description Why the backend is not ready, for the operator; null when ready. */
             sandbox_error?: string | null;
+            /** @description Whether the daemon has its own `ANTHROPIC_API_KEY` for agents without a provider. */
+            anthropic_key: boolean;
         };
         Interrupted: {
             /** @description The interrupted turn, or null if the agent was idle. */

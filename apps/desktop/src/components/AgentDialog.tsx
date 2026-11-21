@@ -46,7 +46,8 @@ export function AgentDialog(props: {
   onClose: () => void;
   onSaved: (a: Agent) => void;
 }): JSX.Element {
-  const { client, toast } = useApp();
+  const { client, toast, health } = useApp();
+  const noDaemonKey = health?.driver === "claude" && !health.anthropic_key;
   const editing = props.agent;
   const [name, setName] = useState(editing?.name ?? "");
   const [description, setDescription] = useState(editing?.description ?? "");
@@ -88,7 +89,14 @@ export function AgentDialog(props: {
     [preview],
   );
   useEffect(() => {
-    client.listProviders().then(setProviders, () => undefined);
+    client.listProviders().then(
+      (list) => {
+        setProviders(list);
+        // A new agent on a daemon without its own key needs a provider to reach a model.
+        if (!editing && noDaemonKey && list[0]) setProviderId((cur) => cur ?? list[0]?.id ?? null);
+      },
+      () => undefined,
+    );
     client.listConnectors().then(setConnectors, () => undefined);
     if (editing) {
       client.agentConnectors(editing.id).then(
@@ -336,7 +344,11 @@ export function AgentDialog(props: {
               setProviderId(e.currentTarget.value || null);
             }}
           >
-            <option value="">Default (the daemon’s Anthropic key)</option>
+            <option value="" disabled={noDaemonKey}>
+              {noDaemonKey
+                ? "Default (no daemon key: pick a provider)"
+                : "Default (the daemon’s Anthropic key)"}
+            </option>
             {providers.map((p) => (
               <option key={p.id} value={p.id}>
                 {p.name} · {KIND_LABELS[p.kind]}
