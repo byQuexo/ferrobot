@@ -16,6 +16,7 @@ import { useApp } from "../context.ts";
 import { presenceLabel } from "../lib/format.ts";
 import { loadOrder, moveId, orderAgents, saveOrder } from "../lib/order.ts";
 import { Avatar } from "./Avatar.tsx";
+import { CallWindow } from "./CallWindow.tsx";
 import { ConversationList, type Pair } from "./Conversations.tsx";
 import { Button, Dialog, IconButton, Logo } from "./ui.tsx";
 
@@ -127,6 +128,7 @@ export function Sidebar(props: {
           <Plus size={18} />
         </IconButton>
       </header>
+      <CallWindow />
       <label class="search">
         <Search size={16} aria-hidden="true" />
         <input

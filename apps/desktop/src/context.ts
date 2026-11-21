@@ -2,6 +2,8 @@ import { createContext } from "preact";
 import { useContext } from "preact/hooks";
 
 import type { Agent, DaemonClient, Health, UiEvent } from "./api.ts";
+import type { CallState } from "./lib/call.ts";
+import type { CallSession } from "./lib/call-session.ts";
 
 export interface AppContextValue {
   client: DaemonClient;
@@ -16,6 +18,10 @@ export interface AppContextValue {
   openConversation: (a: string, b: string) => void;
   /** Opens a file an agent shared (its `file` event id). */
   openFile: (agent: string, file: number) => void;
+  /** The operator's voice call; it outlives the chat it started in. */
+  call: CallSession;
+  /** The call's agents, host and mute state; `null` when there is none. */
+  callState: CallState | null;
   /** Runs an action and reports failures as a toast. */
   run: <T>(action: () => Promise<T>) => Promise<T | undefined>;
 }

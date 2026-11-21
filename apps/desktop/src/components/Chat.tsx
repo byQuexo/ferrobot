@@ -23,6 +23,7 @@ import {
 
 import type { Agent, MailMessage, Routine, StoredEvent, VoiceView } from "../api.ts";
 import { useApp } from "../context.ts";
+import { isPass } from "../lib/call.ts";
 import { clockTime, presenceLabel, stepLabel, toolLabel } from "../lib/format.ts";
 import {
   buildTimeline,
@@ -32,14 +33,7 @@ import {
   type Exchange,
   type TimelineItem,
 } from "../lib/timeline.ts";
-import {
-  record,
-  Speaker,
-  speakable,
-  startLive,
-  type LiveSession,
-  type Recording,
-} from "../lib/voice.ts";
+import { record, startLive, type LiveSession, type Recording } from "../lib/voice.ts";
 import { fileSize } from "./FileViewer.tsx";
 import { Avatar } from "./Avatar.tsx";
 import { QuestionCardView } from "./QuestionCard.tsx";
@@ -53,7 +47,7 @@ export function Chat(props: {
   onToggleInfo: () => void;
   onEdit: () => void;
 }): JSX.Element {
-  const { client, agents, listen, run, toast } = useApp();
+  const { client, agents, listen, run, call, callState } = useApp();
   const agent = props.agent;
   const id = agent.id;
   const [messages, setMessages] = useState<MailMessage[]>([]);
@@ -61,100 +55,16 @@ export function Chat(props: {
   const [routines, setRoutines] = useState<Routine[]>([]);
   const [live, setLive] = useState<Map<string, string>>(new Map());
   const [loaded, setLoaded] = useState(false);
-  // Voice on = a voice call with this agent; agents in it may invite others.
-  const [voice, setVoice] = useState(false);
-  const [call, setCall] = useState<string[]>([]);
-  // Read by the live-event listener, which outlives renders.
-  const voiceOn = useRef(false);
-  voiceOn.current = voice;
-  const inCall = useRef(call);
-  inCall.current = call;
-  const names = useRef(agents);
-  names.current = agents;
-  const spoken = useRef(new Set<number>());
-  const speaker = useMemo(
-    () =>
-      new Speaker(client.speech, (err) => {
-        toast(err instanceof Error ? err.message : String(err));
-      }),
-    [client],
-  );
   const [voiceView, setVoiceView] = useState<VoiceView | null>(null);
   const [quick, setQuick] = useState(false);
-  // What the operator is saying during a hands-free call.
-  const [caption, setCaption] = useState("");
-  const listening = useRef<LiveSession | null>(null);
-  const [hearing, setHearing] = useState(false);
   useEffect(() => {
     client.voice().then(setVoiceView, () => undefined);
   }, [client]);
   const voiceEnabled = voiceView?.enabled !== false;
-
-  const stopListening = (): void => {
-    void listening.current?.stop(false);
-    listening.current = null;
-    setHearing(false);
-    setCaption("");
-  };
-  const endCall = (): void => {
-    speaker.stop();
-    speaker.onPlaying = () => {};
-    stopListening();
-    setVoice(false);
-    setCall([]);
-  };
-  const toggleCall = async (): Promise<void> => {
-    if (voice) {
-      endCall();
-      void run(() => client.setCall([]));
-      return;
-    }
-    const settings = await run(() => client.voice());
-    if (!settings) return;
-    setVoiceView(settings);
-    const provider = settings.providers.find((p) => p.kind === settings.provider);
-    if (!provider?.has_key || !(settings.voice ?? provider.default_voice)) {
-      toast("Set up voice first: a key and a voice (Settings → Voice)", "info");
-      return;
-    }
-    const agents = await run(() => client.setCall([id]));
-    if (!agents) return;
-    setCall(agents);
-    setVoice(true);
-    if (settings.provider !== "elevenlabs") {
-      toast(
-        "Hands-free listening needs ElevenLabs; replies are read aloud, dictate with the microphone",
-        "info",
-      );
-      return;
-    }
-    try {
-      listening.current = await startLive((rate) => client.voiceLive("call", rate), {
-        partial: setCaption,
-        committed: (text) => {
-          setCaption("");
-          const said = text.trim();
-          if (said) void run(() => sendRef.current(said));
-        },
-        error: (message) => {
-          toast(`Listening stopped: ${message}`);
-          stopListening();
-        },
-      });
-      // The agent's own voice must not come back as something the operator said.
-      speaker.onPlaying = (playing) => {
-        listening.current?.mute(playing);
-      };
-      setHearing(true);
-    } catch (err) {
-      toast(err instanceof Error ? err.message : String(err));
-    }
-  };
-  // Everyone in a call hears what the operator says; otherwise it goes to this agent only.
+  const inCall = callState !== null && !callState.ending && callState.agents.includes(id);
+  // Everyone in the call hears what the operator says; otherwise it goes to this agent only.
   const send = (body: string): Promise<unknown> =>
-    voice && call.length > 1 ? client.sayInCall(body) : client.send(id, body);
-  const sendRef = useRef(send);
-  sendRef.current = send;
+    inCall ? call.say(body) : client.send(id, body);
 
   useEffect(() => {
     let cancelled = false;
@@ -176,23 +86,7 @@ export function Chat(props: {
     const off = listen((e) => {
       switch (e.type) {
         case "event": {
-          const ev = e.event;
-          const speaks = ev.agent_id === id || inCall.current.includes(ev.agent_id);
-          if (
-            voiceOn.current &&
-            speaks &&
-            ev.kind === "assistant_text" &&
-            !spoken.current.has(ev.id)
-          ) {
-            spoken.current.add(ev.id);
-            const text = (ev.payload as { text?: unknown }).text;
-            if (typeof text === "string")
-              speaker.say(
-                speakable(text, (aid) => names.current.get(aid)?.name),
-                ev.agent_id,
-              );
-          }
-          if (ev.agent_id !== id) return;
+          if (e.event.agent_id !== id) return;
           setEvents((prev) => (prev.some((x) => x.id === e.event.id) ? prev : [...prev, e.event]));
           if (
             e.event.turn_id &&
@@ -209,11 +103,6 @@ export function Chat(props: {
           if (e.event.kind === "turn_done") void client.markRead(id).catch(() => undefined);
           break;
         }
-        case "call":
-          if (!voiceOn.current) return;
-          if (e.agents.includes(id)) setCall(e.agents);
-          else endCall();
-          break;
         case "delta":
           if (e.agent_id !== id) return;
           setLive((prev) => new Map(prev).set(e.turn_id, (prev.get(e.turn_id) ?? "") + e.text));
@@ -239,9 +128,6 @@ export function Chat(props: {
     return () => {
       cancelled = true;
       off();
-      // Leaving the chat hangs up.
-      if (voiceOn.current) void client.setCall([]).catch(() => undefined);
-      endCall();
     };
   }, [id]);
 
@@ -297,22 +183,6 @@ export function Chat(props: {
             <CircleStop size={16} /> Stop turn
           </Button>
         )}
-        {voice && call.length > 1 && (
-          <span
-            class="call-people"
-            title={`Also in the call: ${call
-              .filter((a) => a !== id)
-              .map((a) => agents.get(a)?.name ?? "?")
-              .join(", ")}`}
-          >
-            {call
-              .filter((a) => a !== id)
-              .map((a) => {
-                const peer = agents.get(a);
-                return peer ? <Avatar key={a} agent={peer} size={24} /> : null;
-              })}
-          </span>
-        )}
         {voiceEnabled && (
           <span class="voice-tools">
             <IconButton
@@ -335,11 +205,21 @@ export function Chat(props: {
               />
             )}
             <IconButton
-              label={voice ? "End the call" : "Start a voice call"}
-              onClick={() => void toggleCall()}
-              pressed={voice}
+              label={
+                inCall
+                  ? "End the call"
+                  : callState
+                    ? "End the current call first"
+                    : "Start a voice call"
+              }
+              onClick={() => {
+                if (inCall) call.hangUp();
+                else void call.start(id);
+              }}
+              pressed={inCall}
+              disabled={!inCall && callState !== null}
             >
-              {voice ? <PhoneOff size={18} /> : <Phone size={18} />}
+              {inCall ? <PhoneOff size={18} /> : <Phone size={18} />}
             </IconButton>
           </span>
         )}
@@ -386,17 +266,12 @@ export function Chat(props: {
         )}
       </div>
 
-      {voice && hearing && (
-        <div class="call-caption" role="status">
-          <Mic size={16} /> {caption || "Listening…"}
-        </div>
-      )}
       <Composer
         agent={agent}
         send={send}
         voice={voiceEnabled ? voiceView : null}
         onTalk={() => {
-          speaker.stop();
+          call.quiet();
         }}
       />
     </section>
@@ -475,7 +350,9 @@ function Item(props: { item: DisplayItem; agent: Agent; files?: ChatFiles }): JS
     case "assistant":
       return (
         <div class="row row-agent">
-          <div class={`bubble-agent${item.streaming ? " streaming" : ""}`}>
+          <div
+            class={`bubble-agent${item.streaming ? " streaming" : ""}${isPass(item.text) ? " pass" : ""}`}
+          >
             <RichText text={item.text} files={props.files} />
             {!item.streaming && <span class="meta">{clockTime(item.at)}</span>}
           </div>

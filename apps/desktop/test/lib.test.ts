@@ -6,6 +6,16 @@ import { hash } from "../src/lib/avatar.ts";
 import { characterOf, deriveCharacter, moodOf, rerollCharacter } from "../src/lib/character.ts";
 import { linkLabel, relativeTime, stepLabel, toolLabel } from "../src/lib/format.ts";
 import { buildTimeline, sharedFiles } from "../src/lib/timeline.ts";
+import {
+  CallScript,
+  callChanged,
+  callClock,
+  isPass,
+  operatorSaid,
+  splitSentences,
+  type CallState,
+  type Line,
+} from "../src/lib/call.ts";
 import { CATALOG, isAdded } from "../src/lib/catalog.ts";
 import { checkDot, checkLabel } from "../src/lib/connectors.ts";
 import { parseBlocks, parseInline } from "../src/lib/markdown.ts";
@@ -519,6 +529,128 @@ describe("live transcription", () => {
       "clipped to -1..1",
     );
     assert.equal(pcm16Base64(new Float32Array(0)), "");
+  });
+});
+
+describe("voice call", () => {
+  it("splits sentences, not abbreviations, numbers, links or code", () => {
+    const text = [
+      "Hi Tim! Dr. Smith checked it, e.g. the 3.5 build on x.dev/log.",
+      "Am 21. November ging es los.",
+      "It shipped in 2024. Done?",
+      "```sh\nrm -rf /tmp/x\n```",
+      "Last one",
+    ].join("\n");
+    assert.deepEqual(splitSentences(text), {
+      done: [
+        "Hi Tim!",
+        "Dr. Smith checked it, e.g. the 3.5 build on x.dev/log.",
+        "Am 21. November ging es los.",
+        "It shipped in 2024.",
+        "Done?",
+        "```sh\nrm -rf /tmp/x\n```",
+      ],
+      rest: "Last one",
+    });
+    assert.deepEqual(splitSentences("Wait for the space."), {
+      done: [],
+      rest: "Wait for the space.",
+    });
+  });
+
+  it("speaks streamed text in the same sentences however it is chunked, each once", () => {
+    const text =
+      'Sure, I\'ll check. The build (v1.2) passed! Dr. Who said "ok." Next:\n- one\n- two\nBye.';
+    const whole = new CallScript();
+    const once = [...whole.text("a", "t0", text), ...whole.done("t0")].map((l) => l.text);
+    for (const size of [1, 2, 3, 7]) {
+      const script = new CallScript();
+      const said: Line[] = [];
+      for (let i = 0; i < text.length; i += size)
+        said.push(...script.delta("a", "t1", text.slice(i, i + size)));
+      said.push(...script.text("a", "t1", text.replace("Dr.", "<@dr>")), ...script.done("t1"));
+      assert.deepEqual(
+        said.map((l) => l.text),
+        once,
+        `chunks of ${String(size)}`,
+      );
+    }
+    assert.equal(once[0], "Sure, I'll check.");
+    assert.equal(once.at(-1), "Bye.");
+  });
+
+  it("lets one agent finish its text block before the next speaks", () => {
+    const script = new CallScript();
+    const said: Line[] = [];
+    said.push(...script.delta("a", "ta", "A one. A t"));
+    said.push(...script.delta("b", "tb", "B one. B two. "));
+    said.push(...script.delta("a", "ta", "wo. "));
+    said.push(...script.text("a", "ta", "A one. A two."));
+    said.push(...script.text("b", "tb", "B one. B two."));
+    assert.deepEqual(
+      said.map((l) => `${l.agent}:${l.text}`),
+      ["a:A one.", "a:A two.", "b:B one.", "b:B two."],
+    );
+  });
+
+  it("never speaks a (pass) and keeps hushed turns quiet", () => {
+    const script = new CallScript();
+    assert.deepEqual(script.delta("a", "t1", "(pa"), []);
+    assert.deepEqual(script.delta("a", "t1", "ss)"), []);
+    assert.deepEqual(script.text("a", "t1", "(pass)"), []);
+    assert.deepEqual(script.text("b", "t2", "(Pass)."), []);
+    assert.ok(isPass(" (pass)\n") && !isPass("(pass) on that, but yes"));
+
+    assert.equal(script.delta("c", "t3", "Long answer. And more").length, 1);
+    assert.ok(script.speaking("c"));
+    script.hush();
+    assert.deepEqual(script.delta("c", "t3", " words. Still going. "), []);
+    assert.deepEqual(script.done("t3"), []);
+    assert.ok(!script.speaking("c"));
+  });
+
+  it("cuts a long turn with a notice", () => {
+    const script = new CallScript();
+    const said = script.text("a", "t1", "This is one sentence. ".repeat(100));
+    assert.ok(said.map((l) => l.text).join(" ").length < 1600);
+    assert.equal(said.at(-1)?.text, "The rest is in the chat.");
+  });
+
+  it("interrupts only with real words that are not the agent's own echo", () => {
+    const said = "I deployed the build to staging.";
+    assert.ok(!operatorSaid("", false, ""));
+    assert.ok(operatorSaid("yes", false, ""), "one word answers when nobody speaks");
+    assert.ok(operatorSaid("staging", false, said), "a one-word answer is never echo");
+    assert.ok(!operatorSaid("yes", true, said), "one word does not interrupt");
+    assert.ok(!operatorSaid("hmm …", true, said));
+    assert.ok(operatorSaid("wait stop", true, said));
+    assert.ok(!operatorSaid("deployed the build", true, said), "echo");
+    assert.ok(!operatorSaid("deployed a bill to staging", false, said), "echo after it ended");
+    assert.ok(operatorSaid("no, use production instead", true, said));
+  });
+
+  it("follows the daemon's call events", () => {
+    const call: CallState = {
+      agents: ["a", "b"],
+      host: "a",
+      since: 0,
+      muted: true,
+      hearing: true,
+      ending: false,
+    };
+    assert.equal(callChanged(null, ["a"]), null, "no call here, nothing to follow");
+    assert.deepEqual(callChanged(call, ["a", "b", "c"])?.agents, ["a", "b", "c"]);
+    assert.deepEqual(callChanged(call, ["a"]), { ...call, agents: ["a"] });
+    assert.deepEqual(callChanged(call, ["b"]), { ...call, agents: ["b"], host: "b" });
+    const ended = callChanged(call, []);
+    assert.deepEqual(ended, { ...call, agents: [], hearing: false, ending: true });
+    assert.equal(callChanged(ended, ["a"]), ended, "an ended call stays ended");
+  });
+
+  it("shows how long the call runs", () => {
+    assert.equal(callClock(0), "0:00");
+    assert.equal(callClock(42_900), "0:42");
+    assert.equal(callClock(3_903_000), "1:05:03");
   });
 });
 

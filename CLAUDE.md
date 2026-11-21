@@ -93,7 +93,8 @@ Principles:
   in the keychain as `voice:<provider>`); `call.rs` — the operator's voice
   call (agents invite teammates; replies reach the others only with the
   operator's next message); `apps/desktop/src/lib/voice.ts` — playback and
-  recording in the UI.
+  recording in the UI; `lib/call-session.ts` — the call in the UI (outlives
+  the chat), `lib/call.ts` — its sentence, barge-in and call-event rules.
 - `crates/daemon/src/storage.rs` — object storage (`object_store`) for snapshot
   archives, `--storage-url` (default: the data dir; `s3://` for S3/R2).
 - `crates/daemon/src/update.rs` — `/v1/update` status; `update/source.rs` — a
