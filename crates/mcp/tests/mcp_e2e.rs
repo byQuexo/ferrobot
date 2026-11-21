@@ -114,6 +114,7 @@ async fn tools_act_as_the_authenticated_agent() {
             "create_agent",
             "create_routine",
             "forget",
+            "hang_up",
             "invite_to_call",
             "list_agents",
             "list_tasks",

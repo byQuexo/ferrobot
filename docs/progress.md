@@ -1165,3 +1165,25 @@ store used for the run) or the daemon's own env.
   answer, a taken name and an invalid schedule refused, decline creates
   nothing, Auto mode creates at once); the MCP tool list test.
 - Not tested: a real model calling `create_routine`.
+
+## Voice calls, daemon side (`feat/voice-call`)
+
+**Done**
+
+- Call note on every call message (operator's words, passed-on lines,
+  invites); `(pass)` lines are never passed on.
+- Agents' completed turns in a call start the others' turns, up to four in a
+  row until the operator speaks again.
+- MCP tool `hang_up`: the host ends the call, an invited agent leaves, both
+  when their turn ends.
+- Live transcription in calls ends a turn after 0.8 s of silence.
+
+**Tested**
+
+- Rust: `voice_calls_let_agents_answer_each_other_and_hang_up` (invite with
+  the note, bob's reply reaching ann as a turn from bob, the operator's words
+  with the note and without repeats, bob leaving only after its turn, the host
+  ending the call), the unit test
+  `agents_answer_each_other_a_few_times_then_wait_for_the_operator`, the
+  message-limit test at the new limit, the MCP tool list.
+- Not tested: real voices, a real microphone, or real models in a call.

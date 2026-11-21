@@ -455,7 +455,7 @@ pub fn live_url(
             LiveMode::Dictation => q.append_pair("commit_strategy", "manual"),
             LiveMode::Call => q
                 .append_pair("commit_strategy", "vad")
-                .append_pair("vad_silence_threshold_secs", "1.2"),
+                .append_pair("vad_silence_threshold_secs", "0.8"),
         };
         if let Some(lang) = language {
             q.append_pair("language_code", lang);

@@ -147,6 +147,12 @@ pub trait MailboxNotifier: Send + Sync + 'static {
         let _ = (requester, request);
         Box::pin(async { Err("routines are not supported here".to_owned()) })
     }
+    /// `agent` hangs up the voice call when its turn ends. `Ok(true)`: it was the host, so the
+    /// call ends for everyone. `Err` carries a message for the agent.
+    fn hang_up(&self, agent: AgentId) -> BoxFuture<Result<bool, String>> {
+        let _ = agent;
+        Box::pin(async { Err("voice calls are not supported here".to_owned()) })
+    }
     /// Brings `guest` into the operator's voice call that `host` is in
     /// and sends it `topic`. `Err` carries a message for the agent.
     fn invite_to_call(

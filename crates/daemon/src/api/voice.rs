@@ -523,14 +523,14 @@ pub(crate) async fn put_call(
 
 #[derive(Debug, Deserialize, ToSchema)]
 pub(crate) struct CallMessage {
-    /// 1..20224 bytes after trimming, counting `@name` mentions as their
+    /// 1..19859 bytes after trimming, counting `@name` mentions as their
     /// stored `<@agent-id>` tokens (the rest of a message is left for what
     /// the others said).
     body: String,
 }
 
 /// Sends the operator's message to every agent in the call, each with what the others said
-/// since its last turn. Agents' replies never start each other's turns.
+/// since its last turn and the call instructions.
 #[utoipa::path(post, path = "/v1/call/messages", tag = "voice",
     request_body = CallMessage,
     responses(
