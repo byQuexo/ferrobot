@@ -1353,3 +1353,14 @@ slop, so polish mode: palette, accent, logo, layout and features stay.
 - A new agent invited into a call gets no greeting: its first turn there is a
   room turn, which never gets one; a greeting turn from a task stays silent in
   the call.
+
+## Naming conventions and renaming
+
+- **Settings, Agents, "Names for new agents"** (`agent_names` in the `general`
+  setting, 1-300 characters, empty = short role names). The daemon appends it to
+  the instructions it sends the runner (welcome and `configure`) of every agent
+  with the "create agents" tool group, not to the stored instructions; a change
+  reaches running agents at once with a `configure`. Names still have to pass
+  the agent-name rules (lowercase `a-z0-9-`).
+- **Rename** from an agent's right-click menu (`PATCH /v1/agents/{id}` with
+  `name`); its computer and chat stay the same (`sandbox_name` does not change).

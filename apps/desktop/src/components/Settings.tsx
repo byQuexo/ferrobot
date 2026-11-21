@@ -80,19 +80,26 @@ const SECTIONS: [SettingsSection, string, string, typeof KeyRound][] = [
 function AgentSettings(): JSX.Element | null {
   const { client, run } = useApp();
   const [settings, setSettings] = useState<GeneralSettings | null>(null);
+  const [names, setNames] = useState("");
 
   useEffect(() => {
     const load = async (): Promise<void> => {
-      setSettings((await run(() => client.settings())) ?? null);
+      const loaded = (await run(() => client.settings())) ?? null;
+      setSettings(loaded);
+      setNames(loaded?.agent_names ?? "");
     };
     void load();
   }, []);
 
   if (!settings) return null;
-  const setAuto = async (auto_mode: boolean): Promise<void> => {
-    const saved = await run(() => client.updateSettings({ ...settings, auto_mode }));
-    if (saved) setSettings(saved);
+  const save = async (changes: Partial<GeneralSettings>): Promise<void> => {
+    const saved = await run(() => client.updateSettings({ ...settings, ...changes }));
+    if (saved) {
+      setSettings(saved);
+      setNames(saved.agent_names ?? "");
+    }
   };
+  const setAuto = (auto_mode: boolean): Promise<void> => save({ auto_mode });
   return (
     <section class="settings-section form">
       <span class="field">
@@ -109,6 +116,27 @@ function AgentSettings(): JSX.Element | null {
           stay protected.
         </span>
       </span>
+      <label>
+        Names for new agents
+        <input
+          value={names}
+          maxLength={300}
+          placeholder="e.g. Greek gods"
+          onInput={(e) => {
+            setNames(e.currentTarget.value);
+          }}
+          onBlur={() => {
+            if (names.trim() !== (settings.agent_names ?? ""))
+              void save({ agent_names: names.trim() || null });
+          }}
+          onKeyDown={(e) => {
+            if (e.key === "Enter") e.currentTarget.blur();
+          }}
+        />
+        <span class="hint">
+          How agents name the agents they create. Empty: short names that fit the role, like scout.
+        </span>
+      </label>
     </section>
   );
 }

@@ -1353,3 +1353,20 @@ store used for the run) or the daemon's own env.
 - Desktop: only call turns are spoken, `CallScript.end` keeps the goodbye,
   `Speaker.keepOnly` cuts the voice playing (with a fake `Audio`).
 - Not tested: a live call with real models and voices.
+
+## Naming conventions and rename (`feat/agent-naming`)
+
+**Done**
+
+- Settings, Agents: "Names for new agents"; the convention reaches agents that
+  may create agents (welcome and `configure`), and the `create_agent` text and
+  the Claude prompt say to follow it.
+- Right-click on an agent: "Rename…" with a small dialog.
+
+**Tested**
+
+- Rust: `agents_name_new_agents_by_the_operators_convention` (trimmed and
+  saved, 400 over 300 characters, `configure` with the convention appended to
+  the agent's own instructions, none for an agent without the group, a later
+  welcome carries it, clearing it).
+- Not tested: the dialog and the field in a browser or the Tauri window.

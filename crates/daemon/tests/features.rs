@@ -1793,7 +1793,10 @@ async fn auto_mode_creates_agents_without_a_card() {
     let backend = Arc::new(StatefulBackend::default());
     let d = start_with(backend, None, "127.0.0.1:0", |s| s.max_agents = 3).await;
     let (status, body) = http(&d.ui, "GET", "/v1/settings", None).await;
-    assert_eq!((status, body), (200, json!({"auto_mode": false})));
+    assert_eq!(
+        (status, body),
+        (200, json!({"auto_mode": false, "agent_names": null}))
+    );
     let (status, body) = http(
         &d.ui,
         "PUT",
@@ -1801,7 +1804,10 @@ async fn auto_mode_creates_agents_without_a_card() {
         Some(json!({"auto_mode": true})),
     )
     .await;
-    assert_eq!((status, body), (200, json!({"auto_mode": true})));
+    assert_eq!(
+        (status, body),
+        (200, json!({"auto_mode": true, "agent_names": null}))
+    );
     let (_, body) = http(&d.ui, "GET", "/v1/settings", None).await;
     assert_eq!(body["auto_mode"], true);
 
@@ -5708,4 +5714,67 @@ async fn agents_create_routines_with_approval_or_in_auto_mode() {
     let mut names = routines().await;
     names.sort();
     assert_eq!(names, ["digest", "hourly"]);
+}
+
+#[tokio::test]
+async fn agents_name_new_agents_by_the_operators_convention() {
+    let backend = Arc::new(StatefulBackend::default());
+    let d = start(backend.clone(), None, "127.0.0.1:0").await;
+    create(&d, json!({"name": "ada", "instructions": "Be brief."})).await;
+    create(&d, json!({"name": "bob", "tools": ["team"]})).await;
+    let mut ada = connect_runner(&d.agents, &backend.token("ada")).await;
+
+    let set = |names: Value| {
+        let ui = d.ui.clone();
+        async move {
+            http(
+                &ui,
+                "PUT",
+                "/v1/settings",
+                Some(json!({"auto_mode": false, "agent_names": names})),
+            )
+            .await
+        }
+    };
+    let (status, _) = set(json!("x".repeat(301))).await;
+    assert_eq!(status, 400, "too long");
+    let (status, saved) = set(json!("  Greek gods, lowercase  ")).await;
+    assert_eq!(status, 200, "{saved}");
+    assert_eq!(saved["agent_names"], "Greek gods, lowercase");
+    let DaemonFrame::Configure { instructions, .. } = next_frame(&mut ada).await else {
+        panic!("expected new instructions");
+    };
+    assert!(instructions.starts_with("Be brief.\n\n"), "{instructions}");
+    assert!(
+        instructions.ends_with("Greek gods, lowercase"),
+        "{instructions}"
+    );
+
+    // Who may not create agents does not get it; a runner connecting later does.
+    let mut bob = open_runner(
+        &d.agents,
+        &backend.token("bob"),
+        ferrobot_core::PROTOCOL_VERSION,
+        false,
+    )
+    .await;
+    let DaemonFrame::Welcome { instructions, .. } = next_frame(&mut bob).await else {
+        panic!("expected a welcome");
+    };
+    assert_eq!(instructions, "", "bob cannot create agents");
+    drop(ada);
+    let mut ada = open_runner(
+        &d.agents,
+        &backend.token("ada"),
+        ferrobot_core::PROTOCOL_VERSION,
+        false,
+    )
+    .await;
+    let DaemonFrame::Welcome { instructions, .. } = next_frame(&mut ada).await else {
+        panic!("expected a welcome");
+    };
+    assert!(instructions.contains("Greek gods"), "{instructions}");
+
+    let (status, cleared) = set(json!("   ")).await;
+    assert_eq!((status, &cleared["agent_names"]), (200, &Value::Null));
 }

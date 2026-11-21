@@ -103,7 +103,7 @@ async fn run_connection(state: AppState, agent: Agent, socket: WebSocket) {
         protocol_version: PROTOCOL_VERSION,
         agent_id: agent.id,
         agent_name: agent.name.clone(),
-        instructions: agent.instructions.clone(),
+        instructions: crate::agents::runner_instructions(&state, &agent).await,
         resume_session_id: session_id.or(agent.session_id.clone()),
         tools: agent.tools.clone(),
     };

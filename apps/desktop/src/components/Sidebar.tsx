@@ -4,6 +4,7 @@ import {
   ArrowDown,
   ArrowUp,
   ChartColumn,
+  Pencil,
   Pin,
   Plus,
   Search,
@@ -52,6 +53,14 @@ export function Sidebar(props: {
   const [order, setOrder] = useState<string[]>(loadOrder);
   const [drop, setDrop] = useState<{ id: string; after: boolean } | null>(null);
   const [menu, setMenu] = useState<{ agent: Agent; x: number; y: number } | null>(null);
+  const [renaming, setRenaming] = useState<{ agent: Agent; name: string } | null>(null);
+  const rename = async (): Promise<void> => {
+    if (!renaming) return;
+    const name = renaming.name.trim();
+    if (!name || name === renaming.agent.name) return;
+    const saved = await run(() => client.updateAgent(renaming.agent.id, { name }));
+    if (saved) setRenaming(null);
+  };
   const [deleting, setDeleting] = useState<Agent | null>(null);
   const dragged = useRef<string | null>(null);
   const chatOpen = !props.pair && props.room === null;
@@ -189,7 +198,61 @@ export function Sidebar(props: {
           onDelete={() => {
             setDeleting(menu.agent);
           }}
+          onRename={() => {
+            setRenaming({ agent: menu.agent, name: menu.agent.name });
+          }}
         />
+      )}
+      {renaming && (
+        <Dialog
+          title={`Rename ${renaming.agent.name}`}
+          onClose={() => {
+            setRenaming(null);
+          }}
+          footer={
+            <>
+              <Button
+                onClick={() => {
+                  setRenaming(null);
+                }}
+              >
+                Cancel
+              </Button>
+              <Button
+                variant="primary"
+                type="submit"
+                disabled={!renaming.name.trim() || renaming.name.trim() === renaming.agent.name}
+                onClick={() => void rename()}
+              >
+                Rename
+              </Button>
+            </>
+          }
+        >
+          <form
+            class="form"
+            onSubmit={(e) => {
+              e.preventDefault();
+              void rename();
+            }}
+          >
+            <label>
+              Name
+              <input
+                value={renaming.name}
+                maxLength={32}
+                autoFocus
+                spellcheck={false}
+                onInput={(e) => {
+                  setRenaming({ ...renaming, name: e.currentTarget.value.toLowerCase() });
+                }}
+              />
+              <span class="hint">
+                Lowercase letters, digits and dashes. Its computer and chat stay the same.
+              </span>
+            </label>
+          </form>
+        </Dialog>
       )}
       {deleting && (
         <Dialog
@@ -262,6 +325,7 @@ function AgentMenu(props: {
   onClose: () => void;
   onStep: (dir: -1 | 1) => void;
   onDelete: () => void;
+  onRename: () => void;
 }): JSX.Element {
   const box = useRef<HTMLDivElement>(null);
   useEffect(() => {
@@ -294,7 +358,7 @@ function AgentMenu(props: {
   );
   // Kept inside the window near the pointer.
   const left = Math.min(props.x, window.innerWidth - 200);
-  const top = Math.min(props.y, window.innerHeight - 130);
+  const top = Math.min(props.y, window.innerHeight - 170);
   return (
     <div
       class="context-menu"
@@ -303,6 +367,7 @@ function AgentMenu(props: {
       ref={box}
       style={{ left: `${String(left)}px`, top: `${String(top)}px` }}
     >
+      {item("Rename…", <Pencil size={16} />, props.onRename)}
       {item("Move up", <ArrowUp size={16} />, () => {
         props.onStep(-1);
       })}

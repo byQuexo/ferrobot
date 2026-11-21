@@ -3897,6 +3897,16 @@
               }
             }
           },
+          "400": {
+            "description": "Naming convention too long",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
           "401": {
             "description": "Missing or wrong API token",
             "content": {
@@ -5556,6 +5566,14 @@
             "type": "boolean",
             "description": "Agents create agents without an approval card. The agent limit still applies.",
             "default": false
+          },
+          "agent_names": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "How agents name the agents they create, in the operator's words (e.g. \"Greek gods\");\n`null`: short role names. 1-300 characters.",
+            "default": null
           }
         }
       },
