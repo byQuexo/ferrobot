@@ -1,6 +1,7 @@
 //! Keeps the committed API contracts in `protocol/` in sync with the Rust types. Regenerate:
 //! `FERROBOT_UPDATE_SPECS=1 cargo test -p ferrobot-daemon --test specs`
 #![allow(
+    clippy::too_many_lines,
     clippy::unwrap_used,
     clippy::expect_used,
     clippy::panic,
