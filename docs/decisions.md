@@ -1133,7 +1133,8 @@ slop, so polish mode: palette, accent, logo, layout and features stay.
   message starts with a call note (spoken, one to three short sentences, the
   solution first, no lists or links; longer work after the call in the chat;
   `(pass)` when there is nothing to add; `hang_up` when done). The pause that
-  ends the operator's turn is 0.8 s instead of 1.2 s.
+  ends the operator's turn is 1.5 s (0.8 s cut people off mid-thought; Tim,
+  2026-11-21).
 - **Agents answer each other:** when an agent's turn in the call completes, the
   other agents get what they have not heard yet as a turn of their own (from
   that agent). At most four such turns in a row; then the lines wait for the

@@ -455,7 +455,7 @@ pub fn live_url(
             LiveMode::Dictation => q.append_pair("commit_strategy", "manual"),
             LiveMode::Call => q
                 .append_pair("commit_strategy", "vad")
-                .append_pair("vad_silence_threshold_secs", "0.8"),
+                .append_pair("vad_silence_threshold_secs", "1.5"),
         };
         if let Some(lang) = language {
             q.append_pair("language_code", lang);
@@ -705,6 +705,10 @@ mod tests {
         assert_eq!(q["token"], "tok");
         assert_eq!(q["audio_format"], "pcm_16000");
         assert_eq!(q["commit_strategy"], "vad");
+        assert_eq!(
+            q["vad_silence_threshold_secs"], "1.5",
+            "short thinking pauses are not a turn"
+        );
         assert_eq!(q["language_code"], "de");
         let dictation =
             live_url("http://127.0.0.1:9", "t", LiveMode::Dictation, 48000, None).unwrap();

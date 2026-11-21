@@ -1211,7 +1211,8 @@ store used for the run) or the daemon's own env.
   row until the operator speaks again.
 - MCP tool `hang_up`: the host ends the call, an invited agent leaves, both
   when their turn ends.
-- Live transcription in calls ends a turn after 0.8 s of silence.
+- Live transcription in calls ends a turn after 1.5 s of silence (was 0.8 s,
+  which cut the operator off during short pauses).
 
 **Tested**
 
