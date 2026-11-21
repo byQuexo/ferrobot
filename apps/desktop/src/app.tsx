@@ -20,6 +20,8 @@ import { Sidebar } from "./components/Sidebar.tsx";
 import { Usage } from "./components/Usage.tsx";
 import { Button, Empty } from "./components/ui.tsx";
 import { AppContext, type AppContextValue } from "./context.ts";
+import type { CallState } from "./lib/call.ts";
+import { CallSession } from "./lib/call-session.ts";
 import { applyTheme, followSystem, loadTheme, type ThemePref } from "./lib/theme.ts";
 
 interface Toast {
@@ -152,6 +154,28 @@ export function App(): JSX.Element {
     };
   }, []);
 
+  const names = useRef(agents);
+  names.current = agents;
+  const call = useMemo(
+    () => new CallSession(client, toast, (id) => names.current.get(id)?.name),
+    [client],
+  );
+  const [callState, setCallState] = useState<CallState | null>(null);
+  useEffect(() => {
+    const off = [
+      call.subscribe(() => {
+        setCallState(call.state);
+      }),
+      listen((e) => {
+        call.handle(e);
+      }),
+    ];
+    return () => {
+      for (const fn of off) fn();
+      call.hangUp();
+    };
+  }, [call]);
+
   const openAgent = useCallback((id: string) => {
     setPair(null);
     setSettings(null);
@@ -177,6 +201,8 @@ export function App(): JSX.Element {
     openAgent,
     openConversation,
     openFile,
+    call,
+    callState,
   };
   const agent = selected ? agents.get(selected) : undefined;
   const withInfo = agent && infoOpen && !pair && !settings && !usage;

@@ -1166,6 +1166,41 @@ store used for the run) or the daemon's own env.
   nothing, Auto mode creates at once); the MCP tool list test.
 - Not tested: a real model calling `create_routine`.
 
+## Voice call feel (`feat/voice-call-ui`)
+
+**Done**
+
+- Replies are spoken sentence by sentence from the stream, one agent's
+  block at a time, each text once; `(pass)` lines are never spoken (greyed in
+  the chat).
+- Barge-in: the microphone stays live (echo cancellation, noise suppression,
+  auto gain). Two or more words while an agent speaks stop playback and
+  interrupt its turn. A word check against what was just said filters
+  echo.
+- What the operator says or types in a call always goes through
+  `POST /v1/call/messages`.
+- The call moved from the chat to the app (`lib/call-session.ts`) and
+  survives switching chats or Settings. The call card in the sidebar has
+  avatars with a speaking ring, the duration, mute, hang up and a way back
+  to the host's chat.
+- `call` events with fewer agents remove them. An empty one plays the
+  goodbye, then closes the card.
+
+**Tested**
+
+- `node --test`: sentence splitting (abbreviations, numbers, links, code),
+  the same sentences however the stream is chunked and nothing spoken twice,
+  one agent at a time, `(pass)` and hush, the length cut, the barge-in and
+  echo rule, the call-event reducer, the call clock.
+- Viewed in Chromium (`npm run dev`, a throwaway page with `fetch` and the
+  WebSocket mocked, light and dark). Deltas were spoken per sentence and the
+  final text was not spoken again. A `(pass)` was not spoken and showed
+  greyed. The card stayed through chat switches and Settings, and a typed line
+  in a one-agent call went to `/v1/call/messages`. An empty `call` event
+  played the goodbye and then closed the card. Hang up sent `PUT /v1/call []`.
+- Not tested: a real microphone, barge-in, ElevenLabs realtime transcription,
+  echo cancellation in the Tauri window, a call against a running daemon.
+
 ## Voice calls, daemon side (`feat/voice-call`)
 
 **Done**

@@ -3,7 +3,7 @@
 import { mentionsAsText } from "./mentions.ts";
 
 /** Longer replies are cut; the rest stays in the chat. */
-const MAX_SPOKEN = 1500;
+export const MAX_SPOKEN = 1500;
 
 /** What to read aloud for a chat message: no code, links or Markdown marks. */
 export function speakable(text: string, nameOf: (id: string) => string | undefined): string {
@@ -27,16 +27,28 @@ export function speakable(text: string, nameOf: (id: string) => string | undefin
   return t;
 }
 
-/** Plays texts one after another; each one's audio is fetched as soon as it is queued. */
+interface Queued {
+  text: string;
+  agent: string | undefined;
+  audio: Promise<Blob | null> | null;
+}
+
+/** Texts fetched ahead of the one playing; more would burst the speech provider. */
+const PREFETCH = 2;
+
+/** Plays texts one after another, fetching each one's audio shortly before its turn. */
 export class Speaker {
   readonly #fetch: (text: string, agent?: string) => Promise<Blob>;
   readonly #onError: (err: unknown) => void;
-  /** Told when speaking starts and stops (a call mutes the microphone meanwhile). */
-  onPlaying: (playing: boolean) => void = () => {};
-  #queue: Promise<Blob | null>[] = [];
+  /** Told whose voice starts playing, and `null` once nothing is left to play. */
+  onSpeaking: (agent: string | null) => void = () => {};
+  #queue: Queued[] = [];
   #audio: HTMLAudioElement | null = null;
+  #now: Queued | null = null;
+  /** Recently played texts and when they ended, for the call's echo check. */
+  #played: { text: string; ended: number }[] = [];
   #round = 0;
-  #playing = false;
+  #busy = false;
 
   constructor(
     fetchAudio: (text: string, agent?: string) => Promise<Blob>,
@@ -46,16 +58,30 @@ export class Speaker {
     this.#onError = onError;
   }
 
+  /** Something is playing or about to. */
+  get busy(): boolean {
+    return this.#busy;
+  }
+
+  /** Whose voice plays now (or loads to play next). */
+  get speaking(): string | undefined {
+    return this.#now?.agent;
+  }
+
+  /** What was played within the last `ms`, including what plays now. */
+  recent(ms: number): string {
+    const since = Date.now() - ms;
+    return [...this.#played.filter((p) => p.ended >= since).map((p) => p.text), this.#now?.text]
+      .filter(Boolean)
+      .join(" ");
+  }
+
   /** Queues `text`, spoken with `agent`'s voice if it has one. */
   say(text: string, agent?: string): void {
     if (!text) return;
-    this.#queue.push(
-      this.#fetch(text, agent).catch((err: unknown) => {
-        this.#onError(err);
-        return null;
-      }),
-    );
-    if (!this.#playing) void this.#play();
+    this.#queue.push({ text, agent, audio: null });
+    this.#prefetch();
+    if (!this.#busy) void this.#play();
   }
 
   stop(): void {
@@ -63,22 +89,45 @@ export class Speaker {
     this.#queue = [];
     this.#audio?.pause();
     this.#audio = null;
-    if (this.#playing) this.onPlaying(false);
-    this.#playing = false;
+    this.#ended();
+    if (this.#busy) this.onSpeaking(null);
+    this.#busy = false;
+  }
+
+  #prefetch(): void {
+    for (const item of this.#queue.slice(0, PREFETCH)) {
+      item.audio ??= this.#fetch(item.text, item.agent).catch((err: unknown) => {
+        this.#onError(err);
+        return null;
+      });
+    }
+  }
+
+  #ended(): void {
+    if (this.#now)
+      this.#played = [...this.#played.slice(-3), { text: this.#now.text, ended: Date.now() }];
+    this.#now = null;
   }
 
   async #play(): Promise<void> {
     const round = this.#round;
-    this.#playing = true;
-    this.onPlaying(true);
+    this.#busy = true;
     while (round === this.#round) {
+      this.#prefetch();
       const next = this.#queue.shift();
       if (!next) break;
-      const blob = await next;
-      if (!blob || round !== this.#round) continue;
+      this.#prefetch();
+      this.#now = next;
+      const blob = await next.audio;
+      if (round !== this.#round) break;
+      if (!blob) {
+        this.#now = null;
+        continue;
+      }
       const url = URL.createObjectURL(blob);
       const audio = new Audio(url);
       this.#audio = audio;
+      this.onSpeaking(next.agent ?? null);
       await new Promise<void>((resolve) => {
         audio.onended =
           audio.onerror =
@@ -91,11 +140,12 @@ export class Speaker {
         });
       });
       URL.revokeObjectURL(url);
+      if (round === this.#round) this.#ended();
     }
     if (round === this.#round) {
-      this.#playing = false;
+      this.#busy = false;
       this.#audio = null;
-      this.onPlaying(false);
+      this.onSpeaking(null);
     }
   }
 }
@@ -170,7 +220,7 @@ export function pcm16Base64(samples: Float32Array): string {
 const LIVE_RATES = [8000, 16000, 22050, 24000, 44100, 48000];
 
 export interface LiveSession {
-  /** Sends silence instead of the microphone (while an agent speaks), keeping the connection. */
+  /** Sends silence instead of the microphone (the operator muted it), keeping the connection. */
   mute: (on: boolean) => void;
   /** Ends the session; with `commit`, waits briefly for the last words first. */
   stop: (commit: boolean) => Promise<void>;
@@ -192,7 +242,7 @@ export async function startLive(
   if (!(navigator.mediaDevices as MediaDevices | undefined))
     throw new Error("The microphone is not available here");
   const stream = await navigator.mediaDevices.getUserMedia({
-    audio: { echoCancellation: true, noiseSuppression: true },
+    audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true },
   });
   const release = (): void => {
     for (const track of stream.getTracks()) track.stop();
