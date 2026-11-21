@@ -40,6 +40,10 @@ struct StatefulBackend {
     log: Mutex<Vec<String>>,
     /// Sandbox names whose disk went to the archive.
     archived: Mutex<std::collections::HashSet<String>>,
+    /// The image each existing sandbox was created from.
+    images: Mutex<HashMap<String, Option<String>>>,
+    /// Held by a test to keep `build_image` running.
+    build_gate: tokio::sync::Mutex<()>,
 }
 
 impl StatefulBackend {
@@ -70,12 +74,29 @@ impl SandboxBackend for StatefulBackend {
             .lock()
             .unwrap()
             .insert(spec.name.clone(), spec.env.clone());
+        self.images
+            .lock()
+            .unwrap()
+            .insert(spec.name.clone(), spec.image.clone());
         self.set(&spec.name, SandboxState::Running);
         self.log(format!("create {}", spec.name));
         Ok(SandboxHandle {
             backend: "fake".into(),
             id: spec.name.clone(),
         })
+    }
+    fn supports_image_builds(&self) -> bool {
+        true
+    }
+    async fn build_image(&self, packages: &[String]) -> Result<Option<String>, SandboxError> {
+        let _gate = self.build_gate.lock().await;
+        let set = ferrobot_sandbox::package_set(packages)?;
+        self.log(format!("build {}", set.join(" ")));
+        Ok((!set.is_empty()).then(|| format!("fake:clis-{}", set.join("-"))))
+    }
+    async fn is_stale(&self, h: &SandboxHandle, image: Option<&str>) -> Result<bool, SandboxError> {
+        let images = self.images.lock().unwrap();
+        Ok(images.get(&h.id).is_some_and(|i| i.as_deref() != image))
     }
     async fn exec(&self, _: &SandboxHandle, _: &ExecRequest) -> Result<ExecOutput, SandboxError> {
         Ok(ExecOutput {
@@ -155,6 +176,7 @@ impl SandboxBackend for StatefulBackend {
     }
     async fn destroy(&self, h: &SandboxHandle, purge: bool) -> Result<(), SandboxError> {
         self.states.lock().unwrap().remove(&h.id);
+        self.images.lock().unwrap().remove(&h.id);
         self.log(format!("destroy {} purge={purge}", h.id));
         Ok(())
     }
@@ -713,6 +735,103 @@ async fn snapshots_create_restore_delete() {
     assert!(
         !calls.contains(&"delete_snapshot snap-kept".to_owned()),
         "{calls:?}"
+    );
+}
+
+#[tokio::test]
+async fn cli_image_reaches_new_and_woken_sandboxes() {
+    let backend = Arc::new(StatefulBackend::default());
+    let d = start(backend.clone(), None, "127.0.0.1:0").await;
+    let ui = d.ui.as_str();
+    let put = |packages: Value| http(ui, "PUT", "/v1/clis", Some(json!({ "packages": packages })));
+    let many: Vec<String> = (0..33).map(|i| format!("p{i}")).collect();
+    for bad in [
+        json!(["-o"]),
+        json!(["jq; id"]),
+        json!(["Jq"]),
+        json!(["a/b"]),
+        json!(many),
+    ] {
+        let (status, body) = put(bad.clone()).await;
+        assert_eq!(status, 400, "{bad}: {body}");
+    }
+    let (status, v) = http(&d.ui, "GET", "/v1/clis", None).await;
+    assert_eq!(status, 200);
+    assert_eq!(
+        v,
+        json!({"packages": [], "status": "idle", "error": null, "supported": true})
+    );
+
+    let running = create(&d, json!({"name": "ada"})).await;
+    let asleep = create(&d, json!({"name": "bob"})).await;
+    let (status, _) = http(
+        &d.ui,
+        "POST",
+        &format!("/v1/agents/{}/stop", asleep["id"].as_str().unwrap()),
+        None,
+    )
+    .await;
+    assert_eq!(status, 204);
+
+    let gate = backend.build_gate.lock().await;
+    let (status, v) = put(json!(["tree", "jq", "jq"])).await;
+    assert_eq!(status, 200, "{v}");
+    assert_eq!(
+        (v["packages"].clone(), v["status"].clone()),
+        (json!(["jq", "tree"]), json!("building"))
+    );
+    let (status, _) = put(json!(["jq"])).await;
+    assert_eq!(status, 409, "one build at a time");
+    drop(gate);
+    eventually("the image build", Duration::from_secs(5), || async {
+        let (_, v) = http(&d.ui, "GET", "/v1/clis", None).await;
+        (v["status"] == "ready").then_some(())
+    })
+    .await;
+    let image = Some("fake:clis-jq-tree".to_owned());
+    let image_of = |name: &str| backend.images.lock().unwrap().get(name).cloned();
+
+    assert_eq!(
+        image_of("ada"),
+        Some(None),
+        "a running sandbox is left alone"
+    );
+    create(&d, json!({"name": "cy"})).await;
+    assert_eq!(image_of("cy"), Some(image.clone()));
+
+    let wake = |agent: &Value| {
+        let path = format!("/v1/agents/{}/wake", agent["id"].as_str().unwrap());
+        async move { http(ui, "POST", &path, None).await.0 }
+    };
+    assert_eq!(wake(&asleep).await, 204);
+    assert_eq!(image_of("bob"), Some(image.clone()));
+    let calls = backend.calls();
+    let destroyed = calls
+        .iter()
+        .position(|c| c == "destroy bob purge=false")
+        .expect("recreated");
+    assert_eq!(calls[destroyed + 1], "create bob", "{calls:?}");
+    assert_eq!(wake(&asleep).await, 204);
+    assert_eq!(
+        backend.calls().last().unwrap(),
+        "wake bob",
+        "a current sandbox just wakes"
+    );
+    assert_eq!(wake(&running).await, 204);
+    assert_eq!(image_of("ada"), Some(image), "the next wake switches it");
+
+    let (status, _) = put(json!([])).await;
+    assert_eq!(status, 200);
+    eventually("the base image", Duration::from_secs(5), || async {
+        let (_, v) = http(&d.ui, "GET", "/v1/clis", None).await;
+        (v["status"] == "idle").then_some(())
+    })
+    .await;
+    assert_eq!(wake(&asleep).await, 204);
+    assert_eq!(image_of("bob"), Some(None));
+    assert!(
+        backend.calls().iter().all(|c| !c.contains("purge=true")),
+        "home volumes are never deleted"
     );
 }
 
@@ -4923,4 +5042,112 @@ async fn openrouter_calls_cost_what_openrouter_reports() {
     );
     assert_eq!(oli["unknown_cost_calls"], 1);
     assert_eq!(report["totals"]["cost_usd"], 0.0042);
+}
+
+#[tokio::test]
+async fn agents_create_routines_with_approval_or_in_auto_mode() {
+    use ferrobot_mcp::{RoutineRequest, RoutineRequestOutcome};
+    let request = |name: &str, schedule: &str| RoutineRequest {
+        name: name.into(),
+        schedule: schedule.into(),
+        prompt: "Summarise yesterday's mail".into(),
+    };
+    let d = start(Arc::new(StatefulBackend::default()), None, "127.0.0.1:0").await;
+    let ada = create(&d, json!({"name": "ada"})).await["id"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    let id: AgentId = ada.parse().unwrap();
+    let routines = || {
+        let path = format!("/v1/agents/{ada}/routines");
+        let ui = d.ui.clone();
+        async move {
+            let (_, list) = http(&ui, "GET", &path, None).await;
+            list.as_array()
+                .unwrap()
+                .iter()
+                .map(|r| r["name"].as_str().unwrap().to_owned())
+                .collect::<Vec<_>>()
+        }
+    };
+    let said = |text: &'static str| {
+        let ada = ada.clone();
+        let d = &d;
+        async move {
+            mail(d, &ada)
+                .await
+                .iter()
+                .any(|m| m["body"].as_str().unwrap().contains(text))
+        }
+    };
+
+    let RoutineRequestOutcome::Pending { question_id } = d
+        .state
+        .request_routine(id, request("digest", "0 9 * * 1-5"))
+        .await
+        .unwrap()
+    else {
+        panic!("expected a card");
+    };
+    assert!(
+        routines().await.is_empty(),
+        "nothing before the operator answers"
+    );
+    let card = events(&d, &ada)
+        .await
+        .into_iter()
+        .find(|e| e["id"] == question_id)
+        .unwrap();
+    assert_eq!(card["payload"]["approval"]["kind"], "create_routine");
+    let prompt = card["payload"]["card"]["questions"][0]["prompt"]
+        .as_str()
+        .unwrap();
+    assert!(
+        prompt.contains("At 09:00") && prompt.contains("Friday (UTC)"),
+        "{prompt}"
+    );
+    assert_eq!(decide(&d, &ada, question_id, "approve").await.0, 202);
+    assert_eq!(routines().await, ["digest"]);
+    assert!(said("approved your routine \"digest\"").await);
+    assert_eq!(decide(&d, &ada, question_id, "approve").await.0, 409);
+
+    let err = d
+        .state
+        .request_routine(id, request("digest", "@daily"))
+        .await
+        .unwrap_err();
+    assert!(err.contains("already"), "{err}");
+    let err = d
+        .state
+        .request_routine(id, request("bad", "every morning"))
+        .await
+        .unwrap_err();
+    assert_ne!(err, "", "an invalid schedule is refused");
+
+    let RoutineRequestOutcome::Pending { question_id } = d
+        .state
+        .request_routine(id, request("weekly", "@weekly"))
+        .await
+        .unwrap()
+    else {
+        panic!("expected a card");
+    };
+    assert_eq!(decide(&d, &ada, question_id, "decline").await.0, 202);
+    assert_eq!(routines().await, ["digest"]);
+    assert!(said("declined your routine \"weekly\"").await);
+
+    let auto = Some(json!({"auto_mode": true}));
+    assert_eq!(http(&d.ui, "PUT", "/v1/settings", auto).await.0, 200);
+    let outcome = d
+        .state
+        .request_routine(id, request("hourly", "@hourly"))
+        .await
+        .unwrap();
+    assert!(
+        matches!(outcome, RoutineRequestOutcome::Created { .. }),
+        "{outcome:?}"
+    );
+    let mut names = routines().await;
+    names.sort();
+    assert_eq!(names, ["digest", "hourly"]);
 }

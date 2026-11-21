@@ -434,6 +434,27 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/clis": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** The CLI packages in every agent's sandbox. */
+        get: operations["get_clis"];
+        /**
+         * Replaces the CLI packages and builds their image in the background. New sandboxes start
+         *     from it; existing ones switch when they next wake, keeping their home directory.
+         */
+        put: operations["put_clis"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/connectors": {
         parameters: {
             query?: never;
@@ -1073,6 +1094,13 @@ export interface components {
             requester: components["schemas"]["AgentId"];
             /** @enum {string} */
             kind: "add_connector";
+        } | {
+            name: string;
+            schedule: string;
+            prompt: string;
+            requester: components["schemas"]["AgentId"];
+            /** @enum {string} */
+            kind: "create_routine";
         };
         /**
          * @description A chosen character avatar look; without one, clients derive a look from the agent id.
@@ -1087,6 +1115,11 @@ export interface components {
              */
             hue: number;
         };
+        /**
+         * @description Where the image build stands.
+         * @enum {string}
+         */
+        BuildStatus: "idle" | "building" | "ready" | "failed";
         CallMessage: {
             /**
              * @description 1..20224 bytes after trimming, counting `@name` mentions as their
@@ -1120,6 +1153,16 @@ export interface components {
             label: string;
             /** @description Stable value reported in the answer; defaults to the label. */
             value?: string;
+        };
+        /** @description The CLI packages and where their image build stands. */
+        ClisView: {
+            /** @description Debian packages added to the base image, sorted. */
+            packages: string[];
+            status: components["schemas"]["BuildStatus"];
+            /** @description Why the last build failed; null otherwise. */
+            error?: string | null;
+            /** @description Whether the sandbox backend can build images (Docker only). */
+            supported: boolean;
         };
         /** @description A remote MCP server whose tools assigned agents can use. */
         Connector: {
@@ -1815,6 +1858,11 @@ export interface components {
             model?: string | null;
             /** @description Pin to the top of the agent list (or unpin). */
             pinned?: boolean | null;
+        };
+        /** @description A new CLI package list. */
+        UpdateClis: {
+            /** @description Debian package names, at most 32; empty: the plain base image. */
+            packages: string[];
         };
         UpdateConnector: {
             name?: string | null;
@@ -3724,6 +3772,93 @@ export interface operations {
             };
             /** @description No voice call */
             409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+        };
+    };
+    get_clis: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ClisView"];
+                };
+            };
+            /** @description Missing or wrong API token */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+        };
+    };
+    put_clis: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["UpdateClis"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ClisView"];
+                };
+            };
+            /** @description Not a Debian package name, or too many */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Missing or wrong API token */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description A build is running */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description The sandbox backend cannot build images */
+            501: {
                 headers: {
                     [name: string]: unknown;
                 };

@@ -63,6 +63,7 @@ async fn container_lifecycle() {
         // No daemon is listening: the runner keeps retrying, which is fine here.
         env: agent_env("test-token-lifecycle"),
         labels: BTreeMap::new(),
+        image: None,
     };
     let h = backend.create(&spec).await.expect("create");
     // create is idempotent
@@ -197,6 +198,7 @@ async fn archive_moves_the_sandbox_into_the_store_and_back() {
         name: name.clone(),
         env: agent_env("test-token-archive"),
         labels: BTreeMap::new(),
+        image: None,
     };
     let h = backend.create(&spec).await.expect("create");
     let note = SandboxPath::parse("/home/node/kept.txt").unwrap();

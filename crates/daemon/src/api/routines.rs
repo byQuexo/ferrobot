@@ -3,7 +3,11 @@
 use axum::Json;
 use axum::extract::{Path, State};
 use axum::http::StatusCode;
-use ferrobot_core::MailMessage;
+use ferrobot_core::question::{
+    Approval, QuestionAnswer, QuestionAnswered, QuestionEvent, approves,
+};
+use ferrobot_core::{AgentId, MailMessage, Sender};
+use ferrobot_mcp::{RoutineRequest, RoutineRequestOutcome};
 use ferrobot_store::{NewRoutine, Routine, RoutineRun, RunTrigger};
 use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;
@@ -110,31 +114,173 @@ pub(crate) async fn create_routine(
     Json(req): Json<CreateRoutine>,
 ) -> Result<(StatusCode, Json<RoutineView>), ApiError> {
     let id = parse_id(&id)?;
-    let name = req.name.trim().to_owned();
-    check_name(&name)?;
-    check_prompt(&req.prompt)?;
     let timezone = req
         .timezone
         .unwrap_or_else(|| state.settings.default_timezone.clone());
-    let enabled = req.enabled.unwrap_or(true);
-    let schedule = req.schedule.trim().to_owned();
+    let routine = add(
+        &state,
+        id,
+        req.name.trim().to_owned(),
+        req.schedule.trim().to_owned(),
+        req.prompt,
+        timezone,
+        req.enabled.unwrap_or(true),
+    )
+    .await?;
+    Ok((StatusCode::CREATED, Json(routine_view(routine))))
+}
+
+async fn add(
+    state: &AppState,
+    agent: AgentId,
+    name: String,
+    schedule: String,
+    prompt: String,
+    timezone: String,
+    enabled: bool,
+) -> Result<Routine, ApiError> {
+    check_name(&name)?;
+    check_prompt(&prompt)?;
     let next_run_at = scheduler::next_run(&schedule, &timezone, enabled)?;
     let routine = state
         .store
         .create_routine(
-            id,
+            agent,
             NewRoutine {
                 name,
                 schedule,
                 timezone,
-                prompt: req.prompt,
+                prompt,
                 enabled,
                 next_run_at,
             },
         )
         .await?;
-    changed(&state, &routine);
-    Ok((StatusCode::CREATED, Json(routine_view(routine))))
+    changed(state, &routine);
+    Ok(routine)
+}
+
+/// An agent's own routine: created at once in Auto mode, else after the operator approves a
+/// card in the chat they use for it.
+pub(crate) async fn request(
+    state: &AppState,
+    requester: AgentId,
+    req: RoutineRequest,
+) -> Result<RoutineRequestOutcome, ApiError> {
+    check_name(&req.name)?;
+    check_prompt(&req.prompt)?;
+    let timezone = state.settings.default_timezone.clone();
+    let when = Schedule::parse(&req.schedule, &timezone)?.describe();
+    let when = when.trim_end_matches('.');
+    if state
+        .store
+        .list_routines(requester)
+        .await?
+        .iter()
+        .any(|r| r.name == req.name)
+    {
+        return Err(ApiError::Conflict(format!(
+            "you already have a routine named {}",
+            req.name
+        )));
+    }
+    // Unreadable settings fail closed: the operator gets the card.
+    if crate::api::settings::load(state)
+        .await
+        .is_ok_and(|s| s.auto_mode)
+    {
+        let routine = add(
+            state,
+            requester,
+            req.name,
+            req.schedule,
+            req.prompt,
+            timezone,
+            true,
+        )
+        .await?;
+        return Ok(RoutineRequestOutcome::Created {
+            id: routine.id,
+            when: when.to_owned(),
+        });
+    }
+    let who = state.store.get_agent(requester).await?.name;
+    let prompt = format!(
+        "Add the routine \"{}\" for {who}?\nWhen: {when} ({timezone})\nMessage: {}",
+        req.name,
+        crate::agents::shorten(&req.prompt, 600)
+    );
+    let card = QuestionEvent::approval(
+        format!("{who} wants a routine"),
+        prompt,
+        Approval::CreateRoutine {
+            name: req.name,
+            schedule: req.schedule,
+            prompt: req.prompt,
+            requester,
+        },
+    );
+    let payload = serde_json::to_value(&card).map_err(|e| ApiError::Internal(e.to_string()))?;
+    let chat = crate::agents::chat_of(state, requester).await?;
+    let event = state
+        .store
+        .append_event(chat, None, "question".into(), payload)
+        .await?;
+    let question_id = event.id;
+    state.publish(UiEvent::Event { event });
+    Ok(RoutineRequestOutcome::Pending { question_id })
+}
+
+/// The operator's answer to a routine card: approved, the routine is created; either way the
+/// agent that asked gets a message.
+pub(crate) async fn answer_card(
+    state: &AppState,
+    chat: AgentId,
+    qid: i64,
+    approval: &Approval,
+    answers: Vec<QuestionAnswer>,
+) -> Result<QuestionAnswered, ApiError> {
+    let Approval::CreateRoutine {
+        name,
+        schedule,
+        prompt,
+        requester,
+    } = approval
+    else {
+        return Err(ApiError::Internal("not a routine card".into()));
+    };
+    let note = if approves(&answers) {
+        let routine = add(
+            state,
+            *requester,
+            name.clone(),
+            schedule.clone(),
+            prompt.clone(),
+            state.settings.default_timezone.clone(),
+            true,
+        )
+        .await?;
+        let when = routine_view(routine).schedule_text;
+        let when = when.trim_end_matches('.');
+        format!("The operator approved your routine \"{name}\": {when}.")
+    } else {
+        format!("The operator declined your routine \"{name}\".")
+    };
+    let msg = state
+        .store
+        .enqueue_message(Sender::User, *requester, note, None)
+        .await?;
+    state.message_arrived(*requester);
+    let message_id = Some(msg.id);
+    state.publish(UiEvent::Message { message: msg });
+    let answered = QuestionAnswered {
+        question: qid,
+        answers,
+        message_id,
+    };
+    let payload = serde_json::to_value(&answered).map_err(|e| ApiError::Internal(e.to_string()))?;
+    state.record(chat, None, "question_answered", payload).await;
+    Ok(answered)
 }
 
 /// Partial update; omitted fields stay unchanged.

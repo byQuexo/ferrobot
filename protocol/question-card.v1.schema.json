@@ -64,6 +64,37 @@
             "kind"
           ],
           "type": "object"
+        },
+        {
+          "description": "An agent wants a routine of its own (`create_routine` tool): `prompt` reaches it on\n`schedule` (cron, the daemon's time zone).",
+          "properties": {
+            "kind": {
+              "enum": [
+                "create_routine"
+              ],
+              "type": "string"
+            },
+            "name": {
+              "type": "string"
+            },
+            "prompt": {
+              "type": "string"
+            },
+            "requester": {
+              "$ref": "#/$defs/AgentId"
+            },
+            "schedule": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "name",
+            "schedule",
+            "prompt",
+            "requester",
+            "kind"
+          ],
+          "type": "object"
         }
       ]
     },

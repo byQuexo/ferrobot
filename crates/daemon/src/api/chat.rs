@@ -202,6 +202,11 @@ pub(crate) async fn answer_question(
         .await?;
         return Ok((StatusCode::ACCEPTED, Json(answered)));
     }
+    if let Some(approval @ Approval::CreateRoutine { .. }) = &question.approval {
+        let answered =
+            crate::api::routines::answer_card(&state, id, qid, approval, req.answers).await?;
+        return Ok((StatusCode::ACCEPTED, Json(answered)));
+    }
     if question.approval.is_some() {
         let answered = QuestionAnswered {
             question: qid,

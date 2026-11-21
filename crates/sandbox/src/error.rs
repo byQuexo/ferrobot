@@ -29,6 +29,8 @@ pub enum SandboxError {
     #[error("file {0} is larger than {MAX_FILE_BYTES} bytes")]
     TooLarge(String),
     #[error("{0}")]
+    InvalidPackages(String),
+    #[error("{0}")]
     Other(String),
 }
 

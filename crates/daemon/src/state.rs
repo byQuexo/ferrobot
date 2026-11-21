@@ -217,6 +217,8 @@ pub struct AppState {
     pub voice: Arc<Mutex<crate::voice::Budget>>,
     /// The operator's voice call (in memory: a restart ends it).
     pub call: Arc<Mutex<crate::call::Call>>,
+    /// Where the CLI image build stands.
+    pub clis: Arc<crate::clis::Builds>,
 }
 
 impl AppState {
@@ -249,6 +251,7 @@ impl AppState {
             model_lists: Arc::default(),
             voice: Arc::default(),
             call: Arc::default(),
+            clis: Arc::default(),
         }
     }
 
@@ -373,6 +376,19 @@ impl ferrobot_mcp::MailboxNotifier for AppState {
         let state = self.clone();
         Box::pin(async move {
             crate::api::connectors::request_card(&state, requester, request)
+                .await
+                .map_err(|e| e.to_string())
+        })
+    }
+
+    fn request_routine(
+        &self,
+        requester: AgentId,
+        request: ferrobot_mcp::RoutineRequest,
+    ) -> ferrobot_mcp::BoxFuture<Result<ferrobot_mcp::RoutineRequestOutcome, String>> {
+        let state = self.clone();
+        Box::pin(async move {
+            crate::api::routines::request(&state, requester, request)
                 .await
                 .map_err(|e| e.to_string())
         })

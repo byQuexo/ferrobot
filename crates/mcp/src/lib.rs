@@ -45,6 +45,24 @@ pub struct ConnectorRequest {
     pub reason: String,
 }
 
+/// An agent's request for a routine of its own (`create_routine` tool).
+#[derive(Debug, Clone)]
+pub struct RoutineRequest {
+    pub name: String,
+    /// 5-field cron expression or alias, in the daemon's time zone.
+    pub schedule: String,
+    pub prompt: String,
+}
+
+/// How a [`RoutineRequest`] ended for now.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum RoutineRequestOutcome {
+    /// Auto mode: the routine exists.
+    Created { id: i64, when: String },
+    /// The operator decides on a card; the outcome arrives as a message.
+    Pending { question_id: i64 },
+}
+
 /// A file an agent shared with the operator (`share_file` tool).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SharedFile {
@@ -118,6 +136,16 @@ pub trait MailboxNotifier: Send + Sync + 'static {
     ) -> BoxFuture<Result<i64, String>> {
         let _ = (requester, request);
         Box::pin(async { Err("adding connectors is not supported here".to_owned()) })
+    }
+    /// Creates a routine for `requester`, or shows the operator a card for it unless Auto mode
+    /// is on. `Err` carries a message for the agent.
+    fn request_routine(
+        &self,
+        requester: AgentId,
+        request: RoutineRequest,
+    ) -> BoxFuture<Result<RoutineRequestOutcome, String>> {
+        let _ = (requester, request);
+        Box::pin(async { Err("routines are not supported here".to_owned()) })
     }
     /// Brings `guest` into the operator's voice call that `host` is in
     /// and sends it `topic`. `Err` carries a message for the agent.
