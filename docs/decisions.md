@@ -1144,7 +1144,7 @@ slop, so polish mode: palette, accent, logo, layout and features stay.
   ends the call for everyone; an invited agent leaves.
 - **Single-agent calls** go through `POST /v1/call/messages` too, so the host
   gets the call note; the operator's call messages lose its length to it (limit
-  now 19,441, see "Call rooms").
+  now 19,316, see "Call flow").
 
 ## Tool profiles
 
@@ -1300,9 +1300,56 @@ slop, so polish mode: palette, accent, logo, layout and features stay.
   not in the room). An
   invited agent first hears that it should listen: at most a short hello or
   `(pass)`, then answer what it is asked. A room turn never gets the new-agent
-  greeting. The operator's call message limit is now 19,441 bytes.
+  greeting. The operator's call message limit was 19,441 bytes (now 19,316,
+  see "Call flow").
 - **UI:** a "Calls" list in the sidebar (title and time), a room view with
   the transcript ("You" or the agent's avatar and name, time) that updates
   live, and a message box there while it is the running call's room. The call
   window's chat button opens the room once there is one. In an agent's chat
   during a room call, typed words go to that agent only.
+
+## Call flow (Tim's room call test, 2026-11-21)
+
+- **One agent at a time.** Room turns ran in parallel, so agents talked over
+  each other ("one is asking if the other one got it but he is still
+  talking"). A room now has a floor: one room turn runs at a time. A line
+  makes the others due; they take the floor in order (the operator's words:
+  everyone, host first, then join order; an agent's line: the others are
+  appended) and each turn's prompt is built when it starts, so it hears the
+  turn before it. Each still decides to speak or `(pass)`; the cap of four
+  agent lines stays and the operator's words reset it. The operator speaking
+  while an agent holds the floor queues as the next line, and in a room
+  `POST /v1/call/messages` returns only the next speaker's message (none while
+  someone speaks). An interrupted room turn means the operator cut in, so
+  nobody else is due until they speak. Room messages jump the agent's queue
+  (urgent). A member busy with its own chat work when the floor reaches it
+  holds the room until that turn ends: accepted, a call member is rarely busy.
+- **The host's announcement first.** When an agent invites another during a
+  turn of its own, that turn holds the floor until it ends, so the guest's
+  hello follows the host's words. A turn outside the room (the one-on-one
+  turn that opens the room) holds the floor without becoming a line.
+- **The call's end silences everyone else.** When the call ends (the host
+  hangs up, or the operator), the room turn holding the floor is interrupted,
+  queued room turns are settled unrun (`last_error` "the call ended") and no
+  more lines are stored. The `call` event names the agent that hung up
+  (`hung_up`); the UI lets that agent's goodbye finish and drops every other
+  voice at once, queued and streaming.
+- **Only the call is heard.** The UI speaks a turn only if it is part of the
+  call, judged at its `message_in`: in a room call only room turns, in a
+  one-on-one call the host's turns. A member's own chat work and a new
+  agent's greeting stay silent. Tim saw "golf-planner is speaking" with only
+  team-lead on the card: the old rule spoke any turn of a member, and an
+  agent that had left (likely golf-planner hanging up after its hello) kept
+  speaking off the card. The card now keeps a just-left agent's face while its
+  goodbye plays.
+- **No question cards in a call.** `ask_user` refuses while the agent is in a
+  call ("ask out loud in your reply"); the call note says so. `create_agent`
+  approval cards stay: they are the operator's safety gate.
+- **Same language.** The call note says to speak the operator's language and
+  names the voice settings' language code when set ("the operator's language
+  (de)"), read when the call starts. The host note says to tell a new agent to
+  speak this call's language. The operator's call message limit is now 19,316
+  bytes (the longest note: a three-letter code plus the host note).
+- A new agent invited into a call gets no greeting: its first turn there is a
+  room turn, which never gets one; a greeting turn from a task stays silent in
+  the call.

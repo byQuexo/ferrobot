@@ -1325,3 +1325,31 @@ store used for the run) or the daemon's own env.
 - Desktop: hiding room turns from the chat timeline, room titles, call state.
 - Not tested: a live call with real models and voices, the room view in the
   Tauri window.
+
+## Call flow (`fix/call-flow`)
+
+**Done**
+
+- Rooms have a floor: one agent turn at a time, host first, each hearing the
+  one before; the host's inviting turn speaks before the guest.
+- Ending a call interrupts the room turn holding the floor, drops queued room
+  turns and stores no more lines; `hung_up` on the `call` event; the UI plays
+  only the goodbye of the agent that hung up.
+- The UI speaks only the call's turns (room turns, or the host's one on one);
+  the card keeps a just-left agent's face while its goodbye plays.
+- `ask_user` is refused during a call; call note: ask out loud, speak the
+  operator's language (code from the voice settings); host note: new agents
+  speak this call's language.
+
+**Tested**
+
+- Rust: `calls_with_two_agents_move_into_a_room_where_agents_speak_one_at_a_time`
+  (the second agent's turn waits for the first and hears it, a guest waits for
+  the host's one-on-one and room turns, interrupted turns wait for the
+  operator, the operator's hang-up interrupts the running room turn and
+  cancels queued ones, the host's goodbye ends the call with `hung_up`,
+  `ask_user` refused in a call and allowed after); unit tests for the floor,
+  the cap, the note's language; store test for cancelling queued turns.
+- Desktop: only call turns are spoken, `CallScript.end` keeps the goodbye,
+  `Speaker.keepOnly` cuts the voice playing (with a fake `Audio`).
+- Not tested: a live call with real models and voices.
