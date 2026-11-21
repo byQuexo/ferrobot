@@ -31,7 +31,12 @@ export function CallWindow(): JSX.Element | null {
   }, [running]);
   if (!state) return null;
 
-  const people = state.agents.flatMap((id) => agents.get(id) ?? []);
+  // An agent that just left stays on the card while its goodbye plays.
+  const ids =
+    call.speaking && !state.agents.includes(call.speaking)
+      ? [...state.agents, call.speaking]
+      : state.agents;
+  const people = ids.flatMap((id) => agents.get(id) ?? []);
   const host = agents.get(state.host);
   const room = state.room;
   const speaker = call.speaking ? agents.get(call.speaking) : undefined;

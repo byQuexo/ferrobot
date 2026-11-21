@@ -4,6 +4,7 @@ import {
   CallScript,
   ECHO_MS,
   callChanged,
+  callTurn,
   operatorSaid,
   type CallState,
   type Line,
@@ -30,6 +31,8 @@ export class CallSession {
   /** A partial of the current utterance already counted as the operator's. */
   #talking = false;
   #seen = new Set<number>();
+  /** Turns that are part of the call (see `callTurn`) and whose agent; only these are spoken. */
+  #turns = new Map<string, string>();
   /** Bumped when a call starts or closes, so a late microphone or reply is dropped. */
   #round = 0;
   #goodbye: ReturnType<typeof setTimeout> | undefined;
@@ -124,19 +127,20 @@ export class CallSession {
   handle(e: UiEvent): void {
     const state = this.state;
     if (!state) return;
-    // An agent that just left still finishes its turn: that is its goodbye.
-    const heard = (agent: string, turn: string | null): boolean =>
-      state.agents.includes(agent) || (turn !== null && this.#script.has(turn));
     switch (e.type) {
       case "delta":
-        if (heard(e.agent_id, e.turn_id))
+        if (this.#turns.has(e.turn_id))
           this.#say(this.#script.delta(e.agent_id, e.turn_id, e.text));
         break;
       case "event": {
         const ev = e.event;
-        const text = (ev.payload as { text?: unknown }).text;
-        if (ev.kind === "assistant_text" && ev.turn_id && typeof text === "string") {
-          if (!heard(ev.agent_id, ev.turn_id) || this.#seen.has(ev.id)) break;
+        const { text, room_id: room } = ev.payload as { text?: unknown; room_id?: unknown };
+        if (ev.kind === "message_in" && ev.turn_id && !state.ending) {
+          if (callTurn(state, ev.agent_id, typeof room === "number" ? room : null))
+            this.#turns.set(ev.turn_id, ev.agent_id);
+        } else if (ev.kind === "assistant_text" && ev.turn_id && typeof text === "string") {
+          // An agent that just left still finishes its turn: that is its goodbye.
+          if (!this.#turns.has(ev.turn_id) || this.#seen.has(ev.id)) break;
           this.#seen.add(ev.id);
           this.#say(this.#script.text(ev.agent_id, ev.turn_id, text));
         } else if (ev.kind === "turn_done" && ev.turn_id) {
@@ -152,6 +156,7 @@ export class CallSession {
         if (next === state) break;
         if (next?.ending) {
           this.#stopListening();
+          this.#onlyGoodbye(e.hung_up ?? null);
           this.#goodbye = setTimeout(() => {
             this.#close();
           }, GOODBYE_MS);
@@ -168,6 +173,18 @@ export class CallSession {
   readonly #fail = (err: unknown): void => {
     this.#toast(message(err));
   };
+
+  /** The daemon ended the call: only the goodbye of the agent that hung up (`keep`) is heard. */
+  #onlyGoodbye(keep: string | null): void {
+    for (const [turn, agent] of this.#turns) if (agent !== keep) this.#turns.delete(turn);
+    const lines = this.#script.end(keep);
+    if (keep === null) {
+      this.#speaker.stop();
+    } else {
+      this.#speaker.keepOnly(keep);
+      this.#say(lines);
+    }
+  }
 
   async #listen(round: number): Promise<void> {
     const live = await startLive((rate) => this.#client.voiceLive("call", rate), {
@@ -248,6 +265,7 @@ export class CallSession {
     this.#stopListening();
     this.#script = new CallScript();
     this.#seen.clear();
+    this.#turns.clear();
     this.state = null;
     this.#speaker.stop();
     this.speaking = null;

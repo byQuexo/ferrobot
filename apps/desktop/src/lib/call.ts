@@ -141,19 +141,31 @@ export class CallScript {
       .flatMap(([id]) => this.done(id));
   }
 
-  /** Whether `turn` is still running. */
-  has(turn: string): boolean {
-    return this.#turns.get(turn)?.closed === false;
-  }
-
   /** Whether `agent` has a turn still running. */
   speaking(agent: string): boolean {
     return [...this.#turns.values()].some((t) => t.agent === agent && !t.closed);
   }
 
-  /** Whether any turn is still running. */
+  /** Whether a turn still running may say more. */
   get active(): boolean {
-    return [...this.#turns.values()].some((t) => !t.closed);
+    return [...this.#turns.values()].some((t) => !t.closed && !t.quiet);
+  }
+
+  /**
+   * The call ended: every turn but `keep`'s (the agent that hung up) goes quiet at once.
+   * Returns `keep`'s lines that waited for another voice to finish.
+   */
+  end(keep: string | null): Line[] {
+    for (const [id, t] of this.#turns) {
+      if (t.agent === keep) continue;
+      t.quiet = true;
+      t.rest = "";
+      t.waiting = [];
+      if (t.closed) this.#turns.delete(id);
+    }
+    this.#next = this.#next.filter((id) => this.#turns.get(id)?.agent === keep);
+    const floor = this.#floor === null ? undefined : this.#turns.get(this.#floor);
+    return floor !== undefined && floor.agent === keep ? [] : this.#pass();
   }
 
   /** The operator cut in: drops what was not spoken and keeps those turns quiet. */
@@ -267,6 +279,15 @@ export function callChanged(
   if (agents.length === 0) return { ...state, agents, hearing: false, ending: true };
   const host = agents.includes(state.host) ? state.host : (agents[0] ?? state.host);
   return { ...state, agents, host, room };
+}
+
+/**
+ * Whether a turn is part of the call, judged when it starts (its `message_in`, with the room it
+ * came from): in a room only the room's turns, so members' own chats stay silent; without one
+ * the host's turns.
+ */
+export function callTurn(state: CallState, agent: string, room: number | null): boolean {
+  return state.room !== null ? room === state.room : room === null && agent === state.host;
 }
 
 /** A room's name from who took part, e.g. `Call · ann, bob`; agents deleted since are left out. */

@@ -49,6 +49,8 @@ export class Speaker {
   #played: { text: string; ended: number }[] = [];
   #round = 0;
   #busy = false;
+  /** Set by `keepOnly`: no other voice is played until `stop`. */
+  #keep: { agent: string | undefined } | null = null;
 
   constructor(
     fetchAudio: (text: string, agent?: string) => Promise<Blob>,
@@ -78,14 +80,22 @@ export class Speaker {
 
   /** Queues `text`, spoken with `agent`'s voice if it has one. */
   say(text: string, agent?: string): void {
-    if (!text) return;
+    if (!text || (this.#keep && this.#keep.agent !== agent)) return;
     this.#queue.push({ text, agent, audio: null });
     this.#prefetch();
     if (!this.#busy) void this.#play();
   }
 
+  /** Drops every other voice at once, the one playing included; `agent`'s lines play on. */
+  keepOnly(agent: string): void {
+    this.#keep = { agent };
+    this.#queue = this.#queue.filter((q) => q.agent === agent);
+    if (this.#now && this.#now.agent !== agent) this.#audio?.pause();
+  }
+
   stop(): void {
     this.#round++;
+    this.#keep = null;
     this.#queue = [];
     this.#audio?.pause();
     this.#audio = null;
@@ -120,7 +130,7 @@ export class Speaker {
       this.#now = next;
       const blob = await next.audio;
       if (round !== this.#round) break;
-      if (!blob) {
+      if (!blob || (this.#keep && this.#keep.agent !== next.agent)) {
         this.#now = null;
         continue;
       }

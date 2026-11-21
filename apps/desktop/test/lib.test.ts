@@ -10,6 +10,7 @@ import {
   CallScript,
   callChanged,
   callClock,
+  callTurn,
   isPass,
   operatorSaid,
   roomTitle,
@@ -23,7 +24,7 @@ import { parseBlocks, parseInline } from "../src/lib/markdown.ts";
 import { modelOptions, withSaved } from "../src/lib/models.ts";
 import { moveId, orderAgents } from "../src/lib/order.ts";
 import { pollOutcome } from "../src/lib/update.ts";
-import { liveEvent, pcm16Base64, speakable } from "../src/lib/voice.ts";
+import { Speaker, liveEvent, pcm16Base64, speakable } from "../src/lib/voice.ts";
 import {
   chartMetric,
   costLabel,
@@ -638,6 +639,91 @@ describe("voice call", () => {
     assert.deepEqual(script.delta("c", "t3", " words. Still going. "), []);
     assert.deepEqual(script.done("t3"), []);
     assert.ok(!script.speaking("c"));
+  });
+
+  it("lets only the goodbye of the agent that hung up finish when the call ends", () => {
+    const script = new CallScript();
+    assert.equal(script.delta("b", "tb", "Still talking. And").length, 1, "b has the floor");
+    assert.deepEqual(script.delta("a", "ta", "Bye now. "), [], "a waits for b");
+    assert.ok(script.active);
+    assert.deepEqual(
+      script.end("a").map((l) => `${l.agent}:${l.text}`),
+      ["a:Bye now."],
+      "a's goodbye goes on at once",
+    );
+    assert.deepEqual(script.delta("b", "tb", " more. "), [], "b is cut off");
+    assert.deepEqual(script.text("a", "ta", "Bye now. See you."), []);
+    assert.ok(script.active, "a may still speak");
+    assert.deepEqual(script.done("ta"), []);
+    assert.ok(!script.active, "nothing left to wait for");
+    const ended = new CallScript();
+    ended.delta("b", "tb", "Talking. ");
+    assert.deepEqual(ended.end(null), [], "the operator ended it: everyone stops");
+    assert.deepEqual(ended.delta("b", "tb", "More. "), []);
+  });
+
+  it("speaks only the call's turns: the room's, or the host's without one", () => {
+    const call: CallState = {
+      agents: ["a", "b"],
+      host: "a",
+      since: 0,
+      muted: false,
+      hearing: true,
+      ending: false,
+      room: null,
+    };
+    assert.ok(callTurn(call, "a", null), "one on one: the host's turns");
+    assert.ok(!callTurn(call, "b", null), "nobody else's");
+    const room = { ...call, room: 7 };
+    assert.ok(callTurn(room, "b", 7) && callTurn(room, "a", 7));
+    assert.ok(!callTurn(room, "a", null), "a member's own chat is not heard in a room call");
+    assert.ok(!callTurn(room, "c", null), "a new agent's greeting is not heard");
+    assert.ok(!callTurn(room, "b", 6), "nor an old room");
+  });
+
+  it("drops every other voice, the one playing included, once the call ends", async () => {
+    const global = globalThis as unknown as { Audio?: unknown };
+    const playing: FakeAudio[] = [];
+    class FakeAudio {
+      onended: (() => void) | null = null;
+      onerror: (() => void) | null = null;
+      onpause: (() => void) | null = null;
+      constructor() {
+        playing.push(this);
+      }
+      play(): Promise<void> {
+        return Promise.resolve();
+      }
+      pause(): void {
+        this.onpause?.();
+      }
+    }
+    const before = global.Audio;
+    global.Audio = FakeAudio;
+    try {
+      const voices: (string | null)[] = [];
+      const speaker = new Speaker(
+        () => Promise.resolve(new Blob(["x"])),
+        (err) => {
+          throw err;
+        },
+      );
+      speaker.onSpeaking = (agent) => voices.push(agent);
+      const tick = (): Promise<void> => new Promise((r) => setTimeout(r, 5));
+      speaker.say("a one", "a");
+      speaker.say("b bye", "b");
+      speaker.say("a two", "a");
+      await tick();
+      speaker.keepOnly("b");
+      speaker.say("a three", "a");
+      await tick();
+      playing.at(-1)?.onended?.();
+      await tick();
+      assert.deepEqual(voices, ["a", "b", null], "a is cut off, b's goodbye plays");
+      assert.equal(playing.length, 2);
+    } finally {
+      global.Audio = before;
+    }
   });
 
   it("cuts a long turn with a notice", () => {
