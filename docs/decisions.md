@@ -631,8 +631,8 @@ the code and this file together.
   API answers 429. Provider calls time out after 120 s. Neither text nor
   audio is logged; a provider's error reason goes to the operator only.
 - **Playback waits for each clip** (fetch, then `<audio>` with a blob URL)
-  instead of streaming through `MediaSource`; clips are fetched as soon as
-  they arrive, so the next one is ready while the current one plays.
+  instead of streaming through `MediaSource`; the next two clips are fetched
+  while one plays.
 - **Tauri:** the CSP allows `media-src 'self' blob:`, and
   `src-tauri/Info.plist` carries `NSMicrophoneUsageDescription` (Tauri
   embeds it in dev builds and merges it into bundles). wry 0.55 grants the
@@ -643,9 +643,8 @@ the code and this file together.
   The phone button in the chat header starts a hands-free call: replies are
   read aloud and, with ElevenLabs, the microphone streams to its realtime
   transcription (`scribe_v3_live`, commit on a 1.2 s pause); each finished
-  sentence is sent. While an agent speaks the app sends silence instead of
-  the microphone, so its voice is not transcribed as the operator's (and the
-  session stays open; ElevenLabs closes after 15 s without input). The mic
+  sentence is sent. The microphone stays live while an agent speaks, so the
+  operator can cut in (see "Voice call feel"). The mic
   button in the message box is dictation: the words appear live in the box,
   stop keeps them there unsent. Other providers transcribe after stopping.
 - **Live transcription with a single-use token.** `POST /v1/voice/live`
@@ -671,12 +670,12 @@ the code and this file together.
   settings stay.
 - **Voice on is a call; agents bring teammates in.** Switching voice on in a
   chat starts the operator's voice call with that agent (`PUT /v1/call`,
-  in memory, so a daemon restart ends it); switching it off or leaving the
-  chat ends it. Agents in the call have an `invite_to_call(agent, topic)`
+  in memory, so a daemon restart ends it); hanging up ends it, switching
+  chats does not. Agents in the call have an `invite_to_call(agent, topic)`
   tool: the teammate joins and gets the topic as mail from the inviter,
-  which starts its first turn. At most 4 agents per call. With more than one
-  agent, what the operator says or types goes to all of them
-  (`POST /v1/call/messages`), and every agent's replies are spoken, each with
+  which starts its first turn. At most 4 agents per call. What the operator
+  says or types goes to all of them (`POST /v1/call/messages`), and every
+  agent's replies are spoken, each with
   its own voice if one is set (`agent_voices`, by agent id).
 - **Agents in a call never start each other's turns.** A deferred message
   (`priority: false`) is no guard: an awake runner claims it at once, so two
@@ -692,7 +691,7 @@ the code and this file together.
   Options: route by spoken name, or let agents stay silent with an empty
   reply. Agents also hear each other only with the operator's next message,
   so the call is operator-driven, not a free discussion.
-- **Follow-up:** streaming playback; a remove button per call participant
+- **Follow-up:** a remove button per call participant
   (today: end the call); telling the host agent that the operator is
   listening (it does not know until someone joins).
 
