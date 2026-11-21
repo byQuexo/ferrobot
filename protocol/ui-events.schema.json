@@ -157,6 +157,17 @@
               "description": "Whether the agent's runner is connected right now.",
               "type": "boolean"
             },
+            "credential_error": {
+              "oneOf": [
+                {
+                  "$ref": "#/$defs/CredentialError",
+                  "description": "Set while the agent's model credential is missing or rejected; its turns wait."
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
             "presence": {
               "$ref": "#/$defs/Presence"
             },
@@ -218,6 +229,36 @@
         "ovals",
         "wide",
         "visor"
+      ],
+      "type": "string"
+    },
+    "CredentialError": {
+      "description": "A model credential problem found by the model proxy. The agent's messages wait until the\noperator changes its provider or model, stores a key or retries. Kept in memory: after a\nrestart the next model call finds it again.",
+      "properties": {
+        "kind": {
+          "$ref": "#/$defs/CredentialProblem"
+        },
+        "reason": {
+          "description": "What is wrong and where to fix it; never contains the key.",
+          "type": "string"
+        },
+        "since": {
+          "format": "date-time",
+          "type": "string"
+        }
+      },
+      "required": [
+        "kind",
+        "reason",
+        "since"
+      ],
+      "type": "object"
+    },
+    "CredentialProblem": {
+      "description": "What is wrong with an agent's model credential.",
+      "enum": [
+        "missing",
+        "rejected"
       ],
       "type": "string"
     },

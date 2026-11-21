@@ -24,7 +24,7 @@ import {
 import type { Agent, MailMessage, Routine, StoredEvent, VoiceView } from "../api.ts";
 import { useApp } from "../context.ts";
 import { isPass } from "../lib/call.ts";
-import { clockTime, presenceLabel, stepLabel, toolLabel } from "../lib/format.ts";
+import { clockTime, statusOf, stepLabel, toolLabel } from "../lib/format.ts";
 import {
   buildTimeline,
   groupExchanges,
@@ -37,6 +37,7 @@ import {
 import { record, startLive, type LiveSession, type Recording } from "../lib/voice.ts";
 import { fileSize } from "./FileViewer.tsx";
 import { Avatar } from "./Avatar.tsx";
+import { CredentialFix } from "./CredentialFix.tsx";
 import { QuestionCardView } from "./QuestionCard.tsx";
 import { RichText, type ChatFiles } from "./RichText.tsx";
 import { Button, IconButton } from "./ui.tsx";
@@ -47,6 +48,7 @@ export function Chat(props: {
   infoOpen: boolean;
   onToggleInfo: () => void;
   onEdit: () => void;
+  onVault: () => void;
 }): JSX.Element {
   const { client, agents, listen, run, call, callState } = useApp();
   const agent = props.agent;
@@ -166,17 +168,22 @@ export function Chat(props: {
   }, [items.shown, items.step]);
 
   const working = agent.presence === "working";
+  const status = statusOf(agent);
 
   return (
     <section class="chat" aria-label={`Chat with ${agent.name}`}>
       <header class="chat-head">
-        <Avatar agent={agent} size={40} presence={agent.presence} />
+        <Avatar agent={agent} size={40} presence={status.presence} />
         <div class="chat-title">
           <h1>{agent.name}</h1>
-          <span class={`chat-sub p-${agent.presence}`}>
+          <span class={`chat-sub p-${status.presence}`} title={agent.credential_error?.reason}>
             <span class="dot" />
-            {presenceLabel(agent.presence)}
-            {agent.description && <span class="muted"> · {agent.description}</span>}
+            {status.label}
+            {agent.credential_error ? (
+              <CredentialFix agent={agent} onEdit={props.onEdit} onVault={props.onVault} />
+            ) : (
+              agent.description && <span class="muted"> · {agent.description}</span>
+            )}
           </span>
         </div>
         <span class="spacer" />

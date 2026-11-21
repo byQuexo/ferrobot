@@ -1,6 +1,7 @@
 // Turns the daemon's messages and turn events into chat items. Pure, so the
 // merge rules are unit-tested without a browser.
 import type { MailMessage, QuestionAnswered, QuestionCard, StoredEvent } from "../api.ts";
+import { credentialLabel } from "./format.ts";
 
 export type TimelineItem =
   | { type: "user"; key: string; at: string; text: string; status: MailMessage["status"] }
@@ -139,6 +140,13 @@ export function buildTimeline(
 
   const tools = new Map<string, Extract<TimelineItem, { type: "tool" }>>();
   const finished = new Set<string>();
+  // A turn that hit a credential problem shows the problem's notice instead of its error.
+  const credentialTurns = new Set(
+    events.flatMap((e) => {
+      const turn = (e.payload as Payload)["turn_id"];
+      return e.kind === "credential_error" && typeof turn === "string" ? [turn] : [];
+    }),
+  );
   for (const e of events) {
     const p = e.payload as unknown as Payload;
     const key = `e${String(e.id)}`;
@@ -206,7 +214,16 @@ export function buildTimeline(
           denied: str(p["reason"]),
         });
         break;
+      case "credential_error":
+        push({
+          type: "error",
+          key,
+          at: e.created_at,
+          text: `${credentialLabel(p["kind"] === "missing" ? "missing" : "rejected")}: ${str(p["reason"])}. Messages wait until it is fixed.`,
+        });
+        break;
       case "turn_done":
+        if (p["outcome"] === "failed" && e.turn_id && credentialTurns.has(e.turn_id)) break;
         if (p["outcome"] === "failed") {
           push({
             type: "error",

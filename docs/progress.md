@@ -1442,3 +1442,31 @@ Replaces the mock-driver demo from "Release prep 4".
   as described. The Usage totals in the hero and screenshots include every
   take of that day on the demo daemon, not one run.
 - Not tested: the clips' and screenshots' scenes in the keyless mode.
+
+## Credential status (`fix/credential-status`)
+
+**Done**
+
+- Proxy: missing keys (daemon default, provider without key, `ChatGPT`
+  sign-in) and upstream 401s (Bedrock: also 403) set the agent's
+  `credential_error` (`missing` / `rejected`, reason, since) and publish it.
+- Dispatch: no new turns while it stands; messages stay queued; one
+  `credential_error` notice per problem. Cleared by an agent provider/model
+  change, any provider PATCH or Vault key, a `ChatGPT` sign-in, or
+  `POST /v1/agents/{id}/retry`.
+- UI: "Key missing" / "Key rejected" with a red dot in the sidebar row, the
+  chat header and the profile, with "Choose a model" (agent dialog, for the
+  daemon default) or "Open Vault", and "Retry". The chat shows the notice
+  instead of the failed turn's error.
+
+**Tested**
+
+- Rust: `credential_problems_hold_turns_until_fixed` (default without a daemon
+  key, queued messages, one notice, a provider clears it and the queue runs, a
+  401 sets "rejected", a retry that did not help sets it again, a good key
+  clears it, the key never in the view or events); specs with the new field and
+  route.
+- Desktop: `statusOf` and the timeline notice.
+- Not tested: a real Claude, OpenAI or Codex driver hitting it (fake runner
+  only), Bedrock's 403, the `ChatGPT` sign-in clearing it, the UI in the Tauri
+  window.

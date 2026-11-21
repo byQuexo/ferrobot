@@ -63,6 +63,7 @@ pub fn router() -> Router<AppState> {
         .route("/v1/conversations", get(chat::list_conversations))
         .route("/v1/conversations/{a}/{b}", get(chat::conversation_thread))
         .route("/v1/agents/{id}/interrupt", post(chat::interrupt))
+        .route("/v1/agents/{id}/retry", post(chat::retry))
         .route(
             "/v1/agents/{id}/questions/{qid}/answer",
             post(chat::answer_question),

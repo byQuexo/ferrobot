@@ -206,6 +206,7 @@ pub(crate) async fn update_agent(
         .await?;
     if model_change {
         lifecycle::recreate(&state, id).await?;
+        crate::credentials::clear(&state, id).await;
     } else if reconfigure {
         agents::reconfigure(&state, id).await?;
     }

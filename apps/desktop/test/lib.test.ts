@@ -4,7 +4,7 @@ import { describe, it } from "node:test";
 import { DaemonClient, type MailMessage, type StoredEvent } from "../src/api.ts";
 import { hash } from "../src/lib/avatar.ts";
 import { characterOf, deriveCharacter, moodOf, rerollCharacter } from "../src/lib/character.ts";
-import { linkLabel, relativeTime, stepLabel, toolLabel } from "../src/lib/format.ts";
+import { linkLabel, relativeTime, statusOf, stepLabel, toolLabel } from "../src/lib/format.ts";
 import { buildTimeline, sharedFiles, withoutRoomTurns } from "../src/lib/timeline.ts";
 import {
   CallScript,
@@ -103,6 +103,25 @@ describe("avatar", () => {
 });
 
 describe("format", () => {
+  it("puts a credential problem over presence", () => {
+    const problem = (kind: "missing" | "rejected") => ({
+      kind,
+      reason: "provider oai has no API key: add it in Settings, Vault",
+      since: "2026-01-01T12:00:00Z",
+    });
+    assert.deepEqual(statusOf({ presence: "awake", credential_error: null }), {
+      presence: "awake",
+      label: "Awake",
+    });
+    assert.deepEqual(statusOf({ presence: "sleeping", credential_error: problem("missing") }), {
+      presence: "error",
+      label: "Key missing",
+    });
+    assert.equal(
+      statusOf({ presence: "awake", credential_error: problem("rejected") }).label,
+      "Key rejected",
+    );
+  });
   it("relative times", () => {
     const now = Date.parse("2026-01-01T12:00:00Z");
     assert.equal(relativeTime("2026-01-01T11:59:50Z", now), "just now");
@@ -235,6 +254,29 @@ describe("buildTimeline", () => {
       ["user", "assistant", "question", "assistant"],
     );
     assert.ok(items[3]?.type === "assistant" && items[3].text === "streaming here");
+  });
+
+  it("shows a credential problem once, instead of its turn's error", () => {
+    const items = buildTimeline(
+      ME,
+      [],
+      [
+        ev(
+          1,
+          "credential_error",
+          { kind: "missing", reason: "the daemon has no Anthropic key", turn_id: "t1" },
+          "2026-01-01T12:00:00Z",
+        ),
+        ev(2, "turn_done", { outcome: "failed", error: "API Error: 400" }, "2026-01-01T12:00:01Z"),
+        ev(3, "turn_done", { outcome: "failed", error: "boom" }, "2026-01-01T12:01:00Z", "t2"),
+      ],
+      new Map(),
+      names,
+    );
+    assert.deepEqual(
+      items.map((i) => (i.type === "error" ? i.text : i.type)),
+      ["Key missing: the daemon has no Anthropic key. Messages wait until it is fixed.", "boom"],
+    );
   });
 
   it("shows shared files and finds them by name", () => {

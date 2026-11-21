@@ -195,6 +195,7 @@ export class DaemonClient {
   sharedFile = (agent: string, file: number): Promise<SharedFile> =>
     this.#request("GET", `/v1/agents/${agent}/files/${String(file)}`);
   interrupt = (id: string): Promise<unknown> => this.#request("POST", `/v1/agents/${id}/interrupt`);
+  retry = (id: string): Promise<Agent> => this.#request("POST", `/v1/agents/${id}/retry`);
   answerQuestion = (
     id: string,
     question: number,

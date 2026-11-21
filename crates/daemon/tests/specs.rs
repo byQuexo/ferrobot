@@ -13,7 +13,7 @@ use ferrobot_core::{
     Agent, AgentId, AgentName, AgentStatus, AvatarCharacter, CharacterBody, CharacterEyes,
     MailMessage, MailStatus, Sender,
 };
-use ferrobot_daemon::views::{AgentView, Presence};
+use ferrobot_daemon::views::{AgentView, CredentialError, CredentialProblem, Presence};
 use ferrobot_daemon::{UiEvent, spec};
 use ferrobot_store::{Room, RoomLine, StoredEvent};
 use serde_json::json;
@@ -60,6 +60,7 @@ fn every_routed_path_is_documented() {
         "/v1/conversations",
         "/v1/conversations/{a}/{b}",
         "/v1/agents/{id}/interrupt",
+        "/v1/agents/{id}/retry",
         "/v1/agents/{id}/questions/{qid}/answer",
         "/v1/agents/{id}/memory",
         "/v1/agents/{id}/memory/{key}",
@@ -108,7 +109,7 @@ fn every_routed_path_is_documented() {
     }
     assert_eq!(
         documented.len(),
-        55,
+        56,
         "undocumented extra paths: {documented:?}"
     );
 }
@@ -197,6 +198,11 @@ fn ui_events_validate_against_schema() {
                 presence: Presence::Working,
                 unread: 3,
                 avatar_url: Some(format!("/v1/agents/{}/avatar?v=2", agent.id)),
+                credential_error: Some(CredentialError {
+                    kind: CredentialProblem::Rejected,
+                    reason: "provider p rejected its API key: replace it in Settings, Vault".into(),
+                    since: OffsetDateTime::UNIX_EPOCH,
+                }),
             }),
         },
         UiEvent::Delta {

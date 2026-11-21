@@ -1,5 +1,6 @@
 //! Tracks connected runners and wakes their dispatch loops.
 
+use std::collections::hash_map::Entry;
 use std::collections::{HashMap, HashSet};
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex, MutexGuard};
@@ -8,6 +9,8 @@ use std::time::Instant;
 use ferrobot_core::AgentId;
 use ferrobot_core::protocol::DaemonFrame;
 use tokio::sync::{Notify, mpsc};
+
+use crate::views::CredentialError;
 
 #[derive(Debug)]
 struct Conn {
@@ -37,6 +40,8 @@ struct Inner {
     lifecycle: HashMap<AgentId, Arc<tokio::sync::Mutex<()>>>,
     /// Agents whose runner was refused since it last connected.
     refused: HashSet<AgentId>,
+    /// Agents whose model credential is missing or rejected; their turns wait.
+    credentials: HashMap<AgentId, CredentialError>,
 }
 
 impl Hub {
@@ -88,6 +93,26 @@ impl Hub {
 
     pub fn is_refused(&self, agent: AgentId) -> bool {
         self.lock().refused.contains(&agent)
+    }
+
+    /// Records the agent's credential problem unless one is already known; true if it is new.
+    pub fn set_credential_error(&self, agent: AgentId, error: CredentialError) -> bool {
+        match self.lock().credentials.entry(agent) {
+            Entry::Occupied(_) => false,
+            Entry::Vacant(e) => {
+                e.insert(error);
+                true
+            }
+        }
+    }
+
+    /// Forgets the agent's credential problem; true if there was one.
+    pub fn clear_credential_error(&self, agent: AgentId) -> bool {
+        self.lock().credentials.remove(&agent).is_some()
+    }
+
+    pub fn credential_error(&self, agent: AgentId) -> Option<CredentialError> {
+        self.lock().credentials.get(&agent).cloned()
     }
 
     /// Removes the connection if it is still the registered one.
@@ -199,6 +224,7 @@ impl Hub {
         inner.activity.remove(&agent);
         inner.started.remove(&agent);
         inner.refused.remove(&agent);
+        inner.credentials.remove(&agent);
     }
 
     /// Wakes the agent's dispatch loop (no-op if nothing is waiting yet; the

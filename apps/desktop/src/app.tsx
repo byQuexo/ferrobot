@@ -216,6 +216,10 @@ export function App(): JSX.Element {
     callState,
   };
   const agent = selected ? agents.get(selected) : undefined;
+  const openVault = (): void => {
+    setUsage(false);
+    setSettings("vault");
+  };
   const withInfo = agent && infoOpen && !pair && room === null && !settings && !usage;
 
   return (
@@ -281,6 +285,7 @@ export function App(): JSX.Element {
             onEdit={() => {
               setDialog("edit");
             }}
+            onVault={openVault}
           />
         ) : (
           <main class="chat chat-none">
@@ -325,6 +330,7 @@ export function App(): JSX.Element {
             onEdit={() => {
               setDialog("edit");
             }}
+            onVault={openVault}
             onDeleted={() => {
               setSelected(null);
             }}
