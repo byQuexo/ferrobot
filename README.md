@@ -16,9 +16,7 @@
 
 ![ferrobot demo: researcher reads the backon docs through the DeepWiki connector, asks you a question and hands the build to builder, which runs cargo on its own computer; then a shared report and the cost in Usage](docs/assets/demo.gif)
 
-Also as [MP4](docs/assets/demo.mp4) (real Claude Sonnet 5.5 turns; waits sped up 2x, long ones shortened)
-
-[![Voice room video: you call researcher, it brings builder into the call, builder reruns the example on its own computer and researcher sums up](docs/assets/voice-room.png)](docs/assets/voice-room.mp4)
+https://github.com/user-attachments/assets/3cbf0815-14ef-46f9-9320-c421fa614b9e
 
 Voice room, with sound: [MP4](docs/assets/voice-room.mp4) (real Claude Sonnet 5.5 turns and ElevenLabs voices; waits sped up 2x, long ones shortened)
 
