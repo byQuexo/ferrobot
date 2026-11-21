@@ -18,6 +18,7 @@ import { loadOrder, moveId, orderAgents, saveOrder } from "../lib/order.ts";
 import { Avatar } from "./Avatar.tsx";
 import { CallWindow } from "./CallWindow.tsx";
 import { ConversationList, type Pair } from "./Conversations.tsx";
+import { RoomList } from "./Rooms.tsx";
 import { Button, Dialog, IconButton, Logo } from "./ui.tsx";
 
 /** Drag-and-drop and the right-click menu, shared by both kinds of agent entries. */
@@ -36,6 +37,8 @@ export function Sidebar(props: {
   onSelect: (id: string) => void;
   pair: Pair | null;
   onOpenPair: (p: Pair) => void;
+  room: number | null;
+  onOpenRoom: (id: number) => void;
   onCreate: () => void;
   onSettings: () => void;
   settingsOpen: boolean;
@@ -51,6 +54,7 @@ export function Sidebar(props: {
   const [menu, setMenu] = useState<{ agent: Agent; x: number; y: number } | null>(null);
   const [deleting, setDeleting] = useState<Agent | null>(null);
   const dragged = useRef<string | null>(null);
+  const chatOpen = !props.pair && props.room === null;
   const list = useMemo(() => {
     const f = filter.trim().toLowerCase();
     const shown = [...agents.values()].filter(
@@ -149,7 +153,7 @@ export function Sidebar(props: {
                 <PinnedAgent
                   key={a.id}
                   agent={a}
-                  active={!props.pair && a.id === props.selected}
+                  active={chatOpen && a.id === props.selected}
                   onSelect={props.onSelect}
                   row={handlers(a, true)}
                 />
@@ -162,7 +166,7 @@ export function Sidebar(props: {
             <AgentRow
               key={a.id}
               agent={a}
-              active={!props.pair && a.id === props.selected}
+              active={chatOpen && a.id === props.selected}
               onSelect={props.onSelect}
               row={handlers(a, false)}
             />
@@ -171,6 +175,7 @@ export function Sidebar(props: {
           <p class="muted pad">No agent matches “{filter}”.</p>
         )}
         <ConversationList active={props.pair} onOpen={props.onOpenPair} />
+        <RoomList active={props.room} onOpen={props.onOpenRoom} />
       </nav>
       {menu && (
         <AgentMenu

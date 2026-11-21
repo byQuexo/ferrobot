@@ -72,15 +72,16 @@ export class CallSession {
         this.#toast("Set up voice first: a key and a voice (Settings → Voice)", "info");
         return;
       }
-      const agents = await this.#client.setCall([agent]);
+      const view = await this.#client.setCall([agent]);
       if (round !== this.#round) return;
       this.#set({
-        agents,
+        agents: view.agents,
         host: agent,
         since: Date.now(),
         muted: false,
         hearing: false,
         ending: false,
+        room: view.room_id ?? null,
       });
       if (settings.provider !== "elevenlabs") {
         this.#toast(
@@ -147,7 +148,7 @@ export class CallSession {
         break;
       }
       case "call": {
-        const next = callChanged(state, e.agents);
+        const next = callChanged(state, e.agents, e.room_id ?? null);
         if (next === state) break;
         if (next?.ending) {
           this.#stopListening();

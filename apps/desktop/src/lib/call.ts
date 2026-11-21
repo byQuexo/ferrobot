@@ -253,14 +253,26 @@ export interface CallState {
   hearing: boolean;
   /** The daemon ended the call; the last words are still being spoken. */
   ending: boolean;
+  /** The call's room, once a second agent joined. */
+  room: number | null;
 }
 
 /** Applies a `call` event: an agent joined or left, or (empty) the call ended. */
-export function callChanged(state: CallState | null, agents: string[]): CallState | null {
+export function callChanged(
+  state: CallState | null,
+  agents: string[],
+  room: number | null = null,
+): CallState | null {
   if (!state || state.ending) return state;
   if (agents.length === 0) return { ...state, agents, hearing: false, ending: true };
   const host = agents.includes(state.host) ? state.host : (agents[0] ?? state.host);
-  return { ...state, agents, host };
+  return { ...state, agents, host, room };
+}
+
+/** A room's name from who took part, e.g. `Call · ann, bob`; agents deleted since are left out. */
+export function roomTitle(members: string[], nameOf: (id: string) => string | undefined): string {
+  const names = members.flatMap((id) => nameOf(id) ?? []);
+  return names.length ? `Call · ${names.join(", ")}` : "Call";
 }
 
 /** A running call's length, e.g. `0:42` or `1:05:03`. */

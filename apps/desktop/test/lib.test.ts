@@ -12,6 +12,7 @@ import {
   callClock,
   isPass,
   operatorSaid,
+  roomTitle,
   splitSentences,
   type CallState,
   type Line,
@@ -203,6 +204,36 @@ describe("buildTimeline", () => {
     assert.ok(routine?.type === "routine" && routine.routine === "digest");
     const deleted = items[7];
     assert.ok(deleted?.type === "routine" && deleted.routine === null);
+  });
+
+  it("leaves call room messages and turns out of the chat, but keeps cards and files", () => {
+    const fromRoom = msg(2, { kind: "user" }, ME, "in the room", "2026-01-01T10:01:00Z");
+    const items = buildTimeline(
+      ME,
+      [
+        msg(1, { kind: "user" }, ME, "just me", "2026-01-01T10:00:00Z"),
+        { ...fromRoom, room_id: 3 },
+      ],
+      [
+        ev(10, "message_in", { message_id: 1 }, "2026-01-01T10:00:01Z", "t1"),
+        ev(11, "assistant_text", { text: "Hi." }, "2026-01-01T10:00:02Z", "t1"),
+        ev(12, "message_in", { message_id: 2, room_id: 3 }, "2026-01-01T10:01:01Z", "t2"),
+        ev(13, "tool_use", { id: "c", name: "create_agent" }, "2026-01-01T10:01:02Z", "t2"),
+        ev(14, "assistant_text", { text: "Said in the room." }, "2026-01-01T10:01:03Z", "t2"),
+        ev(15, "turn_done", { outcome: "failed" }, "2026-01-01T10:01:04Z", "t2"),
+        ev(16, "question", { card: { questions: [] } }, "2026-01-01T10:01:05Z", ""),
+      ],
+      new Map([
+        ["t2", "streaming in the room"],
+        ["t3", "streaming here"],
+      ]),
+      names,
+    );
+    assert.deepEqual(
+      items.map((i) => i.type),
+      ["user", "assistant", "question", "assistant"],
+    );
+    assert.ok(items[3]?.type === "assistant" && items[3].text === "streaming here");
   });
 
   it("shows shared files and finds them by name", () => {
@@ -638,14 +669,29 @@ describe("voice call", () => {
       muted: true,
       hearing: true,
       ending: false,
+      room: null,
     };
     assert.equal(callChanged(null, ["a"]), null, "no call here, nothing to follow");
-    assert.deepEqual(callChanged(call, ["a", "b", "c"])?.agents, ["a", "b", "c"]);
+    assert.deepEqual(callChanged(call, ["a", "b", "c"], 7), {
+      ...call,
+      agents: ["a", "b", "c"],
+      room: 7,
+    });
     assert.deepEqual(callChanged(call, ["a"]), { ...call, agents: ["a"] });
     assert.deepEqual(callChanged(call, ["b"]), { ...call, agents: ["b"], host: "b" });
-    const ended = callChanged(call, []);
-    assert.deepEqual(ended, { ...call, agents: [], hearing: false, ending: true });
+    const ended = callChanged({ ...call, room: 7 }, []);
+    assert.deepEqual(ended, { ...call, agents: [], hearing: false, ending: true, room: 7 });
     assert.equal(callChanged(ended, ["a"]), ended, "an ended call stays ended");
+  });
+
+  it("names a room after who took part", () => {
+    const names = new Map([
+      ["a", "team-lead"],
+      ["b", "product-compare"],
+    ]);
+    const nameOf = (id: string): string | undefined => names.get(id);
+    assert.equal(roomTitle(["a", "gone", "b"], nameOf), "Call · team-lead, product-compare");
+    assert.equal(roomTitle(["gone"], nameOf), "Call");
   });
 
   it("shows how long the call runs", () => {

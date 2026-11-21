@@ -9,7 +9,7 @@ import { IconButton } from "./ui.tsx";
 
 /** The running call: who is in it and who speaks, its length, mute, hang up and a way back. */
 export function CallWindow(): JSX.Element | null {
-  const { call, callState: state, agents, openAgent } = useApp();
+  const { call, callState: state, agents, openAgent, openRoom } = useApp();
   const [, redraw] = useState(0);
   // Captions and the speaking agent change often; only this window follows them.
   useEffect(
@@ -33,6 +33,7 @@ export function CallWindow(): JSX.Element | null {
 
   const people = state.agents.flatMap((id) => agents.get(id) ?? []);
   const host = agents.get(state.host);
+  const room = state.room;
   const speaker = call.speaking ? agents.get(call.speaking) : undefined;
   const status = speaker
     ? `${speaker.name} is speaking`
@@ -79,15 +80,26 @@ export function CallWindow(): JSX.Element | null {
         >
           {state.muted ? <MicOff size={18} /> : <Mic size={18} />}
         </IconButton>
-        {host && (
+        {room !== null ? (
           <IconButton
-            label={`Open the chat with ${host.name}`}
+            label="Open the call room"
             onClick={() => {
-              openAgent(host.id);
+              openRoom(room);
             }}
           >
             <MessageSquare size={18} />
           </IconButton>
+        ) : (
+          host && (
+            <IconButton
+              label={`Open the chat with ${host.name}`}
+              onClick={() => {
+                openAgent(host.id);
+              }}
+            >
+              <MessageSquare size={18} />
+            </IconButton>
+          )
         )}
         <IconButton
           label="Hang up"

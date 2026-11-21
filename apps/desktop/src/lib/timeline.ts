@@ -54,17 +54,31 @@ const SYSTEM_TEXT: Record<string, (p: Payload) => string> = {
   runner_refused: (p) => str(p["reason"]),
 };
 
+/** Turns started by a call room message: they belong to the room, not the agent's chat. */
+export function roomTurns(events: readonly StoredEvent[]): Set<string> {
+  const out = new Set<string>();
+  for (const e of events) {
+    if (e.kind === "message_in" && e.turn_id && (e.payload as Payload)["room_id"] != null)
+      out.add(e.turn_id);
+  }
+  return out;
+}
+
 /**
  * Builds the chat for `agentId`. `live` holds streamed text of turns whose
- * final `assistant_text` has not arrived yet.
+ * final `assistant_text` has not arrived yet. Call room messages and turns are left out.
  */
 export function buildTimeline(
   agentId: string,
-  messages: readonly MailMessage[],
-  events: readonly StoredEvent[],
-  live: ReadonlyMap<string, string>,
+  allMessages: readonly MailMessage[],
+  allEvents: readonly StoredEvent[],
+  allLive: ReadonlyMap<string, string>,
   names: Names,
 ): TimelineItem[] {
+  const inRoom = roomTurns(allEvents);
+  const messages = allMessages.filter((m) => m.room_id == null);
+  const events = allEvents.filter((e) => !e.turn_id || !inRoom.has(e.turn_id));
+  const live = [...allLive].filter(([turn]) => !inRoom.has(turn));
   const items: { item: TimelineItem; order: number }[] = [];
   let order = 0;
   const push = (item: TimelineItem): void => {
