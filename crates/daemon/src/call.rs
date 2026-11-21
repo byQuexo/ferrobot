@@ -50,8 +50,13 @@ pub struct Call {
     prompts: VecDeque<(AgentId, String, String)>,
 }
 
+/// `(pass)`, also as `pass` or with a full stop: models drop the brackets.
 fn is_pass(text: &str) -> bool {
-    text.trim().eq_ignore_ascii_case(PASS)
+    text.trim()
+        .trim_end_matches(['.', '!'])
+        .trim_start_matches('(')
+        .trim_end_matches(')')
+        .eq_ignore_ascii_case(PASS.trim_matches(['(', ')']))
 }
 
 impl Call {
@@ -342,7 +347,9 @@ mod tests {
             ..Call::default()
         };
         call.hear(a, PASS);
+        call.hear(a, "Pass.");
         assert!(call.passed_on(a).is_empty(), "a pass is not passed on");
+        assert!(!is_pass("passing on that"));
         call.hear(a, "Nice weather.");
         assert!(call.passed_on(a).is_empty(), "nobody was addressed");
         call.messages("ok");

@@ -153,7 +153,7 @@ async fn provision_locked(state: &AppState, agent: &Agent) -> Result<SandboxHand
 }
 
 /// Starts the agent's sandbox, provisioning it if it does not exist (anymore) or runs an
-/// outdated CLI image (the disk is kept).
+/// outdated image: other CLIs, or a rebuilt runner under the same name (the disk is kept).
 pub async fn wake(state: &AppState, id: AgentId) -> Result<(), ApiError> {
     let lock = state.hub.lifecycle_lock(id);
     let _guard = lock.lock().await;
@@ -164,7 +164,7 @@ pub async fn wake(state: &AppState, id: AgentId) -> Result<(), ApiError> {
     };
     let image = crate::clis::image(state).await?;
     if state.backend.is_stale(&handle, image.as_deref()).await? {
-        tracing::info!(agent = %agent.name, "new CLI image, recreating the sandbox");
+        tracing::info!(agent = %agent.name, "new sandbox image, recreating the sandbox");
         state.backend.destroy(&handle, false).await?;
         return provision_locked(state, &agent).await.map(|_| ());
     }

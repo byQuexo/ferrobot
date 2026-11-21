@@ -65,7 +65,7 @@ export function splitSentences(text: string): { done: string[]; rest: string } {
 }
 
 /** An agent's "nothing to add" reply in a call: never spoken. */
-export const isPass = (text: string): boolean => /^\(pass\)[.!]?$/i.test(text.trim());
+export const isPass = (text: string): boolean => /^\(?pass\)?[.!]?$/i.test(text.trim());
 
 const words = (s: string): string[] => s.toLowerCase().match(/[\p{L}\p{N}']+/gu) ?? [];
 
