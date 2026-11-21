@@ -6,20 +6,21 @@ use axum::body::{Body, Bytes};
 use axum::extract::{Path, State};
 use axum::http::{HeaderMap, HeaderValue, StatusCode, header};
 use axum::response::Response;
-use ferrobot_core::{AgentId, MailMessage, Sender};
+use ferrobot_core::{AgentId, MailMessage};
+use ferrobot_store::{Room, RoomLine};
 use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;
 
 use super::ApiResult;
 use super::agents::explicit;
 use super::providers::{check_key, clean};
+use crate::AppState;
 use crate::call::MAX_CALL_TEXT_BYTES;
 use crate::error::{ApiError, ErrorBody};
 use crate::voice::{
     self, LiveMode, MAX_SPEECH_CHARS, ModelOption, Speak, Transcript, VoiceOption, VoiceProvider,
     VoiceSettings,
 };
-use crate::{AppState, UiEvent};
 
 const SETTING: &str = "voice";
 
@@ -484,19 +485,26 @@ pub(crate) async fn live(
 pub(crate) struct CallView {
     /// Agents in the operator's voice call (at most 4); empty: no call.
     agents: Vec<AgentId>,
+    /// The call's room, once a second agent joined; ignored when sent.
+    #[serde(default)]
+    #[schema(read_only)]
+    room_id: Option<i64>,
+}
+
+async fn call_view(state: &AppState) -> CallView {
+    let (agents, room_id) = state.call_view().await;
+    CallView { agents, room_id }
 }
 
 /// Who is in the operator's voice call.
 #[utoipa::path(get, path = "/v1/call", tag = "voice",
     responses((status = 200, body = CallView)))]
 pub(crate) async fn get_call(State(state): State<AppState>) -> Json<CallView> {
-    Json(CallView {
-        agents: state.call_agents(),
-    })
+    Json(call_view(&state).await)
 }
 
-/// Starts, changes or (with no agents) ends the voice call. Agents in it
-/// can invite others with their `invite_to_call` tool.
+/// Starts, changes or (with no agents) ends the voice call. Agents in it can invite others
+/// with their `invite_to_call` tool. With two or more agents the call moves into a room.
 #[utoipa::path(put, path = "/v1/call", tag = "voice",
     request_body = CallView,
     responses((status = 200, body = CallView),
@@ -515,22 +523,24 @@ pub(crate) async fn put_call(
     for agent in &req.agents {
         state.store.get_agent(*agent).await?;
     }
-    state.set_call(req.agents).map_err(ApiError::BadRequest)?;
-    Ok(Json(CallView {
-        agents: state.call_agents(),
-    }))
+    state
+        .set_call(req.agents)
+        .await
+        .map_err(ApiError::BadRequest)?;
+    Ok(Json(call_view(&state).await))
 }
 
 #[derive(Debug, Deserialize, ToSchema)]
 pub(crate) struct CallMessage {
-    /// 1..19718 bytes after trimming, counting `@name` mentions as their
+    /// 1..19480 bytes after trimming, counting `@name` mentions as their
     /// stored `<@agent-id>` tokens (the rest of a message is left for what
     /// the others said).
     body: String,
 }
 
 /// Sends the operator's message to every agent in the call, each with what the others said
-/// since its last turn and the call instructions.
+/// since its last turn and the call instructions. In a room it is also a line there, and its
+/// messages (`room_id` set) stay out of the agents' chats.
 #[utoipa::path(post, path = "/v1/call/messages", tag = "voice",
     request_body = CallMessage,
     responses(
@@ -547,28 +557,40 @@ pub(crate) async fn post_call_message(
             "body must be 1..{MAX_CALL_TEXT_BYTES} bytes"
         )));
     }
-    let parts = state.call_messages(&body);
-    if parts.is_empty() {
-        return Err(ApiError::Conflict("there is no voice call".into()));
-    }
-    let mut sent = Vec::new();
-    for (agent, prompt) in parts {
-        state.remember_call_prompt(agent, &body, prompt);
-        match state
-            .store
-            .enqueue_message(Sender::User, agent, body.clone(), None)
-            .await
-        {
-            Ok(message) => {
-                state.message_arrived(agent);
-                state.publish(UiEvent::Message {
-                    message: message.clone(),
-                });
-                sent.push(message);
-            }
-            // E.g. deleted mid-call; the others still get it.
-            Err(e) => tracing::warn!(%agent, error = %e, "call message not queued"),
-        }
-    }
+    let sent = state
+        .say_in_call(&body)
+        .await
+        .ok_or_else(|| ApiError::Conflict("there is no voice call".into()))?;
     Ok((StatusCode::ACCEPTED, Json(sent)))
+}
+
+/// A room with what was said in it.
+#[derive(Debug, Serialize, ToSchema)]
+pub(crate) struct RoomTranscript {
+    #[serde(flatten)]
+    room: Room,
+    /// Oldest first; the last 1000.
+    lines: Vec<RoomLine>,
+}
+
+/// Call rooms (calls with two or more agents), newest first; the last 200.
+#[utoipa::path(get, path = "/v1/rooms", tag = "voice",
+    responses((status = 200, body = Vec<Room>)))]
+pub(crate) async fn list_rooms(State(state): State<AppState>) -> ApiResult<Vec<Room>> {
+    Ok(Json(state.store.rooms(200).await?))
+}
+
+/// One call room: who took part and what was said.
+#[utoipa::path(get, path = "/v1/rooms/{id}", tag = "voice",
+    params(("id" = i64, Path, description = "Room id")),
+    responses((status = 200, body = RoomTranscript),
+        (status = 404, description = "Unknown room", body = ErrorBody)))]
+pub(crate) async fn get_room(
+    State(state): State<AppState>,
+    Path(id): Path<i64>,
+) -> ApiResult<RoomTranscript> {
+    Ok(Json(RoomTranscript {
+        room: state.store.room(id).await?,
+        lines: state.store.room_lines(id, 1000).await?,
+    }))
 }

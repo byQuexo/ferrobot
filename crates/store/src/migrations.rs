@@ -240,6 +240,31 @@ const MIGRATIONS: &[&str] = &[
     "ALTER TABLE usage ADD COLUMN cost_usd REAL;",
     // v15: the tool groups an agent may use, a JSON array; NULL = every group
     "ALTER TABLE agents ADD COLUMN tools TEXT;",
+    // v16: call rooms (calls with two or more agents), their members and lines; messages that
+    // carry a room turn name their room. No agent FKs, so a room outlives deleted agents.
+    r"
+    CREATE TABLE rooms (
+        id         INTEGER PRIMARY KEY AUTOINCREMENT,
+        created_at TEXT NOT NULL,
+        ended_at   TEXT
+    );
+    CREATE TABLE room_members (
+        room_id   INTEGER NOT NULL REFERENCES rooms(id) ON DELETE CASCADE,
+        agent_id  TEXT NOT NULL,
+        joined_at TEXT NOT NULL,
+        PRIMARY KEY (room_id, agent_id)
+    );
+    CREATE TABLE room_lines (
+        id         INTEGER PRIMARY KEY AUTOINCREMENT,
+        room_id    INTEGER NOT NULL REFERENCES rooms(id) ON DELETE CASCADE,
+        speaker    TEXT NOT NULL,
+        body       TEXT NOT NULL,
+        created_at TEXT NOT NULL
+    );
+    CREATE INDEX room_lines_room ON room_lines(room_id, id);
+    ALTER TABLE messages ADD COLUMN room_id INTEGER REFERENCES rooms(id);
+    CREATE INDEX events_turn ON events(turn_id) WHERE turn_id IS NOT NULL;
+    ",
 ];
 
 pub(crate) fn run(conn: &mut Connection) -> Result<(), StoreError> {
@@ -416,5 +441,38 @@ mod tests {
             .query_row("SELECT tools FROM agents", [], |r| r.get(0))
             .unwrap();
         assert_eq!(tools, None, "NULL: existing agents keep every tool group");
+    }
+
+    #[test]
+    fn v15_messages_stay_in_the_chat_and_rooms_start_empty() {
+        let mut conn = Connection::open_in_memory().unwrap();
+        for sql in &MIGRATIONS[..15] {
+            conn.execute_batch(sql).unwrap();
+        }
+        conn.pragma_update(None, "user_version", 15).unwrap();
+        conn.execute_batch(
+            "INSERT INTO agents (id, name, instructions, status, created_at)
+             VALUES ('00000000-0000-4000-8000-000000000001', 'alice', 'x', 'running',
+                     '2026-01-01T00:00:00Z');
+             INSERT INTO messages (sender, recipient, body, status, created_at, updated_at)
+             VALUES ('user', '00000000-0000-4000-8000-000000000001', 'hi', 'delivered',
+                     '2026-01-01T00:00:00Z', '2026-01-01T00:00:00Z');",
+        )
+        .unwrap();
+        run(&mut conn).unwrap();
+        let (body, room): (String, Option<i64>) = conn
+            .query_row("SELECT body, room_id FROM messages", [], |r| {
+                Ok((r.get(0)?, r.get(1)?))
+            })
+            .unwrap();
+        assert_eq!((body.as_str(), room), ("hi", None), "old messages are chat");
+        let rooms: i64 = conn
+            .query_row(
+                "SELECT (SELECT COUNT(*) FROM rooms) + (SELECT COUNT(*) FROM room_lines)",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert_eq!(rooms, 0);
     }
 }

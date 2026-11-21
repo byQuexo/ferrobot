@@ -15,7 +15,7 @@ use ferrobot_core::{
 };
 use ferrobot_daemon::views::{AgentView, Presence};
 use ferrobot_daemon::{UiEvent, spec};
-use ferrobot_store::StoredEvent;
+use ferrobot_store::{Room, RoomLine, StoredEvent};
 use serde_json::json;
 use time::OffsetDateTime;
 
@@ -96,6 +96,8 @@ fn every_routed_path_is_documented() {
         "/v1/voice/transcription",
         "/v1/call",
         "/v1/call/messages",
+        "/v1/rooms",
+        "/v1/rooms/{id}",
         "/v1/usage",
         "/v1/usage/prices",
         "/v1/settings",
@@ -106,7 +108,7 @@ fn every_routed_path_is_documented() {
     }
     assert_eq!(
         documented.len(),
-        53,
+        55,
         "undocumented extra paths: {documented:?}"
     );
 }
@@ -169,6 +171,7 @@ fn ui_events_validate_against_schema() {
     };
     let message = MailMessage {
         priority: None,
+        room_id: None,
         id: 1,
         sender: Sender::Agent(agent.id),
         recipient: AgentId::new(),
@@ -206,6 +209,27 @@ fn ui_events_validate_against_schema() {
         UiEvent::AgentDeleted { agent_id: agent.id },
         UiEvent::Message { message },
         UiEvent::Event { event },
+        UiEvent::Call {
+            agents: vec![agent.id],
+            room_id: Some(3),
+        },
+        UiEvent::Room {
+            room: Room {
+                id: 3,
+                members: vec![agent.id],
+                created_at: OffsetDateTime::UNIX_EPOCH,
+                ended_at: None,
+            },
+        },
+        UiEvent::RoomLine {
+            line: RoomLine {
+                id: 1,
+                room_id: 3,
+                speaker: Sender::User,
+                body: "hi".into(),
+                created_at: OffsetDateTime::UNIX_EPOCH,
+            },
+        },
     ] {
         let value = serde_json::to_value(&ev).unwrap();
         let errors: Vec<String> = v.iter_errors(&value).map(|e| e.to_string()).collect();

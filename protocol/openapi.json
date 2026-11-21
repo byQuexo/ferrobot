@@ -2147,7 +2147,7 @@
         "tags": [
           "voice"
         ],
-        "summary": "Starts, changes or (with no agents) ends the voice call. Agents in it\ncan invite others with their `invite_to_call` tool.",
+        "summary": "Starts, changes or (with no agents) ends the voice call. Agents in it can invite others\nwith their `invite_to_call` tool. With two or more agents the call moves into a room.",
         "operationId": "put_call",
         "requestBody": {
           "content": {
@@ -2217,7 +2217,7 @@
         "tags": [
           "voice"
         ],
-        "summary": "Sends the operator's message to every agent in the call, each with what the others said\nsince its last turn and the call instructions.",
+        "summary": "Sends the operator's message to every agent in the call, each with what the others said\nsince its last turn and the call instructions. In a room it is also a line there, and its\nmessages (`room_id` set) stay out of the agents' chats.",
         "operationId": "post_call_message",
         "requestBody": {
           "content": {
@@ -3513,6 +3513,91 @@
           },
           "404": {
             "description": "Unknown provider",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/rooms": {
+      "get": {
+        "tags": [
+          "voice"
+        ],
+        "summary": "Call rooms (calls with two or more agents), newest first; the last 200.",
+        "operationId": "list_rooms",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/Room"
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or wrong API token",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/rooms/{id}": {
+      "get": {
+        "tags": [
+          "voice"
+        ],
+        "summary": "One call room: who took part and what was said.",
+        "operationId": "get_room",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "Room id",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RoomTranscript"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or wrong API token",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Unknown room",
             "content": {
               "application/json": {
                 "schema": {
@@ -4901,7 +4986,7 @@
         "properties": {
           "body": {
             "type": "string",
-            "description": "1..19718 bytes after trimming, counting `@name` mentions as their\nstored `<@agent-id>` tokens (the rest of a message is left for what\nthe others said)."
+            "description": "1..19480 bytes after trimming, counting `@name` mentions as their\nstored `<@agent-id>` tokens (the rest of a message is left for what\nthe others said)."
           }
         }
       },
@@ -4917,6 +5002,15 @@
               "$ref": "#/components/schemas/AgentId"
             },
             "description": "Agents in the operator's voice call (at most 4); empty: no call."
+          },
+          "room_id": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64",
+            "description": "The call's room, once a second agent joined; ignored when sent.",
+            "readOnly": true
           }
         }
       },
@@ -5693,6 +5787,14 @@
             ],
             "description": "`true`: wakes the recipient and goes first; `false`: waits for its next turn\nwithout waking it; `null` (default): queues and wakes."
           },
+          "room_id": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64",
+            "description": "The call room whose turn this message carries; such messages stay out of the agent's chat."
+          },
           "status": {
             "$ref": "#/components/schemas/MailStatus"
           },
@@ -6177,6 +6279,95 @@
           "text",
           "secret"
         ]
+      },
+      "Room": {
+        "type": "object",
+        "description": "A voice call with two or more agents; kept as history once the call ended.",
+        "required": [
+          "id",
+          "members",
+          "created_at"
+        ],
+        "properties": {
+          "id": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "members": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AgentId"
+            },
+            "description": "Every agent that took part, in the order they joined."
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "ended_at": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time",
+            "description": "When the call ended; `null` while it runs."
+          }
+        }
+      },
+      "RoomLine": {
+        "type": "object",
+        "description": "One thing said in a room, by the operator (`user`) or an agent.",
+        "required": [
+          "id",
+          "room_id",
+          "speaker",
+          "body",
+          "created_at"
+        ],
+        "properties": {
+          "id": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "room_id": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "speaker": {
+            "$ref": "#/components/schemas/Sender"
+          },
+          "body": {
+            "type": "string",
+            "description": "The words; mentions are `<@agent-id>` tokens."
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      },
+      "RoomTranscript": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/Room"
+          },
+          {
+            "type": "object",
+            "required": [
+              "lines"
+            ],
+            "properties": {
+              "lines": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/components/schemas/RoomLine"
+                },
+                "description": "Oldest first; the last 1000."
+              }
+            }
+          }
+        ],
+        "description": "A room with what was said in it."
       },
       "Routine": {
         "type": "object",
@@ -6833,7 +7024,7 @@
           },
           {
             "type": "object",
-            "description": "Who is in the operator's voice call changed (empty: it ended).",
+            "description": "Who is in the operator's voice call changed (empty: it ended). `room_id`: the call's room,\nonce a second agent joined.",
             "required": [
               "agents",
               "type"
@@ -6845,10 +7036,55 @@
                   "$ref": "#/components/schemas/AgentId"
                 }
               },
+              "room_id": {
+                "type": [
+                  "integer",
+                  "null"
+                ],
+                "format": "int64"
+              },
               "type": {
                 "type": "string",
                 "enum": [
                   "call"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "description": "A call room opened, gained a member or ended.",
+            "required": [
+              "room",
+              "type"
+            ],
+            "properties": {
+              "room": {
+                "$ref": "#/components/schemas/Room"
+              },
+              "type": {
+                "type": "string",
+                "enum": [
+                  "room"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "description": "Something was said in a call room.",
+            "required": [
+              "line",
+              "type"
+            ],
+            "properties": {
+              "line": {
+                "$ref": "#/components/schemas/RoomLine"
+              },
+              "type": {
+                "type": "string",
+                "enum": [
+                  "room_line"
                 ]
               }
             }

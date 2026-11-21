@@ -403,8 +403,8 @@ export interface paths {
         /** Who is in the operator's voice call. */
         get: operations["get_call"];
         /**
-         * Starts, changes or (with no agents) ends the voice call. Agents in it
-         *     can invite others with their `invite_to_call` tool.
+         * Starts, changes or (with no agents) ends the voice call. Agents in it can invite others
+         *     with their `invite_to_call` tool. With two or more agents the call moves into a room.
          */
         put: operations["put_call"];
         post?: never;
@@ -425,7 +425,8 @@ export interface paths {
         put?: never;
         /**
          * Sends the operator's message to every agent in the call, each with what the others said
-         *     since its last turn and the call instructions.
+         *     since its last turn and the call instructions. In a room it is also a line there, and its
+         *     messages (`room_id` set) stay out of the agents' chats.
          */
         post: operations["post_call_message"];
         delete?: never;
@@ -740,6 +741,40 @@ export interface paths {
          *     few minutes), else a short built-in list.
          */
         get: operations["provider_models"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/rooms": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Call rooms (calls with two or more agents), newest first; the last 200. */
+        get: operations["list_rooms"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/rooms/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** One call room: who took part and what was said. */
+        get: operations["get_room"];
         put?: never;
         post?: never;
         delete?: never;
@@ -1146,7 +1181,7 @@ export interface components {
         BuildStatus: "idle" | "building" | "ready" | "failed";
         CallMessage: {
             /**
-             * @description 1..19718 bytes after trimming, counting `@name` mentions as their
+             * @description 1..19480 bytes after trimming, counting `@name` mentions as their
              *     stored `<@agent-id>` tokens (the rest of a message is left for what
              *     the others said).
              */
@@ -1155,6 +1190,11 @@ export interface components {
         CallView: {
             /** @description Agents in the operator's voice call (at most 4); empty: no call. */
             agents: components["schemas"]["AgentId"][];
+            /**
+             * Format: int64
+             * @description The call's room, once a second agent joined; ignored when sent.
+             */
+            readonly room_id?: number | null;
         };
         /**
          * @description Body shape of the generated character avatar.
@@ -1475,6 +1515,11 @@ export interface components {
              *     without waking it; `null` (default): queues and wakes.
              */
             priority?: boolean | null;
+            /**
+             * Format: int64
+             * @description The call room whose turn this message carries; such messages stay out of the agent's chat.
+             */
+            room_id?: number | null;
             status: components["schemas"]["MailStatus"];
             /** Format: int32 */
             attempts: number;
@@ -1655,6 +1700,37 @@ export interface components {
          * @enum {string}
          */
         QuestionKind: "single" | "multi" | "text" | "secret";
+        /** @description A voice call with two or more agents; kept as history once the call ended. */
+        Room: {
+            /** Format: int64 */
+            id: number;
+            /** @description Every agent that took part, in the order they joined. */
+            members: components["schemas"]["AgentId"][];
+            /** Format: date-time */
+            created_at: string;
+            /**
+             * Format: date-time
+             * @description When the call ended; `null` while it runs.
+             */
+            ended_at?: string | null;
+        };
+        /** @description One thing said in a room, by the operator (`user`) or an agent. */
+        RoomLine: {
+            /** Format: int64 */
+            id: number;
+            /** Format: int64 */
+            room_id: number;
+            speaker: components["schemas"]["Sender"];
+            /** @description The words; mentions are `<@agent-id>` tokens. */
+            body: string;
+            /** Format: date-time */
+            created_at: string;
+        };
+        /** @description A room with what was said in it. */
+        RoomTranscript: components["schemas"]["Room"] & {
+            /** @description Oldest first; the last 1000. */
+            lines: components["schemas"]["RoomLine"][];
+        };
         /** @description A prompt an agent receives on a cron schedule. */
         Routine: {
             /** Format: int64 */
@@ -1868,8 +1944,18 @@ export interface components {
             type: "routines_changed";
         } | {
             agents: components["schemas"]["AgentId"][];
+            /** Format: int64 */
+            room_id?: number | null;
             /** @enum {string} */
             type: "call";
+        } | {
+            room: components["schemas"]["Room"];
+            /** @enum {string} */
+            type: "room";
+        } | {
+            line: components["schemas"]["RoomLine"];
+            /** @enum {string} */
+            type: "room_line";
         };
         /** @description Partial profile update. Omitted fields stay unchanged. */
         UpdateAgent: {
@@ -4843,6 +4929,74 @@ export interface operations {
                 };
             };
             /** @description Unknown provider */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+        };
+    };
+    list_rooms: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Room"][];
+                };
+            };
+            /** @description Missing or wrong API token */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+        };
+    };
+    get_room: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Room id */
+                id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RoomTranscript"];
+                };
+            };
+            /** @description Missing or wrong API token */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Unknown room */
             404: {
                 headers: {
                     [name: string]: unknown;

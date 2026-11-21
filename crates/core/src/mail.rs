@@ -103,6 +103,8 @@ pub struct MailMessage {
     /// `true`: wakes the recipient and goes first; `false`: waits for its next turn
     /// without waking it; `null` (default): queues and wakes.
     pub priority: Option<bool>,
+    /// The call room whose turn this message carries; such messages stay out of the agent's chat.
+    pub room_id: Option<i64>,
     pub status: MailStatus,
     pub attempts: u32,
     #[serde(with = "time::serde::rfc3339")]

@@ -235,7 +235,7 @@ async fn handle_frame(state: &AppState, agent: &Agent, done_tx: &mpsc::Sender<Do
             let event = match event {
                 TurnEvent::AssistantText { text } => {
                     let text = state.normalize_mentions(&text).await;
-                    state.heard_in_call(agent.id, &text);
+                    state.call_text(&turn_id, &text).await;
                     TurnEvent::AssistantText { text }
                 }
                 other => other,
@@ -255,6 +255,9 @@ async fn handle_frame(state: &AppState, agent: &Agent, done_tx: &mpsc::Sender<Do
             if let Some(sid) = session_id {
                 let _ = state.store.set_agent_session(agent.id, sid).await;
             }
+            // First, so a recorded `turn_done` means the call already has the turn's line.
+            let completed = matches!(outcome, TurnOutcome::Completed);
+            state.call_turn_done(agent.id, &turn_id, completed).await;
             state
                 .record(
                     agent.id,
@@ -263,23 +266,6 @@ async fn handle_frame(state: &AppState, agent: &Agent, done_tx: &mpsc::Sender<Do
                     json!({ "outcome": outcome, "result": result, "error": error }),
                 )
                 .await;
-            let completed = matches!(outcome, TurnOutcome::Completed);
-            for (to, words, prompt) in state.call_turn_done(agent.id, completed) {
-                state.remember_call_prompt(to, &words, prompt);
-                match state
-                    .store
-                    .enqueue_message(Sender::Agent(agent.id), to, words, None)
-                    .await
-                {
-                    Ok(message) => {
-                        state.message_arrived(to);
-                        state.publish(UiEvent::Message { message });
-                    }
-                    Err(e) => {
-                        tracing::warn!(agent = %agent.name, error = %e, "call line not passed on");
-                    }
-                }
-            }
             let _ = done_tx
                 .send(Done {
                     turn_id,
@@ -369,16 +355,17 @@ async fn greeting_due(state: &AppState, agent: AgentId) -> bool {
         && matches!(store.has_queued_messages(agent).await, Ok(false))
 }
 
-/// Hands the operator's messages that arrived during a turn to that turn.
+/// Hands the operator's messages that arrived during a turn to that turn: only those of the
+/// turn's own call room (`None`: the chat), so a reply never lands in the wrong place.
 async fn steer(
     state: &AppState,
     agent: AgentId,
-    turn_id: &str,
+    (turn_id, room): (&str, Option<i64>),
     out: &mpsc::Sender<DaemonFrame>,
     steered: &mut Vec<i64>,
 ) {
     loop {
-        let msg = match state.store.claim_next_user_message(agent).await {
+        let msg = match state.store.claim_next_user_message(agent, room).await {
             Ok(Some(msg)) => msg,
             Ok(None) => return,
             Err(e) => {
@@ -386,14 +373,17 @@ async fn steer(
                 return;
             }
         };
+        let Some(body) = state.turn_body(agent, &msg, turn_id).await else {
+            skip(state, msg.id).await;
+            continue;
+        };
         let from = sender_name(state, msg.sender).await;
+        let mut payload = json!({ "message_id": msg.id, "from": from, "sender": msg.sender, "body": msg.body, "attempt": msg.attempts, "steered": true });
+        if let Some(room) = msg.room_id {
+            payload["room_id"] = room.into();
+        }
         state
-            .record(
-                agent,
-                Some(turn_id.to_owned()),
-                "message_in",
-                json!({ "message_id": msg.id, "from": from, "sender": msg.sender, "body": msg.body, "attempt": msg.attempts, "steered": true }),
-            )
+            .record(agent, Some(turn_id.to_owned()), "message_in", payload)
             .await;
         steered.push(msg.id);
         state.publish_message(msg.id).await;
@@ -402,14 +392,20 @@ async fn steer(
             message_id: msg.id,
             sender: msg.sender,
             sender_name: from,
-            body: state
-                .render_mentions(&state.call_prompt(agent, &msg.body).unwrap_or(msg.body))
-                .await,
+            body: state.render_mentions(&body).await,
         };
         if out.send(frame).await.is_err() {
             return; // reader cleanup requeues
         }
     }
+}
+
+/// Settles a call room message whose turn has nothing new to hear.
+async fn skip(state: &AppState, id: i64) {
+    if let Err(e) = state.store.complete_message(id).await {
+        tracing::error!(error = %e, message = id, "failed to settle message");
+    }
+    state.publish_message(id).await;
 }
 
 /// Steered messages the model saw are delivered; the rest wait for the next
@@ -446,30 +442,37 @@ async fn run_turn(
 ) -> bool {
     let (conn_id, out) = (conn.id, &conn.out);
     let turn_id = uuid::Uuid::new_v4().to_string();
-    let first = state.settings.greet_new_agents
+    let mut prompt = String::new();
+    if let Some(m) = &msg {
+        let Some(body) = state.turn_body(agent, m, &turn_id).await else {
+            skip(state, m.id).await;
+            return true;
+        };
+        prompt = body;
+    }
+    let room = msg.as_ref().and_then(|m| m.room_id);
+    // A room turn listens first; the greeting would make it talk about itself.
+    let first = room.is_none()
+        && state.settings.greet_new_agents
         && matches!(state.store.has_event(agent, "message_in").await, Ok(false));
     let (sender, from) = match &msg {
         Some(m) => (m.sender, sender_name(state, m.sender).await),
         None => (Sender::User, "ferrobot".to_owned()),
     };
     let body = msg.as_ref().map_or("", |m| m.body.as_str());
+    let mut payload = json!({ "message_id": msg.as_ref().map(|m| m.id), "from": from, "sender": sender, "body": body, "attempt": msg.as_ref().map(|m| m.attempts) });
+    if let Some(room) = room {
+        payload["room_id"] = room.into();
+    }
     state
-        .record(
-            agent,
-            Some(turn_id.clone()),
-            "message_in",
-            json!({ "message_id": msg.as_ref().map(|m| m.id), "from": from, "sender": sender, "body": body, "attempt": msg.as_ref().map(|m| m.attempts) }),
-        )
+        .record(agent, Some(turn_id.clone()), "message_in", payload)
         .await;
     state
         .hub
         .set_current_turn(agent, conn_id, Some(turn_id.clone()));
     state.hub.touch(agent);
     state.publish_agent(agent).await;
-    let prompt = msg.as_ref().and_then(|m| state.call_prompt(agent, &m.body));
-    let mut body = state
-        .render_mentions(prompt.as_deref().unwrap_or(body))
-        .await;
+    let mut body = state.render_mentions(&prompt).await;
     if first {
         body = if body.is_empty() {
             GREETING.to_owned()
@@ -499,7 +502,7 @@ async fn run_turn(
                 Err(_) => break None,
             },
             () = notify.notified(), if conn.steering => {
-                steer(state, agent, &turn_id, out, &mut steered).await;
+                steer(state, agent, (&turn_id, room), out, &mut steered).await;
             }
         }
     };
