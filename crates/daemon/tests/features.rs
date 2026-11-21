@@ -4526,6 +4526,12 @@ async fn calls_with_two_agents_move_into_a_room_where_agents_speak_one_at_a_time
         "Is the deploy done?".into(),
     );
     assert_eq!(room_lines(&d, room).await, [topic]);
+    let (_, transcript) = http(&d.ui, "GET", &format!("/v1/rooms/{room}"), None).await;
+    assert_eq!(
+        transcript["lines"][0]["invited"],
+        json!(bob),
+        "shown as an invitation"
+    );
     assert!(
         d.state.invite_to_call(cy, dot, "x").await.is_err(),
         "cy is not in the call"

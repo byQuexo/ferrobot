@@ -229,6 +229,7 @@ fn ui_events_validate_against_schema() {
                 speaker: Sender::User,
                 body: "hi".into(),
                 created_at: OffsetDateTime::UNIX_EPOCH,
+                invited: None,
             },
         },
     ] {
