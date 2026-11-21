@@ -64,8 +64,10 @@ for (const [clip, file] of [
       mp4: `docs/assets/clips/${file}.mp4`,
       width: 960,
       crf: 27,
-      holdMax: 2,
-      waitMax: 1,
+      holdMax: 1,
+      waitMax: 0.8,
+      // The card says what was asked, so these clips start at the card.
+      skip: ["ask"],
     },
   ];
 }
@@ -312,13 +314,18 @@ async function researcherChat(k) {
 const DOCS_URL = "https://mcp.example.com/mcp";
 
 async function keycard(k) {
+  for (const c of await api("GET", "/v1/connectors")) {
+    if (c.url === DOCS_URL) await api("DELETE", `/v1/connectors/${c.id}`);
+  }
   const m = await researcherChat(k);
   const page = k.page;
   await k.start();
   await k.caption("An agent asks for a token for a new connector");
-  await m.say(`Add our docs search connector at ${DOCS_URL}. It needs a token.`, 18);
   const card = m.chat().locator("form.qcard").last();
-  await k.wait(card);
+  await k.optional("ask", async () => {
+    await m.say(`Add our docs search connector at ${DOCS_URL}. It needs a token.`, 18);
+    await k.wait(card);
+  });
   await k.zoom(card, 1.4);
   await k.hold(1500);
   await k.caption("You type it into a hidden field");
@@ -337,6 +344,7 @@ async function keycard(k) {
   await k.zoom(section, 1.4);
   await k.hold(2800);
   await k.offscreen(async () => {
+    await k.zoom(null);
     await page.getByRole("button", { name: "Close settings" }).click();
     await finished("researcher");
   });
@@ -347,9 +355,11 @@ async function routine(k) {
   const page = k.page;
   await k.start();
   await k.caption("Ask an agent for a reminder");
-  await m.say("Remind me every morning at 9 to check the build.", 25);
   const card = m.chat().locator("form.qcard").last();
-  await k.wait(card);
+  await k.optional("ask", async () => {
+    await m.say("Remind me every morning at 9 to check the build.", 25);
+    await k.wait(card);
+  });
   await k.caption("It asks before it sets up a routine");
   await k.zoom(card, 1.4);
   await k.hold(1800);
@@ -368,6 +378,7 @@ async function routine(k) {
     for (const r of await api("GET", `/v1/agents/${id}/routines`)) {
       await api("DELETE", `/v1/routines/${String(r.id)}`);
     }
+    await k.zoom(null);
     await page.getByRole("button", { name: "Hide details" }).click();
     await finished("researcher");
   });
@@ -389,8 +400,9 @@ async function shots(k) {
   };
   const m = await researcherChat(k);
   const composer = m.chat().locator("form.composer textarea");
+  // It already knows the runtime from the hero, so it is asked to check with you again.
   await composer.fill(
-    "Find out how to stop a backon retry early, then have builder write an example.",
+    "Next we need a retry example for the CLI tool. Ask me which runtime it uses before you brief builder.",
   );
   await composer.press("Enter");
   await m.chat().locator("form.qcard").last().waitFor({ timeout: WAIT_MS });
@@ -420,9 +432,6 @@ async function shots(k) {
   await page.locator("button.settings-tab", { hasText: "Vault" }).click();
   await page.locator(".settings-section").first().waitFor();
   await snap("vault");
-  await page.locator("button.settings-tab", { hasText: "Connectors" }).click();
-  await page.locator("ul.catalog").waitFor();
-  await snap("catalog");
   await page.getByRole("button", { name: "Close settings" }).click();
 
   await page.getByRole("button", { name: "Usage", exact: true }).click();
@@ -431,16 +440,16 @@ async function shots(k) {
   await snap("usage");
 }
 
-const RETRY_POLICY =
-  "Retries use backon's ExponentialBuilder: 100 ms first delay, at most 5 attempts, with jitter.";
+// Something only memory holds: a question its chat could answer would skip `recall`.
+const RELEASE_DAY = "Releases go out on Thursdays at 14:00 UTC, never right before a holiday.";
 
 async function memory(k) {
   const m = await researcherChat(k);
   const id = (await agentNamed("researcher")).id;
-  await api("POST", `/v1/agents/${id}/memory`, { key: "retry-policy", content: RETRY_POLICY });
+  await api("POST", `/v1/agents/${id}/memory`, { key: "release-day", content: RELEASE_DAY });
   await k.start();
   await k.caption("Agents remember, and recall it when it matters");
-  await m.say("What retry policy did we settle on?", 25);
+  await m.say("Check your notes: when do we ship releases?", 25);
   await m.activities();
   const recall = m.tool("recall").first();
   await k.wait(recall);
@@ -458,7 +467,7 @@ async function usage(k) {
   await page.locator(".usage-page .usage-totals").waitFor();
   await k.start();
   await k.caption("Usage per provider, model and agent, as CSV");
-  await k.hold(1200);
+  await k.pause(1500);
   const download = page.waitForEvent("download");
   await k.click(page.getByRole("button", { name: "Export CSV" }));
   const file = await download;
@@ -467,11 +476,11 @@ async function usage(k) {
   );
   const sheet = await page.context().newPage();
   await sheet.setContent(
-    `<pre style="font: 15px/1.6 ui-monospace, Menlo, monospace; margin: 40px; color: #1f2330">${csv}</pre>`,
+    `<pre style="font: 22px/1.6 ui-monospace, Menlo, monospace; margin: 120px 80px; color: #1f2330; white-space: pre-wrap">${csv}</pre>`,
   );
   await k.follow(sheet);
   await k.caption(`${file.suggestedFilename()}, as exported`);
-  await k.hold(3000);
+  await k.pause(3000);
 }
 
 const SCENES = { hero, keycard, routine, memory, usage, shots };

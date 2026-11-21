@@ -2,11 +2,11 @@
 # Records one demo scene (scripts/demo/record.mjs) from the Vite UI in Chromium.
 #   DEMO_API=http://127.0.0.1:17990 DEMO_TOKEN_FILE=<data dir>/api-token scripts/demo/record.sh hero
 # uses that daemon and its configured providers (real models). Without DEMO_API it starts a throwaway
-# daemon with the mock driver on 17992/17993 for a keyless dry run. Scenes: hero, connector, routine,
-# memory, usage. DEMO_KEEP=1 keeps the frames dir.
+# daemon with the mock driver on 17992/17993 for a keyless dry run. Scenes: hero, keycard, routine,
+# memory, usage, shots. DEMO_KEEP=1 keeps the frames dir.
 set -euo pipefail
 cd "$(dirname "$0")/../.."
-SCENE=${1:?"scene: hero, connector, routine, memory or usage"}
+SCENE=${1:?"scene: hero, keycard, routine, memory, usage or shots"}
 WORK=$(mktemp -d)
 UI_PORT=1420
 lsof -iTCP:1420 -sTCP:LISTEN >/dev/null 2>&1 && UI_PORT=1421
