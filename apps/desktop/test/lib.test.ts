@@ -600,6 +600,7 @@ describe("voice call", () => {
     assert.deepEqual(script.text("a", "t1", "(pass)"), []);
     assert.deepEqual(script.text("b", "t2", "(Pass)."), []);
     assert.ok(isPass(" (pass)\n") && !isPass("(pass) on that, but yes"));
+    assert.ok(isPass("pass") && isPass("Pass.") && !isPass("passing on"));
 
     assert.equal(script.delta("c", "t3", "Long answer. And more").length, 1);
     assert.ok(script.speaking("c"));

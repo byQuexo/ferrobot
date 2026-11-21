@@ -56,9 +56,12 @@ fn cli_tag(base_id: &str, packages: &[String]) -> String {
 
 /// Whether a container from `current` must move to `wanted` (`None`: `base`). Only base and
 /// CLI images count: snapshot and archive containers keep their root filesystem.
-fn stale(current: &str, wanted: Option<&str>, base: &str) -> bool {
+/// Whether a sandbox created from image `current` (name) should be recreated to run `wanted`
+/// (`None`: the base image). `ids`: (the image id it runs, the id `wanted` names now), known
+/// when the names match, so a rebuilt image under the same name counts as new.
+fn stale(current: &str, wanted: Option<&str>, base: &str, ids: Option<(&str, &str)>) -> bool {
     let built = current == base || current.starts_with(CLI_TAG_PREFIX);
-    built && current != wanted.unwrap_or(base)
+    built && (current != wanted.unwrap_or(base) || ids.is_some_and(|(have, want)| have != want))
 }
 
 /// Dockerfile installing validated `packages` as root, then back to the base image's user.
@@ -677,18 +680,34 @@ impl SandboxBackend for DockerBackend {
         image: Option<&str>,
     ) -> Result<bool, SandboxError> {
         let id = Self::check(sandbox)?;
-        let current = match self
+        let (current, runs) = match self
             .docker()
             .inspect_container(id, None::<InspectContainerOptions>)
             .await
         {
-            Ok(info) => info.config.and_then(|c| c.image).unwrap_or_default(),
+            Ok(info) => (
+                info.config.and_then(|c| c.image).unwrap_or_default(),
+                info.image.unwrap_or_default(),
+            ),
             Err(bollard::errors::Error::DockerResponseServerError {
                 status_code: 404, ..
             }) => return Ok(false),
             Err(e) => return Err(e.into()),
         };
-        Ok(stale(&current, image, &self.config.image))
+        let wanted = image.unwrap_or(&self.config.image);
+        let now = if current == wanted {
+            match self.docker().inspect_image(wanted).await {
+                Ok(info) => info.id,
+                Err(bollard::errors::Error::DockerResponseServerError {
+                    status_code: 404, ..
+                }) => None,
+                Err(e) => return Err(e.into()),
+            }
+        } else {
+            None
+        };
+        let ids = now.as_deref().map(|now| (runs.as_str(), now));
+        Ok(stale(&current, image, &self.config.image, ids))
     }
 
     async fn ready(&self) -> Result<(), SandboxError> {
@@ -1135,11 +1154,22 @@ mod tests {
             (base, None, false),
         ] {
             assert_eq!(
-                stale(current, wanted, base),
+                stale(current, wanted, base, None),
                 expected,
                 "{current} -> {wanted:?}"
             );
         }
+        // The same name over a rebuilt image (a new runner) is stale; snapshots never are.
+        let rebuilt = Some(("sha256:old", "sha256:new"));
+        assert!(stale(base, None, base, rebuilt));
+        assert!(stale(new, Some(new), base, rebuilt));
+        assert!(!stale(
+            base,
+            None,
+            base,
+            Some(("sha256:same", "sha256:same"))
+        ));
+        assert!(!stale("ferrobot-snapshot:x-1", None, base, rebuilt));
     }
 
     #[test]

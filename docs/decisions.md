@@ -1237,3 +1237,15 @@ slop, so polish mode: palette, accent, logo, layout and features stay.
   ending with `</think…>`; the driver drops everything up to that tag, so it is
   neither shown nor spoken. An unclosed `<think>` is dropped; a bare
   "Thinking:" without a closing tag is kept (it may be the answer).
+
+## Rebuilt runner images reach existing agents
+
+- The stale check compared image names only, so a rebuilt `ferrobot-runner:dev`
+  (same name, new id) never reached agents whose container already existed;
+  they kept running the old runner (found when the reasoning filter did not
+  apply, 2026-11-21). Now a container created from the base or a CLI image is
+  stale when the image its name points to has another id; it is recreated on
+  its next wake with its home volume kept. Snapshot and archive containers
+  still never count as stale.
+- `(pass)` is also recognised without brackets or with a full stop ("pass",
+  "Pass."), in the daemon and the UI.

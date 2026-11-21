@@ -1282,3 +1282,17 @@ store used for the run) or the daemon's own env.
 - Runner: `think filter` tests (any chunking, plain answers pass at once,
   unclosed blocks).
 - Not tested: a real call with Tencent's model after the fix.
+
+## Rebuilt runners reach agents (`fix/stale-runner`)
+
+**Done**
+
+- Docker: a sandbox whose image name now points at a rebuilt image is
+  recreated on its next wake (home volume kept).
+- "pass" and "Pass." count as `(pass)` in calls (daemon and UI).
+
+**Tested**
+
+- Unit tests for the id comparison (rebuilt base and CLI images stale, same id
+  not, snapshots never) and the pass spellings; desktop `isPass` test.
+- Not run live yet: recreating real agents on the rebuilt runner image.
