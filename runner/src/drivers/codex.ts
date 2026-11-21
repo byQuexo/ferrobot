@@ -6,7 +6,7 @@ import { createInterface } from "node:readline";
 import { setTimeout as sleep } from "node:timers/promises";
 
 import { errorMessage, log } from "../log.ts";
-import { decide, type Decision } from "../permissions.ts";
+import { decide, offGroups, type BuiltinGroup, type Decision } from "../permissions.ts";
 import type { TurnEvent } from "../protocol.ts";
 import { aborted, clip, systemAppend, toolResultText, turnPrompt } from "./claude.ts";
 import type { ModelDriver, TurnContext, TurnResult } from "./types.ts";
@@ -67,10 +67,20 @@ export interface CodexDriverOptions {
   stateDir: string;
 }
 
-/** `$CODEX_HOME/config.toml`. Names the token's env var; never holds a secret. */
-export function codexConfigToml(opts: { model: string; baseUrl: URL; mcpUrl: URL }): string {
+/** `$CODEX_HOME/config.toml`. Names the token's env var; never holds a secret. Tools of `off`
+ * groups are not offered (checked against Codex 0.166's tool list). */
+export function codexConfigToml(
+  opts: { model: string; baseUrl: URL; mcpUrl: URL },
+  off: ReadonlySet<BuiltinGroup> = new Set(),
+): string {
   // A JSON string literal is also a valid TOML basic string.
   const str = (value: string): string => JSON.stringify(value);
+  const features = [
+    ...(off.has("shell") ? ["shell_tool = false", "unified_exec = false"] : []),
+    ...(off.has("files") ? ["view_image = false"] : []),
+    // Sub-agents run their own tools.
+    ...(off.size > 0 ? ["multi_agent = false"] : []),
+  ];
   return [
     `model = ${str(opts.model)}`,
     `model_provider = ${str(PROVIDER)}`,
@@ -78,7 +88,9 @@ export function codexConfigToml(opts: { model: string; baseUrl: URL; mcpUrl: URL
     `approval_policy = "on-request"`,
     // The container is the boundary; Codex's own Landlock/Seatbelt may not work inside it.
     `sandbox_mode = "danger-full-access"`,
+    ...(off.has("web") ? [`web_search = "disabled"`] : []),
     "",
+    ...(features.length ? ["[features]", ...features, ""] : []),
     `[model_providers.${PROVIDER}]`,
     `name = ${str(PROVIDER)}`,
     `base_url = ${str(opts.baseUrl.href.replace(/\/+$/, ""))}`,
@@ -158,11 +170,12 @@ function review(
   params: Params,
   filesByItem: ReadonlyMap<string, string[]>,
   home: string,
+  off: ReadonlySet<BuiltinGroup>,
 ): { name: string; verdict: Decision } | null {
   switch (method) {
     case "item/commandExecution/requestApproval": {
       const command = typeof params["command"] === "string" ? params["command"] : "";
-      return { name: "Bash", verdict: decide("Bash", { command }, home) };
+      return { name: "Bash", verdict: decide("Bash", { command }, home, off) };
     }
     case "item/fileChange/requestApproval": {
       // The request names only the item; its paths arrived with item/started.
@@ -174,7 +187,7 @@ function review(
           verdict: { allow: false, reason: "blocked: unknown file change" },
         };
       const denied = files
-        .map((file_path) => decide("Write", { file_path }, home))
+        .map((file_path) => decide("Write", { file_path }, home, off))
         .find((v) => !v.allow);
       return { name: "apply_patch", verdict: denied ?? { allow: true } };
     }
@@ -331,6 +344,8 @@ export class CodexDriver implements ModelDriver {
   #server: AppServer | null = null;
   #thread: { id: string; instructions: string } | null = null;
   #stale = false;
+  /** The off groups the running app-server's config was written for. */
+  #off = "";
 
   constructor(opts: CodexDriverOptions) {
     this.#opts = opts;
@@ -338,7 +353,7 @@ export class CodexDriver implements ModelDriver {
 
   async runTurn(ctx: TurnContext): Promise<TurnResult> {
     if (aborted(ctx.signal)) throw new TurnAbortedError("interrupted");
-    const server = await this.#start();
+    const server = await this.#start(offGroups(ctx.tools));
     const threadId = await this.#openThread(server, ctx);
     if (aborted(ctx.signal)) throw new TurnAbortedError("interrupted");
     return { result: await this.#turn(server, threadId, ctx), sessionId: threadId };
@@ -354,15 +369,17 @@ export class CodexDriver implements ModelDriver {
     this.#stale = true;
   }
 
-  async #start(): Promise<AppServer> {
-    if (this.#server?.alive && !this.#stale) return this.#server;
-    // A fresh app-server lists the MCP tools anew; the thread resumes by id.
+  async #start(off: ReadonlySet<BuiltinGroup>): Promise<AppServer> {
+    const key = [...off].sort().join(",");
+    if (this.#server?.alive && !this.#stale && this.#off === key) return this.#server;
+    // A fresh app-server reads its tools and the MCP tools anew; the thread resumes by id.
     this.#server?.kill();
     this.#stale = false;
+    this.#off = key;
     this.#thread = null;
     const home = join(this.#opts.stateDir, "codex");
     await mkdir(home, { recursive: true, mode: 0o700 });
-    await writeFile(join(home, "config.toml"), codexConfigToml(this.#opts), { mode: 0o600 });
+    await writeFile(join(home, "config.toml"), codexConfigToml(this.#opts, off), { mode: 0o600 });
     let server: AppServer;
     try {
       server = await AppServer.start(this.#opts.bin, this.#opts.workspaceDir, {
@@ -477,7 +494,7 @@ export class CodexDriver implements ModelDriver {
     };
     server.onRequest = (method, params) => {
       if (!ours(params)) return undefined;
-      const reviewed = review(method, params, filesByItem, home);
+      const reviewed = review(method, params, filesByItem, home, offGroups(ctx.tools));
       if (!reviewed) return undefined;
       if (reviewed.verdict.allow) return { decision: "accept" };
       emit({ kind: "tool_denied", name: reviewed.name, reason: reviewed.verdict.reason });

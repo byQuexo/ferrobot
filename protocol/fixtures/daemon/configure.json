@@ -1,1 +1,6 @@
-{ "type": "configure", "agent_name": "ada", "instructions": "You review pull requests." }
+{
+  "type": "configure",
+  "agent_name": "ada",
+  "instructions": "You review pull requests.",
+  "tools": ["team", "memory", "files"]
+}

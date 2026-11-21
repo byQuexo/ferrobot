@@ -2,7 +2,7 @@
 // Mirror of crates/core/src/protocol.rs; both sides parse protocol/fixtures/.
 import { z } from "zod";
 
-export const PROTOCOL_VERSION = 1;
+export const PROTOCOL_VERSION = 2;
 
 const senderSchema = z.discriminatedUnion("kind", [
   z.object({ kind: z.literal("user") }),
@@ -19,6 +19,7 @@ export const daemonFrameSchema = z.discriminatedUnion("type", [
     agent_name: z.string().min(1),
     instructions: z.string(),
     resume_session_id: z.string().nullable(),
+    tools: z.array(z.string()),
   }),
   z.object({
     type: z.literal("turn"),
@@ -41,6 +42,7 @@ export const daemonFrameSchema = z.discriminatedUnion("type", [
     type: z.literal("configure"),
     agent_name: z.string().min(1),
     instructions: z.string(),
+    tools: z.array(z.string()),
   }),
 ]);
 export type DaemonFrame = z.infer<typeof daemonFrameSchema>;

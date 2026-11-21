@@ -567,16 +567,8 @@ pub(crate) async fn set_agent_connectors(
 /// Replaces an agent's connectors and lets its open sessions and runner pick them up.
 async fn assign(state: &AppState, id: AgentId, ids: Vec<Uuid>) -> Result<Vec<Uuid>, ApiError> {
     state.store.set_agent_connectors(id, ids).await?;
-    state.connectors.evict_agent(id).await;
     // Codex and Gemini list tools once per process: tell the runner.
-    let agent = state.store.get_agent(id).await?;
-    state.hub.send(
-        id,
-        ferrobot_core::protocol::DaemonFrame::Configure {
-            agent_name: agent.name,
-            instructions: agent.instructions,
-        },
-    );
+    crate::agents::reconfigure(state, id).await?;
     let connectors = state.store.agent_connectors(id).await?;
     Ok(connectors.into_iter().map(|c| c.id).collect())
 }

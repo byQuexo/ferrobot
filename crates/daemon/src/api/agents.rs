@@ -5,8 +5,7 @@ use axum::body::Bytes;
 use axum::extract::{Path, Query, State};
 use axum::http::{HeaderMap, StatusCode, header};
 use axum::response::{IntoResponse, Response};
-use ferrobot_core::protocol::DaemonFrame;
-use ferrobot_core::{AgentName, AvatarCharacter};
+use ferrobot_core::{AgentName, AvatarCharacter, ToolGroup};
 use ferrobot_store::{AgentPatch, Avatar};
 use serde::Deserialize;
 use utoipa::{IntoParams, ToSchema};
@@ -50,6 +49,10 @@ pub(crate) struct CreateAgent {
     /// Model id; omitted: the provider's default model.
     #[serde(default)]
     model: Option<String>,
+    /// Tool groups the agent may use; omitted: all. Connectors are assigned with
+    /// `PUT /v1/agents/{id}/connectors`.
+    #[serde(default)]
+    tools: Option<Vec<ToolGroup>>,
 }
 
 /// Distinguishes an omitted field (`None`) from an explicit `null` (`Some(None)`).
@@ -85,6 +88,8 @@ pub(crate) async fn create_agent(
             character: req.character,
             provider_id: req.provider_id,
             model: req.model,
+            tools: req.tools,
+            connectors: None,
         },
         None,
     )
@@ -144,6 +149,9 @@ pub(crate) struct UpdateAgent {
     model: Option<Option<String>>,
     /// Pin to the top of the agent list (or unpin).
     pinned: Option<bool>,
+    /// Tool groups the agent may use (any; the subset rule binds only agents creating
+    /// agents). A connected runner applies them from its next turn.
+    tools: Option<Vec<ToolGroup>>,
 }
 
 /// Edits an agent's profile.
@@ -169,7 +177,7 @@ pub(crate) async fn update_agent(
         check_len("instructions", i)?;
     }
     check_character(req.character.flatten().as_ref())?;
-    let reconfigure = name.is_some() || req.instructions.is_some();
+    let reconfigure = name.is_some() || req.instructions.is_some() || req.tools.is_some();
     let model_change = req.provider_id.is_some() || req.model.is_some();
     let (provider_id, model) = if model_change {
         let current = state.store.get_agent(id).await?;
@@ -192,21 +200,14 @@ pub(crate) async fn update_agent(
                 provider_id,
                 model,
                 pinned: req.pinned,
+                tools: req.tools,
             },
         )
         .await?;
     if model_change {
         lifecycle::recreate(&state, id).await?;
-    }
-    if reconfigure {
-        let agent = state.store.get_agent(id).await?;
-        state.hub.send(
-            id,
-            DaemonFrame::Configure {
-                agent_name: agent.name,
-                instructions: agent.instructions,
-            },
-        );
+    } else if reconfigure {
+        agents::reconfigure(&state, id).await?;
     }
     state.publish_agent(id).await;
     Ok(Json(views::agent_view(&state, id).await?))

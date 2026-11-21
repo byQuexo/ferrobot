@@ -283,6 +283,41 @@ describe("OpenAIDriver", () => {
     assert.match(at(tools, 1).content, /^blocked: Read outside /);
   });
 
+  it("does not offer turned-off built-in tools and refuses them when called anyway", async () => {
+    const { driver, sent, workspaceDir } = setup({
+      replies: [
+        [call(0, { name: "bash", arguments: '{"command":"touch ran"}' }, "a")],
+        [text("ok")],
+      ],
+    });
+    const { ctx, events } = context({ tools: ["team", "files"] });
+    await driver.runTurn(ctx);
+    const req = at(sent, 0);
+    assert.deepEqual(
+      req.body.tools.map((t) => t.function.name),
+      ["read_file", "write_file"],
+    );
+    const system = at(req.body.messages, 0).content;
+    assert.match(system, /^On your own computer you can use the read_file and write_file tools\./);
+    assert.doesNotMatch(system, /\bbash\b/);
+    assert.deepEqual(
+      events.filter((e) => e.kind === "tool_denied"),
+      [
+        {
+          kind: "tool_denied",
+          name: "bash",
+          reason: "blocked: shell is turned off for this agent",
+        },
+      ],
+    );
+    assert.equal(existsSync(join(workspaceDir, "ran")), false, "never ran");
+
+    const none = setup({ replies: [[text("ok")]] });
+    await none.driver.runTurn(context({ tools: [] }).ctx);
+    assert.deepEqual(at(none.sent, 0).body.tools, []);
+    assert.doesNotMatch(at(at(none.sent, 0).body.messages, 0).content, /On your own computer/);
+  });
+
   it("offers and calls the daemon's MCP tools; tool failures do not fail the turn", async () => {
     const schema = { type: "object", properties: { to: { type: "string" } } };
     const { driver, sent, mcpCalls } = setup({

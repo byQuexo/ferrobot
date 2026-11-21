@@ -14,6 +14,8 @@ export interface RunnerDeps {
 export class Runner {
   readonly #deps: RunnerDeps;
   #instructions = "";
+  // Nothing until the daemon says otherwise: a turn never runs with tools the profile lacks.
+  #tools: readonly string[] = [];
   #agentName: string;
   #sessionId: string | null = null;
   #current: { turnId: string; abort: AbortController; late: SteerFrame[]; seen: number[] } | null =
@@ -38,6 +40,7 @@ export class Runner {
       case "welcome":
         this.#instructions = frame.instructions;
         this.#agentName = frame.agent_name;
+        this.#tools = frame.tools;
         this.#deps.driver.reconfigure?.();
         this.#sessionId ??= frame.resume_session_id;
         log.info("welcome", { agent: frame.agent_name, resume: this.#sessionId });
@@ -50,9 +53,11 @@ export class Runner {
         void this.#runTurn(frame);
         break;
       case "configure":
-        // Applies from the next turn; a running turn keeps its prompt.
+        // Applies from the next turn; a running turn keeps its prompt and tools.
         this.#instructions = frame.instructions;
         this.#agentName = frame.agent_name;
+        this.#tools = frame.tools;
+        this.#deps.driver.reconfigure?.();
         log.info("profile updated", { agent: frame.agent_name });
         break;
       case "steer":
@@ -92,6 +97,7 @@ export class Runner {
         instructions: this.#instructions,
         agentName: this.#agentName,
         sessionId: this.#sessionId,
+        tools: this.#tools,
         signal: abort.signal,
         emit: (event) => {
           send({ type: "event", turn_id: turn.turn_id, event });

@@ -337,6 +337,33 @@ describe("CodexDriver", () => {
     assert.equal(sent("initialize").length, 2);
   });
 
+  it("writes turned-off tools into config.toml and restarts when the profile changes", async () => {
+    const { driver, script, sent, codexHome } = setup();
+    script({
+      turns: [
+        [completed(message("one")), turnDone()],
+        [completed(message("two")), turnDone()],
+      ],
+    });
+    await driver.runTurn(context({ tools: ["team", "files"] }).ctx);
+    const config = readFileSync(join(codexHome, "config.toml"), "utf8");
+    for (const line of [
+      'web_search = "disabled"',
+      "shell_tool = false",
+      "unified_exec = false",
+      "multi_agent = false",
+    ]) {
+      assert.match(config, new RegExp(`^${line}$`, "m"), line);
+    }
+    assert.doesNotMatch(config, /view_image/);
+    await driver.runTurn(context({ sessionId: "thread-new" }).ctx);
+    assert.equal(sent("initialize").length, 2);
+    assert.doesNotMatch(
+      readFileSync(join(codexHome, "config.toml"), "utf8"),
+      /features|web_search/,
+    );
+  });
+
   it("starts a fresh app-server after a reconfigure (new tools)", async () => {
     const { driver, script, sent } = setup();
     script({

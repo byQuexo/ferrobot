@@ -12,7 +12,7 @@ import {
 } from "@anthropic-ai/claude-agent-sdk";
 
 import { log } from "../log.ts";
-import { decide } from "../permissions.ts";
+import { CLAUDE_SUBAGENT_TOOLS, CLAUDE_TOOLS, decide, offGroups } from "../permissions.ts";
 import type { SteerFrame, TurnEvent } from "../protocol.ts";
 import type { SessionStore } from "../session.ts";
 import type { ModelDriver, TurnContext, TurnResult } from "./types.ts";
@@ -138,7 +138,7 @@ class Inbox implements AsyncIterable<SDKUserMessage> {
 
 /** Builds the SDK options for one turn (pure; checked against the SDK's `Options`). */
 export function buildOptions(args: {
-  ctx: Pick<TurnContext, "agentName" | "instructions">;
+  ctx: Pick<TurnContext, "agentName" | "instructions" | "tools">;
   workspaceDir: string;
   mcpUrl: URL;
   token: string;
@@ -148,6 +148,11 @@ export function buildOptions(args: {
   canUseTool: CanUseTool;
   audit: HookCallback;
 }): Options {
+  const off = [...offGroups(args.ctx.tools)];
+  // Removed from the model's context, not just refused when called.
+  const disallowed = off.length
+    ? [...off.flatMap((g) => CLAUDE_TOOLS[g]), ...CLAUDE_SUBAGENT_TOOLS]
+    : [];
   return {
     cwd: args.workspaceDir,
     abortController: args.abortController,
@@ -168,6 +173,7 @@ export function buildOptions(args: {
       },
     },
     hooks: { PreToolUse: [{ hooks: [args.audit] }] },
+    ...(disallowed.length ? { disallowedTools: disallowed } : {}),
     ...(args.resume ? { resume: args.resume } : {}),
     ...(args.model ? { model: args.model } : {}),
   };
@@ -285,8 +291,9 @@ export class ClaudeDriver implements ModelDriver {
     if (aborted(ctx.signal)) throw new TurnAbortedError("interrupted");
     ctx.signal.addEventListener("abort", onAbort, { once: true });
 
+    const off = offGroups(ctx.tools);
     const canUseTool: CanUseTool = (toolName, input) => {
-      const verdict = decide(toolName, input, home);
+      const verdict = decide(toolName, input, home, off);
       if (verdict.allow) return Promise.resolve({ behavior: "allow", updatedInput: input });
       emit({ kind: "tool_denied", name: toolName, reason: verdict.reason });
       return Promise.resolve({ behavior: "deny", message: verdict.reason });

@@ -7,7 +7,7 @@ import { dirname, join, resolve } from "node:path";
 
 import { errorMessage, log } from "../log.ts";
 import type { FerrobotMcp } from "../mcp-client.ts";
-import { decide, type Decision } from "../permissions.ts";
+import { decide, offGroups, type BuiltinGroup, type Decision } from "../permissions.ts";
 import { aborted, clip, latePrompt, systemAppend, turnPrompt } from "./claude.ts";
 import type { ModelDriver, TurnContext, TurnResult } from "./types.ts";
 import { TurnAbortedError } from "./types.ts";
@@ -83,29 +83,49 @@ function functionTool(name: string, description: string, properties: Record<stri
   };
 }
 
-const BUILTIN_TOOLS = [
-  functionTool("bash", "Run a shell command (bash -lc) in your workspace. Times out after 120 s.", {
-    command: { type: "string" },
-    description: {
-      type: "string",
-      description:
-        'What this does in a few plain words for your operator, e.g. "Checking flight prices".',
-    },
-  }),
-  functionTool("read_file", "Read a text file. Relative paths are inside your workspace.", {
-    path: { type: "string" },
-  }),
-  functionTool(
-    "write_file",
-    "Write a text file, creating parent directories. Relative paths are inside your workspace.",
-    {
+const BUILTIN_TOOLS: { group: BuiltinGroup; tool: ReturnType<typeof functionTool> }[] = [
+  {
+    group: "shell",
+    tool: functionTool(
+      "bash",
+      "Run a shell command (bash -lc) in your workspace. Times out after 120 s.",
+      {
+        command: { type: "string" },
+        description: {
+          type: "string",
+          description:
+            'What this does in a few plain words for your operator, e.g. "Checking flight prices".',
+        },
+      },
+    ),
+  },
+  {
+    group: "files",
+    tool: functionTool("read_file", "Read a text file. Relative paths are inside your workspace.", {
       path: { type: "string" },
-      content: { type: "string" },
-    },
-  ),
+    }),
+  },
+  {
+    group: "files",
+    tool: functionTool(
+      "write_file",
+      "Write a text file, creating parent directories. Relative paths are inside your workspace.",
+      {
+        path: { type: "string" },
+        content: { type: "string" },
+      },
+    ),
+  },
 ];
 
-const TOOLS_LINE = "On your own computer you can use the bash, read_file and write_file tools.";
+function toolsLine(names: string[]): string {
+  if (names.length === 0) return "";
+  const list =
+    names.length > 1
+      ? `${names.slice(0, -1).join(", ")} and ${names.at(-1) ?? ""}`
+      : names.join("");
+  return `On your own computer you can use the ${list} tool${names.length > 1 ? "s" : ""}.\n`;
+}
 
 /** Inlines `$defs` refs and drops `$schema`: several upstreams (Gemini among them) reject those keywords. */
 export function plainSchema(schema: object): Record<string, unknown> {
@@ -154,13 +174,15 @@ export class OpenAIDriver implements ModelDriver {
 
   async #turn(ctx: TurnContext): Promise<TurnResult> {
     const { id, history } = await this.#load(ctx.sessionId);
+    const off = offGroups(ctx.tools);
+    const builtin = BUILTIN_TOOLS.filter((b) => !off.has(b.group)).map((b) => b.tool);
     const system: ChatMessage = {
       role: "system",
-      content: `${TOOLS_LINE}\n${systemAppend(ctx.agentName, ctx.instructions)}`,
+      content: `${toolsLine(builtin.map((t) => t.function.name))}${systemAppend(ctx.agentName, ctx.instructions)}`,
     };
     const mcpTools = await this.#opts.mcp.listTools({ signal: ctx.signal });
     const tools = [
-      ...BUILTIN_TOOLS,
+      ...builtin,
       ...mcpTools.map((t) => ({
         type: "function" as const,
         function: {
@@ -281,7 +303,7 @@ export class OpenAIDriver implements ModelDriver {
       ctx.emit({ kind: "tool_result", id, output, is_error: true });
       return output;
     }
-    const verdict = this.#decide(name, input);
+    const verdict = this.#decide(name, input, offGroups(ctx.tools));
     if (!verdict.allow) {
       ctx.emit({ kind: "tool_denied", name, reason: verdict.reason });
       return verdict.reason;
@@ -298,19 +320,20 @@ export class OpenAIDriver implements ModelDriver {
     return clip(outcome.output, MAX_MODEL_TOOL_OUTPUT);
   }
 
-  #decide(name: string, input: Record<string, unknown>): Decision {
+  // Also refuses a built-in tool the model calls by name although it was not offered.
+  #decide(name: string, input: Record<string, unknown>, off: ReadonlySet<BuiltinGroup>): Decision {
     const home = this.#opts.workspaceDir;
     const path = input["path"];
     const file_path = typeof path === "string" ? resolve(home, path) : undefined;
     switch (name) {
       case "bash":
-        return decide("Bash", input, home);
+        return decide("Bash", input, home, off);
       case "read_file":
-        return decide("Read", { file_path }, home);
+        return decide("Read", { file_path }, home, off);
       case "write_file":
-        return decide("Write", { file_path }, home);
+        return decide("Write", { file_path }, home, off);
       default:
-        return decide(name, input, home);
+        return decide(name, input, home, off);
     }
   }
 

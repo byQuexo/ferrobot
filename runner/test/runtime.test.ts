@@ -178,13 +178,13 @@ async function waitFor(cond: () => boolean, timeoutMs = 2000): Promise<void> {
 }
 
 describe("Runner configure", () => {
-  it("applies a new name and instructions from the next turn", async () => {
+  it("applies a new name, instructions and tools from the next turn", async () => {
     const seen: string[] = [];
     let reconfigured = 0;
     const driver: ModelDriver = {
       name: "fake",
       runTurn: (ctx) => {
-        seen.push(`${ctx.agentName}:${ctx.instructions}`);
+        seen.push(`${ctx.agentName}:${ctx.instructions}:${(ctx.tools ?? []).join(",")}`);
         return Promise.resolve({ result: null, sessionId: null });
       },
       reconfigure: () => {
@@ -200,18 +200,20 @@ describe("Runner configure", () => {
     );
     runner.handle({
       type: "welcome",
-      protocol_version: 1,
+      protocol_version: 2,
       agent_id: "0b5c2a0e-8f5e-4a51-9d6e-3f1f6f0c9a11",
       agent_name: "a",
       instructions: "old",
       resume_session_id: null,
+      tools: ["team", "shell"],
     });
     runner.handle(turn("t1"));
     await new Promise((r) => setTimeout(r, 10));
-    runner.handle({ type: "configure", agent_name: "b", instructions: "new" });
+    runner.handle({ type: "configure", agent_name: "b", instructions: "new", tools: ["memory"] });
     runner.handle(turn("t2"));
     await new Promise((r) => setTimeout(r, 10));
-    assert.deepEqual(seen, ["a:old", "b:new"]);
-    assert.equal(reconfigured, 1, "the driver hears about it");
+    assert.deepEqual(seen, ["a:old:team,shell", "b:new:memory"]);
+    // Codex and Gemini keep a process with its tools: both frames must reach the driver.
+    assert.equal(reconfigured, 2, "the driver hears about it");
   });
 });
