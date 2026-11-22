@@ -146,4 +146,5 @@ page. Sending is only possible when you added a send action.
 Connector tokens, OAuth and the approval card run in the daemon and are
 covered by its tests against fake servers. Not every catalog server has been
 tried with a real account, and the Gmail steps follow Google's Developer
-Preview, which may change. Gmail through Zapier has not been tried with a real account yet.
+Preview, which may change. Gmail through Zapier has not been tried with a
+real account yet.
