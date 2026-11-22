@@ -71,6 +71,86 @@ pub struct AgentList {
     pub agents: Vec<AgentInfo>,
 }
 
+/// The user guides from `docs/wiki`: the pages the app shows under Settings → Guides.
+const GUIDES: [(&str, &str, &str); 10] = [
+    (
+        "Getting-Started",
+        "Getting started",
+        include_str!("../../../docs/wiki/Getting-Started.md"),
+    ),
+    (
+        "Providers",
+        "Model providers and keys",
+        include_str!("../../../docs/wiki/Providers.md"),
+    ),
+    (
+        "Connectors-and-OAuth",
+        "Connectors and OAuth",
+        include_str!("../../../docs/wiki/Connectors-and-OAuth.md"),
+    ),
+    ("CLIs", "CLIs", include_str!("../../../docs/wiki/CLIs.md")),
+    (
+        "Tools-and-Permissions",
+        "Tools and permissions",
+        include_str!("../../../docs/wiki/Tools-and-Permissions.md"),
+    ),
+    (
+        "Routines-and-Memory",
+        "Routines and memory",
+        include_str!("../../../docs/wiki/Routines-and-Memory.md"),
+    ),
+    (
+        "Voice-and-Calls",
+        "Voice and calls",
+        include_str!("../../../docs/wiki/Voice-and-Calls.md"),
+    ),
+    (
+        "Usage-and-Costs",
+        "Usage and costs",
+        include_str!("../../../docs/wiki/Usage-and-Costs.md"),
+    ),
+    (
+        "Troubleshooting",
+        "Troubleshooting",
+        include_str!("../../../docs/wiki/Troubleshooting.md"),
+    ),
+    ("FAQ", "FAQ", include_str!("../../../docs/wiki/FAQ.md")),
+];
+
+/// The guide named `page`; spaces and case do not matter (`connectors and oauth`).
+fn find_guide(page: &str) -> Option<&'static (&'static str, &'static str, &'static str)> {
+    let page = page.trim().replace(' ', "-");
+    GUIDES
+        .iter()
+        .find(|(p, _, _)| p.eq_ignore_ascii_case(&page))
+}
+
+#[derive(Debug, Serialize, JsonSchema)]
+pub struct GuideInfo {
+    /// Pass this to `read_guide`.
+    pub page: String,
+    pub title: String,
+}
+
+#[derive(Debug, Serialize, JsonSchema)]
+pub struct GuideList {
+    pub guides: Vec<GuideInfo>,
+}
+
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct ReadGuideArgs {
+    /// The guide's page from `list_guides`, e.g. `Connectors-and-OAuth`.
+    pub page: String,
+}
+
+#[derive(Debug, Serialize, JsonSchema)]
+pub struct Guide {
+    pub page: String,
+    pub title: String,
+    /// Markdown. `[[Page]]` and `[[Text|Page]]` link to other guides.
+    pub markdown: String,
+}
+
 #[derive(Debug, Deserialize, JsonSchema)]
 pub struct SendMessageArgs {
     /// Recipient agent id (from `list_agents`). The agent's current name,
@@ -444,6 +524,43 @@ impl FerrobotTools {
 impl FerrobotTools {
     pub fn new(state: McpState) -> Self {
         Self { state }
+    }
+
+    #[tool(
+        description = "List ferrobot's user guides: setup, model providers and keys, connectors and \
+        OAuth, CLIs, tools and permissions, routines and memory, voice, usage and costs, \
+        troubleshooting, FAQ. The operator sees the same pages under Settings → Guides. Read one \
+        with read_guide before you walk the operator through a setting."
+    )]
+    async fn list_guides(&self) -> ToolResult<GuideList> {
+        Ok(Json(GuideList {
+            guides: GUIDES
+                .iter()
+                .map(|(page, title, _)| GuideInfo {
+                    page: (*page).to_owned(),
+                    title: (*title).to_owned(),
+                })
+                .collect(),
+        }))
+    }
+
+    #[tool(
+        description = "Read one of ferrobot's user guides as Markdown, by its page from list_guides \
+        (e.g. `Connectors-and-OAuth`). Use its steps when the operator asks how to set something \
+        up; you cannot change settings yourself."
+    )]
+    async fn read_guide(&self, Parameters(args): Parameters<ReadGuideArgs>) -> ToolResult<Guide> {
+        let (page, title, markdown) = find_guide(&args.page).ok_or_else(|| {
+            ErrorData::invalid_params(
+                format!("no guide named {}; list_guides shows the pages", args.page),
+                None,
+            )
+        })?;
+        Ok(Json(Guide {
+            page: (*page).to_owned(),
+            title: (*title).to_owned(),
+            markdown: (*markdown).to_owned(),
+        }))
     }
 
     #[tool(description = "List all agents on this ferrobot host with their status and role.")]
@@ -1052,7 +1169,9 @@ pub(crate) fn group_of(tool: &str) -> Option<ToolGroup> {
             ToolGroup::Team
         }
         "remember" | "recall" | "forget" => ToolGroup::Memory,
-        "ask_user" | "share_file" | "invite_to_call" | "hang_up" => ToolGroup::Operator,
+        "ask_user" | "share_file" | "invite_to_call" | "hang_up" | "list_guides" | "read_guide" => {
+            ToolGroup::Operator
+        }
         "create_agent" | "set_agent_tools" => ToolGroup::CreateAgents,
         "add_connector" => ToolGroup::AddConnectors,
         "create_routine" => ToolGroup::Routines,
@@ -1119,6 +1238,16 @@ impl ServerHandler for FerrobotTools {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn guides_are_found_by_page_in_any_case() {
+        assert!(GUIDES.iter().all(|(_, _, text)| !text.trim().is_empty()));
+        let found = find_guide(" connectors and oauth ").map(|(p, _, _)| *p);
+        assert_eq!(found, Some("Connectors-and-OAuth"));
+        assert_eq!(find_guide("FAQ").map(|(p, _, _)| *p), Some("FAQ"));
+        assert!(find_guide("Architecture").is_none(), "only user guides");
+        assert!(find_guide("../secrets").is_none());
+    }
 
     #[test]
     fn every_tool_has_a_group() {
