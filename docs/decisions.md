@@ -554,6 +554,10 @@ the code and this file together.
   `croner`), `humantime` (via `object_store`), `zbus_names`/`zvariant` (the
   keyring's Linux backend), and in the Tauri lockfile `proc-macro-error`, the
   `unic-*` crates and `glib` 0.18 (unsound iterator, Linux GTK stack of Tauri).
+  RUSTSEC-2026-0592 (`url` 2.5.8, stack overflow in `Url::origin()` on nested
+  `blob:` URLs) is ignored in `.cargo/audit.toml` until 2.5.9 passes the 7-day
+  publish age (2026-11-27): no agent can reach it, since proxied URLs keep the
+  upstream's scheme and OAuth revocation checks `https` first.
 
 - **The desktop app bundles the daemon** as a Tauri sidecar
   (`tauri.release.conf.json` adds it, so dev builds need no binary). The shell
