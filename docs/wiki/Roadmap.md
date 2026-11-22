@@ -1,6 +1,26 @@
-Status per phase. The detailed log of what was built and tested is
-[docs/progress.md](../blob/main/docs/progress.md); the assumptions behind it
-are in [docs/decisions.md](../blob/main/docs/decisions.md).
+What comes next, then the status of every phase so far. The detailed log of
+what was built and tested is [docs/progress.md](../blob/main/docs/progress.md);
+the assumptions behind it are in
+[docs/decisions.md](../blob/main/docs/decisions.md).
+
+## What's next
+
+In rough order. Nothing here has a date.
+
+1. **Firecracker on real hardware.** Boot the written backend on a Linux host
+   with KVM (F0 to F2), then start it through the jailer (F3), add cold sleep
+   from a snapshot (F4b) and a KVM test runner in CI (F5). Docker stays the
+   default, and the only choice on macOS and Windows.
+2. **Live runs for every provider.** OpenAI, Gemini, Amazon Bedrock and Google
+   Vertex AI have only run against fakes, and Codex has never used a real
+   ChatGPT sign-in. Each gets a real turn, and fixes where the real API
+   differs.
+3. **Windows and updates.** More testing of the Windows app (installer,
+   Credential Manager, Codex), and a release with signed update files, so the
+   in-app updater runs against a real release for the first time.
+4. **Later.** Moving warm agents to cold sleep under memory pressure (F4d),
+   computer use inside sandboxes, a native macOS app on the same `/v1` API, and
+   optional self-hosted S3-compatible storage. Smaller ideas are on [[Ideas]].
 
 Status words: **done** (built and tested, gaps noted), **partial** (code
 written, key parts never run), **open** (not built), **deliberately
