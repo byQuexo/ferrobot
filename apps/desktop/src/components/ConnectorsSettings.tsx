@@ -22,7 +22,7 @@ import {
 import type { Connector } from "../api.ts";
 import { useApp } from "../context.ts";
 import { CATALOG, type CatalogEntry, isAdded } from "../lib/catalog.ts";
-import { checkDot, checkLabel } from "../lib/connectors.ts";
+import { checkDot, checkLabel, ownAppEntry } from "../lib/connectors.ts";
 import { Button, IconButton } from "./ui.tsx";
 
 /** Client id, issuer and scopes of an own OAuth app; its client secret lives in Vault. */
@@ -227,12 +227,16 @@ export function ConnectorsSettings(props: {
     });
   };
 
+  // A catalog server that needs the operator's own OAuth app cannot be added without one.
+  const lockedApp = ownAppEntry(url) !== undefined;
+  const withApp = ownApp || lockedApp;
+
   const add = (): Promise<void> =>
     run(async () => {
       const c = await client.createConnector({
         name: name.trim(),
         url: url.trim(),
-        ...(ownApp
+        ...(withApp
           ? {
               client_id: app.clientId.trim() || null,
               issuer: app.issuer.trim() || null,
@@ -429,22 +433,32 @@ export function ConnectorsSettings(props: {
                 value={url}
                 placeholder="https://host/mcp"
                 onInput={(e) => {
-                  setUrl(e.currentTarget.value);
+                  const next = e.currentTarget.value;
+                  setUrl(next);
+                  const entry = ownAppEntry(next);
+                  if (entry?.app && !app.issuer.trim()) {
+                    setApp({
+                      ...app,
+                      issuer: entry.app.issuer,
+                      scopes: entry.app.scopes.join(" "),
+                    });
+                  }
                 }}
               />
             </label>
             <label class="check">
               <input
                 type="checkbox"
-                checked={ownApp}
+                checked={withApp}
+                disabled={lockedApp}
                 onChange={(e) => {
                   setOwnApp(e.currentTarget.checked);
                 }}
               />
-              Use my own OAuth app
+              Use my own OAuth app{lockedApp ? " (this server needs one)" : ""}
             </label>
-            {ownApp && <AppFields draft={app} onChange={setApp} redirectUri={redirectUri} />}
-            {ownApp && !app.clientId.trim() && (
+            {withApp && <AppFields draft={app} onChange={setApp} redirectUri={redirectUri} />}
+            {withApp && !app.clientId.trim() && (
               <span class="hint">
                 Enter your OAuth app’s client ID. No app yet?{" "}
                 <button type="button" class="text-link" onClick={props.onGuide}>
@@ -463,7 +477,7 @@ export function ConnectorsSettings(props: {
             <div class="form-actions">
               <Button
                 variant="primary"
-                disabled={busy || !name.trim() || !url.trim() || (ownApp && !app.clientId.trim())}
+                disabled={busy || !name.trim() || !url.trim() || (withApp && !app.clientId.trim())}
                 onClick={() => void add()}
               >
                 Add connector
