@@ -3477,6 +3477,18 @@ async fn add_connector(d: &Daemon, body: Value) -> Value {
 }
 
 #[tokio::test]
+async fn connectors_with_an_own_oauth_app_need_a_sign_in_even_if_listing_is_open() {
+    let d = start(Arc::new(StatefulBackend::default()), None, "127.0.0.1:0").await;
+    let url = keyless_upstream().await;
+    let open = add_connector(&d, json!({"name": "open", "url": url})).await;
+    assert_eq!(open["check"]["status"], "ok", "{open}");
+    let app = json!({"name": "mail", "url": url, "client_id": "app.example",
+        "issuer": "https://accounts.example.com"});
+    let conn = add_connector(&d, app).await;
+    assert_eq!(conn["check"]["status"], "needs_sign_in", "{conn}");
+}
+
+#[tokio::test]
 async fn connectors_reach_servers_that_refuse_the_newest_protocol() {
     let d = start(Arc::new(StatefulBackend::default()), None, "127.0.0.1:0").await;
     let url = legacy_upstream().await;
