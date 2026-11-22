@@ -38,7 +38,7 @@ import { CATALOG, isAdded } from "../src/lib/catalog.ts";
 import { checkDot, checkLabel, ownAppEntry } from "../src/lib/connectors.ts";
 import { parseBlocks, parseInline } from "../src/lib/markdown.ts";
 import { modelOptions, withSaved } from "../src/lib/models.ts";
-import { moveId, orderAgents } from "../src/lib/order.ts";
+import { moveId, orderAgents, pickSelection } from "../src/lib/order.ts";
 import { pollOutcome } from "../src/lib/update.ts";
 import { Speaker, liveEvent, pcm16Base64, speakable } from "../src/lib/voice.ts";
 import {
@@ -1277,5 +1277,19 @@ describe("connector status", () => {
     assert.equal(checkLabel(withApp, false), "connected · 23 tools");
     assert.equal(ownAppEntry(" https://gmailmcp.googleapis.com/mcp/v1 ")?.name, "gmail");
     assert.equal(ownAppEntry("https://mcp.deepwiki.com/mcp"), undefined);
+  });
+});
+
+describe("pickSelection", () => {
+  const map = (...xs: { id: string; name: string; pinned?: boolean }[]) =>
+    new Map(xs.map((x) => [x.id, x]));
+  it("keeps the remembered agent until the list has loaded", () => {
+    assert.equal(pickSelection(map(), "bob", false), undefined);
+    assert.equal(pickSelection(map({ id: "bob", name: "bob" }), "bob", true), undefined);
+  });
+  it("falls back to the first pinned agent, then by name, once loaded", () => {
+    const agents = map({ id: "c", name: "carol" }, { id: "f", name: "ferro", pinned: true });
+    assert.equal(pickSelection(agents, "gone", true), "f");
+    assert.equal(pickSelection(map(), "gone", true), null);
   });
 });

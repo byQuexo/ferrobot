@@ -1,5 +1,6 @@
 import type { JSX } from "preact";
 import { useCallback, useEffect, useMemo, useRef, useState } from "preact/hooks";
+import { pickSelection } from "./lib/order.ts";
 import { Bot, KeyRound, Plus, WifiOff } from "lucide-preact";
 
 import {
@@ -66,6 +67,7 @@ export function App(): JSX.Element {
   const [needsToken, setNeedsToken] = useState(false);
   const client = useMemo(() => new DaemonClient(base, token), [base, token]);
   const [agents, setAgents] = useState<Map<string, Agent>>(new Map());
+  const [loaded, setLoaded] = useState(false);
   const [health, setHealth] = useState<Health | null>(null);
   const [providers, setProviders] = useState<Provider[] | null>(null);
   const [skipped, setSkipped] = useState(() => localStorage.getItem(WELCOME_KEY) === "skipped");
@@ -137,6 +139,7 @@ export function App(): JSX.Element {
       ]);
       setHealth(h);
       setAgents(new Map(list.map((a) => [a.id, a])));
+      setLoaded(true);
       setProviders(ps);
       setNeedsToken(false);
     } catch (err) {
@@ -169,14 +172,9 @@ export function App(): JSX.Element {
   }, [client]);
 
   useEffect(() => {
-    if (selected && agents.has(selected)) return;
-    const first = [...agents.values()].sort(
-      (a, b) =>
-        Number(Boolean(b.pinned)) - Number(Boolean(a.pinned)) || a.name.localeCompare(b.name),
-    )[0];
-    if (first) setSelected(first.id);
-    else if (agents.size === 0) setSelected(null);
-  }, [agents, selected]);
+    const next = pickSelection(agents, selected, loaded);
+    if (next !== undefined) setSelected(next);
+  }, [agents, selected, loaded]);
 
   const listen = useCallback((fn: (e: UiEvent) => void) => {
     listeners.current.add(fn);
