@@ -254,7 +254,8 @@ export class OpenAIDriver implements ModelDriver {
           stream: true,
           ...(withUsage ? { stream_options: { include_usage: true } } : {}),
           messages,
-          tools,
+          // Some models take no tools at all, not even an empty list.
+          ...(tools.length > 0 ? { tools } : {}),
         }),
         signal: ctx.signal,
       });

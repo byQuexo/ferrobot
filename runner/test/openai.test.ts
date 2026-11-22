@@ -314,7 +314,7 @@ describe("OpenAIDriver", () => {
 
     const none = setup({ replies: [[text("ok")]] });
     await none.driver.runTurn(context({ tools: [] }).ctx);
-    assert.deepEqual(at(none.sent, 0).body.tools, []);
+    assert.equal("tools" in at(none.sent, 0).body, false, "no empty tools list");
     assert.doesNotMatch(at(at(none.sent, 0).body.messages, 0).content, /On your own computer/);
   });
 
