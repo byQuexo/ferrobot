@@ -12,7 +12,13 @@ export type Inline =
 export type Block =
   | { kind: "heading"; level: number; text: string }
   | { kind: "para"; text: string }
-  | { kind: "list"; ordered: boolean; items: { text: string; depth: number }[] }
+  | {
+      kind: "list";
+      ordered: boolean;
+      /** First number of an ordered list that does not start at 1. */
+      start?: number;
+      items: { text: string; depth: number }[];
+    }
   | { kind: "quote"; text: string }
   | { kind: "code"; text: string }
   | { kind: "hr" }
@@ -42,7 +48,10 @@ export function parseBlocks(src: string): Block[] {
     if (/^\s*```/.test(line)) {
       flush();
       const code: string[] = [];
-      while (++i < lines.length && !/^\s*```/.test(lines[i] ?? "")) code.push(lines[i] ?? "");
+      // A fence indented in a list item indents its code lines as far.
+      const indent = new RegExp(`^ {0,${String(line.length - line.trimStart().length)}}`);
+      while (++i < lines.length && !/^\s*```/.test(lines[i] ?? ""))
+        code.push((lines[i] ?? "").replace(indent, ""));
       out.push({ kind: "code", text: code.join("\n") });
       continue;
     }
@@ -78,7 +87,17 @@ export function parseBlocks(src: string): Block[] {
       const last = out[out.length - 1];
       const entry = { text: item[3] ?? "", depth: Math.floor((item[1]?.length ?? 0) / 2) };
       if (last?.kind === "list" && last.ordered === ordered) last.items.push(entry);
-      else out.push({ kind: "list", ordered, items: [entry] });
+      else {
+        const start = Number.parseInt(item[2] ?? "", 10);
+        out.push({ kind: "list", ordered, ...(start > 1 ? { start } : {}), items: [entry] });
+      }
+      continue;
+    }
+    // An indented line right after a list item continues that item.
+    const prev = out[out.length - 1];
+    if (!para.length && prev?.kind === "list" && /^\s+\S/.test(line) && lines[i - 1]?.trim()) {
+      const lastItem = prev.items[prev.items.length - 1];
+      if (lastItem) lastItem.text += ` ${line.trim()}`;
       continue;
     }
     const quote = /^\s*>\s?(.*)$/.exec(line);

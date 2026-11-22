@@ -6,6 +6,20 @@ All notable changes are listed here. The format follows
 
 ## [Unreleased]
 
+### Added
+
+- First run (desktop): with no agents, a starter agent walks you through
+  Docker and a model provider with its key, then wakes up as your first agent
+  (`guide`). **Skip** sets up alone.
+- Guides under Settings: the wiki's user pages (`docs/wiki`), bundled into the
+  app. New pages on connectors and OAuth (with a Gmail example), CLIs, tools
+  and permissions, routines and memory, voice and calls, and troubleshooting.
+
+### Changed
+
+- The agent dialog's tools list is collapsed behind a summary such as
+  "7 of 9 tools".
+
 ## [0.1.0] - 2026-11-22
 
 First public release.
