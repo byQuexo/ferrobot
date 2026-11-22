@@ -167,7 +167,7 @@ describe("AcpDriver", () => {
       params: {
         protocolVersion: 1,
         clientCapabilities: { fs: { readTextFile: false, writeTextFile: false }, terminal: false },
-        clientInfo: { name: "ferrobot", version: "0.1.0" },
+        clientInfo: { name: "ferrobot", version: "0.1.1" },
       },
     });
     assert.deepEqual(auth, {

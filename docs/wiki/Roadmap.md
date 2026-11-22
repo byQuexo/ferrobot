@@ -78,6 +78,7 @@ tested against fakes on a machine without KVM.
 | Phase | Status | Notes |
 | --- | --- | --- |
 | v0.1.0 | done | Desktop downloads for macOS (universal) and Windows (x64) that bundle the daemon; the Windows installer has had little testing. |
+| v0.1.1 | done | Codex setup help, key links per provider, and the reason under a message that was not delivered. |
 
 Ideas beyond this list are on [[Ideas]].
 

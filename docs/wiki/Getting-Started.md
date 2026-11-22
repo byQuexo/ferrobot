@@ -2,7 +2,7 @@ Two ways in: download the desktop app, or build from source.
 
 ## A. Desktop download
 
-Desktop builds come from the repository's Releases page: v0.1.0 has a
+Desktop builds come from the repository's Releases page: v0.1.1 has a
 universal `.dmg` for macOS and an `.exe` installer for Windows (x64).
 
 1. **Install Docker Desktop** and start it. Every agent runs in a container,
@@ -19,7 +19,7 @@ universal `.dmg` for macOS and an `.exe` installer for Windows (x64).
    (its key goes in **Settings → Vault**) and create an agent with
    **New agent**. See [[Model providers and keys|Providers]].
 4. **Wait for the first start.** The first time an agent starts, the runner
-   image (`ghcr.io/byquexo/ferrobot-runner:0.1.0`, about 2 GB) is pulled
+   image (`ghcr.io/byquexo/ferrobot-runner:0.1.1`, about 2 GB) is pulled
    from the GitHub Container Registry. Later agents start from the cached
    image.
 
