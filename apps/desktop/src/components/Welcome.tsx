@@ -202,7 +202,11 @@ export function Welcome(props: {
               I need a model to think with. Add a model provider: pick its kind, give it a name and
               a default model. {guide("Providers", "Guide")}
             </p>
-            <ProvidersSettings onVault={props.onVault} onChange={props.onProviders} />
+            <ProvidersSettings
+              onVault={props.onVault}
+              onChange={props.onProviders}
+              signIn={false}
+            />
           </Line>
         )}
         {step === "key" && (
@@ -221,7 +225,6 @@ export function Welcome(props: {
             </p>
             <ChatgptLogin
               provider={codex}
-              onVault={props.onVault}
               onStatus={(s) => {
                 setSignedIn(s.state === "signed_in" ? codex.id : null);
               }}

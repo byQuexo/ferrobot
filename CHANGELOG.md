@@ -6,6 +6,14 @@ All notable changes are listed here. The format follows
 
 ## [Unreleased]
 
+## [0.1.2] - 2026-11-23
+
+### Fixed
+
+- First run with a Codex provider shows the ChatGPT sign-in once, in Ferro's
+  line, instead of twice; the not-installed message is shorter and no longer
+  sends you to Vault next to the key field.
+
 ## [0.1.1] - 2026-11-23
 
 ### Added
@@ -112,6 +120,7 @@ First public release.
   allowlist per API family, no redirects, header allowlists both ways, agent
   tokens blanked in committed images.
 
-[Unreleased]: https://github.com/byQuexo/ferrobot/compare/v0.1.1...HEAD
+[Unreleased]: https://github.com/byQuexo/ferrobot/compare/v0.1.2...HEAD
+[0.1.2]: https://github.com/byQuexo/ferrobot/compare/v0.1.1...v0.1.2
 [0.1.1]: https://github.com/byQuexo/ferrobot/compare/v0.1.0...v0.1.1
 [0.1.0]: https://github.com/byQuexo/ferrobot/releases/tag/v0.1.0

@@ -81,7 +81,8 @@ const LOGIN_TIMEOUT_MS = 15 * 60_000;
 /** Device-code sign-in with ChatGPT, done by the daemon host’s Codex. */
 export function ChatgptLogin(props: {
   provider: Provider;
-  onVault: () => void;
+  /** Offers an OpenAI key in Vault instead; left out where the key row is already shown. */
+  onVault?: () => void;
   onStatus?: (status: LoginStatus) => void;
 }): JSX.Element {
   const { client, toast } = useApp();
@@ -142,10 +143,15 @@ export function ChatgptLogin(props: {
       {status?.state === "failed" && !code && (
         // Checking the sign-in failed, mostly because Codex is missing on the daemon's computer.
         <span class="small">
-          <LinkOut {...CODEX_INSTALL} /> · or{" "}
-          <button type="button" class="text-link" onClick={props.onVault}>
-            use an OpenAI API key in Vault
-          </button>
+          <LinkOut {...CODEX_INSTALL} />
+          {props.onVault && (
+            <>
+              {" · or "}
+              <button type="button" class="text-link" onClick={props.onVault}>
+                use an OpenAI API key in Vault
+              </button>
+            </>
+          )}
         </span>
       )}
     </div>
@@ -169,6 +175,8 @@ const dotOf = (p: Provider): string => (!needsKey(p.kind) || p.has_key ? "p-awak
 /** Add and remove model providers (a settings section); their keys live in Vault. */
 export function ProvidersSettings(props: {
   onVault: () => void;
+  /** The ChatGPT sign-in on Codex providers without a key; the welcome shows its own. */
+  signIn?: boolean;
   /** Called with the list after every load or change. */
   onChange?: (providers: Provider[]) => void;
 }): JSX.Element {
@@ -253,7 +261,7 @@ export function ProvidersSettings(props: {
               >
                 <Trash2 size={16} />
               </IconButton>
-              {p.kind === "codex" && !p.has_key && (
+              {props.signIn !== false && p.kind === "codex" && !p.has_key && (
                 <ChatgptLogin provider={p} onVault={props.onVault} />
               )}
             </li>

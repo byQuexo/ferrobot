@@ -122,10 +122,10 @@ impl AppServer {
             .kill_on_drop(true)
             .spawn()
             .map_err(|e| match e.kind() {
-                std::io::ErrorKind::NotFound => format!(
-                    "Codex is not installed on the daemon's computer \
-                     (looked for `{bin}`; --codex-bin sets its path)"
-                ),
+                std::io::ErrorKind::NotFound => {
+                    tracing::warn!(bin, "codex not found; --codex-bin sets its path");
+                    "Codex is not installed on the daemon's computer".to_owned()
+                }
                 _ => format!("cannot start `{bin} app-server` on the daemon's computer: {e}"),
             })?;
         let (Some(stdin), Some(stdout)) = (child.stdin.take(), child.stdout.take()) else {
