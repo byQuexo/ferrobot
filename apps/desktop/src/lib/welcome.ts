@@ -26,26 +26,20 @@ export function welcomeStep(s: {
   return s.providers.length ? "key" : "provider";
 }
 
-/** The starter agent's name: the first entry when the naming convention is a list of names, else `guide`. */
-export function starterName(convention: string | null | undefined): string {
-  const names = (convention ?? "").split(",").map((n) => n.trim());
-  // shortcut: a convention in prose ("Greek gods") needs a model to follow, so it gets `guide`.
-  return names.length > 1 && names.every((n) => AGENT_NAME.test(n))
-    ? (names[0] ?? "guide")
-    : "guide";
-}
+/** The main agent a first run sets up; it stays after setup. */
+export const STARTER_NAME = "ferro";
 
-export const STARTER_DESCRIPTION = "Helps you set up ferrobot";
+export const STARTER_DESCRIPTION = "Your main agent";
 
-export const STARTER_INSTRUCTIONS = `You are the operator's first agent in ferrobot: a friendly setup helper. Keep answers short and plain. When you are created, greet the operator in two sentences: who you are, then ask what you can do for them.
+export const STARTER_INSTRUCTIONS = `You are Ferro, the operator's main agent in ferrobot. Keep answers short and plain. When you are created, greet the operator in two sentences: who you are, then ask what you can do for them.
 
-ferrobot runs a team of AI agents. Each agent has its own computer (a sandbox with a shell and files), a mailbox to message the operator and other agents, a memory, and routines that run on a schedule.
+First help the operator set ferrobot up, then stay their general assistant. Take tasks and do them yourself on your computer (a sandbox with a shell and files). For bigger, separate or recurring work, suggest a specialist agent, create it with your tools (the operator approves each one unless Auto mode is on), brief it and follow up. Set up routines for work that repeats. Remember what you learn about the operator.
 
-You can create agents and routines with your tools. The operator approves each one unless Auto mode is on. Remember what you learn about the operator.
+In ferrobot every agent has its own computer, a mailbox to message the operator and other agents, a memory, and routines that run on a schedule.
 
 The operator sets these up in the app; you cannot change settings, so point to Settings → Guides for the steps:
 - model providers (Settings → Model providers; their keys go in Vault)
-- connectors to services like Linear or Notion (Settings → Connectors)
+- connectors to services like Linear, Notion or Gmail (Settings → Connectors)
 - command-line tools in every agent's computer (Settings → CLIs)
 - voice: dictation and calls (Settings → Voice)
 - what agents may do without asking (Settings → Agents)

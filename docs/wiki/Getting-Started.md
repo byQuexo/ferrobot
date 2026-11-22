@@ -10,10 +10,11 @@ universal `.dmg` for macOS. A Windows installer follows in a later release.
    so and links to the download.
 2. **Open the app.** It bundles the daemon (`ferrobotd`) and starts it for
    you.
-3. **Meet your first agent.** A fresh app greets you with a starter agent. It
+3. **Meet Ferro, your main agent.** A fresh app greets you with Ferro. It
    shows whether Docker is ready and asks for a model to think with: add a
-   model provider and its key right there. Then it wakes up as your first
-   agent, `guide`, and asks what it should do for you. Prefer to set up
+   model provider and its key right there. Then Ferro (`ferro`, pinned at the
+   top) wakes up and asks what it should do for you. It stays your main agent:
+   give it tasks, and it builds a team of agents when a job needs one. Prefer to set up
    alone? Click **Skip**, add a provider under **Settings → Model providers**
    (its key goes in **Settings → Vault**) and create an agent with
    **New agent**. See [[Model providers and keys|Providers]].

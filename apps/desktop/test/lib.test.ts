@@ -19,7 +19,7 @@ import {
   toolsSummary,
 } from "../src/lib/format.ts";
 import { GUIDES, splitWikiLinks } from "../src/lib/guides.ts";
-import { providerReady, starterName, welcomeStep } from "../src/lib/welcome.ts";
+import { providerReady, welcomeStep } from "../src/lib/welcome.ts";
 import { buildTimeline, sharedFiles, withoutRoomTurns } from "../src/lib/timeline.ts";
 import {
   CallScript,
@@ -625,14 +625,6 @@ describe("welcome", () => {
       assert.equal(welcomeStep({ ...base, ...input }), step, JSON.stringify(input));
     assert.equal(providerReady(provider("anthropic", false)), false);
     assert.equal(providerReady(provider("vertex", false)), true);
-  });
-
-  it("names the starter after a list convention, else guide", () => {
-    assert.equal(starterName(null), "guide");
-    assert.equal(starterName("Greek gods"), "guide");
-    assert.equal(starterName("zeus"), "guide");
-    assert.equal(starterName("zeus, hera, athena"), "zeus");
-    assert.equal(starterName("Zeus, Hera"), "guide");
   });
 });
 
