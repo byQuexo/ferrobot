@@ -46,6 +46,20 @@ pub struct CredentialError {
     pub since: time::OffsetDateTime,
 }
 
+/// The agent's model refused a request with tools. The agent's messages wait until the operator
+/// approves the card to run it without tools, changes its provider or model, or retries. Kept in
+/// memory: after a restart the next model call finds it again.
+#[derive(Debug, Clone, Serialize, ToSchema)]
+pub struct ToolsUnsupported {
+    /// The model as the agent requested it.
+    pub model: String,
+    /// Which provider can't run the model with tools; never the upstream's words.
+    pub reason: String,
+    #[serde(with = "time::serde::rfc3339")]
+    #[schema(value_type = String, format = DateTime)]
+    pub since: time::OffsetDateTime,
+}
+
 /// An agent plus live state.
 #[derive(Debug, Clone, Serialize, ToSchema)]
 pub struct AgentView {
@@ -60,6 +74,9 @@ pub struct AgentView {
     pub avatar_url: Option<String>,
     /// Set while the agent's model credential is missing or rejected; its turns wait.
     pub credential_error: Option<CredentialError>,
+    /// Set while the agent's model can't use tools and the operator has not turned them off;
+    /// its turns wait.
+    pub tools_unsupported: Option<ToolsUnsupported>,
 }
 
 pub fn presence(agent: &Agent, connected: bool, working: bool) -> Presence {
@@ -82,6 +99,7 @@ pub fn view(state: &AppState, agent: Agent, unread: u32) -> AgentView {
         connected,
         unread,
         credential_error: state.hub.credential_error(agent.id),
+        tools_unsupported: state.hub.tools_unsupported(agent.id),
         agent,
     }
 }

@@ -171,6 +171,17 @@
             "presence": {
               "$ref": "#/$defs/Presence"
             },
+            "tools_unsupported": {
+              "oneOf": [
+                {
+                  "$ref": "#/$defs/ToolsUnsupported",
+                  "description": "Set while the agent's model can't use tools and the operator has not turned them off;\nits turns wait."
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
             "unread": {
               "description": "Finished turns since the operator last marked the chat as read.",
               "format": "int32",
@@ -532,6 +543,29 @@
         "web"
       ],
       "type": "string"
+    },
+    "ToolsUnsupported": {
+      "description": "The agent's model refused a request with tools. The agent's messages wait until the operator\napproves the card to run it without tools, changes its provider or model, or retries. Kept in\nmemory: after a restart the next model call finds it again.",
+      "properties": {
+        "model": {
+          "description": "The model as the agent requested it.",
+          "type": "string"
+        },
+        "reason": {
+          "description": "Which provider can't run the model with tools; never the upstream's words.",
+          "type": "string"
+        },
+        "since": {
+          "format": "date-time",
+          "type": "string"
+        }
+      },
+      "required": [
+        "model",
+        "reason",
+        "since"
+      ],
+      "type": "object"
     },
     "UiEvent": {
       "description": "Pushed to every UI WebSocket client.",

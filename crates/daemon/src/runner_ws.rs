@@ -321,14 +321,14 @@ async fn dispatch_loop(
     mut done_rx: mpsc::Receiver<Done>,
 ) {
     let notify = state.hub.notify_handle(agent);
-    hold_for_credentials(&state, agent, &notify).await;
+    hold_for_model(&state, agent, &notify).await;
     if greeting_due(&state, agent).await
         && !run_turn(&state, agent, &conn, &notify, &mut done_rx, None).await
     {
         return;
     }
     loop {
-        hold_for_credentials(&state, agent, &notify).await;
+        hold_for_model(&state, agent, &notify).await;
         let msg = match state.store.claim_next_message(agent).await {
             Ok(Some(msg)) => msg,
             Ok(None) => {
@@ -347,9 +347,10 @@ async fn dispatch_loop(
     }
 }
 
-/// Waits while the agent's model credential is broken, so its messages stay queued.
-async fn hold_for_credentials(state: &AppState, agent: AgentId, notify: &tokio::sync::Notify) {
-    while state.hub.credential_error(agent).is_some() {
+/// Waits while the agent's model credential is broken or its model refuses tools, so its
+/// messages stay queued.
+async fn hold_for_model(state: &AppState, agent: AgentId, notify: &tokio::sync::Notify) {
+    while state.hub.held(agent) {
         notify.notified().await;
     }
 }
@@ -517,7 +518,7 @@ async fn run_turn(
     state.hub.set_current_turn(agent, conn_id, None);
     state.hub.touch(agent);
     // The Claude SDK reports a refused model call as a completed turn whose answer is the error.
-    if state.hub.credential_error(agent).is_some()
+    if state.hub.held(agent)
         && let Some(done) = result
             .as_mut()
             .filter(|d| d.outcome == TurnOutcome::Completed)
@@ -550,9 +551,7 @@ async fn settle(state: &AppState, agent: AgentId, msg: &MailMessage, result: Opt
             state.store.complete_message(msg.id).await
         }
         // It waits for the operator's fix instead of using up its attempts.
-        _ if state.hub.credential_error(agent).is_some() => {
-            state.store.requeue_message(msg.id).await
-        }
+        _ if state.hub.held(agent) => state.store.requeue_message(msg.id).await,
         failed => {
             let error = match failed {
                 Some(Done { error, .. }) => error.unwrap_or_else(|| "turn failed".into()),

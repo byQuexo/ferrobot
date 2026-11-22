@@ -278,8 +278,8 @@ export interface paths {
         get?: never;
         put?: never;
         /**
-         * Clears the agent's credential problem so its waiting messages run; if the credential is
-         *     still broken, the next model call sets it again.
+         * Clears the agent's credential or tools problem so its waiting messages run; if it still
+         *     stands, the next model call sets it again.
          */
         post: operations["retry"];
         delete?: never;
@@ -1160,6 +1160,7 @@ export interface components {
             /** @description Relative URL of the avatar image, if one was uploaded. */
             avatar_url?: string | null;
             credential_error?: components["schemas"]["CredentialError"] | null;
+            tools_unsupported?: components["schemas"]["ToolsUnsupported"] | null;
         };
         AnswerQuestion: {
             /** @description One answer per question of the card. */
@@ -1199,6 +1200,11 @@ export interface components {
             requester: components["schemas"]["AgentId"];
             /** @enum {string} */
             kind: "set_agent_tools";
+        } | {
+            agent: components["schemas"]["AgentId"];
+            model: string;
+            /** @enum {string} */
+            kind: "use_without_tools";
         };
         /**
          * @description A chosen character avatar look; without one, clients derive a look from the agent id.
@@ -1973,6 +1979,19 @@ export interface components {
          * @enum {string}
          */
         ToolGroup: "team" | "memory" | "operator" | "create_agents" | "add_connectors" | "routines" | "shell" | "files" | "web";
+        /**
+         * @description The agent's model refused a request with tools. The agent's messages wait until the operator
+         *     approves the card to run it without tools, changes its provider or model, or retries. Kept in
+         *     memory: after a restart the next model call finds it again.
+         */
+        ToolsUnsupported: {
+            /** @description The model as the agent requested it. */
+            model: string;
+            /** @description Which provider can't run the model with tools; never the upstream's words. */
+            reason: string;
+            /** Format: date-time */
+            since: string;
+        };
         /** @description What was said. Both providers answer `{"text": ...}` (plus fields we ignore). */
         Transcript: {
             text: string;

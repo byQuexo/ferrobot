@@ -10,7 +10,7 @@ use ferrobot_core::AgentId;
 use ferrobot_core::protocol::DaemonFrame;
 use tokio::sync::{Notify, mpsc};
 
-use crate::views::CredentialError;
+use crate::views::{CredentialError, ToolsUnsupported};
 
 #[derive(Debug)]
 struct Conn {
@@ -42,6 +42,8 @@ struct Inner {
     refused: HashSet<AgentId>,
     /// Agents whose model credential is missing or rejected; their turns wait.
     credentials: HashMap<AgentId, CredentialError>,
+    /// Agents whose model refused tools; their turns wait too.
+    no_tools: HashMap<AgentId, ToolsUnsupported>,
 }
 
 impl Hub {
@@ -113,6 +115,32 @@ impl Hub {
 
     pub fn credential_error(&self, agent: AgentId) -> Option<CredentialError> {
         self.lock().credentials.get(&agent).cloned()
+    }
+
+    /// Records that the agent's model refused tools unless already known; true if it is new.
+    pub fn set_tools_unsupported(&self, agent: AgentId, problem: ToolsUnsupported) -> bool {
+        match self.lock().no_tools.entry(agent) {
+            Entry::Occupied(_) => false,
+            Entry::Vacant(e) => {
+                e.insert(problem);
+                true
+            }
+        }
+    }
+
+    /// Forgets that the agent's model refused tools; true if it had.
+    pub fn clear_tools_unsupported(&self, agent: AgentId) -> bool {
+        self.lock().no_tools.remove(&agent).is_some()
+    }
+
+    pub fn tools_unsupported(&self, agent: AgentId) -> Option<ToolsUnsupported> {
+        self.lock().no_tools.get(&agent).cloned()
+    }
+
+    /// True while a model problem holds the agent's turns.
+    pub fn held(&self, agent: AgentId) -> bool {
+        let inner = self.lock();
+        inner.credentials.contains_key(&agent) || inner.no_tools.contains_key(&agent)
     }
 
     /// Removes the connection if it is still the registered one.
@@ -225,6 +253,7 @@ impl Hub {
         inner.started.remove(&agent);
         inner.refused.remove(&agent);
         inner.credentials.remove(&agent);
+        inner.no_tools.remove(&agent);
     }
 
     /// Wakes the agent's dispatch loop (no-op if nothing is waiting yet; the
