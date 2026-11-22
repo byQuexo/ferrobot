@@ -10,6 +10,7 @@
 [![License: MIT OR Apache-2.0](https://img.shields.io/badge/license-MIT%20OR%20Apache--2.0-blue)](#contributing-security-license)
 [![Release v0.1.0](https://img.shields.io/badge/release-v0.1.0-orange)](https://github.com/byQuexo/ferrobot/releases/tag/v0.1.0)
 [![macOS](https://img.shields.io/badge/macOS-universal-lightgrey?logo=apple)](#download)
+[![Windows](https://img.shields.io/badge/Windows-x64-lightgrey?logo=windows)](#download)
 
 ![ferrobot demo: researcher reads the backon docs through the DeepWiki connector, asks you a question and hands the build to builder, which runs cargo on its own computer; then a shared report and the cost in Usage](docs/assets/demo.gif)
 
@@ -75,13 +76,17 @@ versioned API. More in the [wiki](docs/wiki/Architecture.md).
 ## Download
 
 Version 0.1.0 on the [release page](https://github.com/byQuexo/ferrobot/releases/tag/v0.1.0):
-`ferrobot_0.1.0_universal.dmg` (macOS, Apple silicon and Intel); `SHA256SUMS`
-lists its checksum. A Windows installer follows in a later release.
+`ferrobot_0.1.0_universal.dmg` (macOS, Apple silicon and Intel) and
+`ferrobot_0.1.0_x64-setup.exe` (Windows); `SHA256SUMS` lists the checksums.
 The app needs [Docker Desktop](https://www.docker.com/products/docker-desktop/)
 and starts its own daemon.
 
-The app is not signed, so macOS warns once: right-click (or Control-click) the
-app in Applications, choose **Open**, then **Open** again.
+The installers are not signed, so the system warns once:
+
+- **macOS:** right-click (or Control-click) the app in Applications, choose
+  **Open**, then **Open** again.
+- **Windows:** when SmartScreen says "Windows protected your PC", click
+  **More info**, then **Run anyway**.
 
 ## Quickstart (Docker + Ollama, no API key)
 
@@ -117,8 +122,8 @@ ferrobot is early. The desktop app, agents in Docker and voice rooms have been
 used live on macOS. Claude (Anthropic API), OpenRouter and local Ollama have
 run against the real services; OpenAI, Gemini, Bedrock and Vertex have only
 been tested against fakes so far. Firecracker sandboxes are experimental and
-have never booted a microVM. There is no Windows download yet; the Windows
-build and its keychain have never run on real hardware. Details:
+have never booted a microVM. The Windows installer is new and has had little
+testing. Details:
 [Roadmap](docs/wiki/Roadmap.md) and [Ideas](docs/wiki/Ideas.md).
 
 ## Contributing, security, license

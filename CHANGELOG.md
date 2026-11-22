@@ -77,7 +77,8 @@ First public release.
   agent, from the model proxy; prices in `config/pricing.toml` with overrides
   in Settings; CSV export.
 - Desktop app (Tauri) for macOS (universal .dmg) that starts the daemon itself
-  and says so when Docker is missing. A Windows installer follows later.
+  and says so when Docker is missing, and a Windows installer (x64, first
+  release, little testing).
 - Runner image published as `ghcr.io/byquexo/ferrobot-runner`.
 
 ### Security

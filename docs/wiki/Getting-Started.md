@@ -3,7 +3,7 @@ Two ways in: download the desktop app, or build from source.
 ## A. Desktop download
 
 Desktop builds come from the repository's Releases page: v0.1.0 has a
-universal `.dmg` for macOS. A Windows installer follows in a later release.
+universal `.dmg` for macOS and an `.exe` installer for Windows (x64).
 
 1. **Install Docker Desktop** and start it. Every agent runs in a container,
    so it is required. If Docker is missing or not running, the app tells you
@@ -23,9 +23,13 @@ universal `.dmg` for macOS. A Windows installer follows in a later release.
    from the GitHub Container Registry. Later agents start from the cached
    image.
 
-Builds are unsigned unless the release notes say otherwise, so macOS
-(Gatekeeper) warns on first launch: right-click the app, choose **Open**, then
-confirm. More fixes: [[Troubleshooting]].
+Builds are unsigned unless the release notes say otherwise, so the system
+warns on first launch:
+
+- **macOS** (Gatekeeper): right-click the app, choose **Open**, then confirm.
+- **Windows** (SmartScreen): click **More info**, then **Run anyway**.
+
+More fixes: [[Troubleshooting]].
 
 The guides under **Settings → Guides** in the app are the same pages as this
 wiki.
