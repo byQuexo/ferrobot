@@ -8,7 +8,7 @@
 
 [![CI](https://github.com/byQuexo/ferrobot/actions/workflows/ci.yml/badge.svg)](https://github.com/byQuexo/ferrobot/actions/workflows/ci.yml)
 [![License: MIT OR Apache-2.0](https://img.shields.io/badge/license-MIT%20OR%20Apache--2.0-blue)](#contributing-security-license)
-[![Release v0.1.0](https://img.shields.io/badge/release-v0.1.0-orange)](https://github.com/byQuexo/ferrobot/releases/tag/v0.1.0)
+[![Release v0.1.1](https://img.shields.io/badge/release-v0.1.1-orange)](https://github.com/byQuexo/ferrobot/releases/tag/v0.1.1)
 [![macOS](https://img.shields.io/badge/macOS-universal-lightgrey?logo=apple)](#download)
 [![Windows](https://img.shields.io/badge/Windows-x64-lightgrey?logo=windows)](#download)
 
@@ -78,9 +78,9 @@ versioned API. More in the [wiki](docs/wiki/Architecture.md).
 
 ## Download
 
-Version 0.1.0 on the [release page](https://github.com/byQuexo/ferrobot/releases/tag/v0.1.0):
-`ferrobot_0.1.0_universal.dmg` (macOS, Apple silicon and Intel) and
-`ferrobot_0.1.0_x64-setup.exe` (Windows); `SHA256SUMS` lists the checksums.
+Version 0.1.1 on the [release page](https://github.com/byQuexo/ferrobot/releases/tag/v0.1.1):
+`ferrobot_0.1.1_universal.dmg` (macOS, Apple silicon and Intel) and
+`ferrobot_0.1.1_x64-setup.exe` (Windows); `SHA256SUMS` lists the checksums.
 The app needs [Docker Desktop](https://www.docker.com/products/docker-desktop/)
 and starts its own daemon.
 

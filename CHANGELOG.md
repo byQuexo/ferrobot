@@ -6,6 +6,8 @@ All notable changes are listed here. The format follows
 
 ## [Unreleased]
 
+## [0.1.1] - 2026-11-23
+
 ### Added
 
 - Every model provider kind links to where its key is created or how it is
@@ -110,5 +112,6 @@ First public release.
   allowlist per API family, no redirects, header allowlists both ways, agent
   tokens blanked in committed images.
 
-[Unreleased]: https://github.com/byQuexo/ferrobot/compare/v0.1.0...HEAD
+[Unreleased]: https://github.com/byQuexo/ferrobot/compare/v0.1.1...HEAD
+[0.1.1]: https://github.com/byQuexo/ferrobot/compare/v0.1.0...v0.1.1
 [0.1.0]: https://github.com/byQuexo/ferrobot/releases/tag/v0.1.0
