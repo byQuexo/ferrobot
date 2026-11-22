@@ -35,7 +35,7 @@ import {
   type Line,
 } from "../src/lib/call.ts";
 import { CATALOG, isAdded } from "../src/lib/catalog.ts";
-import { checkDot, checkLabel } from "../src/lib/connectors.ts";
+import { checkDot, checkLabel, ownAppEntry } from "../src/lib/connectors.ts";
 import { parseBlocks, parseInline } from "../src/lib/markdown.ts";
 import { modelOptions, withSaved } from "../src/lib/models.ts";
 import { moveId, orderAgents } from "../src/lib/order.ts";
@@ -1263,5 +1263,19 @@ describe("connector status", () => {
       assert.ok(!checkLabel(c, false).includes("not signed in"));
     }
     assert.equal(checkLabel(base, true), "checking…");
+  });
+
+  it("does not call a server that needs an own OAuth app connected without one", () => {
+    const gmail = {
+      ...base,
+      url: "https://gmailmcp.googleapis.com/mcp/v1",
+      check: { status: "ok" as const, tools: 23, at },
+    };
+    assert.equal(checkLabel(gmail, false), "needs your OAuth app");
+    assert.equal(checkDot(gmail, false), "p-starting");
+    const withApp = { ...gmail, client_id: "app.example" };
+    assert.equal(checkLabel(withApp, false), "connected · 23 tools");
+    assert.equal(ownAppEntry(" https://gmailmcp.googleapis.com/mcp/v1 ")?.name, "gmail");
+    assert.equal(ownAppEntry("https://mcp.deepwiki.com/mcp"), undefined);
   });
 });

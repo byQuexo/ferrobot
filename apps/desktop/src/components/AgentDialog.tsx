@@ -25,7 +25,11 @@ import { Button, Dialog, Switch } from "./ui.tsx";
 const TOOL_GROUPS: readonly [ToolGroup, string, string][] = [
   ["team", "Team", "Message teammates and give them tasks"],
   ["memory", "Memory", "Remember and recall notes"],
-  ["operator", "Operator", "Ask you questions, share files, bring teammates into calls"],
+  [
+    "operator",
+    "Operator",
+    "Ask you questions, share files, bring teammates into calls, read the guides",
+  ],
   ["create_agents", "Create agents", "Ask to create new agents"],
   ["add_connectors", "Add connectors", "Ask you to add connectors"],
   ["routines", "Routines", "Set up its own routines"],

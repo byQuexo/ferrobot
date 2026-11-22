@@ -12,7 +12,7 @@ off.
 | --- | --- |
 | Team | Message teammates and give them tasks |
 | Memory | Remember and recall notes |
-| Operator | Ask you questions, share files, bring teammates into calls |
+| Operator | Ask you questions, share files, bring teammates into calls, read the guides |
 | Create agents | Ask to create new agents |
 | Add connectors | Ask you to add connectors |
 | Routines | Set up its own routines |
