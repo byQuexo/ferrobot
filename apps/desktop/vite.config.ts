@@ -1,3 +1,5 @@
+import { readFileSync } from "node:fs";
+
 import preact from "@preact/preset-vite";
 import { defineConfig, searchForWorkspaceRoot } from "vite";
 
@@ -5,6 +7,15 @@ import { defineConfig, searchForWorkspaceRoot } from "vite";
 // localhost:1420, which the daemon's CORS policy allows.
 export default defineConfig({
   plugins: [preact()],
+  define: {
+    __APP_VERSION__: JSON.stringify(
+      (
+        JSON.parse(readFileSync(new URL("package.json", import.meta.url), "utf8")) as {
+          version: string;
+        }
+      ).version,
+    ),
+  },
   clearScreen: false,
   server: {
     port: 1420,
