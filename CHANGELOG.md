@@ -6,6 +6,10 @@ All notable changes are listed here. The format follows
 
 ## [Unreleased]
 
+## [0.1.0] - 2026-11-22
+
+First public release.
+
 ### Added
 
 - First run (desktop): with no agents, Ferro walks you through Docker and a
@@ -26,18 +30,17 @@ All notable changes are listed here. The format follows
   counts, the data folder and the daemon's latest log lines, with **Copy
   diagnostics** for bug reports (`GET /v1/diagnostics`, `/v1/diagnostics/log`;
   credentials in log lines are redacted).
-
-### Changed
-
 - The agent dialog's tools list is collapsed behind a summary such as
   "7 of 9 tools".
-
-## [0.1.0] - 2026-11-22
-
-First public release.
-
-### Added
-
+- Gmail (Google's official MCP server) in the connector catalog. A server
+  that needs your own OAuth app asks for its client ID and shows **needs your
+  OAuth app** or **needs sign-in** until it is set up; the guide also shows
+  Gmail through Zapier, without a Google app.
+- Agents change the tools and connectors of agents they created
+  (`set_agent_tools`): at most their own, and more tools need your approval
+  unless Auto mode is on.
+- Agents read the user guides (`list_guides`, `read_guide`), so Ferro can walk
+  you through a setting.
 - Daemon (`ferrobotd`) with a versioned HTTP/WebSocket API (`/v1`), operator
   token on every route, OpenAPI spec and JSON Schemas in `protocol/`.
 - One sandboxed computer per agent: Docker (default), local processes, and a
