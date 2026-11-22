@@ -62,6 +62,7 @@ export function App(): JSX.Element {
   const [room, setRoom] = useState<number | null>(null);
   const [dialog, setDialog] = useState<"create" | "edit" | null>(null);
   const [settings, setSettings] = useState<SettingsSection | null>(null);
+  const [guide, setGuide] = useState<string | null>(null);
   const [usage, setUsage] = useState(false);
   const [infoOpen, setInfoOpen] = useState(
     () => localStorage.getItem("ferrobot.info") !== "closed",
@@ -220,6 +221,11 @@ export function App(): JSX.Element {
     setUsage(false);
     setSettings("vault");
   };
+  const openGuide = (page: string | null): void => {
+    setUsage(false);
+    setSettings("guides");
+    setGuide(page);
+  };
   const withInfo = agent && infoOpen && !pair && room === null && !settings && !usage;
 
   return (
@@ -263,6 +269,8 @@ export function App(): JSX.Element {
             }}
             theme={theme}
             onTheme={setTheme}
+            guide={guide}
+            onGuide={openGuide}
           />
         ) : usage ? (
           <Usage

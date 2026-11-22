@@ -12,6 +12,7 @@ import {
   toolLabel,
   toolsSummary,
 } from "../src/lib/format.ts";
+import { GUIDES, splitWikiLinks } from "../src/lib/guides.ts";
 import { buildTimeline, sharedFiles, withoutRoomTurns } from "../src/lib/timeline.ts";
 import {
   CallScript,
@@ -570,6 +571,42 @@ describe("markdown", () => {
     assert.deepEqual(parseInline("[x](javascript:alert(1))"), [
       { text: "[x](javascript:alert(1))" },
     ]);
+  });
+
+  it("joins wrapped list items and keeps the number after a code block", () => {
+    const md = "1. Install it\n   and start it.\n\n   ```\n   run\n   ```\n\n2. Done\n\n   later";
+    assert.deepEqual(parseBlocks(md), [
+      { kind: "list", ordered: true, items: [{ text: "Install it and start it.", depth: 0 }] },
+      { kind: "code", text: "run" },
+      { kind: "list", ordered: true, start: 2, items: [{ text: "Done", depth: 0 }] },
+      { kind: "para", text: "   later" },
+    ]);
+  });
+});
+
+describe("guides", () => {
+  it("splits wiki links in GitHub's Text|Page order", () => {
+    assert.deepEqual(
+      splitWikiLinks(
+        "See [[FAQ]], [[Getting Started|Getting-Started]] and [[proxy|Usage and Costs#api]].",
+      ),
+      [
+        { text: "See " },
+        { page: "FAQ", label: "FAQ" },
+        { text: ", " },
+        { page: "Getting-Started", label: "Getting Started" },
+        { text: " and " },
+        { page: "Usage-and-Costs", label: "proxy" },
+        { text: "." },
+      ],
+    );
+    assert.deepEqual(splitWikiLinks("no [link] here"), [{ text: "no [link] here" }]);
+  });
+
+  it("lists each guide once", () => {
+    const pages = GUIDES.map((g) => g.page);
+    assert.equal(new Set(pages).size, pages.length);
+    assert.ok(!pages.includes("Architecture"));
   });
 });
 

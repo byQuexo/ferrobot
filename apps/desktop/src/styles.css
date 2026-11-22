@@ -775,3 +775,16 @@ textarea { resize: vertical; min-height: 40px; line-height: 1.5; }
 .tools-chevron { flex: none; transition: transform 0.15s; }
 .tools-toggle[aria-expanded="true"] .tools-chevron { transform: rotate(90deg); }
 .tools-list[hidden] { display: none; }
+
+/* ---------- guides ---------- */
+.guide-list { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 8px; }
+.guide-card { width: 100%; height: 100%; display: flex; flex-direction: column; gap: 4px; padding: 12px; border: 1px solid var(--border); border-radius: 12px; background: var(--surface); color: var(--text); font: inherit; text-align: left; cursor: pointer; }
+.guide-card:hover { border-color: var(--border-strong); }
+.guide-card b { font-weight: 500; }
+.guide-back { display: inline-flex; align-items: center; gap: 4px; font-size: 13px; }
+.guide-title { margin: 12px 0; font-size: 18px; font-weight: 500; }
+.guide .rich { font-size: 14px; line-height: 1.6; }
+.guide .rich p { white-space: normal; }
+.guide .rich h4 { margin-top: 24px; font-size: 15px; }
+.guide .rich h5 { margin-top: 16px; }
+.guide .rich .md-table { overflow-x: auto; margin-bottom: 8px; }

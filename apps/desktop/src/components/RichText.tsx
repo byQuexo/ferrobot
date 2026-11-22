@@ -5,11 +5,14 @@ import { FileText, Link } from "lucide-preact";
 
 import { useApp } from "../context.ts";
 import { linkLabel } from "../lib/format.ts";
+import { splitWikiLinks } from "../lib/guides.ts";
 import { parseBlocks, parseInline, type Block, type Inline } from "../lib/markdown.ts";
 import { mentionsAsText, splitMentions } from "../lib/mentions.ts";
 import { Avatar } from "./Avatar.tsx";
 
 type Plain = (text: string) => string;
+/** Opens a wiki page; set only for guides, so chat text never turns `[[x]]` into links. */
+type OnPage = ((page: string) => void) | undefined;
 
 /** Files shared in this chat by name, so a mentioned file name opens it. */
 export interface ChatFiles {
@@ -17,14 +20,18 @@ export interface ChatFiles {
   byName: ReadonlyMap<string, number>;
 }
 
-export function RichText(props: { text: string; files?: ChatFiles }): JSX.Element {
+export function RichText(props: {
+  text: string;
+  files?: ChatFiles;
+  onPage?: (page: string) => void;
+}): JSX.Element {
   const { agents } = useApp();
   // Code shows mention tokens as plain `@name`, not as chips.
   const plain: Plain = (t) => mentionsAsText(t, (id) => agents.get(id)?.name);
   return (
     <div class="rich">
       {parseBlocks(props.text).map((b, i) => (
-        <BlockView key={i} block={b} plain={plain} files={props.files} />
+        <BlockView key={i} block={b} plain={plain} files={props.files} onPage={props.onPage} />
       ))}
     </div>
   );
@@ -34,10 +41,11 @@ function BlockView(props: {
   block: Block;
   plain: Plain;
   files: ChatFiles | undefined;
+  onPage: OnPage;
 }): JSX.Element {
   const { block, plain } = props;
   const inline = (text: string): JSX.Element => (
-    <Inlines nodes={parseInline(text)} plain={plain} files={props.files} />
+    <Inlines nodes={parseInline(text)} plain={plain} files={props.files} onPage={props.onPage} />
   );
   switch (block.kind) {
     case "heading": {
@@ -52,7 +60,7 @@ function BlockView(props: {
           {inline(item.text)}
         </li>
       ));
-      return block.ordered ? <ol>{items}</ol> : <ul>{items}</ul>;
+      return block.ordered ? <ol start={block.start}>{items}</ol> : <ul>{items}</ul>;
     }
     case "quote":
       return (
@@ -98,24 +106,43 @@ function Inlines(props: {
   nodes: Inline[];
   plain: Plain;
   files?: ChatFiles | undefined;
+  onPage?: OnPage;
 }): JSX.Element {
-  const { plain, files } = props;
+  const { plain, files, onPage } = props;
   const { openFile } = useApp();
   return (
     <>
       {props.nodes.map((n, i) => {
-        if ("text" in n) return n.text;
+        if ("text" in n) {
+          if (!onPage) return n.text;
+          return splitWikiLinks(n.text).map((part, j) =>
+            "text" in part ? (
+              part.text
+            ) : (
+              <button
+                key={`${String(i)}-${String(j)}`}
+                type="button"
+                class="text-link"
+                onClick={() => {
+                  onPage(part.page);
+                }}
+              >
+                {part.label}
+              </button>
+            ),
+          );
+        }
         if ("mention" in n) return <Mention key={i} id={n.mention} />;
         if ("strong" in n)
           return (
             <strong key={i}>
-              <Inlines nodes={n.strong} plain={plain} files={files} />
+              <Inlines nodes={n.strong} plain={plain} files={files} onPage={onPage} />
             </strong>
           );
         if ("em" in n)
           return (
             <em key={i}>
-              <Inlines nodes={n.em} plain={plain} files={files} />
+              <Inlines nodes={n.em} plain={plain} files={files} onPage={onPage} />
             </em>
           );
         if ("link" in n) {

@@ -2,6 +2,7 @@ import type { JSX } from "preact";
 import { useEffect, useState } from "preact/hooks";
 import {
   AudioLines,
+  BookOpen,
   Bot,
   Brain,
   Cpu,
@@ -21,6 +22,7 @@ import { useApp } from "../context.ts";
 import type { ThemePref } from "../lib/theme.ts";
 import { ClisSettings } from "./ClisSettings.tsx";
 import { ConnectorsSettings } from "./ConnectorsSettings.tsx";
+import { Guides } from "./Guides.tsx";
 import { Memory } from "./InfoPanel.tsx";
 import { ProvidersSettings } from "./ProvidersSettings.tsx";
 import { UpdatesSettings } from "./UpdatesSettings.tsx";
@@ -37,28 +39,38 @@ export type SettingsSection =
   | "memory"
   | "voice"
   | "appearance"
-  | "updates";
+  | "updates"
+  | "guides";
 
-const SECTIONS: [SettingsSection, string, string, typeof KeyRound][] = [
-  ["providers", "Model providers", "The models your agents run on. Their keys live in Vault.", Cpu],
+/** Id, label, about, icon and the guide page behind the header's "Guide" link. */
+const SECTIONS: [SettingsSection, string, string, typeof KeyRound, string?][] = [
+  [
+    "providers",
+    "Model providers",
+    "The models your agents run on. Their keys live in Vault.",
+    Cpu,
+    "Providers",
+  ],
   [
     "vault",
     "Vault",
     "Every key in one place: model providers, connectors and voice. Kept in the keychain of the daemon’s computer; agents never see them.",
     KeyRound,
   ],
-  ["agents", "Agents", "What agents may do without asking you.", Bot],
+  ["agents", "Agents", "What agents may do without asking you.", Bot, "Tools-and-Permissions"],
   [
     "connectors",
     "Connectors",
     "Remote MCP servers whose tools you can give to agents, with a token or an OAuth sign-in.",
     Plug,
+    "Connectors-and-OAuth",
   ],
   [
     "clis",
     "CLIs",
     "Command-line tools in every agent’s computer, built into one shared image.",
     Terminal,
+    "CLIs",
   ],
   [
     "memory",
@@ -71,9 +83,11 @@ const SECTIONS: [SettingsSection, string, string, typeof KeyRound][] = [
     "Voice",
     "Agents’ replies read aloud and spoken messages. Start a call with the phone button in a chat.",
     AudioLines,
+    "Voice-and-Calls",
   ],
   ["appearance", "Appearance", "How ferrobot looks on this computer.", Palette],
   ["updates", "Updates", "The version ferrobot runs and how to get the latest.", RefreshCw],
+  ["guides", "Guides", "How ferrobot works, step by step. The same pages as the wiki.", BookOpen],
 ];
 
 /** Auto mode; saved as soon as it is switched. */
@@ -148,8 +162,11 @@ export function Settings(props: {
   onClose: () => void;
   theme: ThemePref;
   onTheme: (t: ThemePref) => void;
+  /** The open guide under Guides; `null`: the list. */
+  guide: string | null;
+  onGuide: (page: string | null) => void;
 }): JSX.Element {
-  const [, title, about] = SECTIONS.find(([id]) => id === props.section) ?? [
+  const [, title, about, , guide] = SECTIONS.find(([id]) => id === props.section) ?? [
     "providers",
     "Settings",
     "",
@@ -180,7 +197,23 @@ export function Settings(props: {
         <header class="settings-head">
           <div>
             <h2>{title}</h2>
-            <p class="muted">{about}</p>
+            <p class="muted">
+              {about}
+              {guide && (
+                <>
+                  {" "}
+                  <button
+                    type="button"
+                    class="text-link"
+                    onClick={() => {
+                      props.onGuide(guide);
+                    }}
+                  >
+                    Guide
+                  </button>
+                </>
+              )}
+            </p>
           </div>
           <IconButton label="Close settings" onClick={props.onClose}>
             <X size={18} />
@@ -194,6 +227,7 @@ export function Settings(props: {
         {props.section === "memory" && <Memory agent={null} />}
         {props.section === "voice" && <VoiceSettings onVault={vault} />}
         {props.section === "updates" && <UpdatesSettings />}
+        {props.section === "guides" && <Guides page={props.guide} onPage={props.onGuide} />}
         {props.section === "appearance" && (
           <div class="form">
             <span class="field">
