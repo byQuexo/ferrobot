@@ -6050,14 +6050,12 @@ async fn agents_change_the_tools_of_agents_they_created() {
         "no card"
     );
 
-    // Narrowing applies at once and reaches the runner.
+    // Narrowing, through the MCP tool, applies at once and reaches the runner.
     let mut ws = connect_runner(&d.agents, &backend.token("scout")).await;
-    let outcome = d
-        .state
-        .set_agent_tools(ada_id, req(scout_id, Some(vec![Team]), Some(&[])))
-        .await
-        .unwrap();
-    assert_eq!(outcome, AgentToolsOutcome::Applied);
+    let client = mcp_as(&d, backend.token("ada")).await;
+    let args = json!({"agent": "@scout", "tools": ["team"], "connectors": []});
+    let result = call(&client, "set_agent_tools", args).await;
+    assert_eq!(result["status"], "applied", "{result}");
     let DaemonFrame::Configure { tools, .. } = next_frame(&mut ws).await else {
         panic!("expected configure");
     };

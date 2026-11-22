@@ -116,15 +116,16 @@ async fn set_profile(
     tools: Option<Vec<ToolGroup>>,
     connectors: Option<Vec<uuid::Uuid>>,
 ) -> Result<(), ApiError> {
+    // Connectors first: one deleted since the card fails here, before the tools change.
+    if let Some(ids) = connectors {
+        state.store.set_agent_connectors(id, ids).await?;
+    }
     if tools.is_some() {
         let patch = AgentPatch {
             tools,
             ..AgentPatch::default()
         };
         state.store.update_agent_profile(id, patch).await?;
-    }
-    if let Some(ids) = connectors {
-        state.store.set_agent_connectors(id, ids).await?;
     }
     reconfigure(state, id).await?;
     state.publish_agent(id).await;
