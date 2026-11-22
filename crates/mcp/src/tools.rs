@@ -15,8 +15,9 @@ use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
 use crate::{
-    AgentRequest, AgentRequestOutcome, Caller, ConnectorRequest, MAX_MEMORY_KEY_BYTES,
-    MAX_MESSAGE_BYTES, McpState, RoutineRequest, RoutineRequestOutcome,
+    AgentRequest, AgentRequestOutcome, AgentToolsOutcome, AgentToolsRequest, Caller,
+    ConnectorRequest, MAX_MEMORY_KEY_BYTES, MAX_MESSAGE_BYTES, McpState, RoutineRequest,
+    RoutineRequestOutcome,
 };
 
 type ToolResult<T> = Result<Json<T>, ErrorData>;
@@ -151,6 +152,24 @@ pub struct CreateAgentResult {
     /// Id of the new agent (when created); use it in `send_message.to`.
     pub agent_id: Option<String>,
     pub name: String,
+    /// What happened, in words.
+    pub note: String,
+}
+
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct SetAgentToolsArgs {
+    /// The agent to change: its id or `@name`. Only one you created.
+    pub agent: String,
+    /// Tool groups it gets instead of its current ones, at most your own. Omitted: unchanged.
+    pub tools: Option<Vec<ToolGroup>>,
+    /// Names of your connectors it gets instead of its current ones. Omitted: unchanged.
+    pub connectors: Option<Vec<String>>,
+}
+
+#[derive(Debug, Serialize, JsonSchema)]
+pub struct SetAgentToolsResult {
+    /// `applied` or `pending` (waiting for the operator).
+    pub status: String,
     /// What happened, in words.
     pub note: String,
 }
@@ -681,6 +700,45 @@ impl FerrobotTools {
     }
 
     #[tool(
+        description = "Change the tool groups and connectors of an agent you created (never your \
+        own). `tools` and `connectors` replace its current ones; give at least one. It gets at \
+        most your own tools and connectors. Taking tools away applies at once (`applied`). \
+        Giving it anything new needs the operator's approval unless Auto mode is on: this call \
+        then returns `pending` and a message tells you whether they approved it."
+    )]
+    async fn set_agent_tools(
+        &self,
+        Extension(parts): Extension<http::request::Parts>,
+        Parameters(args): Parameters<SetAgentToolsArgs>,
+    ) -> ToolResult<SetAgentToolsResult> {
+        let me = caller(&parts)?.0.id;
+        let target = self.agent(&args.agent).await?;
+        let request = AgentToolsRequest {
+            agent: target.id,
+            tools: args.tools,
+            connectors: args.connectors,
+        };
+        let outcome = self
+            .state
+            .notifier
+            .set_agent_tools(me, request)
+            .await
+            .map_err(|e| ErrorData::invalid_params(e, None))?;
+        Ok(Json(match outcome {
+            AgentToolsOutcome::Applied => SetAgentToolsResult {
+                status: "applied".into(),
+                note: format!("Changed the tools of @{}.", target.name),
+            },
+            AgentToolsOutcome::Pending { .. } => SetAgentToolsResult {
+                status: "pending".into(),
+                note: "Shown to the operator. A message tells you whether they approved it; \
+                       finish your turn now."
+                    .into(),
+            },
+        }))
+    }
+
+    #[tool(
         description = "Create a routine for yourself: `prompt` reaches you as a message on \
         `schedule`, so you can do recurring work or keep reminders. Unless the operator turned on \
         Auto mode, they first see a card and this call returns `pending`; a message tells you \
@@ -995,7 +1053,7 @@ pub(crate) fn group_of(tool: &str) -> Option<ToolGroup> {
         }
         "remember" | "recall" | "forget" => ToolGroup::Memory,
         "ask_user" | "share_file" | "invite_to_call" | "hang_up" => ToolGroup::Operator,
-        "create_agent" => ToolGroup::CreateAgents,
+        "create_agent" | "set_agent_tools" => ToolGroup::CreateAgents,
         "add_connector" => ToolGroup::AddConnectors,
         "create_routine" => ToolGroup::Routines,
         _ => return None,

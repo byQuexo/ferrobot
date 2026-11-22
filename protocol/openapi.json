@@ -5106,6 +5106,49 @@
                 ]
               }
             }
+          },
+          {
+            "type": "object",
+            "description": "An agent wants to give an agent it created more tools (`set_agent_tools` tool). The new\nsets replace the target's; `null` leaves that set as it is.",
+            "required": [
+              "agent",
+              "requester",
+              "kind"
+            ],
+            "properties": {
+              "agent": {
+                "$ref": "#/components/schemas/AgentId"
+              },
+              "tools": {
+                "type": [
+                  "array",
+                  "null"
+                ],
+                "items": {
+                  "$ref": "#/components/schemas/ToolGroup"
+                }
+              },
+              "connectors": {
+                "type": [
+                  "array",
+                  "null"
+                ],
+                "items": {
+                  "type": "string",
+                  "format": "uuid"
+                },
+                "description": "Connector ids."
+              },
+              "requester": {
+                "$ref": "#/components/schemas/AgentId"
+              },
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "set_agent_tools"
+                ]
+              }
+            }
           }
         ],
         "description": "What an approval card asks the operator to allow; the decision goes to the waiting tool\ncall, not to the agent's mailbox."

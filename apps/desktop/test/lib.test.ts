@@ -332,18 +332,21 @@ describe("buildTimeline", () => {
     );
   });
 
-  it("notes agents created in auto mode", () => {
+  it("notes agents created or changed in auto mode", () => {
     const created = { name: "scout", id: BOB, by: "ada", auto: true };
     const items = buildTimeline(
       ME,
       [],
-      [ev(1, "agent_created", created, "2026-01-01T12:00:00Z", "")],
+      [
+        ev(1, "agent_created", created, "2026-01-01T12:00:00Z", ""),
+        ev(2, "agent_tools_changed", created, "2026-01-01T12:01:00Z", ""),
+      ],
       new Map(),
       names,
     );
     assert.deepEqual(
       items.map((i) => (i.type === "system" ? i.text : null)),
-      ["ada created scout (auto mode)"],
+      ["ada created scout (auto mode)", "ada changed the tools of scout (auto mode)"],
     );
   });
 
