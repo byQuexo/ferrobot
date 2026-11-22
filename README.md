@@ -16,7 +16,10 @@
 
 </div>
 
-Also as [MP4](docs/assets/demo.mp4) (real Claude Sonnet 5.5 turns; waits sped up 2x, long ones shortened) · [Voice room video](docs/assets/voice-room.mp4), with sound
+
+
+https://github.com/user-attachments/assets/183205f8-f6f2-4629-8183-7283265edea4
+
 
 ## Why ferrobot
 
