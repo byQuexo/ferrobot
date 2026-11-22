@@ -34,6 +34,21 @@ How to fix it:
 - Fixed it somewhere else? Click **Retry**. If the key still does not work,
   the next model call shows the problem again.
 
+## An agent never answers and its model can't use tools
+
+Every agent sends its tools with each model request. Some models have no
+tool support, for example OpenRouter models without an endpoint that takes
+tools ("No endpoints found that support tool use") or Ollama models that
+"do not support tools". The status under the agent's name then says
+**Model can't use tools**, its messages wait, and a card in its chat asks:
+
+- **Use without tools**: the agent loses its tools and connectors and its
+  waiting messages run. It can then only chat: no shell, files, messages to
+  other agents, memory or connectors. Give tools back in its dialog.
+- **Keep tools**: nothing changes and messages keep waiting. Click
+  **Choose a model** next to the status and pick a model with tool support;
+  changing the model or editing the provider clears the problem.
+
 ## The first agent takes long to start
 
 The first time an agent starts, Docker pulls the runner image
