@@ -44,20 +44,14 @@ export type SettingsSection =
 
 /** Id, label, about, icon and the guide page behind the header's "Guide" link. */
 const SECTIONS: [SettingsSection, string, string, typeof KeyRound, string?][] = [
-  [
-    "providers",
-    "Model providers",
-    "The models your agents run on. Their keys live in Vault.",
-    Cpu,
-    "Providers",
-  ],
+  ["providers", "Model providers", "The models your agents run on. Their keys live in Vault.", Cpu],
   [
     "vault",
     "Vault",
     "Every key in one place: model providers, connectors and voice. Kept in the keychain of the daemon’s computer; agents never see them.",
     KeyRound,
   ],
-  ["agents", "Agents", "What agents may do without asking you.", Bot, "Tools-and-Permissions"],
+  ["agents", "Agents", "What agents may do without asking you.", Bot],
   [
     "connectors",
     "Connectors",
@@ -70,7 +64,6 @@ const SECTIONS: [SettingsSection, string, string, typeof KeyRound, string?][] = 
     "CLIs",
     "Command-line tools in every agent’s computer, built into one shared image.",
     Terminal,
-    "CLIs",
   ],
   [
     "memory",
@@ -83,7 +76,6 @@ const SECTIONS: [SettingsSection, string, string, typeof KeyRound, string?][] = 
     "Voice",
     "Agents’ replies read aloud and spoken messages. Start a call with the phone button in a chat.",
     AudioLines,
-    "Voice-and-Calls",
   ],
   ["appearance", "Appearance", "How ferrobot looks on this computer.", Palette],
   ["updates", "Updates", "The version ferrobot runs and how to get the latest.", RefreshCw],

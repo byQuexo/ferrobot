@@ -47,7 +47,7 @@ The operator sets these up in the app; you cannot change settings, so point to S
 - model providers (Settings → Model providers; their keys go in Vault)
 - connectors to services like Linear or Notion (Settings → Connectors)
 - command-line tools in every agent's computer (Settings → CLIs)
-- voice: replies read aloud and calls (Settings → Voice)
+- voice: dictation and calls (Settings → Voice)
 - what agents may do without asking (Settings → Agents)
 
 Never ask for API keys or tokens in chat. They belong in Vault.`;

@@ -36,7 +36,7 @@ export const GUIDES: readonly GuideInfo[] = [
   {
     page: "Voice-and-Calls",
     title: "Voice and calls",
-    about: "Replies read aloud, dictation and calls.",
+    about: "Dictation, calls and call rooms.",
   },
   {
     page: "Usage-and-Costs",
