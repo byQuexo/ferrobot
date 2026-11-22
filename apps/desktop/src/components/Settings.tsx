@@ -214,7 +214,14 @@ export function Settings(props: {
         {props.section === "providers" && <ProvidersSettings onVault={vault} />}
         {props.section === "vault" && <VaultSettings />}
         {props.section === "agents" && <AgentSettings />}
-        {props.section === "connectors" && <ConnectorsSettings onVault={vault} />}
+        {props.section === "connectors" && (
+          <ConnectorsSettings
+            onVault={vault}
+            onGuide={() => {
+              props.onGuide("Connectors-and-OAuth");
+            }}
+          />
+        )}
         {props.section === "clis" && <ClisSettings />}
         {props.section === "memory" && <Memory agent={null} />}
         {props.section === "voice" && <VoiceSettings onVault={vault} />}

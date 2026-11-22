@@ -82,6 +82,10 @@ in Developer Preview: your Google Workspace account must be in the Google
 Workspace Developer Preview Program. Its tools search and read mail, manage
 labels and write drafts. It cannot send mail.
 
+Do the Google steps first: ferrobot asks for the client ID when you add Gmail,
+and until you sign in its row shows **needs sign-in**, even though Google lists
+Gmail's tools to anyone.
+
 In the Google Cloud console:
 
 1. Pick or create a Google Cloud project.
@@ -101,20 +105,19 @@ In the Google Cloud console:
 
 In ferrobot:
 
-1. In **Settings → Connectors**, add **Gmail** from the catalog. Adding it
-   starts a sign-in right away, which cannot work yet: close that browser tab.
-   Without a catalog card, use **Add connector** with the name `gmail` and
-   the URL above.
-2. Click the gear button (**OAuth app of gmail**) and enter:
-   - OAuth client ID: your client ID
-   - Issuer: `https://accounts.google.com`
-   - Scopes: `https://www.googleapis.com/auth/gmail.readonly https://www.googleapis.com/auth/gmail.compose https://www.googleapis.com/auth/gmail.modify`
-3. Click **Save OAuth app**.
-4. Open **Vault**. Under Connectors, add the **OAuth client secret** of gmail.
-5. Back in **Settings → Connectors**, click **Sign in to gmail** (the sign-in
+1. In **Settings → Connectors**, click **Add** on the **Gmail** card. The form
+   opens with **Use my own OAuth app**, the issuer
+   `https://accounts.google.com` and the three scopes filled in. Enter your
+   client ID and click **Add connector**. Without a catalog card, use **Add
+   connector** with the name `gmail`, the URL above and those values.
+2. Open **Vault**. Under Connectors, add the **OAuth client secret** of gmail.
+3. Back in **Settings → Connectors**, click **Sign in to gmail** (the sign-in
    button on its row), sign in with Google and allow access. The row turns
    **connected**.
-6. Give `gmail` to an agent in its **Edit agent** dialog.
+4. Give `gmail` to an agent in its **Edit agent** dialog.
+
+Added Gmail before creating the app? Delete its row and add it again with
+the client ID.
 
 ## What has been tested
 

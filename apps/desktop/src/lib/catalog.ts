@@ -49,7 +49,7 @@ export const CATALOG: CatalogEntry[] = [
     auth: "oauth",
     kind: "work",
     setup:
-      "Google's official server, in Developer Preview. Needs your own Google OAuth app: see the Connectors and OAuth guide.",
+      "First create your own Google OAuth app (Developer Preview): the guide shows how. Adding Gmail asks for its client ID.",
     app: {
       issuer: "https://accounts.google.com",
       scopes: [
