@@ -9,6 +9,7 @@ export function IconButton(props: {
   disabled?: boolean;
   tone?: "default" | "danger" | "accent";
   pressed?: boolean;
+  expanded?: boolean;
 }): JSX.Element {
   return (
     <button
@@ -17,6 +18,7 @@ export function IconButton(props: {
       aria-label={props.label}
       title={props.label}
       aria-pressed={props.pressed}
+      aria-expanded={props.expanded}
       disabled={props.disabled}
       onClick={props.onClick}
     >

@@ -4,11 +4,15 @@ import {
   ArrowDown,
   ArrowUp,
   ChartColumn,
+  PanelLeftClose,
+  PanelLeftOpen,
   Pencil,
+  Phone,
   Pin,
   Plus,
   Search,
   Settings,
+  Star,
   Trash2,
 } from "lucide-preact";
 
@@ -34,6 +38,9 @@ interface RowHandlers {
 }
 
 export function Sidebar(props: {
+  /** Collapsed to a narrow rail of avatars. */
+  rail: boolean;
+  onRail: (rail: boolean) => void;
   selected: string | null;
   onSelect: (id: string) => void;
   pair: Pair | null;
@@ -48,7 +55,7 @@ export function Sidebar(props: {
   online: boolean;
   onDeleted: (id: string) => void;
 }): JSX.Element {
-  const { agents, client, run } = useApp();
+  const { agents, client, run, callState } = useApp();
   const [filter, setFilter] = useState("");
   const [order, setOrder] = useState<string[]>(loadOrder);
   const [drop, setDrop] = useState<{ id: string; after: boolean } | null>(null);
@@ -63,6 +70,18 @@ export function Sidebar(props: {
   };
   const [deleting, setDeleting] = useState<Agent | null>(null);
   const dragged = useRef<string | null>(null);
+  const aside = useRef<HTMLElement>(null);
+  const toggled = useRef(false);
+  const toggle = (): void => {
+    toggled.current = true;
+    props.onRail(!props.rail);
+  };
+  // The pressed toggle unmounts, so focus moves to its counterpart.
+  useEffect(() => {
+    if (!toggled.current) return;
+    toggled.current = false;
+    aside.current?.querySelector<HTMLElement>("[aria-expanded]")?.focus();
+  }, [props.rail]);
   const chatOpen = !props.pair && props.room === null;
   const list = useMemo(() => {
     const f = filter.trim().toLowerCase();
@@ -125,67 +144,126 @@ export function Sidebar(props: {
     },
   });
 
+  const railAgents = props.rail ? orderAgents([...agents.values()], order) : [];
+  const railItem = (a: Agent): JSX.Element => (
+    <RailAgent
+      key={a.id}
+      agent={a}
+      active={chatOpen && a.id === props.selected}
+      onSelect={props.onSelect}
+      onContextMenu={handlers(a, false).onContextMenu}
+    />
+  );
+  const connLabel = props.online ? "Daemon connected" : "Daemon offline";
+  const callLabel = callState?.ending
+    ? "Call ended"
+    : callState?.muted
+      ? "Voice call, muted"
+      : "Voice call";
+
   return (
-    <aside class="sidebar">
-      <header class="brand">
-        <Logo />
-        <span class="brand-name">ferrobot</span>
-        <span class="spacer" />
-        <IconButton label="Usage" onClick={props.onUsage} pressed={props.usageOpen}>
-          <ChartColumn size={18} />
-        </IconButton>
-        <IconButton label="Settings" onClick={props.onSettings} pressed={props.settingsOpen}>
-          <Settings size={18} />
-        </IconButton>
-        <IconButton label="New agent" onClick={props.onCreate} tone="accent">
-          <Plus size={18} />
-        </IconButton>
-      </header>
-      <CallWindow />
-      <label class="search">
-        <Search size={16} aria-hidden="true" />
-        <input
-          type="search"
-          placeholder="Find an agent"
-          value={filter}
-          onInput={(e) => {
-            setFilter(e.currentTarget.value);
-          }}
-        />
-      </label>
-      <nav class="agent-list" aria-label="Agents">
-        {list.some((a) => a.pinned) && (
-          <div class="pinned-strip" aria-label="Pinned agents">
+    <aside class={`sidebar${props.rail ? " rail" : ""}`} ref={aside}>
+      {props.rail ? (
+        <>
+          {callState && (
+            <button
+              type="button"
+              class={`rail-call${callState.ending ? " ending" : callState.muted ? " muted" : ""}`}
+              aria-label={`${callLabel}: show the controls`}
+              title={`${callLabel}: show the controls`}
+              onClick={toggle}
+            >
+              <Phone size={18} />
+            </button>
+          )}
+          <nav class="rail-list" aria-label="Agents">
+            {railAgents.filter((a) => a.pinned).map(railItem)}
+            {railAgents.some((a) => a.pinned) && railAgents.some((a) => !a.pinned) && (
+              <hr class="rail-divider" />
+            )}
+            {railAgents.filter((a) => !a.pinned).map(railItem)}
+          </nav>
+          <div class="rail-tools">
+            <IconButton label="Usage" onClick={props.onUsage} pressed={props.usageOpen}>
+              <ChartColumn size={18} />
+            </IconButton>
+            <IconButton label="Settings" onClick={props.onSettings} pressed={props.settingsOpen}>
+              <Settings size={18} />
+            </IconButton>
+            <IconButton label="New agent" onClick={props.onCreate} tone="accent">
+              <Plus size={18} />
+            </IconButton>
+            <IconButton label="Expand sidebar" expanded={false} onClick={toggle}>
+              <PanelLeftOpen size={18} />
+            </IconButton>
+          </div>
+        </>
+      ) : (
+        <>
+          <header class="brand">
+            <Logo />
+            <span class="brand-name">ferrobot</span>
+            <span class="spacer" />
+            <IconButton label="Usage" onClick={props.onUsage} pressed={props.usageOpen}>
+              <ChartColumn size={18} />
+            </IconButton>
+            <IconButton label="Settings" onClick={props.onSettings} pressed={props.settingsOpen}>
+              <Settings size={18} />
+            </IconButton>
+            <IconButton label="New agent" onClick={props.onCreate} tone="accent">
+              <Plus size={18} />
+            </IconButton>
+            <IconButton label="Collapse sidebar" expanded onClick={toggle}>
+              <PanelLeftClose size={18} />
+            </IconButton>
+          </header>
+          <CallWindow />
+          <label class="search">
+            <Search size={16} aria-hidden="true" />
+            <input
+              type="search"
+              placeholder="Find an agent"
+              value={filter}
+              onInput={(e) => {
+                setFilter(e.currentTarget.value);
+              }}
+            />
+          </label>
+          <nav class="agent-list" aria-label="Agents">
+            {list.some((a) => a.pinned) && (
+              <div class="pinned-strip" aria-label="Pinned agents">
+                {list
+                  .filter((a) => a.pinned)
+                  .map((a) => (
+                    <PinnedAgent
+                      key={a.id}
+                      agent={a}
+                      active={chatOpen && a.id === props.selected}
+                      onSelect={props.onSelect}
+                      row={handlers(a, true)}
+                    />
+                  ))}
+              </div>
+            )}
             {list
-              .filter((a) => a.pinned)
+              .filter((a) => !a.pinned)
               .map((a) => (
-                <PinnedAgent
+                <AgentRow
                   key={a.id}
                   agent={a}
                   active={chatOpen && a.id === props.selected}
                   onSelect={props.onSelect}
-                  row={handlers(a, true)}
+                  row={handlers(a, false)}
                 />
               ))}
-          </div>
-        )}
-        {list
-          .filter((a) => !a.pinned)
-          .map((a) => (
-            <AgentRow
-              key={a.id}
-              agent={a}
-              active={chatOpen && a.id === props.selected}
-              onSelect={props.onSelect}
-              row={handlers(a, false)}
-            />
-          ))}
-        {list.length === 0 && agents.size > 0 && (
-          <p class="muted pad">No agent matches “{filter}”.</p>
-        )}
-        <ConversationList active={props.pair} onOpen={props.onOpenPair} />
-        <RoomList active={props.room} onOpen={props.onOpenRoom} />
-      </nav>
+            {list.length === 0 && agents.size > 0 && (
+              <p class="muted pad">No agent matches “{filter}”.</p>
+            )}
+            <ConversationList active={props.pair} onOpen={props.onOpenPair} />
+            <RoomList active={props.room} onOpen={props.onOpenRoom} />
+          </nav>
+        </>
+      )}
       {menu && (
         <AgentMenu
           {...menu}
@@ -291,9 +369,12 @@ export function Sidebar(props: {
         </Dialog>
       )}
       <footer class="sidebar-foot">
-        <span class={`conn ${props.online ? "on" : "off"}`}>
+        <span
+          class={`conn ${props.online ? "on" : "off"}`}
+          title={props.rail ? connLabel : undefined}
+        >
           <span class="conn-dot" />
-          {props.online ? "Daemon connected" : "Daemon offline"}
+          <span class={props.rail ? "sr-only" : undefined}>{connLabel}</span>
         </span>
       </footer>
     </aside>
@@ -452,5 +533,33 @@ function AgentRow(props: {
       </button>
       <PinToggle agent={a} />
     </div>
+  );
+}
+
+/** An agent in the collapsed rail: its avatar, a star when pinned and a dot when unread. */
+function RailAgent(props: {
+  agent: Agent;
+  active: boolean;
+  onSelect: (id: string) => void;
+  onContextMenu: (e: MouseEvent) => void;
+}): JSX.Element {
+  const a = props.agent;
+  const status = statusOf(a);
+  return (
+    <button
+      type="button"
+      class={`rail-agent${props.active ? " active" : ""}`}
+      aria-label={a.unread > 0 ? `${a.name}, ${String(a.unread)} unread` : a.name}
+      aria-current={props.active ? "page" : undefined}
+      title={`${a.name} · ${status.label}`}
+      onClick={() => {
+        props.onSelect(a.id);
+      }}
+      onContextMenu={props.onContextMenu}
+    >
+      <Avatar agent={a} size={40} presence={status.presence} />
+      {a.pinned && <Star class="rail-star" size={10} aria-hidden="true" />}
+      {a.unread > 0 && <span class="rail-unread" aria-hidden="true" />}
+    </button>
   );
 }
