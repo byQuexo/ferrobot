@@ -637,8 +637,8 @@ store used for the run) or the daemon's own env.
 
 - The README describes the desktop download as section 7 builds it (bundled
   daemon, Docker check, runner image on ghcr.io); true once that lands.
-- The Code of Conduct points reporters to the email on the maintainer's
-  GitHub profile; GitHub has no private messages.
+- The Code of Conduct gives reporters an email address, since GitHub has no
+  private messages.
 
 ## Release prep 5: wiki (`chore/wiki`)
 
