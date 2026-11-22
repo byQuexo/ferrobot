@@ -82,6 +82,9 @@ in Developer Preview: your Google Workspace account must be in the Google
 Workspace Developer Preview Program. Its tools search and read mail, manage
 labels and write drafts. It cannot send mail.
 
+No Google Cloud project, or not in the preview program? See **Example: Gmail
+through Zapier** below.
+
 Do the Google steps first: ferrobot asks for the client ID when you add Gmail,
 and until you sign in its row shows **needs sign-in**, even though Google lists
 Gmail's tools to anyone.
@@ -119,9 +122,29 @@ In ferrobot:
 Added Gmail before creating the app? Delete its row and add it again with
 the client ID.
 
+## Example: Gmail through Zapier
+
+Zapier's MCP server reaches Gmail with Zapier's own Google sign-in, so you need
+no Google Cloud project, no OAuth app and no preview program. It can also send
+mail, if you allow that action. The trade-offs: your mail passes through
+Zapier, and every tool call uses Zapier tasks from your Zapier plan.
+
+1. In **Settings → Connectors**, click **Add** on the **Zapier** card and sign
+   in with your Zapier account in the browser.
+2. On Zapier's MCP page (`mcp.zapier.com`), add the Gmail actions you want,
+   for example finding, reading, drafting or sending email, and connect your
+   Gmail account there. Zapier asks Google for access; you only allow it.
+3. Back in ferrobot, check the **zapier** row again: its tool count now
+   includes the Gmail actions. Their tools are named `zapier__<action>`.
+4. Give `zapier` to an agent in its **Edit agent** dialog.
+
+To change what agents may do in Gmail, add or remove actions on Zapier's MCP
+page. Sending is only possible when you added a send action.
+
 ## What has been tested
 
 Connector tokens, OAuth and the approval card run in the daemon and are
 covered by its tests against fake servers. Not every catalog server has been
 tried with a real account, and the Gmail steps follow Google's Developer
-Preview, which may change.
+Preview, which may change. Gmail through Zapier has not been tried with a
+real account yet.
