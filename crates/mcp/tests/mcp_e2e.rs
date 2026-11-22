@@ -122,6 +122,7 @@ async fn tools_act_as_the_authenticated_agent() {
             "recall",
             "remember",
             "send_message",
+            "set_agent_tools",
             "share_file"
         ]
     );

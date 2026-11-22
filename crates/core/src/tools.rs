@@ -16,7 +16,7 @@ pub enum ToolGroup {
     Memory,
     /// `ask_user`, `share_file`, `invite_to_call`, `hang_up`.
     Operator,
-    /// `create_agent`.
+    /// `create_agent`, `set_agent_tools`.
     CreateAgents,
     /// `add_connector`.
     AddConnectors,

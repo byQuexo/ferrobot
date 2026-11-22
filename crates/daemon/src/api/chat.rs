@@ -210,6 +210,11 @@ pub(crate) async fn answer_question(
             crate::api::routines::answer_card(&state, id, qid, approval, req.answers).await?;
         return Ok((StatusCode::ACCEPTED, Json(answered)));
     }
+    if let Some(approval @ Approval::SetAgentTools { .. }) = &question.approval {
+        let answered =
+            crate::agents::answer_tools_card(&state, id, qid, approval, req.answers).await?;
+        return Ok((StatusCode::ACCEPTED, Json(answered)));
+    }
     if question.approval.is_some() {
         let answered = QuestionAnswered {
             question: qid,

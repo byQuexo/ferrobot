@@ -429,6 +429,19 @@ impl ferrobot_mcp::MailboxNotifier for AppState {
         })
     }
 
+    fn set_agent_tools(
+        &self,
+        requester: AgentId,
+        request: ferrobot_mcp::AgentToolsRequest,
+    ) -> ferrobot_mcp::BoxFuture<Result<ferrobot_mcp::AgentToolsOutcome, String>> {
+        let state = self.clone();
+        Box::pin(async move {
+            crate::agents::set_tools(&state, requester, request)
+                .await
+                .map_err(|e| e.to_string())
+        })
+    }
+
     fn request_agent(
         &self,
         requester: AgentId,

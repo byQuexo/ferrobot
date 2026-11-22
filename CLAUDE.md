@@ -236,6 +236,8 @@ daemon, `docker ps -a` must be empty of ferrobot containers.
   (`tools/call` too) ferrobot tools outside an agent's profile; the runner turns
   off built-in groups per driver. A new agent's tools and connectors are at most
   its creator's, checked in the daemon in every mode, Auto mode included.
+  `set_agent_tools` changes only agents the caller created (never itself), to at most
+  the caller's own; narrowing applies at once, anything new needs a card unless Auto mode is on.
 - **`FERROBOT_MAX_AGENTS`** (default 10) applies to `POST /v1/agents` and to
   `create_agent` (both through `daemon::agents::create`).
 - Question cards are answered at most once (`409` after).
