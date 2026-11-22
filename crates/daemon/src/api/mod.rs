@@ -4,6 +4,7 @@ pub(crate) mod agents;
 pub(crate) mod chat;
 pub(crate) mod clis;
 pub(crate) mod connectors;
+pub(crate) mod diagnostics;
 pub(crate) mod files;
 pub(crate) mod memory;
 pub(crate) mod providers;
@@ -100,6 +101,8 @@ pub fn router() -> Router<AppState> {
             "/v1/update",
             get(update::get_update).post(update::start_update),
         )
+        .route("/v1/diagnostics", get(diagnostics::get_diagnostics))
+        .route("/v1/diagnostics/log", get(diagnostics::get_log))
         .route("/v1/usage", get(usage::get_usage))
         .route(
             "/v1/usage/prices",
@@ -205,6 +208,18 @@ pub(crate) fn check_len(field: &str, value: &str) -> Result<(), ApiError> {
     Ok(())
 }
 
+/// How long a request waits for the sandbox backend, so a hanging engine cannot stall it.
+pub(crate) const BACKEND_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(2);
+
+/// Why the sandbox backend cannot start agents now; `None` when it can.
+pub(crate) async fn sandbox_error(state: &AppState) -> Option<String> {
+    match tokio::time::timeout(BACKEND_TIMEOUT, state.backend.ready()).await {
+        Ok(Ok(())) => None,
+        Ok(Err(e)) => Some(e.to_string()),
+        Err(_) => Some("the sandbox backend did not answer within 2 s".to_owned()),
+    }
+}
+
 #[derive(Debug, Serialize, ToSchema)]
 pub(crate) struct Health {
     name: &'static str,
@@ -231,16 +246,7 @@ pub(crate) struct Health {
     responses((status = 200, body = Health)))]
 pub(crate) async fn health(State(state): State<AppState>) -> Json<Health> {
     let s = &state.settings;
-    let sandbox_error = match tokio::time::timeout(
-        std::time::Duration::from_secs(2),
-        state.backend.ready(),
-    )
-    .await
-    {
-        Ok(Ok(())) => None,
-        Ok(Err(e)) => Some(e.to_string()),
-        Err(_) => Some("the sandbox backend did not answer within 2 s".to_owned()),
-    };
+    let sandbox_error = sandbox_error(&state).await;
     Json(Health {
         name: ferrobot_core::PROJECT_NAME,
         version: env!("CARGO_PKG_VERSION"),

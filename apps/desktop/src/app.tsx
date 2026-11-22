@@ -1,5 +1,6 @@
 import type { JSX } from "preact";
 import { useCallback, useEffect, useMemo, useRef, useState } from "preact/hooks";
+import { pickSelection } from "./lib/order.ts";
 import { Bot, KeyRound, Plus, WifiOff } from "lucide-preact";
 
 import {
@@ -37,6 +38,7 @@ interface Toast {
 const DAEMON_KEY = "ferrobot.daemon";
 const TOKEN_KEY = "ferrobot.token";
 const WELCOME_KEY = "ferrobot.welcome";
+const SIDEBAR_KEY = "ferrobot.sidebar";
 
 declare global {
   interface Window {
@@ -44,6 +46,14 @@ declare global {
     __FERROBOT_TOKEN__?: string;
     /** Set by the desktop shell: whether the app updater is set up and it started the daemon. */
     __FERROBOT_SHELL__?: { updater: boolean; ownDaemon: boolean };
+  }
+}
+
+function initialRail(): boolean {
+  try {
+    return localStorage.getItem(SIDEBAR_KEY) === "rail";
+  } catch {
+    return false;
   }
 }
 
@@ -57,6 +67,7 @@ export function App(): JSX.Element {
   const [needsToken, setNeedsToken] = useState(false);
   const client = useMemo(() => new DaemonClient(base, token), [base, token]);
   const [agents, setAgents] = useState<Map<string, Agent>>(new Map());
+  const [loaded, setLoaded] = useState(false);
   const [health, setHealth] = useState<Health | null>(null);
   const [providers, setProviders] = useState<Provider[] | null>(null);
   const [skipped, setSkipped] = useState(() => localStorage.getItem(WELCOME_KEY) === "skipped");
@@ -73,6 +84,7 @@ export function App(): JSX.Element {
   const [infoOpen, setInfoOpen] = useState(
     () => localStorage.getItem("ferrobot.info") !== "closed",
   );
+  const [rail, setRail] = useState(initialRail);
   const [tab, setTab] = useState<InfoTab>("profile");
   const [theme, setTheme] = useState<ThemePref>(loadTheme);
   const [toasts, setToasts] = useState<Toast[]>([]);
@@ -87,6 +99,13 @@ export function App(): JSX.Element {
   useEffect(() => {
     localStorage.setItem("ferrobot.info", infoOpen ? "open" : "closed");
   }, [infoOpen]);
+  useEffect(() => {
+    try {
+      localStorage.setItem(SIDEBAR_KEY, rail ? "rail" : "full");
+    } catch {
+      // Storage can be unavailable; the sidebar then opens expanded next time.
+    }
+  }, [rail]);
   useEffect(() => {
     if (selected) localStorage.setItem("ferrobot.selected", selected);
   }, [selected]);
@@ -120,6 +139,7 @@ export function App(): JSX.Element {
       ]);
       setHealth(h);
       setAgents(new Map(list.map((a) => [a.id, a])));
+      setLoaded(true);
       setProviders(ps);
       setNeedsToken(false);
     } catch (err) {
@@ -152,14 +172,9 @@ export function App(): JSX.Element {
   }, [client]);
 
   useEffect(() => {
-    if (selected && agents.has(selected)) return;
-    const first = [...agents.values()].sort(
-      (a, b) =>
-        Number(Boolean(b.pinned)) - Number(Boolean(a.pinned)) || a.name.localeCompare(b.name),
-    )[0];
-    if (first) setSelected(first.id);
-    else if (agents.size === 0) setSelected(null);
-  }, [agents, selected]);
+    const next = pickSelection(agents, selected, loaded);
+    if (next !== undefined) setSelected(next);
+  }, [agents, selected, loaded]);
 
   const listen = useCallback((fn: (e: UiEvent) => void) => {
     listeners.current.add(fn);
@@ -247,8 +262,10 @@ export function App(): JSX.Element {
 
   return (
     <AppContext.Provider value={ctx}>
-      <div class={`shell${withInfo ? " with-info" : ""}`}>
+      <div class={`shell${withInfo ? " with-info" : ""}${rail ? " rail" : ""}`}>
         <Sidebar
+          rail={rail}
+          onRail={setRail}
           selected={selected}
           onSelect={openAgent}
           pair={pair}

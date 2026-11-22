@@ -19,6 +19,13 @@ All notable changes are listed here. The format follows
   tool use", Ollama's "does not support tools") no longer fails the agent's
   messages: they wait, the agent shows **Model can't use tools**, and one card
   offers to run it without tools (`tools_unsupported` on the agent view).
+- The agent sidebar collapses into a narrow rail of avatars (pinned agents
+  first, starred), with usage, settings and new agent at the bottom and a call
+  indicator while a call runs.
+- Diagnostics under Settings: versions, Docker status, the runner image,
+  counts, the data folder and the daemon's latest log lines, with **Copy
+  diagnostics** for bug reports (`GET /v1/diagnostics`, `/v1/diagnostics/log`;
+  credentials in log lines are redacted).
 
 ### Changed
 

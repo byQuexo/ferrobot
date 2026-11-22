@@ -714,6 +714,17 @@ impl SandboxBackend for DockerBackend {
         self.ping().await
     }
 
+    async fn default_image(&self) -> Option<(String, Option<String>)> {
+        let image = &self.config.image;
+        let id = self
+            .docker()
+            .inspect_image(image)
+            .await
+            .ok()
+            .and_then(|i| i.id);
+        Some((image.clone(), id))
+    }
+
     async fn create(&self, spec: &SandboxSpec) -> Result<SandboxHandle, SandboxError> {
         let id = if let Some(id) = self.unarchive(spec).await? {
             id

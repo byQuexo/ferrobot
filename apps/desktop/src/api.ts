@@ -51,6 +51,8 @@ export type PriceEntry = Schemas["PriceEntry"];
 export type SetPrice = Schemas["SetPrice"];
 export type GeneralSettings = Schemas["GeneralSettings"];
 export type UpdateInfo = Schemas["UpdateInfo"];
+export type Diagnostics = Schemas["Diagnostics"];
+export type DiagnosticsLog = Schemas["DiagnosticsLog"];
 export type ClisView = Schemas["ClisView"];
 export type CallView = Schemas["CallView"];
 export type Room = Schemas["Room"];
@@ -292,6 +294,9 @@ export class DaemonClient {
   updateSettings = (s: GeneralSettings): Promise<GeneralSettings> =>
     this.#request("PUT", "/v1/settings", s);
   updateInfo = (): Promise<UpdateInfo> => this.#request("GET", "/v1/update");
+  diagnostics = (): Promise<Diagnostics> => this.#request("GET", "/v1/diagnostics");
+  diagnosticsLog = (lines: number): Promise<DiagnosticsLog> =>
+    this.#request("GET", `/v1/diagnostics/log?lines=${String(lines)}`);
   /** Pulls, rebuilds and restarts a source build; poll `updateInfo` for progress. */
   startUpdate = (): Promise<UpdateInfo> => this.#request("POST", "/v1/update");
 

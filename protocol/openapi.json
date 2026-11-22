@@ -2888,6 +2888,78 @@
         }
       }
     },
+    "/v1/diagnostics": {
+      "get": {
+        "tags": [
+          "system"
+        ],
+        "summary": "Versions, setup and counts for a bug report.",
+        "operationId": "get_diagnostics",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Diagnostics"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or wrong API token",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/diagnostics/log": {
+      "get": {
+        "tags": [
+          "system"
+        ],
+        "summary": "The latest daemon log lines, kept in memory since the daemon started.",
+        "operationId": "get_log",
+        "parameters": [
+          {
+            "name": "lines",
+            "in": "query",
+            "description": "How many of the latest lines (default 200, at most 2000).",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 0
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DiagnosticsLog"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or wrong API token",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/v1/health": {
       "get": {
         "tags": [
@@ -5748,6 +5820,120 @@
           },
           "user_code": {
             "type": "string"
+          }
+        }
+      },
+      "Diagnostics": {
+        "type": "object",
+        "description": "What a bug report needs about this daemon. Never holds a key or token.",
+        "required": [
+          "version",
+          "build",
+          "os",
+          "arch",
+          "backend",
+          "driver",
+          "data_dir",
+          "storage",
+          "sandbox_ready",
+          "anthropic_key",
+          "agents",
+          "providers",
+          "connectors",
+          "uptime_s"
+        ],
+        "properties": {
+          "version": {
+            "type": "string"
+          },
+          "build": {
+            "type": "string",
+            "description": "`debug` or `release`."
+          },
+          "os": {
+            "type": "string",
+            "description": "Operating system, e.g. `macos`, `linux`, `windows`."
+          },
+          "arch": {
+            "type": "string",
+            "description": "CPU architecture, e.g. `aarch64`, `x86_64`."
+          },
+          "backend": {
+            "type": "string"
+          },
+          "driver": {
+            "type": "string"
+          },
+          "data_dir": {
+            "type": "string",
+            "description": "Directory with the database and the API token file."
+          },
+          "storage": {
+            "type": "string",
+            "description": "Where snapshot archives go: `local`, or the scheme of `--storage-url` (`s3`, ...)."
+          },
+          "sandbox_ready": {
+            "type": "boolean",
+            "description": "Whether the sandbox backend can start agents now (Docker: the engine answers)."
+          },
+          "sandbox_error": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Why the backend is not ready; null when ready."
+          },
+          "runner_image": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Image sandboxes start from by default; null: the backend has no images."
+          },
+          "runner_image_id": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "That image's id; null when the engine does not have it or did not answer."
+          },
+          "anthropic_key": {
+            "type": "boolean",
+            "description": "Whether the daemon has its own `ANTHROPIC_API_KEY` for agents without a provider."
+          },
+          "agents": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "providers": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "connectors": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "uptime_s": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Seconds since the daemon started.",
+            "minimum": 0
+          }
+        }
+      },
+      "DiagnosticsLog": {
+        "type": "object",
+        "description": "The latest daemon log lines.",
+        "required": [
+          "lines"
+        ],
+        "properties": {
+          "lines": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Oldest first, without colour codes; what looks like a credential reads `[REDACTED]`."
           }
         }
       },

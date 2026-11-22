@@ -46,3 +46,19 @@ export function saveOrder(order: string[]): void {
     // Storage can be unavailable; the order then lasts until the app closes.
   }
 }
+
+/**
+ * The agent to show: the remembered one while it exists, else the first pinned agent, then by
+ * name. `undefined` keeps the current choice: before the list loaded, an empty map is no answer.
+ */
+export function pickSelection<T extends Orderable>(
+  agents: ReadonlyMap<string, T>,
+  selected: string | null,
+  loaded: boolean,
+): string | null | undefined {
+  if (!loaded || (selected && agents.has(selected))) return undefined;
+  const first = [...agents.values()].sort(
+    (a, b) => Number(Boolean(b.pinned)) - Number(Boolean(a.pinned)) || a.name.localeCompare(b.name),
+  )[0];
+  return first?.id ?? null;
+}

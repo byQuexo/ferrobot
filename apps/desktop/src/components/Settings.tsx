@@ -12,6 +12,7 @@ import {
   Palette,
   Plug,
   RefreshCw,
+  Stethoscope,
   Sun,
   Terminal,
   X,
@@ -22,6 +23,7 @@ import { useApp } from "../context.ts";
 import type { ThemePref } from "../lib/theme.ts";
 import { ClisSettings } from "./ClisSettings.tsx";
 import { ConnectorsSettings } from "./ConnectorsSettings.tsx";
+import { DiagnosticsSettings } from "./DiagnosticsSettings.tsx";
 import { Guides } from "./Guides.tsx";
 import { Memory } from "./InfoPanel.tsx";
 import { ProvidersSettings } from "./ProvidersSettings.tsx";
@@ -40,6 +42,7 @@ export type SettingsSection =
   | "voice"
   | "appearance"
   | "updates"
+  | "diagnostics"
   | "guides";
 
 /** Id, label, about, icon and the guide page behind the header's "Guide" link. */
@@ -79,6 +82,13 @@ const SECTIONS: [SettingsSection, string, string, typeof KeyRound, string?][] = 
   ],
   ["appearance", "Appearance", "How ferrobot looks on this computer.", Palette],
   ["updates", "Updates", "The version ferrobot runs and how to get the latest.", RefreshCw],
+  [
+    "diagnostics",
+    "Diagnostics",
+    "Versions, status and the daemon log, to help with problems and bug reports.",
+    Stethoscope,
+    "Troubleshooting",
+  ],
   ["guides", "Guides", "How ferrobot works, step by step. The same pages as the wiki.", BookOpen],
 ];
 
@@ -226,6 +236,7 @@ export function Settings(props: {
         {props.section === "memory" && <Memory agent={null} />}
         {props.section === "voice" && <VoiceSettings onVault={vault} />}
         {props.section === "updates" && <UpdatesSettings />}
+        {props.section === "diagnostics" && <DiagnosticsSettings />}
         {props.section === "guides" && <Guides page={props.guide} onPage={props.onGuide} />}
         {props.section === "appearance" && (
           <div class="form">
