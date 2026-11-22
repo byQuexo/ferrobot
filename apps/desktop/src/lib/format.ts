@@ -19,14 +19,17 @@ export function credentialLabel(kind: "missing" | "rejected"): string {
   return kind === "missing" ? "Key missing" : "Key rejected";
 }
 
-/** The agent's status dot and label: a model credential problem outranks presence. */
-export function statusOf(a: Pick<Agent, "presence" | "credential_error">): {
+export const TOOLS_UNSUPPORTED = "Model can't use tools";
+
+/** The agent's status dot and label: a model credential or tools problem outranks presence. */
+export function statusOf(a: Pick<Agent, "presence" | "credential_error" | "tools_unsupported">): {
   presence: Presence;
   label: string;
 } {
-  return a.credential_error
-    ? { presence: "error", label: credentialLabel(a.credential_error.kind) }
-    : { presence: a.presence, label: presenceLabel(a.presence) };
+  if (a.credential_error)
+    return { presence: "error", label: credentialLabel(a.credential_error.kind) };
+  if (a.tools_unsupported) return { presence: "error", label: TOOLS_UNSUPPORTED };
+  return { presence: a.presence, label: presenceLabel(a.presence) };
 }
 
 /** The agent dialog's tools summary: "All tools", "7 of 9 tools" or "No tools", plus connectors given. */

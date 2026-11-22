@@ -2083,6 +2083,221 @@ async fn credential_problems_hold_turns_until_fixed() {
     assert!(!everything.contains("good-key"));
 }
 
+/// `OpenRouter`'s answer when no endpoint of the model supports tools.
+const NO_TOOL_ENDPOINTS: &str = r#"{"error":{"message":"No endpoints found that support tool use. Try disabling \"bash\".","code":404}}"#;
+
+/// Fake chat completions upstream: requests with tools get [`NO_TOOL_ENDPOINTS`] (model `tooled`
+/// excepted), and so does every request for model `gone`; the rest get a completion.
+async fn no_tools_upstream() -> String {
+    async fn handler(body: axum::body::Bytes) -> axum::response::Response {
+        let req: Value = serde_json::from_slice(&body).unwrap_or(Value::Null);
+        let tools = req["tools"].as_array().is_some_and(|t| !t.is_empty());
+        let model = req["model"].as_str().unwrap_or_default();
+        if model == "gone" || (tools && model != "tooled") {
+            let status = axum::http::StatusCode::NOT_FOUND;
+            let json = [("content-type", "application/json")];
+            return (status, json, NO_TOOL_ENDPOINTS).into_response();
+        }
+        axum::Json(json!({"choices": [{"message": {"role": "assistant", "content": "hi"}}]}))
+            .into_response()
+    }
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let addr = listener.local_addr().unwrap();
+    let app = axum::Router::new().fallback(handler);
+    tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });
+    format!("http://{addr}/v1")
+}
+
+#[tokio::test]
+async fn models_without_tools_ask_once_and_hold_turns() {
+    let upstream = no_tools_upstream().await;
+    let backend = Arc::new(StatefulBackend::default());
+    let d = start(backend.clone(), None, "127.0.0.1:0").await;
+    let backend = &*backend;
+    let body = json!({"name": "or", "kind": "openrouter", "base_url": upstream,
+                      "api_key": "or-key", "default_model": "dolphin"});
+    let (status, provider) = http(&d.ui, "POST", "/v1/providers", Some(body)).await;
+    assert_eq!(status, 201, "{provider}");
+    let id = create(&d, json!({"name": "kim", "provider_id": provider["id"]})).await["id"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    let (d, id) = (&d, id.as_str());
+    let conn = add_connector(d, json!({"name": "open", "url": keyless_upstream().await})).await;
+    let assign = format!("/v1/agents/{id}/connectors");
+    let (status, _) = http(&d.ui, "PUT", &assign, Some(json!([conn["id"]]))).await;
+    assert_eq!(status, 200);
+    let mut ws = connect_runner(&d.agents, &backend.token("kim")).await;
+    let post = |body: &'static str| async move {
+        let path = format!("/v1/agents/{id}/messages");
+        http(&d.ui, "POST", &path, Some(json!({"body": body})))
+            .await
+            .1["id"]
+            .as_i64()
+            .unwrap()
+    };
+    let agent = || async {
+        http(&d.ui, "GET", &format!("/v1/agents/{id}"), None)
+            .await
+            .1
+    };
+    let patch = |body: Value| async move {
+        let (status, view) = http(&d.ui, "PATCH", &format!("/v1/agents/{id}"), Some(body)).await;
+        assert_eq!(status, 200, "{view}");
+        view
+    };
+    let cards = || async {
+        events(d, id)
+            .await
+            .into_iter()
+            .filter(|e| e["kind"] == "question")
+            .filter(|e| e["payload"]["approval"]["kind"] == "use_without_tools")
+            .collect::<Vec<_>>()
+    };
+    let pending = |ids: Vec<i64>| async move {
+        let mail = mail(d, id).await;
+        ids.iter().all(|m| {
+            mail.iter()
+                .any(|x| x["id"] == *m && x["status"] == "pending")
+        })
+    };
+    // The runner's model call, with a built-in tool or with an empty list.
+    let call = |tools: bool| async move {
+        let bearer = format!("Bearer {}", backend.token("kim"));
+        let tools = if tools {
+            json!([{"type": "function", "function": {"name": "bash"}}])
+        } else {
+            json!([])
+        };
+        let model = agent().await["model"]
+            .as_str()
+            .unwrap_or("dolphin")
+            .to_owned();
+        let body = json!({"model": model, "messages": [], "tools": tools});
+        let headers = [
+            ("authorization", bearer.as_str()),
+            ("content-type", "application/json"),
+        ];
+        let url = "/model/chat/completions";
+        let out = http_raw(
+            &d.agents,
+            "POST",
+            url,
+            &headers,
+            body.to_string().as_bytes(),
+        )
+        .await;
+        (out.0, String::from_utf8(out.2).unwrap())
+    };
+    let failed_turn = |mut ws: Ws, message: i64| async move {
+        let (turn, got, _) = next_turn(&mut ws).await;
+        assert_eq!(got, message);
+        let (status, text) = call(true).await;
+        assert_eq!(status, 404);
+        fail(
+            &mut ws,
+            turn,
+            &format!("model request failed with 404: {text}"),
+        )
+        .await;
+        ws
+    };
+
+    // The first refusal holds the turns and asks once; the message waits instead of failing.
+    let first = post("hello").await;
+    ws = failed_turn(ws, first).await;
+    let problem = agent().await["tools_unsupported"].clone();
+    assert_eq!(problem["model"], "dolphin", "{problem}");
+    assert_eq!(problem["reason"], "or can't run dolphin with tools");
+    assert_eq!(agent().await["credential_error"], Value::Null);
+    let found = cards().await;
+    assert_eq!(found.len(), 1, "one card: {found:?}");
+    let card = &found[0]["payload"]["card"];
+    assert_eq!(card["title"], "kim's model can't use tools");
+    let prompt = card["questions"][0]["prompt"].as_str().unwrap();
+    assert!(prompt.contains("only chat: no shell, files"), "{prompt}");
+    let labels: Vec<&Value> = card["questions"][0]["choices"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|c| &c["label"])
+        .collect();
+    assert_eq!(labels, [&json!("Use without tools"), &json!("Keep tools")]);
+    let notices = events(d, id).await;
+    assert!(notices.iter().any(|e| e["kind"] == "tools_unsupported"));
+    quiet(&mut ws).await;
+    assert!(pending(vec![first]).await, "not failed");
+
+    // Declined: nothing changes, later messages wait too and no second card comes.
+    let qid = found[0]["id"].as_i64().unwrap();
+    assert_eq!(decide(d, id, qid, "decline").await.0, 202);
+    let second = post("are you there?").await;
+    quiet(&mut ws).await;
+    assert!(pending(vec![first, second]).await);
+    assert_eq!(cards().await.len(), 1);
+    assert_ne!(agent().await["tools_unsupported"], Value::Null);
+
+    // A new model clears the hold; refused again, a new card comes, but a retry with that card
+    // still open adds none.
+    let view = patch(json!({"model": "dolphin-2"})).await;
+    assert_eq!(view["tools_unsupported"], Value::Null);
+    ws = failed_turn(ws, first).await;
+    assert_eq!(cards().await.len(), 2);
+    let (status, view) = http(&d.ui, "POST", &format!("/v1/agents/{id}/retry"), None).await;
+    assert_eq!((status, &view["tools_unsupported"]), (200, &Value::Null));
+    ws = failed_turn(ws, first).await;
+    let found = cards().await;
+    assert_eq!(found.len(), 2, "one open card at most");
+
+    // Approved: no tools and no connectors, and the waiting messages run without tools.
+    let qid = found[1]["id"].as_i64().unwrap();
+    assert_eq!(decide(d, id, qid, "approve").await.0, 202);
+    match next_frame(&mut ws).await {
+        DaemonFrame::Configure { tools, .. } => assert!(tools.is_empty(), "{tools:?}"),
+        other => panic!("expected configure, got {other:?}"),
+    }
+    let (turn, got, _) = next_turn(&mut ws).await;
+    assert_eq!(got, first);
+    assert_eq!(call(false).await.0, 200);
+    finish(&mut ws, turn, Some("hi")).await;
+    let (turn, got, _) = next_turn(&mut ws).await;
+    assert_eq!(got, second);
+    finish(&mut ws, turn, None).await;
+    delivered(d, id, second).await;
+    assert_eq!(a_tools(d, id).await, json!([]));
+    assert_eq!(http(&d.ui, "GET", &assign, None).await.1, json!([]));
+    assert_eq!(agent().await["tools_unsupported"], Value::Null);
+
+    // A request without tools is never taken for a tools problem, whatever the upstream says.
+    patch(json!({"model": "gone"})).await;
+    let (status, text) = call(false).await;
+    assert_eq!(status, 404);
+    assert!(text.contains("support tool use"), "the body passes through");
+    assert_eq!(agent().await["tools_unsupported"], Value::Null);
+    assert_eq!(cards().await.len(), 2);
+
+    // A card left open after the model changed does not take the tools of an agent that works.
+    patch(json!({"tools": ["shell"]})).await;
+    assert!(matches!(
+        next_frame(&mut ws).await,
+        DaemonFrame::Configure { .. }
+    ));
+    let third = post("still there?").await;
+    ws = failed_turn(ws, third).await;
+    let found = cards().await;
+    assert_eq!(found.len(), 3);
+    patch(json!({"model": "tooled"})).await;
+    let (turn, got, _) = next_turn(&mut ws).await;
+    assert_eq!(got, third);
+    assert_eq!(call(true).await.0, 200);
+    finish(&mut ws, turn, None).await;
+    delivered(d, id, third).await;
+    let qid = found[2]["id"].as_i64().unwrap();
+    assert_eq!(decide(d, id, qid, "approve").await.0, 202);
+    quiet(&mut ws).await;
+    assert_eq!(a_tools(d, id).await, json!(["shell"]));
+}
+
 #[tokio::test]
 async fn openrouter_calls_cache_claude_and_stick_to_one_provider() {
     let upstream = echo_upstream().await;
@@ -2905,7 +3120,31 @@ async fn mcp_upstream_app(token: &str) -> axum::Router {
 
 /// [`upstream_mcp`] that needs no token: it adds the one it accepts itself.
 async fn keyless_upstream() -> String {
-    let app = mcp_upstream_app("open")
+    serve_upstream(keyless_app().await).await
+}
+
+/// [`keyless_upstream`] that refuses an `initialize` offering protocol 2026-07-28 with "Method
+/// not supported" instead of offering an older version, as Google's MCP servers do.
+async fn legacy_upstream() -> String {
+    let app = keyless_app().await.layer(axum::middleware::from_fn(
+        |req: axum::extract::Request, next: axum::middleware::Next| async move {
+            let (parts, body) = req.into_parts();
+            let bytes = axum::body::to_bytes(body, usize::MAX).await.unwrap();
+            let rpc: Value = serde_json::from_slice(&bytes).unwrap_or(Value::Null);
+            if rpc["method"] == "initialize" && rpc["params"]["protocolVersion"] == "2026-07-28" {
+                let error = json!({"jsonrpc": "2.0", "id": rpc["id"],
+                    "error": {"code": -32601, "message": "Method not supported"}});
+                return axum::response::IntoResponse::into_response(axum::Json(error));
+            }
+            let req = axum::extract::Request::from_parts(parts, axum::body::Body::from(bytes));
+            next.run(req).await
+        },
+    ));
+    serve_upstream(app).await
+}
+
+async fn keyless_app() -> axum::Router {
+    mcp_upstream_app("open")
         .await
         .layer(axum::middleware::from_fn(
             |mut req: axum::extract::Request, next: axum::middleware::Next| async move {
@@ -2913,7 +3152,10 @@ async fn keyless_upstream() -> String {
                 req.headers_mut().insert("authorization", open);
                 next.run(req).await
             },
-        ));
+        ))
+}
+
+async fn serve_upstream(app: axum::Router) -> String {
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
     let url = format!("http://{}/mcp", listener.local_addr().unwrap());
     tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });
@@ -3232,6 +3474,14 @@ async fn add_connector(d: &Daemon, body: Value) -> Value {
     let (status, conn) = http(&d.ui, "POST", "/v1/connectors", Some(body)).await;
     assert_eq!(status, 201, "{conn}");
     conn
+}
+
+#[tokio::test]
+async fn connectors_reach_servers_that_refuse_the_newest_protocol() {
+    let d = start(Arc::new(StatefulBackend::default()), None, "127.0.0.1:0").await;
+    let url = legacy_upstream().await;
+    let conn = add_connector(&d, json!({"name": "legacy", "url": url})).await;
+    assert_eq!(conn["check"]["status"], "ok", "{conn}");
 }
 
 #[tokio::test]

@@ -8,7 +8,9 @@ use std::time::Duration;
 
 use ferrobot_core::{AgentId, Connector};
 use rmcp::ServiceExt;
-use rmcp::model::{CallToolRequestParams, CallToolResult, JsonObject, Tool};
+use rmcp::model::{
+    CallToolRequestParams, CallToolResult, ClientConfig, JsonObject, ProtocolVersion, Tool,
+};
 use rmcp::service::{ClientInitializeError, RoleClient, RunningService, ServiceError};
 use rmcp::transport::auth::AuthError;
 use rmcp::transport::streamable_http_client::{
@@ -33,7 +35,7 @@ const CHECK_TIMEOUT: Duration = Duration::from_secs(15);
 const MAX_TOOL_NAME: usize = 64;
 const CLIENT_PREFIX: &str = "mcp__ferrobot__";
 
-type Client = RunningService<RoleClient, ()>;
+type Client = RunningService<RoleClient, ClientConfig>;
 type Session = Arc<Client>;
 
 /// Where a connector's token lives in the secret store.
@@ -233,9 +235,19 @@ async fn connect(
             failure(auth_reason(&e), false)
         })?,
     };
+    // Google's MCP servers refuse rmcp's newest protocol instead of offering an older one.
+    let handshake = ClientConfig::default().with_protocol_version(ProtocolVersion::V_2025_11_25);
     match oauth {
-        Some(http) => ().serve(StreamableHttpClientTransport::with_client(http, config)).await,
-        None => ().serve(StreamableHttpClientTransport::from_config(config)).await,
+        Some(http) => {
+            handshake
+                .serve(StreamableHttpClientTransport::with_client(http, config))
+                .await
+        }
+        None => {
+            handshake
+                .serve(StreamableHttpClientTransport::from_config(config))
+                .await
+        }
     }
     .map_err(|e| {
         unreachable(&e);

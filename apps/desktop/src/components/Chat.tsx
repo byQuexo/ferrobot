@@ -170,6 +170,7 @@ export function Chat(props: {
 
   const working = agent.presence === "working";
   const status = statusOf(agent);
+  const problem = agent.credential_error ?? agent.tools_unsupported;
 
   return (
     <section class="chat" aria-label={`Chat with ${agent.name}`}>
@@ -177,10 +178,10 @@ export function Chat(props: {
         <Avatar agent={agent} size={40} presence={status.presence} />
         <div class="chat-title">
           <h1>{agent.name}</h1>
-          <span class={`chat-sub p-${status.presence}`} title={agent.credential_error?.reason}>
+          <span class={`chat-sub p-${status.presence}`} title={problem?.reason}>
             <span class="dot" />
             {status.label}
-            {agent.credential_error ? (
+            {problem ? (
               <CredentialFix agent={agent} onEdit={props.onEdit} onVault={props.onVault} />
             ) : (
               agent.description && <span class="muted"> · {agent.description}</span>

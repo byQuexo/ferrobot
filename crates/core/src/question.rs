@@ -128,6 +128,9 @@ pub enum Approval {
         connectors: Option<Vec<uuid::Uuid>>,
         requester: AgentId,
     },
+    /// The agent's model refused a request with tools (raised by the daemon). Approving turns
+    /// off its tool groups and connectors so its waiting messages run as plain chat.
+    UseWithoutTools { agent: AgentId, model: String },
 }
 
 /// Choice value that approves an approval card; anything else declines.
@@ -177,6 +180,15 @@ impl QuestionEvent {
 }
 
 impl QuestionEvent {
+    /// Renames an approval card's Approve and Decline choices; their values stay.
+    #[must_use]
+    pub fn with_labels(mut self, approve: &str, decline: &str) -> Self {
+        for c in self.card.questions.iter_mut().flat_map(|q| &mut q.choices) {
+            c.label = if c.value == APPROVE { approve } else { decline }.into();
+        }
+        self
+    }
+
     /// An Approve/Decline card for a connector, with a hidden token field when it takes one.
     pub fn add_connector(title: String, prompt: String, approval: Approval) -> Self {
         let token = matches!(

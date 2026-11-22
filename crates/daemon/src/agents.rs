@@ -110,7 +110,7 @@ fn pick(mine: &[Connector], names: &[String]) -> Result<Vec<Connector>, ApiError
 
 /// Replaces an agent's tool groups and connectors (`None`: unchanged) the way
 /// `PATCH /v1/agents/{id}` and `PUT /v1/agents/{id}/connectors` do.
-async fn set_profile(
+pub(crate) async fn set_profile(
     state: &AppState,
     id: AgentId,
     tools: Option<Vec<ToolGroup>>,

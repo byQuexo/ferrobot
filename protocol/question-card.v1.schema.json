@@ -138,6 +138,29 @@
             "kind"
           ],
           "type": "object"
+        },
+        {
+          "description": "The agent's model refused a request with tools (raised by the daemon). Approving turns\noff its tool groups and connectors so its waiting messages run as plain chat.",
+          "properties": {
+            "agent": {
+              "$ref": "#/$defs/AgentId"
+            },
+            "kind": {
+              "enum": [
+                "use_without_tools"
+              ],
+              "type": "string"
+            },
+            "model": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "agent",
+            "model",
+            "kind"
+          ],
+          "type": "object"
         }
       ]
     },

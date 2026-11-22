@@ -215,6 +215,10 @@ pub(crate) async fn answer_question(
             crate::agents::answer_tools_card(&state, id, qid, approval, req.answers).await?;
         return Ok((StatusCode::ACCEPTED, Json(answered)));
     }
+    if let Some(approval @ Approval::UseWithoutTools { .. }) = &question.approval {
+        let answered = crate::no_tools::answer_card(&state, id, qid, approval, req.answers).await?;
+        return Ok((StatusCode::ACCEPTED, Json(answered)));
+    }
     if question.approval.is_some() {
         let answered = QuestionAnswered {
             question: qid,
@@ -271,8 +275,8 @@ pub(crate) async fn interrupt(
     }))
 }
 
-/// Clears the agent's credential problem so its waiting messages run; if the credential is
-/// still broken, the next model call sets it again.
+/// Clears the agent's credential or tools problem so its waiting messages run; if it still
+/// stands, the next model call sets it again.
 #[utoipa::path(post, path = "/v1/agents/{id}/retry", tag = "chat",
     params(("id" = String, Path, description = "Agent id (UUID)")),
     responses((status = 200, body = AgentView),

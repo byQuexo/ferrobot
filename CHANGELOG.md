@@ -8,12 +8,17 @@ All notable changes are listed here. The format follows
 
 ### Added
 
-- First run (desktop): with no agents, a starter agent walks you through
-  Docker and a model provider with its key, then wakes up as your first agent
-  (`guide`). **Skip** sets up alone.
+- First run (desktop): with no agents, Ferro walks you through Docker and a
+  model provider with its key, then wakes up as your main agent (`ferro`,
+  pinned): it takes tasks and builds a team of agents when a job needs one.
+  **Skip** sets up alone.
 - Guides under Settings: the wiki's user pages (`docs/wiki`), bundled into the
   app. New pages on connectors and OAuth (with a Gmail example), CLIs, tools
   and permissions, routines and memory, voice and calls, and troubleshooting.
+- A model that can't use tools (OpenRouter's "No endpoints found that support
+  tool use", Ollama's "does not support tools") no longer fails the agent's
+  messages: they wait, the agent shows **Model can't use tools**, and one card
+  offers to run it without tools (`tools_unsupported` on the agent view).
 
 ### Changed
 

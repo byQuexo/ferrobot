@@ -26,10 +26,11 @@ pub async fn set(state: &AppState, agent: AgentId, kind: CredentialProblem, reas
     state.publish_agent(agent).await;
 }
 
-/// Clears the agent's credential problem and runs its waiting messages; if the fix did not
-/// work, the next model call sets it again.
+/// Clears the agent's credential and tools problems and runs its waiting messages; if the fix
+/// did not work, the next model call sets them again.
 pub async fn clear(state: &AppState, agent: AgentId) {
-    if !state.hub.clear_credential_error(agent) {
+    let credential = state.hub.clear_credential_error(agent);
+    if !(state.hub.clear_tools_unsupported(agent) || credential) {
         return;
     }
     state.publish_agent(agent).await;

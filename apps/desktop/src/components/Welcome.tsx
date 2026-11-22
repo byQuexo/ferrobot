@@ -9,7 +9,7 @@ import {
   STARTER_DESCRIPTION,
   STARTER_INSTRUCTIONS,
   providerReady,
-  starterName,
+  STARTER_NAME,
   type WelcomeStep,
 } from "../lib/welcome.ts";
 import { Avatar } from "./Avatar.tsx";
@@ -52,7 +52,7 @@ export function Welcome(props: {
 }): JSX.Element {
   const { client, health } = useApp();
   const [look] = useState(() => deriveCharacter(crypto.randomUUID()));
-  const [name, setName] = useState<string | null>(null);
+  const name = STARTER_NAME;
   const [model, setModel] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -60,18 +60,7 @@ export function Welcome(props: {
   // Wakes by itself only when the model was added here; opened at "meet", it waits for a click.
   const auto = useRef(props.step !== "meet");
   const provider = props.providers.find(providerReady);
-  const shownName = name ?? "guide";
-
-  useEffect(() => {
-    client.settings().then(
-      (s) => {
-        setName(starterName(s.agent_names));
-      },
-      () => {
-        setName(starterName(null));
-      },
-    );
-  }, []);
+  const shownName = "Ferro";
 
   useEffect(() => {
     if (ready) return;
@@ -89,7 +78,6 @@ export function Welcome(props: {
   }, [ready]);
 
   const wake = async (): Promise<void> => {
-    if (!name) return;
     setBusy(true);
     setError(null);
     let agent: Agent;
@@ -107,12 +95,13 @@ export function Welcome(props: {
       setBusy(false);
       return;
     }
-    // The daemon opens a new agent's first turn with a greeting; its instructions say what to ask.
+    // The main agent stays first in the list. The daemon opens its first turn with a greeting.
+    agent = await client.updateAgent(agent.id, { pinned: true }).catch(() => agent);
     props.onCreated(agent);
   };
 
   useEffect(() => {
-    if (!auto.current || props.step !== "meet" || !ready || !name) return;
+    if (!auto.current || props.step !== "meet" || !ready) return;
     auto.current = false;
     void wake();
   }, [props.step, ready, name]);
@@ -141,7 +130,7 @@ export function Welcome(props: {
           <h1>{shownName}</h1>
           <span class="chat-sub p-sleeping">
             <span class="dot" />
-            Asleep · your first agent
+            Asleep · your main agent
           </span>
         </div>
         <span class="spacer" />
@@ -159,7 +148,11 @@ export function Welcome(props: {
           <p class="empty-title">Welcome to ferrobot</p>
         </div>
         <Line look={look}>
-          <p>Hi, I’m {shownName}. I’m still asleep: I wake up once I have a model to think with.</p>
+          <p>
+            Hi, I’m {shownName}, your main agent. I help you set up ferrobot, then I take your tasks
+            and build a team of agents when a job needs one. I wake up once I have a model to think
+            with.
+          </p>
           <p>
             In ferrobot every agent gets its own computer, a mailbox and a memory. Agents work on
             their own, talk to each other and ask you before anything big.
@@ -232,11 +225,7 @@ export function Welcome(props: {
             )}
             {error && <p class="hint bad">{error}</p>}
             <div class="form-actions">
-              <Button
-                variant="primary"
-                disabled={busy || !ready || !name}
-                onClick={() => void wake()}
-              >
+              <Button variant="primary" disabled={busy || !ready} onClick={() => void wake()}>
                 <Sunrise size={16} /> {busy ? "Waking up…" : `Wake ${shownName}`}
               </Button>
             </div>

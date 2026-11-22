@@ -1,7 +1,7 @@
 //! Append-only log of turn events per agent (what the UI renders).
 
 use ferrobot_core::AgentId;
-use rusqlite::params;
+use rusqlite::{OptionalExtension, params};
 use serde::Serialize;
 use time::OffsetDateTime;
 
@@ -108,6 +108,27 @@ impl Store {
                 params![agent.to_string(), question],
                 |r| r.get(0),
             )?)
+        })
+        .await
+    }
+
+    /// The newest unanswered approval card in `agent`'s chat whose approval is of `kind`.
+    pub async fn open_approval(
+        &self,
+        agent: AgentId,
+        kind: &'static str,
+    ) -> Result<Option<i64>, StoreError> {
+        self.with(move |c| {
+            Ok(c.query_row(
+                "SELECT q.id FROM events q WHERE q.agent_id = ?1 AND q.kind = 'question'
+                 AND json_extract(q.payload, '$.approval.kind') = ?2
+                 AND NOT EXISTS (SELECT 1 FROM events a WHERE a.agent_id = ?1
+                     AND a.kind = 'question_answered' AND json_extract(a.payload, '$.question') = q.id)
+                 ORDER BY q.id DESC LIMIT 1",
+                params![agent.to_string(), kind],
+                |r| r.get(0),
+            )
+            .optional()?)
         })
         .await
     }

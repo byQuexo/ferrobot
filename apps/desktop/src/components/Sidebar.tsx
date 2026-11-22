@@ -438,7 +438,7 @@ function AgentRow(props: {
           <span class="agent-row-top">
             <span class="agent-name">{a.name}</span>
           </span>
-          {a.credential_error ? (
+          {a.credential_error || a.tools_unsupported ? (
             <span class="agent-desc bad">{status.label}</span>
           ) : (
             <span class="agent-desc">{a.description || "No description"}</span>
