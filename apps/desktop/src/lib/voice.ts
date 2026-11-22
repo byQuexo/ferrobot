@@ -1,6 +1,11 @@
 // Voice in the chat with browser built-ins only: <audio> plays what the
 // daemon's speech endpoint returns, MediaRecorder records the operator.
+import type { VoiceView } from "../api.ts";
 import { mentionsAsText } from "./mentions.ts";
+
+/** Whether the chosen voice provider has its key, so dictation can work. */
+export const hasVoiceKey = (v: VoiceView): boolean =>
+  v.providers.some((p) => p.kind === v.provider && p.has_key);
 
 /** Longer replies are cut; the rest stays in the chat. */
 export const MAX_SPOKEN = 1500;

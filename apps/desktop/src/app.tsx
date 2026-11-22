@@ -247,6 +247,11 @@ export function App(): JSX.Element {
     setUsage(false);
     setSettings("vault");
   };
+  const openProviders = (): void => {
+    setUsage(false);
+    setSettings("providers");
+  };
+  const agentProvider = providers?.find((p) => p.id === agent?.provider_id);
   const openGuide = (page: string | null): void => {
     setUsage(false);
     setSettings("guides");
@@ -328,6 +333,9 @@ export function App(): JSX.Element {
               setDialog("edit");
             }}
             onVault={openVault}
+            onSignIn={
+              agentProvider?.kind === "codex" && !agentProvider.has_key ? openProviders : undefined
+            }
           />
         ) : welcome ? (
           <Welcome

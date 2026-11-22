@@ -8,13 +8,19 @@ export function CredentialFix(props: {
   agent: Agent;
   onEdit: () => void;
   onVault: () => void;
+  onSignIn?: () => void;
 }): JSX.Element {
   const { client, run } = useApp();
   const pickModel = props.agent.provider_id == null || !props.agent.credential_error;
+  const [label, fix] = pickModel
+    ? ["Choose a model", props.onEdit]
+    : props.onSignIn
+      ? ["Sign in with ChatGPT", props.onSignIn]
+      : ["Open Vault", props.onVault];
   return (
     <span class="credential-fix">
-      <button type="button" class="text-link" onClick={pickModel ? props.onEdit : props.onVault}>
-        {pickModel ? "Choose a model" : "Open Vault"}
+      <button type="button" class="text-link" onClick={fix}>
+        {label}
       </button>
       <button
         type="button"

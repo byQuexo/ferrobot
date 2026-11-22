@@ -29,11 +29,61 @@ const KIND_HINTS: Partial<Record<ProviderKind, string>> = {
   gemini_cli: "Runs Google’s Gemini CLI harness (over ACP) with a Gemini API key.",
 };
 
+const CODEX_INSTALL: Link = {
+  label: "Install Codex to sign in with ChatGPT",
+  url: "https://developers.openai.com/codex/cli",
+};
+
+interface Link {
+  label: string;
+  url: string;
+}
+
+/** Where to create a kind's key or set it up; a kind's first link is its key page, if it has one. */
+export const KIND_LINKS: Partial<Record<ProviderKind, Link[]>> = {
+  anthropic: [
+    { label: "Create an Anthropic API key", url: "https://platform.claude.com/settings/keys" },
+  ],
+  openai: [{ label: "Create an OpenAI API key", url: "https://platform.openai.com/api-keys" }],
+  gemini: [{ label: "Create a Gemini API key", url: "https://aistudio.google.com/apikey" }],
+  bedrock: [
+    {
+      label: "Create a Bedrock API key",
+      url: "https://docs.aws.amazon.com/bedrock/latest/userguide/api-keys.html",
+    },
+  ],
+  vertex: [
+    {
+      label: "Set up Claude on Vertex AI",
+      url: "https://cloud.google.com/vertex-ai/generative-ai/docs/partner-models/claude",
+    },
+  ],
+  openrouter: [
+    { label: "Create an OpenRouter API key", url: "https://openrouter.ai/settings/keys" },
+  ],
+  ollama: [{ label: "Download Ollama", url: "https://ollama.com/download" }],
+  codex: [
+    { label: "Create an OpenAI API key", url: "https://platform.openai.com/api-keys" },
+    CODEX_INSTALL,
+  ],
+  gemini_cli: [{ label: "Create a Gemini API key", url: "https://aistudio.google.com/apikey" }],
+};
+
+export const LinkOut = (props: Link): JSX.Element => (
+  <a href={props.url} target="_blank" rel="noreferrer">
+    {props.label}
+  </a>
+);
+
 // The daemon's own LOGIN_TIMEOUT in crates/daemon/src/codex.rs.
 const LOGIN_TIMEOUT_MS = 15 * 60_000;
 
 /** Device-code sign-in with ChatGPT, done by the daemon host’s Codex. */
-function ChatgptLogin(props: { provider: Provider }): JSX.Element {
+export function ChatgptLogin(props: {
+  provider: Provider;
+  onVault: () => void;
+  onStatus?: (status: LoginStatus) => void;
+}): JSX.Element {
   const { client, toast } = useApp();
   const [code, setCode] = useState<DeviceCode | null>(null);
   const [status, setStatus] = useState<LoginStatus | null>(null);
@@ -47,7 +97,11 @@ function ChatgptLogin(props: { provider: Provider }): JSX.Element {
         (s) => {
           if (!live) return;
           const expired = s.state === "pending" && Date.now() - started >= LOGIN_TIMEOUT_MS;
-          setStatus(expired ? { state: "failed", error: "Sign-in timed out. Sign in again." } : s);
+          const shown: LoginStatus = expired
+            ? { state: "failed", error: "Sign-in timed out. Sign in again." }
+            : s;
+          setStatus(shown);
+          props.onStatus?.(shown);
           if (s.state === "pending" && !expired) setTimeout(poll, 2000);
         },
         () => undefined,
@@ -85,6 +139,15 @@ function ChatgptLogin(props: { provider: Provider }): JSX.Element {
         </Button>
       )}
       {status?.state === "failed" && <span class="hint bad">{status.error}</span>}
+      {status?.state === "failed" && !code && (
+        // Checking the sign-in failed, mostly because Codex is missing on the daemon's computer.
+        <span class="small">
+          <LinkOut {...CODEX_INSTALL} /> · or{" "}
+          <button type="button" class="text-link" onClick={props.onVault}>
+            use an OpenAI API key in Vault
+          </button>
+        </span>
+      )}
     </div>
   );
 }
@@ -190,7 +253,9 @@ export function ProvidersSettings(props: {
               >
                 <Trash2 size={16} />
               </IconButton>
-              {p.kind === "codex" && !p.has_key && <ChatgptLogin provider={p} />}
+              {p.kind === "codex" && !p.has_key && (
+                <ChatgptLogin provider={p} onVault={props.onVault} />
+              )}
             </li>
           ))}
         </ul>
@@ -214,6 +279,16 @@ export function ProvidersSettings(props: {
                 ))}
               </select>
               {KIND_HINTS[kind] && <span class="hint">{KIND_HINTS[kind]}</span>}
+              {KIND_LINKS[kind] && (
+                <span class="hint">
+                  {KIND_LINKS[kind].map((link, i) => (
+                    <span key={link.url}>
+                      {i > 0 && " · "}
+                      <LinkOut {...link} />
+                    </span>
+                  ))}
+                </span>
+              )}
             </label>
             <label>
               Name

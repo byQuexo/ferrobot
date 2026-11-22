@@ -6,6 +6,29 @@ All notable changes are listed here. The format follows
 
 ## [Unreleased]
 
+### Added
+
+- Every model provider kind links to where its key is created or how it is
+  set up: under the kind when adding a provider, and next to a missing key in
+  Vault.
+
+### Fixed
+
+- First run with a Codex provider: Ferro no longer wakes on Codex before it
+  can think. Without a key it asks for an OpenAI API key or a ChatGPT sign-in,
+  and links the Codex install when Codex is missing on the computer.
+- The daemon finds Codex where its installers and npm put it, even when the
+  app was started from the Dock or the Start menu with a short PATH; on
+  Windows it also runs npm's `codex.cmd`.
+- An agent held for a ChatGPT sign-in links **Sign in with ChatGPT** instead
+  of Vault.
+- Dictation says right away when the voice provider has no key, instead of
+  after you stop talking.
+- A message that was not delivered shows why under it: the model provider's
+  answer in plain words, e.g. "The model provider answered 429 (rate limit or
+  quota reached): …". Google's errors are read too (they came through as raw
+  JSON), and the daemon log notes each error status for Diagnostics.
+
 ## [0.1.0] - 2026-11-22
 
 First public release.

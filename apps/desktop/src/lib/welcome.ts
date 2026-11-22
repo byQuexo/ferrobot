@@ -6,8 +6,9 @@ export const AGENT_NAME = /^[a-z][a-z0-9-]{0,31}$/;
 /** First-run steps: add a provider, add its key, then meet the starter agent. */
 export type WelcomeStep = "provider" | "key" | "meet";
 
-// The daemon's `ProviderKind::needs_key` (crates/core/src/provider.rs).
-const KEYLESS: readonly ProviderKind[] = ["vertex", "ollama", "openai_compatible", "codex"];
+// The daemon's `ProviderKind::needs_key` (crates/core/src/provider.rs), less codex: without a key
+// it needs a ChatGPT sign-in, which the welcome checks itself.
+const KEYLESS: readonly ProviderKind[] = ["vertex", "ollama", "openai_compatible"];
 
 /** Whether agents can reach a model through `p` now. */
 export const providerReady = (p: Provider): boolean => p.has_key || KEYLESS.includes(p.kind);

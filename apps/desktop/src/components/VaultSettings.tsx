@@ -4,7 +4,7 @@ import { KeyRound, Trash2 } from "lucide-preact";
 
 import type { Connector, Provider, VoiceView } from "../api.ts";
 import { useApp } from "../context.ts";
-import { KIND_LABELS, needsKey } from "./ProvidersSettings.tsx";
+import { KIND_LABELS, KIND_LINKS, LinkOut, needsKey } from "./ProvidersSettings.tsx";
 import { Button, IconButton } from "./ui.tsx";
 import { VOICE_LABELS } from "./VoiceSettings.tsx";
 
@@ -13,6 +13,8 @@ interface Entry {
   name: string;
   what: string;
   stored: boolean;
+  /** Where to create the key. */
+  keyUrl?: string;
   save: (value: string | null) => Promise<unknown>;
 }
 
@@ -65,6 +67,7 @@ export function VaultSettings(props: {
           name: p.name,
           what: `${KIND_LABELS[p.kind]} API key`,
           stored: p.has_key,
+          keyUrl: KIND_LINKS[p.kind]?.[0]?.url,
           save: (v) => client.updateProvider(p.id, { api_key: v }),
         })),
     ],
@@ -119,6 +122,12 @@ export function VaultSettings(props: {
                   <b>{e.name}</b>
                   <span class="muted small">
                     {e.what} · {e.stored ? "stored" : "not set"}
+                    {!e.stored && e.keyUrl && (
+                      <>
+                        {" · "}
+                        <LinkOut label="create one" url={e.keyUrl} />
+                      </>
+                    )}
                   </span>
                 </div>
                 <IconButton

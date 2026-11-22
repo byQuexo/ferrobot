@@ -266,7 +266,8 @@ export class OpenAIDriver implements ModelDriver {
       res = await request(false);
     }
     if (!res.ok || !res.body) {
-      throw new Error(`model request failed with ${res.status}: ${errorSnippet(await res.text())}`);
+      const why = `${String(res.status)} (${statusHint(res.status)})`;
+      throw new Error(`The model provider answered ${why}: ${errorSnippet(await res.text())}`);
     }
     let text = "";
     const think = new ThinkFilter();
@@ -439,9 +440,24 @@ function stringArg(input: Record<string, unknown>, key: string): string {
 }
 
 /** The message of an OpenAI-style or daemon error envelope, else the start of the body. */
+const STATUS_HINTS: Record<number, string> = {
+  401: "the key was refused",
+  403: "access was refused",
+  404: "model or endpoint not found",
+  429: "rate limit or quota reached",
+};
+
+const statusHint = (status: number): string =>
+  STATUS_HINTS[status] ?? (status >= 500 ? "the provider had a problem" : "request refused");
+
 function errorSnippet(body: string): string {
   try {
-    const message = (JSON.parse(body) as { error?: { message?: unknown } } | null)?.error?.message;
+    const parsed = JSON.parse(body) as unknown;
+    // Google wraps its error object in an array.
+    const first = (Array.isArray(parsed) ? parsed[0] : parsed) as {
+      error?: { message?: unknown };
+    } | null;
+    const message = first?.error?.message;
     if (typeof message === "string") return message;
   } catch {
     // not JSON
