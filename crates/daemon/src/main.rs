@@ -17,6 +17,8 @@ use ferrobot_sandbox::{
 };
 use ferrobot_store::Store;
 use tracing_subscriber::EnvFilter;
+use tracing_subscriber::layer::SubscriberExt;
+use tracing_subscriber::util::SubscriberInitExt;
 
 #[derive(Debug, Clone, Copy, ValueEnum)]
 enum Backend {
@@ -167,11 +169,14 @@ struct Cli {
     reason = "startup wiring, one step after another"
 )]
 async fn main() -> Result<()> {
-    tracing_subscriber::fmt()
-        .with_env_filter(
+    let log = ferrobot_daemon::logs::LogRing::default();
+    tracing_subscriber::registry()
+        .with(
             EnvFilter::try_from_default_env()
                 .unwrap_or_else(|_| EnvFilter::new("info,ferrobot=debug")),
         )
+        .with(tracing_subscriber::fmt::layer())
+        .with(ferrobot_daemon::logs::layer(log.clone()))
         .init();
     let cli = Cli::parse();
 
@@ -211,6 +216,9 @@ async fn main() -> Result<()> {
     settings.ui_url = browser_url(cli.listen);
     settings.storage =
         storage::open(cli.storage_url.as_deref(), &cli.data_dir).context("--storage-url")?;
+    settings.storage_kind = storage::kind(cli.storage_url.as_deref());
+    settings.data_dir = std::path::absolute(&cli.data_dir).unwrap_or(cli.data_dir.clone());
+    settings.log = log;
     settings.driver = cli.driver.as_str().into();
     settings.anthropic_api_key = anthropic_api_key;
     settings.anthropic_upstream = cli.anthropic_upstream.trim_end_matches('/').to_owned();

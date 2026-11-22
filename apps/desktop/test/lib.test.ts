@@ -36,6 +36,7 @@ import {
 } from "../src/lib/call.ts";
 import { CATALOG, isAdded } from "../src/lib/catalog.ts";
 import { checkDot, checkLabel, ownAppEntry } from "../src/lib/connectors.ts";
+import { diagnosticsReport } from "../src/lib/diagnostics.ts";
 import { parseBlocks, parseInline } from "../src/lib/markdown.ts";
 import { modelOptions, withSaved } from "../src/lib/models.ts";
 import { moveId, orderAgents, pickSelection } from "../src/lib/order.ts";
@@ -52,7 +53,7 @@ import {
   toCsv,
   zoneDays,
 } from "../src/lib/usage.ts";
-import type { Connector, UpdateInfo, UsageGroup } from "../src/api.ts";
+import type { Connector, Diagnostics, UpdateInfo, UsageGroup } from "../src/api.ts";
 
 const ME = "11111111-1111-4111-8111-111111111111";
 const BOB = "22222222-2222-4222-8222-222222222222";
@@ -1222,6 +1223,69 @@ describe("source update", () => {
     assert.equal(pollOutcome(info("idle")), "restarted");
     assert.equal(pollOutcome(info("failed")), "done");
     assert.equal(pollOutcome(info("up_to_date")), "done");
+  });
+});
+
+describe("diagnostics", () => {
+  const info: Diagnostics = {
+    version: "0.2.0",
+    build: "release",
+    os: "macos",
+    arch: "aarch64",
+    backend: "docker",
+    driver: "claude",
+    data_dir: "/Users/me/Library/Application Support/dev.ferrobot.desktop",
+    storage: "local",
+    sandbox_ready: false,
+    sandbox_error: "Docker is not running",
+    runner_image: "ghcr.io/byquexo/ferrobot-runner:0.2.0",
+    runner_image_id: "sha256:8785127776e1aaaabbbbcccc",
+    anthropic_key: false,
+    agents: 1,
+    providers: 2,
+    connectors: 0,
+    uptime_s: 3720,
+  };
+
+  it("reports versions, status, counts, the data folder and the log", () => {
+    assert.equal(
+      diagnosticsReport("0.1.0", info, ["line one", "line two"]),
+      [
+        "ferrobot diagnostics",
+        "App: 0.1.0",
+        "Daemon: 0.2.0 (release)",
+        "System: macos aarch64",
+        "Sandbox: docker, Docker is not running",
+        "Runner image: ghcr.io/byquexo/ferrobot-runner:0.2.0 (8785127776e1)",
+        "Driver: claude",
+        "Anthropic key: not set",
+        "Setup: 1 agent, 2 providers, 0 connectors",
+        "Storage: local",
+        "Uptime: 1 h 2 min",
+        "Data folder: /Users/me/Library/Application Support/dev.ferrobot.desktop",
+        "",
+        "Daemon log (last 2 lines):",
+        "line one",
+        "line two",
+      ].join("\n"),
+    );
+  });
+
+  it("names a backend without images and a ready sandbox", () => {
+    const report = diagnosticsReport(
+      "0.1.0",
+      {
+        ...info,
+        sandbox_ready: true,
+        sandbox_error: null,
+        runner_image: null,
+        runner_image_id: null,
+      },
+      [],
+    );
+    assert.match(report, /^Sandbox: docker, ready$/m);
+    assert.match(report, /^Runner image: none$/m);
+    assert.match(report, /^Daemon log \(last 0 lines\):$/m);
   });
 });
 

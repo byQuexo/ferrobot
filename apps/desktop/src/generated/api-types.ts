@@ -606,6 +606,40 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/diagnostics": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Versions, setup and counts for a bug report. */
+        get: operations["get_diagnostics"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/diagnostics/log": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** The latest daemon log lines, kept in memory since the daemon started. */
+        get: operations["get_log"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/health": {
         parameters: {
             query?: never;
@@ -1452,6 +1486,45 @@ export interface components {
         DeviceCode: {
             verification_url: string;
             user_code: string;
+        };
+        /** @description What a bug report needs about this daemon. Never holds a key or token. */
+        Diagnostics: {
+            version: string;
+            /** @description `debug` or `release`. */
+            build: string;
+            /** @description Operating system, e.g. `macos`, `linux`, `windows`. */
+            os: string;
+            /** @description CPU architecture, e.g. `aarch64`, `x86_64`. */
+            arch: string;
+            backend: string;
+            driver: string;
+            /** @description Directory with the database and the API token file. */
+            data_dir: string;
+            /** @description Where snapshot archives go: `local`, or the scheme of `--storage-url` (`s3`, ...). */
+            storage: string;
+            /** @description Whether the sandbox backend can start agents now (Docker: the engine answers). */
+            sandbox_ready: boolean;
+            /** @description Why the backend is not ready; null when ready. */
+            sandbox_error?: string | null;
+            /** @description Image sandboxes start from by default; null: the backend has no images. */
+            runner_image?: string | null;
+            /** @description That image's id; null when the engine does not have it or did not answer. */
+            runner_image_id?: string | null;
+            /** @description Whether the daemon has its own `ANTHROPIC_API_KEY` for agents without a provider. */
+            anthropic_key: boolean;
+            agents: number;
+            providers: number;
+            connectors: number;
+            /**
+             * Format: int64
+             * @description Seconds since the daemon started.
+             */
+            uptime_s: number;
+        };
+        /** @description The latest daemon log lines. */
+        DiagnosticsLog: {
+            /** @description Oldest first, without colour codes; what looks like a credential reads `[REDACTED]`. */
+            lines: string[];
         };
         /** @description JSON body of every non-2xx UI API response. */
         ErrorBody: {
@@ -4513,6 +4586,65 @@ export interface operations {
             };
             /** @description Malformed agent id */
             404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+        };
+    };
+    get_diagnostics: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Diagnostics"];
+                };
+            };
+            /** @description Missing or wrong API token */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+        };
+    };
+    get_log: {
+        parameters: {
+            query?: {
+                /** @description How many of the latest lines (default 200, at most 2000). */
+                lines?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DiagnosticsLog"];
+                };
+            };
+            /** @description Missing or wrong API token */
+            401: {
                 headers: {
                     [name: string]: unknown;
                 };
