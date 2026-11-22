@@ -1,4 +1,4 @@
-/** Vendor-run remote MCP servers that ferrobot can add in one step. Checked 2026-11-20. */
+/** Vendor-run remote MCP servers that ferrobot can add in one step. Checked 2026-11-22. */
 export interface CatalogEntry {
   /** The connector name (prefixes its tools). */
   name: string;
@@ -11,6 +11,9 @@ export interface CatalogEntry {
     "work" | "notes" | "code" | "errors" | "data" | "cloud" | "money" | "docs" | "search" | "ai";
   /** A step needed before it works. */
   setup?: string;
+  /** The server has no automatic client registration: Add opens the form for the operator's own
+   * OAuth app with these filled in. */
+  app?: { issuer: string; scopes: string[] };
 }
 
 export const CATALOG: CatalogEntry[] = [
@@ -37,6 +40,24 @@ export const CATALOG: CatalogEntry[] = [
     about: "Jira issues, Confluence pages, Bitbucket and Loom.",
     auth: "oauth",
     kind: "work",
+  },
+  {
+    name: "gmail",
+    title: "Gmail",
+    url: "https://gmailmcp.googleapis.com/mcp/v1",
+    about: "Search and read mail, manage labels and write drafts. It cannot send.",
+    auth: "oauth",
+    kind: "work",
+    setup:
+      "Google's official server, in Developer Preview. Needs your own Google OAuth app: see the Connectors and OAuth guide.",
+    app: {
+      issuer: "https://accounts.google.com",
+      scopes: [
+        "https://www.googleapis.com/auth/gmail.readonly",
+        "https://www.googleapis.com/auth/gmail.compose",
+        "https://www.googleapis.com/auth/gmail.modify",
+      ],
+    },
   },
   {
     name: "sentry",

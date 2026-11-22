@@ -1066,6 +1066,18 @@ describe("catalog", () => {
     }
   });
 
+  it("prefills an own OAuth app only for OAuth servers", () => {
+    for (const e of CATALOG.filter((c) => c.app)) {
+      assert.equal(e.auth, "oauth", e.name);
+      assert.ok(e.app?.issuer.startsWith("https://"), e.name);
+      assert.ok(e.app?.scopes.length, e.name);
+    }
+    assert.equal(
+      CATALOG.find((e) => e.name === "gmail")?.app?.issuer,
+      "https://accounts.google.com",
+    );
+  });
+
   it("knows what is added by name or url", () => {
     const linear = CATALOG.find((e) => e.name === "linear");
     assert.ok(linear);
