@@ -194,6 +194,12 @@ pub trait SandboxBackend: Send + Sync + std::fmt::Debug {
         Ok(())
     }
 
+    /// The image sandboxes start from by default and its id if the engine has it pulled;
+    /// `None`: the backend has no images.
+    async fn default_image(&self) -> Option<(String, Option<String>)> {
+        None
+    }
+
     /// Creates (or adopts) and starts the sandbox. A sandbox archived with
     /// `sleep(Archived)` comes back from its archive.
     async fn create(&self, spec: &SandboxSpec) -> Result<SandboxHandle, SandboxError>;

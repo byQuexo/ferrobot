@@ -955,6 +955,84 @@ impl ferrobot_daemon::update::Runner for FakeSteps {
     }
 }
 
+#[tokio::test]
+async fn diagnostics_need_the_token_and_redact_the_log() {
+    use tracing_subscriber::layer::SubscriberExt;
+
+    let ring = ferrobot_daemon::logs::LogRing::default();
+    let daemon_key = "sk-ant-daemon-key-0123456789abcdef";
+    let d = start_with(
+        Arc::new(StatefulBackend::default()),
+        None,
+        "127.0.0.1:0",
+        |s| {
+            s.log = ring.clone();
+            s.anthropic_api_key = Some(daemon_key.into());
+            s.data_dir = "/tmp/ferrobot-data".into();
+        },
+    )
+    .await;
+    for path in ["/v1/diagnostics", "/v1/diagnostics/log"] {
+        let (status, _, _) = http_raw(&d.ui, "GET", path, &[("Authorization", "")], b"").await;
+        assert_eq!(status, 401, "{path}");
+    }
+
+    http(&d.ui, "POST", "/v1/agents", Some(json!({"name": "kim"}))).await;
+    let (status, info) = http(&d.ui, "GET", "/v1/diagnostics", None).await;
+    assert_eq!(status, 200);
+    assert_eq!(
+        (&info["backend"], &info["data_dir"], &info["storage"]),
+        (
+            &json!("fake"),
+            &json!("/tmp/ferrobot-data"),
+            &json!("memory")
+        )
+    );
+    assert_eq!(
+        (
+            &info["agents"],
+            &info["anthropic_key"],
+            &info["sandbox_ready"]
+        ),
+        (&json!(1), &json!(true), &json!(true))
+    );
+    assert_eq!(
+        info["runner_image"],
+        Value::Null,
+        "the fake backend has no images"
+    );
+    let body = info.to_string();
+    assert!(!body.contains(daemon_key) && !body.contains(common::TEST_TOKEN));
+
+    let planted = "upstream refused sk-ant-api03-planted0123456789 for Bearer planted-bearer-token";
+    let subscriber =
+        tracing_subscriber::registry().with(ferrobot_daemon::logs::layer(ring.clone()));
+    tracing::subscriber::with_default(subscriber, || {
+        tracing::info!("first line");
+        tracing::warn!(
+            url = "/v1/ws?access_token=planted-query-token-0123",
+            "{planted}"
+        );
+    });
+    let (status, log) = http(&d.ui, "GET", "/v1/diagnostics/log", None).await;
+    assert_eq!(status, 200);
+    let lines: Vec<&str> = log["lines"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|l| l.as_str().unwrap())
+        .collect();
+    assert_eq!(lines.len(), 2, "{lines:?}");
+    assert!(lines[0].ends_with("first line"), "{lines:?}");
+    assert!(
+        lines[1].contains("upstream refused [REDACTED] for Bearer [REDACTED]"),
+        "{lines:?}"
+    );
+    assert!(!lines[1].contains("planted"), "{lines:?}");
+    let (_, last) = http(&d.ui, "GET", "/v1/diagnostics/log?lines=1", None).await;
+    assert_eq!(last["lines"].as_array().unwrap().len(), 1);
+}
+
 #[cfg(debug_assertions)]
 #[tokio::test]
 async fn source_update_needs_the_token_and_reports_its_steps() {

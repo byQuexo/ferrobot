@@ -69,6 +69,8 @@ async fn container_lifecycle() {
     // create is idempotent
     assert_eq!(backend.create(&spec).await.expect("re-create").id, h.id);
     assert_eq!(backend.state(&h).await.unwrap(), SandboxState::Running);
+    let (image, id) = backend.default_image().await.unwrap();
+    assert!(id.is_some_and(|id| id.starts_with("sha256:")), "{image}");
 
     let path = SandboxPath::parse("/home/node/hello.txt").unwrap();
     backend

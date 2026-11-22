@@ -62,6 +62,12 @@ pub struct Settings {
     pub storage: Arc<dyn object_store::ObjectStore>,
     /// Base URL for every voice provider instead of its public API (tests).
     pub voice_upstream: Option<String>,
+    /// Directory with the database and the API token file.
+    pub data_dir: std::path::PathBuf,
+    /// What `--storage-url` names, for diagnostics: `local` or its scheme (`s3`, ...).
+    pub storage_kind: String,
+    /// The latest log lines, for diagnostics.
+    pub log: crate::logs::LogRing,
     /// The checkout a debug build updates itself from; `None`: no self-update.
     #[cfg(debug_assertions)]
     pub source_update: Option<crate::update::Source>,
@@ -94,6 +100,9 @@ impl std::fmt::Debug for Settings {
             ui_url,
             storage,
             voice_upstream,
+            data_dir,
+            storage_kind,
+            log,
             #[cfg(debug_assertions)]
             source_update,
         } = self;
@@ -121,7 +130,10 @@ impl std::fmt::Debug for Settings {
             .field("chatgpt_upstream", chatgpt_upstream)
             .field("ui_url", ui_url)
             .field("storage", storage)
-            .field("voice_upstream", voice_upstream);
+            .field("voice_upstream", voice_upstream)
+            .field("data_dir", data_dir)
+            .field("storage_kind", storage_kind)
+            .field("log", log);
         #[cfg(debug_assertions)]
         s.field("source_update", source_update);
         s.finish()
@@ -157,6 +169,9 @@ impl Settings {
             ui_url: "http://127.0.0.1:7878".into(),
             storage: Arc::new(object_store::memory::InMemory::new()),
             voice_upstream: None,
+            data_dir: std::path::PathBuf::new(),
+            storage_kind: "memory".into(),
+            log: crate::logs::LogRing::default(),
             #[cfg(debug_assertions)]
             source_update: None,
         }
@@ -241,6 +256,8 @@ pub struct AppState {
     pub update: Arc<Mutex<crate::update::UpdateInfo>>,
     /// Where the CLI image build stands.
     pub clis: Arc<crate::clis::Builds>,
+    /// When this daemon started.
+    pub started: std::time::Instant,
 }
 
 impl AppState {
@@ -275,6 +292,7 @@ impl AppState {
             call: Arc::default(),
             update: Arc::default(),
             clis: Arc::default(),
+            started: std::time::Instant::now(),
         }
     }
 

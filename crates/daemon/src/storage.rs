@@ -19,6 +19,16 @@ pub fn is_local(url: Option<&str>) -> bool {
     url.is_none_or(|u| u.starts_with("file://") || u.starts_with("memory://"))
 }
 
+/// What `--storage-url` names without bucket or credentials: `local`, or its scheme (`s3`, ...).
+pub fn kind(url: Option<&str>) -> String {
+    if is_local(url) {
+        return "local".into();
+    }
+    url.and_then(|u| u.split_once("://"))
+        .map_or("unknown", |(scheme, _)| scheme)
+        .into()
+}
+
 /// The key archives are encrypted with. Without a usable secret store a
 /// local store gets plaintext archives; a remote one is refused.
 pub async fn archive_key(
@@ -123,5 +133,12 @@ mod tests {
         let dir = std::env::temp_dir();
         assert!(open(Some("ftp://host/x"), &dir).is_err());
         assert!(open(Some("not a url"), &dir).is_err());
+    }
+
+    #[test]
+    fn kind_never_shows_bucket_or_credentials() {
+        assert_eq!(kind(None), "local");
+        assert_eq!(kind(Some("file:///x")), "local");
+        assert_eq!(kind(Some("s3://AKIA:secret@bucket/p")), "s3");
     }
 }
