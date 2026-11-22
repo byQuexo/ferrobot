@@ -14,7 +14,7 @@ import {
 } from "../lib/welcome.ts";
 import { Avatar } from "./Avatar.tsx";
 import { ModelPicker } from "./ModelPicker.tsx";
-import { ProvidersSettings } from "./ProvidersSettings.tsx";
+import { ChatgptLogin, ProvidersSettings } from "./ProvidersSettings.tsx";
 import { Button } from "./ui.tsx";
 import { VaultSettings } from "./VaultSettings.tsx";
 
@@ -59,7 +59,12 @@ export function Welcome(props: {
   const [ready, setReady] = useState(health?.sandbox_ready ?? true);
   // Wakes by itself only when the model was added here; opened at "meet", it waits for a click.
   const auto = useRef(props.step !== "meet");
-  const provider = props.providers.find(providerReady);
+  const [signedIn, setSignedIn] = useState<string | null>(null);
+  const codex = props.providers.find((p) => p.kind === "codex" && !p.has_key);
+  const provider =
+    props.providers.find(providerReady) ?? (codex?.id === signedIn ? codex : undefined);
+  // Only the welcome knows about a ChatGPT sign-in, so it moves on to waking by itself.
+  const step = props.step === "key" && provider ? "meet" : props.step;
   const shownName = "Ferro";
 
   useEffect(() => {
@@ -181,7 +186,7 @@ export function Welcome(props: {
             </>
           )}
         </Line>
-        {props.step === "meet" ? (
+        {step === "meet" ? (
           <Line look={look}>
             <p class="welcome-done">
               <Check size={16} /> I’ll think with{" "}
@@ -200,7 +205,7 @@ export function Welcome(props: {
             <ProvidersSettings onVault={props.onVault} onChange={props.onProviders} />
           </Line>
         )}
-        {props.step === "key" && (
+        {step === "key" && (
           <Line look={look} wide>
             <p>
               Now its API key. It stays in the keychain of the daemon’s computer; I never see it.
@@ -208,7 +213,22 @@ export function Welcome(props: {
             <VaultSettings providersOnly onProviders={props.onProviders} />
           </Line>
         )}
-        {props.step === "meet" && (
+        {step === "key" && codex && (
+          <Line look={look} wide>
+            <p>
+              Or I think through your ChatGPT account instead of a key. That needs Codex installed
+              on this computer; then sign in here.
+            </p>
+            <ChatgptLogin
+              provider={codex}
+              onVault={props.onVault}
+              onStatus={(s) => {
+                setSignedIn(s.state === "signed_in" ? codex.id : null);
+              }}
+            />
+          </Line>
+        )}
+        {step === "meet" && (
           <Line look={look} wide>
             <p>All set. Wake me up and I’ll introduce myself.</p>
             {provider && !provider.default_model && (

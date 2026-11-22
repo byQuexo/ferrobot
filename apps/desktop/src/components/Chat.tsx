@@ -34,7 +34,7 @@ import {
   type Exchange,
   type TimelineItem,
 } from "../lib/timeline.ts";
-import { record, startLive, type LiveSession, type Recording } from "../lib/voice.ts";
+import { hasVoiceKey, record, startLive, type LiveSession, type Recording } from "../lib/voice.ts";
 import { fileSize } from "./FileViewer.tsx";
 import { Avatar } from "./Avatar.tsx";
 import { CredentialFix } from "./CredentialFix.tsx";
@@ -42,6 +42,7 @@ import { QuestionCardView } from "./QuestionCard.tsx";
 import { RichText, type ChatFiles } from "./RichText.tsx";
 import { Button, IconButton } from "./ui.tsx";
 import { VoiceQuick } from "./VoiceQuick.tsx";
+import { VOICE_LABELS } from "./VoiceSettings.tsx";
 
 export function Chat(props: {
   agent: Agent;
@@ -49,6 +50,8 @@ export function Chat(props: {
   onToggleInfo: () => void;
   onEdit: () => void;
   onVault: () => void;
+  /** Set when the agent's model needs a ChatGPT sign-in rather than a key. */
+  onSignIn?: () => void;
 }): JSX.Element {
   const { client, agents, listen, run, call, callState } = useApp();
   const agent = props.agent;
@@ -182,7 +185,12 @@ export function Chat(props: {
             <span class="dot" />
             {status.label}
             {problem ? (
-              <CredentialFix agent={agent} onEdit={props.onEdit} onVault={props.onVault} />
+              <CredentialFix
+                agent={agent}
+                onEdit={props.onEdit}
+                onVault={props.onVault}
+                onSignIn={props.onSignIn}
+              />
             ) : (
               agent.description && <span class="muted"> · {agent.description}</span>
             )}
@@ -607,6 +615,15 @@ function MicButton(props: {
     else props.setText(joinText(before, text));
   };
   const start = async (): Promise<void> => {
+    const provider = props.voice.provider;
+    if (!hasVoiceKey(props.voice)) {
+      toast(
+        provider
+          ? `Add your ${VOICE_LABELS[provider]} key in Vault to dictate`
+          : "Choose a voice provider in Settings, Voice, to dictate",
+      );
+      return;
+    }
     props.onTalk();
     const startedIn = chat.current;
     const before = props.text();

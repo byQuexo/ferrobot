@@ -41,7 +41,7 @@ import { parseBlocks, parseInline } from "../src/lib/markdown.ts";
 import { modelOptions, withSaved } from "../src/lib/models.ts";
 import { moveId, orderAgents, pickSelection } from "../src/lib/order.ts";
 import { pollOutcome } from "../src/lib/update.ts";
-import { Speaker, liveEvent, pcm16Base64, speakable } from "../src/lib/voice.ts";
+import { Speaker, hasVoiceKey, liveEvent, pcm16Base64, speakable } from "../src/lib/voice.ts";
 import {
   chartMetric,
   costLabel,
@@ -53,7 +53,14 @@ import {
   toCsv,
   zoneDays,
 } from "../src/lib/usage.ts";
-import type { Connector, Diagnostics, UpdateInfo, UsageGroup } from "../src/api.ts";
+import type {
+  Connector,
+  Diagnostics,
+  UpdateInfo,
+  UsageGroup,
+  VoiceProvider,
+  VoiceView,
+} from "../src/api.ts";
 
 const ME = "11111111-1111-4111-8111-111111111111";
 const BOB = "22222222-2222-4222-8222-222222222222";
@@ -650,6 +657,9 @@ describe("welcome", () => {
       assert.equal(welcomeStep({ ...base, ...input }), step, JSON.stringify(input));
     assert.equal(providerReady(provider("anthropic", false)), false);
     assert.equal(providerReady(provider("vertex", false)), true);
+    // Without a key Codex needs a ChatGPT sign-in, which only the welcome itself checks.
+    assert.equal(providerReady(provider("codex", false)), false);
+    assert.equal(welcomeStep({ ...base, providers: [provider("codex", false)] }), "key");
   });
 });
 
@@ -690,6 +700,20 @@ describe("tools summary", () => {
 
 describe("voice", () => {
   const nameOf = (id: string): string | undefined => names.agents.get(id);
+
+  it("needs the chosen provider's key to dictate", () => {
+    const view = (provider: VoiceView["provider"], keyed: VoiceProvider[]): VoiceView =>
+      ({
+        provider,
+        providers: (["elevenlabs", "openrouter"] as const).map((kind) => ({
+          kind,
+          has_key: keyed.includes(kind),
+        })),
+      }) as VoiceView;
+    assert.equal(hasVoiceKey(view("elevenlabs", ["elevenlabs"])), true);
+    assert.equal(hasVoiceKey(view("openrouter", ["elevenlabs"])), false);
+    assert.equal(hasVoiceKey(view(null, ["elevenlabs"])), false);
+  });
 
   it("reads the words of a message, not its Markdown or code", () => {
     const text = [

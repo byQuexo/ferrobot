@@ -12,6 +12,20 @@ authenticated. Each agent picks a provider and a model in its profile.
   the kind, `api_key`, `base_url`, `region`, `project` and `default_model`.
   `api_key` is write-only; responses only say `has_key`.
 
+Where to get a key or set a kind up (the app links these too, under the kind
+and next to a missing key in Vault):
+
+| Kind | Key or setup |
+| --- | --- |
+| Anthropic | [Create an API key](https://platform.claude.com/settings/keys) |
+| OpenAI | [Create an API key](https://platform.openai.com/api-keys) |
+| Google Gemini, Gemini CLI | [Create a Gemini API key](https://aistudio.google.com/apikey) |
+| Amazon Bedrock | [Create a Bedrock API key](https://docs.aws.amazon.com/bedrock/latest/userguide/api-keys.html) |
+| Google Vertex AI | [Set up Claude on Vertex AI](https://cloud.google.com/vertex-ai/generative-ai/docs/partner-models/claude) |
+| OpenRouter | [Create an API key](https://openrouter.ai/settings/keys) |
+| Ollama | [Download Ollama](https://ollama.com/download); no key |
+| OpenAI Codex | [An OpenAI API key](https://platform.openai.com/api-keys), or a ChatGPT sign-in with [Codex installed](https://developers.openai.com/codex/cli) (see below) |
+
 Then set `provider_id` and `model` on an agent (`PATCH /v1/agents/{id}` or the
 agent dialog). Without a model the agent uses the provider's
 `default_model`. Agents without a provider use the daemon's own
@@ -76,6 +90,21 @@ Notes per kind:
   shows a device code, the host's `codex` CLI (`--codex-bin`) does the
   sign-in, the tokens go to the keychain and the proxy adds them. They never
   enter a sandbox.
+
+  The sign-in needs the Codex CLI on the daemon's computer; an API key does
+  not. Install it, then press **Sign in with ChatGPT** again:
+  - macOS or Linux: `curl -fsSL https://chatgpt.com/codex/install.sh | sh`,
+    or `brew install --cask codex`
+  - Windows, in a new PowerShell window:
+    `powershell -ExecutionPolicy ByPass -c "irm https://chatgpt.com/codex/install.ps1 | iex"`
+  - Anywhere with Node.js: `npm install -g @openai/codex`
+
+  The daemon looks on PATH and where these installers put Codex
+  (`~/.local/bin`, `/opt/homebrew/bin`, `/usr/local/bin`; on Windows
+  `%LOCALAPPDATA%\Programs\OpenAI\Codex\bin` and npm's `%APPDATA%\npm`), so
+  the app finds it without a restart. Elsewhere, point `--codex-bin` at it.
+  Until a Codex provider has a key or a sign-in, the first-run setup asks for
+  one before Ferro wakes.
 - **Ollama** needs no key. Ollama must listen on the daemon's computer (or
   set `base_url`).
 - A model that can't use tools (some OpenRouter and Ollama models) holds the

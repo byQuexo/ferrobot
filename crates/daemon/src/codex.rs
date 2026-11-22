@@ -2,7 +2,8 @@
 //! Its `auth.json` lives in the secret store and is copied into a private `CODEX_HOME` per run.
 
 use std::collections::HashMap;
-use std::path::Path;
+use std::ffi::OsStr;
+use std::path::{Path, PathBuf};
 use std::process::Stdio;
 use std::time::{Duration, Instant};
 
@@ -57,6 +58,45 @@ pub struct DeviceCode {
     pub user_code: String,
 }
 
+/// `bin` on PATH or where Codex's installers and npm put it: an app started from the Dock or the
+/// Start menu has a shorter PATH than a terminal, and on Windows npm installs a `.cmd`.
+fn find_bin(bin: &str, path: Option<&OsStr>, extra: &[PathBuf]) -> PathBuf {
+    if Path::new(bin).components().count() > 1 {
+        return bin.into();
+    }
+    let names = if cfg!(windows) && Path::new(bin).extension().is_none() {
+        vec![format!("{bin}.exe"), format!("{bin}.cmd")]
+    } else {
+        vec![bin.to_owned()]
+    };
+    path.map(std::env::split_paths)
+        .into_iter()
+        .flatten()
+        .chain(extra.iter().cloned())
+        .flat_map(|dir| names.iter().map(move |name| dir.join(name)))
+        .find(|candidate| candidate.is_file())
+        .unwrap_or_else(|| bin.into())
+}
+
+fn install_dirs() -> Vec<PathBuf> {
+    let env = |key| std::env::var_os(key).map(PathBuf::from);
+    if cfg!(windows) {
+        vec![
+            env("LOCALAPPDATA").map(|d| d.join(r"Programs\OpenAI\Codex\bin")),
+            env("APPDATA").map(|d| d.join("npm")),
+        ]
+    } else {
+        vec![
+            env("HOME").map(|h| h.join(".local/bin")),
+            Some("/opt/homebrew/bin".into()),
+            Some("/usr/local/bin".into()),
+        ]
+    }
+    .into_iter()
+    .flatten()
+    .collect()
+}
+
 /// A running `codex app-server`, spoken to over stdio (one JSON object per
 /// line, no `jsonrpc` field).
 struct AppServer {
@@ -72,7 +112,8 @@ impl AppServer {
         tokio::fs::create_dir_all(home)
             .await
             .map_err(|e| format!("codex home: {e}"))?;
-        let mut child = Command::new(bin)
+        let path = std::env::var_os("PATH");
+        let mut child = Command::new(find_bin(bin, path.as_deref(), &install_dirs()))
             .arg("app-server")
             .env("CODEX_HOME", home)
             .stdin(Stdio::piped())
@@ -82,8 +123,8 @@ impl AppServer {
             .spawn()
             .map_err(|e| match e.kind() {
                 std::io::ErrorKind::NotFound => format!(
-                    "the codex CLI ({bin}) is not installed on the daemon's computer; \
-                     install it or set --codex-bin"
+                    "Codex is not installed on the daemon's computer \
+                     (looked for `{bin}`; --codex-bin sets its path)"
                 ),
                 _ => format!("cannot start `{bin} app-server` on the daemon's computer: {e}"),
             })?;
@@ -400,6 +441,24 @@ fn jwt_claims(token: &str) -> Option<Value> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn codex_is_found_outside_path() {
+        let (on_path, installed) = (tempfile::tempdir().unwrap(), tempfile::tempdir().unwrap());
+        let name = if cfg!(windows) { "codex.cmd" } else { "codex" };
+        std::fs::write(installed.path().join(name), "").unwrap();
+        let path = std::env::join_paths([on_path.path()]).unwrap();
+        let extra = [installed.path().to_path_buf()];
+        assert_eq!(
+            find_bin("codex", Some(&path), &extra),
+            installed.path().join(name)
+        );
+        assert_eq!(find_bin("codex", Some(&path), &[]), PathBuf::from("codex"));
+        assert_eq!(
+            find_bin("/opt/codex", None, &extra),
+            PathBuf::from("/opt/codex")
+        );
+    }
 
     #[test]
     fn debug_never_shows_tokens() {
