@@ -78,3 +78,22 @@ page.
 
 If the app asks for its access token, paste the content of `api-token` from
 the daemon's data folder.
+
+## Diagnostics and logs
+
+**Settings → Diagnostics** shows the app and daemon versions, whether Docker
+is ready, the runner image, how many agents, providers and connectors you
+have, the data folder, and the daemon's latest log lines.
+
+- **Copy diagnostics** copies all of it as plain text, with the last 200 log
+  lines. Paste it into a bug report. Keys and tokens are never part of it, and
+  anything in the log that looks like one reads `[REDACTED]`.
+- **Copy path** copies the data folder's path. **Refresh** reloads the log.
+- The log there is kept in memory since the daemon started. The desktop app
+  also writes the daemon's whole log to `daemon.log` in its data folder, new
+  on each start:
+  - macOS: `~/Library/Application Support/dev.ferrobot.desktop/`
+  - Windows: `%APPDATA%\dev.ferrobot.desktop\`
+- To remove all data, quit the app, delete that folder and remove the Docker
+  containers and volumes whose names start with `ferrobot-`. Keys stay in the
+  system keychain under `ferrobot` until you delete them there.
