@@ -142,8 +142,19 @@ fn strip_ansi(text: &str) -> String {
     out
 }
 
-/// Key prefixes of the providers ferrobot talks to; `sk-` covers `sk-ant-` and `sk-or-`.
-const KEY_PREFIXES: [&str; 6] = ["sk-", "sk_", "xi-", "ghp_", "gho_", "github_pat_"];
+/// Prefixes of keys and tokens the daemon handles: provider keys (`sk-` covers `sk-ant-` and
+/// `sk-or-`), Gemini (`AIza`), Google access tokens (`ya29.`), GitHub, and JWTs (`eyJ`).
+const KEY_PREFIXES: [&str; 9] = [
+    "sk-",
+    "sk_",
+    "xi-",
+    "AIza",
+    "ya29.",
+    "ghp_",
+    "gho_",
+    "github_pat_",
+    "eyJ",
+];
 /// A `<name>=` or `<name>: ` whose name ends in one of these is followed by a secret.
 const SECRET_NAMES: [&str; 4] = ["token", "key", "secret", "password"];
 
@@ -218,6 +229,14 @@ mod tests {
             (
                 "xi-0123456789abcdef and ghp_0123456789abcdefXYZ",
                 "[REDACTED] and [REDACTED]",
+            ),
+            (
+                "AIzaSyA0123456789abcdefghij, ya29.a0AfB_0123456789xyz",
+                "[REDACTED], [REDACTED]",
+            ),
+            (
+                "jwt eyJhbGciOiJSUzI1NiJ9.eyJzdWIiOiJ4In0.c2lnbmF0dXJl ok",
+                "jwt [REDACTED] ok",
             ),
             (
                 "GET /v1/ws?access_token=test-operator-token-0123456789&x=1",

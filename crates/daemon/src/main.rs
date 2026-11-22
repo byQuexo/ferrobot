@@ -217,7 +217,7 @@ async fn main() -> Result<()> {
     settings.storage =
         storage::open(cli.storage_url.as_deref(), &cli.data_dir).context("--storage-url")?;
     settings.storage_kind = storage::kind(cli.storage_url.as_deref());
-    settings.data_dir = std::fs::canonicalize(&cli.data_dir).unwrap_or(cli.data_dir.clone());
+    settings.data_dir = std::path::absolute(&cli.data_dir).unwrap_or(cli.data_dir.clone());
     settings.log = log;
     settings.driver = cli.driver.as_str().into();
     settings.anthropic_api_key = anthropic_api_key;
