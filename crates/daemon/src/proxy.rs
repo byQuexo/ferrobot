@@ -529,7 +529,8 @@ async fn forward(
     if family.is_some() && body_names_model(&route.api) {
         call.model_from_body(&body);
     }
-    let sends_tools = family.is_some() && no_tools::sends_tools(&body);
+    // Only the chat completions driver can drop every tool; the other harnesses keep their own.
+    let sends_tools = family == Some(Family::ChatCompletions) && no_tools::sends_tools(&body);
     if let Some(q) = parts.uri.query() {
         url.push('?');
         url.push_str(q);
