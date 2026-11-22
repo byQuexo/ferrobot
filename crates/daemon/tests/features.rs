@@ -2905,7 +2905,31 @@ async fn mcp_upstream_app(token: &str) -> axum::Router {
 
 /// [`upstream_mcp`] that needs no token: it adds the one it accepts itself.
 async fn keyless_upstream() -> String {
-    let app = mcp_upstream_app("open")
+    serve_upstream(keyless_app().await).await
+}
+
+/// [`keyless_upstream`] that refuses an `initialize` offering protocol 2026-07-28 with "Method
+/// not supported" instead of offering an older version, as Google's MCP servers do.
+async fn legacy_upstream() -> String {
+    let app = keyless_app().await.layer(axum::middleware::from_fn(
+        |req: axum::extract::Request, next: axum::middleware::Next| async move {
+            let (parts, body) = req.into_parts();
+            let bytes = axum::body::to_bytes(body, usize::MAX).await.unwrap();
+            let rpc: Value = serde_json::from_slice(&bytes).unwrap_or(Value::Null);
+            if rpc["method"] == "initialize" && rpc["params"]["protocolVersion"] == "2026-07-28" {
+                let error = json!({"jsonrpc": "2.0", "id": rpc["id"],
+                    "error": {"code": -32601, "message": "Method not supported"}});
+                return axum::response::IntoResponse::into_response(axum::Json(error));
+            }
+            let req = axum::extract::Request::from_parts(parts, axum::body::Body::from(bytes));
+            next.run(req).await
+        },
+    ));
+    serve_upstream(app).await
+}
+
+async fn keyless_app() -> axum::Router {
+    mcp_upstream_app("open")
         .await
         .layer(axum::middleware::from_fn(
             |mut req: axum::extract::Request, next: axum::middleware::Next| async move {
@@ -2913,7 +2937,10 @@ async fn keyless_upstream() -> String {
                 req.headers_mut().insert("authorization", open);
                 next.run(req).await
             },
-        ));
+        ))
+}
+
+async fn serve_upstream(app: axum::Router) -> String {
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
     let url = format!("http://{}/mcp", listener.local_addr().unwrap());
     tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });
@@ -3232,6 +3259,14 @@ async fn add_connector(d: &Daemon, body: Value) -> Value {
     let (status, conn) = http(&d.ui, "POST", "/v1/connectors", Some(body)).await;
     assert_eq!(status, 201, "{conn}");
     conn
+}
+
+#[tokio::test]
+async fn connectors_reach_servers_that_refuse_the_newest_protocol() {
+    let d = start(Arc::new(StatefulBackend::default()), None, "127.0.0.1:0").await;
+    let url = legacy_upstream().await;
+    let conn = add_connector(&d, json!({"name": "legacy", "url": url})).await;
+    assert_eq!(conn["check"]["status"], "ok", "{conn}");
 }
 
 #[tokio::test]
