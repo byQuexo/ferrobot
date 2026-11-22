@@ -162,7 +162,10 @@ describe("OpenAIDriver", () => {
     assert.equal(at(sent, 1).body.stream_options, undefined);
 
     const twice = setup({ replies: [rejected(), rejected()] });
-    await assert.rejects(twice.driver.runTurn(context().ctx), /400: Unrecognized argument/);
+    await assert.rejects(
+      twice.driver.runTurn(context().ctx),
+      /400 \(request refused\): Unrecognized argument/,
+    );
     assert.equal(twice.sent.length, 2);
   });
 
@@ -468,7 +471,27 @@ describe("OpenAIDriver", () => {
       error: { type: "api_error", message: "upstream down" },
     });
     const { driver } = setup({ replies: [new Response(envelope, { status: 502 })] });
-    await assert.rejects(driver.runTurn(context().ctx), /502: upstream down/);
+    await assert.rejects(
+      driver.runTurn(context().ctx),
+      /answered 502 \(the provider had a problem\): upstream down/,
+    );
+  });
+
+  it("reads Google's errors, which come in an array", async () => {
+    const google = JSON.stringify([
+      {
+        error: {
+          code: 429,
+          message: "You exceeded your current quota.",
+          status: "RESOURCE_EXHAUSTED",
+        },
+      },
+    ]);
+    const { driver } = setup({ replies: [new Response(google, { status: 429 })] });
+    await assert.rejects(
+      driver.runTurn(context().ctx),
+      /answered 429 \(rate limit or quota reached\): You exceeded your current quota\.$/,
+    );
   });
 
   it("fails the turn when the model never stops calling tools", async () => {

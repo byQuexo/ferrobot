@@ -546,7 +546,7 @@ async fn forward(
 
     tracing::debug!(agent = %agent.name, method = %parts.method, %path, "model request");
     let mut response = match upstream.send().await {
-        Ok(r) => r,
+        Ok(r) => warned(agent.name.as_str(), &path, r),
         Err(e) => {
             tracing::warn!(agent = %agent.name, error = %e, "model upstream unreachable");
             if family.is_some() {
@@ -563,6 +563,15 @@ async fn forward(
         response = no_tools::check(&state, &agent, &call.model, response).await;
     }
     respond(response, family.map(|f| (f, call)))
+}
+
+/// The agent gets the error body and shows why; Diagnostics gets the status.
+fn warned(agent: &str, path: &str, response: reqwest::Response) -> reqwest::Response {
+    let status = response.status();
+    if !status.is_success() {
+        tracing::warn!(agent, %status, path, "model upstream answered an error");
+    }
+    response
 }
 
 /// Adds the route's real credential, which never leaves the daemon.

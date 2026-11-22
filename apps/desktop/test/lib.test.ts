@@ -339,6 +339,26 @@ describe("buildTimeline", () => {
     );
   });
 
+  it("shows why a message was not delivered: its last attempt's error", () => {
+    const at = "2026-01-01T12:00:00Z";
+    const failed = (id: number): MailMessage => ({
+      ...msg(id, { kind: "user" }, ME, "hi", at),
+      status: "failed",
+    });
+    const attempt = (id: number, message: number, turn: string, error: string): StoredEvent[] => [
+      ev(id, "message_in", { message_id: message }, at, turn),
+      ev(id + 1, "turn_done", { outcome: "failed", error }, at, turn),
+    ];
+    const events = [...attempt(1, 1, "t1", "first try"), ...attempt(3, 1, "t2", "quota reached")];
+    const delivered = msg(2, { kind: "user" }, ME, "ok", at);
+    const items = buildTimeline(ME, [failed(1), delivered], events, new Map(), names);
+    const errors = items.map((i) => (i.type === "user" ? (i.error ?? null) : undefined));
+    assert.deepEqual(
+      errors.filter((e) => e !== undefined),
+      ["quota reached", null],
+    );
+  });
+
   it("shows shared files and finds them by name", () => {
     const events = [
       ev(1, "file", { name: "plan.md", size: 2048 }, "2026-01-01T12:00:00Z", "t1"),

@@ -24,6 +24,10 @@ All notable changes are listed here. The format follows
   of Vault.
 - Dictation says right away when the voice provider has no key, instead of
   after you stop talking.
+- A message that was not delivered shows why under it: the model provider's
+  answer in plain words, e.g. "The model provider answered 429 (rate limit or
+  quota reached): …". Google's errors are read too (they came through as raw
+  JSON), and the daemon log notes each error status for Diagnostics.
 
 ## [0.1.0] - 2026-11-22
 

@@ -359,19 +359,28 @@ function Item(props: { item: DisplayItem; agent: Agent; files?: ChatFiles }): JS
       return <ExchangeHint item={item} agent={agent} />;
     case "user":
       return (
-        <div class="row row-user">
-          <div class="bubble bubble-user">
-            <RichText text={item.text} />
-            <span class="meta">
-              {clockTime(item.at)}
-              {item.status === "pending"
-                ? " · queued"
-                : item.status === "failed"
-                  ? " · not delivered"
-                  : ""}
-            </span>
+        <>
+          <div class="row row-user">
+            <div class="bubble bubble-user">
+              <RichText text={item.text} />
+              <span class="meta">
+                {clockTime(item.at)}
+                {item.status === "pending"
+                  ? " · queued"
+                  : item.status === "failed"
+                    ? " · not delivered"
+                    : ""}
+              </span>
+            </div>
           </div>
-        </div>
+          {item.error && (
+            <div class="row row-user">
+              <p class="send-error">
+                <AlertTriangle size={14} /> {item.error}
+              </p>
+            </div>
+          )}
+        </>
       );
     case "assistant":
       return (

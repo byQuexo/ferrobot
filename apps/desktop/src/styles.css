@@ -967,6 +967,19 @@ textarea {
 .row-user {
   justify-content: flex-end;
 }
+.send-error {
+  display: flex;
+  gap: 6px;
+  max-width: min(560px, 78%);
+  margin: -4px 0 0;
+  font-size: 12px;
+  color: var(--err);
+  overflow-wrap: anywhere;
+}
+.send-error svg {
+  flex: none;
+  margin-top: 2px;
+}
 .row-agent {
   align-items: flex-start;
 }

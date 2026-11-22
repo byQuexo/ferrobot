@@ -4,7 +4,15 @@ import type { MailMessage, QuestionAnswered, QuestionCard, StoredEvent } from ".
 import { TOOLS_UNSUPPORTED, credentialLabel } from "./format.ts";
 
 export type TimelineItem =
-  | { type: "user"; key: string; at: string; text: string; status: MailMessage["status"] }
+  | {
+      type: "user";
+      key: string;
+      at: string;
+      text: string;
+      status: MailMessage["status"];
+      /** Why the last attempt failed, on a message that was not delivered. */
+      error?: string;
+    }
   | { type: "incoming"; key: string; at: string; text: string; from: string; peerId: string }
   | { type: "routine"; key: string; at: string; text: string; routine: string | null }
   | { type: "outgoing"; key: string; at: string; text: string; to: string; peerId: string }
@@ -113,12 +121,25 @@ export function buildTimeline(
   }
   const answerMessages = new Set([...answers.values()].map((a) => a.message_id));
 
+  // Turn errors stay on the Activities tab, except the last one of a message that failed.
+  const turnMessage = new Map<string, number>();
+  const failures = new Map<number, string>();
+  for (const e of events) {
+    const p = e.payload as Payload;
+    if (e.kind === "message_in" && e.turn_id && typeof p["message_id"] === "number")
+      turnMessage.set(e.turn_id, p["message_id"]);
+    const message = e.turn_id ? turnMessage.get(e.turn_id) : undefined;
+    if (e.kind === "turn_done" && p["outcome"] === "failed" && message !== undefined)
+      failures.set(message, str(p["error"]) || "The turn failed");
+  }
+
   for (const m of messages) {
     const key = `m${String(m.id)}`;
     if (answerMessages.has(m.id)) continue;
     if (m.recipient === agentId) {
       if (m.sender.kind === "user") {
-        push({ type: "user", key, at: m.created_at, text: m.body, status: m.status });
+        const error = m.status === "failed" ? failures.get(m.id) : undefined;
+        push({ type: "user", key, at: m.created_at, text: m.body, status: m.status, error });
       } else if (m.sender.kind === "agent") {
         push({
           type: "incoming",
