@@ -15,13 +15,12 @@ import {
 } from "../lib/character.ts";
 import { toolsSummary } from "../lib/format.ts";
 import { toAvatarPng } from "../lib/image.ts";
+import { AGENT_NAME } from "../lib/welcome.ts";
 import { CharacterFace } from "./Character.tsx";
 import { Avatar } from "./Avatar.tsx";
 import { ModelPicker } from "./ModelPicker.tsx";
 import { KIND_LABELS } from "./ProvidersSettings.tsx";
 import { Button, Dialog, Switch } from "./ui.tsx";
-
-const NAME = /^[a-z][a-z0-9-]{0,31}$/;
 
 const TOOL_GROUPS: readonly [ToolGroup, string, string][] = [
   ["team", "Team", "Message teammates and give them tasks"],
@@ -114,7 +113,7 @@ export function AgentDialog(props: {
     setPicked((p) => (p.includes(id) ? p.filter((x) => x !== id) : [...p, id]));
   };
 
-  const nameOk = NAME.test(name);
+  const nameOk = AGENT_NAME.test(name);
   const imageUrl = avatar === null ? null : (editing?.avatar_url ?? null);
   const shown = { name: name || "?", avatar_url: imageUrl, character: look };
   const hasImage = Boolean(preview ?? imageUrl);

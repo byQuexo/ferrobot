@@ -776,6 +776,19 @@ textarea { resize: vertical; min-height: 40px; line-height: 1.5; }
 .tools-toggle[aria-expanded="true"] .tools-chevron { transform: rotate(90deg); }
 .tools-list[hidden] { display: none; }
 
+/* ---------- first run ---------- */
+.welcome .chat-empty { margin: 0 auto 8px; }
+.welcome-line { flex: 0 1 auto; padding: 10px 14px; border-radius: 16px; border-top-left-radius: 4px; background: var(--surface-2); }
+.welcome-line.wide { flex: 1; }
+.welcome-line > p { margin: 0 0 8px; }
+.welcome-line > p:last-child { margin-bottom: 0; }
+.welcome-line .settings-section { margin-top: 12px; }
+.welcome-line .settings-section + .settings-section { padding-top: 12px; }
+.welcome-line .provider-list { background: var(--surface); }
+.welcome-done { display: flex; align-items: center; gap: 6px; }
+.welcome-done svg { flex: none; color: var(--ok); }
+.welcome-model { display: flex; flex-direction: column; gap: 8px; margin-bottom: 12px; font-size: 13px; font-weight: 500; color: var(--text-2); }
+
 /* ---------- guides ---------- */
 .guide-list { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 8px; }
 .guide-card { width: 100%; height: 100%; display: flex; flex-direction: column; gap: 4px; padding: 12px; border: 1px solid var(--border); border-radius: 12px; background: var(--surface); color: var(--text); font: inherit; text-align: left; cursor: pointer; }

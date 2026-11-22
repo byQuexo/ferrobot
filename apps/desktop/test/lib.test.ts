@@ -1,7 +1,13 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 
-import { DaemonClient, type MailMessage, type StoredEvent } from "../src/api.ts";
+import {
+  DaemonClient,
+  type MailMessage,
+  type Provider,
+  type ProviderKind,
+  type StoredEvent,
+} from "../src/api.ts";
 import { hash } from "../src/lib/avatar.ts";
 import { characterOf, deriveCharacter, moodOf, rerollCharacter } from "../src/lib/character.ts";
 import {
@@ -13,6 +19,7 @@ import {
   toolsSummary,
 } from "../src/lib/format.ts";
 import { GUIDES, splitWikiLinks } from "../src/lib/guides.ts";
+import { providerReady, starterName, welcomeStep } from "../src/lib/welcome.ts";
 import { buildTimeline, sharedFiles, withoutRoomTurns } from "../src/lib/timeline.ts";
 import {
   CallScript,
@@ -581,6 +588,48 @@ describe("markdown", () => {
       { kind: "list", ordered: true, start: 2, items: [{ text: "Done", depth: 0 }] },
       { kind: "para", text: "   later" },
     ]);
+  });
+});
+
+describe("welcome", () => {
+  const provider = (kind: ProviderKind, has_key: boolean): Provider => ({
+    id: kind,
+    name: kind,
+    kind,
+    has_key,
+    created_at: "2026-01-01T00:00:00Z",
+  });
+
+  it("picks the first-run step", () => {
+    const base: Parameters<typeof welcomeStep>[0] = {
+      agents: 0,
+      providers: [],
+      daemonKey: false,
+      skipped: false,
+    };
+    const cases: [Partial<typeof base>, string | null][] = [
+      [{}, "provider"],
+      [{ providers: [provider("openai", false)] }, "key"],
+      [{ providers: [provider("openai", false), provider("openai", true)] }, "meet"],
+      [{ providers: [provider("ollama", false)] }, "meet"],
+      [{ daemonKey: true }, "meet"],
+      [{ agents: 1 }, null],
+      [{ agents: 1, providers: [provider("openai", true)] }, null],
+      [{ skipped: true }, null],
+      [{ providers: null }, null],
+    ];
+    for (const [input, step] of cases)
+      assert.equal(welcomeStep({ ...base, ...input }), step, JSON.stringify(input));
+    assert.equal(providerReady(provider("anthropic", false)), false);
+    assert.equal(providerReady(provider("vertex", false)), true);
+  });
+
+  it("names the starter after a list convention, else guide", () => {
+    assert.equal(starterName(null), "guide");
+    assert.equal(starterName("Greek gods"), "guide");
+    assert.equal(starterName("zeus"), "guide");
+    assert.equal(starterName("zeus, hera, athena"), "zeus");
+    assert.equal(starterName("Zeus, Hera"), "guide");
   });
 });
 

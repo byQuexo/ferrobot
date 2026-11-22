@@ -17,7 +17,12 @@ interface Entry {
 }
 
 /** Every stored key in one place. Values go to the daemon’s keychain and never come back. */
-export function VaultSettings(): JSX.Element {
+export function VaultSettings(props: {
+  /** Show only the model provider keys. */
+  providersOnly?: boolean;
+  /** Called with the providers after every load or change. */
+  onProviders?: (providers: Provider[]) => void;
+}): JSX.Element {
   const { client, toast } = useApp();
   const [providers, setProviders] = useState<Provider[]>([]);
   const [connectors, setConnectors] = useState<Connector[]>([]);
@@ -36,6 +41,7 @@ export function VaultSettings(): JSX.Element {
         client.voice(),
       ]);
       setProviders(p);
+      props.onProviders?.(p);
       setConnectors(c);
       setVoice(v);
     } catch (err) {
@@ -99,7 +105,7 @@ export function VaultSettings(): JSX.Element {
 
   return (
     <div>
-      {groups.map(([group, entries]) => (
+      {(props.providersOnly ? groups.slice(0, 1) : groups).map(([group, entries]) => (
         <section key={group} class="settings-section form">
           <h3 class="form-head">{group}</h3>
           {entries.length === 0 && (
