@@ -109,7 +109,10 @@ const AUTH_LABELS: Record<CatalogEntry["auth"], string> = {
 };
 
 /** Add, sign in and remove connectors; their tokens and client secrets live in Vault. */
-export function ConnectorsSettings(props: { onVault: () => void }): JSX.Element {
+export function ConnectorsSettings(props: {
+  onVault: () => void;
+  onGuide: () => void;
+}): JSX.Element {
   const { client, toast } = useApp();
   const [connectors, setConnectors] = useState<Connector[]>([]);
   const [name, setName] = useState("");
@@ -373,7 +376,19 @@ export function ConnectorsSettings(props: { onVault: () => void }): JSX.Element 
                   <span class="muted small">{AUTH_LABELS[e.auth]}</span>
                 </div>
                 <p class="muted small">{e.about}</p>
-                {e.setup && <p class="hint">{e.setup}</p>}
+                {e.setup && (
+                  <p class="hint">
+                    {e.setup}
+                    {e.app && (
+                      <>
+                        {" "}
+                        <button type="button" class="text-link" onClick={props.onGuide}>
+                          Guide
+                        </button>
+                      </>
+                    )}
+                  </p>
+                )}
                 <div>
                   {added ? (
                     <span class="muted small catalog-added">
@@ -429,6 +444,15 @@ export function ConnectorsSettings(props: { onVault: () => void }): JSX.Element 
               Use my own OAuth app
             </label>
             {ownApp && <AppFields draft={app} onChange={setApp} redirectUri={redirectUri} />}
+            {ownApp && !app.clientId.trim() && (
+              <span class="hint">
+                Enter your OAuth app’s client ID. No app yet?{" "}
+                <button type="button" class="text-link" onClick={props.onGuide}>
+                  See the guide
+                </button>
+                .
+              </span>
+            )}
             <span class="hint">
               After adding it, put its token in{" "}
               <button type="button" class="text-link" onClick={props.onVault}>
@@ -439,7 +463,7 @@ export function ConnectorsSettings(props: { onVault: () => void }): JSX.Element 
             <div class="form-actions">
               <Button
                 variant="primary"
-                disabled={busy || !name.trim() || !url.trim()}
+                disabled={busy || !name.trim() || !url.trim() || (ownApp && !app.clientId.trim())}
                 onClick={() => void add()}
               >
                 Add connector

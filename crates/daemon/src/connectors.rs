@@ -277,6 +277,13 @@ async fn session(state: &AppState, agent: AgentId, c: &Connector) -> Result<Sess
     Ok(client)
 }
 
+async fn own_app_signed_out(state: &AppState, c: &Connector) -> bool {
+    let own_app = crate::oauth::client_config(state, c.id)
+        .await
+        .is_ok_and(|cfg| cfg.client_id.is_some());
+    own_app && !crate::oauth::signed_in(state, c.id).await
+}
+
 /// Connects to `c` with its current token or sign-in (not as an agent), lists its tools and
 /// keeps the outcome until the next check or change.
 pub async fn check(state: &AppState, c: &Connector) -> ConnectorCheck {
@@ -284,6 +291,10 @@ pub async fn check(state: &AppState, c: &Connector) -> ConnectorCheck {
     let probe = async {
         let token = stored_token(state, c).await?;
         let has_token = token.is_some();
+        // Some servers (Google's) list tools to anyone but need the sign-in for every call.
+        if !has_token && own_app_signed_out(state, c).await {
+            return Err(Failure::SignIn);
+        }
         let client = connect(state, c, token).await?;
         let tools = client
             .list_all_tools()
