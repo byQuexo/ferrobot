@@ -1338,9 +1338,9 @@ slop, so polish mode: palette, accent, logo, layout and features stay.
 - **Only the call is heard.** The UI speaks a turn only if it is part of the
   call, judged at its `message_in`: in a room call only room turns, in a
   one-on-one call the host's turns. A member's own chat work and a new
-  agent's greeting stay silent. Tim saw "golf-planner is speaking" with only
+  agent's greeting stay silent. Tim saw "helper is speaking" with only
   team-lead on the card: the old rule spoke any turn of a member, and an
-  agent that had left (likely golf-planner hanging up after its hello) kept
+  agent that had left (likely helper hanging up after its hello) kept
   speaking off the card. The card now keeps a just-left agent's face while its
   goodbye plays.
 - **No question cards in a call.** `ask_user` refuses while the agent is in a

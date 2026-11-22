@@ -40,8 +40,8 @@ agent work.
 - **Linux:** the daemon is built and tested on Linux in CI, including the
   Docker backend. Build the desktop app from source.
 - **macOS:** the main development platform, with Docker Desktop.
-- **Windows:** a desktop download comes with v0.1.0. It is new and has had
-  little testing; the Windows keychain path has never run.
+- **Windows:** no desktop download yet; v0.1.0 is macOS only. The Windows
+  build and the Windows keychain path have never run on real hardware.
 
 ### Why Docker?
 

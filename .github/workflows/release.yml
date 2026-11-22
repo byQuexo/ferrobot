@@ -140,6 +140,9 @@ jobs:
           mkdir -p apps/desktop/src-tauri/binaries
           lipo -create -output apps/desktop/src-tauri/binaries/ferrobotd-${{ matrix.triple }} \
             target/aarch64-apple-darwin/release/ferrobotd target/x86_64-apple-darwin/release/ferrobotd
+          # Each architecture's build checks for its own sidecar; the bundle takes the universal one.
+          cp target/aarch64-apple-darwin/release/ferrobotd apps/desktop/src-tauri/binaries/ferrobotd-aarch64-apple-darwin
+          cp target/x86_64-apple-darwin/release/ferrobotd apps/desktop/src-tauri/binaries/ferrobotd-x86_64-apple-darwin
       - name: Build the daemon sidecar (Windows)
         if: runner.os == 'Windows'
         shell: bash

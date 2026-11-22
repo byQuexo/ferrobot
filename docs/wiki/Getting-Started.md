@@ -2,8 +2,8 @@ Two ways in: download the desktop app, or build from source.
 
 ## A. Desktop download
 
-Desktop builds come with the v0.1.0 release, from the repository's Releases
-page: a `.dmg` for macOS and an `.exe` for Windows.
+Desktop builds come from the repository's Releases page: v0.1.0 has a
+universal `.dmg` for macOS. A Windows installer follows in a later release.
 
 1. **Install Docker Desktop** and start it. Every agent runs in a container,
    so it is required. If Docker is missing or not running, the app tells you
@@ -17,11 +17,9 @@ page: a `.dmg` for macOS and an `.exe` for Windows.
 4. **Add a model provider** under **Settings → Model providers**, then create
    an agent and pick that provider. See [[Providers]].
 
-Builds are unsigned unless the release notes say otherwise, so the system
-warns on first launch:
-
-- **macOS** (Gatekeeper): right-click the app, choose **Open**, then confirm.
-- **Windows** (SmartScreen): click **More info**, then **Run anyway**.
+Builds are unsigned unless the release notes say otherwise, so macOS
+(Gatekeeper) warns on first launch: right-click the app, choose **Open**, then
+confirm.
 
 The desktop window itself has had far less testing than the daemon; most UI
 checks ran in a browser against a real daemon.

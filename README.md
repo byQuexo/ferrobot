@@ -10,7 +10,6 @@
 [![License: MIT OR Apache-2.0](https://img.shields.io/badge/license-MIT%20OR%20Apache--2.0-blue)](#contributing-security-license)
 [![Release v0.1.0](https://img.shields.io/badge/release-v0.1.0-orange)](https://github.com/byQuexo/ferrobot/releases/tag/v0.1.0)
 [![macOS](https://img.shields.io/badge/macOS-universal-lightgrey?logo=apple)](#download)
-[![Windows](https://img.shields.io/badge/Windows-x64-lightgrey?logo=windows)](#download)
 
 ![ferrobot demo: researcher reads the backon docs through the DeepWiki connector, asks you a question and hands the build to builder, which runs cargo on its own computer; then a shared report and the cost in Usage](docs/assets/demo.gif)
 
@@ -71,22 +70,18 @@ flowchart LR
 ```
 
 The desktop app holds no business logic; it is one client of the daemon's
-versioned API. More in the [wiki](../../wiki/Architecture).
+versioned API. More in the [wiki](docs/wiki/Architecture.md).
 
 ## Download
 
 Version 0.1.0 on the [release page](https://github.com/byQuexo/ferrobot/releases/tag/v0.1.0):
-`ferrobot_0.1.0_universal.dmg` (macOS, Apple silicon and Intel) and
-`ferrobot_0.1.0_x64-setup.exe` (Windows); `SHA256SUMS` lists the checksums.
+`ferrobot_0.1.0_universal.dmg` (macOS, Apple silicon and Intel); `SHA256SUMS`
+lists its checksum. A Windows installer follows in a later release.
 The app needs [Docker Desktop](https://www.docker.com/products/docker-desktop/)
 and starts its own daemon.
 
-The installers are not signed, so the system warns once:
-
-- **macOS:** right-click (or Control-click) the app in Applications, choose
-  **Open**, then **Open** again.
-- **Windows:** when SmartScreen says "Windows protected your PC", click
-  **More info**, then **Run anyway**.
+The app is not signed, so macOS warns once: right-click (or Control-click) the
+app in Applications, choose **Open**, then **Open** again.
 
 ## Quickstart (Docker + Ollama, no API key)
 
@@ -113,7 +108,7 @@ cargo build -p ferrobot-daemon
 cd apps/desktop && npm ci && npm run tauri dev                                        # the app
 ```
 
-Details, tests and the release build: [Getting Started](../../wiki/Getting-Started)
+Details, tests and the release build: [Getting Started](docs/wiki/Getting-Started.md)
 and [CLAUDE.md](CLAUDE.md).
 
 ## Status
@@ -122,9 +117,9 @@ ferrobot is early. The desktop app, agents in Docker and voice rooms have been
 used live on macOS. Claude (Anthropic API), OpenRouter and local Ollama have
 run against the real services; OpenAI, Gemini, Bedrock and Vertex have only
 been tested against fakes so far. Firecracker sandboxes are experimental and
-have never booted a microVM. The Windows build and its keychain have not run
-on real hardware. Details: [Roadmap](../../wiki/Roadmap) and
-[Ideas](../../wiki/Ideas).
+have never booted a microVM. There is no Windows download yet; the Windows
+build and its keychain have never run on real hardware. Details:
+[Roadmap](docs/wiki/Roadmap.md) and [Ideas](docs/wiki/Ideas.md).
 
 ## Contributing, security, license
 

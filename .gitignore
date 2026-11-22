@@ -8,3 +8,7 @@ dist/
 /.ferrobot/
 apps/desktop/src-tauri/gen/
 apps/desktop/src-tauri/binaries/
+.claude/
+.env
+secrets.json
+api-token

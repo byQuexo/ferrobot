@@ -26,7 +26,7 @@ npm --prefix runner ci && npm --prefix runner run build
 docker build -f runner/Dockerfile -t ferrobot-runner:dev .   # runner image
 ```
 
-The [README](README.md#quick-start) shows how to start the daemon and talk to
+The [README](README.md#quickstart-docker--ollama-no-api-key) shows how to start the daemon and talk to
 an agent. The mock driver (`--driver mock`) needs no API key.
 
 ## Checks
@@ -122,7 +122,7 @@ docs: explain --warm-after in the quick start
 - Provider keys and the operator token never go into a sandbox, its env, a log, a
   test fixture or an issue.
 - Contributions are dual-licensed under Apache-2.0 and MIT, as described in the
-  [README](README.md#license).
+  [README](README.md#contributing-security-license).
 
 ## Where to start
 
