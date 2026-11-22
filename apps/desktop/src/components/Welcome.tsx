@@ -7,7 +7,6 @@ import { useApp } from "../context.ts";
 import { deriveCharacter, type Character } from "../lib/character.ts";
 import {
   STARTER_DESCRIPTION,
-  STARTER_HELLO,
   STARTER_INSTRUCTIONS,
   providerReady,
   starterName,
@@ -51,7 +50,7 @@ export function Welcome(props: {
   onVault: () => void;
   onGuide: (page: string) => void;
 }): JSX.Element {
-  const { client, health, run } = useApp();
+  const { client, health } = useApp();
   const [look] = useState(() => deriveCharacter(crypto.randomUUID()));
   const [name, setName] = useState<string | null>(null);
   const [model, setModel] = useState("");
@@ -108,8 +107,8 @@ export function Welcome(props: {
       setBusy(false);
       return;
     }
+    // The daemon opens a new agent's first turn with a greeting; its instructions say what to ask.
     props.onCreated(agent);
-    await run(() => client.send(agent.id, STARTER_HELLO));
   };
 
   useEffect(() => {
