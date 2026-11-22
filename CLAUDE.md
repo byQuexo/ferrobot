@@ -19,8 +19,8 @@ a versioned HTTP/WebSocket API (`/v1`).
 - No Grok Bot / OpenBot logos, icons, brand names, UI texts or 1:1 screens.
   Icons come from lucide (`lucide-preact`); avatars are our own SVG + CSS.
   Reference screenshots are for feel only.
-- The repo (github.com/byQuexo/ferrobot) stays **private** until Tim says
-  otherwise. Do not push, publish, create repos or change remotes unless asked.
+- Do not push, publish, create repos, change remotes or change the repo's
+  visibility (github.com/byQuexo/ferrobot) unless asked.
 - Never fabricate test results; say what was not run.
 
 ## Architecture
@@ -264,12 +264,12 @@ daemon, `docker ps -a` must be empty of ferrobot containers.
 - Voice ran live with ElevenLabs in the Tauri window (calls, rooms, streamed
   speech, live transcription; 2026-11-21); OpenRouter voice only against a
   fake upstream.
-- The app updater never ran against a real release (private repo, no signing
-  secrets yet), and its Windows install path is untested.
+- The app updater never ran against a real release (v0.1.0 shipped without
+  update files), and its Windows install path is untested.
 
 ## Next up: Firecracker
 
-Roadmap: https://cursor.com/canvas/store-0b9dda1f-693e-4629-9899-c87852755bdc/ad9f72df-2257-4c5f-ba31-48368896c60a
+Roadmap: `docs/wiki/Roadmap.md`.
 Status per phase: `docs/progress.md`; assumptions: `docs/decisions.md`.
 
 1. ~~Storage layer on `object_store`~~ (done: snapshot archives, `--storage-url`).

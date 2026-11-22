@@ -57,7 +57,7 @@ tested against fakes on a machine without KVM.
 
 | Phase | Status | Notes |
 | --- | --- | --- |
-| v0.1.0 | in progress | Desktop downloads for macOS and Windows that bundle the daemon; the Windows build has not run on real hardware. |
+| v0.1.0 | done (macOS) | A universal macOS download that bundles the daemon. Windows follows in a later release; its build has never run on real hardware. |
 
 Ideas beyond this list are on [[Ideas]].
 

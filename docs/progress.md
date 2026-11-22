@@ -1,6 +1,6 @@
 # Progress
 
-Status per roadmap phase (the [roadmap page](https://cursor.com/canvas/store-0b9dda1f-693e-4629-9899-c87852755bdc/ad9f72df-2257-4c5f-ba31-48368896c60a)). Decisions are in
+Status per roadmap phase (the [roadmap](wiki/Roadmap.md)). Decisions are in
 `docs/decisions.md`.
 
 ## M1 Storage layer — done (`feature/m1-storage`)
@@ -630,7 +630,7 @@ store used for the run) or the daemon's own env.
   (private advisories, known open hardening items), issue forms, PR template,
   CODEOWNERS, ten issue drafts in `docs/launch/issues/`.
 - Clean-room and employer check: no OpenBot or Grok Bot material; the only
-  mentions are the README's clean-room note and CLAUDE.md's rules. No
+  mentions are CLAUDE.md's rules. No
   employer named anywhere.
 
 **Not verified**
@@ -1084,7 +1084,7 @@ store used for the run) or the daemon's own env.
 - Not tested: a real daemon re-execing into a real new one; the Tauri shell
   (never built or launched: plugin registration, the injected flags, the
   daemon stopping through the resource); an update check against a real
-  release (private repo, no signing secrets); the release workflow (not run);
+  release (no release with update files yet); the release workflow (not run);
   Windows.
 
 ## Connector checks (`fix/connector-check`)

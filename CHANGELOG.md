@@ -47,8 +47,8 @@ First public release.
 - Usage tab: model calls, tokens and estimated cost per provider, model and
   agent, from the model proxy; prices in `config/pricing.toml` with overrides
   in Settings; CSV export.
-- Desktop app (Tauri) for macOS (.dmg) and Windows (.exe) that starts the
-  daemon itself and says so when Docker is missing.
+- Desktop app (Tauri) for macOS (universal .dmg) that starts the daemon itself
+  and says so when Docker is missing. A Windows installer follows later.
 - Runner image published as `ghcr.io/byquexo/ferrobot-runner`.
 
 ### Security
