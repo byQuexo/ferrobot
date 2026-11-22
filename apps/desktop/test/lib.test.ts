@@ -4,7 +4,14 @@ import { describe, it } from "node:test";
 import { DaemonClient, type MailMessage, type StoredEvent } from "../src/api.ts";
 import { hash } from "../src/lib/avatar.ts";
 import { characterOf, deriveCharacter, moodOf, rerollCharacter } from "../src/lib/character.ts";
-import { linkLabel, relativeTime, statusOf, stepLabel, toolLabel } from "../src/lib/format.ts";
+import {
+  linkLabel,
+  relativeTime,
+  statusOf,
+  stepLabel,
+  toolLabel,
+  toolsSummary,
+} from "../src/lib/format.ts";
 import { buildTimeline, sharedFiles, withoutRoomTurns } from "../src/lib/timeline.ts";
 import {
   CallScript,
@@ -563,6 +570,15 @@ describe("markdown", () => {
     assert.deepEqual(parseInline("[x](javascript:alert(1))"), [
       { text: "[x](javascript:alert(1))" },
     ]);
+  });
+});
+
+describe("tools summary", () => {
+  it("summarises tool groups and connectors", () => {
+    assert.equal(toolsSummary(9, 9, 0), "All tools");
+    assert.equal(toolsSummary(7, 9, 0), "7 of 9 tools");
+    assert.equal(toolsSummary(0, 9, 1), "No tools + 1 connector");
+    assert.equal(toolsSummary(8, 8, 2), "All tools + 2 connectors");
   });
 });
 

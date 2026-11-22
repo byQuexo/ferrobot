@@ -1,6 +1,6 @@
 import type { JSX } from "preact";
 import { useEffect, useRef, useState } from "preact/hooks";
-import { Dices, ImageUp, RotateCcw, X } from "lucide-preact";
+import { ChevronRight, Dices, ImageUp, RotateCcw, X } from "lucide-preact";
 
 import type { Agent, Connector, Provider, ProviderKind, ToolGroup } from "../api.ts";
 import { useApp } from "../context.ts";
@@ -13,6 +13,7 @@ import {
   rerollCharacter,
   type Character,
 } from "../lib/character.ts";
+import { toolsSummary } from "../lib/format.ts";
 import { toAvatarPng } from "../lib/image.ts";
 import { CharacterFace } from "./Character.tsx";
 import { Avatar } from "./Avatar.tsx";
@@ -63,6 +64,7 @@ export function AgentDialog(props: {
   const [given, setGiven] = useState<string[] | null>(editing ? null : []);
   const [picked, setPicked] = useState<string[]>([]);
   const [tools, setTools] = useState<ToolGroup[]>(editing?.tools ?? ALL_TOOLS);
+  const [toolsOpen, setToolsOpen] = useState(false);
   const chosen = providers.find((p) => p.id === providerId);
   const groups = TOOL_GROUPS.filter(
     ([g]) => g !== "web" || hasWebTools(chosen?.kind ?? "anthropic"),
@@ -374,40 +376,60 @@ export function AgentDialog(props: {
           )}
         </label>
         <div class="field">
-          <span>Tools</span>
-          {groups.map(([group, label, what]) => (
-            <span key={group} class="field-row">
-              <span>
-                {label} <span class="hint">{what}</span>
-              </span>
-              <Switch
-                checked={tools.includes(group)}
-                label={label}
-                onChange={(on) => {
-                  setTools((t) => (on ? [...t, group] : t.filter((g) => g !== group)));
-                }}
-              />
+          <button
+            type="button"
+            class="tools-toggle"
+            aria-expanded={toolsOpen}
+            aria-controls="agent-tools"
+            onClick={() => {
+              setToolsOpen(!toolsOpen);
+            }}
+          >
+            <ChevronRight size={16} class="tools-chevron" aria-hidden="true" />
+            Tools
+            <span class="hint">
+              {toolsSummary(
+                groups.filter(([g]) => tools.includes(g)).length,
+                groups.length,
+                given ? picked.length : 0,
+              )}
             </span>
-          ))}
-          {given &&
-            connectors.map((c) => (
-              <span key={c.id} class="field-row">
+          </button>
+          <div class="field tools-list" id="agent-tools" hidden={!toolsOpen}>
+            {groups.map(([group, label, what]) => (
+              <span key={group} class="field-row">
                 <span>
-                  {c.name} <span class="hint">Connector</span>
+                  {label} <span class="hint">{what}</span>
                 </span>
                 <Switch
-                  checked={picked.includes(c.id)}
-                  label={c.name}
-                  onChange={() => {
-                    togglePick(c.id);
+                  checked={tools.includes(group)}
+                  label={label}
+                  onChange={(on) => {
+                    setTools((t) => (on ? [...t, group] : t.filter((g) => g !== group)));
                   }}
                 />
               </span>
             ))}
-          <span class="hint">
-            Changes apply from its next turn. With Shell on, it can still read files and reach the
-            web through commands.
-          </span>
+            {given &&
+              connectors.map((c) => (
+                <span key={c.id} class="field-row">
+                  <span>
+                    {c.name} <span class="hint">Connector</span>
+                  </span>
+                  <Switch
+                    checked={picked.includes(c.id)}
+                    label={c.name}
+                    onChange={() => {
+                      togglePick(c.id);
+                    }}
+                  />
+                </span>
+              ))}
+            <span class="hint">
+              Changes apply from its next turn. With Shell on, it can still read files and reach the
+              web through commands.
+            </span>
+          </div>
         </div>
         <button type="submit" hidden />
       </form>

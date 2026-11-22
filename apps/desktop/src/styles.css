@@ -767,3 +767,11 @@ textarea { resize: vertical; min-height: 40px; line-height: 1.5; }
 .usage-price > .small { flex-basis: 100%; }
 .usage-price label { display: flex; flex-direction: column; gap: 4px; font-size: 12px; color: var(--text-2); }
 .usage-price input { width: 96px; }
+
+/* ---------- agent dialog tools ---------- */
+.tools-toggle { display: flex; align-items: center; gap: 8px; padding: 0; border: none; background: none; color: var(--text-2); font: inherit; font-weight: 500; text-align: left; cursor: pointer; }
+.tools-toggle .hint { margin-left: auto; }
+.tools-toggle:hover { color: var(--text); }
+.tools-chevron { flex: none; transition: transform 0.15s; }
+.tools-toggle[aria-expanded="true"] .tools-chevron { transform: rotate(90deg); }
+.tools-list[hidden] { display: none; }
