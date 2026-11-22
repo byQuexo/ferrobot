@@ -101,6 +101,7 @@ function Profile(props: {
   const { client, run, agents, health } = useApp();
   const a = props.agent;
   const status = statusOf(a);
+  const problem = a.credential_error ?? a.tools_unsupported;
   const creator = a.created_by ? agents.get(a.created_by) : undefined;
   const [confirm, setConfirm] = useState(false);
   const [providers, setProviders] = useState<Provider[] | null>(null);
@@ -120,9 +121,9 @@ function Profile(props: {
         <span>Status</span>
         <span class="model-line">
           <span class={`status-chip p-${status.presence}`}>{status.label}</span>
-          {a.credential_error && (
+          {problem && (
             <>
-              <span class="muted">{a.credential_error.reason}</span>
+              <span class="muted">{problem.reason}</span>
               <CredentialFix agent={a} onEdit={props.onEdit} onVault={props.onVault} />
             </>
           )}
