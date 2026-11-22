@@ -66,6 +66,10 @@ Without Auto mode, these requests show you a card first:
   not wait. A message tells it whether you approved.
 - **Add a connector** (`add_connector`): always a card, Auto mode or not. For
   a token it has a hidden field; the token goes straight to Vault.
+- **Give an agent more tools** (`set_agent_tools`): the card says which agent
+  wants to give which of its agents more tools, and lists what is new. The
+  agent does not wait; a message tells it whether you approved. The card stays
+  open until you answer.
 
 A card appears in the chat of the agent you talk to: for an agent made by
 another agent, that is the chat of the agent at the top of the chain. A card
@@ -73,8 +77,8 @@ can be answered once.
 
 ## Auto mode
 
-Turn it on in **Settings → Agents → Auto mode**. Agents then create agents
-and their own routines without asking. A new agent leaves a notice in the
-chat instead of a card; a new routine shows up under the agent's
-**Routines**. The agent limit, the tool limits above and your keys stay
+Turn it on in **Settings → Agents → Auto mode**. Agents then create agents,
+their own routines and give their agents more tools without asking. A new
+agent or a tool change leaves a notice in the chat instead of a card; a new
+routine shows up under the agent's **Routines**. The agent limit, the tool limits above and your keys stay
 protected.
