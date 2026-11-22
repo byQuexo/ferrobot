@@ -6,10 +6,10 @@ use std::time::Duration;
 
 use ferrobot_core::protocol::DaemonFrame;
 use ferrobot_core::question::{
-    APPROVE, Approval, DECLINE, QuestionAnswer, QuestionAnswered, QuestionEvent,
+    APPROVE, Approval, DECLINE, QuestionAnswer, QuestionAnswered, QuestionEvent, approves,
 };
-use ferrobot_core::{Agent, AgentId, AgentName, AvatarCharacter, Connector, ToolGroup};
-use ferrobot_mcp::AgentRequestOutcome;
+use ferrobot_core::{Agent, AgentId, AgentName, AvatarCharacter, Connector, Sender, ToolGroup};
+use ferrobot_mcp::{AgentRequestOutcome, AgentToolsOutcome, AgentToolsRequest};
 use ferrobot_store::{AgentPatch, NewAgent};
 
 use crate::api::check_len;
@@ -69,7 +69,18 @@ async fn profile(
         return Ok((ToolGroup::normalize(tools), Vec::new()));
     };
     let own = state.store.get_agent(creator).await?.tools;
-    let tools = ToolGroup::normalize(spec.tools.clone().unwrap_or_else(|| own.clone()));
+    let tools = at_most(&own, spec.tools.clone().unwrap_or_else(|| own.clone()))?;
+    let mine = state.store.agent_connectors(creator).await?;
+    let connectors = match &spec.connectors {
+        None => mine,
+        Some(names) => pick(&mine, names)?,
+    };
+    Ok((tools, connectors))
+}
+
+/// `tools`, normalized, if `own` has every one of them.
+fn at_most(own: &[ToolGroup], tools: Vec<ToolGroup>) -> Result<Vec<ToolGroup>, ApiError> {
+    let tools = ToolGroup::normalize(tools);
     let wider: Vec<&str> = tools
         .iter()
         .filter(|g| !own.contains(g))
@@ -77,24 +88,213 @@ async fn profile(
         .collect();
     if !wider.is_empty() {
         return Err(ApiError::BadRequest(format!(
-            "a new agent gets at most your own tools; you do not have: {}",
+            "agents you create get at most your own tools; you do not have: {}",
             wider.join(", ")
         )));
     }
-    let mine = state.store.agent_connectors(creator).await?;
-    let connectors = match &spec.connectors {
-        None => mine,
-        Some(names) => names
-            .iter()
-            .map(|n| {
-                mine.iter()
-                    .find(|c| c.name == n.trim())
-                    .cloned()
-                    .ok_or_else(|| ApiError::BadRequest(format!("you have no connector {n}")))
-            })
-            .collect::<Result<_, _>>()?,
+    Ok(tools)
+}
+
+/// The connectors of `mine` named in `names`.
+fn pick(mine: &[Connector], names: &[String]) -> Result<Vec<Connector>, ApiError> {
+    names
+        .iter()
+        .map(|n| {
+            mine.iter()
+                .find(|c| c.name == n.trim())
+                .cloned()
+                .ok_or_else(|| ApiError::BadRequest(format!("you have no connector {n}")))
+        })
+        .collect()
+}
+
+/// Replaces an agent's tool groups and connectors (`None`: unchanged) the way
+/// `PATCH /v1/agents/{id}` and `PUT /v1/agents/{id}/connectors` do.
+async fn set_profile(
+    state: &AppState,
+    id: AgentId,
+    tools: Option<Vec<ToolGroup>>,
+    connectors: Option<Vec<uuid::Uuid>>,
+) -> Result<(), ApiError> {
+    // Connectors first: one deleted since the card fails here, before the tools change.
+    if let Some(ids) = connectors {
+        state.store.set_agent_connectors(id, ids).await?;
+    }
+    if tools.is_some() {
+        let patch = AgentPatch {
+            tools,
+            ..AgentPatch::default()
+        };
+        state.store.update_agent_profile(id, patch).await?;
+    }
+    reconfigure(state, id).await?;
+    state.publish_agent(id).await;
+    Ok(())
+}
+
+/// Names of the tool groups and connectors in the new sets (`None`: unchanged) that the agent
+/// does not have yet.
+fn added<'a>(
+    tools: &[ToolGroup],
+    connectors: &[Connector],
+    new_tools: Option<&[ToolGroup]>,
+    new_connectors: Option<&'a [Connector]>,
+) -> Vec<&'a str> {
+    let new_tools = new_tools.into_iter().flatten();
+    let new_connectors = new_connectors.into_iter().flatten();
+    new_tools
+        .filter(|g| !tools.contains(g))
+        .map(|g| g.as_str())
+        .chain(
+            new_connectors
+                .filter(|c| !connectors.iter().any(|t| t.id == c.id))
+                .map(|c| c.name.as_str()),
+        )
+        .collect()
+}
+
+fn list<'a>(names: impl IntoIterator<Item = &'a str>) -> String {
+    let names: Vec<&str> = names.into_iter().collect();
+    if names.is_empty() {
+        "none".to_owned()
+    } else {
+        names.join(", ")
+    }
+}
+
+/// Changes the tools of an agent `requester` created (`set_agent_tools`), at most to its own.
+/// Narrowing applies at once; anything new needs the operator's card unless Auto mode is on.
+pub async fn set_tools(
+    state: &AppState,
+    requester: AgentId,
+    req: AgentToolsRequest,
+) -> Result<AgentToolsOutcome, ApiError> {
+    if req.tools.is_none() && req.connectors.is_none() {
+        return Err(ApiError::BadRequest(
+            "give tools, connectors or both".into(),
+        ));
+    }
+    if req.agent == requester {
+        return Err(ApiError::BadRequest(
+            "you cannot change your own tools".into(),
+        ));
+    }
+    let target = state.store.get_agent(req.agent).await?;
+    if target.created_by != Some(requester) {
+        return Err(ApiError::BadRequest(format!(
+            "you can only change the tools of agents you created; you did not create {}",
+            target.name
+        )));
+    }
+    let me = state.store.get_agent(requester).await?;
+    let tools = req.tools.map(|t| at_most(&me.tools, t)).transpose()?;
+    let mine = state.store.agent_connectors(requester).await?;
+    let connectors = req.connectors.map(|n| pick(&mine, &n)).transpose()?;
+    let have = state.store.agent_connectors(target.id).await?;
+    let new = added(
+        &target.tools,
+        &have,
+        tools.as_deref(),
+        connectors.as_deref(),
+    );
+    let ids: Option<Vec<uuid::Uuid>> = connectors
+        .as_ref()
+        .map(|cs| cs.iter().map(|c| c.id).collect());
+    if new.is_empty() {
+        set_profile(state, target.id, tools, ids).await?;
+        return Ok(AgentToolsOutcome::Applied);
+    }
+    let chat = chat_of(state, requester).await?;
+    // Unreadable settings fail closed: the operator gets the card.
+    if crate::api::settings::load(state)
+        .await
+        .is_ok_and(|s| s.auto_mode)
+    {
+        set_profile(state, target.id, tools, ids).await?;
+        let notice = serde_json::json!({
+            "name": target.name, "id": target.id, "by": me.name, "auto": true
+        });
+        state
+            .record(chat, None, "agent_tools_changed", notice)
+            .await;
+        return Ok(AgentToolsOutcome::Applied);
+    }
+    let mut prompt = format!("Change the tools of \"{}\"?", target.name);
+    if let Some(tools) = &tools {
+        let names = tools.iter().map(|g| g.as_str());
+        let _ = write!(prompt, "\nTools: {}", list(names));
+    }
+    if let Some(connectors) = &connectors {
+        let names = connectors.iter().map(|c| c.name.as_str());
+        let _ = write!(prompt, "\nConnectors: {}", list(names));
+    }
+    let _ = write!(prompt, "\nNew for it: {}", list(new));
+    let card = QuestionEvent::approval(
+        format!("{} wants to give {} more tools", me.name, target.name),
+        prompt,
+        Approval::SetAgentTools {
+            agent: target.id,
+            tools,
+            connectors: ids,
+            requester,
+        },
+    );
+    let payload = serde_json::to_value(&card).map_err(|e| ApiError::Internal(e.to_string()))?;
+    let event = state
+        .store
+        .append_event(chat, None, "question".into(), payload)
+        .await?;
+    let question_id = event.id;
+    state.publish(UiEvent::Event { event });
+    Ok(AgentToolsOutcome::Pending { question_id })
+}
+
+/// The operator's answer to a `set_agent_tools` card: approved, the change is made; either way
+/// the agent that asked gets a message.
+pub(crate) async fn answer_tools_card(
+    state: &AppState,
+    chat: AgentId,
+    qid: i64,
+    approval: &Approval,
+    answers: Vec<QuestionAnswer>,
+) -> Result<QuestionAnswered, ApiError> {
+    let Approval::SetAgentTools {
+        agent,
+        tools,
+        connectors,
+        requester,
+    } = approval
+    else {
+        return Err(ApiError::Internal("not a tools card".into()));
     };
-    Ok((tools, connectors))
+    let note = match state.store.get_agent(*agent).await {
+        Err(_) => "The agent whose tools you asked to change no longer exists.".to_owned(),
+        Ok(target) if approves(&answers) => {
+            set_profile(state, *agent, tools.clone(), connectors.clone()).await?;
+            format!("The operator approved the new tools for {}.", target.name)
+        }
+        Ok(target) => format!("The operator declined the new tools for {}.", target.name),
+    };
+    let message_id = if state.store.get_agent(*requester).await.is_ok() {
+        let msg = state
+            .store
+            .enqueue_message(Sender::User, *requester, note, None)
+            .await?;
+        state.message_arrived(*requester);
+        let id = msg.id;
+        state.publish(UiEvent::Message { message: msg });
+        Some(id)
+    } else {
+        None
+    };
+    let answered = QuestionAnswered {
+        question: qid,
+        answers,
+        message_id,
+    };
+    let payload = serde_json::to_value(&answered).map_err(|e| ApiError::Internal(e.to_string()))?;
+    state.record(chat, None, "question_answered", payload).await;
+    Ok(answered)
 }
 
 /// The agent's instructions as its runner gets them: with the operator's naming convention
@@ -454,4 +654,38 @@ pub(crate) fn decide(state: &AppState, qid: i64, answers: &[QuestionAnswer]) -> 
         .first()
         .is_some_and(|a| a.values.iter().any(|v| v == APPROVE));
     tx.send(approved).is_ok()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use ToolGroup::{Memory, Team, Web};
+
+    #[test]
+    fn only_what_the_agent_lacks_is_new() {
+        let connector = |name: &str| Connector {
+            id: uuid::Uuid::new_v4(),
+            name: name.into(),
+            url: "https://example.com/mcp".into(),
+            created_at: time::OffsetDateTime::UNIX_EPOCH,
+        };
+        let (gh, db) = (connector("github"), connector("db"));
+        let have = [Team, Memory];
+        let current = [gh.clone()];
+        let new_db = [db];
+        for (tools, connectors, new) in [
+            (None, None, vec![]),
+            (Some(&[Team][..]), Some(&[][..]), vec![]),
+            (Some(&[Team, Web][..]), None, vec!["web"]),
+            (None, Some(&new_db[..]), vec!["db"]),
+            (Some(&[Web][..]), Some(&new_db[..]), vec!["web", "db"]),
+        ] {
+            assert_eq!(added(&have, &current, tools, connectors), new);
+        }
+        let err = at_most(&have, vec![Web, Team]).unwrap_err().to_string();
+        assert!(err.ends_with("you do not have: web"), "{err}");
+        assert_eq!(at_most(&have, vec![Memory, Team, Team]).unwrap(), have);
+        assert!(pick(&current, &["slack".into()]).is_err());
+        assert_eq!(pick(&current, &[" github".into()]).unwrap(), [gh]);
+    }
 }

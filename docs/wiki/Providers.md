@@ -3,7 +3,11 @@ authenticated. Each agent picks a provider and a model in its profile.
 
 ## Adding a provider
 
-- In the desktop app: **Settings → Model providers**.
+- In the desktop app: **Settings → Model providers → Add provider**. Pick the
+  kind, give it a name and optionally a default model. Then add its key in
+  **Settings → Vault** (the provider's row links there: "add its key in
+  Vault"). Vault holds every key in one place: model providers, connectors
+  and voice.
 - Over the API: `POST /v1/providers` with `name`, `kind` and, depending on
   the kind, `api_key`, `base_url`, `region`, `project` and `default_model`.
   `api_key` is write-only; responses only say `has_key`.
@@ -79,8 +83,9 @@ Notes per kind:
 
 Voice (calls and dictation) uses its own providers, separate from the model
 providers: ElevenLabs (speech and live transcription) or OpenRouter (speech
-and transcription models). Their keys are set under Settings → Voice and
-stay in the daemon's secret store like model keys.
+and transcription models). Pick one under **Settings → Voice**; its key goes
+in **Settings → Vault** and stays in the daemon's secret store like model
+keys. See [[Voice and calls|Voice-and-Calls]].
 
 ## Not supported
 

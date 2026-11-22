@@ -150,17 +150,17 @@ fn open_external(url: &tauri::Url) {
     if !matches!(url.scheme(), "http" | "https") {
         return;
     }
-    let program = if cfg!(target_os = "macos") {
-        "open"
+    let mut opener = if cfg!(target_os = "macos") {
+        std::process::Command::new("open")
     } else if cfg!(windows) {
-        "explorer"
+        // explorer.exe opens File Explorer instead of the browser for long query URLs (OAuth).
+        let mut c = std::process::Command::new("rundll32");
+        c.arg("url.dll,FileProtocolHandler");
+        c
     } else {
-        "xdg-open"
+        std::process::Command::new("xdg-open")
     };
-    match std::process::Command::new(program)
-        .arg(url.as_str())
-        .spawn()
-    {
+    match opener.arg(url.as_str()).spawn() {
         Ok(mut child) => {
             std::thread::spawn(move || child.wait());
         }

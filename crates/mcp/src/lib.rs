@@ -67,6 +67,25 @@ pub enum RoutineRequestOutcome {
     Pending { question_id: i64 },
 }
 
+/// An agent's request to change the tools of an agent it created (`set_agent_tools` tool).
+#[derive(Debug, Clone)]
+pub struct AgentToolsRequest {
+    pub agent: AgentId,
+    /// Replaces the target's tool groups; `None` keeps them.
+    pub tools: Option<Vec<ferrobot_core::ToolGroup>>,
+    /// Names of the requester's connectors that replace the target's; `None` keeps them.
+    pub connectors: Option<Vec<String>>,
+}
+
+/// How an [`AgentToolsRequest`] ended for now.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum AgentToolsOutcome {
+    /// Narrower, or Auto mode: the change is made.
+    Applied,
+    /// Wider: the operator decides on a card; the outcome arrives as a message.
+    Pending { question_id: i64 },
+}
+
 /// A file an agent shared with the operator (`share_file` tool).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SharedFile {
@@ -150,6 +169,17 @@ pub trait MailboxNotifier: Send + Sync + 'static {
     ) -> BoxFuture<Result<RoutineRequestOutcome, String>> {
         let _ = (requester, request);
         Box::pin(async { Err("routines are not supported here".to_owned()) })
+    }
+    /// Changes the tools of an agent `requester` created: at once when that narrows them,
+    /// else after the operator approves a card unless Auto mode is on. `Err` carries a message
+    /// for the agent.
+    fn set_agent_tools(
+        &self,
+        requester: AgentId,
+        request: AgentToolsRequest,
+    ) -> BoxFuture<Result<AgentToolsOutcome, String>> {
+        let _ = (requester, request);
+        Box::pin(async { Err("changing tools is not supported here".to_owned()) })
     }
     /// `agent` hangs up the voice call when its turn ends. `Ok(true)`: it was the host, so the
     /// call ends for everyone. `Err` carries a message for the agent.

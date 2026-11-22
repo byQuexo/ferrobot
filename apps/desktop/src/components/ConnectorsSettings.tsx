@@ -1,5 +1,5 @@
 import type { JSX } from "preact";
-import { useEffect, useState } from "preact/hooks";
+import { useEffect, useRef, useState } from "preact/hooks";
 import {
   BookOpen,
   Bug,
@@ -121,6 +121,7 @@ export function ConnectorsSettings(props: { onVault: () => void }): JSX.Element 
   const [adding, setAdding] = useState(false);
   const [busy, setBusy] = useState(false);
   const [checking, setChecking] = useState<ReadonlySet<string>>(new Set());
+  const form = useRef<HTMLDivElement>(null);
   const redirectUri = connectors[0]?.redirect_uri ?? `${client.base}/v1/oauth/callback`;
   const errorText = (err: unknown): string => (err instanceof Error ? err.message : String(err));
 
@@ -197,8 +198,20 @@ export function ConnectorsSettings(props: { onVault: () => void }): JSX.Element 
       setSignIn({ id: c.id, url: authorization_url });
     });
 
-  const addFromCatalog = (e: CatalogEntry): Promise<void> =>
-    run(async () => {
+  useEffect(() => {
+    if (adding) form.current?.scrollIntoView({ behavior: "smooth", block: "center" });
+  }, [adding]);
+
+  const addFromCatalog = (e: CatalogEntry): Promise<void> => {
+    if (e.app) {
+      setName(e.name);
+      setUrl(e.url);
+      setOwnApp(true);
+      setApp({ clientId: "", issuer: e.app.issuer, scopes: e.app.scopes.join(" ") });
+      setAdding(true);
+      return Promise.resolve();
+    }
+    return run(async () => {
       const c = await client.createConnector({ name: e.name, url: e.url });
       toastIfFailed(c);
       if (e.auth === "oauth" && c.check?.status === "needs_sign_in") {
@@ -209,6 +222,7 @@ export function ConnectorsSettings(props: { onVault: () => void }): JSX.Element 
         props.onVault();
       }
     });
+  };
 
   const add = (): Promise<void> =>
     run(async () => {
@@ -378,7 +392,7 @@ export function ConnectorsSettings(props: { onVault: () => void }): JSX.Element 
       </section>
       <section class="settings-section">
         {adding ? (
-          <div class="form">
+          <div class="form" ref={form}>
             <h3 class="form-head">Add a connector</h3>
             <label>
               Name

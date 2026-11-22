@@ -104,8 +104,12 @@ function fieldsOf(kind: ProviderKind): { baseUrl: boolean; region: boolean; proj
 const dotOf = (p: Provider): string => (!needsKey(p.kind) || p.has_key ? "p-awake" : "p-sleeping");
 
 /** Add and remove model providers (a settings section); their keys live in Vault. */
-export function ProvidersSettings(props: { onVault: () => void }): JSX.Element {
-  const { client, toast } = useApp();
+export function ProvidersSettings(props: {
+  onVault: () => void;
+  /** Called with the list after every load or change. */
+  onChange?: (providers: Provider[]) => void;
+}): JSX.Element {
+  const { client, toast, health } = useApp();
   const [providers, setProviders] = useState<Provider[]>([]);
   const [kind, setKind] = useState<ProviderKind>("openai");
   const [name, setName] = useState("");
@@ -121,7 +125,9 @@ export function ProvidersSettings(props: { onVault: () => void }): JSX.Element {
     setBusy(true);
     try {
       await action();
-      setProviders(await client.listProviders());
+      const list = await client.listProviders();
+      setProviders(list);
+      props.onChange?.(list);
     } catch (err) {
       toast(err instanceof Error ? err.message : String(err));
     } finally {
@@ -154,7 +160,9 @@ export function ProvidersSettings(props: { onVault: () => void }): JSX.Element {
       <section class="settings-section form">
         {providers.length === 0 && (
           <p class="muted small">
-            No providers yet. Without one, agents use the daemon’s ANTHROPIC_API_KEY.
+            {health?.driver === "claude" && !health.anthropic_key
+              ? "No providers yet. Agents need one to reach a model."
+              : "No providers yet. Without one, agents use the daemon’s ANTHROPIC_API_KEY."}
           </p>
         )}
         <ul class="provider-list">

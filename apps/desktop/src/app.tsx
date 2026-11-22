@@ -8,6 +8,7 @@ import {
   DaemonClient,
   type Agent,
   type Health,
+  type Provider,
   type UiEvent,
 } from "./api.ts";
 import { AgentDialog } from "./components/AgentDialog.tsx";
@@ -19,11 +20,13 @@ import { InfoPanel, type InfoTab } from "./components/InfoPanel.tsx";
 import { RoomView } from "./components/Rooms.tsx";
 import { Sidebar } from "./components/Sidebar.tsx";
 import { Usage } from "./components/Usage.tsx";
+import { Welcome } from "./components/Welcome.tsx";
 import { Button, Empty } from "./components/ui.tsx";
 import { AppContext, type AppContextValue } from "./context.ts";
 import type { CallState } from "./lib/call.ts";
 import { CallSession } from "./lib/call-session.ts";
 import { applyTheme, followSystem, loadTheme, type ThemePref } from "./lib/theme.ts";
+import { welcomeStep } from "./lib/welcome.ts";
 
 interface Toast {
   id: number;
@@ -33,6 +36,7 @@ interface Toast {
 
 const DAEMON_KEY = "ferrobot.daemon";
 const TOKEN_KEY = "ferrobot.token";
+const WELCOME_KEY = "ferrobot.welcome";
 
 declare global {
   interface Window {
@@ -54,6 +58,8 @@ export function App(): JSX.Element {
   const client = useMemo(() => new DaemonClient(base, token), [base, token]);
   const [agents, setAgents] = useState<Map<string, Agent>>(new Map());
   const [health, setHealth] = useState<Health | null>(null);
+  const [providers, setProviders] = useState<Provider[] | null>(null);
+  const [skipped, setSkipped] = useState(() => localStorage.getItem(WELCOME_KEY) === "skipped");
   const [online, setOnline] = useState(false);
   const [selected, setSelected] = useState<string | null>(() =>
     localStorage.getItem("ferrobot.selected"),
@@ -62,6 +68,7 @@ export function App(): JSX.Element {
   const [room, setRoom] = useState<number | null>(null);
   const [dialog, setDialog] = useState<"create" | "edit" | null>(null);
   const [settings, setSettings] = useState<SettingsSection | null>(null);
+  const [guide, setGuide] = useState<string | null>(null);
   const [usage, setUsage] = useState(false);
   const [infoOpen, setInfoOpen] = useState(
     () => localStorage.getItem("ferrobot.info") !== "closed",
@@ -106,9 +113,14 @@ export function App(): JSX.Element {
 
   const refresh = useCallback(async () => {
     try {
-      const [h, list] = await Promise.all([client.health(), client.listAgents()]);
+      const [h, list, ps] = await Promise.all([
+        client.health(),
+        client.listAgents(),
+        client.listProviders(),
+      ]);
       setHealth(h);
       setAgents(new Map(list.map((a) => [a.id, a])));
+      setProviders(ps);
       setNeedsToken(false);
     } catch (err) {
       if (err instanceof ApiError && err.status === 401) setNeedsToken(true);
@@ -220,6 +232,17 @@ export function App(): JSX.Element {
     setUsage(false);
     setSettings("vault");
   };
+  const openGuide = (page: string | null): void => {
+    setUsage(false);
+    setSettings("guides");
+    setGuide(page);
+  };
+  const welcome = welcomeStep({
+    agents: agents.size,
+    providers,
+    daemonKey: health?.anthropic_key ?? false,
+    skipped,
+  });
   const withInfo = agent && infoOpen && !pair && room === null && !settings && !usage;
 
   return (
@@ -263,6 +286,8 @@ export function App(): JSX.Element {
             }}
             theme={theme}
             onTheme={setTheme}
+            guide={guide}
+            onGuide={openGuide}
           />
         ) : usage ? (
           <Usage
@@ -286,6 +311,22 @@ export function App(): JSX.Element {
               setDialog("edit");
             }}
             onVault={openVault}
+          />
+        ) : welcome ? (
+          <Welcome
+            step={welcome}
+            providers={providers ?? []}
+            onProviders={setProviders}
+            onCreated={(a) => {
+              setAgents((m) => new Map(m).set(a.id, a));
+              setSelected(a.id);
+            }}
+            onSkip={() => {
+              localStorage.setItem(WELCOME_KEY, "skipped");
+              setSkipped(true);
+            }}
+            onVault={openVault}
+            onGuide={openGuide}
           />
         ) : (
           <main class="chat chat-none">

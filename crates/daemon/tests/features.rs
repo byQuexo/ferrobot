@@ -5938,6 +5938,197 @@ async fn agents_create_routines_with_approval_or_in_auto_mode() {
 }
 
 #[tokio::test]
+async fn agents_change_the_tools_of_agents_they_created() {
+    use ferrobot_core::ToolGroup::{self, CreateAgents, Memory, Shell, Team, Web};
+    use ferrobot_mcp::{AgentRequest, AgentRequestOutcome, AgentToolsOutcome, AgentToolsRequest};
+    let backend = Arc::new(StatefulBackend::default());
+    let d = start(backend.clone(), None, "127.0.0.1:0").await;
+    let auto = |on: bool| {
+        let ui = d.ui.clone();
+        async move {
+            let body = Some(json!({"auto_mode": on}));
+            assert_eq!(http(&ui, "PUT", "/v1/settings", body).await.0, 200);
+        }
+    };
+    let ada = create(
+        &d,
+        json!({"name": "ada", "tools": ["team", "memory", "create_agents", "shell"]}),
+    )
+    .await["id"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    let ada_id: AgentId = ada.parse().unwrap();
+    let bob: AgentId = create(&d, json!({"name": "bob"})).await["id"]
+        .as_str()
+        .unwrap()
+        .parse()
+        .unwrap();
+    let gone = "http://127.0.0.1:1/mcp";
+    let gh = add_connector(&d, json!({"name": "github", "url": gone})).await["id"].clone();
+    let db = add_connector(&d, json!({"name": "db", "url": gone})).await["id"].clone();
+    let path = format!("/v1/agents/{ada}/connectors");
+    let mine = Some(json!([gh, db]));
+    assert_eq!(http(&d.ui, "PUT", &path, mine).await.0, 200);
+
+    auto(true).await;
+    let AgentRequestOutcome::Created { id: scout_id, .. } = d
+        .state
+        .request_agent(
+            ada_id,
+            AgentRequest {
+                tools: Some(vec![Team, Memory, Shell]),
+                connectors: Some(vec!["github".into()]),
+                ..agent_request("scout")
+            },
+        )
+        .await
+        .unwrap()
+    else {
+        panic!("expected created");
+    };
+    auto(false).await;
+    let scout = scout_id.to_string();
+    let connectors = || {
+        let ui = d.ui.clone();
+        let path = format!("/v1/agents/{scout}/connectors");
+        async move { http(&ui, "GET", &path, None).await.1 }
+    };
+    let req = |agent: AgentId, tools: Option<Vec<ToolGroup>>, connectors: Option<&[&str]>| {
+        AgentToolsRequest {
+            agent,
+            tools,
+            connectors: connectors.map(|c| c.iter().map(|&n| n.to_owned()).collect()),
+        }
+    };
+
+    // Refused before anything changes or the operator is asked.
+    for (requester, request, error) in [
+        (
+            ada_id,
+            req(bob, Some(vec![Team]), None),
+            "agents you created",
+        ),
+        (
+            scout_id,
+            req(ada_id, Some(vec![Team]), None),
+            "agents you created",
+        ),
+        (
+            ada_id,
+            req(ada_id, Some(vec![Team]), None),
+            "your own tools",
+        ),
+        (ada_id, req(scout_id, None, None), "give tools"),
+        (
+            ada_id,
+            req(scout_id, Some(vec![Team, Web]), None),
+            "you do not have: web",
+        ),
+        (
+            ada_id,
+            req(scout_id, None, Some(&["slack"])),
+            "no connector slack",
+        ),
+    ] {
+        let err = d
+            .state
+            .set_agent_tools(requester, request)
+            .await
+            .unwrap_err();
+        assert!(err.contains(error), "{err}");
+    }
+    assert_eq!(
+        a_tools(&d, &scout).await,
+        json!(["team", "memory", "shell"])
+    );
+    assert!(
+        !events(&d, &ada)
+            .await
+            .iter()
+            .any(|e| e["kind"] == "question"),
+        "no card"
+    );
+
+    // Narrowing, through the MCP tool, applies at once and reaches the runner.
+    let mut ws = connect_runner(&d.agents, &backend.token("scout")).await;
+    let client = mcp_as(&d, backend.token("ada")).await;
+    let args = json!({"agent": "@scout", "tools": ["team"], "connectors": []});
+    let result = call(&client, "set_agent_tools", args).await;
+    assert_eq!(result["status"], "applied", "{result}");
+    let DaemonFrame::Configure { tools, .. } = next_frame(&mut ws).await else {
+        panic!("expected configure");
+    };
+    assert_eq!(tools, [Team]);
+    assert_eq!(a_tools(&d, &scout).await, json!(["team"]));
+    assert_eq!(connectors().await, json!([]));
+
+    // Anything new needs the card: decline changes nothing, approve applies.
+    let wider = || req(scout_id, Some(vec![Team, Memory]), Some(&["db"]));
+    let AgentToolsOutcome::Pending { question_id } =
+        d.state.set_agent_tools(ada_id, wider()).await.unwrap()
+    else {
+        panic!("expected a card");
+    };
+    let card = events(&d, &ada)
+        .await
+        .into_iter()
+        .find(|e| e["id"] == question_id)
+        .unwrap();
+    assert_eq!(card["payload"]["approval"]["kind"], "set_agent_tools");
+    let prompt = card["payload"]["card"]["questions"][0]["prompt"]
+        .as_str()
+        .unwrap();
+    assert!(prompt.contains("New for it: memory, db"), "{prompt}");
+    assert_eq!(a_tools(&d, &scout).await, json!(["team"]));
+    assert_eq!(decide(&d, &ada, question_id, "decline").await.0, 202);
+    assert_eq!(a_tools(&d, &scout).await, json!(["team"]));
+    assert_eq!(connectors().await, json!([]));
+    let said = |text: &'static str| {
+        let ada = ada.clone();
+        let d = &d;
+        async move {
+            mail(d, &ada)
+                .await
+                .iter()
+                .any(|m| m["body"].as_str().unwrap().contains(text))
+        }
+    };
+    assert!(said("declined the new tools for scout").await);
+
+    let AgentToolsOutcome::Pending { question_id } =
+        d.state.set_agent_tools(ada_id, wider()).await.unwrap()
+    else {
+        panic!("expected a card");
+    };
+    assert_eq!(decide(&d, &ada, question_id, "approve").await.0, 202);
+    assert_eq!(a_tools(&d, &scout).await, json!(["team", "memory"]));
+    assert_eq!(connectors().await, json!([db]));
+    assert!(said("approved the new tools for scout").await);
+    assert_eq!(decide(&d, &ada, question_id, "approve").await.0, 409);
+
+    // Auto mode applies it without a card and leaves a notice.
+    auto(true).await;
+    let outcome = d
+        .state
+        .set_agent_tools(ada_id, req(scout_id, Some(vec![CreateAgents, Team]), None))
+        .await
+        .unwrap();
+    assert_eq!(outcome, AgentToolsOutcome::Applied);
+    assert_eq!(a_tools(&d, &scout).await, json!(["team", "create_agents"]));
+    let evs = events(&d, &ada).await;
+    let notice = evs
+        .iter()
+        .find(|e| e["kind"] == "agent_tools_changed")
+        .unwrap();
+    assert_eq!(
+        notice["payload"],
+        json!({"name": "scout", "id": scout, "by": "ada", "auto": true})
+    );
+    assert_eq!(evs.iter().filter(|e| e["kind"] == "question").count(), 2);
+}
+
+#[tokio::test]
 async fn agents_name_new_agents_by_the_operators_convention() {
     let backend = Arc::new(StatefulBackend::default());
     let d = start(backend.clone(), None, "127.0.0.1:0").await;

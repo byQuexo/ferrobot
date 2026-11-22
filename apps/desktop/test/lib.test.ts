@@ -1,10 +1,25 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 
-import { DaemonClient, type MailMessage, type StoredEvent } from "../src/api.ts";
+import {
+  DaemonClient,
+  type MailMessage,
+  type Provider,
+  type ProviderKind,
+  type StoredEvent,
+} from "../src/api.ts";
 import { hash } from "../src/lib/avatar.ts";
 import { characterOf, deriveCharacter, moodOf, rerollCharacter } from "../src/lib/character.ts";
-import { linkLabel, relativeTime, statusOf, stepLabel, toolLabel } from "../src/lib/format.ts";
+import {
+  linkLabel,
+  relativeTime,
+  statusOf,
+  stepLabel,
+  toolLabel,
+  toolsSummary,
+} from "../src/lib/format.ts";
+import { GUIDES, splitWikiLinks } from "../src/lib/guides.ts";
+import { providerReady, starterName, welcomeStep } from "../src/lib/welcome.ts";
 import { buildTimeline, sharedFiles, withoutRoomTurns } from "../src/lib/timeline.ts";
 import {
   CallScript,
@@ -332,18 +347,21 @@ describe("buildTimeline", () => {
     );
   });
 
-  it("notes agents created in auto mode", () => {
+  it("notes agents created or changed in auto mode", () => {
     const created = { name: "scout", id: BOB, by: "ada", auto: true };
     const items = buildTimeline(
       ME,
       [],
-      [ev(1, "agent_created", created, "2026-01-01T12:00:00Z", "")],
+      [
+        ev(1, "agent_created", created, "2026-01-01T12:00:00Z", ""),
+        ev(2, "agent_tools_changed", created, "2026-01-01T12:01:00Z", ""),
+      ],
       new Map(),
       names,
     );
     assert.deepEqual(
       items.map((i) => (i.type === "system" ? i.text : null)),
-      ["ada created scout (auto mode)"],
+      ["ada created scout (auto mode)", "ada changed the tools of scout (auto mode)"],
     );
   });
 
@@ -563,6 +581,93 @@ describe("markdown", () => {
     assert.deepEqual(parseInline("[x](javascript:alert(1))"), [
       { text: "[x](javascript:alert(1))" },
     ]);
+  });
+
+  it("joins wrapped list items and keeps the number after a code block", () => {
+    const md = "1. Install it\n   and start it.\n\n   ```\n   run\n   ```\n\n2. Done\n\n   later";
+    assert.deepEqual(parseBlocks(md), [
+      { kind: "list", ordered: true, items: [{ text: "Install it and start it.", depth: 0 }] },
+      { kind: "code", text: "run" },
+      { kind: "list", ordered: true, start: 2, items: [{ text: "Done", depth: 0 }] },
+      { kind: "para", text: "   later" },
+    ]);
+  });
+});
+
+describe("welcome", () => {
+  const provider = (kind: ProviderKind, has_key: boolean): Provider => ({
+    id: kind,
+    name: kind,
+    kind,
+    has_key,
+    created_at: "2026-01-01T00:00:00Z",
+  });
+
+  it("picks the first-run step", () => {
+    const base: Parameters<typeof welcomeStep>[0] = {
+      agents: 0,
+      providers: [],
+      daemonKey: false,
+      skipped: false,
+    };
+    const cases: [Partial<typeof base>, string | null][] = [
+      [{}, "provider"],
+      [{ providers: [provider("openai", false)] }, "key"],
+      [{ providers: [provider("openai", false), provider("openai", true)] }, "meet"],
+      [{ providers: [provider("ollama", false)] }, "meet"],
+      [{ daemonKey: true }, "meet"],
+      [{ agents: 1 }, null],
+      [{ agents: 1, providers: [provider("openai", true)] }, null],
+      [{ skipped: true }, null],
+      [{ providers: null }, null],
+    ];
+    for (const [input, step] of cases)
+      assert.equal(welcomeStep({ ...base, ...input }), step, JSON.stringify(input));
+    assert.equal(providerReady(provider("anthropic", false)), false);
+    assert.equal(providerReady(provider("vertex", false)), true);
+  });
+
+  it("names the starter after a list convention, else guide", () => {
+    assert.equal(starterName(null), "guide");
+    assert.equal(starterName("Greek gods"), "guide");
+    assert.equal(starterName("zeus"), "guide");
+    assert.equal(starterName("zeus, hera, athena"), "zeus");
+    assert.equal(starterName("Zeus, Hera"), "guide");
+  });
+});
+
+describe("guides", () => {
+  it("splits wiki links in GitHub's Text|Page order", () => {
+    assert.deepEqual(
+      splitWikiLinks(
+        "See [[FAQ]], [[Getting Started|Getting-Started]] and [[proxy|Usage and Costs#api]].",
+      ),
+      [
+        { text: "See " },
+        { page: "FAQ", label: "FAQ" },
+        { text: ", " },
+        { page: "Getting-Started", label: "Getting Started" },
+        { text: " and " },
+        { page: "Usage-and-Costs", label: "proxy" },
+        { text: "." },
+      ],
+    );
+    assert.deepEqual(splitWikiLinks("no [link] here"), [{ text: "no [link] here" }]);
+  });
+
+  it("lists each guide once", () => {
+    const pages = GUIDES.map((g) => g.page);
+    assert.equal(new Set(pages).size, pages.length);
+    assert.ok(!pages.includes("Architecture"));
+  });
+});
+
+describe("tools summary", () => {
+  it("summarises tool groups and connectors", () => {
+    assert.equal(toolsSummary(9, 9, 0), "All tools");
+    assert.equal(toolsSummary(7, 9, 0), "7 of 9 tools");
+    assert.equal(toolsSummary(0, 9, 1), "No tools + 1 connector");
+    assert.equal(toolsSummary(8, 8, 2), "All tools + 2 connectors");
   });
 });
 
@@ -1064,6 +1169,18 @@ describe("catalog", () => {
       assert.ok(!names.has(e.name), `duplicate ${e.name}`);
       names.add(e.name);
     }
+  });
+
+  it("prefills an own OAuth app only for OAuth servers", () => {
+    for (const e of CATALOG.filter((c) => c.app)) {
+      assert.equal(e.auth, "oauth", e.name);
+      assert.ok(e.app?.issuer.startsWith("https://"), e.name);
+      assert.ok(e.app?.scopes.length, e.name);
+    }
+    assert.equal(
+      CATALOG.find((e) => e.name === "gmail")?.app?.issuer,
+      "https://accounts.google.com",
+    );
   });
 
   it("knows what is added by name or url", () => {

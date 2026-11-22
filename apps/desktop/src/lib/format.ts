@@ -29,6 +29,14 @@ export function statusOf(a: Pick<Agent, "presence" | "credential_error">): {
     : { presence: a.presence, label: presenceLabel(a.presence) };
 }
 
+/** The agent dialog's tools summary: "All tools", "7 of 9 tools" or "No tools", plus connectors given. */
+export function toolsSummary(on: number, total: number, connectors: number): string {
+  const tools =
+    on >= total ? "All tools" : on === 0 ? "No tools" : `${String(on)} of ${String(total)} tools`;
+  if (!connectors) return tools;
+  return `${tools} + ${String(connectors)} ${connectors === 1 ? "connector" : "connectors"}`;
+}
+
 /** "just now", "5 min ago", "3 h ago", "2 d ago"; future times as "in 5 min". */
 export function relativeTime(iso: string, now: number = Date.now()): string {
   const t = Date.parse(iso);

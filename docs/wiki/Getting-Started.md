@@ -10,16 +10,24 @@ universal `.dmg` for macOS. A Windows installer follows in a later release.
    so and links to the download.
 2. **Open the app.** It bundles the daemon (`ferrobotd`) and starts it for
    you.
-3. **Wait for the first agent.** The first time an agent starts, the runner
+3. **Meet your first agent.** A fresh app greets you with a starter agent. It
+   shows whether Docker is ready and asks for a model to think with: add a
+   model provider and its key right there. Then it wakes up as your first
+   agent, `guide`, and asks what it should do for you. Prefer to set up
+   alone? Click **Skip**, add a provider under **Settings → Model providers**
+   (its key goes in **Settings → Vault**) and create an agent with
+   **New agent**. See [[Model providers and keys|Providers]].
+4. **Wait for the first start.** The first time an agent starts, the runner
    image (`ghcr.io/byquexo/ferrobot-runner:0.1.0`, about 2 GB) is pulled
    from the GitHub Container Registry. Later agents start from the cached
    image.
-4. **Add a model provider** under **Settings → Model providers**, then create
-   an agent and pick that provider. See [[Providers]].
 
 Builds are unsigned unless the release notes say otherwise, so macOS
 (Gatekeeper) warns on first launch: right-click the app, choose **Open**, then
-confirm.
+confirm. More fixes: [[Troubleshooting]].
+
+The guides under **Settings → Guides** in the app are the same pages as this
+wiki.
 
 The desktop window itself has had far less testing than the daemon; most UI
 checks ran in a browser against a real daemon.

@@ -95,6 +95,49 @@
             "kind"
           ],
           "type": "object"
+        },
+        {
+          "description": "An agent wants to give an agent it created more tools (`set_agent_tools` tool). The new\nsets replace the target's; `null` leaves that set as it is.",
+          "properties": {
+            "agent": {
+              "$ref": "#/$defs/AgentId"
+            },
+            "connectors": {
+              "description": "Connector ids.",
+              "items": {
+                "format": "uuid",
+                "type": "string"
+              },
+              "type": [
+                "array",
+                "null"
+              ]
+            },
+            "kind": {
+              "enum": [
+                "set_agent_tools"
+              ],
+              "type": "string"
+            },
+            "requester": {
+              "$ref": "#/$defs/AgentId"
+            },
+            "tools": {
+              "items": {
+                "$ref": "#/$defs/ToolGroup"
+              },
+              "type": [
+                "array",
+                "null"
+              ]
+            }
+          },
+          "required": [
+            "agent",
+            "requester",
+            "kind"
+          ],
+          "type": "object"
         }
       ]
     },
@@ -271,6 +314,21 @@
         "multi",
         "text",
         "secret"
+      ],
+      "type": "string"
+    },
+    "ToolGroup": {
+      "description": "A group of tools an agent can have on or off. The first six are ferrobot's own MCP tools\n(enforced by the daemon), the last three the model's built-in tools (enforced by the runner).",
+      "enum": [
+        "team",
+        "memory",
+        "operator",
+        "create_agents",
+        "add_connectors",
+        "routines",
+        "shell",
+        "files",
+        "web"
       ],
       "type": "string"
     }

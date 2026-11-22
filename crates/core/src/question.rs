@@ -5,7 +5,7 @@ use std::fmt::Write as _;
 
 use serde::{Deserialize, Serialize};
 
-use crate::{AgentId, ConnectorAuth};
+use crate::{AgentId, ConnectorAuth, ToolGroup};
 
 /// Version of the question card format (`QuestionEvent.version`).
 pub const QUESTION_CARD_VERSION: u32 = 1;
@@ -117,6 +117,15 @@ pub enum Approval {
         name: String,
         schedule: String,
         prompt: String,
+        requester: AgentId,
+    },
+    /// An agent wants to give an agent it created more tools (`set_agent_tools` tool). The new
+    /// sets replace the target's; `null` leaves that set as it is.
+    SetAgentTools {
+        agent: AgentId,
+        tools: Option<Vec<ToolGroup>>,
+        /// Connector ids.
+        connectors: Option<Vec<uuid::Uuid>>,
         requester: AgentId,
     },
 }
