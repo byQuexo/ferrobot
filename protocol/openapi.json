@@ -1431,7 +1431,7 @@
         "tags": [
           "chat"
         ],
-        "summary": "Clears the agent's credential problem so its waiting messages run; if the credential is\nstill broken, the next model call sets it again.",
+        "summary": "Clears the agent's credential or tools problem so its waiting messages run; if it still\nstands, the next model call sets it again.",
         "operationId": "retry",
         "parameters": [
           {
@@ -4996,6 +4996,17 @@
                     "type": "null"
                   }
                 ]
+              },
+              "tools_unsupported": {
+                "oneOf": [
+                  {
+                    "$ref": "#/components/schemas/ToolsUnsupported",
+                    "description": "Set while the agent's model can't use tools and the operator has not turned them off;\nits turns wait."
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
               }
             }
           }
@@ -5146,6 +5157,29 @@
                 "type": "string",
                 "enum": [
                   "set_agent_tools"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "description": "The agent's model refused a request with tools (raised by the daemon). Approving turns\noff its tool groups and connectors so its waiting messages run as plain chat.",
+            "required": [
+              "agent",
+              "model",
+              "kind"
+            ],
+            "properties": {
+              "agent": {
+                "$ref": "#/components/schemas/AgentId"
+              },
+              "model": {
+                "type": "string"
+              },
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "use_without_tools"
                 ]
               }
             }
@@ -7111,6 +7145,29 @@
           "files",
           "web"
         ]
+      },
+      "ToolsUnsupported": {
+        "type": "object",
+        "description": "The agent's model refused a request with tools. The agent's messages wait until the operator\napproves the card to run it without tools, changes its provider or model, or retries. Kept in\nmemory: after a restart the next model call finds it again.",
+        "required": [
+          "model",
+          "reason",
+          "since"
+        ],
+        "properties": {
+          "model": {
+            "type": "string",
+            "description": "The model as the agent requested it."
+          },
+          "reason": {
+            "type": "string",
+            "description": "Which provider can't run the model with tools; never the upstream's words."
+          },
+          "since": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
       },
       "Transcript": {
         "type": "object",

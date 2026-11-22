@@ -15,6 +15,10 @@ All notable changes are listed here. The format follows
 - Guides under Settings: the wiki's user pages (`docs/wiki`), bundled into the
   app. New pages on connectors and OAuth (with a Gmail example), CLIs, tools
   and permissions, routines and memory, voice and calls, and troubleshooting.
+- A model that can't use tools (OpenRouter's "No endpoints found that support
+  tool use", Ollama's "does not support tools") no longer fails the agent's
+  messages: they wait, the agent shows **Model can't use tools**, and one card
+  offers to run it without tools (`tools_unsupported` on the agent view).
 
 ### Changed
 

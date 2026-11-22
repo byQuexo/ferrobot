@@ -14,7 +14,9 @@ use ferrobot_core::{
     Agent, AgentId, AgentName, AgentStatus, AvatarCharacter, CharacterBody, CharacterEyes,
     MailMessage, MailStatus, Sender,
 };
-use ferrobot_daemon::views::{AgentView, CredentialError, CredentialProblem, Presence};
+use ferrobot_daemon::views::{
+    AgentView, CredentialError, CredentialProblem, Presence, ToolsUnsupported,
+};
 use ferrobot_daemon::{UiEvent, spec};
 use ferrobot_store::{Room, RoomLine, StoredEvent};
 use serde_json::json;
@@ -202,6 +204,11 @@ fn ui_events_validate_against_schema() {
                 credential_error: Some(CredentialError {
                     kind: CredentialProblem::Rejected,
                     reason: "provider p rejected its API key: replace it in Settings, Vault".into(),
+                    since: OffsetDateTime::UNIX_EPOCH,
+                }),
+                tools_unsupported: Some(ToolsUnsupported {
+                    model: "dolphin".into(),
+                    reason: "or can't run dolphin with tools".into(),
                     since: OffsetDateTime::UNIX_EPOCH,
                 }),
             }),

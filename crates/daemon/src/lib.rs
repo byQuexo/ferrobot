@@ -14,6 +14,7 @@ pub mod files;
 pub mod hub;
 pub mod lifecycle;
 pub mod models;
+pub mod no_tools;
 pub mod oauth;
 pub mod pricing;
 pub mod proxy;

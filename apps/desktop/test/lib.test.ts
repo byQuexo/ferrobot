@@ -136,6 +136,23 @@ describe("format", () => {
       statusOf({ presence: "awake", credential_error: problem("rejected") }).label,
       "Key rejected",
     );
+    const noTools = {
+      model: "m",
+      reason: "or can't run m with tools",
+      since: "2026-01-01T12:00:00Z",
+    };
+    assert.deepEqual(
+      statusOf({ presence: "awake", credential_error: null, tools_unsupported: noTools }),
+      { presence: "error", label: "Model can't use tools" },
+    );
+    assert.equal(
+      statusOf({
+        presence: "awake",
+        credential_error: problem("missing"),
+        tools_unsupported: noTools,
+      }).label,
+      "Key missing",
+    );
   });
   it("relative times", () => {
     const now = Date.parse("2026-01-01T12:00:00Z");
@@ -275,12 +292,16 @@ describe("buildTimeline", () => {
     assert.equal(withoutRoomTurns([], [room, after], new Map()).roomTurn, false);
   });
 
-  it("shows a credential problem once, instead of its turn's error", () => {
+  it("shows a credential or tools problem once, instead of its turn's error", () => {
     const at = "2026-01-01T12:00:00Z";
     const notice = (id: number, turn: string): StoredEvent => ({
       ...ev(id, "credential_error", { kind: "missing", reason: "no key", turn_id: turn }, at),
       turn_id: null,
     });
+    const noTools: StoredEvent = {
+      ...ev(8, "tools_unsupported", { reason: "or can't run m with tools", turn_id: "t4" }, at),
+      turn_id: null,
+    };
     const items = buildTimeline(
       ME,
       [],
@@ -292,6 +313,8 @@ describe("buildTimeline", () => {
         notice(5, "t2"),
         ev(6, "turn_done", { outcome: "failed", error: "API Error: 400" }, at, "t2"),
         ev(7, "turn_done", { outcome: "failed", error: "boom" }, at, "t3"),
+        noTools,
+        ev(9, "turn_done", { outcome: "failed", error: "model request failed with 404" }, at, "t4"),
       ],
       new Map(),
       names,
@@ -303,6 +326,7 @@ describe("buildTimeline", () => {
         "Key missing: no key. Messages wait until it is fixed.",
         "Key missing: no key. Messages wait until it is fixed.",
         "boom",
+        "Model can't use tools: or can't run m with tools. Messages wait until you choose.",
       ],
     );
   });

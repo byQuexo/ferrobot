@@ -17,7 +17,7 @@ use ferrobot_store::{Tokens, UsageStatus};
 
 use crate::usage::{Call, Family, Meter};
 use crate::views::CredentialProblem;
-use crate::{AppState, credentials};
+use crate::{AppState, credentials, no_tools};
 
 /// Google access tokens live an hour; refresh well before.
 const GCLOUD_TOKEN_TTL: Duration = Duration::from_secs(45 * 60);
@@ -529,6 +529,8 @@ async fn forward(
     if family.is_some() && body_names_model(&route.api) {
         call.model_from_body(&body);
     }
+    // Only the chat completions driver can drop every tool; the other harnesses keep their own.
+    let sends_tools = family == Some(Family::ChatCompletions) && no_tools::sends_tools(&body);
     if let Some(q) = parts.uri.query() {
         url.push('?');
         url.push_str(q);
@@ -543,7 +545,7 @@ async fn forward(
     let upstream = with_credential(upstream, &route).body(body);
 
     tracing::debug!(agent = %agent.name, method = %parts.method, %path, "model request");
-    let response = match upstream.send().await {
+    let mut response = match upstream.send().await {
         Ok(r) => r,
         Err(e) => {
             tracing::warn!(agent = %agent.name, error = %e, "model upstream unreachable");
@@ -556,6 +558,9 @@ async fn forward(
     if route.secret.is_some() && refuses_credential(&route.api, response.status()) {
         let reason = route.rejected;
         credentials::set(&state, agent.id, CredentialProblem::Rejected, reason).await;
+    }
+    if sends_tools {
+        response = no_tools::check(&state, &agent, &call.model, response).await;
     }
     respond(response, family.map(|f| (f, call)))
 }

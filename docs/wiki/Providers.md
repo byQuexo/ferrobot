@@ -78,6 +78,9 @@ Notes per kind:
   enter a sandbox.
 - **Ollama** needs no key. Ollama must listen on the daemon's computer (or
   set `base_url`).
+- A model that can't use tools (some OpenRouter and Ollama models) holds the
+  agent's messages and asks you whether to run the agent without tools; see
+  [[Troubleshooting]].
 
 ## Voice providers
 
