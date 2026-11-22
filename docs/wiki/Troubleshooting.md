@@ -36,10 +36,12 @@ How to fix it:
 
 ## An agent never answers and its model can't use tools
 
-Every agent sends its tools with each model request. Some models have no
-tool support, for example OpenRouter models without an endpoint that takes
-tools ("No endpoints found that support tool use") or Ollama models that
-"do not support tools". The status under the agent's name then says
+Agents on the `openai` driver (OpenAI, Gemini, OpenRouter, Ollama and
+OpenAI-compatible providers) send their tools with each model request. Some
+models have no tool support, for example OpenRouter models without an
+endpoint that takes tools ("No endpoints found that support tool use") or
+Ollama models that "do not support tools". The status under the agent's name
+then says
 **Model can't use tools**, its messages wait, and a card in its chat asks:
 
 - **Use without tools**: the agent loses its tools and connectors and its
