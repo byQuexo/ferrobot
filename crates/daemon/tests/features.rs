@@ -6905,7 +6905,7 @@ async fn context_is_the_newest_call_since_the_last_new_chat() {
     assert_eq!(ctx["tokens"], Value::Null, "a new chat starts empty");
     d.state
         .store
-        .insert_usage(row(0, Some(10), UsageStatus::Ok))
+        .insert_usage(row(-60, Some(10), UsageStatus::Ok))
         .await
         .unwrap();
     let (_, ctx) = http(&d.ui, "GET", &path, None).await;
