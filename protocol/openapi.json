@@ -4237,6 +4237,133 @@
         }
       }
     },
+    "/v1/otel": {
+      "get": {
+        "tags": [
+          "settings"
+        ],
+        "summary": "Where finished turns' traces go.",
+        "operationId": "get_otel",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OtelView"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or wrong API token",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        }
+      },
+      "put": {
+        "tags": [
+          "settings"
+        ],
+        "summary": "Replaces the export settings. Each turn's trace then goes to the endpoint when the turn ends.",
+        "operationId": "put_otel",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/OtelSettings"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OtelView"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid endpoint or header name",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or wrong API token",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/otel/secret": {
+      "put": {
+        "tags": [
+          "settings"
+        ],
+        "summary": "Stores or removes the auth header's value, kept in the daemon's secret store.",
+        "operationId": "put_otel_secret",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/OtelSecret"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OtelView"
+                }
+              }
+            }
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or wrong API token",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/v1/previews": {
       "post": {
         "tags": [
@@ -7337,6 +7464,26 @@
           }
         }
       },
+      "ExportStatus": {
+        "type": "object",
+        "description": "How the last export went.",
+        "required": [
+          "at"
+        ],
+        "properties": {
+          "at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "error": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Why it failed; `null` when it went through."
+          }
+        }
+      },
       "GeneralSettings": {
         "type": "object",
         "description": "Daemon-wide settings. Omitted fields take their defaults.",
@@ -7834,6 +7981,84 @@
             "description": "Open this in a browser on the daemon's computer to sign in."
           }
         }
+      },
+      "OtelSecret": {
+        "type": "object",
+        "properties": {
+          "value": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "The auth header's value, e.g. `Bearer …` or `Basic …`; `null` removes it."
+          }
+        }
+      },
+      "OtelSettings": {
+        "type": "object",
+        "description": "Where finished turns' traces go. The auth header's value is in the secret store.",
+        "properties": {
+          "enabled": {
+            "type": "boolean",
+            "default": false
+          },
+          "endpoint": {
+            "type": "string",
+            "description": "The OTLP/HTTP traces URL, e.g. `http://localhost:6006/v1/traces`.",
+            "default": ""
+          },
+          "header": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "The auth header's name, e.g. `Authorization`; `null`: none.",
+            "default": null
+          },
+          "project": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Sent as the `openinference.project.name` resource attribute (Phoenix's project).",
+            "default": null
+          },
+          "content": {
+            "type": "boolean",
+            "description": "Also send tool inputs and the turn's reply; off: only names, times, tokens and errors.",
+            "default": false
+          }
+        }
+      },
+      "OtelView": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/OtelSettings"
+          },
+          {
+            "type": "object",
+            "required": [
+              "has_secret"
+            ],
+            "properties": {
+              "has_secret": {
+                "type": "boolean",
+                "description": "The auth header's value is in the secret store; it is never returned."
+              },
+              "last_export": {
+                "oneOf": [
+                  {
+                    "$ref": "#/components/schemas/ExportStatus"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              }
+            }
+          }
+        ],
+        "description": "The export settings, whether the header's value is stored, and how the last export went."
       },
       "PlanLimits": {
         "type": "object",

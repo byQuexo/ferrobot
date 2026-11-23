@@ -44,6 +44,11 @@ export const GUIDES: readonly GuideInfo[] = [
     about: "Tokens and cost estimates per agent and model.",
   },
   {
+    page: "Traces",
+    title: "Traces",
+    about: "A turn’s steps on a timeline, and export to Phoenix or Langfuse.",
+  },
+  {
     page: "Troubleshooting",
     title: "Troubleshooting",
     about: "Docker, keys, the runner image and macOS warnings.",

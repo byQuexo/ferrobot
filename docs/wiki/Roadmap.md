@@ -30,7 +30,9 @@ In rough order. Nothing here has a date.
    over OpenTelemetry (OTLP, GenAI conventions) to an endpoint you choose,
    such as Langfuse, Phoenix, Grafana Tempo or Jaeger. Export is off by
    default; its keys stay in the keychain, and prompts and replies are left
-   out unless you turn them on.
+   out unless you turn them on. **Done:** the trace view (model and tool
+   calls) and the export ([[Traces]]); **open:** approval waits and handoffs
+   to other agents.
 6. **Later.** Moving warm agents to cold sleep under memory pressure (F4d), a
    native macOS app on the same `/v1` API, and optional self-hosted
    S3-compatible storage. Smaller ideas are on [[Ideas]].

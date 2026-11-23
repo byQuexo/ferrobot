@@ -124,6 +124,8 @@ Principles:
 - `crates/daemon/src/lifecycle.rs`, `supervisor.rs`, `scheduler.rs`, `runner_ws.rs`.
 - `crates/daemon/src/trace.rs` — a turn as a timeline (model calls from usage rows tagged
   with the turn, tool calls from its events); `GET /v1/agents/{id}/turns/{turn_id}/trace`.
+  `otel.rs` — sends each finished turn's trace to the operator's OTLP/HTTP endpoint
+  (hand-encoded protobuf; `/v1/otel`, header value in the keychain as `otel:header`).
 - `crates/daemon/src/tasks.rs` — tracked tasks: automatic report and reminder;
   `crates/store/src/tasks.rs` — task state from `task` events and the mailbox.
 - `crates/mcp/src/tools.rs` — MCP tools; `crates/mcp/src/lib.rs` — `MailboxNotifier`.

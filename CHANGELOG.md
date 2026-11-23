@@ -23,6 +23,11 @@ All notable changes are listed here. The format follows
   ferrobot passes only these (`--settings`, `--plugin-dir`); your own Claude
   Code settings stay out, and agents cannot change them
   (`/v1/claude-code/settings`, `/v1/claude-code/plugins`).
+- Settings → Traces: each finished turn's trace goes to Phoenix, Langfuse or
+  any OpenTelemetry backend over OTLP/HTTP (protobuf, OpenInference and GenAI
+  attributes), with presets, keys in the keychain and the last export's
+  status. Off by default; tool inputs and replies only with **Include
+  content** (`/v1/otel`, `/v1/otel/secret`). Guide: Traces.
 
 ### Changed
 

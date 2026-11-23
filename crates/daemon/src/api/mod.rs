@@ -8,6 +8,7 @@ pub(crate) mod diagnostics;
 pub(crate) mod files;
 pub(crate) mod groups;
 pub(crate) mod memory;
+pub(crate) mod otel;
 pub(crate) mod providers;
 pub(crate) mod routines;
 pub(crate) mod sandbox;
@@ -141,6 +142,8 @@ fn integrations() -> Router<AppState> {
             "/v1/claude-code/plugins",
             get(providers::claude_code_plugins),
         )
+        .route("/v1/otel", get(otel::get_otel).put(otel::put_otel))
+        .route("/v1/otel/secret", put(otel::put_otel_secret))
         .route(
             "/v1/provider-kinds/{kind}/models",
             get(providers::kind_models),

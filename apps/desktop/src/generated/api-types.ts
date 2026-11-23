@@ -1000,6 +1000,41 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/otel": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Where finished turns' traces go. */
+        get: operations["get_otel"];
+        /** Replaces the export settings. Each turn's trace then goes to the endpoint when the turn ends. */
+        put: operations["put_otel"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/otel/secret": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /** Stores or removes the auth header's value, kept in the daemon's secret store. */
+        put: operations["put_otel_secret"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/previews": {
         parameters: {
             query?: never;
@@ -1961,6 +1996,13 @@ export interface components {
             cmd: string[];
             workdir?: string | null;
         };
+        /** @description How the last export went. */
+        ExportStatus: {
+            /** Format: date-time */
+            at: string;
+            /** @description Why it failed; `null` when it went through. */
+            error?: string | null;
+        };
         /** @description Daemon-wide settings. Omitted fields take their defaults. */
         GeneralSettings: {
             /**
@@ -2161,6 +2203,41 @@ export interface components {
         OAuthStart: {
             /** @description Open this in a browser on the daemon's computer to sign in. */
             authorization_url: string;
+        };
+        OtelSecret: {
+            /** @description The auth header's value, e.g. `Bearer …` or `Basic …`; `null` removes it. */
+            value?: string | null;
+        };
+        /** @description Where finished turns' traces go. The auth header's value is in the secret store. */
+        OtelSettings: {
+            /** @default false */
+            enabled: boolean;
+            /**
+             * @description The OTLP/HTTP traces URL, e.g. `http://localhost:6006/v1/traces`.
+             * @default
+             */
+            endpoint: string;
+            /**
+             * @description The auth header's name, e.g. `Authorization`; `null`: none.
+             * @default null
+             */
+            header: string | null;
+            /**
+             * @description Sent as the `openinference.project.name` resource attribute (Phoenix's project).
+             * @default null
+             */
+            project: string | null;
+            /**
+             * @description Also send tool inputs and the turn's reply; off: only names, times, tokens and errors.
+             * @default false
+             */
+            content: boolean;
+        };
+        /** @description The export settings, whether the header's value is stored, and how the last export went. */
+        OtelView: components["schemas"]["OtelSettings"] & {
+            /** @description The auth header's value is in the secret store; it is never returned. */
+            has_secret: boolean;
+            last_export?: components["schemas"]["ExportStatus"] | null;
         };
         PlanLimits: {
             five_hour?: components["schemas"]["LimitWindow"] | null;
@@ -6218,6 +6295,115 @@ export interface operations {
                 };
                 content: {
                     "text/html": string;
+                };
+            };
+            /** @description Missing or wrong API token */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+        };
+    };
+    get_otel: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OtelView"];
+                };
+            };
+            /** @description Missing or wrong API token */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+        };
+    };
+    put_otel: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["OtelSettings"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OtelView"];
+                };
+            };
+            /** @description Invalid endpoint or header name */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Missing or wrong API token */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+        };
+    };
+    put_otel_secret: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["OtelSecret"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OtelView"];
+                };
+            };
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
                 };
             };
             /** @description Missing or wrong API token */

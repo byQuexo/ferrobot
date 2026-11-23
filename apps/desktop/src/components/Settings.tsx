@@ -14,6 +14,7 @@ import {
   RefreshCw,
   Stethoscope,
   Terminal,
+  Waypoints,
   X,
 } from "lucide-preact";
 
@@ -29,6 +30,7 @@ import { DiagnosticsSettings } from "./DiagnosticsSettings.tsx";
 import { Guides } from "./Guides.tsx";
 import { Memory } from "./InfoPanel.tsx";
 import { ProvidersSettings } from "./ProvidersSettings.tsx";
+import { TracesSettings } from "./TracesSettings.tsx";
 import { UpdatesSettings } from "./UpdatesSettings.tsx";
 import { VaultSettings } from "./VaultSettings.tsx";
 import { VoiceSettings } from "./VoiceSettings.tsx";
@@ -42,6 +44,7 @@ export type SettingsSection =
   | "connectors"
   | "clis"
   | "memory"
+  | "traces"
   | "voice"
   | "appearance"
   | "keyboard"
@@ -73,6 +76,13 @@ export const SECTIONS: [SettingsSection, string, string, typeof KeyRound, string
     "Global memory",
     "Facts every agent can recall. Agents add to it; you can edit and remove entries.",
     Brain,
+  ],
+  [
+    "traces",
+    "Traces",
+    "Send each turn’s trace to Phoenix, Langfuse or any OpenTelemetry backend.",
+    Waypoints,
+    "Traces",
   ],
   [
     "connectors",
@@ -107,7 +117,7 @@ export const SECTIONS: [SettingsSection, string, string, typeof KeyRound, string
 /** The sidebar's categories, in order; together they hold every section once. */
 const GROUPS: [string, SettingsSection[]][] = [
   ["General", ["appearance", "keyboard", "voice"]],
-  ["Agents", ["providers", "agents", "claude-code", "memory"]],
+  ["Agents", ["providers", "agents", "claude-code", "memory", "traces"]],
   ["Tools & keys", ["connectors", "clis", "vault"]],
   ["App", ["updates", "diagnostics", "guides"]],
 ];
@@ -281,6 +291,7 @@ export function Settings(props: {
         )}
         {props.section === "clis" && <ClisSettings />}
         {props.section === "memory" && <Memory agent={null} />}
+        {props.section === "traces" && <TracesSettings />}
         {props.section === "voice" && <VoiceSettings />}
         {props.section === "updates" && <UpdatesSettings />}
         {props.section === "diagnostics" && <DiagnosticsSettings />}

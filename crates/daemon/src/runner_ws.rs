@@ -267,6 +267,7 @@ async fn handle_frame(state: &AppState, agent: &Agent, done_tx: &mpsc::Sender<Do
                     json!({ "outcome": outcome, "result": result, "error": error }),
                 )
                 .await;
+            crate::otel::turn_done(state, agent.id, turn_id.clone());
             let _ = done_tx
                 .send(Done {
                     turn_id,

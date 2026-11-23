@@ -7688,3 +7688,67 @@ async fn only_the_operator_sets_claude_code_hooks_and_plugins() {
     .await;
     assert_eq!(status, 401);
 }
+
+#[tokio::test]
+async fn a_finished_turn_goes_to_the_trace_endpoint_as_protobuf() {
+    let got: Arc<Mutex<Vec<(String, String, usize)>>> = Arc::default();
+    let sink = got.clone();
+    let receiver = axum::Router::new().route(
+        "/v1/traces",
+        axum::routing::post(move |headers: HeaderMap, body: axum::body::Bytes| {
+            let sink = sink.clone();
+            async move {
+                let header = |k: &str| {
+                    headers
+                        .get(k)
+                        .and_then(|v| v.to_str().ok())
+                        .unwrap_or_default()
+                        .to_owned()
+                };
+                sink.lock().unwrap().push((
+                    header("content-type"),
+                    header("authorization"),
+                    body.len(),
+                ));
+            }
+        }),
+    );
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let addr = listener.local_addr().unwrap();
+    tokio::spawn(async move { axum::serve(listener, receiver).await });
+
+    let backend = Arc::new(StatefulBackend::default());
+    let d = start(backend.clone(), None, "127.0.0.1:0").await;
+    let settings = json!({
+        "enabled": true,
+        "endpoint": format!("http://{addr}/v1/traces"),
+        "header": "Authorization",
+    });
+    let (status, body) = http(&d.ui, "PUT", "/v1/otel", Some(settings)).await;
+    assert_eq!(status, 200, "{body}");
+    let secret = json!({"value": "Bearer phoenix-key"});
+    let (_, view) = http(&d.ui, "PUT", "/v1/otel/secret", Some(secret)).await;
+    assert_eq!(view["has_secret"], true);
+    assert!(!view.to_string().contains("phoenix-key"), "{view}");
+
+    let id = create(&d, json!({"name": "ada"})).await["id"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    let mut ws = connect_runner(&d.agents, &backend.token("ada")).await;
+    let path = format!("/v1/agents/{id}/messages");
+    let (status, _) = http(&d.ui, "POST", &path, Some(json!({"body": "hello"}))).await;
+    assert_eq!(status, 202);
+    say_turn(&mut ws, "Hi.").await;
+    let sent = eventually("an exported trace", Duration::from_secs(8), || async {
+        got.lock().unwrap().first().cloned()
+    })
+    .await;
+    assert_eq!(
+        (sent.0.as_str(), sent.1.as_str()),
+        ("application/x-protobuf", "Bearer phoenix-key")
+    );
+    assert!(sent.2 > 0);
+    let (_, view) = http(&d.ui, "GET", "/v1/otel", None).await;
+    assert_eq!(view["last_export"]["error"], Value::Null, "{view}");
+}

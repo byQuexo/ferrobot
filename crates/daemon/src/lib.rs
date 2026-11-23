@@ -19,6 +19,7 @@ pub mod logs;
 pub mod models;
 pub mod no_tools;
 pub mod oauth;
+pub mod otel;
 pub mod pricing;
 pub mod proxy;
 pub mod runner_ws;

@@ -46,6 +46,8 @@ export type ClaudeCodeSettings = Schemas["ClaudeCodeSettings"];
 export type Hook = Schemas["Hook"];
 export type HookEvent = Schemas["HookEvent"];
 export type InstalledPlugin = Schemas["InstalledPlugin"];
+export type OtelSettings = Schemas["OtelSettings"];
+export type OtelView = Schemas["OtelView"];
 export type ModelList = Schemas["ModelList"];
 export type ModelInfo = Schemas["ModelInfo"];
 export type VoiceView = Schemas["VoiceView"];
@@ -348,6 +350,10 @@ export class DaemonClient {
   settings = (): Promise<GeneralSettings> => this.#request("GET", "/v1/settings");
   updateSettings = (s: GeneralSettings): Promise<GeneralSettings> =>
     this.#request("PUT", "/v1/settings", s);
+  otel = (): Promise<OtelView> => this.#request("GET", "/v1/otel");
+  updateOtel = (s: OtelSettings): Promise<OtelView> => this.#request("PUT", "/v1/otel", s);
+  setOtelSecret = (value: string | null): Promise<OtelView> =>
+    this.#request("PUT", "/v1/otel/secret", { value });
   updateInfo = (): Promise<UpdateInfo> => this.#request("GET", "/v1/update");
   diagnostics = (): Promise<Diagnostics> => this.#request("GET", "/v1/diagnostics");
   diagnosticsLog = (lines: number): Promise<DiagnosticsLog> =>

@@ -72,6 +72,7 @@ import { parseBlocks, parseInline } from "../src/lib/markdown.ts";
 import { modelLabel, modelOptions, withSaved } from "../src/lib/models.ts";
 import { addTag, contextMeter } from "../src/lib/agent-meta.ts";
 import { moveId, orderAgents, pickSelection } from "../src/lib/order.ts";
+import { authValue, backendOf, OTEL_ENDPOINTS } from "../src/lib/otel.ts";
 import { keyLabel, matchShortcut, SHORTCUTS, type KeyPress } from "../src/lib/shortcuts.ts";
 import { pollOutcome } from "../src/lib/update.ts";
 import {
@@ -2370,5 +2371,20 @@ describe("local server commands", () => {
       commandLine(["npx", "-y", "@scope/server", "/Users/me/My Vault"]),
       "npx -y @scope/server '/Users/me/My Vault'",
     );
+  });
+});
+
+describe("trace export settings", () => {
+  it("knows the presets and builds their auth values", () => {
+    assert.equal(backendOf(OTEL_ENDPOINTS.langfuse), "langfuse");
+    assert.equal(backendOf("https://us.cloud.langfuse.com/api/public/otel/v1/traces"), "langfuse");
+    assert.equal(backendOf(OTEL_ENDPOINTS.phoenix), "phoenix");
+    assert.equal(backendOf("https://app.phoenix.arize.com/s/me/v1/traces"), "phoenix");
+    assert.equal(backendOf("http://localhost:4318/v1/traces"), "other");
+    assert.equal(authValue("phoenix", " k1 "), "Bearer k1");
+    assert.equal(authValue("phoenix", ""), null);
+    assert.equal(authValue("langfuse", "pk-lf-1", "sk-lf-2"), `Basic ${btoa("pk-lf-1:sk-lf-2")}`);
+    assert.equal(authValue("langfuse", "pk-lf-1", ""), null);
+    assert.equal(authValue("other", " Api-Key x "), "Api-Key x");
   });
 });
