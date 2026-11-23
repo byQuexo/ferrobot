@@ -1,5 +1,4 @@
 import type { JSX } from "preact";
-import { createPortal } from "preact/compat";
 import { useEffect, useState } from "preact/hooks";
 import { Check, Copy, Maximize2 } from "lucide-preact";
 
@@ -86,20 +85,17 @@ export function CodeBlock(props: { lang: PreviewLang; code: string }): JSX.Eleme
         </button>
       </div>
       <div class="block-body">{view(false)}</div>
-      {/* In the body: a chat row's entry animation would otherwise hold the fixed overlay. */}
-      {expanded &&
-        createPortal(
-          <Dialog
-            title={label}
-            full
-            onClose={() => {
-              setExpanded(false);
-            }}
-          >
-            <div class="block-expanded">{view(true)}</div>
-          </Dialog>,
-          document.body,
-        )}
+      {expanded && (
+        <Dialog
+          title={label}
+          full
+          onClose={() => {
+            setExpanded(false);
+          }}
+        >
+          <div class="block-expanded">{view(true)}</div>
+        </Dialog>
+      )}
     </div>
   );
 }
