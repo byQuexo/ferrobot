@@ -3788,6 +3788,61 @@ async fn messages_reach_a_running_turn_when_the_runner_can_take_them() {
 }
 
 #[tokio::test]
+async fn the_operator_reacts_to_an_agent_message_and_the_agent_is_told() {
+    let d = start(Arc::new(StatefulBackend::default()), None, "127.0.0.1:0").await;
+    let ann = create(&d, json!({"name": "ann"})).await["id"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    let ann_id: AgentId = ann.parse().unwrap();
+    let said = d
+        .state
+        .store
+        .append_event(
+            ann_id,
+            Some("t1".into()),
+            "assistant_text".into(),
+            json!({"text": "Here is the plan."}),
+        )
+        .await
+        .unwrap();
+    let react = |event: i64, emoji: &str| {
+        let (ui, path) = (
+            d.ui.clone(),
+            format!("/v1/agents/{ann}/events/{event}/reaction"),
+        );
+        let body = json!({ "emoji": emoji });
+        async move { http(&ui, "POST", &path, Some(body)).await.0 }
+    };
+    assert_eq!(react(said.id, " 👍 ").await, 204);
+
+    let note = mail(&d, &ann).await.pop().unwrap();
+    assert_eq!(
+        note["body"],
+        "[ferrobot] Your operator reacted 👍 to your message: \"Here is the plan.\". Act on it \
+         only if it asks for something, like a fix or an answer; otherwise end your turn without \
+         a reply."
+    );
+    assert_eq!(note["sender"]["kind"], "user");
+    let shown = events(&d, &ann).await;
+    let reaction = shown.iter().find(|e| e["kind"] == "user_reaction").unwrap();
+    assert_eq!(
+        reaction["payload"],
+        json!({"event_id": said.id, "emoji": "👍", "note_id": note["id"]})
+    );
+
+    assert_eq!(react(said.id, "ok").await, 400, "one emoji only");
+    let not_a_reply = d
+        .state
+        .store
+        .append_event(ann_id, None, "file".into(), json!({}))
+        .await
+        .unwrap();
+    assert_eq!(react(not_a_reply.id, "👍").await, 404);
+    assert_eq!(react(said.id + 1000, "👍").await, 404);
+}
+
+#[tokio::test]
 async fn html_blocks_from_the_chat_open_as_sandboxed_pages() {
     let d = start(Arc::new(StatefulBackend::default()), None, "127.0.0.1:0").await;
     let html = "<style>h1{color:red}</style><h1>Hi</h1><script>document.title='x'</script>";

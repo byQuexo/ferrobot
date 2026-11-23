@@ -152,6 +152,27 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/agents/{id}/events/{event_id}/reaction": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Reacts to one of the agent's messages (an `assistant_text` event) with one emoji. The agent
+         *     hears of it in a short `[ferrobot]` note from the operator, which starts a turn; the chat shows
+         *     the emoji on its message (a `user_reaction` event naming the note as `note_id`), not the note.
+         */
+        post: operations["react"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/agents/{id}/exec": {
         parameters: {
             query?: never;
@@ -2165,6 +2186,10 @@ export interface components {
          * @enum {string}
          */
         QuestionKind: "single" | "multi" | "text" | "secret";
+        ReactionRequest: {
+            /** @description One emoji, e.g. 👍. A new reaction replaces your earlier one on that message. */
+            emoji: string;
+        };
         /**
          * @description A voice call with two or more agents, kept as history once the call ended; or, with a name,
          *     a group chat, kept until deleted.
@@ -3347,6 +3372,60 @@ export interface operations {
                 };
             };
             /** @description Unknown agent */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+        };
+    };
+    react: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Agent id (UUID) */
+                id: string;
+                /** @description Id of the agent's `assistant_text` event */
+                event_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ReactionRequest"];
+            };
+        };
+        responses: {
+            /** @description Recorded, and the agent was told */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Not one emoji */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Missing or wrong API token */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Unknown agent or message */
             404: {
                 headers: {
                     [name: string]: unknown;

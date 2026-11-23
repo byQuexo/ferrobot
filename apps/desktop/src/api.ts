@@ -208,6 +208,9 @@ export class DaemonClient {
       "application/octet-stream",
     );
   markRead = (id: string): Promise<void> => this.#request("POST", `/v1/agents/${id}/read`);
+  /** Reacts to the agent's message (its `assistant_text` event); the agent is told. */
+  react = (agent: string, event: number, emoji: string): Promise<void> =>
+    this.#request("POST", `/v1/agents/${agent}/events/${String(event)}/reaction`, { emoji });
   sharedFile = (agent: string, file: number): Promise<SharedFile> =>
     this.#request("GET", `/v1/agents/${agent}/files/${String(file)}`);
   /** A ```html block from the chat, served by the daemon as a sandboxed page. */

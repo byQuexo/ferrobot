@@ -1,8 +1,9 @@
 //! Mailbox, events and turn control: everything the chat view needs.
 
-use axum::Json;
 use axum::extract::{Path, Query, State};
 use axum::http::StatusCode;
+use axum::routing::{get, post};
+use axum::{Json, Router};
 use ferrobot_core::question::{Approval, QuestionAnswer, QuestionAnswered, QuestionEvent};
 use ferrobot_core::{MailMessage, Sender};
 use ferrobot_store::StoredEvent;
@@ -13,6 +14,26 @@ use super::{ApiResult, MAX_TEXT_BYTES, parse_id};
 use crate::error::{ApiError, ErrorBody};
 use crate::views::AgentView;
 use crate::{AppState, UiEvent};
+
+pub(super) fn router() -> Router<AppState> {
+    Router::new()
+        .route(
+            "/v1/agents/{id}/messages",
+            get(list_messages).post(post_message),
+        )
+        .route("/v1/agents/{id}/events/{event_id}/reaction", post(react))
+        .route("/v1/agents/{id}/events", get(list_events))
+        .route("/v1/agents/{id}/read", post(mark_read))
+        .route("/v1/conversations", get(list_conversations))
+        .route("/v1/conversations/{a}/{b}", get(conversation_thread))
+        .route("/v1/agents/{id}/interrupt", post(interrupt))
+        .route("/v1/agents/{id}/retry", post(retry))
+        .route("/v1/agents/{id}/new-session", post(new_session))
+        .route(
+            "/v1/agents/{id}/questions/{qid}/answer",
+            post(answer_question),
+        )
+}
 
 #[derive(Debug, Deserialize, ToSchema)]
 pub(crate) struct PostMessage {
@@ -49,6 +70,62 @@ pub(crate) async fn post_message(
         message: msg.clone(),
     });
     Ok((StatusCode::ACCEPTED, Json(msg)))
+}
+
+#[derive(Debug, Deserialize, ToSchema)]
+pub(crate) struct ReactionRequest {
+    /// One emoji, e.g. 👍. A new reaction replaces your earlier one on that message.
+    emoji: String,
+}
+
+/// How much of the agent's message its reaction note quotes.
+const REACTION_QUOTE_CHARS: usize = 200;
+
+/// Reacts to one of the agent's messages (an `assistant_text` event) with one emoji. The agent
+/// hears of it in a short `[ferrobot]` note from the operator, which starts a turn; the chat shows
+/// the emoji on its message (a `user_reaction` event naming the note as `note_id`), not the note.
+#[utoipa::path(post, path = "/v1/agents/{id}/events/{event_id}/reaction", tag = "chat",
+    params(("id" = String, Path, description = "Agent id (UUID)"),
+        ("event_id" = i64, Path, description = "Id of the agent's `assistant_text` event")),
+    request_body = ReactionRequest,
+    responses((status = 204, description = "Recorded, and the agent was told"),
+        (status = 400, description = "Not one emoji", body = ErrorBody),
+        (status = 404, description = "Unknown agent or message", body = ErrorBody)))]
+pub(crate) async fn react(
+    State(state): State<AppState>,
+    Path((id, event_id)): Path<(String, i64)>,
+    Json(req): Json<ReactionRequest>,
+) -> Result<StatusCode, ApiError> {
+    let id = parse_id(&id)?;
+    let emoji = req.emoji.trim();
+    if !ferrobot_core::is_reaction(emoji) {
+        return Err(ApiError::BadRequest(
+            "emoji must be one emoji, like 👍".into(),
+        ));
+    }
+    let event = state.store.get_event(id, event_id).await?;
+    if event.kind != "assistant_text" {
+        return Err(ApiError::NotFound("message not found".into()));
+    }
+    let text = event.payload["text"].as_str().unwrap_or_default();
+    let mut quote: String = text.chars().take(REACTION_QUOTE_CHARS).collect();
+    if quote.len() < text.len() {
+        quote.push('…');
+    }
+    let body = format!(
+        "[ferrobot] Your operator reacted {emoji} to your message: \"{quote}\". Act on it only \
+         if it asks for something, like a fix or an answer; otherwise end your turn without a reply."
+    );
+    let note = state
+        .store
+        .enqueue_message(Sender::User, id, body, None)
+        .await?;
+    let payload = serde_json::json!({ "event_id": event_id, "emoji": emoji, "note_id": note.id });
+    // Before the note is published, so the chat hides it from the start.
+    state.record(id, None, "user_reaction", payload).await;
+    state.message_arrived(id);
+    state.publish(UiEvent::Message { message: note });
+    Ok(StatusCode::NO_CONTENT)
 }
 
 /// The agent's conversation: messages to and from it, oldest first (last 200). Call room turns

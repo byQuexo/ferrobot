@@ -21,6 +21,7 @@ import {
   RotateCcw,
   ShieldAlert,
   SlidersHorizontal,
+  Smile,
   Square,
   Sun,
   UserPlus,
@@ -348,6 +349,56 @@ export function Chat(props: {
   );
 }
 
+const REACTIONS = ["👍", "❤️", "😂", "🎉", "🤔", "👎"];
+
+/** Your emoji on an agent's message; the agent hears of it and may act on it. */
+function ReactButton(props: { agent: string; event: number; current: string | null }): JSX.Element {
+  const { client, run } = useApp();
+  const [open, setOpen] = useState(false);
+  return (
+    <span
+      class="react"
+      onFocusOut={(e) => {
+        if (!e.currentTarget.contains(e.relatedTarget as Node | null)) setOpen(false);
+      }}
+      onKeyDown={(e) => {
+        if (e.key === "Escape") setOpen(false);
+      }}
+    >
+      <button
+        type="button"
+        class="react-btn"
+        aria-label="React"
+        title="React"
+        aria-expanded={open}
+        onClick={() => {
+          setOpen(!open);
+        }}
+      >
+        <Smile size={14} />
+      </button>
+      {open && (
+        <span class="react-pick" role="menu" aria-label="React with">
+          {REACTIONS.map((emoji) => (
+            <button
+              key={emoji}
+              type="button"
+              role="menuitemradio"
+              aria-checked={props.current === emoji}
+              onClick={() => {
+                setOpen(false);
+                void run(() => client.react(props.agent, props.event, emoji));
+              }}
+            >
+              {emoji}
+            </button>
+          ))}
+        </span>
+      )}
+    </span>
+  );
+}
+
 /** "N messages with <peer>": collapsed agent-to-agent mail, expandable inline. */
 function ExchangeHint(props: { item: Exchange; agent: Agent }): JSX.Element {
   const { item, agent } = props;
@@ -474,7 +525,19 @@ function Item(props: {
             class={`bubble-agent${item.streaming ? " streaming" : ""}${isPass(item.text) ? " pass" : ""}`}
           >
             <RichText text={item.text} files={props.files} />
-            {!item.streaming && <span class="meta">{clockTime(item.at)}</span>}
+            {!item.streaming && (
+              <span class="meta msg-foot">
+                {clockTime(item.at)}
+                {item.reaction && (
+                  <span class="reaction-mine" title="Your reaction">
+                    {item.reaction}
+                  </span>
+                )}
+                {item.id !== null && (
+                  <ReactButton agent={agent.id} event={item.id} current={item.reaction} />
+                )}
+              </span>
+            )}
           </div>
         </div>
       );

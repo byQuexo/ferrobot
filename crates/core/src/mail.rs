@@ -112,6 +112,19 @@ pub struct MailMessage {
     pub created_at: OffsetDateTime,
 }
 
+/// Longest emoji a reaction takes, in bytes; family and flag sequences fit.
+const MAX_EMOJI_BYTES: usize = 32;
+
+/// Whether `emoji` (trimmed) passes as one emoji reaction: short, without letters, digits or
+/// spaces.
+pub fn is_reaction(emoji: &str) -> bool {
+    !emoji.is_empty()
+        && emoji.len() <= MAX_EMOJI_BYTES
+        && !emoji
+            .chars()
+            .any(|c| c.is_ascii_alphanumeric() || c.is_whitespace())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -135,6 +148,16 @@ mod tests {
             MailStatus::Failed,
         ] {
             assert_eq!(s.as_str().parse::<MailStatus>().unwrap(), s);
+        }
+    }
+
+    #[test]
+    fn reactions_are_one_short_emoji() {
+        for ok in ["👍", "❤️", "👨‍👩‍👧", "🇩🇪"] {
+            assert!(is_reaction(ok), "{ok}");
+        }
+        for bad in ["", "ok", "👍 👍", "1️⃣", &"👍".repeat(9)] {
+            assert!(!is_reaction(bad), "{bad}");
         }
     }
 }

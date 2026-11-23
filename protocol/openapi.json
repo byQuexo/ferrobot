@@ -897,6 +897,81 @@
         }
       }
     },
+    "/v1/agents/{id}/events/{event_id}/reaction": {
+      "post": {
+        "tags": [
+          "chat"
+        ],
+        "summary": "Reacts to one of the agent's messages (an `assistant_text` event) with one emoji. The agent\nhears of it in a short `[ferrobot]` note from the operator, which starts a turn; the chat shows\nthe emoji on its message (a `user_reaction` event naming the note as `note_id`), not the note.",
+        "operationId": "react",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "Agent id (UUID)",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "event_id",
+            "in": "path",
+            "description": "Id of the agent's `assistant_text` event",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ReactionRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "204": {
+            "description": "Recorded, and the agent was told"
+          },
+          "400": {
+            "description": "Not one emoji",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or wrong API token",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Unknown agent or message",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/v1/agents/{id}/exec": {
       "post": {
         "tags": [
@@ -7809,6 +7884,18 @@
           "text",
           "secret"
         ]
+      },
+      "ReactionRequest": {
+        "type": "object",
+        "required": [
+          "emoji"
+        ],
+        "properties": {
+          "emoji": {
+            "type": "string",
+            "description": "One emoji, e.g. 👍. A new reaction replaces your earlier one on that message."
+          }
+        }
       },
       "Room": {
         "type": "object",

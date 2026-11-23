@@ -1075,3 +1075,19 @@ kbd { padding: 2px 8px; border: 1px solid var(--border-strong); border-radius: 6
 }
 .mention-pick li { display: flex; align-items: center; gap: 8px; padding: 6px 8px; border-radius: 8px; cursor: pointer; font-size: 14px; }
 .mention-pick li[aria-selected="true"], .mention-pick li:hover { background: var(--surface-2); }
+
+/* Your reaction on an agent's message: the emoji, and the picker behind the smiley */
+.bubble-agent > .meta.msg-foot { display: flex; align-items: center; gap: 6px; }
+.reaction-mine { padding: 0 6px; border-radius: 999px; background: var(--surface-2); font-size: 14px; line-height: 22px; }
+.react { position: relative; display: inline-flex; }
+.react-btn { display: inline-flex; padding: 3px; border: none; border-radius: 6px; background: none; color: var(--muted); cursor: pointer; opacity: 0; transition: opacity 0.15s var(--ease); }
+.bubble-agent:hover .react-btn, .react-btn:focus-visible, .react-btn[aria-expanded="true"] { opacity: 1; }
+.react-btn:hover { background: var(--surface-2); color: var(--text); }
+.react-pick {
+  position: absolute; left: 0; bottom: calc(100% + 4px); z-index: 20; display: flex; gap: 2px; padding: 4px;
+  border: 1px solid var(--border); border-radius: 999px; background: var(--surface); box-shadow: 0 8px 24px rgb(0 0 0 / 0.25);
+}
+.react-pick button { width: 32px; height: 32px; border: none; border-radius: 50%; background: none; font-size: 18px; cursor: pointer; }
+.react-pick button:hover, .react-pick button[aria-checked="true"] { background: var(--surface-2); }
+@media (prefers-reduced-motion: reduce) { .react-btn { transition: none; } }
+

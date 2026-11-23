@@ -19,7 +19,17 @@ export type TimelineItem =
   | { type: "incoming"; key: string; at: string; text: string; from: string; peerId: string }
   | { type: "routine"; key: string; at: string; text: string; routine: string | null }
   | { type: "outgoing"; key: string; at: string; text: string; to: string; peerId: string }
-  | { type: "assistant"; key: string; at: string; text: string; streaming: boolean }
+  | {
+      type: "assistant";
+      key: string;
+      at: string;
+      text: string;
+      streaming: boolean;
+      /** Its `assistant_text` event; `null` while it streams. */
+      id: number | null;
+      /** The operator's emoji on this message. */
+      reaction: string | null;
+    }
   | {
       type: "tool";
       key: string;
@@ -148,6 +158,9 @@ export function buildTimeline(
   const answers = new Map<number, QuestionAnswered>();
   // An agent's reaction shows on the operator's message; a newer one replaces it.
   const reactions = new Map<number, string>();
+  // The operator's shows on the agent's message; the note that told the agent stays hidden.
+  const mine = new Map<number, string>();
+  const notes = new Set<number>();
   for (const e of events) {
     const p = e.payload as Payload;
     if (e.kind === "question_answered") {
@@ -155,6 +168,9 @@ export function buildTimeline(
       answers.set(a.question, a);
     } else if (e.kind === "reaction" && typeof p["message_id"] === "number") {
       reactions.set(p["message_id"], str(p["emoji"]));
+    } else if (e.kind === "user_reaction" && typeof p["event_id"] === "number") {
+      mine.set(p["event_id"], str(p["emoji"]));
+      if (typeof p["note_id"] === "number") notes.add(p["note_id"]);
     }
   }
   const answerMessages = new Set([...answers.values()].map((a) => a.message_id));
@@ -185,7 +201,7 @@ export function buildTimeline(
 
   for (const m of messages) {
     const key = `m${String(m.id)}`;
-    if (answerMessages.has(m.id)) continue;
+    if (answerMessages.has(m.id) || notes.has(m.id)) continue;
     if (m.recipient === agentId) {
       if (m.sender.kind === "user") {
         const error = m.status === "failed" ? failures.get(m.id) : undefined;
@@ -247,7 +263,15 @@ export function buildTimeline(
       case "assistant_text":
         if (e.turn_id) finished.add(e.turn_id);
         if (afterCredentialError) break;
-        push({ type: "assistant", key, at: e.created_at, text: str(p["text"]), streaming: false });
+        push({
+          type: "assistant",
+          key,
+          at: e.created_at,
+          text: str(p["text"]),
+          streaming: false,
+          id: e.id,
+          reaction: mine.get(e.id) ?? null,
+        });
         break;
       case "question": {
         const card = (p["card"] ?? null) as QuestionCard | null;
@@ -350,7 +374,15 @@ export function buildTimeline(
   const now = new Date().toISOString();
   for (const [turnId, text] of live) {
     if (!finished.has(turnId) && text) {
-      push({ type: "assistant", key: `live-${turnId}`, at: now, text, streaming: true });
+      push({
+        type: "assistant",
+        key: `live-${turnId}`,
+        at: now,
+        text,
+        streaming: true,
+        id: null,
+        reaction: null,
+      });
     }
   }
 

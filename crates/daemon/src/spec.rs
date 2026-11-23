@@ -50,6 +50,7 @@ pub const QUESTION_CARD_FILE: &str = "question-card.v1.schema.json";
         api::agents::delete_avatar,
         api::chat::list_messages,
         api::chat::post_message,
+        api::chat::react,
         api::chat::list_events,
         api::chat::mark_read,
         api::chat::list_conversations,

@@ -55,22 +55,8 @@ pub fn router() -> Router<AppState> {
                 .put(agents::put_avatar)
                 .delete(agents::delete_avatar),
         )
-        .route(
-            "/v1/agents/{id}/messages",
-            get(chat::list_messages).post(chat::post_message),
-        )
-        .route("/v1/agents/{id}/events", get(chat::list_events))
-        .route("/v1/agents/{id}/read", post(chat::mark_read))
-        .route("/v1/conversations", get(chat::list_conversations))
-        .route("/v1/conversations/{a}/{b}", get(chat::conversation_thread))
-        .route("/v1/agents/{id}/interrupt", post(chat::interrupt))
-        .route("/v1/agents/{id}/retry", post(chat::retry))
-        .route("/v1/agents/{id}/new-session", post(chat::new_session))
+        .merge(chat::router())
         .route("/v1/agents/{id}/context", get(usage::get_context))
-        .route(
-            "/v1/agents/{id}/questions/{qid}/answer",
-            post(chat::answer_question),
-        )
         .route(
             "/v1/agents/{id}/memory",
             get(memory::list_memory).post(memory::put_memory),

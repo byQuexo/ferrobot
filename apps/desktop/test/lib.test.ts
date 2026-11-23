@@ -243,6 +243,27 @@ describe("format", () => {
 });
 
 describe("buildTimeline", () => {
+  it("shows the operator's reaction on the agent's message and hides the note it sent", () => {
+    const items = buildTimeline(
+      ME,
+      [
+        msg(1, { kind: "user" }, ME, "plan it", "2026-01-01T10:00:00Z"),
+        msg(2, { kind: "user" }, ME, "[ferrobot] Your operator reacted 👍", "2026-01-01T10:00:09Z"),
+      ],
+      [
+        ev(10, "assistant_text", { text: "Here is the plan." }, "2026-01-01T10:00:05Z"),
+        ev(11, "user_reaction", { event_id: 10, emoji: "😂", note_id: 2 }, "2026-01-01T10:00:08Z"),
+        ev(12, "user_reaction", { event_id: 10, emoji: "👍", note_id: 2 }, "2026-01-01T10:00:09Z"),
+      ],
+      new Map(),
+      names,
+    );
+    assert.deepEqual(
+      items.map((i) => (i.type === "assistant" ? [i.type, i.id, i.reaction] : [i.type])),
+      [["user"], ["assistant", 10, "👍"]],
+    );
+  });
+
   it("orders messages and events and pairs tool results", () => {
     const items = buildTimeline(
       ME,
@@ -913,6 +934,8 @@ describe("ui polish", () => {
       at: "2026-11-23T12:01:00Z",
       text: "ok",
       streaming: false,
+      id: 1,
+      reaction: null,
     } as const;
     const items = [
       tool(1, "2026-11-23T12:00:00Z"),

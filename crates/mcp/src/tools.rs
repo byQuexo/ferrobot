@@ -312,9 +312,6 @@ pub struct ReactArgs {
     pub emoji: String,
 }
 
-/// Longest emoji `react` takes, in bytes; family and flag sequences fit.
-const MAX_EMOJI_BYTES: usize = 32;
-
 #[derive(Debug, Deserialize, JsonSchema)]
 pub struct InviteToCallArgs {
     /// The teammate to bring in: its id or `@name`.
@@ -981,12 +978,7 @@ impl FerrobotTools {
     ) -> ToolResult<Ack> {
         let me = caller(&parts)?.0.id;
         let emoji = args.emoji.trim();
-        if emoji.is_empty()
-            || emoji.len() > MAX_EMOJI_BYTES
-            || emoji
-                .chars()
-                .any(|c| c.is_ascii_alphanumeric() || c.is_whitespace())
-        {
+        if !ferrobot_core::is_reaction(emoji) {
             return Err(ErrorData::invalid_params(
                 "emoji must be one emoji, like 👍",
                 None,
