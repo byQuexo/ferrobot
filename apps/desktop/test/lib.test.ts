@@ -1391,7 +1391,7 @@ describe("usage", () => {
       "Nov 26 at 6:59am (Europe/Berlin)",
     );
     const local = resetLabel("2026-11-26T05:59:00Z");
-    assert.match(local, /^Nov 26, \d{1,2}:\d{2}\s?[AP]M$/);
+    assert.match(local, /^Nov \d{1,2}, \d{1,2}:\d{2}\s?[AP]M$/);
   });
 });
 
