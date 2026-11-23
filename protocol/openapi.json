@@ -7908,6 +7908,17 @@
                   "$ref": "#/components/schemas/RoomLine"
                 },
                 "description": "Oldest first; the last 1000."
+              },
+              "speaking": {
+                "oneOf": [
+                  {
+                    "$ref": "#/components/schemas/AgentId",
+                    "description": "The member whose turn it is (writing or speaking), if any; `room_floor` events follow it."
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
               }
             }
           }
@@ -8683,6 +8694,36 @@
                 "type": "string",
                 "enum": [
                   "room_deleted"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "description": "Whose turn it is in a call room or group; `None`: nobody's.",
+            "required": [
+              "room_id",
+              "type"
+            ],
+            "properties": {
+              "room_id": {
+                "type": "integer",
+                "format": "int64"
+              },
+              "agent": {
+                "oneOf": [
+                  {
+                    "$ref": "#/components/schemas/AgentId"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "type": {
+                "type": "string",
+                "enum": [
+                  "room_floor"
                 ]
               }
             }

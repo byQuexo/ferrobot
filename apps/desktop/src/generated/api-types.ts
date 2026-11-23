@@ -2205,6 +2205,7 @@ export interface components {
         RoomTranscript: components["schemas"]["Room"] & {
             /** @description Oldest first; the last 1000. */
             lines: components["schemas"]["RoomLine"][];
+            speaking?: components["schemas"]["AgentId"] | null;
         };
         /** @description A prompt an agent receives on a cron schedule. */
         Routine: {
@@ -2450,6 +2451,12 @@ export interface components {
             room_id: number;
             /** @enum {string} */
             type: "room_deleted";
+        } | {
+            /** Format: int64 */
+            room_id: number;
+            agent?: components["schemas"]["AgentId"] | null;
+            /** @enum {string} */
+            type: "room_floor";
         };
         /** @description Partial profile update. Omitted fields stay unchanged. */
         UpdateAgent: {

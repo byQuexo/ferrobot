@@ -227,6 +227,11 @@ pub enum UiEvent {
     RoomLine { line: RoomLine },
     /// A group was deleted.
     RoomDeleted { room_id: i64 },
+    /// Whose turn it is in a call room or group; `None`: nobody's.
+    RoomFloor {
+        room_id: i64,
+        agent: Option<AgentId>,
+    },
 }
 
 /// Shared daemon state. Cheap to clone.

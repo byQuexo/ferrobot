@@ -74,8 +74,8 @@ export function useShortcuts(on: (id: ShortcutId, n?: number) => void): void {
       const hit = matchShortcut(e, mac);
       if (!hit) return;
       if (hit.id !== "close") e.preventDefault();
-      // Dialogs, menus and popovers handle their own keys, Esc included.
-      if (document.querySelector('[role="dialog"], [role="menu"]')) return;
+      // Dialogs, menus, popovers and pick lists handle their own keys, Esc included.
+      if (document.querySelector('[role="dialog"], [role="menu"], [role="listbox"]')) return;
       latest.current(hit.id, hit.n);
     };
     // Capture, so this runs before a dialog's own Esc handler removes the dialog.

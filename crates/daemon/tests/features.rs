@@ -7024,6 +7024,8 @@ async fn groups_talk_by_room_rules_and_a_call_to_one_lands_in_it() {
         (&sent[0]["recipient"], &sent[0]["room_id"]),
         (&json!(ann), &json!(id))
     );
+    let (_, room) = http(&d.ui, "GET", &format!("/v1/rooms/{id}"), None).await;
+    assert_eq!(room["speaking"], json!(ann), "whose turn it is");
     let mut ann_ws = connect_runner(&d.agents, &backend.token("ann")).await;
     let mut bob_ws = connect_runner(&d.agents, &backend.token("bob")).await;
     let body = say_turn(&mut ann_ws, "All green.").await;
@@ -7111,6 +7113,15 @@ async fn groups_talk_by_room_rules_and_a_call_to_one_lands_in_it() {
             .starts_with("(Group chat:")
     );
     turns_done(&d, cy, 2).await;
+
+    // A line naming a member is that member's to answer; the others only hear it.
+    let sent = post("@cy ship it?").await;
+    assert_eq!(sent[0]["recipient"], json!(cy));
+    say_turn(&mut cy_ws, "Shipped.").await;
+    turns_done(&d, cy, 3).await;
+    quiet(&mut bob_ws).await;
+    let (_, room) = http(&d.ui, "GET", &format!("/v1/rooms/{id}"), None).await;
+    assert_eq!(room["speaking"], Value::Null, "nobody's turn");
 
     assert_eq!(http(&d.ui, "DELETE", &path, None).await.0, 204);
     assert_eq!(

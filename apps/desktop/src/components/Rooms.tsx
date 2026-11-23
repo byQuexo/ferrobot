@@ -5,6 +5,7 @@ import { Pencil, Phone, PhoneOff } from "lucide-preact";
 import type { Room, RoomTranscript, VoiceView } from "../api.ts";
 import { useApp } from "../context.ts";
 import { roomTitle } from "../lib/call.ts";
+import { characterOf } from "../lib/character.ts";
 import { clockTime, relativeTime } from "../lib/format.ts";
 import { Avatar } from "./Avatar.tsx";
 import { Composer } from "./Chat.tsx";
@@ -72,6 +73,7 @@ export function RoomView(props: { id: number; onClose: () => void }): JSX.Elemen
   const [room, setRoom] = useState<RoomTranscript | null>(null);
   const [voice, setVoice] = useState<VoiceView | null>(null);
   const [editing, setEditing] = useState(false);
+  const [speaking, setSpeaking] = useState<string | null>(null);
   const scroller = useRef<HTMLDivElement>(null);
   useEffect(() => {
     client.voice().then(setVoice, () => undefined);
@@ -79,7 +81,9 @@ export function RoomView(props: { id: number; onClose: () => void }): JSX.Elemen
   useEffect(() => {
     const load = (): void => {
       void run(() => client.room(props.id)).then((r) => {
-        if (r) setRoom(r);
+        if (!r) return;
+        setRoom(r);
+        setSpeaking(r.speaking ?? null);
       });
     };
     load();
@@ -90,12 +94,13 @@ export function RoomView(props: { id: number; onClose: () => void }): JSX.Elemen
       )
         load();
       if (e.type === "room_deleted" && e.room_id === props.id) props.onClose();
+      if (e.type === "room_floor" && e.room_id === props.id) setSpeaking(e.agent ?? null);
     });
   }, [client, listen, run, props.id, props.onClose]);
   useLayoutEffect(() => {
     const el = scroller.current;
     if (el) el.scrollTop = el.scrollHeight;
-  }, [room?.lines.length]);
+  }, [room?.lines.length, speaking]);
 
   if (!room) return <section class="chat chat-none" aria-busy="true" />;
   const nameOf = (id: string): string | undefined => agents.get(id)?.name;
@@ -103,6 +108,7 @@ export function RoomView(props: { id: number; onClose: () => void }): JSX.Elemen
   const present = room.members.filter((id) => agents.has(id));
   const title = group ?? roomTitle(room.members, nameOf);
   const live = callState !== null && !callState.ending && callState.room === props.id;
+  const speaker = speaking === null ? undefined : agents.get(speaking);
   const sub =
     group === null
       ? room.ended_at
@@ -180,14 +186,26 @@ export function RoomView(props: { id: number; onClose: () => void }): JSX.Elemen
             <div key={l.id} class="row row-agent">
               {from && <Avatar agent={from} size={28} />}
               <div class="bubble bubble-agent">
-                <RichText text={l.body} />
-                <span class="meta">
-                  {from?.name ?? "agent"} · {clockTime(l.created_at)}
+                <span
+                  class="speaker"
+                  style={from ? { "--char-hue": String(characterOf(from).hue) } : undefined}
+                >
+                  {from?.name ?? "agent"}
                 </span>
+                <RichText text={l.body} />
+                <span class="meta">{clockTime(l.created_at)}</span>
               </div>
             </div>
           );
         })}
+        {speaker && (
+          <div class="row row-agent" role="status">
+            <Avatar agent={speaker} size={28} />
+            <span class="step-now">
+              {speaker.name} is {live ? "speaking" : "writing"}…
+            </span>
+          </div>
+        )}
       </div>
       {(live || group !== null) && (
         <Composer
@@ -198,6 +216,7 @@ export function RoomView(props: { id: number; onClose: () => void }): JSX.Elemen
           onTalk={() => {
             call.quiet();
           }}
+          mentions={group === null ? undefined : present.flatMap((id) => agents.get(id) ?? [])}
         />
       )}
       {editing && (

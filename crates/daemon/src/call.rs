@@ -9,6 +9,7 @@
 
 use std::collections::{HashMap, VecDeque};
 
+use ferrobot_core::mention::{Segment, segments};
 use ferrobot_core::protocol::TurnOutcome;
 use ferrobot_core::{AgentId, MailMessage, Sender};
 use ferrobot_store::Room;
@@ -92,6 +93,8 @@ pub struct Call {
     last: Option<(Sender, String)>,
     /// Agent lines since the operator last spoke.
     agent_lines: usize,
+    /// The operator's latest line named members: a reply makes only the members it names due.
+    directed: bool,
     /// Agents that hung up; they go when their turn ends, so their goodbye is heard.
     leaving: Vec<AgentId>,
     /// Calls without a room: (recipient, words in the chat, message for its model), oldest first.
@@ -116,6 +119,20 @@ fn is_pass(text: &str) -> bool {
         .trim_start_matches('(')
         .trim_end_matches(')')
         .eq_ignore_ascii_case(PASS.trim_matches(['(', ')']))
+}
+
+/// The members `text` mentions, in order, each once.
+fn named(text: &str, members: &[AgentId]) -> Vec<AgentId> {
+    let mut out = Vec::new();
+    for segment in segments(text) {
+        if let Segment::Mention(id) = segment
+            && members.contains(&id)
+            && !out.contains(&id)
+        {
+            out.push(id);
+        }
+    }
+    out
 }
 
 fn line_of(agent: AgentId, text: &str) -> String {
@@ -154,16 +171,23 @@ impl Call {
         }
     }
 
-    /// The operator spoke in the room: everyone is due it, host first, and the agents' count
-    /// restarts.
+    /// The operator spoke in the room: everyone is due it, host first, or only the members it
+    /// names; the agents' count restarts.
     fn operator_said(&mut self, text: &str) {
         self.agent_lines = 0;
         self.hear(None, &format!("{OPERATOR}{text}"));
-        self.order = self.agents.iter().copied().collect();
+        let named = named(text, &self.agents);
+        self.directed = !named.is_empty();
+        self.order = if self.directed {
+            named.into()
+        } else {
+            self.agents.iter().copied().collect()
+        };
         self.last = Some((Sender::User, text.to_owned()));
     }
 
-    /// `agent` said `text` in the room: the others are due it, unless past [`MAX_AGENT_LINES`].
+    /// `agent` said `text` in the room: the others are due it (after a line that named members,
+    /// only those `text` names), unless past [`MAX_AGENT_LINES`].
     fn agent_said(&mut self, agent: AgentId, text: &str) {
         self.hear(Some(agent), &line_of(agent, text));
         self.last = Some((Sender::Agent(agent), text.to_owned()));
@@ -171,10 +195,13 @@ impl Call {
         if self.agent_lines > MAX_AGENT_LINES {
             return;
         }
-        let due: Vec<AgentId> = self
-            .agents
-            .iter()
-            .copied()
+        let candidates = if self.directed {
+            named(text, &self.agents)
+        } else {
+            self.agents.clone()
+        };
+        let due: Vec<AgentId> = candidates
+            .into_iter()
             .filter(|a| *a != agent && !self.order.contains(a))
             .collect();
         self.order.extend(due);
@@ -431,19 +458,42 @@ impl AppState {
             }
             Err(e) => tracing::warn!(error = %e, "queued call turns not cancelled"),
         }
+        self.publish(UiEvent::RoomFloor {
+            room_id: room,
+            agent: None,
+        });
     }
 
-    /// Hands a free floor to the next member due, with the message that starts its turn.
+    /// Hands a free floor to the next member due, with the message that starts its turn, and
+    /// tells the UI whose turn it is.
     async fn hand_on(&self, call: &mut Call) -> Option<MailMessage> {
         let room = call.room?;
-        let (sender, words) = call.last.clone()?;
-        while let Some(next) = call.next_speaker() {
-            if let Some(message) = self.queue(sender, next, &words, Some(room)).await {
-                return Some(message);
+        let mut sent = None;
+        if let Some((sender, words)) = call.last.clone() {
+            while let Some(next) = call.next_speaker() {
+                sent = self.queue(sender, next, &words, Some(room)).await;
+                if sent.is_some() {
+                    break;
+                }
+                call.floor = None;
             }
-            call.floor = None;
         }
-        None
+        self.publish(UiEvent::RoomFloor {
+            room_id: room,
+            agent: call.floor.as_ref().map(|f| f.agent),
+        });
+        sent
+    }
+
+    /// The member whose turn it is in room `room`, if any.
+    pub async fn floor_of(&self, room: i64) -> Option<AgentId> {
+        let rooms = self.rooms().await;
+        let talk = if rooms.call.room == Some(room) {
+            Some(&rooms.call)
+        } else {
+            rooms.groups.get(&room)
+        };
+        talk?.floor.as_ref().map(|f| f.agent)
     }
 
     /// The operator's words to the call; `None`: there is no call. Without a room each agent
@@ -704,6 +754,34 @@ mod tests {
         });
         assert_eq!(call.start_turn(a, "t2"), None, "heard once");
         assert!(call.floor.is_none(), "nothing new frees the floor");
+    }
+
+    #[test]
+    fn a_line_that_names_members_is_theirs_to_answer() {
+        let (a, b, c) = (id(1), id(2), id(3));
+        let mut call = room_of(vec![a, b, c]);
+        call.operator_said(&format!("<@{c}> and <@{b}>, status? <@{c}>"));
+        assert_eq!(
+            Vec::from(call.order.clone()),
+            [c, b],
+            "named order, each once"
+        );
+        assert_eq!(take_turn(&mut call, "Green.").0, c);
+        assert_eq!(take_turn(&mut call, &format!("Ask <@{a}>.")).0, b);
+        let (agent, prompt) = take_turn(&mut call, "Done.");
+        assert_eq!(agent, a, "a reply brings in only whom it names");
+        assert!(prompt.contains("status?"), "the others heard everything");
+        assert!(
+            call.next_speaker().is_none(),
+            "unnamed replies make nobody due"
+        );
+
+        call.operator_said("everyone?");
+        assert_eq!(
+            Vec::from(call.order.clone()),
+            [a, b, c],
+            "no names: everyone, host first"
+        );
     }
 
     #[test]

@@ -872,6 +872,36 @@
             "type"
           ],
           "type": "object"
+        },
+        {
+          "description": "Whose turn it is in a call room or group; `None`: nobody's.",
+          "properties": {
+            "agent": {
+              "oneOf": [
+                {
+                  "$ref": "#/$defs/AgentId"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "room_id": {
+              "format": "int64",
+              "type": "integer"
+            },
+            "type": {
+              "enum": [
+                "room_floor"
+              ],
+              "type": "string"
+            }
+          },
+          "required": [
+            "room_id",
+            "type"
+          ],
+          "type": "object"
         }
       ]
     }

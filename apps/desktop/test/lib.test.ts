@@ -549,6 +549,16 @@ describe("mentions", () => {
       "@unknown-agent",
     );
   });
+
+  it("finds the @name being typed at the caret", async () => {
+    const { mentionQuery } = await import("../src/lib/mentions.ts");
+    assert.deepEqual(mentionQuery("hi @Bo", 6), { query: "bo", at: 3 });
+    assert.deepEqual(mentionQuery("@", 1), { query: "", at: 0 });
+    assert.deepEqual(mentionQuery("@ann ok\n@c", 10), { query: "c", at: 8 });
+    assert.equal(mentionQuery("mail@bob", 8), null, "not inside a word");
+    assert.equal(mentionQuery("@bob hi", 7), null, "a finished name");
+    assert.deepEqual(mentionQuery("@bob hi", 3), { query: "bo", at: 0 }, "up to the caret");
+  });
 });
 
 describe("groupExchanges", () => {

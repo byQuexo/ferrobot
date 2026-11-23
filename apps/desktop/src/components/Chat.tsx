@@ -44,6 +44,7 @@ import {
   type Exchange,
   type TimelineItem,
 } from "../lib/timeline.ts";
+import { mentionQuery } from "../lib/mentions.ts";
 import { hasVoiceKey, record, startLive, type LiveSession, type Recording } from "../lib/voice.ts";
 import { AttachmentChips, previews } from "./Attachments.tsx";
 import { FilePreview } from "./FilePreview.tsx";
@@ -816,9 +817,25 @@ export function Composer(props: {
   extra?: JSX.Element;
   /** Puts a file into the agent's workspace; without it nothing can be attached. */
   upload?: (file: File) => Promise<Upload>;
+  /** Agents `@` offers to name; without them typing `@` opens nothing. */
+  mentions?: Agent[];
 }): JSX.Element {
   const { run } = useApp();
   const [text, setText] = useState("");
+  const [pick, setPick] = useState<{ query: string; at: number; n: number } | null>(null);
+  const options = pick
+    ? (props.mentions ?? []).filter((a) => a.name.toLowerCase().startsWith(pick.query)).slice(0, 8)
+    : [];
+  const choose = (agent: Agent): void => {
+    const el = ref.current;
+    if (!el || !pick) return;
+    const end = pick.at + agent.name.length + 2;
+    setText(`${text.slice(0, pick.at)}@${agent.name} ${text.slice(el.selectionStart)}`);
+    setPick(null);
+    requestAnimationFrame(() => {
+      el.setSelectionRange(end, end);
+    });
+  };
   const current = useRef(text);
   current.current = text;
   const [files, setFiles] = useState<File[]>([]);
@@ -882,6 +899,24 @@ export function Composer(props: {
         void send();
       }}
     >
+      {pick && options.length > 0 && (
+        <ul class="mention-pick" role="listbox" aria-label="Agents">
+          {options.map((a, i) => (
+            <li
+              key={a.id}
+              role="option"
+              aria-selected={i === pick.n % options.length}
+              onMouseDown={(e) => {
+                e.preventDefault();
+                choose(a);
+              }}
+            >
+              <Avatar agent={a} size={20} />
+              {a.name}
+            </li>
+          ))}
+        </ul>
+      )}
       {files.length > 0 && (
         <div class="attachments pending">
           {files.map((f, n) => (
@@ -929,8 +964,14 @@ export function Composer(props: {
         rows={1}
         value={text}
         placeholder={props.placeholder}
+        aria-expanded={options.length > 0}
         onInput={(e) => {
-          setText(e.currentTarget.value);
+          const { value, selectionStart } = e.currentTarget;
+          setText(value);
+          if (props.mentions) {
+            const found = mentionQuery(value, selectionStart);
+            setPick(found && { ...found, n: 0 });
+          }
         }}
         onPaste={(e) => {
           const images = Array.from(e.clipboardData?.files ?? []).filter((f) =>
@@ -941,6 +982,16 @@ export function Composer(props: {
           attach(images);
         }}
         onKeyDown={(e) => {
+          const chosen = pick && options[pick.n % options.length];
+          if (pick && chosen && !e.isComposing) {
+            const step = { ArrowDown: 1, ArrowUp: options.length - 1 }[e.key];
+            if (step !== undefined) setPick({ ...pick, n: (pick.n + step) % options.length });
+            else if (e.key === "Enter" || e.key === "Tab") choose(chosen);
+            else if (e.key === "Escape") setPick(null);
+            else return;
+            e.preventDefault();
+            return;
+          }
           if (e.key === "Enter" && !e.shiftKey && !e.isComposing) {
             e.preventDefault();
             void send();
