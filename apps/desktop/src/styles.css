@@ -976,8 +976,8 @@ kbd { padding: 2px 8px; border: 1px solid var(--border-strong); border-radius: 6
 .file-preview { align-self: stretch; max-width: 640px; margin: 0; }
 .file-preview-body { height: 360px; }
 .file-preview-body iframe { display: block; width: 100%; height: 100%; border: none; background: #fff; }
-.new-divider { align-items: center; gap: 8px; color: var(--accent); font-size: 12px; font-weight: 500; }
-.new-divider::before { content: ""; flex: 1; height: 1px; background: var(--accent); opacity: 0.4; }
+.new-divider { align-items: center; gap: 12px; color: var(--accent); font-size: 12px; font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase; }
+.new-divider::before, .new-divider::after { content: ""; flex: 1; height: 1px; background: var(--accent); }
 .exchange .pair-avatars .avatar + .avatar, .mail-row .pair-avatars .avatar + .avatar { margin-left: -6px; box-shadow: 0 0 0 2px var(--bg); }
 .mail-row { padding: 8px 12px; }
 .mail-row-head { width: 100%; margin: 0; padding: 0; border: none; background: none; text-align: left; }
