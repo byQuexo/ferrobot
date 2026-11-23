@@ -41,7 +41,7 @@ Click the phone button in an agent's chat (**Start a voice call**).
   switch chats, Settings or Usage.
 - With ElevenLabs the bar also has the speaking speed (**1×**; click for the
   next step, 0.7× to 1.2×). It is the same speed as in Settings and the chat's
-  sliders, so every agent speaks at it, from its next sentence.
+  sliders, so every agent speaks at it, within a sentence or two.
 - **Push to talk** in the bar switches from always listening to talking only
   while you hold **Hold to talk** or Space (outside text fields). Words count
   once you let go and pause briefly; **Mute** still wins. This computer
