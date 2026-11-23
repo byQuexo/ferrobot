@@ -56,12 +56,15 @@ lists and token-count calls are not logged. Rows outlive deleted agents.
 - A sortable breakdown with Model, Agent and Day tabs (Day rows are UTC
   dates); set your own price with the pencil on the Model tab.
 - CSV export of the open tab.
+- With a Claude Code provider, a note that its costs are estimates at API
+  prices, which your Claude subscription covers.
 
 ## Plan limits
 
 With a Claude Code provider, or a Codex provider signed in with ChatGPT, the
-Usage header shows two rings per provider: how much of the 5-hour window and
-of the week is used. Hover a ring for its reset time.
+Usage view shows a card per plan under its header, with a bar each for the
+**5-hour window** and **Weekly**: the percentage used and when it resets. A
+plan whose limits could not be read says why, with **Try again**.
 
 - Claude Code: the daemon runs the host's own `claude` with its `/usage`
   command (no model call, no cost) in an empty folder, and keeps only the

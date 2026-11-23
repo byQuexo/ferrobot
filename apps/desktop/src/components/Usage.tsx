@@ -3,7 +3,6 @@ import { useEffect, useRef, useState } from "preact/hooks";
 import { ArrowDown, ArrowUp, ChartColumn, Download, Pencil, X } from "lucide-preact";
 
 import type {
-  LimitWindow,
   PriceEntry,
   ProviderKind,
   ProviderLimits,
@@ -19,10 +18,10 @@ import {
   count,
   dayLabel,
   freshTokens,
+  limitCards,
   metricOf,
   niceTicks,
   rangeOf,
-  resetLabel,
   shareLabel,
   slotOf,
   sortGroups,
@@ -81,20 +80,27 @@ export function Usage(props: { onClose: () => void }): JSX.Element {
   });
   const [editing, setEditing] = useState<string | null>(null);
   const [reload, setReload] = useState(0);
-  const [claudeCode, setClaudeCode] = useState(false);
-  const [limits, setLimits] = useState<ProviderLimits[]>([]);
+  const [kinds, setKinds] = useState<ProviderKind[]>([]);
+  const [limits, setLimits] = useState<ProviderLimits[] | { error: string } | null>(null);
+  const [limitsReload, setLimitsReload] = useState(0);
   const span = rangeOf(range, new Date(), custom);
 
   useEffect(() => {
     client.listProviders().then(
       (list) => {
-        setClaudeCode(list.some((p) => p.kind === "claude_code"));
+        setKinds(list.map((p) => p.kind));
       },
       () => undefined,
     );
-    // Apart from the reports: reading a plan's limits runs the host's CLI and can take seconds.
-    client.limits().then(setLimits, () => undefined);
   }, []);
+
+  // Apart from the reports: reading a plan's limits runs the host's CLI and can take seconds.
+  useEffect(() => {
+    setLimits(null);
+    client.limits().then(setLimits, (err: unknown) => {
+      setLimits({ error: err instanceof Error ? err.message : String(err) });
+    });
+  }, [limitsReload]);
 
   useEffect(() => {
     if (!span) return;
@@ -154,18 +160,23 @@ export function Usage(props: { onClose: () => void }): JSX.Element {
               Model calls your agents made through the daemon. OpenRouter costs are what it charged;
               the rest are estimates from list prices.
             </p>
-            {claudeCode && (
+            {kinds.includes("claude_code") && (
               <p class="muted small">
-                Claude Code (your own login): not tracked. Those agents call Claude from your own
-                claude CLI, past the daemon.
+                Claude Code costs are estimates at API prices; your Claude subscription covers them.
               </p>
             )}
           </div>
-          {limits.length > 0 && <Limits limits={limits} />}
           <IconButton label="Close usage" onClick={props.onClose}>
             <X size={18} />
           </IconButton>
         </header>
+        <PlanLimits
+          limits={limits}
+          expected={kinds.includes("claude_code") || kinds.includes("codex")}
+          onRetry={() => {
+            setLimitsReload((n) => n + 1);
+          }}
+        />
         <div class="usage-bar">
           <div class="chips" role="group" aria-label="Time range">
             {RANGES.map(([id, label]) => (
@@ -347,56 +358,60 @@ function TokenTotals(props: { totals: UsageTotals }): JSX.Element {
   );
 }
 
-function Limits(props: { limits: ProviderLimits[] }): JSX.Element {
+/** How much of each plan's 5-hour window and week is used, and when each starts over. */
+function PlanLimits(props: {
+  limits: ProviderLimits[] | { error: string } | null;
+  /** A provider with a plan exists, so a reading is on its way. */
+  expected: boolean;
+  onRetry: () => void;
+}): JSX.Element | null {
+  const { limits, expected } = props;
+  if (limits === null) {
+    return expected ? (
+      <section class="limits" aria-label="Plan limits">
+        <div class="limit-card">
+          <span class="muted small">Reading your plan limits…</span>
+          <Skeleton lines={2} />
+        </div>
+      </section>
+    ) : null;
+  }
+  if (!Array.isArray(limits) && !expected) return null;
+  const cards = Array.isArray(limits)
+    ? limitCards(limits)
+    : [{ key: "", title: "Plan limits", error: limits.error, rows: [] }];
+  if (cards.length === 0) return null;
   return (
-    <div class="usage-limits" role="group" aria-label="Plan limits">
-      {props.limits.map((l) => (
-        <div key={l.provider_id} class="usage-limit">
-          <span class="usage-limit-name" title={l.name}>
-            {l.name}
-          </span>
-          {l.error ? (
-            <span class="muted small" title={l.error}>
-              Limits unavailable
-            </span>
+    <section class="limits" aria-label="Plan limits">
+      {cards.map((card) => (
+        <div key={card.key} class="limit-card">
+          <h3 class="limit-title">{card.title}</h3>
+          {card.error !== undefined ? (
+            <div class="limit-error">
+              <span class="small">Limits could not be read: {card.error}</span>
+              <Button small onClick={props.onRetry}>
+                Try again
+              </Button>
+            </div>
+          ) : card.rows.length === 0 ? (
+            <span class="muted small">No limits reported.</span>
           ) : (
-            <span class="usage-rings">
-              <Ring label="5h" window={l.five_hour} />
-              <Ring label="Week" window={l.weekly} />
-            </span>
+            card.rows.map((row) => (
+              <div key={row.label} class="limit-row">
+                <div class="limit-line">
+                  <span>{row.label}</span>
+                  <b>{row.percent}% used</b>
+                </div>
+                <div class={`limit-bar ${row.level}`} aria-hidden="true">
+                  <i style={{ width: `${String(row.percent)}%` }} />
+                </div>
+                {row.resets && <span class="muted small">Resets {row.resets}</span>}
+              </div>
+            ))
           )}
         </div>
       ))}
-    </div>
-  );
-}
-
-const RING_R = 14;
-const RING_C = 2 * Math.PI * RING_R;
-
-function Ring(props: { label: string; window?: LimitWindow | null }): JSX.Element | null {
-  const w = props.window;
-  if (!w) return null;
-  const used = Math.min(100, Math.max(0, w.used_percent));
-  const text = `${props.label}: ${String(Math.round(used))}% used${w.resets ? `, resets ${resetLabel(w.resets)}` : ""}`;
-  return (
-    <span class="usage-ring" role="img" aria-label={text} title={text}>
-      <svg width="36" height="36" viewBox="0 0 36 36" aria-hidden="true">
-        <circle class="track" cx="18" cy="18" r={RING_R} />
-        <circle
-          class={`used${used >= 90 ? " high" : ""}`}
-          cx="18"
-          cy="18"
-          r={RING_R}
-          stroke-dasharray={`${String((used / 100) * RING_C)} ${String(RING_C)}`}
-          transform="rotate(-90 18 18)"
-        />
-        <text x="18" y="18">
-          {Math.round(used)}
-        </text>
-      </svg>
-      {props.label}
-    </span>
+    </section>
   );
 }
 

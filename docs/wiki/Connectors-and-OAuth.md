@@ -7,18 +7,21 @@ enter a sandbox, and an agent only sees the connectors you give it.
 
 Open **Settings → Connectors**.
 
-- **Catalog**: popular MCP servers run by their vendors. Click **Add** on a
-  card. Each card says how it signs in: **Sign in** (OAuth), **Token** or
-  **No sign-in**.
-- **Add connector**: any other server. Give it a name (lowercase letters,
-  digits and dashes, at most 16 characters) and its URL. Agents see its tools
-  as `name__tool`.
+- **Your connectors**: one card each, with its status, the agents that use it
+  and its next step, such as **Sign in** or **Add its token in Vault**.
+- **Catalog**: popular MCP servers run by their vendors, grouped by kind and
+  searchable. Click **Add** on a card. Each card says how it signs in:
+  **Sign in** (OAuth), **Token** or **No sign-in**.
+- **Add a custom connector**: any other server. Give it a name (lowercase
+  letters, digits and dashes, at most 16 characters) and its URL. Agents see
+  its tools as `name__tool`.
 
 ## Token or OAuth
 
-- **Token connectors**: adding one from the catalog opens **Vault**; for one
-  you added by hand, open Vault yourself. Paste the token there; it goes to
-  the daemon's keychain and is sent as a Bearer token.
+- **Token connectors**: adding one from the catalog opens **Vault** at its
+  token; for any other, click its key button (**Add the token of name in
+  Vault**). Paste the token there; it goes to the daemon's keychain and is
+  sent as a Bearer token.
 - **OAuth connectors**: adding one from the catalog opens the provider's
   sign-in page in your browser; otherwise click the sign-in button on its row
   (**Sign in to name**). Sign in and allow access. The page then says "Signed in. You can
@@ -40,8 +43,9 @@ an MCP client and lists its tools. The row shows the result:
 - **failed: ...**: unreachable, not an MCP server, or it refused the token.
   The reason is ferrobot's own text, never the server's, because a server's
   error could echo the token.
+- **needs a token**: a token-only server (GitHub) without a working token.
 - **not checked yet**: after a daemon restart; opening Settings checks it
-  again.
+  again. The refresh button (**Check name again**) checks it any time.
 
 ## Give it to an agent
 
@@ -70,8 +74,8 @@ ferrobot its details:
   provider. The form shows the exact value for your daemon.
 - **Client secret**: goes in **Vault**, never in the form.
 
-For a new connector, tick **Use my own OAuth app** in the **Add connector**
-form. For one you already added, click its gear button (**OAuth app of
+For a new connector, tick **Use my own OAuth app** in the **Add a custom
+connector** dialog. For one you already added, click its gear button (**OAuth app of
 name**), fill in the fields and click **Save OAuth app**. Changing the client
 ID or issuer signs the connector out and removes its client secret from Vault,
 so add the secret after saving.
@@ -113,8 +117,9 @@ In ferrobot:
    opens with **Use my own OAuth app**, the issuer
    `https://accounts.google.com` and the three scopes filled in. Enter your
    client ID and click **Add connector**. Without a catalog card, use **Add
-   connector** with the name `gmail`, the URL above and those values.
-2. Open **Vault**. Under Connectors, add the **OAuth client secret** of gmail.
+   a custom connector** with the name `gmail`, the URL above and those values.
+2. On the gmail card, click **Add it in Vault** (or open **Vault**) and add
+   the **OAuth client secret** of gmail.
 3. Back in **Settings → Connectors**, click **Sign in to gmail** (the sign-in
    button on its row), sign in with Google and allow access. The row turns
    **connected**.

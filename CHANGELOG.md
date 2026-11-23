@@ -26,6 +26,19 @@ All notable changes are listed here. The format follows
   own `/compact` on the agent's session, with no tools and none of your
   settings; message text can still never run a slash command.
 
+### Changed
+
+- Settings → Connectors: your connectors are cards with a tile, their status
+  (connected, needs sign-in, needs a token, failed), the agents that use them
+  and the next step (**Sign in**, **Add its token in Vault**, which opens
+  Vault at that token, **Check again**). The catalog is grouped (Work & notes,
+  Code & cloud, Data & payments, Docs & search, Mail & automation) with a
+  search, and **Add a custom connector** opens a dialog.
+- Usage: plan limits are labelled bars ("5-hour window", "Weekly") with the
+  percentage used and the reset time, plus loading and error states with
+  **Try again**. Claude Code costs are noted as estimates at API prices,
+  covered by your subscription.
+
 ### Fixed
 
 - A renamed agent can still be reached by its old name: agents that write

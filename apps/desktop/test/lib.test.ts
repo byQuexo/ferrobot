@@ -51,8 +51,18 @@ import {
   type CallState,
   type Line,
 } from "../src/lib/call.ts";
-import { CATALOG, isAdded } from "../src/lib/catalog.ts";
-import { checkDot, checkLabel, ownAppEntry } from "../src/lib/connectors.ts";
+import { CATALOG, CATALOG_GROUPS, groupCatalog, isAdded } from "../src/lib/catalog.ts";
+import {
+  checkDot,
+  checkLabel,
+  entryOf,
+  monogram,
+  needOf,
+  ownAppEntry,
+  tileHue,
+  usedByLabel,
+  usersOf,
+} from "../src/lib/connectors.ts";
 import { claudeCodeState } from "../src/lib/claude-code.ts";
 import { diagnosticsReport } from "../src/lib/diagnostics.ts";
 import { parseBlocks, parseInline } from "../src/lib/markdown.ts";
@@ -66,6 +76,7 @@ import {
   chartMetric,
   costLabel,
   freshTokens,
+  limitCards,
   niceTicks,
   rangeOf,
   resetLabel,
@@ -80,6 +91,7 @@ import {
 import type {
   Connector,
   Diagnostics,
+  ProviderLimits,
   UpdateInfo,
   UsageGroup,
   VoiceProvider,
@@ -1632,11 +1644,48 @@ describe("usage", () => {
 
   it("shows Claude Code's reset words as they are and Codex times locally", () => {
     assert.equal(
-      resetLabel("Nov 26 at 6:59am (Europe/Berlin)"),
+      resetLabel("Nov 26 at 6:59am (Europe/Berlin)", "UTC"),
       "Nov 26 at 6:59am (Europe/Berlin)",
+    );
+    assert.equal(
+      resetLabel("Nov 26 at 6:59am (Europe/Berlin)", "Europe/Berlin"),
+      "Nov 26 at 6:59am",
     );
     const local = resetLabel("2026-11-26T05:59:00Z");
     assert.match(local, /^Nov \d{1,2}, \d{1,2}:\d{2}\s?[AP]M$/);
+  });
+
+  it("makes one limit card per plan with labelled, clamped windows", () => {
+    const plan = (
+      id: string,
+      kind: ProviderKind,
+      extra: Partial<ProviderLimits> = {},
+    ): ProviderLimits => ({ provider_id: id, name: "claude code", kind, ...extra });
+    const cards = limitCards(
+      [
+        plan("a", "claude_code", {
+          five_hour: { used_percent: 19.4, resets: "6:59am (Europe/Berlin)" },
+          weekly: { used_percent: 120 },
+        }),
+        plan("b", "claude_code", { error: "not signed in" }),
+        plan("c", "codex", { name: "work", weekly: { used_percent: 80 } }),
+        plan("d", "openai_compatible", { name: "Other plan", error: "cannot read" }),
+      ],
+      "Europe/Berlin",
+    );
+    assert.deepEqual(cards, [
+      {
+        key: "claude_code",
+        title: "Claude Code",
+        rows: [
+          { label: "5-hour window", percent: 19, level: "ok", resets: "6:59am" },
+          { label: "Weekly", percent: 100, level: "full" },
+        ],
+      },
+      { key: "c", title: "Codex", rows: [{ label: "Weekly", percent: 80, level: "high" }] },
+      { key: "d", title: "Other plan", rows: [], error: "cannot read" },
+    ]);
+    assert.deepEqual(limitCards([]), []);
   });
 });
 
@@ -1669,6 +1718,30 @@ describe("catalog", () => {
     assert.equal(isAdded(linear, [{ name: "work", url: linear.url }]), true);
     assert.equal(isAdded(linear, [{ name: "linear", url: "https://x" }]), true);
     assert.equal(isAdded(linear, [{ name: "other", url: "https://x" }]), false);
+  });
+
+  it("puts every entry under exactly one heading", () => {
+    const grouped = groupCatalog("").flatMap((g) => g.entries.map((e) => e.name));
+    assert.deepEqual([...grouped].sort(), CATALOG.map((e) => e.name).sort());
+    assert.deepEqual(
+      groupCatalog("").map((g) => g.label),
+      CATALOG_GROUPS.map((g) => g.label),
+    );
+    assert.equal(
+      groupCatalog("")
+        .find((g) => g.label === "Mail & automation")
+        ?.entries.some((e) => e.name === "gmail"),
+      true,
+    );
+  });
+
+  it("filters by every word of the search, its heading included", () => {
+    const names = (q: string): string[] =>
+      groupCatalog(q).flatMap((g) => g.entries.map((e) => e.name));
+    assert.deepEqual(names("POSTGRES"), ["neon"]);
+    assert.deepEqual(names("cloudflare docs"), ["cloudflare-docs"]);
+    assert.ok(names("payments").includes("stripe"));
+    assert.deepEqual(groupCatalog("no such server"), []);
   });
 });
 
@@ -1804,6 +1877,47 @@ describe("connector status", () => {
     assert.equal(checkLabel(withApp, false), "connected · 23 tools");
     assert.equal(ownAppEntry(" https://gmailmcp.googleapis.com/mcp/v1 ")?.name, "gmail");
     assert.equal(ownAppEntry("https://mcp.deepwiki.com/mcp"), undefined);
+  });
+
+  it("leads each card with the step it needs", () => {
+    const needs = { status: "needs_sign_in" as const, at };
+    const github = { ...base, name: "gh", url: "https://api.githubcopilot.com/mcp/" };
+    assert.equal(needOf(base), undefined);
+    assert.equal(needOf({ ...base, check: needs }), "sign_in");
+    assert.equal(needOf({ ...github, check: needs }), "token");
+    assert.equal(checkLabel({ ...github, check: needs }, false), "needs a token");
+    assert.equal(needOf({ ...base, check: { status: "failed", at } }), undefined);
+    const gmail = { ...base, url: "https://gmailmcp.googleapis.com/mcp/v1", check: needs };
+    assert.equal(needOf(gmail), "app");
+    assert.equal(needOf({ ...gmail, client_id: "app.example" }), "sign_in");
+    assert.equal(entryOf(github)?.title, "GitHub");
+    assert.equal(entryOf({ ...base, name: "mine", url: "https://x/mcp" }), undefined);
+  });
+
+  it("gives every tile stable initials and a hue", () => {
+    assert.deepEqual(["cloudflare-docs", "linear", "my_own server", "---"].map(monogram), [
+      "CD",
+      "L",
+      "MO",
+      "?",
+    ]);
+    assert.equal(tileHue("linear"), tileHue("linear"));
+    assert.ok(tileHue("linear") >= 0 && tileHue("linear") < 360);
+    assert.notEqual(tileHue("linear"), tileHue("notion"));
+  });
+
+  it("names the agents that use a connector", () => {
+    const users = usersOf([
+      ["ada", ["c1", "c2"]],
+      ["bob", ["c1"]],
+    ]);
+    assert.deepEqual(users.get("c1"), ["ada", "bob"]);
+    assert.deepEqual(users.get("c2"), ["ada"]);
+    assert.equal(users.get("c3"), undefined);
+    assert.equal(usedByLabel([]), "Not given to an agent yet");
+    assert.equal(usedByLabel(["ada"]), "Used by ada");
+    assert.equal(usedByLabel(["ada", "bob", "cy"]), "Used by ada, bob and cy");
+    assert.equal(usedByLabel(["a", "b", "c", "d", "e", "f"]), "Used by a, b, c and 3 more");
   });
 });
 

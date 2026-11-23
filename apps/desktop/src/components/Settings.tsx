@@ -199,8 +199,13 @@ export function Settings(props: {
     "",
     KeyRound,
   ];
+  const [vaultFocus, setVaultFocus] = useState<string>();
   const vault = (): void => {
     props.onSection("vault");
+  };
+  const vaultAt = (focus?: string): void => {
+    setVaultFocus(focus);
+    vault();
   };
   return (
     <main class="settings" aria-label="Settings">
@@ -217,6 +222,7 @@ export function Settings(props: {
               class={`settings-tab${props.section === id ? " active" : ""}`}
               aria-current={props.section === id ? "page" : undefined}
               onClick={() => {
+                setVaultFocus(undefined);
                 props.onSection(id);
               }}
             >
@@ -252,11 +258,11 @@ export function Settings(props: {
           </IconButton>
         </header>
         {props.section === "providers" && <ProvidersSettings onVault={vault} />}
-        {props.section === "vault" && <VaultSettings />}
+        {props.section === "vault" && <VaultSettings focus={vaultFocus} />}
         {props.section === "agents" && <AgentSettings />}
         {props.section === "connectors" && (
           <ConnectorsSettings
-            onVault={vault}
+            onVault={vaultAt}
             onGuide={() => {
               props.onGuide("Connectors-and-OAuth");
             }}

@@ -1,4 +1,4 @@
-import type { UsageGroup, UsageTotals } from "../api.ts";
+import type { LimitWindow, ProviderKind, ProviderLimits, UsageGroup, UsageTotals } from "../api.ts";
 
 export type RangeKind = "today" | "7d" | "30d" | "custom";
 
@@ -230,7 +230,57 @@ const resetTime = new Intl.DateTimeFormat("en", {
   minute: "2-digit",
 });
 
-/** A Codex reset (RFC 3339) in local time; Claude Code's own words stay as they are. */
-export function resetLabel(resets: string): string {
-  return /^\d{4}-\d{2}-\d{2}T/.test(resets) ? resetTime.format(Date.parse(resets)) : resets;
+/** A Codex reset (RFC 3339) in local time; Claude Code's own words keep their zone unless it is `zone`. */
+export function resetLabel(
+  resets: string,
+  zone = Intl.DateTimeFormat().resolvedOptions().timeZone,
+): string {
+  if (/^\d{4}-\d{2}-\d{2}T/.test(resets)) return resetTime.format(Date.parse(resets));
+  return resets.replace(` (${zone})`, "");
+}
+
+export interface LimitRow {
+  label: string;
+  /** 0-100, rounded. */
+  percent: number;
+  /** `high` from 75%, `full` from 90%. */
+  level: "ok" | "high" | "full";
+  resets?: string;
+}
+
+export interface LimitCard {
+  key: string;
+  title: string;
+  error?: string;
+  rows: LimitRow[];
+}
+
+const PLAN_TITLES: Partial<Record<ProviderKind, string>> = {
+  claude_code: "Claude Code",
+  codex: "Codex",
+};
+
+/** One card per plan: Claude Code providers share the host's one login, so they show once. */
+export function limitCards(limits: ProviderLimits[], zone?: string): LimitCard[] {
+  const seen = new Set<string>();
+  return limits.flatMap((l) => {
+    const key = l.kind === "claude_code" ? l.kind : l.provider_id;
+    if (seen.has(key)) return [];
+    seen.add(key);
+    const windows: [string, LimitWindow | null | undefined][] = [
+      ["5-hour window", l.five_hour],
+      ["Weekly", l.weekly],
+    ];
+    const rows = windows.flatMap(([label, w]): LimitRow[] => {
+      if (!w) return [];
+      const percent = Math.round(Math.min(100, Math.max(0, w.used_percent)));
+      const level = percent >= 90 ? "full" : percent >= 75 ? "high" : "ok";
+      return [
+        { label, percent, level, ...(w.resets ? { resets: resetLabel(w.resets, zone) } : {}) },
+      ];
+    });
+    return [
+      { key, title: PLAN_TITLES[l.kind] ?? l.name, rows, ...(l.error ? { error: l.error } : {}) },
+    ];
+  });
 }
