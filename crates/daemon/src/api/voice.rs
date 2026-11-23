@@ -518,7 +518,7 @@ pub(crate) struct CallView {
     room_id: Option<i64>,
 }
 
-async fn call_view(state: &AppState) -> CallView {
+pub(crate) async fn call_view(state: &AppState) -> CallView {
     let (agents, room_id) = state.call_view().await;
     CallView { agents, room_id }
 }
@@ -608,7 +608,7 @@ pub(crate) async fn list_rooms(State(state): State<AppState>) -> ApiResult<Vec<R
     Ok(Json(state.store.rooms(200).await?))
 }
 
-/// One call room: who took part and what was said.
+/// One call room or group: who is in it and what was said.
 #[utoipa::path(get, path = "/v1/rooms/{id}", tag = "voice",
     params(("id" = i64, Path, description = "Room id")),
     responses((status = 200, body = RoomTranscript),

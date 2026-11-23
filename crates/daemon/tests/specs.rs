@@ -104,6 +104,10 @@ fn every_routed_path_is_documented() {
         "/v1/call/messages",
         "/v1/rooms",
         "/v1/rooms/{id}",
+        "/v1/groups",
+        "/v1/groups/{id}",
+        "/v1/groups/{id}/messages",
+        "/v1/groups/{id}/call",
         "/v1/usage",
         "/v1/usage/prices",
         "/v1/limits",
@@ -118,7 +122,7 @@ fn every_routed_path_is_documented() {
     }
     assert_eq!(
         documented.len(),
-        64,
+        68,
         "undocumented extra paths: {documented:?}"
     );
 }
@@ -243,11 +247,13 @@ fn ui_events_validate_against_schema() {
         UiEvent::Room {
             room: Room {
                 id: 3,
+                name: Some("Ops".into()),
                 members: vec![agent.id],
                 created_at: OffsetDateTime::UNIX_EPOCH,
                 ended_at: None,
             },
         },
+        UiEvent::RoomDeleted { room_id: 3 },
         UiEvent::RoomLine {
             line: RoomLine {
                 id: 1,

@@ -714,6 +714,84 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/groups": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Group chats, oldest first. */
+        get: operations["list_groups"];
+        put?: never;
+        /** Creates a group chat. Its transcript is `GET /v1/rooms/{id}`. */
+        post: operations["create_group"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/groups/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /** Deletes a group with its transcript; a member's running turn in it is cut off. */
+        delete: operations["delete_group"];
+        options?: never;
+        head?: never;
+        /** Renames a group or replaces its members; a conversation going on continues with them. */
+        patch: operations["update_group"];
+        trace?: never;
+    };
+    "/v1/groups/{id}/call": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Calls the group: every member joins a voice call whose room is the group, so its lines land
+         *     there. The first member hosts. End it with `PUT /v1/call` and no agents.
+         */
+        post: operations["call_group"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/groups/{id}/messages": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Sends the operator's message to the group: a line that is due for every member. They answer
+         *     one at a time in join order, each with what it has not read yet, or pass; at most four agent
+         *     lines in a row, then the group waits for the operator. Their messages (`room_id` set) stay
+         *     out of chats. While the group is in a call, the message goes to the call.
+         */
+        post: operations["post_group_message"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/health": {
         parameters: {
             query?: never;
@@ -947,7 +1025,7 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** One call room: who took part and what was said. */
+        /** One call room or group: who is in it and what was said. */
         get: operations["get_room"];
         put?: never;
         post?: never;
@@ -1599,6 +1677,12 @@ export interface components {
              */
             issuer?: string | null;
         };
+        CreateGroup: {
+            /** @description 1-64 characters. */
+            name: string;
+            /** @description At least two agents; the first hosts the group's calls. */
+            members: components["schemas"]["AgentId"][];
+        };
         CreateProvider: {
             /**
              * @description Unique display name (1-64 bytes).
@@ -1739,6 +1823,13 @@ export interface components {
              * @default null
              */
             agent_names: string | null;
+        };
+        GroupMessage: {
+            /**
+             * @description 1..19316 bytes after trimming, counting `@name` mentions as their stored `<@agent-id>`
+             *     tokens.
+             */
+            body: string;
         };
         Health: {
             name: string;
@@ -2054,17 +2145,22 @@ export interface components {
          * @enum {string}
          */
         QuestionKind: "single" | "multi" | "text" | "secret";
-        /** @description A voice call with two or more agents; kept as history once the call ended. */
+        /**
+         * @description A voice call with two or more agents, kept as history once the call ended; or, with a name,
+         *     a group chat, kept until deleted.
+         */
         Room: {
             /** Format: int64 */
             id: number;
-            /** @description Every agent that took part, in the order they joined. */
+            /** @description The group's name; `null`: a call room. */
+            name?: string | null;
+            /** @description Every agent that took part (a group: its members), in the order they joined. */
             members: components["schemas"]["AgentId"][];
             /** Format: date-time */
             created_at: string;
             /**
              * Format: date-time
-             * @description When the call ended; `null` while it runs.
+             * @description When the call ended; `null` while it runs, and always for a group.
              */
             ended_at?: string | null;
         };
@@ -2329,6 +2425,11 @@ export interface components {
             line: components["schemas"]["RoomLine"];
             /** @enum {string} */
             type: "room_line";
+        } | {
+            /** Format: int64 */
+            room_id: number;
+            /** @enum {string} */
+            type: "room_deleted";
         };
         /** @description Partial profile update. Omitted fields stay unchanged. */
         UpdateAgent: {
@@ -2383,6 +2484,12 @@ export interface components {
             scopes?: string[] | null;
             /** @description Issuer of the own OAuth app. */
             issuer?: string | null;
+        };
+        UpdateGroup: {
+            /** @description 1-64 characters; omitted keeps the name. */
+            name?: string | null;
+            /** @description At least two agents; omitted keeps them. Those who stay keep their place. */
+            members?: components["schemas"]["AgentId"][] | null;
         };
         /** @description This daemon's version and self-update status. */
         UpdateInfo: {
@@ -5011,6 +5118,305 @@ export interface operations {
             };
             /** @description Missing or wrong API token */
             401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+        };
+    };
+    list_groups: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Room"][];
+                };
+            };
+            /** @description Missing or wrong API token */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+        };
+    };
+    create_group: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CreateGroup"];
+            };
+        };
+        responses: {
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Room"];
+                };
+            };
+            /** @description Bad name or fewer than two agents */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Missing or wrong API token */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Unknown agent */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+        };
+    };
+    delete_group: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Group (room) id */
+                id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Deleted */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Missing or wrong API token */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Unknown group */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description The group is in a call */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+        };
+    };
+    update_group: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Group (room) id */
+                id: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["UpdateGroup"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Room"];
+                };
+            };
+            /** @description Bad name or fewer than two agents */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Missing or wrong API token */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Unknown group or agent */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Members changed while the group is in a call */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+        };
+    };
+    call_group: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Group (room) id */
+                id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CallView"];
+                };
+            };
+            /** @description More than 4 members */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Missing or wrong API token */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Unknown group */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Voice is switched off, or a call is running */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+        };
+    };
+    post_group_message: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Group (room) id */
+                id: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["GroupMessage"];
+            };
+        };
+        responses: {
+            /** @description Queued: the next speaker's message (none while a member still answers) */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MailMessage"][];
+                };
+            };
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Missing or wrong API token */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Unknown group */
+            404: {
                 headers: {
                     [name: string]: unknown;
                 };

@@ -3158,6 +3158,380 @@
         }
       }
     },
+    "/v1/groups": {
+      "get": {
+        "tags": [
+          "groups"
+        ],
+        "summary": "Group chats, oldest first.",
+        "operationId": "list_groups",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/Room"
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or wrong API token",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "groups"
+        ],
+        "summary": "Creates a group chat. Its transcript is `GET /v1/rooms/{id}`.",
+        "operationId": "create_group",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateGroup"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Room"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad name or fewer than two agents",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or wrong API token",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Unknown agent",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/groups/{id}": {
+      "delete": {
+        "tags": [
+          "groups"
+        ],
+        "summary": "Deletes a group with its transcript; a member's running turn in it is cut off.",
+        "operationId": "delete_group",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "Group (room) id",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Deleted"
+          },
+          "401": {
+            "description": "Missing or wrong API token",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Unknown group",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "The group is in a call",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        }
+      },
+      "patch": {
+        "tags": [
+          "groups"
+        ],
+        "summary": "Renames a group or replaces its members; a conversation going on continues with them.",
+        "operationId": "update_group",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "Group (room) id",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateGroup"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Room"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad name or fewer than two agents",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or wrong API token",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Unknown group or agent",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Members changed while the group is in a call",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/groups/{id}/call": {
+      "post": {
+        "tags": [
+          "groups"
+        ],
+        "summary": "Calls the group: every member joins a voice call whose room is the group, so its lines land\nthere. The first member hosts. End it with `PUT /v1/call` and no agents.",
+        "operationId": "call_group",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "Group (room) id",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CallView"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "More than 4 members",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or wrong API token",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Unknown group",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Voice is switched off, or a call is running",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/groups/{id}/messages": {
+      "post": {
+        "tags": [
+          "groups"
+        ],
+        "summary": "Sends the operator's message to the group: a line that is due for every member. They answer\none at a time in join order, each with what it has not read yet, or pass; at most four agent\nlines in a row, then the group waits for the operator. Their messages (`room_id` set) stay\nout of chats. While the group is in a call, the message goes to the call.",
+        "operationId": "post_group_message",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "Group (room) id",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/GroupMessage"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "202": {
+            "description": "Queued: the next speaker's message (none while a member still answers)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/MailMessage"
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or wrong API token",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Unknown group",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/v1/health": {
       "get": {
         "tags": [
@@ -3966,7 +4340,7 @@
         "tags": [
           "voice"
         ],
-        "summary": "One call room: who took part and what was said.",
+        "summary": "One call room or group: who is in it and what was said.",
         "operationId": "get_room",
         "parameters": [
           {
@@ -6109,6 +6483,26 @@
           }
         }
       },
+      "CreateGroup": {
+        "type": "object",
+        "required": [
+          "name",
+          "members"
+        ],
+        "properties": {
+          "name": {
+            "type": "string",
+            "description": "1-64 characters."
+          },
+          "members": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AgentId"
+            },
+            "description": "At least two agents; the first hosts the group's calls."
+          }
+        }
+      },
       "CreateProvider": {
         "type": "object",
         "required": [
@@ -6444,6 +6838,18 @@
             ],
             "description": "How agents name the agents they create, in the operator's words (e.g. \"Greek gods\");\n`null`: short role names. 1-300 characters.",
             "default": null
+          }
+        }
+      },
+      "GroupMessage": {
+        "type": "object",
+        "required": [
+          "body"
+        ],
+        "properties": {
+          "body": {
+            "type": "string",
+            "description": "1..19316 bytes after trimming, counting `@name` mentions as their stored `<@agent-id>`\ntokens."
           }
         }
       },
@@ -7297,7 +7703,7 @@
       },
       "Room": {
         "type": "object",
-        "description": "A voice call with two or more agents; kept as history once the call ended.",
+        "description": "A voice call with two or more agents, kept as history once the call ended; or, with a name,\na group chat, kept until deleted.",
         "required": [
           "id",
           "members",
@@ -7308,12 +7714,19 @@
             "type": "integer",
             "format": "int64"
           },
+          "name": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "The group's name; `null`: a call room."
+          },
           "members": {
             "type": "array",
             "items": {
               "$ref": "#/components/schemas/AgentId"
             },
-            "description": "Every agent that took part, in the order they joined."
+            "description": "Every agent that took part (a group: its members), in the order they joined."
           },
           "created_at": {
             "type": "string",
@@ -7325,7 +7738,7 @@
               "null"
             ],
             "format": "date-time",
-            "description": "When the call ended; `null` while it runs."
+            "description": "When the call ended; `null` while it runs, and always for a group."
           }
         }
       },
@@ -8109,7 +8522,7 @@
           },
           {
             "type": "object",
-            "description": "A call room opened, gained a member or ended.",
+            "description": "A call room opened, gained a member or ended; or a group was created or changed.",
             "required": [
               "room",
               "type"
@@ -8128,7 +8541,7 @@
           },
           {
             "type": "object",
-            "description": "Something was said in a call room.",
+            "description": "Something was said in a call room or group.",
             "required": [
               "line",
               "type"
@@ -8141,6 +8554,26 @@
                 "type": "string",
                 "enum": [
                   "room_line"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "description": "A group was deleted.",
+            "required": [
+              "room_id",
+              "type"
+            ],
+            "properties": {
+              "room_id": {
+                "type": "integer",
+                "format": "int64"
+              },
+              "type": {
+                "type": "string",
+                "enum": [
+                  "room_deleted"
                 ]
               }
             }
@@ -8295,6 +8728,28 @@
               "null"
             ],
             "description": "Issuer of the own OAuth app."
+          }
+        }
+      },
+      "UpdateGroup": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "1-64 characters; omitted keeps the name."
+          },
+          "members": {
+            "type": [
+              "array",
+              "null"
+            ],
+            "items": {
+              "$ref": "#/components/schemas/AgentId"
+            },
+            "description": "At least two agents; omitted keeps them. Those who stay keep their place."
           }
         }
       },
@@ -8865,6 +9320,10 @@
     {
       "name": "voice",
       "description": "Speech and transcription for the operator's chat"
+    },
+    {
+      "name": "groups",
+      "description": "Group chats: write once to several agents, or call them"
     },
     {
       "name": "usage",

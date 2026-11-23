@@ -6,6 +6,7 @@ pub(crate) mod clis;
 pub(crate) mod connectors;
 pub(crate) mod diagnostics;
 pub(crate) mod files;
+pub(crate) mod groups;
 pub(crate) mod memory;
 pub(crate) mod providers;
 pub(crate) mod routines;
@@ -188,6 +189,16 @@ fn integrations() -> Router<AppState> {
         .route("/v1/call/messages", post(voice::post_call_message))
         .route("/v1/rooms", get(voice::list_rooms))
         .route("/v1/rooms/{id}", get(voice::get_room))
+        .route(
+            "/v1/groups",
+            get(groups::list_groups).post(groups::create_group),
+        )
+        .route(
+            "/v1/groups/{id}",
+            axum::routing::patch(groups::update_group).delete(groups::delete_group),
+        )
+        .route("/v1/groups/{id}/messages", post(groups::post_group_message))
+        .route("/v1/groups/{id}/call", post(groups::call_group))
         .route(
             "/v1/voice/transcription",
             post(voice::transcription).layer(axum::extract::DefaultBodyLimit::max(

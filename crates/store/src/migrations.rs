@@ -273,6 +273,8 @@ const MIGRATIONS: &[&str] = &[
     ALTER TABLE agents ADD COLUMN tags TEXT;
     CREATE INDEX usage_agent ON usage(agent_id, id);
     ",
+    // v19: a room with a name is a group chat, kept until deleted; NULL = a call room
+    "ALTER TABLE rooms ADD COLUMN name TEXT;",
 ];
 
 pub(crate) fn run(conn: &mut Connection) -> Result<(), StoreError> {
@@ -522,5 +524,21 @@ mod tests {
             .query_row("SELECT tags FROM agents", [], |r| r.get(0))
             .unwrap();
         assert_eq!(tags, None);
+    }
+
+    #[test]
+    fn v19_rooms_stay_call_rooms() {
+        let mut conn = Connection::open_in_memory().unwrap();
+        for sql in &MIGRATIONS[..18] {
+            conn.execute_batch(sql).unwrap();
+        }
+        conn.pragma_update(None, "user_version", 18).unwrap();
+        conn.execute_batch("INSERT INTO rooms (created_at) VALUES ('2026-01-01T00:00:00Z');")
+            .unwrap();
+        run(&mut conn).unwrap();
+        let name: Option<String> = conn
+            .query_row("SELECT name FROM rooms", [], |r| r.get(0))
+            .unwrap();
+        assert_eq!(name, None, "an existing room is a call room");
     }
 }

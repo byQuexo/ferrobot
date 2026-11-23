@@ -221,10 +221,12 @@ pub enum UiEvent {
         room_id: Option<i64>,
         hung_up: Option<AgentId>,
     },
-    /// A call room opened, gained a member or ended.
+    /// A call room opened, gained a member or ended; or a group was created or changed.
     Room { room: Room },
-    /// Something was said in a call room.
+    /// Something was said in a call room or group.
     RoomLine { line: RoomLine },
+    /// A group was deleted.
+    RoomDeleted { room_id: i64 },
 }
 
 /// Shared daemon state. Cheap to clone.
@@ -263,9 +265,9 @@ pub struct AppState {
     pub limits: Arc<crate::limits::LimitsCache>,
     /// What speech and transcription may still spend this minute.
     pub voice: Arc<Mutex<crate::voice::Budget>>,
-    /// The operator's voice call (in memory: a restart ends it). Async, so a change and its
-    /// room's rows in the store happen as one step.
-    pub call: Arc<tokio::sync::Mutex<crate::call::Call>>,
+    /// The operator's voice call and group chats' turns (in memory: a restart ends them). Async,
+    /// so a change and its room's rows in the store happen as one step.
+    pub rooms: Arc<tokio::sync::Mutex<crate::call::Rooms>>,
     /// The running or last source update (in memory: the restarted daemon starts idle).
     pub update: Arc<Mutex<crate::update::UpdateInfo>>,
     /// Where the CLI image build stands.
@@ -305,7 +307,7 @@ impl AppState {
             model_lists: Arc::default(),
             limits: Arc::default(),
             voice: Arc::default(),
-            call: Arc::default(),
+            rooms: Arc::default(),
             update: Arc::default(),
             clis: Arc::default(),
             started: std::time::Instant::now(),

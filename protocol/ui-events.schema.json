@@ -401,14 +401,14 @@
       "type": "string"
     },
     "Room": {
-      "description": "A voice call with two or more agents; kept as history once the call ended.",
+      "description": "A voice call with two or more agents, kept as history once the call ended; or, with a name,\na group chat, kept until deleted.",
       "properties": {
         "created_at": {
           "format": "date-time",
           "type": "string"
         },
         "ended_at": {
-          "description": "When the call ended; `null` while it runs.",
+          "description": "When the call ended; `null` while it runs, and always for a group.",
           "format": "date-time",
           "type": [
             "string",
@@ -420,11 +420,18 @@
           "type": "integer"
         },
         "members": {
-          "description": "Every agent that took part, in the order they joined.",
+          "description": "Every agent that took part (a group: its members), in the order they joined.",
           "items": {
             "$ref": "#/$defs/AgentId"
           },
           "type": "array"
+        },
+        "name": {
+          "description": "The group's name; `null`: a call room.",
+          "type": [
+            "string",
+            "null"
+          ]
         }
       },
       "required": [
@@ -809,7 +816,7 @@
           "type": "object"
         },
         {
-          "description": "A call room opened, gained a member or ended.",
+          "description": "A call room opened, gained a member or ended; or a group was created or changed.",
           "properties": {
             "room": {
               "$ref": "#/$defs/Room"
@@ -828,7 +835,7 @@
           "type": "object"
         },
         {
-          "description": "Something was said in a call room.",
+          "description": "Something was said in a call room or group.",
           "properties": {
             "line": {
               "$ref": "#/$defs/RoomLine"
@@ -842,6 +849,26 @@
           },
           "required": [
             "line",
+            "type"
+          ],
+          "type": "object"
+        },
+        {
+          "description": "A group was deleted.",
+          "properties": {
+            "room_id": {
+              "format": "int64",
+              "type": "integer"
+            },
+            "type": {
+              "enum": [
+                "room_deleted"
+              ],
+              "type": "string"
+            }
+          },
+          "required": [
+            "room_id",
             "type"
           ],
           "type": "object"

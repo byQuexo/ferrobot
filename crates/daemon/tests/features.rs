@@ -6967,3 +6967,148 @@ async fn context_is_the_newest_call_since_the_last_new_chat() {
     let (_, ctx) = http(&d.ui, "GET", &path, None).await;
     assert_eq!(ctx["tokens"], 1510);
 }
+
+#[tokio::test]
+async fn groups_talk_by_room_rules_and_a_call_to_one_lands_in_it() {
+    let backend = Arc::new(StatefulBackend::default());
+    let d = start(backend.clone(), None, "127.0.0.1:0").await;
+    let mut ids = Vec::new();
+    for name in ["ann", "bob", "cy"] {
+        let agent = create(&d, json!({ "name": name })).await;
+        ids.push(agent["id"].as_str().unwrap().parse::<AgentId>().unwrap());
+    }
+    let [ann, bob, cy] = ids[..] else {
+        unreachable!()
+    };
+    let unknown = "00000000-0000-4000-8000-000000000099";
+    for (body, status) in [
+        (json!({"name": " ", "members": [ann, bob]}), 400),
+        (json!({"name": "Ops", "members": [ann, ann]}), 400),
+        (json!({"name": "Ops", "members": [ann, unknown]}), 404),
+    ] {
+        let (got, err) = http(&d.ui, "POST", "/v1/groups", Some(body)).await;
+        assert_eq!(got, status, "{err}");
+    }
+    let new = json!({"name": " Ops ", "members": [ann, bob]});
+    let (status, group) = http(&d.ui, "POST", "/v1/groups", Some(new)).await;
+    assert_eq!(status, 201, "{group}");
+    assert_eq!(
+        (&group["name"], &group["members"]),
+        (&json!("Ops"), &json!([ann, bob]))
+    );
+    let id = group["id"].as_i64().unwrap();
+    let path = format!("/v1/groups/{id}");
+    assert_eq!(
+        http(&d.ui, "GET", "/v1/groups", None).await.1,
+        json!([group])
+    );
+    assert_eq!(http(&d.ui, "GET", "/v1/rooms", None).await.1, json!([]));
+    let post = |body: &'static str| {
+        let (ui, path) = (d.ui.clone(), format!("{path}/messages"));
+        async move {
+            let (status, sent) = http(&ui, "POST", &path, Some(json!({ "body": body }))).await;
+            assert_eq!(status, 202, "{sent}");
+            sent
+        }
+    };
+
+    // Written once: members answer one at a time with the group note, out of their chats.
+    let sent = post("Status?").await;
+    assert_eq!(
+        (&sent[0]["recipient"], &sent[0]["room_id"]),
+        (&json!(ann), &json!(id))
+    );
+    let mut ann_ws = connect_runner(&d.agents, &backend.token("ann")).await;
+    let mut bob_ws = connect_runner(&d.agents, &backend.token("bob")).await;
+    let body = say_turn(&mut ann_ws, "All green.").await;
+    assert!(body.starts_with("(Group chat:"), "{body}");
+    assert!(
+        !body.contains("Voice call") && !body.contains("You host"),
+        "{body}"
+    );
+    assert!(
+        body.ends_with("In the group since your last turn:\nThe operator: Status?"),
+        "{body}"
+    );
+    let body = say_turn(&mut bob_ws, "Agreed.").await;
+    assert!(
+        body.ends_with("The operator: Status?\n@ann: All green."),
+        "{body}"
+    );
+    assert!(
+        say_turn(&mut ann_ws, "(pass)")
+            .await
+            .ends_with("@bob: Agreed.")
+    );
+    turns_done(&d, ann, 2).await;
+    quiet(&mut bob_ws).await;
+    let lines = lines_reach(&d, id, 3).await;
+    let said: Vec<_> = lines.iter().map(|l| l.1.as_str()).collect();
+    assert_eq!(said, ["Status?", "All green.", "Agreed."]);
+    assert!(received(&d, ann).await.is_empty() && received(&d, bob).await.is_empty());
+
+    let change = json!({"name": "Ops team", "members": [cy, bob]});
+    let (status, changed) = http(&d.ui, "PATCH", &path, Some(change)).await;
+    assert_eq!(status, 200, "{changed}");
+    assert_eq!(
+        (&changed["name"], &changed["members"]),
+        (&json!("Ops team"), &json!([bob, cy])),
+        "bob keeps its place"
+    );
+
+    // Called, the group is the call's room: members are fixed and nothing is written meanwhile.
+    let (status, view) = http(&d.ui, "POST", &format!("{path}/call"), None).await;
+    assert_eq!(
+        (status, view),
+        (200, json!({"agents": [bob, cy], "room_id": id}))
+    );
+    assert_eq!(
+        http(&d.ui, "POST", &format!("{path}/call"), None).await.0,
+        409
+    );
+    let change = json!({"name": "Renamed", "members": [ann, bob]});
+    assert_eq!(http(&d.ui, "PATCH", &path, Some(change)).await.0, 409);
+    assert_eq!(http(&d.ui, "DELETE", &path, None).await.0, 409);
+    let (_, room) = http(&d.ui, "GET", &format!("/v1/rooms/{id}"), None).await;
+    assert_eq!(room["name"], "Ops team");
+    post("Next?").await;
+    let body = say_turn(&mut bob_ws, "Deploying.").await;
+    assert!(
+        body.starts_with("(Voice call:") && body.contains("(You host the call."),
+        "{body}"
+    );
+    let mut cy_ws = connect_runner(&d.agents, &backend.token("cy")).await;
+    assert!(
+        say_turn(&mut cy_ws, "(pass)")
+            .await
+            .ends_with("@bob: Deploying.")
+    );
+    lines_reach(&d, id, 5).await;
+
+    // Hung up, the group stays and talks outside the call again.
+    let hang_up = json!({"agents": []});
+    assert_eq!(http(&d.ui, "PUT", "/v1/call", Some(hang_up)).await.0, 200);
+    let (_, room) = http(&d.ui, "GET", &format!("/v1/rooms/{id}"), None).await;
+    assert_eq!(room["ended_at"], Value::Null);
+    assert_eq!(http(&d.ui, "GET", "/v1/rooms", None).await.1, json!([]));
+    post("Thanks").await;
+    assert!(
+        say_turn(&mut bob_ws, "(pass)")
+            .await
+            .starts_with("(Group chat:")
+    );
+    assert!(
+        say_turn(&mut cy_ws, "(pass)")
+            .await
+            .starts_with("(Group chat:")
+    );
+    turns_done(&d, cy, 2).await;
+
+    assert_eq!(http(&d.ui, "DELETE", &path, None).await.0, 204);
+    assert_eq!(
+        http(&d.ui, "GET", &format!("/v1/rooms/{id}"), None).await.0,
+        404
+    );
+    assert_eq!(http(&d.ui, "GET", "/v1/groups", None).await.1, json!([]));
+    assert_eq!(room_mail(&d, cy).await, 0, "its turns went with it");
+}
