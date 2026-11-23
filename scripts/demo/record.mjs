@@ -120,6 +120,9 @@ async function greeted(name) {
 async function demoProvider() {
   const provider = (await api("GET", "/v1/providers")).find((p) => p.name === PROVIDER);
   if (!provider && process.env.DEMO_PROVIDER) throw new Error(`no provider named ${PROVIDER}`);
+  // A daemon started with `--driver mock` runs every agent on the mock, provider or not.
+  if (provider && (await api("GET", "/v1/health")).driver === "mock")
+    throw new Error("the daemon runs --driver mock; start it with --driver claude");
   return provider;
 }
 /** Waits until each of `names` said something in the group after line `from`, and nobody holds the floor. */
