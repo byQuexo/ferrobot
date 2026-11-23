@@ -25,6 +25,7 @@ and next to a missing key in Vault):
 | OpenRouter | [Create an API key](https://openrouter.ai/settings/keys) |
 | Ollama | [Download Ollama](https://ollama.com/download); no key |
 | OpenAI Codex | [An OpenAI API key](https://platform.openai.com/api-keys), or a ChatGPT sign-in with [Codex installed](https://developers.openai.com/codex/cli) (see below) |
+| Claude Code (your own login) | No key: [log in to Claude Code](https://code.claude.com/docs/en/authentication) yourself (see below) |
 
 Then set `provider_id` and `model` on an agent (`PATCH /v1/agents/{id}` or the
 agent dialog). Without a model the agent uses the provider's
@@ -69,6 +70,7 @@ Good to know:
 | `openai_compatible` | `openai` | API key (optional) | `Authorization: Bearer` if set | none: `base_url` is required |
 | `codex` | `codex` | OpenAI API key, or a ChatGPT sign-in on the daemon host | `Authorization: Bearer` | `https://api.openai.com/v1` |
 | `gemini_cli` | `acp` | Gemini API key (required) | `x-goog-api-key` | `https://generativelanguage.googleapis.com` |
+| `claude_code` | `claude_code` | none: your own `claude` login on the daemon's computer | not proxied | none: the host's `claude` CLI |
 
 `base_url` overrides the default upstream for any kind. The upstream is
 called by the daemon, so `127.0.0.1` in it means the daemon's computer, not
@@ -107,9 +109,45 @@ Notes per kind:
   one before Ferro wakes.
 - **Ollama** needs no key. Ollama must listen on the daemon's computer (or
   set `base_url`).
+- **Claude Code (your own login)**: see the next section.
 - A model that can't use tools (some OpenRouter and Ollama models) holds the
   agent's messages and asks you whether to run the agent without tools; see
   [[Troubleshooting]].
+
+## Claude Code (your own login)
+
+Opt-in: nothing uses it until you add a provider of this kind. ferrobot runs
+the daemon computer's own, unmodified `claude` CLI (`claude -p`), signed in by
+you with `claude auth login`, Anthropic's own flow. ferrobot never reads,
+stores or relays that login: no token in Vault, the keychain or the model
+proxy, and no Claude sign-in in the app.
+
+- **Your seat:** uses your own Claude subscription seat. All agents share
+  your seat's limits. Do not share your seat. Anthropic's terms: "Advertised
+  usage limits for Pro, Max, and Ultra plans assume ordinary, individual usage
+  of Claude Code and the Agent SDK." Signing in to your own copy is allowed:
+  the restrictions do not "prevent an end user from signing in to the
+  unmodified Claude Code binary with their own Claude subscription". See
+  [Legal and compliance](https://code.claude.com/docs/en/legal-and-compliance).
+- **Host, not sandbox:** `claude` and its login stay on the daemon's
+  computer. It runs with its built-in tools off and none of your settings,
+  hooks, plugins, CLAUDE.md or claude.ai connectors. It reaches the agent's
+  computer only through ferrobot's MCP tools `bash`, `read_file` and
+  `write_file`, which run inside the sandbox, next to the usual ferrobot
+  tools. The runner's check for destructive shell commands does not apply on
+  this path; the sandbox still contains them.
+- **Not tracked:** the calls go from your `claude` to Anthropic, past the
+  model proxy, so Usage shows no tokens or costs for these agents.
+- **Settings** shows whether `claude` is installed and logged in, with
+  **Check again** after you log in in a terminal.
+- **Sessions:** each agent works in its own folder in the data dir
+  (`claude-code/<agent id>`), so its conversation also shows up in your
+  `~/.claude/projects`. Deleting the agent removes the folder; Claude Code
+  keeps its transcripts.
+- One turn at a time per agent; messages that arrive during a turn wait for
+  the next one. `--claude-bin` sets the CLI's path; the daemon also looks
+  where its installer puts it (`~/.local/bin`, on Windows
+  `%USERPROFILE%\.local\bin`).
 
 ## Voice providers
 
@@ -121,10 +159,9 @@ keys. See [[Voice and calls|Voice-and-Calls]].
 
 ## Not supported
 
-- **Claude subscription logins** (signing in with a Claude account instead of
-  an API key). This is by design: Claude models are used with API keys or
-  through Bedrock and Vertex only. The ChatGPT sign-in for Codex is a separate
-  feature and is supported.
+- **A Claude sign-in inside ferrobot.** ferrobot never handles Claude
+  credentials. To use your subscription, log in to your own Claude Code and
+  add a Claude Code (your own login) provider (above).
 - Bedrock with IAM credentials or SigV4.
 
 ## What has been tested
@@ -140,6 +177,7 @@ that no key reaches the sandbox env, files or logs.
 | `openai_compatible` | Yes, against Ollama. |
 | `codex` | Only against Ollama's Responses API. No OpenAI key used; a real ChatGPT sign-in was never tried, and whether ChatGPT's backend accepts these requests is unverified. |
 | `gemini_cli` | No: a fake Gemini API only. |
+| `claude_code` | Yes, on macOS with Claude Code 2.1.330 and a claude.ai login: greeting, `bash`, `write_file`, `read_file` and `remember` in a Docker sandbox, a resumed session and a stopped turn. Windows never. |
 | `openai`, `gemini`, `openrouter` | No: fake upstreams only. Gemini's endpoint with these tool schemas is untested. |
 | `bedrock`, `vertex` | No: request shapes were checked by capturing the Claude SDK's requests against a local server. No AWS or GCP call. |
 

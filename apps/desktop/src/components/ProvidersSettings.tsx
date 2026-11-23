@@ -2,8 +2,9 @@ import type { JSX } from "preact";
 import { useEffect, useState } from "preact/hooks";
 import { LogIn, Plus, Trash2 } from "lucide-preact";
 
-import type { DeviceCode, LoginStatus, Provider, ProviderKind } from "../api.ts";
+import type { ClaudeCodeStatus, DeviceCode, LoginStatus, Provider, ProviderKind } from "../api.ts";
 import { useApp } from "../context.ts";
+import { CLAUDE_CODE_NOTICE, claudeCodeState } from "../lib/claude-code.ts";
 import { ModelPicker } from "./ModelPicker.tsx";
 import { Button, IconButton } from "./ui.tsx";
 
@@ -18,6 +19,7 @@ export const KIND_LABELS: Record<ProviderKind, string> = {
   openai_compatible: "OpenAI-compatible",
   codex: "OpenAI Codex",
   gemini_cli: "Gemini CLI",
+  claude_code: "Claude Code (your own login)",
 };
 
 const KIND_HINTS: Partial<Record<ProviderKind, string>> = {
@@ -27,6 +29,7 @@ const KIND_HINTS: Partial<Record<ProviderKind, string>> = {
   openai_compatible: "Any server with an OpenAI-style /chat/completions endpoint.",
   codex: "Runs OpenAI’s Codex harness. Add an API key in Vault, or sign in with ChatGPT.",
   gemini_cli: "Runs Google’s Gemini CLI harness (over ACP) with a Gemini API key.",
+  claude_code: `Runs your own claude CLI on the daemon’s computer, off the model proxy. ${CLAUDE_CODE_NOTICE}`,
 };
 
 const CODEX_INSTALL: Link = {
@@ -67,6 +70,13 @@ export const KIND_LINKS: Partial<Record<ProviderKind, Link[]>> = {
     CODEX_INSTALL,
   ],
   gemini_cli: [{ label: "Create a Gemini API key", url: "https://aistudio.google.com/apikey" }],
+  claude_code: [
+    {
+      label: "How to log in to Claude Code",
+      url: "https://code.claude.com/docs/en/authentication",
+    },
+    { label: "Anthropic’s terms", url: "https://code.claude.com/docs/en/legal-and-compliance" },
+  ],
 };
 
 export const LinkOut = (props: Link): JSX.Element => (
@@ -159,7 +169,59 @@ export function ChatgptLogin(props: {
 }
 
 /** Whether a kind takes an API key (kept in Vault). */
-export const needsKey = (kind: ProviderKind): boolean => kind !== "vertex" && kind !== "ollama";
+export const needsKey = (kind: ProviderKind): boolean =>
+  kind !== "vertex" && kind !== "ollama" && kind !== "claude_code";
+
+/** Whether the daemon host’s own claude CLI is installed and logged in; ferrobot never logs it in. */
+export function ClaudeCodeLogin(props: {
+  onStatus?: (status: ClaudeCodeStatus) => void;
+}): JSX.Element {
+  const { client } = useApp();
+  const [status, setStatus] = useState<ClaudeCodeStatus | null>(null);
+  const [check, setCheck] = useState(0);
+
+  useEffect(() => {
+    let live = true;
+    setStatus(null);
+    client.claudeCode().then(
+      (s) => {
+        if (!live) return;
+        setStatus(s);
+        props.onStatus?.(s);
+      },
+      () => undefined,
+    );
+    return () => {
+      live = false;
+    };
+  }, [check]);
+
+  const state = claudeCodeState(status);
+  return (
+    <div class="provider-login">
+      <span class={status && !state.ready ? "hint bad" : "muted small"}>{state.text}</span>
+      {status && !state.ready && (
+        <span class="small">
+          {!status.installed && (
+            <>
+              <LinkOut label="Install Claude Code" url="https://code.claude.com/docs/en/setup" />
+              {" · "}
+            </>
+          )}
+          <button
+            type="button"
+            class="text-link"
+            onClick={() => {
+              setCheck(check + 1);
+            }}
+          >
+            Check again
+          </button>
+        </span>
+      )}
+    </div>
+  );
+}
 
 /** Fields a kind asks for besides its key. */
 function fieldsOf(kind: ProviderKind): { baseUrl: boolean; region: boolean; project: boolean } {
@@ -245,7 +307,13 @@ export function ProvidersSettings(props: {
                 <span class="muted small">
                   {KIND_LABELS[p.kind]}
                   {p.default_model ? ` · ${p.default_model}` : ""}
-                  {!needsKey(p.kind) ? " · no key needed" : p.has_key ? " · key in Vault" : " · "}
+                  {p.kind === "claude_code"
+                    ? " · your own login"
+                    : !needsKey(p.kind)
+                      ? " · no key needed"
+                      : p.has_key
+                        ? " · key in Vault"
+                        : " · "}
                   {needsKey(p.kind) && !p.has_key && (
                     <button type="button" class="text-link" onClick={props.onVault}>
                       add its key in Vault
@@ -261,6 +329,7 @@ export function ProvidersSettings(props: {
               >
                 <Trash2 size={16} />
               </IconButton>
+              {props.signIn !== false && p.kind === "claude_code" && <ClaudeCodeLogin />}
               {props.signIn !== false && p.kind === "codex" && !p.has_key && (
                 <ChatgptLogin provider={p} onVault={props.onVault} />
               )}
@@ -298,6 +367,7 @@ export function ProvidersSettings(props: {
                 </span>
               )}
             </label>
+            {kind === "claude_code" && <ClaudeCodeLogin />}
             <label>
               Name
               <input

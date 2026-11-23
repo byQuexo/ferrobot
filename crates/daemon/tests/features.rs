@@ -6530,3 +6530,143 @@ async fn agents_name_new_agents_by_the_operators_convention() {
     let (status, cleared) = set(json!("   ")).await;
     assert_eq!((status, &cleared["agent_names"]), (200, &Value::Null));
 }
+
+/// Stands in for the host's `claude`: logs what it got and answers like `claude -p` stream-json.
+const FAKE_CLAUDE: &str = r#"#!/bin/sh
+here="$(dirname "$0")"
+case "$1" in
+  --version) echo "9.9.9 (Claude Code)"; exit 0 ;;
+  auth) echo '{"loggedIn": true, "authMethod": "claude.ai", "email": "someone@example.com"}'; exit 0 ;;
+esac
+echo "$*" >> "$here/args.log"
+env > "$here/env.log"
+for a in "$@"; do case "$a" in --mcp-config=*) cat "${a#--mcp-config=}" > "$here/mcp.log" ;; esac; done
+cat > "$here/prompt.log"
+echo '{"type":"system","subtype":"init","session_id":"s1","tools":[]}'
+echo '{"type":"assistant","message":{"content":[{"type":"text","text":"hello"}]},"parent_tool_use_id":null,"session_id":"s1"}'
+echo '{"type":"result","subtype":"success","is_error":false,"result":"hello","session_id":"s1"}'
+"#;
+
+async fn claude_code_turn(agents: &str, token: &str, new_session: bool) -> (u16, String) {
+    let bearer = format!("Bearer {token}");
+    let body = json!({"prompt": "hi there", "system": "be brief", "new_session": new_session});
+    let headers = [
+        ("authorization", bearer.as_str()),
+        ("content-type", "application/json"),
+    ];
+    let path = "/host/claude-code/turn";
+    let (status, _, out) =
+        http_raw(agents, "POST", path, &headers, body.to_string().as_bytes()).await;
+    (status, String::from_utf8_lossy(&out).into_owned())
+}
+
+#[cfg(unix)]
+#[tokio::test]
+async fn claude_code_agents_use_the_hosts_own_cli_and_nothing_enters_the_sandbox() {
+    use std::os::unix::fs::PermissionsExt;
+    let dir = tempfile::tempdir().unwrap();
+    let bin = dir.path().join("claude");
+    std::fs::write(&bin, FAKE_CLAUDE).unwrap();
+    std::fs::set_permissions(&bin, std::fs::Permissions::from_mode(0o755)).unwrap();
+    let backend = Arc::new(StatefulBackend::default());
+    let data = dir.path().join("data");
+    let data_dir = data.clone();
+    let d = start_with(backend.clone(), None, "127.0.0.1:0", |s| {
+        s.driver = "claude".into();
+        s.claude_bin = bin.display().to_string();
+        s.data_dir = data_dir;
+    })
+    .await;
+
+    let (status, cc) = http(&d.ui, "GET", "/v1/claude-code", None).await;
+    assert_eq!(status, 200, "{cc}");
+    assert_eq!(
+        (cc["installed"].as_bool(), cc["logged_in"].as_bool()),
+        (Some(true), Some(true))
+    );
+    assert!(
+        !cc.to_string().contains("example.com"),
+        "never the account: {cc}"
+    );
+
+    let (_, provider) = http(
+        &d.ui,
+        "POST",
+        "/v1/providers",
+        Some(json!({"name": "cc", "kind": "claude_code", "default_model": "sonnet"})),
+    )
+    .await;
+    let clio = create(&d, json!({"name": "clio", "provider_id": provider["id"]})).await;
+    let env = backend.envs.lock().unwrap()["clio"].clone();
+    assert_eq!(env["FERROBOT_DRIVER"], "claude_code");
+    // No key, no Claude login and no claude config: only ferrobot's own settings.
+    assert!(env.keys().all(|k| k.starts_with("FERROBOT_")), "{env:?}");
+
+    let token = env["FERROBOT_AGENT_TOKEN"].clone();
+    let (status, out) = claude_code_turn(&d.agents, &token, true).await;
+    assert_eq!(status, 200, "{out}");
+    assert!(
+        out.lines().any(|l| l.contains(r#""type":"result""#)),
+        "{out}"
+    );
+    let log = |name: &str| std::fs::read_to_string(dir.path().join(name)).unwrap_or_default();
+    assert_eq!(
+        log("prompt.log"),
+        "hi there",
+        "the prompt goes on stdin, not argv"
+    );
+    let first = log("args.log");
+    assert!(
+        first.contains("--tools= ") && first.contains("--strict-mcp-config"),
+        "{first}"
+    );
+    assert!(first.contains("--model=sonnet"), "{first}");
+    let session = first
+        .split("--session-id=")
+        .nth(1)
+        .unwrap()
+        .split_whitespace()
+        .next()
+        .unwrap()
+        .to_owned();
+    assert!(
+        log("mcp.log").contains(&format!("Bearer {token}")),
+        "the agent's own token for /mcp"
+    );
+    assert!(
+        !log("env.log").contains(&token),
+        "the token stays out of claude's environment"
+    );
+
+    let (status, _) = claude_code_turn(&d.agents, &token, false).await;
+    assert_eq!(status, 200);
+    assert!(
+        log("args.log")
+            .lines()
+            .nth(1)
+            .unwrap()
+            .contains(&format!("--resume={session}"))
+    );
+
+    // Agents on other providers cannot reach the host's claude.
+    let (_, ollama) = http(
+        &d.ui,
+        "POST",
+        "/v1/providers",
+        Some(json!({"name": "ol", "kind": "ollama", "default_model": "qwen3"})),
+    )
+    .await;
+    create(&d, json!({"name": "otto", "provider_id": ollama["id"]})).await;
+    let other = backend.envs.lock().unwrap()["otto"]["FERROBOT_AGENT_TOKEN"].clone();
+    let (status, _) = claude_code_turn(&d.agents, &other, true).await;
+    assert_eq!(status, 403);
+
+    let id = clio["id"].as_str().unwrap();
+    assert!(data.join("claude-code").join(id).join("session").exists());
+    let (status, _) = http(&d.ui, "DELETE", &format!("/v1/agents/{id}"), None).await;
+    assert_eq!(status, 204);
+    assert!(
+        !data.join("claude-code").join(id).exists(),
+        "its folder goes with the agent"
+    );
+}

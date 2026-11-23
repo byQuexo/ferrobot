@@ -72,7 +72,17 @@ export function Usage(props: { onClose: () => void }): JSX.Element {
   });
   const [editing, setEditing] = useState<string | null>(null);
   const [reload, setReload] = useState(0);
+  const [claudeCode, setClaudeCode] = useState(false);
   const span = rangeOf(range, new Date(), custom);
+
+  useEffect(() => {
+    client.listProviders().then(
+      (list) => {
+        setClaudeCode(list.some((p) => p.kind === "claude_code"));
+      },
+      () => undefined,
+    );
+  }, []);
 
   useEffect(() => {
     if (!span) return;
@@ -127,6 +137,12 @@ export function Usage(props: { onClose: () => void }): JSX.Element {
               Model calls your agents made through the daemon. OpenRouter costs are what it charged;
               the rest are estimates from list prices.
             </p>
+            {claudeCode && (
+              <p class="muted small">
+                Claude Code (your own login): not tracked. Those agents call Claude from your own
+                claude CLI, past the daemon.
+              </p>
+            )}
           </div>
           <IconButton label="Close usage" onClick={props.onClose}>
             <X size={18} />

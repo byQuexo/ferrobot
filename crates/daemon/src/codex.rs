@@ -60,7 +60,7 @@ pub struct DeviceCode {
 
 /// `bin` on PATH or where Codex's installers and npm put it: an app started from the Dock or the
 /// Start menu has a shorter PATH than a terminal, and on Windows npm installs a `.cmd`.
-fn find_bin(bin: &str, path: Option<&OsStr>, extra: &[PathBuf]) -> PathBuf {
+pub(crate) fn find_bin(bin: &str, path: Option<&OsStr>, extra: &[PathBuf]) -> PathBuf {
     if Path::new(bin).components().count() > 1 {
         return bin.into();
     }
@@ -78,12 +78,14 @@ fn find_bin(bin: &str, path: Option<&OsStr>, extra: &[PathBuf]) -> PathBuf {
         .unwrap_or_else(|| bin.into())
 }
 
-fn install_dirs() -> Vec<PathBuf> {
+/// Where the Codex and Claude Code installers and npm put their CLIs.
+pub(crate) fn install_dirs() -> Vec<PathBuf> {
     let env = |key| std::env::var_os(key).map(PathBuf::from);
     if cfg!(windows) {
         vec![
             env("LOCALAPPDATA").map(|d| d.join(r"Programs\OpenAI\Codex\bin")),
             env("APPDATA").map(|d| d.join("npm")),
+            env("USERPROFILE").map(|d| d.join(r".local\bin")),
         ]
     } else {
         vec![

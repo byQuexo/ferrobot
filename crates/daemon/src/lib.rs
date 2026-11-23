@@ -5,6 +5,7 @@ pub mod agents;
 pub mod api;
 pub mod auth;
 pub mod call;
+pub mod claude_code;
 pub mod clis;
 pub mod codex;
 pub mod connectors;
@@ -74,6 +75,7 @@ pub fn agent_router(state: AppState) -> Router {
     });
     Router::new()
         .merge(runner_ws::router().with_state(state.clone()))
-        .merge(proxy::router().with_state(state))
+        .merge(proxy::router().with_state(state.clone()))
+        .merge(claude_code::router().with_state(state))
         .nest("/mcp", mcp)
 }

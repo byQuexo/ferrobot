@@ -109,12 +109,13 @@ fn every_routed_path_is_documented() {
         "/v1/diagnostics",
         "/v1/diagnostics/log",
         "/v1/clis",
+        "/v1/claude-code",
     ] {
         assert!(documented.contains(&path), "{path} missing from OpenAPI");
     }
     assert_eq!(
         documented.len(),
-        58,
+        59,
         "undocumented extra paths: {documented:?}"
     );
 }

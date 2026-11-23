@@ -14,7 +14,13 @@ import {
 } from "../lib/welcome.ts";
 import { Avatar } from "./Avatar.tsx";
 import { ModelPicker } from "./ModelPicker.tsx";
-import { ChatgptLogin, ProvidersSettings } from "./ProvidersSettings.tsx";
+import { CLAUDE_CODE_NOTICE, claudeCodeState } from "../lib/claude-code.ts";
+import {
+  ChatgptLogin,
+  ClaudeCodeLogin,
+  needsKey,
+  ProvidersSettings,
+} from "./ProvidersSettings.tsx";
 import { Button } from "./ui.tsx";
 import { VaultSettings } from "./VaultSettings.tsx";
 
@@ -61,8 +67,11 @@ export function Welcome(props: {
   const auto = useRef(props.step !== "meet");
   const [signedIn, setSignedIn] = useState<string | null>(null);
   const codex = props.providers.find((p) => p.kind === "codex" && !p.has_key);
+  const claudeCode = props.providers.find((p) => p.kind === "claude_code");
+  // Codex without a key and Claude Code need a login only the welcome checks.
   const provider =
-    props.providers.find(providerReady) ?? (codex?.id === signedIn ? codex : undefined);
+    props.providers.find(providerReady) ??
+    [codex, claudeCode].find((p) => p !== undefined && p.id === signedIn);
   // Only the welcome knows about a ChatGPT sign-in, so it moves on to waking by itself.
   const step = props.step === "key" && provider ? "meet" : props.step;
   const shownName = "Ferro";
@@ -209,12 +218,22 @@ export function Welcome(props: {
             />
           </Line>
         )}
-        {step === "key" && (
+        {step === "key" && props.providers.some((p) => needsKey(p.kind)) && (
           <Line look={look} wide>
             <p>
               Now its API key. It stays in the keychain of the daemon’s computer; I never see it.
             </p>
             <VaultSettings providersOnly onProviders={props.onProviders} />
+          </Line>
+        )}
+        {step === "key" && claudeCode && (
+          <Line look={look} wide>
+            <p>I think through your own Claude Code login on this computer. {CLAUDE_CODE_NOTICE}</p>
+            <ClaudeCodeLogin
+              onStatus={(s) => {
+                setSignedIn(claudeCodeState(s).ready ? claudeCode.id : null);
+              }}
+            />
           </Line>
         )}
         {step === "key" && codex && (

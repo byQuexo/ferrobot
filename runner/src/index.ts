@@ -5,6 +5,7 @@ import { homedir } from "node:os";
 import { ConfigError, loadConfig, mcpUrl, runnerWsUrl, type RunnerConfig } from "./config.ts";
 import { AcpDriver } from "./drivers/acp.ts";
 import { ClaudeDriver } from "./drivers/claude.ts";
+import { ClaudeCodeDriver } from "./drivers/claude-code.ts";
 import { CodexDriver } from "./drivers/codex.ts";
 import { MockDriver } from "./drivers/mock.ts";
 import { OpenAIDriver } from "./drivers/openai.ts";
@@ -109,6 +110,8 @@ function createDriver(config: RunnerConfig, session: SessionStore): ModelDriver 
         workspaceDir: config.workspaceDir,
         homeDir: homedir(),
       });
+    case "claude_code":
+      return new ClaudeCodeDriver({ daemonUrl: config.daemonUrl, token: config.token });
     case "mock":
       return new MockDriver(new FerrobotMcp(mcpUrl(config.daemonUrl), config.token));
   }

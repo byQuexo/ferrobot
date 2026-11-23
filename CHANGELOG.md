@@ -6,6 +6,17 @@ All notable changes are listed here. The format follows
 
 ## [Unreleased]
 
+### Added
+
+- Claude Code (your own login), opt-in: a provider kind that runs the daemon
+  computer's own, unmodified `claude` CLI, signed in with your own Claude
+  subscription through Anthropic's flow. ferrobot never reads, stores or
+  relays that login. `claude` runs on the host with its built-in tools off and
+  none of your settings; the agent's computer is reached through ferrobot's
+  `bash`, `read_file` and `write_file` MCP tools. Settings shows whether
+  `claude` is installed and logged in (`GET /v1/claude-code`); Usage marks
+  these agents as not tracked. All agents share your seat's limits.
+
 ## [0.1.2] - 2026-11-23
 
 ### Fixed

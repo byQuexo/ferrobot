@@ -158,6 +158,10 @@ struct Cli {
     /// with `ChatGPT` (the sign-in stays on the host, in the secret store).
     #[arg(long, env = "FERROBOT_CODEX_BIN", default_value = "codex")]
     codex_bin: String,
+    /// The daemon host's own `claude` CLI, for agents on a Claude Code provider (signed in by the
+    /// user with `claude auth login`; ferrobot never touches that login).
+    #[arg(long, env = "FERROBOT_CLAUDE_BIN", default_value = "claude")]
+    claude_bin: String,
     /// Where API keys, tokens and sign-ins are kept.
     #[arg(long, env = "FERROBOT_SECRET_STORE", value_enum, default_value_t = SecretStoreKind::Keyring)]
     secret_store: SecretStoreKind,
@@ -244,6 +248,8 @@ async fn main() -> Result<()> {
     settings.approval_timeout = Duration::from_secs(cli.approval_timeout);
     settings.secrets = secrets;
     settings.codex_bin.clone_from(&cli.codex_bin);
+    settings.claude_bin.clone_from(&cli.claude_bin);
+    settings.agent_url = browser_url(cli.agent_listen);
     settings.codex_home = ferrobot_daemon::codex::clean_home(cli.data_dir.join("codex"));
     #[cfg(debug_assertions)]
     {

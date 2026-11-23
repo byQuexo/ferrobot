@@ -36,6 +36,7 @@ import {
 } from "../src/lib/call.ts";
 import { CATALOG, isAdded } from "../src/lib/catalog.ts";
 import { checkDot, checkLabel, ownAppEntry } from "../src/lib/connectors.ts";
+import { claudeCodeState } from "../src/lib/claude-code.ts";
 import { diagnosticsReport } from "../src/lib/diagnostics.ts";
 import { parseBlocks, parseInline } from "../src/lib/markdown.ts";
 import { modelOptions, withSaved } from "../src/lib/models.ts";
@@ -680,6 +681,25 @@ describe("welcome", () => {
     // Without a key Codex needs a ChatGPT sign-in, which only the welcome itself checks.
     assert.equal(providerReady(provider("codex", false)), false);
     assert.equal(welcomeStep({ ...base, providers: [provider("codex", false)] }), "key");
+  });
+});
+
+describe("claude code", () => {
+  it("says what the host's claude needs before agents can use it", () => {
+    const base = {
+      installed: true,
+      logged_in: true,
+      version: "2.1.330 (Claude Code)",
+      auth_method: "claude.ai",
+    };
+    assert.deepEqual(claudeCodeState(base), {
+      ready: true,
+      text: "2.1.330 (Claude Code) · logged in with claude.ai",
+    });
+    assert.match(claudeCodeState({ ...base, logged_in: false }).text, /claude auth login/);
+    assert.equal(claudeCodeState({ ...base, logged_in: false }).ready, false);
+    assert.match(claudeCodeState({ ...base, installed: false }).text, /not installed/);
+    assert.equal(claudeCodeState(null).ready, false);
   });
 });
 

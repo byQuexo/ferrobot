@@ -458,6 +458,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/claude-code": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Whether the daemon host's own `claude` CLI is installed and signed in, for Claude Code
+         *     providers. Only the login state is returned, never the account.
+         */
+        get: operations["claude_code_status"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/clis": {
         parameters: {
             query?: never;
@@ -1297,6 +1317,15 @@ export interface components {
             /** @description Stable value reported in the answer; defaults to the label. */
             value?: string;
         };
+        /** @description Whether the host's `claude` is installed and signed in; never its account details. */
+        ClaudeCodeStatus: {
+            installed: boolean;
+            /** @description `claude --version`, e.g. `2.1.330 (Claude Code)`. */
+            version?: string | null;
+            logged_in: boolean;
+            /** @description How it is signed in, e.g. `claude.ai`. */
+            auth_method?: string | null;
+        };
         /** @description The CLI packages and where their image build stands. */
         ClisView: {
             /** @description Debian packages added to the base image, sorted. */
@@ -1776,7 +1805,7 @@ export interface components {
          *     URL and how the daemon's model proxy adds the credential.
          * @enum {string}
          */
-        ProviderKind: "anthropic" | "openai" | "gemini" | "bedrock" | "vertex" | "openrouter" | "ollama" | "openai_compatible" | "codex" | "gemini_cli";
+        ProviderKind: "anthropic" | "openai" | "gemini" | "bedrock" | "vertex" | "openrouter" | "ollama" | "openai_compatible" | "codex" | "gemini_cli" | "claude_code";
         ProviderView: components["schemas"]["Provider"] & {
             /** @description Whether an API key is stored. The key itself is never returned. */
             has_key: boolean;
@@ -4124,6 +4153,34 @@ export interface operations {
             };
             /** @description No voice call */
             409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+        };
+    };
+    claude_code_status: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ClaudeCodeStatus"];
+                };
+            };
+            /** @description Missing or wrong API token */
+            401: {
                 headers: {
                     [name: string]: unknown;
                 };

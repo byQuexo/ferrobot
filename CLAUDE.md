@@ -39,7 +39,8 @@ runner/          TypeScript runner inside each sandbox: drives the model
                  (drivers/claude.ts via Claude Agent SDK, drivers/openai.ts for
                  OpenAI-compatible providers, drivers/codex.ts via `codex
                  app-server`, drivers/acp.ts for ACP agents (Gemini CLI),
-                 drivers/mock.ts)
+                 drivers/claude-code.ts hands turns to the host's own `claude`
+                 through the daemon, drivers/mock.ts)
 apps/desktop/    Preact + Vite UI in a Tauri shell (own Cargo workspace)
 protocol/        generated OpenAPI + JSON Schemas, fixtures, README (the contract)
 scripts/         seed-demo.sh, smoke-docker.sh, smoke-live.sh, demo/ (README videos,
@@ -81,6 +82,10 @@ Principles:
 - `crates/daemon/src/codex.rs` — host-side `codex app-server`: ChatGPT
   sign-in and tokens for `codex` providers (`auth.json` in the keychain,
   a private temp `CODEX_HOME` per run; tokens never enter a sandbox).
+- `crates/daemon/src/claude_code.rs` — opt-in Claude Code (your own login): the
+  host's own, unmodified `claude -p` per turn (`/host/claude-code/turn`), built-in
+  tools off, none of the user's settings, the sandbox reached through MCP tools
+  (`bash`, `read_file`, `write_file`); `GET /v1/claude-code` reports its login state.
 - `crates/daemon/src/connectors.rs`, `api/connectors.rs` — connectors: the daemon
   is the MCP client of remote MCP servers and lends their tools to assigned
   agents through `/mcp` (tokens in the keychain, never in a sandbox), and the
@@ -219,13 +224,16 @@ daemon, `docker ps -a` must be empty of ferrobot containers.
   proxy picks the upstream from the agent's provider and swaps in the real
   key. Never pass a key into a sandbox, env, log, event or API response.
   Connector tokens follow the same rule: only the daemon talks to connectors.
-  No Claude subscription (OAuth) logins (connector OAuth is fine).
+  Claude credentials are never read, stored or relayed: no Claude sign-in in
+  ferrobot; the opt-in Claude Code provider runs the host's own, unmodified
+  `claude` (built-in tools off, none of the user's settings) and reaches the
+  sandbox only through MCP. Connector OAuth is fine.
 - **Operator token on `/v1`.** Every UI route requires
   `Authorization: Bearer <token>` (`FERROBOT_API_TOKEN` or
   `<data dir>/api-token`); only `/v1/health` and `/v1/oauth/callback` (single-use
   `state`) are open, and `/artifacts/` takes signed links. Keep the UI listener on
   loopback by default.
-- **Per-agent tokens** on `/runner/ws`, `/mcp`, `/model`. An agent can only act
+- **Per-agent tokens** on `/runner/ws`, `/mcp`, `/model`, `/host/claude-code/turn`. An agent can only act
   as itself (MCP tools read the caller from the token). Only hashes are stored.
 - **`create_agent` needs operator approval unless Auto mode is on**: an
   Approve/Decline card, the tool waits; decline or `FERROBOT_APPROVAL_TIMEOUT`
@@ -266,6 +274,8 @@ daemon, `docker ps -a` must be empty of ferrobot containers.
 - Voice ran live with ElevenLabs in the Tauri window (calls, rooms, streamed
   speech, live transcription; 2026-11-21); OpenRouter voice only against a
   fake upstream.
+- Claude Code (your own login) ran live on macOS (2026-11-23, CLI 2.1.330,
+  claude.ai login, Docker sandbox); Windows never.
 - The app updater never ran against a real release (v0.1.0 shipped without
   update files), and its Windows install path is untested.
 

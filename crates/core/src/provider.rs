@@ -36,6 +36,9 @@ pub enum ProviderKind {
     Codex,
     /// Google Gemini through the Gemini CLI harness, spoken to over ACP.
     GeminiCli,
+    /// The daemon host's own, unmodified `claude` CLI with the user's own Claude login.
+    /// Runs on the host, never in a sandbox; ferrobot never sees its credentials.
+    ClaudeCode,
 }
 
 /// How the model proxy authenticates upstream.
@@ -52,7 +55,7 @@ pub enum UpstreamAuth {
 }
 
 impl ProviderKind {
-    pub const ALL: [Self; 10] = [
+    pub const ALL: [Self; 11] = [
         Self::Anthropic,
         Self::Openai,
         Self::Gemini,
@@ -63,6 +66,7 @@ impl ProviderKind {
         Self::OpenaiCompatible,
         Self::Codex,
         Self::GeminiCli,
+        Self::ClaudeCode,
     ];
 
     pub fn as_str(self) -> &'static str {
@@ -77,6 +81,7 @@ impl ProviderKind {
             Self::OpenaiCompatible => "openai_compatible",
             Self::Codex => "codex",
             Self::GeminiCli => "gemini_cli",
+            Self::ClaudeCode => "claude_code",
         }
     }
 
@@ -86,6 +91,7 @@ impl ProviderKind {
             Self::Anthropic | Self::Bedrock | Self::Vertex => "claude",
             Self::Codex => "codex",
             Self::GeminiCli => "acp",
+            Self::ClaudeCode => "claude_code",
             _ => "openai",
         }
     }
@@ -103,7 +109,7 @@ impl ProviderKind {
     pub fn needs_key(self) -> bool {
         !matches!(
             self,
-            Self::Vertex | Self::Ollama | Self::OpenaiCompatible | Self::Codex
+            Self::Vertex | Self::Ollama | Self::OpenaiCompatible | Self::Codex | Self::ClaudeCode
         )
     }
 
@@ -126,7 +132,7 @@ impl ProviderKind {
                     r => format!("https://{r}-aiplatform.googleapis.com/v1"),
                 });
             }
-            Self::OpenaiCompatible => return None,
+            Self::OpenaiCompatible | Self::ClaudeCode => return None,
         };
         Some(fixed.to_owned())
     }

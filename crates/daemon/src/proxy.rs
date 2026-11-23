@@ -179,7 +179,7 @@ pub fn router() -> Router<AppState> {
     Router::new().route("/model/{*path}", any(forward))
 }
 
-fn agent_token(headers: &HeaderMap) -> Option<&str> {
+pub(crate) fn agent_token(headers: &HeaderMap) -> Option<&str> {
     headers
         .get("x-api-key")
         .or_else(|| headers.get("x-goog-api-key"))
@@ -337,6 +337,12 @@ async fn route(state: &AppState, provider: Option<Provider>, path: &str) -> Resu
     let upstream = upstream
         .ok_or_else(|| unavailable(format!("provider {} has no upstream", provider.name)))?;
     let api = match provider.kind {
+        ProviderKind::ClaudeCode => {
+            let name = &provider.name;
+            return Err(unavailable(format!(
+                "provider {name} runs on the host's claude CLI"
+            )));
+        }
         ProviderKind::Anthropic => Api::Anthropic,
         ProviderKind::Bedrock if path.starts_with("model/") => Api::Bedrock,
         ProviderKind::Bedrock => Api::BedrockControl,

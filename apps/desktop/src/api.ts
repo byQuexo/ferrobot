@@ -37,6 +37,7 @@ export type CreateConnector = Schemas["CreateConnector"];
 export type UpdateConnector = Schemas["UpdateConnector"];
 export type DeviceCode = Schemas["DeviceCode"];
 export type LoginStatus = Schemas["LoginStatus"];
+export type ClaudeCodeStatus = Schemas["ClaudeCodeStatus"];
 export type ModelList = Schemas["ModelList"];
 export type ModelInfo = Schemas["ModelInfo"];
 export type VoiceView = Schemas["VoiceView"];
@@ -151,6 +152,7 @@ export class DaemonClient {
     this.#request("POST", `/v1/providers/${id}/chatgpt-login`);
   chatgptLoginStatus = (id: string): Promise<LoginStatus> =>
     this.#request("GET", `/v1/providers/${id}/chatgpt-login`);
+  claudeCode = (): Promise<ClaudeCodeStatus> => this.#request("GET", "/v1/claude-code");
   providerModels = (id: string): Promise<ModelList> =>
     this.#request("GET", `/v1/providers/${id}/models`);
   kindModels = (kind: ProviderKind): Promise<ModelList> =>
