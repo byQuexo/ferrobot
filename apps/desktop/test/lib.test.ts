@@ -39,6 +39,7 @@ import {
   callTurn,
   groupChange,
   isPass,
+  meterDots,
   operatorSaid,
   roomTitle,
   splitSentences,
@@ -1338,6 +1339,16 @@ describe("voice call", () => {
     assert.equal(callClock(0), "0:00");
     assert.equal(callClock(42_900), "0:42");
     assert.equal(callClock(3_903_000), "1:05:03");
+  });
+
+  it("lights meter dots by microphone level", () => {
+    assert.equal(meterDots(0), 0);
+    assert.equal(meterDots(0.001), 0);
+    assert.equal(meterDots(0.01), 1);
+    assert.equal(meterDots(0.1), 3);
+    assert.equal(meterDots(0.25), 5);
+    assert.equal(meterDots(1), 5);
+    assert.equal(meterDots(-1), 0);
   });
 });
 

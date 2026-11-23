@@ -7,7 +7,6 @@ import {
   PanelLeftClose,
   PanelLeftOpen,
   Pencil,
-  Phone,
   Pin,
   Plus,
   Search,
@@ -21,7 +20,6 @@ import { useApp } from "../context.ts";
 import { rowLine, statusOf } from "../lib/format.ts";
 import { loadOrder, moveId, orderAgents, saveOrder } from "../lib/order.ts";
 import { Avatar } from "./Avatar.tsx";
-import { CallWindow } from "./CallWindow.tsx";
 import { TagChips } from "./AgentMeta.tsx";
 import { ConversationList, type Pair } from "./Conversations.tsx";
 import { GroupList } from "./Groups.tsx";
@@ -57,7 +55,7 @@ export function Sidebar(props: {
   online: boolean;
   onDeleted: (id: string) => void;
 }): JSX.Element {
-  const { agents, client, run, callState } = useApp();
+  const { agents, client, run } = useApp();
   const [filter, setFilter] = useState("");
   const [order, setOrder] = useState<string[]>(loadOrder);
   const [drop, setDrop] = useState<{ id: string; after: boolean } | null>(null);
@@ -157,27 +155,11 @@ export function Sidebar(props: {
     />
   );
   const connLabel = props.online ? "Daemon connected" : "Daemon offline";
-  const callLabel = callState?.ending
-    ? "Call ended"
-    : callState?.muted
-      ? "Voice call, muted"
-      : "Voice call";
 
   return (
     <aside class={`sidebar${props.rail ? " rail" : ""}`} ref={aside}>
       {props.rail ? (
         <>
-          {callState && (
-            <button
-              type="button"
-              class={`rail-call${callState.ending ? " ending" : callState.muted ? " muted" : ""}`}
-              aria-label={`${callLabel}: show the controls`}
-              title={`${callLabel}: show the controls`}
-              onClick={toggle}
-            >
-              <Phone size={18} />
-            </button>
-          )}
           <nav class="rail-list" aria-label="Agents">
             {railAgents.filter((a) => a.pinned).map(railItem)}
             {railAgents.some((a) => a.pinned) && railAgents.some((a) => !a.pinned) && (
@@ -219,7 +201,6 @@ export function Sidebar(props: {
               <PanelLeftClose size={18} />
             </IconButton>
           </header>
-          <CallWindow />
           <label class="search">
             <Search size={16} aria-hidden="true" />
             <input

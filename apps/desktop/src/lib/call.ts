@@ -329,3 +329,10 @@ export function callClock(ms: number): string {
   const m = Math.floor((s % 3600) / 60);
   return h ? `${String(h)}:${two(m)}:${two(s % 60)}` : `${String(m)}:${two(s % 60)}`;
 }
+
+/** Dots in the call bar's level meter. */
+export const METER_DOTS = 5;
+
+/** How many meter dots a microphone level (RMS, 0..1) lights; the root lifts quiet speech. */
+export const meterDots = (rms: number): number =>
+  Math.min(METER_DOTS, Math.round(Math.sqrt(Math.max(0, rms)) * METER_DOTS * 2));

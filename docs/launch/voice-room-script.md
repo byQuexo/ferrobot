@@ -21,10 +21,10 @@ centre). Mark any sped-up part "2x"; cut nothing out of an agent's answer.
 
 | # | On screen | Tim says | Caption |
 |---|-----------|----------|---------|
-| 1 | researcher's chat; click **Start a voice call**. The call window appears in the sidebar. | "Hi researcher, quick one about the retry example." | Call an agent. It starts speaking as soon as its first words are written. |
+| 1 | researcher's chat; click **Start a voice call**. The call bar appears at the top of the window. | "Hi researcher, quick one about the retry example." | Call an agent. It starts speaking as soon as its first words are written. |
 | 2 | researcher answers aloud; the words appear in the chat. | (listens) | |
 | 3 | | "Bring builder in. I want to hear if the example still runs." | Agents bring teammates into the call. |
-| 4 | researcher invites builder; builder's face joins the call window and the call moves into a room (listed under **Calls**). | (listens) | One call, two agents: a room. |
+| 4 | researcher invites builder; builder's face joins the call bar and the call moves into a room (listed under **Calls**). | (listens) | One call, two agents: a room. |
 | 5 | | "builder, run it once more and tell us what it printed." | |
 | 6 | researcher, the host, speaks first or passes; then builder reports the three attempts aloud (from its last run; whether it runs `cargo run` inside a call turn is untested). | (listens) | Each agent hears the others, and takes its turn. |
 | 7 | | "researcher, sum it up in one sentence." | |

@@ -325,9 +325,6 @@ textarea { resize: vertical; min-height: 40px; line-height: 1.5; }
 .rail-unread { position: absolute; top: 3px; right: 3px; width: 10px; height: 10px; border: 2px solid var(--ring); border-radius: 50%; background: var(--accent); }
 .rail-divider { width: 32px; margin: 4px 0; border: none; border-top: 1px solid var(--border-strong); }
 .rail-tools { display: flex; flex-direction: column; align-items: center; gap: 4px; padding-top: 8px; }
-.rail-call { display: grid; place-items: center; width: 40px; height: 40px; flex: none; margin-top: 16px; border: none; border-radius: var(--radius-sm); background: color-mix(in srgb, var(--ok) 14%, transparent); color: var(--ok); }
-.rail-call.muted { background: var(--err-soft); color: var(--err); }
-.rail-call.ending { background: var(--surface-2); color: var(--muted); }
 .sidebar.rail .sidebar-foot { padding: 12px 0 16px; }
 
 /* ---------- chat ---------- */
@@ -517,18 +514,10 @@ textarea { resize: vertical; min-height: 40px; line-height: 1.5; }
 }
 .voice-quick label { display: flex; flex-direction: column; gap: 4px; font-size: 13px; font-weight: 500; color: var(--text-2); }
 .bubble-agent.pass { color: var(--muted); }
-.call-window {
-  display: flex; flex-direction: column; gap: 8px; margin: 0 8px 12px; padding: 12px;
-  border: 1px solid var(--border); border-radius: var(--radius); background: var(--surface); box-shadow: var(--shadow);
-  animation: rise 0.2s var(--ease);
-}
-.call-top { display: flex; align-items: center; gap: 12px; }
 .call-faces { display: inline-flex; gap: 4px; flex: none; }
 .call-face { display: inline-flex; border-radius: 50%; }
 .call-face.speaking { box-shadow: 0 0 0 2px var(--surface), 0 0 0 4px var(--accent); animation: speaking 1.2s ease-in-out infinite; }
 @keyframes speaking { 50% { box-shadow: 0 0 0 2px var(--surface), 0 0 0 4px var(--accent), 0 0 0 8px var(--accent-soft); } }
-.call-info { display: flex; flex-direction: column; min-width: 0; line-height: 1.3; }
-.call-info strong { font-weight: 500; }
 .call-clock { font-size: 12px; color: var(--muted); font-variant-numeric: tabular-nums; }
 .call-status { margin: 0; font-size: 13px; color: var(--text-2); }
 .call-actions { display: flex; gap: 4px; }
@@ -1091,3 +1080,21 @@ kbd { padding: 2px 8px; border: 1px solid var(--border-strong); border-radius: 6
 .react-pick button:hover, .react-pick button[aria-checked="true"] { background: var(--surface-2); }
 @media (prefers-reduced-motion: reduce) { .react-btn { transition: none; } }
 
+/* Call bar: the running call as a pill above every view */
+#app { display: flex; flex-direction: column; background: var(--sidebar); }
+.shell { min-height: 0; }
+.call-bar {
+  display: flex; align-items: center; gap: 10px; flex: none; align-self: center;
+  max-width: calc(100% - 16px); margin-top: 8px; padding: 4px 4px 4px 6px;
+  border: 1px solid var(--border-strong); border-radius: 999px; background: var(--surface); box-shadow: var(--shadow);
+  animation: fade 0.2s var(--ease);
+}
+.call-bar .call-status { min-width: 0; max-width: 240px; }
+.call-bar .call-clock { flex: none; }
+.call-bar .icon-btn { border-radius: 50%; }
+.call-meter { display: inline-flex; align-items: center; gap: 3px; height: 16px; flex: none; }
+.call-meter i { width: 4px; height: 4px; border-radius: 2px; background: var(--border-strong); transition: height 0.15s var(--ease), background 0.15s; }
+.call-meter i.on { height: 14px; background: var(--accent); }
+.call-meter.playing i { background: var(--accent); animation: meter 0.9s ease-in-out infinite; animation-delay: calc(var(--i) * 0.12s); }
+@keyframes meter { 50% { height: 14px; } }
+@media (prefers-reduced-motion: reduce) { .call-meter.playing i { animation: none; height: 8px; } }

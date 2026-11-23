@@ -13,6 +13,7 @@ import {
   type UiEvent,
 } from "./api.ts";
 import { AgentDialog } from "./components/AgentDialog.tsx";
+import { CallBar } from "./components/CallBar.tsx";
 import { FileViewer } from "./components/FileViewer.tsx";
 import { QuickSwitcher } from "./components/QuickSwitcher.tsx";
 import { Settings, ShortcutList, type SettingsSection } from "./components/Settings.tsx";
@@ -324,6 +325,7 @@ export function App(): JSX.Element {
 
   return (
     <AppContext.Provider value={ctx}>
+      <CallBar />
       <div class={`shell${withInfo ? " with-info" : ""}${rail ? " rail" : ""}`}>
         <Sidebar
           rail={rail}

@@ -22,6 +22,8 @@ export class CallSession {
   caption = "";
   /** Whose voice is playing. */
   speaking: string | null = null;
+  /** The operator's microphone level (RMS, 0..1); 0 while muted or not listening. */
+  level = 0;
   readonly #client: DaemonClient;
   readonly #toast: (message: string, kind?: "error" | "info") => void;
   readonly #nameOf: (id: string) => string | undefined;
@@ -210,6 +212,10 @@ export class CallSession {
         this.#toast(`Listening stopped: ${msg}`);
         this.#stopListening();
       },
+      level: (rms) => {
+        this.level = rms;
+        this.#emit();
+      },
     });
     if (round !== this.#round || !this.state || this.state.ending) {
       void live.stop(false);
@@ -254,6 +260,7 @@ export class CallSession {
     this.#live = null;
     this.#talking = false;
     this.caption = "";
+    this.level = 0;
     if (this.state?.hearing) this.state = { ...this.state, hearing: false };
     this.#emit();
   }

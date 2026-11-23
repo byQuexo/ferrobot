@@ -36,8 +36,10 @@ Click the phone button in an agent's chat (**Start a voice call**).
   spoken sentences, no lists or links.
 - With ElevenLabs the call listens hands-free. With OpenRouter, replies are
   read aloud and you dictate with the microphone.
-- The call window has **Mute** and **Hang up**. The call keeps running while
-  you switch to other chats.
+- The call bar at the top of the window shows everyone in the call and your
+  microphone level, and has **Mute**, **Stop speaking** (silences the agent;
+  its turn goes on in the chat) and **Hang up**. It stays while you switch
+  chats, Settings or Usage.
 - Longer work: the agent says so and does it after the call, in its chat.
 - An agent cannot show question cards during a call; it asks out loud.
 
