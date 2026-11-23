@@ -281,7 +281,7 @@ export function App(): JSX.Element {
   const withInfo = agent && infoOpen && !pair && room === null && !settings && !usage;
   const toggleSettings = (): void => {
     setUsage(false);
-    setSettings(settings ? null : "providers");
+    setSettings(settings ? null : "appearance");
   };
   const toggleUsage = (): void => {
     setSettings(null);

@@ -48,14 +48,22 @@ export type SettingsSection =
 
 /** Id, label, about, icon and the guide page behind the header's "Guide" link. */
 export const SECTIONS: [SettingsSection, string, string, typeof KeyRound, string?][] = [
-  ["providers", "Model providers", "The models your agents run on. Their keys live in Vault.", Cpu],
+  ["appearance", "Appearance", "How ferrobot looks on this computer.", Palette],
+  ["keyboard", "Keyboard", "Shortcuts that work anywhere in the app.", Keyboard],
   [
-    "vault",
-    "Vault",
-    "Every key in one place: model providers, connectors and voice. Kept in the keychain of the daemon’s computer; agents never see them.",
-    KeyRound,
+    "voice",
+    "Voice",
+    "Agents’ replies read aloud and spoken messages. Start a call with the phone button in a chat.",
+    AudioLines,
   ],
+  ["providers", "Model providers", "The models your agents run on. Their keys live in Vault.", Cpu],
   ["agents", "Agents", "What agents may do without asking you.", Bot],
+  [
+    "memory",
+    "Global memory",
+    "Facts every agent can recall. Agents add to it; you can edit and remove entries.",
+    Brain,
+  ],
   [
     "connectors",
     "Connectors",
@@ -70,19 +78,11 @@ export const SECTIONS: [SettingsSection, string, string, typeof KeyRound, string
     Terminal,
   ],
   [
-    "memory",
-    "Global memory",
-    "Facts every agent can recall. Agents add to it; you can edit and remove entries.",
-    Brain,
+    "vault",
+    "Vault",
+    "Every key in one place: model providers, connectors and voice. Kept in the keychain of the daemon’s computer; agents never see them.",
+    KeyRound,
   ],
-  [
-    "voice",
-    "Voice",
-    "Agents’ replies read aloud and spoken messages. Start a call with the phone button in a chat.",
-    AudioLines,
-  ],
-  ["appearance", "Appearance", "How ferrobot looks on this computer.", Palette],
-  ["keyboard", "Keyboard", "Shortcuts that work anywhere in the app.", Keyboard],
   ["updates", "Updates", "The version ferrobot runs and how to get the latest.", RefreshCw],
   [
     "diagnostics",
@@ -92,6 +92,14 @@ export const SECTIONS: [SettingsSection, string, string, typeof KeyRound, string
     "Troubleshooting",
   ],
   ["guides", "Guides", "How ferrobot works, step by step. The same pages as the wiki.", BookOpen],
+];
+
+/** The sidebar's categories, in order; together they hold every section once. */
+const GROUPS: [string, SettingsSection[]][] = [
+  ["General", ["appearance", "keyboard", "voice"]],
+  ["Agents", ["providers", "agents", "memory"]],
+  ["Tools & keys", ["connectors", "clis", "vault"]],
+  ["App", ["updates", "diagnostics", "guides"]],
 ];
 
 /** Auto mode; saved as soon as it is switched. */
@@ -198,19 +206,24 @@ export function Settings(props: {
     <main class="settings" aria-label="Settings">
       <nav class="settings-nav" aria-label="Settings sections">
         <h1>Settings</h1>
-        {SECTIONS.map(([id, label, , Icon]) => (
-          <button
-            key={id}
-            type="button"
-            class={`settings-tab${props.section === id ? " active" : ""}`}
-            aria-current={props.section === id ? "page" : undefined}
-            onClick={() => {
-              props.onSection(id);
-            }}
-          >
-            <Icon size={16} /> {label}
-          </button>
-        ))}
+        {GROUPS.map(([group, ids]) => [
+          <h2 key={group} class="settings-group">
+            {group}
+          </h2>,
+          ...SECTIONS.filter(([id]) => ids.includes(id)).map(([id, label, , Icon]) => (
+            <button
+              key={id}
+              type="button"
+              class={`settings-tab${props.section === id ? " active" : ""}`}
+              aria-current={props.section === id ? "page" : undefined}
+              onClick={() => {
+                props.onSection(id);
+              }}
+            >
+              <Icon size={16} /> {label}
+            </button>
+          )),
+        ])}
       </nav>
       <section class="settings-body">
         <header class="settings-head">
