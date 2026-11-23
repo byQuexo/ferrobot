@@ -126,6 +126,8 @@ pub const QUESTION_CARD_FILE: &str = "question-card.v1.schema.json";
         api::diagnostics::get_log,
         api::files::shared_file,
         api::files::page,
+        api::files::create_preview,
+        api::files::preview,
         api::ws::ui_ws,
     ),
     components(schemas(

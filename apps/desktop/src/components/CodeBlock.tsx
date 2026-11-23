@@ -26,12 +26,7 @@ export function CodeBlock(props: { lang: PreviewLang; code: string }): JSX.Eleme
     ) : props.lang === "mermaid" ? (
       <Mermaid code={props.code} />
     ) : (
-      <iframe
-        class={big ? "block-frame big" : "block-frame"}
-        title="HTML preview"
-        sandbox="allow-scripts"
-        srcdoc={props.code}
-      />
+      <HtmlPage code={props.code} big={big} />
     );
   const copy = async (): Promise<void> => {
     const ok = await run(async () => {
@@ -101,6 +96,45 @@ export function CodeBlock(props: { lang: PreviewLang; code: string }): JSX.Eleme
 }
 
 type Rendered = { url: string } | { error: string };
+
+/** The block as a page the daemon serves: in a srcdoc frame the app's CSP would block its styles
+ * and scripts. */
+function HtmlPage(props: { code: string; big: boolean }): JSX.Element {
+  const { client } = useApp();
+  const [out, setOut] = useState<Rendered | null>(null);
+  useEffect(() => {
+    let live = true;
+    client.preview(props.code).then(
+      (r) => {
+        if (live) setOut({ url: `${client.base}${r.url}` });
+      },
+      (err: unknown) => {
+        if (live) setOut({ error: err instanceof Error ? err.message : String(err) });
+      },
+    );
+    return () => {
+      live = false;
+    };
+  }, [props.code]);
+  if (!out) return <div class="mermaid-loading" aria-busy="true" />;
+  if ("error" in out)
+    return (
+      <>
+        <pre class="code-block">
+          <code>{props.code}</code>
+        </pre>
+        <p class="block-error">Could not show the page: {out.error}</p>
+      </>
+    );
+  return (
+    <iframe
+      class={props.big ? "block-frame big" : "block-frame"}
+      title="HTML preview"
+      sandbox="allow-scripts"
+      src={out.url}
+    />
+  );
+}
 
 /** The diagram as an image: under the app's CSP an inline SVG would lose its styles, and an
  * image can run nothing. */

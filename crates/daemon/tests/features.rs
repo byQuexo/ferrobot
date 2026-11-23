@@ -3782,6 +3782,62 @@ async fn messages_reach_a_running_turn_when_the_runner_can_take_them() {
 }
 
 #[tokio::test]
+async fn html_blocks_from_the_chat_open_as_sandboxed_pages() {
+    let d = start(Arc::new(StatefulBackend::default()), None, "127.0.0.1:0").await;
+    let html = "<style>h1{color:red}</style><h1>Hi</h1><script>document.title='x'</script>";
+    let post = |body: Value| http(&d.ui, "POST", "/v1/previews", Some(body));
+    let (status, link) = post(json!({ "html": html })).await;
+    assert_eq!(status, 200, "{link}");
+    let url = link["url"].as_str().unwrap().to_owned();
+    let id = url
+        .strip_prefix("/artifacts/previews/")
+        .and_then(|rest| rest.split('?').next())
+        .unwrap()
+        .to_owned();
+    let (_, again) = post(json!({ "html": html })).await;
+    assert!(
+        again["url"].as_str().unwrap().contains(&id),
+        "the same block keeps its id"
+    );
+
+    let no_token = [("Authorization", "")];
+    let (status, headers, body) = http_raw(&d.ui, "GET", &url, &no_token, b"").await;
+    assert_eq!(status, 200);
+    assert_eq!(String::from_utf8_lossy(&body), html);
+    let csp = headers
+        .iter()
+        .find(|(k, _)| k.eq_ignore_ascii_case("content-security-policy"))
+        .map(|(_, v)| v.clone())
+        .unwrap();
+    assert!(
+        csp.starts_with("sandbox allow-scripts;")
+            && csp.contains("connect-src 'none'")
+            && !csp.contains("allow-same-origin"),
+        "{csp}"
+    );
+
+    let get = |url: String| {
+        let ui = d.ui.clone();
+        async move { http_raw(&ui, "GET", &url, &no_token, b"").await.0 }
+    };
+    let last = if url.ends_with('0') { '1' } else { '0' };
+    assert_eq!(get(format!("{}{last}", &url[..url.len() - 1])).await, 404);
+    assert_eq!(get(format!("/artifacts/previews/{id}")).await, 404);
+    let expired = files::preview_link(&d.state, &id, 1).await.unwrap();
+    assert_eq!(get(expired).await, 404, "links expire");
+    let unknown = files::fresh_preview_link(&d.state, &"0".repeat(64))
+        .await
+        .unwrap();
+    assert_eq!(get(unknown).await, 404);
+
+    let (status, _) = post(json!({ "html": "x".repeat(files::MAX_BLOCK_BYTES + 1) })).await;
+    assert_eq!(status, 400);
+    let (status, _, _) =
+        http_raw(&d.ui, "POST", "/v1/previews", &no_token, br#"{"html":"x"}"#).await;
+    assert_eq!(status, 401, "only the operator stores blocks");
+}
+
+#[tokio::test]
 async fn agents_share_files_that_open_from_storage() {
     let backend = Arc::new(StatefulBackend::default());
     let d = start(backend.clone(), None, "127.0.0.1:0").await;

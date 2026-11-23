@@ -1,9 +1,10 @@
 //! Files agents shared with the operator (`share_file`), read from storage.
 
-use axum::Json;
 use axum::extract::{Path, Query, State};
 use axum::http::{HeaderValue, StatusCode, header};
 use axum::response::{IntoResponse, Response};
+use axum::routing::{get, post};
+use axum::{Json, Router};
 use serde::{Deserialize, Serialize};
 use utoipa::{IntoParams, ToSchema};
 
@@ -13,6 +14,14 @@ use crate::{AppState, files};
 
 /// Largest file shown as text.
 const MAX_PREVIEW_BYTES: usize = 2 * 1024 * 1024;
+
+pub(super) fn router() -> Router<AppState> {
+    Router::new()
+        .route("/v1/agents/{id}/files/{file_id}", get(shared_file))
+        .route("/artifacts/{id}/{file_id}", get(page))
+        .route("/v1/previews", post(create_preview))
+        .route("/artifacts/previews/{id}", get(preview))
+}
 
 #[derive(Debug, Serialize, ToSchema)]
 pub(crate) struct SharedFileView {
@@ -127,7 +136,16 @@ pub(crate) async fn page(
     let filename = name.replace(['"', '\\', '\r', '\n'], "_");
     let disposition = HeaderValue::from_str(&format!("{disposition}; filename=\"{filename}\""))
         .unwrap_or_else(|_| HeaderValue::from_static("attachment"));
-    Ok((
+    Ok(respond(content_type, disposition, csp, bytes))
+}
+
+fn respond(
+    content_type: &'static str,
+    disposition: HeaderValue,
+    csp: &'static str,
+    body: Vec<u8>,
+) -> Response {
+    (
         StatusCode::OK,
         [
             (header::CONTENT_TYPE, HeaderValue::from_static(content_type)),
@@ -146,9 +164,79 @@ pub(crate) async fn page(
             ),
             (header::CACHE_CONTROL, HeaderValue::from_static("no-store")),
         ],
-        bytes,
+        body,
     )
-        .into_response())
+        .into_response()
+}
+
+#[derive(Debug, Deserialize, ToSchema)]
+pub(crate) struct PreviewRequest {
+    /// The block's HTML, at most 512 KiB.
+    html: String,
+}
+
+#[derive(Debug, Serialize, ToSchema)]
+pub(crate) struct PreviewLink {
+    /// The block as a sandboxed page (relative to the daemon), a signed link that works for
+    /// 30 minutes.
+    url: String,
+}
+
+/// Serves a HTML block from the chat as a page, so its inline styles and scripts run under
+/// the shared pages' policy (no network) instead of being blocked by the app's.
+#[utoipa::path(post, path = "/v1/previews", tag = "chat", request_body = PreviewRequest,
+    responses((status = 200, body = PreviewLink),
+        (status = 400, description = "Larger than 512 KiB", body = ErrorBody)))]
+pub(crate) async fn create_preview(
+    State(state): State<AppState>,
+    Json(req): Json<PreviewRequest>,
+) -> ApiResult<PreviewLink> {
+    if req.html.len() > files::MAX_BLOCK_BYTES {
+        return Err(ApiError::BadRequest(format!(
+            "an HTML preview is at most {} KiB",
+            files::MAX_BLOCK_BYTES / 1024
+        )));
+    }
+    let id = state.previews.put(&req.html);
+    let url = files::fresh_preview_link(&state, &id)
+        .await
+        .map_err(|e| ApiError::Internal(format!("preview link: {e}")))?;
+    Ok(Json(PreviewLink { url }))
+}
+
+#[derive(Debug, Deserialize, IntoParams)]
+#[into_params(parameter_in = Query)]
+pub(crate) struct LinkQuery {
+    /// Expiry of the link (unix seconds), from `url`.
+    exp: Option<u64>,
+    /// Signature of the link, from `url`.
+    sig: Option<String>,
+}
+
+/// A HTML block by signed, expiring link, as a sandboxed page.
+#[utoipa::path(get, path = "/artifacts/previews/{id}", tag = "chat",
+    params(("id" = String, Path, description = "Block id, from `POST /v1/previews`"), LinkQuery),
+    responses((status = 200, description = "The page", content_type = "text/html", body = String),
+        (status = 404, description = "Unknown block, or the link expired", body = ErrorBody)))]
+pub(crate) async fn preview(
+    State(state): State<AppState>,
+    Path(id): Path<String>,
+    Query(q): Query<LinkQuery>,
+) -> Result<Response, ApiError> {
+    let missing = || ApiError::NotFound("preview not found, or the link expired".into());
+    let (Some(exp), Some(sig)) = (q.exp, q.sig.as_deref()) else {
+        return Err(missing());
+    };
+    if !files::preview_link_valid(&state, &id, exp, sig).await {
+        return Err(missing());
+    }
+    let html = state.previews.get(&id).ok_or_else(missing)?;
+    Ok(respond(
+        "text/html; charset=utf-8",
+        HeaderValue::from_static("inline"),
+        PAGE_CSP,
+        html.as_bytes().to_vec(),
+    ))
 }
 
 /// Shared pages: inline scripts, styles and data only. No remote origin at

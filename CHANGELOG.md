@@ -35,7 +35,8 @@ All notable changes are listed here. The format follows
   `claude` (`/usage`, no model call) and `codex app-server`; never the
   account.
 - Richer chat: ```mermaid blocks draw as diagrams and ```html blocks as a
-  sandboxed live preview (Preview/Code, Copy, Expand); shared .html and .pdf
+  sandboxed live preview with their styles and scripts, served by the daemon
+  like shared pages (`POST /v1/previews`; Preview/Code, Copy, Expand); shared .html and .pdf
   files preview under their card; cleaner tables; a "New" line where unread
   turns start; mail with several agents folds into one "N messages with K
   agents" line.

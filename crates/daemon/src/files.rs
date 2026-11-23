@@ -1,6 +1,8 @@
 //! Files agents share: copied into object storage (`artifacts/<agent>/<uuid>`) and shown as a
 //! `file` event, so they outlive the sandbox and stay the version that was shared.
 
+use std::collections::VecDeque;
+use std::sync::{Arc, Mutex, PoisonError};
 use std::time::Duration;
 
 use ferrobot_core::AgentId;
@@ -21,6 +23,36 @@ pub const LINK_TTL: Duration = Duration::from_secs(30 * 60);
 
 /// Where the key that signs file links lives in the secret store.
 const LINK_KEY: &str = "artifact-link-key";
+
+/// Largest HTML block from the chat the daemon serves as a page.
+pub const MAX_BLOCK_BYTES: usize = 512 * 1024;
+
+/// How many blocks stay served; older links stop working.
+const KEPT_BLOCKS: usize = 32;
+
+/// HTML blocks from the chat, served as pages so their styles and scripts run under the shared
+/// pages' policy rather than the app's. In memory: after a restart the app asks again.
+#[derive(Debug, Default)]
+pub struct Previews(Mutex<VecDeque<(String, Arc<str>)>>);
+
+impl Previews {
+    /// Keeps `html` under its SHA-256, so a block rendered again is kept once.
+    pub fn put(&self, html: &str) -> String {
+        let id = hex::encode(ring::digest::digest(&ring::digest::SHA256, html.as_bytes()));
+        let mut kept = self.0.lock().unwrap_or_else(PoisonError::into_inner);
+        kept.retain(|(k, _)| *k != id);
+        if kept.len() >= KEPT_BLOCKS {
+            kept.pop_front();
+        }
+        kept.push_back((id.clone(), html.into()));
+        id
+    }
+
+    pub fn get(&self, id: &str) -> Option<Arc<str>> {
+        let kept = self.0.lock().unwrap_or_else(PoisonError::into_inner);
+        kept.iter().find(|(k, _)| k == id).map(|(_, h)| h.clone())
+    }
+}
 
 /// A file named by an agent: absolute, below its home (`~/x`) or, like its
 /// tools see it, relative to its workspace.
@@ -129,6 +161,20 @@ fn unix_now() -> u64 {
         .map_or(0, |d| d.as_secs())
 }
 
+async fn sign(state: &AppState, message: &str) -> Result<String, String> {
+    let key = link_key(state).await?;
+    Ok(hex::encode(
+        ring::hmac::sign(&key, message.as_bytes()).as_ref(),
+    ))
+}
+
+async fn verify(state: &AppState, message: &str, expires: u64, sig: &str) -> bool {
+    let (Ok(key), Ok(sig)) = (link_key(state).await, hex::decode(sig)) else {
+        return false;
+    };
+    expires >= unix_now() && ring::hmac::verify(&key, message.as_bytes(), &sig).is_ok()
+}
+
 /// A link to a shared file that works until `expires` (unix seconds).
 pub async fn signed_link(
     state: &AppState,
@@ -136,9 +182,7 @@ pub async fn signed_link(
     file: i64,
     expires: u64,
 ) -> Result<String, String> {
-    let key = link_key(state).await?;
-    let tag = ring::hmac::sign(&key, format!("{agent}/{file}/{expires}").as_bytes());
-    let sig = hex::encode(tag.as_ref());
+    let sig = sign(state, &format!("{agent}/{file}/{expires}")).await?;
     Ok(format!("/artifacts/{agent}/{file}?exp={expires}&sig={sig}"))
 }
 
@@ -155,11 +199,23 @@ pub async fn link_valid(
     expires: u64,
     sig: &str,
 ) -> bool {
-    let (Ok(key), Ok(sig)) = (link_key(state).await, hex::decode(sig)) else {
-        return false;
-    };
-    expires >= unix_now()
-        && ring::hmac::verify(&key, format!("{agent}/{file}/{expires}").as_bytes(), &sig).is_ok()
+    verify(state, &format!("{agent}/{file}/{expires}"), expires, sig).await
+}
+
+/// A link to a kept HTML block (see [`Previews`]) until `expires` (unix seconds).
+pub async fn preview_link(state: &AppState, id: &str, expires: u64) -> Result<String, String> {
+    // Agent ids are UUIDs, so `preview/...` never signs like a file link.
+    let sig = sign(state, &format!("preview/{id}/{expires}")).await?;
+    Ok(format!("/artifacts/previews/{id}?exp={expires}&sig={sig}"))
+}
+
+/// A link to a kept HTML block that works for [`LINK_TTL`].
+pub async fn fresh_preview_link(state: &AppState, id: &str) -> Result<String, String> {
+    preview_link(state, id, unix_now() + LINK_TTL.as_secs()).await
+}
+
+pub async fn preview_link_valid(state: &AppState, id: &str, expires: u64, sig: &str) -> bool {
+    verify(state, &format!("preview/{id}/{expires}"), expires, sig).await
 }
 
 /// Whether a shared file is a PDF by name (the content is checked too).

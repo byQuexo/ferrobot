@@ -34,6 +34,7 @@ export type Connector = Schemas["ConnectorView"];
 export type ToolGroup = Schemas["ToolGroup"];
 export type ConnectorCheck = Schemas["ConnectorCheck"];
 export type SharedFile = Schemas["SharedFileView"];
+export type PreviewLink = Schemas["PreviewLink"];
 export type CreateConnector = Schemas["CreateConnector"];
 export type UpdateConnector = Schemas["UpdateConnector"];
 export type DeviceCode = Schemas["DeviceCode"];
@@ -201,6 +202,8 @@ export class DaemonClient {
   markRead = (id: string): Promise<void> => this.#request("POST", `/v1/agents/${id}/read`);
   sharedFile = (agent: string, file: number): Promise<SharedFile> =>
     this.#request("GET", `/v1/agents/${agent}/files/${String(file)}`);
+  /** A ```html block from the chat, served by the daemon as a sandboxed page. */
+  preview = (html: string): Promise<PreviewLink> => this.#request("POST", "/v1/previews", { html });
   interrupt = (id: string): Promise<unknown> => this.#request("POST", `/v1/agents/${id}/interrupt`);
   retry = (id: string): Promise<Agent> => this.#request("POST", `/v1/agents/${id}/retry`);
   /** The agent's next turn starts a fresh model session; the chat stays. */

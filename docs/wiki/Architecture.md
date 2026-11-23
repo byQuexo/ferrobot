@@ -42,8 +42,9 @@ different trust:
   HTTP and WebSocket API for the operator. Every `/v1` route needs the
   operator token as `Authorization: Bearer <token>`, except `GET /v1/health`
   and the OAuth callback for connector sign-ins (guarded by a single-use
-  `state` instead). Pages of files agents share are served under
-  `/artifacts/` with signed links that expire after 30 minutes.
+  `state` instead). Pages of files agents share, and ```html blocks from the
+  chat (`POST /v1/previews`, kept in memory), are served under `/artifacts/`
+  with signed links that expire after 30 minutes, sandboxed with no network.
   The token is generated on first start into `<data dir>/api-token` (mode
   0600), or set with `--api-token` / `FERROBOT_API_TOKEN`. `GET` requests may
   pass `?access_token=` instead, for WebSockets and images. It is plain HTTP

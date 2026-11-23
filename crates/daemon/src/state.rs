@@ -253,6 +253,8 @@ pub struct AppState {
     pub connectors: Arc<crate::connectors::Sessions>,
     /// Signs links to shared files; loaded from the secret store once.
     pub link_key: Arc<tokio::sync::OnceCell<ring::hmac::Key>>,
+    /// HTML blocks from the chat, served as pages.
+    pub previews: Arc<crate::files::Previews>,
     /// Connector OAuth sign-ins waiting for the browser, refresh locks.
     pub oauth: Arc<crate::oauth::OAuth>,
     /// Model lists recently fetched from providers.
@@ -298,6 +300,7 @@ impl AppState {
             codex: Arc::default(),
             connectors: Arc::default(),
             link_key: Arc::default(),
+            previews: Arc::default(),
             oauth: Arc::default(),
             model_lists: Arc::default(),
             limits: Arc::default(),

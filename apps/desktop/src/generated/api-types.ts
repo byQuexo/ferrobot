@@ -4,6 +4,23 @@
  */
 
 export interface paths {
+    "/artifacts/previews/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** A HTML block by signed, expiring link, as a sandboxed page. */
+        get: operations["preview"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/artifacts/{id}/{file_id}": {
         parameters: {
             query?: never;
@@ -783,6 +800,26 @@ export interface paths {
         get: operations["oauth_callback"];
         put?: never;
         post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/previews": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Serves a HTML block from the chat as a page, so its inline styles and scripts run under
+         *     the shared pages' policy (no network) instead of being blocked by the app's.
+         */
+        post: operations["create_preview"];
         delete?: never;
         options?: never;
         head?: never;
@@ -1878,6 +1915,17 @@ export interface components {
          * @enum {string}
          */
         Presence: "working" | "awake" | "starting" | "sleeping" | "error";
+        PreviewLink: {
+            /**
+             * @description The block as a sandboxed page (relative to the daemon), a signed link that works for
+             *     30 minutes.
+             */
+            url: string;
+        };
+        PreviewRequest: {
+            /** @description The block's HTML, at most 512 KiB. */
+            html: string;
+        };
         /** @description USD per 1M tokens. */
         Price: {
             /** Format: double */
@@ -2525,6 +2573,52 @@ export interface components {
 }
 export type $defs = Record<string, never>;
 export interface operations {
+    preview: {
+        parameters: {
+            query?: {
+                /** @description Expiry of the link (unix seconds), from `url`. */
+                exp?: number;
+                /** @description Signature of the link, from `url`. */
+                sig?: string;
+            };
+            header?: never;
+            path: {
+                /** @description Block id, from `POST /v1/previews` */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The page */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "text/html": string;
+                };
+            };
+            /** @description Missing or wrong API token */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Unknown block, or the link expired */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+        };
+    };
     page: {
         parameters: {
             query?: {
@@ -5114,6 +5208,47 @@ export interface operations {
                 };
                 content: {
                     "text/html": string;
+                };
+            };
+            /** @description Missing or wrong API token */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+        };
+    };
+    create_preview: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PreviewRequest"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PreviewLink"];
+                };
+            };
+            /** @description Larger than 512 KiB */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
                 };
             };
             /** @description Missing or wrong API token */
