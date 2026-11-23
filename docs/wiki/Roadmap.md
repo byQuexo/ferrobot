@@ -24,7 +24,14 @@ In rough order. Nothing here has a date.
    Like every other tool it stays inside the sandbox, goes through the tool
    groups (a new `computer` group, off by default) and the risky-step
    classifier, and works with any model that accepts images.
-5. **Later.** Moving warm agents to cold sleep under memory pressure (F4d), a
+5. **Traces.** A trace view behind each reply's steps line: one timeline of
+   the turn's model calls, tool calls, approval waits and the work it handed
+   to other agents, with duration, counts and errors. The same traces go out
+   over OpenTelemetry (OTLP, GenAI conventions) to an endpoint you choose,
+   such as Langfuse, Phoenix, Grafana Tempo or Jaeger. Export is off by
+   default; its keys stay in the keychain, and prompts and replies are left
+   out unless you turn them on.
+6. **Later.** Moving warm agents to cold sleep under memory pressure (F4d), a
    native macOS app on the same `/v1` API, and optional self-hosted
    S3-compatible storage. Smaller ideas are on [[Ideas]].
 
