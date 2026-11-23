@@ -94,7 +94,8 @@ tested against fakes on a machine without KVM.
 | v0.1.1 | done | Codex setup help, key links per provider, and the reason under a message that was not delivered. |
 | v0.1.2 | done | The first-run setup shows the ChatGPT sign-in for Codex once. |
 | v0.1.3 | done | Opt-in Claude Code (your own login): your own claude CLI and subscription, on the host. |
-| v0.1.4 | done | Group chats, reactions, uploads, richer chat, plan limits, tags and model switch, Appearance, shortcuts, the call bar. |
+| v0.1.4 | done | Group chats, reactions, uploads, richer chat, plan limits, tags and model switch, Appearance, shortcuts, the call bar. Tagged, not published. |
+| v0.1.5 | done | v0.1.4 plus the fix for messages shown as queued while their turn runs. |
 
 Ideas beyond this list are on [[Ideas]].
 
