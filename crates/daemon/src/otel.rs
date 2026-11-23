@@ -372,7 +372,12 @@ fn step<'a>(
         start: s.started_at,
         end: s.ended_at.unwrap_or(end),
         attrs,
-        error: s.error.as_deref(),
+        // A failed tool's error is its own output: content, so it only goes out with content on.
+        error: s.error.as_deref().map(|e| match (content, s.kind) {
+            (true, _) | (false, SpanKind::Model) => e,
+            (false, SpanKind::Tool) if e.starts_with("denied") => "denied",
+            (false, SpanKind::Tool) => "failed",
+        }),
     }
 }
 
@@ -526,10 +531,11 @@ mod tests {
             outcome: Some("completed".into()),
             error: None,
             models_tracked: true,
-            spans: vec![
-                step(SpanKind::Model, "claude-x", 0),
-                step(SpanKind::Tool, "bash", 2),
-            ],
+            spans: vec![step(SpanKind::Model, "claude-x", 0), {
+                let mut bash = step(SpanKind::Tool, "bash", 2);
+                bash.error = Some("cat: /secret/notes.txt: No such file".into());
+                bash
+            }],
         };
         let body = encode(&TurnInfo {
             trace: &trace,
@@ -569,6 +575,12 @@ mod tests {
         assert!(
             !attrs.iter().any(|(k, _)| k == b"input.value"),
             "inputs stay out unless content is on"
+        );
+        let status = &get(&spans[2], 15)[0];
+        assert_eq!(
+            get(status, 2)[0],
+            b"failed",
+            "no tool output without content"
         );
     }
 

@@ -173,7 +173,8 @@ out, and agents cannot change either.
   an agent can hand work to Claude Code subagents (`general-purpose`,
   `Explore`, and those of plugins you switched on). They get the same ferrobot
   tools and no built-in ones, so they too work only in the agent's computer.
-  The turn ends when they are done; they use more of your plan.
+  The turn ends when they are done; they use more of your plan. Their own
+  model calls may be missing from Usage and traces.
 - **Plugins** are the ones installed in your Claude Code
   (`claude plugin install ...`). Their hooks run, and their subagents when
   Subagents is on. Their skills and commands need Claude Code's built-in

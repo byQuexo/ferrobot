@@ -309,6 +309,14 @@ daemon, `docker ps -a` must be empty of ferrobot containers.
   claude.ai login, Docker sandbox); Windows never.
 - The app updater never ran against a real release (v0.1.0 shipped without
   update files), and its Windows install path is untested.
+- Claude Code hooks, plugins and Subagents (2026-11-24) ran only as direct
+  `claude -p` turns (Haiku) with the daemon's flags, never through a daemon
+  turn; that a `Task` subagent has no built-in tools was not observed, and its
+  model calls likely miss Usage and traces.
+- OTLP export ran against Grafana's collector and Tempo (root span only;
+  child spans only in a unit test), never against Phoenix or Langfuse.
+- The Obsidian vault memory ran only against a temp folder, never with
+  Obsidian open; frontmatter with CRLF line endings is not parsed.
 
 ## Next up: Firecracker
 

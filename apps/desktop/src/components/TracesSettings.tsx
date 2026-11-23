@@ -59,11 +59,10 @@ export function TracesSettings(): JSX.Element | null {
   const auth = authValue(backend, key, secret);
   const save = async (enabled: boolean, content = view.content): Promise<void> => {
     const custom = backend === "other";
-    const headerName = custom
-      ? header.trim() || null
-      : auth || view.has_secret
-        ? "Authorization"
-        : null;
+    // A stored key belongs to the backend it was saved for, never to the next one.
+    const switched = view.endpoint !== "" && backendOf(view.endpoint) !== backend;
+    const keep = view.has_secret && !switched;
+    const headerName = custom ? header.trim() || null : auth || keep ? "Authorization" : null;
     let saved = await run(() =>
       client.updateOtel({
         enabled,
@@ -74,6 +73,8 @@ export function TracesSettings(): JSX.Element | null {
       }),
     );
     if (saved && auth) saved = await run(() => client.setOtelSecret(auth));
+    else if (saved && switched && view.has_secret)
+      saved = await run(() => client.setOtelSecret(null));
     if (saved) show(saved);
   };
   const forget = async (): Promise<void> => {
