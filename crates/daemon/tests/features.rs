@@ -7090,6 +7090,8 @@ async fn groups_talk_by_room_rules_and_a_call_to_one_lands_in_it() {
             .ends_with("@bob: Deploying.")
     );
     lines_reach(&d, id, 5).await;
+    // Hanging up cuts off a turn still holding the floor, so cy's pass must be settled first.
+    turns_done(&d, cy, 1).await;
 
     // Hung up, the group stays and talks outside the call again.
     let hang_up = json!({"agents": []});
