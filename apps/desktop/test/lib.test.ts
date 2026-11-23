@@ -941,6 +941,7 @@ describe("ui polish", () => {
       text: "ok",
       streaming: false,
       id: 1,
+      turn: "t",
       reaction: null,
     } as const;
     const items = [
@@ -2036,6 +2037,21 @@ describe("trace layout", () => {
       "12s",
       "1m 5s",
     ]);
+  });
+
+  it("labels computer steps by their command or file", async () => {
+    const { traceLabel } = await import("../src/lib/trace.ts");
+    const none = (): undefined => undefined;
+    assert.equal(
+      traceLabel("tool", "mcp__ferrobot__bash", { command: "ls -la\npwd" }, none),
+      "$ ls -la",
+    );
+    assert.equal(
+      traceLabel("tool", "mcp__ferrobot__read_file", { path: "brief.md" }, none),
+      "Reading brief.md",
+    );
+    assert.equal(traceLabel("tool", "write_file", { path: "out.txt" }, none), "Writing out.txt");
+    assert.equal(traceLabel("model", "claude-opus", null, none), "claude-opus");
   });
 
   it("runs a still running turn up to now", async () => {

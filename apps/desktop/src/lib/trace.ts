@@ -1,6 +1,7 @@
 // A turn's trace laid out as a timeline: where each step's bar starts and how wide it is.
 // Pure, so the layout rules are unit-tested without a browser.
 import type { Trace } from "../api.ts";
+import { stepLabel } from "./format.ts";
 
 export interface TraceRow {
   index: number;
@@ -77,4 +78,25 @@ export function traceDuration(ms: number): string {
   if (ms < 10_000) return `${(ms / 1000).toFixed(1)}s`;
   const s = Math.round(ms / 1000);
   return s < 60 ? `${String(s)}s` : `${String(Math.floor(s / 60))}m ${String(s % 60)}s`;
+}
+
+/** What a step did: the model, the command or file of a computer tool, else the chat's label. */
+export function traceLabel(
+  kind: "model" | "tool",
+  name: string,
+  input: unknown,
+  nameOf: (id: string) => string | undefined,
+): string {
+  if (kind === "model") return name;
+  const tool = name.split("__").pop() ?? name;
+  const arg = (key: string): string | null => {
+    const v = (input as Record<string, unknown> | null)?.[key];
+    return typeof v === "string" && v ? v : null;
+  };
+  const cmd = arg("command");
+  if (tool === "bash" && cmd) return `$ ${cmd.split("\n")[0] ?? cmd}`;
+  const path = arg("path");
+  if (tool === "read_file" && path) return `Reading ${path}`;
+  if (tool === "write_file" && path) return `Writing ${path}`;
+  return stepLabel(name, input, nameOf);
 }

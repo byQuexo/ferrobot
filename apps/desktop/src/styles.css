@@ -1152,3 +1152,7 @@ kbd { padding: 2px 8px; border: 1px solid var(--border-strong); border-radius: 6
 @media (prefers-reduced-motion: reduce) { .trace-bar.running { animation: none; } }
 .trace-time.inside { color: var(--bg); font-weight: 600; }
 
+/* A reply's steps in its footer, opening the trace */
+.msg-steps { display: inline-flex; align-items: center; gap: 4px; padding: 2px 6px; border: none; border-radius: 6px; background: none; color: var(--muted); font: inherit; font-size: 12px; cursor: pointer; }
+.msg-steps:hover { background: var(--surface-2); color: var(--text); }
+

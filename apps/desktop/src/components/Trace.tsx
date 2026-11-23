@@ -4,8 +4,7 @@ import { Brain, Wrench } from "lucide-preact";
 
 import type { Agent, Trace } from "../api.ts";
 import { useApp } from "../context.ts";
-import { stepLabel } from "../lib/format.ts";
-import { layoutTrace, traceDuration, type TraceRow } from "../lib/trace.ts";
+import { layoutTrace, traceDuration, traceLabel, type TraceRow } from "../lib/trace.ts";
 import { Avatar } from "./Avatar.tsx";
 import { Dialog } from "./ui.tsx";
 
@@ -47,7 +46,7 @@ export function TraceDialog(props: {
   }, [props.agent.id, props.turn]);
 
   const label = (r: TraceRow): string =>
-    r.kind === "model" ? r.name : stepLabel(r.name, r.input, (id) => agents.get(id)?.name);
+    traceLabel(r.kind, r.name, r.input, (id) => agents.get(id)?.name);
   const layout = trace ? layoutTrace(trace, now) : null;
   const q = query.trim().toLowerCase();
   const rows = layout?.rows.filter((r) => !q || label(r).toLowerCase().includes(q)) ?? [];

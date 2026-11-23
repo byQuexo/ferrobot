@@ -203,6 +203,20 @@ export function Chat(props: {
 
   const working = agent.presence === "working";
   const [trace, setTrace] = useState<string | null>(null);
+  // A turn's steps show in the footer of its last reply; a turn without one keeps its own line.
+  const turnSteps = useMemo(() => {
+    const steps = new Map<string, { count: number; seconds: number }>();
+    const lastReply = new Map<string, string>();
+    for (const i of items.shown) {
+      if (i.type === "steps") {
+        const turn = i.tools.find((t) => t.turn)?.turn;
+        if (!turn) continue;
+        const had = steps.get(turn) ?? { count: 0, seconds: 0 };
+        steps.set(turn, { count: had.count + i.tools.length, seconds: had.seconds + i.seconds });
+      } else if (i.type === "assistant" && i.turn && !i.streaming) lastReply.set(i.turn, i.key);
+    }
+    return { steps, lastReply };
+  }, [items.shown]);
   // Queued means the running turn cannot take it in: stopping that turn sends it next.
   const queued = items.shown.some((i) => i.type === "user" && i.status === "pending");
   const sendNow =
@@ -333,6 +347,17 @@ export function Chat(props: {
               onActivities={props.onActivities}
               sendNow={sendNow}
               onTrace={setTrace}
+              footSteps={
+                item.type === "assistant" &&
+                item.turn &&
+                turnSteps.lastReply.get(item.turn) === item.key
+                  ? turnSteps.steps.get(item.turn)
+                  : undefined
+              }
+              folded={
+                item.type === "steps" &&
+                turnSteps.lastReply.has(item.tools.find((t) => t.turn)?.turn ?? "")
+              }
             />
           </div>
         ))}
@@ -379,6 +404,27 @@ export function Chat(props: {
         />
       )}
     </section>
+  );
+}
+
+/** A reply's steps in its footer; opens the turn's trace. */
+function TraceLink(props: {
+  turn: string;
+  steps: { count: number; seconds: number };
+  onTrace?: ((turn: string) => void) | undefined;
+}): JSX.Element {
+  return (
+    <button
+      type="button"
+      class="msg-steps"
+      title="Open the trace"
+      onClick={() => {
+        props.onTrace?.(props.turn);
+      }}
+    >
+      <Footprints size={13} /> {stepsLabel(props.steps.count, props.steps.seconds)}
+      <ChevronRight size={13} />
+    </button>
   );
 }
 
@@ -499,11 +545,16 @@ function Item(props: {
   sendNow?: (() => void) | undefined;
   /** Opens a turn's trace. */
   onTrace?: (turn: string) => void;
-}): JSX.Element {
+  /** On a turn's last reply: its steps, shown in the footer. */
+  footSteps?: { count: number; seconds: number } | undefined;
+  /** A steps line whose turn's reply shows them instead. */
+  folded?: boolean;
+}): JSX.Element | null {
   const { item, agent } = props;
   const { agents, openFile } = useApp();
   switch (item.type) {
     case "steps":
+      if (props.folded) return null;
       return (
         <div class="row row-center">
           <button
@@ -586,6 +637,9 @@ function Item(props: {
                 )}
                 {item.id !== null && (
                   <ReactButton agent={agent.id} event={item.id} current={item.reaction} />
+                )}
+                {props.footSteps && item.turn && (
+                  <TraceLink turn={item.turn} steps={props.footSteps} onTrace={props.onTrace} />
                 )}
               </span>
             )}

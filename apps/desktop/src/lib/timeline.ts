@@ -27,6 +27,8 @@ export type TimelineItem =
       streaming: boolean;
       /** Its `assistant_text` event; `null` while it streams. */
       id: number | null;
+      /** The turn that wrote it. */
+      turn: string | null;
       /** The operator's emoji on this message. */
       reaction: string | null;
     }
@@ -270,6 +272,7 @@ export function buildTimeline(
           text: str(p["text"]),
           streaming: false,
           id: e.id,
+          turn: e.turn_id ?? null,
           reaction: mine.get(e.id) ?? null,
         });
         break;
@@ -381,6 +384,7 @@ export function buildTimeline(
         text,
         streaming: true,
         id: null,
+        turn: turnId,
         reaction: null,
       });
     }
