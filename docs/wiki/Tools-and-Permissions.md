@@ -36,14 +36,14 @@ Connectors are switched on per agent in the same list. See
 ## Subagents
 
 An agent can split work into parallel parts without a new teammate. Claude
-(the SDK's Agent tool), Codex and Gemini CLI use their own subagents;
-OpenAI-compatible providers get ferrobot's `subagent` tool. It runs a task
-with the same model and tools and a fresh history, at most 20 model calls,
-and returns the answer. Several in one step run in parallel; their steps go
-through the same checks and show in Activities.
+uses the SDK's Agent tool; OpenAI-compatible providers get ferrobot's
+`subagent` tool. It runs a task with the same model and tools and a fresh
+history, at most 20 model calls, and returns the answer. Several in one step
+run in parallel; their steps go through the same checks and show in
+Activities.
 
 - Subagents are off while Shell, Files or Web is off, since they run their
-  own tools.
+  own tools. Where Codex or Gemini CLI offer their own, the same rule applies.
 - Claude Code (your own login) has none.
 
 ## Files and reactions in the chat

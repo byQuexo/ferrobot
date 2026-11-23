@@ -40,12 +40,12 @@ import {
   sharedFiles,
   unreadSince,
   withoutRoomTurns,
-  type Attachment,
   type DisplayItem,
   type Exchange,
   type TimelineItem,
 } from "../lib/timeline.ts";
 import { hasVoiceKey, record, startLive, type LiveSession, type Recording } from "../lib/voice.ts";
+import { AttachmentChips, previews } from "./Attachments.tsx";
 import { FilePreview } from "./FilePreview.tsx";
 import { fileSize } from "./FileViewer.tsx";
 import { ContextMeter, ModelChip, TagChips } from "./AgentMeta.tsx";
@@ -802,26 +802,7 @@ function MicButton(props: {
   );
 }
 
-/** Object URLs of images sent from this window by `<agent>/<path>`, for their chips. */
-// shortcut: the URLs live until the window closes and older images show no thumbnail; load them from the workspace if that matters.
-const previews = new Map<string, string>();
 const MAX_UPLOAD = 25 * 1024 * 1024;
-
-function AttachmentChips(props: { agent: string; files: Attachment[] }): JSX.Element {
-  return (
-    <div class="attachments">
-      {props.files.map((f) => {
-        const preview = previews.get(`${props.agent}/${f.path}`);
-        return (
-          <span key={f.path} class="attachment" title={`${f.path} (${f.kind}, ${f.size})`}>
-            {preview ? <img src={preview} alt="" /> : <Paperclip size={14} />}
-            <span>{f.path.split("/").pop()}</span>
-          </span>
-        );
-      })}
-    </div>
-  );
-}
 
 /** The message box of a chat or call room (`chat` is its id). */
 export function Composer(props: {
