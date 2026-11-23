@@ -35,6 +35,8 @@ export interface TraceLayout {
 
 /** Bars narrower than this would vanish. */
 const MIN_WIDTH = 0.6;
+/** A step only counts as the slowest when it took at least this long. */
+const SLOW_MS = 1000;
 
 export function layoutTrace(trace: Trace, now: number = Date.now()): TraceLayout {
   const start = Date.parse(trace.started_at);
@@ -62,7 +64,7 @@ export function layoutTrace(trace: Trace, now: number = Date.now()): TraceLayout
     };
   });
   const longest = rows.reduce<TraceRow | null>((a, r) => (!a || r.ms > a.ms ? r : a), null);
-  if (longest && rows.length > 1 && longest.ms > 0) longest.slowest = true;
+  if (longest && rows.length > 1 && longest.ms >= SLOW_MS) longest.slowest = true;
   return {
     ms: end - start,
     running,

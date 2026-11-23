@@ -2039,6 +2039,23 @@ describe("trace layout", () => {
     ]);
   });
 
+  it("marks no step slowest when every step was quick", async () => {
+    const { layoutTrace } = await import("../src/lib/trace.ts");
+    const t = layoutTrace({
+      turn_id: "t",
+      started_at: new Date(1_000_000).toISOString(),
+      ended_at: new Date(1_005_300).toISOString(),
+      outcome: "completed",
+      error: null,
+      models_tracked: false,
+      spans: [span("tool", "a", 2600, 2640), span("tool", "b", 3500, 3510)],
+    });
+    assert.deepEqual(
+      t.rows.map((r) => r.slowest),
+      [false, false],
+    );
+  });
+
   it("labels computer steps by their command or file", async () => {
     const { traceLabel } = await import("../src/lib/trace.ts");
     const none = (): undefined => undefined;
