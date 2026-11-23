@@ -49,8 +49,9 @@ Open the agent's **Edit agent** dialog. Its **Tools** list has a switch per
 connector. Changes apply from the agent's next turn.
 
 - An agent can ask for a connector with its `add_connector` tool. You see a
-  card with the name and URL and, for a token, a hidden field. The token goes
-  straight to Vault; the agent never sees it.
+  card with the name and URL; approve it and the connector is added and given
+  to the agent. No card asks for a key: put a token in **Vault** yourself. The
+  agent never sees it.
 - An agent that creates another agent can give it at most its own
   connectors. See [[Tools and permissions|Tools-and-Permissions]].
 

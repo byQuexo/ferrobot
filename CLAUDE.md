@@ -93,7 +93,7 @@ Principles:
 - `crates/daemon/src/connectors.rs`, `api/connectors.rs` — connectors: the daemon
   is the MCP client of remote MCP servers and lends their tools to assigned
   agents through `/mcp` (tokens in the keychain, never in a sandbox), and the
-  `add_connector` approval card with its hidden token field;
+  `add_connector` approval card (Approve/Decline; tokens go in Settings → Vault);
   `oauth.rs` — their OAuth sign-in (rmcp's client, loopback callback).
 - `crates/daemon/src/clis.rs`, `api/clis.rs` — CLIs: keyless Debian packages
   built into one shared sandbox image (Docker, `build_image` in
@@ -260,10 +260,11 @@ daemon, `docker ps -a` must be empty of ferrobot containers.
 - **`FERROBOT_MAX_AGENTS`** (default 10) applies to `POST /v1/agents` and to
   `create_agent` (both through `daemon::agents::create`).
 - Question cards are answered at most once (`409` after).
-- **A secret typed into a card goes only to the URL on that card.** Only
-  daemon cards carry `secret` fields (`ask_user` refuses them); the answer
-  route strips the value before anything is recorded, broadcast or sent, and
-  agents can never refer to stored secrets.
+- **No card asks for a key.** An agent's `add_connector` card is
+  Approve/Decline only; connector tokens are typed in Settings → Vault. Agent
+  cards cannot carry `secret` fields (`ask_user` refuses them), the answer
+  route strips any secret value before anything is recorded, broadcast or
+  sent, and agents can never refer to stored secrets.
 
 ## Open items
 

@@ -52,6 +52,9 @@ All notable changes are listed here. The format follows
 
 ### Changed
 
+- An agent's `add_connector` card no longer asks for the token: approving it
+  adds the connector and gives it to the agent, and you put its token in
+  Settings → Vault. No card asks for a key.
 - Calmer, clearer desktop UI. Avatars show trouble and an open question card;
   the agent list shows what an agent is doing or its last reply with the time
   (`waiting` and `last_reply` on agents); finished tool runs fold into one

@@ -34,7 +34,7 @@
           "type": "object"
         },
         {
-          "description": "An agent wants to add a connector (`add_connector` tool). Approving creates it with the\ntoken typed into the card and gives it to the agent; the token only ever goes to `url`.",
+          "description": "An agent wants to add a connector (`add_connector` tool). Approving creates it and gives\nit to the agent; a token, if it takes one, goes in under Settings, never on a card.",
           "properties": {
             "auth": {
               "$ref": "#/$defs/ConnectorAuth"

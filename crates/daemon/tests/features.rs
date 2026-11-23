@@ -6122,7 +6122,7 @@ async fn agents_get_connectors_through_a_card_whose_token_they_never_see() {
         .as_str()
         .unwrap()
         .to_owned();
-    // Auto mode skips agent cards, never one that takes a key.
+    // Auto mode does not skip a connector card.
     let auto = Some(json!({"auto_mode": true}));
     assert_eq!(http(&d.ui, "PUT", "/v1/settings", auto).await.0, 200);
     let mut ui = d.state.ui.subscribe();
@@ -6140,44 +6140,47 @@ async fn agents_get_connectors_through_a_card_whose_token_they_never_see() {
         .into_iter()
         .find(|e| e["id"] == qid)
         .unwrap();
-    let questions = &card["payload"]["card"]["questions"];
+    let questions = card["payload"]["card"]["questions"].as_array().unwrap();
     let prompt = questions[0]["prompt"].as_str().unwrap();
     assert!(prompt.contains(&url), "{prompt}");
-    assert!(prompt.contains("goes only to 127.0.0.1"), "{prompt}");
-    assert_eq!(questions[1]["kind"], "secret");
+    assert!(prompt.contains("Settings → Vault"), "{prompt}");
+    assert_eq!(questions.len(), 1, "no card asks for a key");
 
     let path = format!("/v1/agents/{ann}/questions/{qid}/answer");
-    let answer = |token: Option<&str>| {
-        json!({"answers": [
-            {"question_id": "q1", "values": ["approve"]},
-            {"question_id": "token", "custom": token}]})
-    };
-    let (status, _) = http(&d.ui, "POST", &path, Some(answer(None))).await;
-    assert_eq!(status, 400, "approving needs the token");
-    let (status, answered) = http(&d.ui, "POST", &path, Some(answer(Some(TOKEN)))).await;
+    let approve = json!({"answers": [{"question_id": "q1", "values": ["approve"]}]});
+    let (status, answered) = http(&d.ui, "POST", &path, Some(approve.clone())).await;
     assert_eq!(status, 202, "{answered}");
-    let (status, _) = http(&d.ui, "POST", &path, Some(answer(Some(TOKEN)))).await;
+    let (status, _) = http(&d.ui, "POST", &path, Some(approve)).await;
     assert_eq!(status, 409, "answered once");
 
-    // ann has the connector, and the token went to the URL on the card...
+    // ann has the connector; its tools work once the operator puts the token in Settings.
     let (_, ids) = http(&d.ui, "GET", &format!("/v1/agents/{ann}/connectors"), None).await;
     assert_eq!(ids.as_array().unwrap().len(), 1);
-    let tools = mcp_as(&d, backend.token("ann"))
-        .await
-        .list_all_tools()
-        .await
-        .unwrap();
-    assert!(
-        tools.iter().any(|t| t.name == "gh__list_agents"),
-        "{tools:?}"
-    );
+    let gh_tools = || async {
+        mcp_as(&d, backend.token("ann"))
+            .await
+            .list_all_tools()
+            .await
+            .unwrap()
+            .iter()
+            .any(|t| t.name == "gh__list_agents")
+    };
+    assert!(!gh_tools().await, "no token yet");
+    let id = http(&d.ui, "GET", "/v1/connectors", None).await.1[0]["id"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    let set = Some(json!({ "token": TOKEN }));
+    let (status, _) = http(&d.ui, "PATCH", &format!("/v1/connectors/{id}"), set).await;
+    assert_eq!(status, 200);
+    assert!(gh_tools().await);
     assert!(seen.lock().unwrap().contains(&format!("Bearer {TOKEN}")));
     let mail_now = mail(&d, &ann).await;
     assert!(
-        mail_now.iter().any(|m| m["body"]
-            .as_str()
-            .unwrap()
-            .contains("added the connector \"gh\"")),
+        mail_now.iter().any(|m| {
+            let body = m["body"].as_str().unwrap();
+            body.contains("added the connector \"gh\"") && body.contains("Settings → Vault")
+        }),
         "{mail_now:?}"
     );
 

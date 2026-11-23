@@ -88,8 +88,8 @@ Without Auto mode, these requests show you a card first:
   minutes (`FERROBOT_APPROVAL_TIMEOUT`, 300 s); no answer counts as declined.
 - **Create a routine** (`create_routine`): the same rule, but the agent does
   not wait. A message tells it whether you approved.
-- **Add a connector** (`add_connector`): always a card, Auto mode or not. For
-  a token it has a hidden field; the token goes straight to Vault.
+- **Add a connector** (`add_connector`): always a card, Auto mode or not. It
+  never asks for a key: a token goes in Vault, where you type it yourself.
 - **Give an agent more tools** (`set_agent_tools`): the card says which agent
   wants to give which of its agents more tools, and lists what is new. The
   agent does not wait; a message tells it whether you approved. The card stays

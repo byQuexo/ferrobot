@@ -47,7 +47,7 @@ which adds the real key.
   ([Providers](docs/wiki/Providers.md#claude-code-your-own-login)).
 - **MCP connectors.** Remote MCP servers with token or OAuth sign-in, a catalog
   of vendor servers and keyless ones, and a first connection check. Agents ask
-  for a token on a card with a hidden field ([clip](docs/assets/clips/key-card.mp4)).
+  for a connector on a card; its token goes in Vault, never on a card.
 - **Routines.** Prompts on a cron schedule; agents can set up their own after
   you approve a card ([clip](docs/assets/clips/routine.mp4)).
 - **Memory.** Per-agent memory with full-text search, plus a global memory

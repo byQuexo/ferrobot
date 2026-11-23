@@ -906,10 +906,11 @@ impl FerrobotTools {
 
     #[tool(
         description = "Ask your operator to add a connector (a remote MCP server) and give it to \
-        you. They see a card with its name and URL and, for `token`, a hidden field for the token: \
-        you never see the token, so never ask for keys, passwords or tokens in chat or with \
+        you. They see a card with its name and URL. For `token` they put the token in Settings \
+        themselves: you never see it, so never ask for keys, passwords or tokens in chat or with \
         ask_user. Does not wait: a message tells you when it was added or declined; its tools \
-        (`<name>__<tool>`) work from your next turn after that. Finish your turn after asking."
+        (`<name>__<tool>`) work from your next turn after that, or once the token is in. Finish \
+        your turn after asking."
     )]
     async fn add_connector(
         &self,

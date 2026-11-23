@@ -102,8 +102,8 @@ pub enum Approval {
         /// Requested one-line description (role).
         description: String,
     },
-    /// An agent wants to add a connector (`add_connector` tool). Approving creates it with the
-    /// token typed into the card and gives it to the agent; the token only ever goes to `url`.
+    /// An agent wants to add a connector (`add_connector` tool). Approving creates it and gives
+    /// it to the agent; a token, if it takes one, goes in under Settings, never on a card.
     AddConnector {
         name: String,
         url: String,
@@ -198,28 +198,6 @@ impl QuestionEvent {
             c.label = if c.value == APPROVE { approve } else { decline }.into();
         }
         self
-    }
-
-    /// An Approve/Decline card for a connector, with a hidden token field when it takes one.
-    pub fn add_connector(title: String, prompt: String, approval: Approval) -> Self {
-        let token = matches!(
-            approval,
-            Approval::AddConnector {
-                auth: ConnectorAuth::Token,
-                ..
-            }
-        );
-        let mut event = Self::approval(title, prompt, approval);
-        if token {
-            event.card.questions.push(Question {
-                id: "token".into(),
-                prompt: "Token".into(),
-                kind: QuestionKind::Secret,
-                choices: vec![],
-                allow_custom: false,
-            });
-        }
-        event
     }
 }
 
@@ -482,9 +460,9 @@ mod tests {
         c.questions[2].kind = QuestionKind::Secret;
         assert!(c.normalize().unwrap_err().contains("secret"));
 
-        let event = QuestionEvent::add_connector(
-            "scout wants to add a connector".into(),
-            "Add github?".into(),
+        let mut event = QuestionEvent::approval(
+            "Add a key?".into(),
+            "p".into(),
             Approval::AddConnector {
                 name: "github".into(),
                 url: "https://api.example.com/mcp".into(),
@@ -492,8 +470,14 @@ mod tests {
                 requester: AgentId::new(),
             },
         );
+        event.card.questions.push(Question {
+            id: "token".into(),
+            prompt: "Token".into(),
+            kind: QuestionKind::Secret,
+            choices: vec![],
+            allow_custom: false,
+        });
         let card = &event.card;
-        assert_eq!(card.questions[1].kind, QuestionKind::Secret);
         let declined = [ans("q1", &[DECLINE], None), ans("token", &[], None)];
         card.check_answers(&declined).unwrap();
         let mut approved = [
@@ -505,17 +489,5 @@ mod tests {
         assert_eq!(take_secret(card, &mut approved).as_deref(), Some("sk-1"));
         assert_eq!(approved[1].custom, None);
         assert_eq!(approved[0].values, [APPROVE]);
-
-        let open = QuestionEvent::add_connector(
-            "t".into(),
-            "p".into(),
-            Approval::AddConnector {
-                name: "docs".into(),
-                url: "https://docs.example.com/mcp".into(),
-                auth: ConnectorAuth::None,
-                requester: AgentId::new(),
-            },
-        );
-        assert_eq!(open.card.questions.len(), 1);
     }
 }
