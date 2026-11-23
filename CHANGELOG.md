@@ -67,7 +67,7 @@ All notable changes are listed here. The format follows
   with Model, Agent and Day tabs.
 - The voice call moves from the sidebar to a bar at the top of the window, so
   it stays in view on every page: every agent in the call, a microphone level
-  meter, the call's length, and Open chat, Mute, Stop speaking and Hang up.
+  meter, the call's length, and Open chat, Mute and Hang up.
 
 ### Fixed
 

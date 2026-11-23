@@ -1,6 +1,6 @@
 import type { JSX } from "preact";
 import { useEffect, useState } from "preact/hooks";
-import { MessageSquare, Mic, MicOff, PhoneOff, Square } from "lucide-preact";
+import { MessageSquare, Mic, MicOff, PhoneOff } from "lucide-preact";
 
 import { useApp } from "../context.ts";
 import { METER_DOTS, callClock, meterDots } from "../lib/call.ts";
@@ -109,15 +109,6 @@ export function CallBar(): JSX.Element | null {
           }}
         >
           {state.muted ? <MicOff size={16} /> : <Mic size={16} />}
-        </IconButton>
-        <IconButton
-          label="Stop speaking"
-          disabled={!call.speaking}
-          onClick={() => {
-            call.quiet();
-          }}
-        >
-          <Square size={14} />
         </IconButton>
         <IconButton
           label="Hang up"
