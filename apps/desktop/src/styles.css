@@ -390,7 +390,7 @@ textarea { resize: vertical; min-height: 40px; line-height: 1.5; }
 .file-card:hover { border-color: var(--accent); }
 .file-card .file-name { font-weight: 500; }
 .file-view { max-height: 70vh; overflow: auto; }
-.dialog-wide { width: min(1040px, 100%); }
+.dialog.dialog-wide { width: min(1040px, 100%); }
 .dialog-full { width: calc(100vw - 32px); height: calc(100vh - 32px); max-height: none; }
 .dialog-full .dialog-body { flex: 1; display: flex; padding: 8px 12px; }
 .file-pdf { flex: 1; width: 100%; border: 1px solid var(--border); border-radius: 8px; background: #fff; }
@@ -1155,4 +1155,5 @@ kbd { padding: 2px 8px; border: 1px solid var(--border-strong); border-radius: 6
 /* A reply's steps in its footer, opening the trace */
 .msg-steps { display: inline-flex; align-items: center; gap: 4px; padding: 2px 6px; border: none; border-radius: 6px; background: none; color: var(--muted); font: inherit; font-size: 12px; cursor: pointer; }
 .msg-steps:hover { background: var(--surface-2); color: var(--text); }
+.trace-label svg { flex: none; }
 
