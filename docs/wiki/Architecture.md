@@ -107,6 +107,7 @@ harness:
 | `openai` | the runner's own tool loop (`bash`, `read_file`, `write_file` plus the agent tools) over an OpenAI-compatible chat API | OpenAI, Gemini, OpenRouter, Ollama, any OpenAI-compatible endpoint |
 | `codex` | `codex app-server` inside the sandbox | `codex` providers |
 | `acp` | Gemini CLI over the Agent Client Protocol | `gemini_cli` providers |
+| `claude_code` | the daemon computer's own `claude` CLI, run by the daemon per turn; the runner only hands it the turn | `claude_code` providers (opt-in, your own login) |
 | `mock` | a deterministic fake, no model | `--driver mock` (tests, demos) |
 
 `--driver mock` forces the mock driver for every agent. `--driver claude`

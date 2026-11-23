@@ -1,7 +1,7 @@
 import { homedir } from "node:os";
 import { join } from "node:path";
 
-export type DriverKind = "mock" | "claude" | "openai" | "codex" | "acp";
+export type DriverKind = "mock" | "claude" | "openai" | "codex" | "acp" | "claude_code";
 
 interface CommonConfig {
   /** Agent API base, e.g. http://host.docker.internal:7879 */
@@ -16,8 +16,9 @@ interface CommonConfig {
 }
 
 export type RunnerConfig = CommonConfig &
+  // claude_code: the daemon host's own claude CLI runs the model; nothing of it is in the sandbox
   (
-    | { driver: "mock" | "claude" }
+    | { driver: "mock" | "claude" | "claude_code" }
     // openaiBaseUrl: the daemon's OpenAI-compatible model proxy, e.g. http://host.docker.internal:7879/model
     | { driver: "openai"; model: string; openaiBaseUrl: URL }
     // codexBaseUrl: the proxy's Responses API base; Codex POSTs <base>/responses
@@ -58,10 +59,11 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): RunnerConfig {
     driver !== "claude" &&
     driver !== "openai" &&
     driver !== "codex" &&
-    driver !== "acp"
+    driver !== "acp" &&
+    driver !== "claude_code"
   ) {
     throw new ConfigError(
-      `FERROBOT_DRIVER must be "mock", "claude", "openai", "codex" or "acp", got ${driver}`,
+      `FERROBOT_DRIVER must be "mock", "claude", "openai", "codex", "acp" or "claude_code", got ${driver}`,
     );
   }
   if (driver === "claude" && !env["ANTHROPIC_API_KEY"]) {

@@ -85,6 +85,8 @@ fn suggested_ids(kind: ProviderKind) -> &'static [&'static str] {
         ],
         ProviderKind::Ollama => &["gemma3", "qwen3", "llama3.1", "deepseek-r1"],
         ProviderKind::OpenaiCompatible => &[],
+        // Claude Code's own aliases; its picker knows the full ids.
+        ProviderKind::ClaudeCode => &["opus", "sonnet", "haiku"],
     }
 }
 
@@ -157,7 +159,10 @@ fn list_url(provider: &Provider) -> Option<String> {
         | ProviderKind::Ollama
         | ProviderKind::OpenaiCompatible
         | ProviderKind::Codex => Some(format!("{base}/models")),
-        ProviderKind::Bedrock | ProviderKind::Vertex | ProviderKind::GeminiCli => None,
+        ProviderKind::Bedrock
+        | ProviderKind::Vertex
+        | ProviderKind::GeminiCli
+        | ProviderKind::ClaudeCode => None,
     }
 }
 

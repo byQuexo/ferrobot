@@ -2326,6 +2326,36 @@
         }
       }
     },
+    "/v1/claude-code": {
+      "get": {
+        "tags": [
+          "providers"
+        ],
+        "summary": "Whether the daemon host's own `claude` CLI is installed and signed in, for Claude Code\nproviders. Only the login state is returned, never the account.",
+        "operationId": "claude_code_status",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ClaudeCodeStatus"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or wrong API token",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/v1/clis": {
       "get": {
         "tags": [
@@ -5375,6 +5405,36 @@
           }
         }
       },
+      "ClaudeCodeStatus": {
+        "type": "object",
+        "description": "Whether the host's `claude` is installed and signed in; never its account details.",
+        "required": [
+          "installed",
+          "logged_in"
+        ],
+        "properties": {
+          "installed": {
+            "type": "boolean"
+          },
+          "version": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "`claude --version`, e.g. `2.1.330 (Claude Code)`."
+          },
+          "logged_in": {
+            "type": "boolean"
+          },
+          "auth_method": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "How it is signed in, e.g. `claude.ai`."
+          }
+        }
+      },
       "ClisView": {
         "type": "object",
         "description": "The CLI packages and where their image build stands.",
@@ -6564,7 +6624,8 @@
           "ollama",
           "openai_compatible",
           "codex",
-          "gemini_cli"
+          "gemini_cli",
+          "claude_code"
         ]
       },
       "ProviderView": {

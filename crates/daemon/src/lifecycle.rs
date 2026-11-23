@@ -251,6 +251,7 @@ pub async fn delete(state: &AppState, id: AgentId, purge_disk: bool) -> Result<(
         }
     }
     state.store.delete_agent(id).await?;
+    crate::claude_code::forget(state, id).await;
     state.hub.forget(id);
     state.publish(UiEvent::AgentDeleted { agent_id: id });
     Ok(())

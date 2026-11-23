@@ -41,7 +41,7 @@ skipped** (left out on purpose).
 | L2 Bedrock and Vertex | partial | Written; request shapes checked by capture. No call to AWS or Google Cloud yet. |
 | L3 Codex driver and ChatGPT sign-in | done | A live turn ran against Ollama's Responses API. No OpenAI key used; a real ChatGPT sign-in was never tried. |
 | L4 ACP driver (Gemini CLI) | done | Tested against a fake Gemini API only. |
-| L5 Claude subscription sign-in | deliberately skipped | By design: no Claude subscription logins. Claude runs on API keys, Bedrock or Vertex. |
+| L5 Claude subscription | done, opt-in | No sign-in inside ferrobot: a Claude Code (your own login) provider runs your own, logged-in `claude` CLI on the host. Live on macOS; Windows never. |
 
 ## Firecracker and sleep
 

@@ -41,7 +41,10 @@ which adds the real key.
   in the OS keychain and are managed in one Vault in Settings.
 - **Providers and drivers.** Claude (Agent SDK), any OpenAI-compatible API
   including local Ollama, OpenAI Codex, Gemini CLI, OpenRouter, Amazon
-  Bedrock and Google Vertex AI.
+  Bedrock and Google Vertex AI. Opt-in: **Claude Code (your own login)** runs
+  your own, unmodified `claude` CLI with your own subscription; it uses your
+  seat's limits, is not tracked in Usage, and ferrobot never touches the login
+  ([Providers](docs/wiki/Providers.md#claude-code-your-own-login)).
 - **MCP connectors.** Remote MCP servers with token or OAuth sign-in, a catalog
   of vendor servers and keyless ones, and a first connection check. Agents ask
   for a token on a card with a hidden field ([clip](docs/assets/clips/key-card.mp4)).

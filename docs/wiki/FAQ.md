@@ -24,8 +24,8 @@ for CI only.
 Anthropic, OpenAI, Google Gemini, Claude on Amazon Bedrock and Google Vertex
 AI, OpenRouter, Ollama, any OpenAI-compatible endpoint, OpenAI's Codex
 harness (API key or ChatGPT sign-in) and Google's Gemini CLI. Most of them
-have only run against fake upstreams so far. Claude subscription logins are
-not supported. See [[Providers]].
+have only run against fake upstreams so far. A Claude subscription works
+only through your own Claude Code login (opt-in). See [[Providers]].
 
 ### Does it work offline with Ollama?
 

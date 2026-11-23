@@ -52,6 +52,10 @@ pub struct Settings {
     pub gcloud_token_cmd: Vec<String>,
     /// The daemon host's `codex` binary, for `ChatGPT` sign-in.
     pub codex_bin: String,
+    /// The host's own `claude` CLI, for agents on a Claude Code provider.
+    pub claude_bin: String,
+    /// The agent API as the host reaches it (the host's `claude` talks to `/mcp` here).
+    pub agent_url: String,
     /// One Codex home per `ChatGPT`-signed-in provider lives below this.
     pub codex_home: std::path::PathBuf,
     /// Upstream for Codex providers signed in with `ChatGPT`.
@@ -95,6 +99,8 @@ impl std::fmt::Debug for Settings {
             secrets,
             gcloud_token_cmd,
             codex_bin,
+            claude_bin,
+            agent_url,
             codex_home,
             chatgpt_upstream,
             ui_url,
@@ -126,6 +132,8 @@ impl std::fmt::Debug for Settings {
             .field("secrets", secrets)
             .field("gcloud_token_cmd", gcloud_token_cmd)
             .field("codex_bin", codex_bin)
+            .field("claude_bin", claude_bin)
+            .field("agent_url", agent_url)
             .field("codex_home", codex_home)
             .field("chatgpt_upstream", chatgpt_upstream)
             .field("ui_url", ui_url)
@@ -164,6 +172,8 @@ impl Settings {
                 .map(String::from)
                 .to_vec(),
             codex_bin: "codex".into(),
+            claude_bin: "claude".into(),
+            agent_url: "http://127.0.0.1:7879".into(),
             codex_home: std::env::temp_dir().join("ferrobot-codex"),
             chatgpt_upstream: crate::codex::CHATGPT_CODEX_UPSTREAM.into(),
             ui_url: "http://127.0.0.1:7878".into(),
@@ -494,7 +504,11 @@ impl ferrobot_mcp::MailboxNotifier for AppState {
 
     fn connector_tools(&self, agent: AgentId) -> ferrobot_mcp::BoxFuture<Vec<rmcp::model::Tool>> {
         let state = self.clone();
-        Box::pin(async move { crate::connectors::tools(&state, agent).await })
+        Box::pin(async move {
+            let mut tools = crate::claude_code::computer_tools(&state, agent).await;
+            tools.extend(crate::connectors::tools(&state, agent).await);
+            tools
+        })
     }
 
     fn call_connector_tool(
@@ -504,7 +518,14 @@ impl ferrobot_mcp::MailboxNotifier for AppState {
         arguments: Option<rmcp::model::JsonObject>,
     ) -> ferrobot_mcp::BoxFuture<Result<rmcp::model::CallToolResult, String>> {
         let state = self.clone();
-        Box::pin(async move { crate::connectors::call(&state, agent, &name, arguments).await })
+        Box::pin(async move {
+            if let Some(result) =
+                crate::claude_code::call_computer(&state, agent, &name, arguments.as_ref()).await
+            {
+                return result;
+            }
+            crate::connectors::call(&state, agent, &name, arguments).await
+        })
     }
 }
 

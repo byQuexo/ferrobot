@@ -84,6 +84,7 @@ pub const QUESTION_CARD_FILE: &str = "question-card.v1.schema.json";
         api::providers::delete_provider,
         api::providers::start_chatgpt_login,
         api::providers::chatgpt_login_status,
+        api::providers::claude_code_status,
         api::providers::provider_models,
         api::providers::kind_models,
         api::connectors::list_connectors,

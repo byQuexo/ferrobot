@@ -11,6 +11,7 @@ use uuid::Uuid;
 
 use super::ApiResult;
 use super::agents::explicit;
+use crate::claude_code::ClaudeCodeStatus;
 use crate::codex::{self, DeviceCode, LoginStatus};
 use crate::error::{ApiError, ErrorBody};
 use crate::models::{self, ModelList};
@@ -263,6 +264,16 @@ pub(crate) async fn chatgpt_login_status(
 ) -> ApiResult<LoginStatus> {
     let id = codex_provider(&state, &id).await?;
     Ok(Json(codex::login_status(&state, id).await))
+}
+
+/// Whether the daemon host's own `claude` CLI is installed and signed in, for Claude Code
+/// providers. Only the login state is returned, never the account.
+#[utoipa::path(get, path = "/v1/claude-code", tag = "providers",
+    responses((status = 200, body = ClaudeCodeStatus)))]
+pub(crate) async fn claude_code_status(
+    State(state): State<AppState>,
+) -> ApiResult<ClaudeCodeStatus> {
+    Ok(Json(crate::claude_code::status(&state).await))
 }
 
 /// Models to offer for a provider: its own list fetched with the stored key (cached for a

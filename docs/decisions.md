@@ -71,7 +71,13 @@ the code and this file together.
 - **Agents created by agents inherit** the creator's provider and model.
 - **Deleting a provider in use is refused** (409); the agents have to switch
   first.
-- **Subscription logins (Claude OAuth) are not built**, per Tim's rule.
+- **Subscription logins (Claude OAuth) are not built**, per Tim's rule. Since
+  2026-11-23 an opt-in Claude Code provider runs the host's own, unmodified
+  `claude` with the user's own login (Tim's call); ferrobot still never reads,
+  stores or relays Claude credentials. Anthropic's legal page does not
+  "prevent an end user from signing in to the unmodified Claude Code binary
+  with their own Claude subscription"; it forbids offering Claude.ai login or
+  routing requests through plan credentials on behalf of users.
 
 ## Phase 3: Codex driver
 
@@ -558,6 +564,9 @@ the code and this file together.
   `blob:` URLs) is ignored in `.cargo/audit.toml` until 2.5.9 passes the 7-day
   publish age (2026-11-27): no agent can reach it, since proxied URLs keep the
   upstream's scheme and OAuth revocation checks `https` first.
+  RUSTSEC-2026-0594 (`cookie` 0.18.2 via `tauri`, private-cookie nonces can
+  repeat across `fork`) is ignored the same way until 0.18.3 passes the publish
+  age (2026-11-30), Tim's call.
 
 - **The desktop app bundles the daemon** as a Tauri sidecar
   (`tauri.release.conf.json` adds it, so dev builds need no binary). The shell
