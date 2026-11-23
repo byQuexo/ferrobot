@@ -13,6 +13,7 @@ import {
   rerollCharacter,
   type Character,
 } from "../lib/character.ts";
+import { addTag } from "../lib/agent-meta.ts";
 import { toolsSummary } from "../lib/format.ts";
 import { toAvatarPng } from "../lib/image.ts";
 import { AGENT_NAME } from "../lib/welcome.ts";
@@ -68,6 +69,26 @@ export function AgentDialog(props: {
   const [picked, setPicked] = useState<string[]>([]);
   const [tools, setTools] = useState<ToolGroup[]>(editing?.tools ?? ALL_TOOLS);
   const [toolsOpen, setToolsOpen] = useState(false);
+  const [tags, setTags] = useState<string[]>(editing?.tags ?? []);
+  const [tagText, setTagText] = useState("");
+  const [tagError, setTagError] = useState("");
+  // The tags with what is still typed in the box; `null` when that is not a valid tag.
+  const withTyped = (): string[] | null => {
+    if (!tagText.trim()) return tags;
+    const next = addTag(tags, tagText);
+    if ("error" in next) {
+      setTagError(next.error);
+      return null;
+    }
+    return next.tags;
+  };
+  const commitTag = (): void => {
+    const next = withTyped();
+    if (next) {
+      setTags(next);
+      setTagText("");
+    }
+  };
   const chosen = providers.find((p) => p.id === providerId);
   const groups = TOOL_GROUPS.filter(
     ([g]) => g !== "web" || hasWebTools(chosen?.kind ?? "anthropic"),
@@ -134,7 +155,8 @@ export function AgentDialog(props: {
   };
 
   const save = async (): Promise<void> => {
-    if (!nameOk) return;
+    const finalTags = withTyped();
+    if (!nameOk || !finalTags) return;
     setSaving(true);
     try {
       let agent = editing
@@ -147,6 +169,7 @@ export function AgentDialog(props: {
               : {}),
             ...(modelChanged ? { provider_id: providerId, model: model.trim() || null } : {}),
             tools,
+            tags: finalTags,
           })
         : await client.createAgent({
             name,
@@ -156,6 +179,7 @@ export function AgentDialog(props: {
             provider_id: providerId,
             model: model.trim() || null,
             tools,
+            tags: finalTags,
           });
       if (given && (picked.length !== given.length || picked.some((id) => !given.includes(id)))) {
         await client.setAgentConnectors(agent.id, picked);
@@ -327,6 +351,47 @@ export function AgentDialog(props: {
             }}
           />
         </label>
+        <div class="field">
+          <label for="agent-tags">Tags</label>
+          <span class="tag-editor">
+            {tags.map((t) => (
+              <span key={t} class="tag-chip">
+                {t}
+                <button
+                  type="button"
+                  aria-label={`Remove tag ${t}`}
+                  onClick={() => {
+                    setTags(tags.filter((x) => x !== t));
+                  }}
+                >
+                  <X size={12} />
+                </button>
+              </span>
+            ))}
+            <input
+              id="agent-tags"
+              value={tagText}
+              maxLength={40}
+              placeholder={tags.length ? "" : "e.g. research"}
+              autoComplete="off"
+              onInput={(e) => {
+                setTagText(e.currentTarget.value);
+                setTagError("");
+              }}
+              onKeyDown={(e) => {
+                if (e.key === "Enter" || e.key === ",") {
+                  e.preventDefault();
+                  commitTag();
+                } else if (e.key === "Backspace" && !tagText && tags.length) {
+                  setTags(tags.slice(0, -1));
+                }
+              }}
+            />
+          </span>
+          <span class={`hint${tagError ? " bad" : ""}`}>
+            {tagError || "Up to 5 short labels, shown next to the name. Press Enter to add one."}
+          </span>
+        </div>
         <label>
           Instructions
           <textarea

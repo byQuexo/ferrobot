@@ -98,6 +98,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/agents/{id}/context": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** How full the agent's context is. */
+        get: operations["get_context"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/agents/{id}/events": {
         parameters: {
             query?: never;
@@ -225,6 +242,26 @@ export interface paths {
          *     the agent if it sleeps.
          */
         post: operations["post_message"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/agents/{id}/new-session": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Starts a new chat: the agent's next turn begins a fresh model session without the earlier
+         *     messages. The chat history stays visible.
+         */
+        post: operations["new_session"];
         delete?: never;
         options?: never;
         head?: never;
@@ -1202,8 +1239,36 @@ export interface components {
             pinned?: boolean;
             /** @description Tool groups the agent may use; its connectors are its assignment. */
             tools?: components["schemas"]["ToolGroup"][];
+            /** @description The operator's labels for the agent, in order. */
+            tags?: string[];
             /** Format: date-time */
             created_at: string;
+        };
+        /** @description How full an agent's context is, read from its newest proxied model call. */
+        AgentContext: {
+            /**
+             * @description Whether the daemon sees the agent's model calls: `false` on Claude Code, which runs on
+             *     the host's own login and not through the model proxy.
+             */
+            tracked: boolean;
+            /**
+             * Format: int64
+             * @description Input plus cache read and write tokens of the newest call since the last new chat;
+             *     `null` before there is one.
+             */
+            tokens?: number | null;
+            /**
+             * Format: int64
+             * @description Context window of `model` in tokens; `null` when not known.
+             */
+            window?: number | null;
+            /** @description The model of that call, else the agent's configured model. */
+            model?: string | null;
+            /**
+             * Format: date-time
+             * @description When that call was made.
+             */
+            at?: string | null;
         };
         /**
          * Format: uuid
@@ -1463,6 +1528,8 @@ export interface components {
              *     `PUT /v1/agents/{id}/connectors`.
              */
             tools?: components["schemas"]["ToolGroup"][] | null;
+            /** @description Labels for the operator: at most 5, each 1-20 characters after trimming, no duplicates. */
+            tags?: string[];
         };
         CreateConnector: {
             /**
@@ -2242,6 +2309,8 @@ export interface components {
              *     agents). A connected runner applies them from its next turn.
              */
             tools?: components["schemas"]["ToolGroup"][] | null;
+            /** @description Replaces the tags (same rules as on create); `[]` removes them. */
+            tags?: string[] | null;
         };
         /** @description A new CLI package list. */
         UpdateClis: {
@@ -2967,6 +3036,46 @@ export interface operations {
             };
         };
     };
+    get_context: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Agent id (UUID) */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AgentContext"];
+                };
+            };
+            /** @description Missing or wrong API token */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Unknown agent */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+        };
+    };
     list_events: {
         parameters: {
             query?: {
@@ -3371,6 +3480,45 @@ export interface operations {
                 content: {
                     "application/json": components["schemas"]["ErrorBody"];
                 };
+            };
+            /** @description Missing or wrong API token */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Unknown agent */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+        };
+    };
+    new_session: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Agent id (UUID) */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The agent's next turn starts fresh */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
             /** @description Missing or wrong API token */
             401: {

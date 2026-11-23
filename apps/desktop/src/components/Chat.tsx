@@ -45,6 +45,7 @@ import {
 import { hasVoiceKey, record, startLive, type LiveSession, type Recording } from "../lib/voice.ts";
 import { FilePreview } from "./FilePreview.tsx";
 import { fileSize } from "./FileViewer.tsx";
+import { ContextMeter, ModelChip, TagChips } from "./AgentMeta.tsx";
 import { Avatar } from "./Avatar.tsx";
 import { CredentialFix } from "./CredentialFix.tsx";
 import { MailGroup } from "./MailGroup.tsx";
@@ -202,7 +203,11 @@ export function Chat(props: {
       <header class="chat-head">
         <Avatar agent={agent} size={40} presence={status.presence} />
         <div class="chat-title">
-          <h1>{agent.name}</h1>
+          <div class="chat-name">
+            <h1>{agent.name}</h1>
+            <TagChips tags={agent.tags} />
+            <ModelChip agent={agent} />
+          </div>
           <span class={`chat-sub p-${status.presence}`} title={problem?.reason}>
             <span class="dot" />
             {status.label}
@@ -332,6 +337,7 @@ export function Chat(props: {
         onTalk={() => {
           call.quiet();
         }}
+        extra={<ContextMeter agent={agent} />}
       />
     </section>
   );
@@ -794,6 +800,8 @@ export function Composer(props: {
   /** `null`: voice is off, no microphone. */
   voice: VoiceView | null;
   onTalk: () => void;
+  /** Shown before the buttons, e.g. the chat's context meter. */
+  extra?: JSX.Element;
 }): JSX.Element {
   const { run } = useApp();
   const [text, setText] = useState("");
@@ -843,6 +851,7 @@ export function Composer(props: {
           }
         }}
       />
+      {props.extra}
       {props.voice && (
         <MicButton
           chat={props.chat}

@@ -43,7 +43,8 @@ import { checkDot, checkLabel, ownAppEntry } from "../src/lib/connectors.ts";
 import { claudeCodeState } from "../src/lib/claude-code.ts";
 import { diagnosticsReport } from "../src/lib/diagnostics.ts";
 import { parseBlocks, parseInline } from "../src/lib/markdown.ts";
-import { modelOptions, withSaved } from "../src/lib/models.ts";
+import { modelLabel, modelOptions, withSaved } from "../src/lib/models.ts";
+import { addTag, contextMeter } from "../src/lib/agent-meta.ts";
 import { moveId, orderAgents, pickSelection } from "../src/lib/order.ts";
 import { keyLabel, matchShortcut, SHORTCUTS, type KeyPress } from "../src/lib/shortcuts.ts";
 import { pollOutcome } from "../src/lib/update.ts";
@@ -1758,5 +1759,52 @@ describe("shortcuts", () => {
     assert.equal(keyLabel(usage, true), "⌘⇧U");
     assert.equal(keyLabel(usage, false), "Ctrl+Shift+U");
     assert.equal(keyLabel(agent, true), "⌘1–9");
+  });
+});
+
+describe("agent meta", () => {
+  it("adds tags under the daemon's rules", () => {
+    assert.deepEqual(addTag(["ops"], "  nightly "), { tags: ["ops", "nightly"] });
+    assert.deepEqual(addTag([], "é".repeat(20)), { tags: ["é".repeat(20)] });
+    for (const [tags, raw] of [
+      [[], "   "],
+      [[], "x".repeat(21)],
+      [["ops"], "ops "],
+      [["a", "b", "c", "d", "e"], "f"],
+    ] as const) {
+      assert.ok("error" in addTag(tags, raw), raw);
+    }
+  });
+
+  it("labels the model an agent runs", () => {
+    const provider = { default_model: "gpt-x" };
+    assert.equal(modelLabel({ model: "m1", provider_id: "p" }, provider), "m1");
+    assert.equal(modelLabel({ model: null, provider_id: "p" }, provider), "gpt-x");
+    assert.equal(modelLabel({ model: null, provider_id: "p" }, undefined), "provider default");
+    assert.equal(modelLabel({ model: null, provider_id: null }, undefined), "default");
+  });
+
+  it("fills the context meter and clamps it", () => {
+    const ctx = { tracked: true, tokens: 50_000, window: 200_000, model: "m" };
+    assert.deepEqual(contextMeter(ctx), {
+      percent: 25,
+      title: "Context 25% full",
+      detail: "50K of 200K tokens",
+    });
+    assert.equal(contextMeter({ ...ctx, tokens: 250_000 }).percent, 100);
+    assert.equal(contextMeter({ ...ctx, tokens: null }).percent, 0);
+    assert.equal(contextMeter({ ...ctx, window: null }).percent, null);
+    assert.equal(contextMeter({ tracked: false }).title, "Context not tracked");
+  });
+
+  it("shows a new chat in the timeline", () => {
+    const items = buildTimeline(
+      ME,
+      [],
+      [ev(1, "new_session", {}, "2026-11-23T10:00:00Z", "")],
+      new Map(),
+      names,
+    );
+    assert.equal(items[0]?.type === "system" && items[0].text.startsWith("New chat"), true);
   });
 });

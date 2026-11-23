@@ -6,6 +6,7 @@ export const DEFAULT_DAEMON = "http://127.0.0.1:7878";
 // which in turn is generated from the daemon's Rust types. Do not hand-edit.
 type Schemas = components["schemas"];
 export type Agent = Schemas["AgentView"];
+export type AgentContext = Schemas["AgentContext"];
 export type Presence = Schemas["Presence"];
 export type AvatarCharacter = Schemas["AvatarCharacter"];
 export type StoredEvent = Schemas["StoredEvent"];
@@ -202,6 +203,10 @@ export class DaemonClient {
     this.#request("GET", `/v1/agents/${agent}/files/${String(file)}`);
   interrupt = (id: string): Promise<unknown> => this.#request("POST", `/v1/agents/${id}/interrupt`);
   retry = (id: string): Promise<Agent> => this.#request("POST", `/v1/agents/${id}/retry`);
+  /** The agent's next turn starts a fresh model session; the chat stays. */
+  newSession = (id: string): Promise<void> => this.#request("POST", `/v1/agents/${id}/new-session`);
+  agentContext = (id: string): Promise<AgentContext> =>
+    this.#request("GET", `/v1/agents/${id}/context`);
   answerQuestion = (
     id: string,
     question: number,

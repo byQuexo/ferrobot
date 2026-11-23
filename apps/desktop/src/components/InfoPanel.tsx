@@ -37,6 +37,8 @@ import {
   statusOf,
 } from "../lib/format.ts";
 import { buildTimeline, type TimelineItem } from "../lib/timeline.ts";
+import { modelLabel } from "../lib/models.ts";
+import { TagChips } from "./AgentMeta.tsx";
 import { Avatar } from "./Avatar.tsx";
 import { CredentialFix } from "./CredentialFix.tsx";
 import { ToolCard } from "./Chat.tsx";
@@ -118,12 +120,13 @@ function Profile(props: {
     });
   }, [a.provider_id]);
   const provider = providers?.find((p) => p.id === a.provider_id);
-  const model = a.model ?? provider?.default_model ?? (provider ? "provider default" : "default");
+  const model = modelLabel(a, provider);
   return (
     <div class="profile">
       <Avatar agent={a} size={88} />
       <h2>{a.name}</h2>
       <p class="muted center">{a.description || "No description yet."}</p>
+      <TagChips tags={a.tags} />
       <div class="kv">
         <span>Status</span>
         <span class="model-line">

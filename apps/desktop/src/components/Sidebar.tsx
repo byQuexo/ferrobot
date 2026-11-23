@@ -22,6 +22,7 @@ import { rowLine, statusOf } from "../lib/format.ts";
 import { loadOrder, moveId, orderAgents, saveOrder } from "../lib/order.ts";
 import { Avatar } from "./Avatar.tsx";
 import { CallWindow } from "./CallWindow.tsx";
+import { TagChips } from "./AgentMeta.tsx";
 import { ConversationList, type Pair } from "./Conversations.tsx";
 import { RoomList } from "./Rooms.tsx";
 import { Button, Dialog, IconButton, Logo } from "./ui.tsx";
@@ -519,6 +520,7 @@ function AgentRow(props: {
         <span class="agent-row-text">
           <span class="agent-row-top">
             <span class="agent-name">{a.name}</span>
+            <TagChips tags={a.tags} />
             {line.time && <span class="agent-time">{line.time}</span>}
           </span>
           <span class={`agent-desc${line.tone ? ` ${line.tone}` : ""}`}>{line.text}</span>
