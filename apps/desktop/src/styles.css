@@ -1040,3 +1040,27 @@ kbd { padding: 2px 8px; border: 1px solid var(--border-strong); border-radius: 6
 .group-head .icon-btn { width: 22px; height: 22px; border-radius: 6px; }
 .group-members { display: flex; flex-direction: column; gap: 6px; max-height: 240px; overflow-y: auto; border: none; margin: 0; padding: 0; }
 .group-members legend { font-weight: 500; margin-bottom: 6px; padding: 0; }
+
+/* Reactions and attachments: an agent's emoji on the operator's message, files in the composer and on sent messages */
+.bubble-user .reaction {
+  position: absolute; left: -10px; bottom: -10px; padding: 0 6px; font-size: 14px; line-height: 22px;
+  border: 1px solid var(--border); border-radius: 999px; background: var(--surface); box-shadow: var(--shadow);
+}
+.attachments { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 6px; }
+.attachment {
+  display: inline-flex; align-items: center; gap: 6px; max-width: 240px; padding: 4px 8px;
+  border-radius: var(--radius-sm); background: var(--surface); color: var(--text-2); font-size: 12px;
+}
+.attachment > span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.attachment img { width: 96px; max-height: 96px; object-fit: cover; border-radius: 6px; }
+.attachment button { display: grid; place-items: center; padding: 0; border: none; background: none; color: var(--muted); }
+.attachment button:hover { color: var(--text); }
+.composer { flex-wrap: wrap; }
+.composer textarea { flex: 1 1 0; min-width: 0; }
+.attachments.pending { flex-basis: 100%; margin: 0; }
+.attachments.pending .attachment { background: var(--surface-2); }
+.attach {
+  display: grid; place-items: center; width: 36px; height: 36px; flex: none; margin-left: -8px;
+  border: none; border-radius: 50%; background: transparent; color: var(--muted);
+}
+.attach:hover { background: var(--surface-2); color: var(--text); }

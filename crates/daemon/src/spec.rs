@@ -134,6 +134,7 @@ pub const QUESTION_CARD_FILE: &str = "question-card.v1.schema.json";
         api::files::page,
         api::files::create_preview,
         api::files::preview,
+        api::files::upload,
         api::ws::ui_ws,
     ),
     components(schemas(

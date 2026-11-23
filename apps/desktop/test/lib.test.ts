@@ -24,7 +24,13 @@ import {
 } from "../src/lib/format.ts";
 import { GUIDES, splitWikiLinks } from "../src/lib/guides.ts";
 import { providerReady, welcomeStep } from "../src/lib/welcome.ts";
-import { buildTimeline, foldSteps, sharedFiles, withoutRoomTurns } from "../src/lib/timeline.ts";
+import {
+  buildTimeline,
+  foldSteps,
+  sharedFiles,
+  splitAttachments,
+  withoutRoomTurns,
+} from "../src/lib/timeline.ts";
 import {
   CallScript,
   firstClause,
@@ -472,6 +478,44 @@ describe("buildTimeline", () => {
     );
     assert.ok(items[0]?.type === "tool" && items[0].denied === "outside workspace");
     assert.ok(items[1]?.type === "error" && items[1].text === "model unavailable");
+  });
+
+  it("splits attachment lines off a message", () => {
+    assert.deepEqual(
+      splitAttachments(
+        "Look at these\nAttached: uploads/photo-2.png (image, 120.5 KB)\nAttached: uploads/notes (file, 12 B)",
+      ),
+      {
+        text: "Look at these",
+        files: [
+          { path: "uploads/photo-2.png", kind: "image", size: "120.5 KB" },
+          { path: "uploads/notes", kind: "file", size: "12 B" },
+        ],
+      },
+    );
+    assert.deepEqual(splitAttachments("Attached: uploads/a.pdf (file, 2.0 MB)"), {
+      text: "",
+      files: [{ path: "uploads/a.pdf", kind: "file", size: "2.0 MB" }],
+    });
+    const plain = "Attached: my thoughts (see below)\nAttached: x (a, b) and more";
+    assert.deepEqual(splitAttachments(plain), { text: plain, files: [] });
+  });
+
+  it("shows an agent's latest reaction on the message and hides its react calls", () => {
+    const items = buildTimeline(
+      ME,
+      [msg(1, { kind: "user" }, ME, "Book it", "2026-01-01T10:00:00Z")],
+      [
+        ev(2, "tool_use", { id: "r1", name: "mcp__ferrobot__react" }, "2026-01-01T10:00:01Z"),
+        ev(3, "tool_result", { id: "r1", output: "{}", is_error: false }, "2026-01-01T10:00:01Z"),
+        ev(4, "reaction", { message_id: 1, emoji: "👀" }, "2026-01-01T10:00:01Z", ""),
+        ev(5, "reaction", { message_id: 1, emoji: "👍" }, "2026-01-01T10:00:02Z", ""),
+      ],
+      new Map(),
+      names,
+    );
+    assert.equal(items.length, 1);
+    assert.ok(items[0]?.type === "user" && items[0].reaction === "👍");
   });
 });
 

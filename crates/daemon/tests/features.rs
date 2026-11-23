@@ -44,6 +44,8 @@ struct StatefulBackend {
     images: Mutex<HashMap<String, Option<String>>>,
     /// Held by a test to keep `build_image` running.
     build_gate: tokio::sync::Mutex<()>,
+    /// Path and length of every `write_file`.
+    written: Mutex<Vec<(String, usize)>>,
 }
 
 impl StatefulBackend {
@@ -115,9 +117,13 @@ impl SandboxBackend for StatefulBackend {
     async fn write_file(
         &self,
         _: &SandboxHandle,
-        _: &SandboxPath,
-        _: &[u8],
+        p: &SandboxPath,
+        bytes: &[u8],
     ) -> Result<(), SandboxError> {
+        self.written
+            .lock()
+            .unwrap()
+            .push((p.to_string(), bytes.len()));
         Ok(())
     }
     async fn snapshot(&self, h: &SandboxHandle, label: &str) -> Result<SnapshotRef, SandboxError> {
@@ -7111,4 +7117,53 @@ async fn groups_talk_by_room_rules_and_a_call_to_one_lands_in_it() {
     );
     assert_eq!(http(&d.ui, "GET", "/v1/groups", None).await.1, json!([]));
     assert_eq!(room_mail(&d, cy).await, 0, "its turns went with it");
+}
+
+#[tokio::test]
+async fn operator_uploads_land_in_the_agents_workspace() {
+    let backend = Arc::new(StatefulBackend::default());
+    let d = start(backend.clone(), None, "127.0.0.1:0").await;
+    let ann = create(&d, json!({"name": "ann"})).await["id"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    let upload = async |agent: &str, name: &str, auth: &[(&str, &str)], body: &[u8]| {
+        let path = format!("/v1/agents/{agent}/uploads?name={name}");
+        let (status, _, body) = http_raw(&d.ui, "POST", &path, auth, body).await;
+        (
+            status,
+            serde_json::from_slice::<Value>(&body).unwrap_or(Value::Null),
+        )
+    };
+
+    let (status, body) = upload(&ann, "..%2Fsecret%2FReport%20(1).pdf", &[], &[7; 1234]).await;
+    assert_eq!(status, 201, "{body}");
+    assert_eq!(
+        body,
+        json!({"path": "uploads/Report__1_.pdf", "size": 1234})
+    );
+    assert_eq!(
+        *backend.written.lock().unwrap(),
+        [(
+            "/home/node/workspace/uploads/Report__1_.pdf".to_owned(),
+            1234
+        )]
+    );
+
+    let big = vec![0; 25 * 1024 * 1024 + 1];
+    let (status, body) = upload(&ann, "big.bin", &[], &big).await;
+    assert_eq!(status, 400, "{body}");
+    assert_eq!(
+        upload(&ann, "x.txt", &[("Authorization", "")], b"hi")
+            .await
+            .0,
+        401
+    );
+    let unknown = "00000000-0000-0000-0000-000000000001";
+    assert_eq!(upload(unknown, "x.txt", &[], b"hi").await.0, 404);
+    assert_eq!(
+        backend.written.lock().unwrap().len(),
+        1,
+        "nothing else written"
+    );
 }

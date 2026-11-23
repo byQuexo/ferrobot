@@ -14,7 +14,7 @@ pub enum ToolGroup {
     Team,
     /// `remember`, `recall`, `forget`.
     Memory,
-    /// `ask_user`, `share_file`, `invite_to_call`, `hang_up`.
+    /// `ask_user`, `share_file`, `react`, `invite_to_call`, `hang_up`.
     Operator,
     /// `create_agent`, `set_agent_tools`.
     CreateAgents,

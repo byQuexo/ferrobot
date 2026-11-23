@@ -453,6 +453,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/agents/{id}/uploads": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Puts a file from the operator into the agent's workspace folder `uploads/`, waking its
+         *     computer if it sleeps. Body: the raw file, at most 25 MiB.
+         */
+        post: operations["upload"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/agents/{id}/wake": {
         parameters: {
             query?: never;
@@ -2540,6 +2560,16 @@ export interface components {
              */
             api_key?: string | null;
         };
+        /** @description A file the operator put into an agent's workspace. */
+        Upload: {
+            /** @description Where the file is, relative to the agent's workspace, e.g. `uploads/photo.png`. */
+            path: string;
+            /**
+             * Format: int64
+             * @description Bytes written.
+             */
+            size: number;
+        };
         UsageDay: components["schemas"]["UsageTotals"] & {
             /** @description Date in the report's `timezone`, `YYYY-MM-DD`. */
             date: string;
@@ -4381,6 +4411,91 @@ export interface operations {
                 content: {
                     "application/json": components["schemas"]["ErrorBody"];
                 };
+            };
+            /** @description Sandbox backend error */
+            502: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+        };
+    };
+    upload: {
+        parameters: {
+            query: {
+                /**
+                 * @description The file's name. Only letters, digits, `.`, `-` and `_` are kept (others become `_`);
+                 *     a name already in `uploads/` gets `-2`, `-3`, ... before its extension.
+                 */
+                name: string;
+            };
+            header?: never;
+            path: {
+                /** @description Agent id (UUID) */
+                id: string;
+            };
+            cookie?: never;
+        };
+        /** @description The file, at most 25 MiB */
+        requestBody: {
+            content: {
+                "application/octet-stream": number[];
+            };
+        };
+        responses: {
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Upload"];
+                };
+            };
+            /** @description Larger than 25 MiB */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Missing or wrong API token */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Unknown agent */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description No sandbox */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Far larger than 25 MiB (plain text) */
+            413: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
             /** @description Sandbox backend error */
             502: {

@@ -305,6 +305,17 @@ pub struct ShareFileResult {
 }
 
 #[derive(Debug, Deserialize, JsonSchema)]
+pub struct ReactArgs {
+    /// The `#id` of a message your operator sent you, as in "Message #7 from user".
+    pub message_id: i64,
+    /// One emoji, e.g. 👍. It replaces your earlier reaction on that message.
+    pub emoji: String,
+}
+
+/// Longest emoji `react` takes, in bytes; family and flag sequences fit.
+const MAX_EMOJI_BYTES: usize = 32;
+
+#[derive(Debug, Deserialize, JsonSchema)]
 pub struct InviteToCallArgs {
     /// The teammate to bring in: its id or `@name`.
     pub agent: String,
@@ -959,6 +970,53 @@ impl FerrobotTools {
     }
 
     #[tool(
+        description = "React to a message your operator sent you with one emoji; it shows on \
+        their message in your chat. Use it to acknowledge without words instead of replying \
+        \"ok\". A new reaction replaces your earlier one on that message."
+    )]
+    async fn react(
+        &self,
+        Extension(parts): Extension<http::request::Parts>,
+        Parameters(args): Parameters<ReactArgs>,
+    ) -> ToolResult<Ack> {
+        let me = caller(&parts)?.0.id;
+        let emoji = args.emoji.trim();
+        if emoji.is_empty()
+            || emoji.len() > MAX_EMOJI_BYTES
+            || emoji
+                .chars()
+                .any(|c| c.is_ascii_alphanumeric() || c.is_whitespace())
+        {
+            return Err(ErrorData::invalid_params(
+                "emoji must be one emoji, like 👍",
+                None,
+            ));
+        }
+        let store = &self.state.store;
+        let theirs = store
+            .get_message(args.message_id)
+            .await
+            .ok()
+            .filter(|m| m.sender == Sender::User && m.recipient == me && m.room_id.is_none());
+        if theirs.is_none() {
+            return Err(ErrorData::invalid_params(
+                format!(
+                    "message #{} is not one your operator sent you in your chat",
+                    args.message_id
+                ),
+                None,
+            ));
+        }
+        let payload = serde_json::json!({ "message_id": args.message_id, "emoji": emoji });
+        let event = store
+            .append_event(me, None, "reaction".into(), payload)
+            .await
+            .map_err(store_err)?;
+        self.state.notifier.event_recorded(&event);
+        Ok(Json(Ack { ok: true }))
+    }
+
+    #[tool(
         description = "Hang up the voice call. If the operator called you, it ends for everyone; \
         if you were invited, you leave. It takes effect when your turn ends, so say your short \
         goodbye in your reply."
@@ -1169,9 +1227,8 @@ pub(crate) fn group_of(tool: &str) -> Option<ToolGroup> {
             ToolGroup::Team
         }
         "remember" | "recall" | "forget" => ToolGroup::Memory,
-        "ask_user" | "share_file" | "invite_to_call" | "hang_up" | "list_guides" | "read_guide" => {
-            ToolGroup::Operator
-        }
+        "ask_user" | "share_file" | "invite_to_call" | "hang_up" | "list_guides" | "read_guide"
+        | "react" => ToolGroup::Operator,
         "create_agent" | "set_agent_tools" => ToolGroup::CreateAgents,
         "add_connector" => ToolGroup::AddConnectors,
         "create_routine" => ToolGroup::Routines,

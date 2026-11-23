@@ -35,6 +35,7 @@ export type ToolGroup = Schemas["ToolGroup"];
 export type ConnectorCheck = Schemas["ConnectorCheck"];
 export type SharedFile = Schemas["SharedFileView"];
 export type PreviewLink = Schemas["PreviewLink"];
+export type Upload = Schemas["Upload"];
 export type CreateConnector = Schemas["CreateConnector"];
 export type UpdateConnector = Schemas["UpdateConnector"];
 export type DeviceCode = Schemas["DeviceCode"];
@@ -199,6 +200,13 @@ export class DaemonClient {
   };
   send = (id: string, body: string): Promise<MailMessage> =>
     this.#request("POST", `/v1/agents/${id}/messages`, { body });
+  upload = (id: string, file: File): Promise<Upload> =>
+    this.#request(
+      "POST",
+      `/v1/agents/${id}/uploads?name=${encodeURIComponent(file.name)}`,
+      file,
+      "application/octet-stream",
+    );
   markRead = (id: string): Promise<void> => this.#request("POST", `/v1/agents/${id}/read`);
   sharedFile = (agent: string, file: number): Promise<SharedFile> =>
     this.#request("GET", `/v1/agents/${agent}/files/${String(file)}`);

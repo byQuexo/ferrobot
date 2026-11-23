@@ -14,6 +14,7 @@ import {
   Info,
   Mic,
   Moon,
+  Paperclip,
   Phone,
   PhoneOff,
   SendHorizontal,
@@ -24,9 +25,10 @@ import {
   Sun,
   UserPlus,
   Wrench,
+  X,
 } from "lucide-preact";
 
-import type { Agent, MailMessage, Routine, StoredEvent, VoiceView } from "../api.ts";
+import type { Agent, MailMessage, Routine, StoredEvent, Upload, VoiceView } from "../api.ts";
 import { useApp } from "../context.ts";
 import { isPass } from "../lib/call.ts";
 import { clockTime, statusOf, stepLabel, stepsLabel, toolLabel } from "../lib/format.ts";
@@ -38,6 +40,7 @@ import {
   sharedFiles,
   unreadSince,
   withoutRoomTurns,
+  type Attachment,
   type DisplayItem,
   type Exchange,
   type TimelineItem,
@@ -338,6 +341,7 @@ export function Chat(props: {
           call.quiet();
         }}
         extra={<ContextMeter agent={agent} />}
+        upload={(file) => client.upload(id, file)}
       />
     </section>
   );
@@ -436,7 +440,8 @@ function Item(props: {
         <>
           <div class="row row-user">
             <div class="bubble bubble-user">
-              <RichText text={item.text} />
+              {item.files.length > 0 && <AttachmentChips agent={agent.id} files={item.files} />}
+              {item.text && <RichText text={item.text} />}
               <span class="meta">
                 {clockTime(item.at)}
                 {item.status === "pending"
@@ -445,6 +450,11 @@ function Item(props: {
                     ? " · not delivered"
                     : ""}
               </span>
+              {item.reaction && (
+                <span class="reaction" title={`${agent.name} reacted`}>
+                  {item.reaction}
+                </span>
+              )}
             </div>
           </div>
           {item.error && (
@@ -792,6 +802,27 @@ function MicButton(props: {
   );
 }
 
+/** Object URLs of images sent from this window by `<agent>/<path>`, for their chips. */
+// shortcut: the URLs live until the window closes and older images show no thumbnail; load them from the workspace if that matters.
+const previews = new Map<string, string>();
+const MAX_UPLOAD = 25 * 1024 * 1024;
+
+function AttachmentChips(props: { agent: string; files: Attachment[] }): JSX.Element {
+  return (
+    <div class="attachments">
+      {props.files.map((f) => {
+        const preview = previews.get(`${props.agent}/${f.path}`);
+        return (
+          <span key={f.path} class="attachment" title={`${f.path} (${f.kind}, ${f.size})`}>
+            {preview ? <img src={preview} alt="" /> : <Paperclip size={14} />}
+            <span>{f.path.split("/").pop()}</span>
+          </span>
+        );
+      })}
+    </div>
+  );
+}
+
 /** The message box of a chat or call room (`chat` is its id). */
 export function Composer(props: {
   chat: string;
@@ -802,16 +833,35 @@ export function Composer(props: {
   onTalk: () => void;
   /** Shown before the buttons, e.g. the chat's context meter. */
   extra?: JSX.Element;
+  /** Puts a file into the agent's workspace; without it nothing can be attached. */
+  upload?: (file: File) => Promise<Upload>;
 }): JSX.Element {
   const { run } = useApp();
   const [text, setText] = useState("");
   const current = useRef(text);
   current.current = text;
+  const [files, setFiles] = useState<File[]>([]);
   const [sending, setSending] = useState(false);
   const ref = useRef<HTMLTextAreaElement>(null);
+  const picker = useRef<HTMLInputElement>(null);
+  const canAttach = props.upload !== undefined;
+  const attach = (list: ArrayLike<File>): void => {
+    setFiles((prev) => [...prev, ...Array.from(list)]);
+  };
   useEffect(() => {
     ref.current?.focus();
+    setFiles([]);
   }, [props.chat]);
+  useEffect(() => {
+    if (!canAttach) return;
+    const drop = (e: DragEvent): void => {
+      attach(e.dataTransfer?.files ?? []);
+    };
+    window.addEventListener("drop", drop);
+    return () => {
+      window.removeEventListener("drop", drop);
+    };
+  }, [canAttach]);
   useLayoutEffect(() => {
     const el = ref.current;
     if (!el) return;
@@ -821,11 +871,26 @@ export function Composer(props: {
 
   const send = async (): Promise<void> => {
     const body = text.trim();
-    if (!body || sending) return;
+    if ((!body && files.length === 0) || sending) return;
     setSending(true);
-    const ok = await run(() => props.send(body));
+    const ok = await run(async () => {
+      const big = files.find((f) => f.size > MAX_UPLOAD);
+      if (big) throw new Error(`${big.name} is larger than 25 MB`);
+      const lines: string[] = [];
+      for (const file of files) {
+        const done = await props.upload?.(file);
+        if (!done) continue;
+        const image = file.type.startsWith("image/");
+        if (image) previews.set(`${props.chat}/${done.path}`, URL.createObjectURL(file));
+        lines.push(`Attached: ${done.path} (${image ? "image" : "file"}, ${fileSize(done.size)})`);
+      }
+      return props.send([body, ...lines].filter(Boolean).join("\n"));
+    });
     setSending(false);
-    if (ok) setText("");
+    if (ok) {
+      setText("");
+      setFiles([]);
+    }
   };
 
   return (
@@ -836,6 +901,48 @@ export function Composer(props: {
         void send();
       }}
     >
+      {files.length > 0 && (
+        <div class="attachments pending">
+          {files.map((f, n) => (
+            <span key={`${String(n)}-${f.name}`} class="attachment">
+              <Paperclip size={14} />
+              <span>{f.name}</span>
+              <button
+                type="button"
+                aria-label={`Remove ${f.name}`}
+                onClick={() => {
+                  setFiles(files.filter((_, i) => i !== n));
+                }}
+              >
+                <X size={14} />
+              </button>
+            </span>
+          ))}
+        </div>
+      )}
+      {canAttach && (
+        <>
+          <input
+            ref={picker}
+            type="file"
+            multiple
+            hidden
+            onChange={(e) => {
+              attach(e.currentTarget.files ?? []);
+              e.currentTarget.value = "";
+            }}
+          />
+          <button
+            type="button"
+            class="attach"
+            aria-label="Attach files"
+            title="Attach files (or drop or paste them)"
+            onClick={() => picker.current?.click()}
+          >
+            <Paperclip size={18} />
+          </button>
+        </>
+      )}
       <textarea
         ref={ref}
         rows={1}
@@ -843,6 +950,14 @@ export function Composer(props: {
         placeholder={props.placeholder}
         onInput={(e) => {
           setText(e.currentTarget.value);
+        }}
+        onPaste={(e) => {
+          const images = Array.from(e.clipboardData?.files ?? []).filter((f) =>
+            f.type.startsWith("image/"),
+          );
+          if (!canAttach || images.length === 0) return;
+          e.preventDefault();
+          attach(images);
         }}
         onKeyDown={(e) => {
           if (e.key === "Enter" && !e.shiftKey && !e.isComposing) {
@@ -864,7 +979,7 @@ export function Composer(props: {
       <button
         type="submit"
         class="send"
-        disabled={!text.trim() || sending}
+        disabled={(!text.trim() && files.length === 0) || sending}
         aria-label="Send"
         title="Send (Enter)"
       >

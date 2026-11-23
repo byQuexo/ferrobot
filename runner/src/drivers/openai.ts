@@ -16,6 +16,10 @@ import { TurnAbortedError } from "./types.ts";
 
 const MCP_PREFIX = "mcp__ferrobot__";
 const MAX_MODEL_CALLS = 50;
+const SUBAGENT = "subagent";
+const MAX_SUBAGENT_CALLS = 20;
+const SUBAGENT_BRIEF =
+  "You are a helper on one task. Work on it with your tools and end with your result; it goes back to the agent that asked.\n\nTask:\n";
 const BASH_TIMEOUT_MS = 120_000;
 /** The model sees more of a tool's output than the timeline does. */
 const MAX_MODEL_TOOL_OUTPUT = 20_000;
@@ -121,6 +125,12 @@ const BUILTIN_TOOLS: { group: BuiltinGroup; tool: ReturnType<typeof functionTool
   },
 ];
 
+const SUBAGENT_TOOL = functionTool(
+  SUBAGENT,
+  "Hand a self-contained task to a helper with your tools and a fresh history; you get its final answer. It does not see this conversation, so put everything it needs in the task. Several subagent calls in one step run in parallel.",
+  { task: { type: "string" } },
+);
+
 function toolsLine(names: string[]): string {
   if (names.length === 0) return "";
   const list =
@@ -194,7 +204,11 @@ export class OpenAIDriver implements ModelDriver {
           parameters: plainSchema(t.inputSchema),
         },
       })),
+      // Like the other drivers' sub-agents: only while no built-in group is off.
+      ...(off.size === 0 ? [SUBAGENT_TOOL] : []),
     ];
+    const helper = (task: string, callId: string): Promise<ToolOutcome> =>
+      this.#subagent(task, callId, system, tools, ctx);
     const messages: ChatMessage[] = [...history, { role: "user", content: turnPrompt(ctx) }];
 
     for (let call = 0; call < MAX_MODEL_CALLS; call++) {
@@ -208,22 +222,53 @@ export class OpenAIDriver implements ModelDriver {
         await this.#save(id, messages);
         return { result: reply.text, sessionId: id };
       }
-      messages.push({
-        role: "assistant",
-        content: reply.text,
-        // Upstreams re-parse arguments on every request; a malformed one would fail the session for good.
-        tool_calls: reply.calls.map((c) => ({
-          id: c.id,
-          type: "function",
-          function: { name: c.name, arguments: JSON.stringify(c.input ?? {}) },
-        })),
+      messages.push(withCalls(reply));
+      // Subagents run side by side; every other call waits for the one before it.
+      let queue = Promise.resolve("");
+      const outputs = await Promise.all(
+        reply.calls.map((c) =>
+          c.name === SUBAGENT
+            ? this.#runTool(c, ctx, helper)
+            : (queue = queue.then(() => this.#runTool(c, ctx))),
+        ),
+      );
+      reply.calls.forEach((c, i) => {
+        messages.push({ role: "tool", tool_call_id: c.id, content: outputs[i] ?? "" });
       });
-      for (const c of reply.calls) {
-        messages.push({ role: "tool", tool_call_id: c.id, content: await this.#runTool(c, ctx) });
-      }
       this.#late(ctx, messages);
     }
     throw new Error(`turn stopped after ${MAX_MODEL_CALLS} model calls without a final answer`);
+  }
+
+  /** `task` with the same model and tools minus `subagent`, its own history and a step cap. */
+  async #subagent(
+    task: string,
+    callId: string,
+    system: ChatMessage,
+    tools: readonly { function: { name: string } }[],
+    ctx: TurnContext,
+  ): Promise<ToolOutcome> {
+    const quiet: TurnContext = {
+      ...ctx,
+      // Its text is not the agent's reply, and its call ids may repeat a sibling's.
+      emit: (e) => {
+        if (e.kind === "tool_use" || e.kind === "tool_result")
+          ctx.emit({ ...e, id: `${callId}/${e.id ?? ""}` });
+        else if (e.kind !== "assistant_delta" && e.kind !== "assistant_text") ctx.emit(e);
+      },
+    };
+    const own = tools.filter((t) => t.function.name !== SUBAGENT);
+    const messages: ChatMessage[] = [system, { role: "user", content: SUBAGENT_BRIEF + task }];
+    for (let call = 0; call < MAX_SUBAGENT_CALLS; call++) {
+      const reply = await this.#complete(messages, own, quiet);
+      if (reply.calls.length === 0) return { output: reply.text, isError: false };
+      messages.push(withCalls(reply));
+      for (const c of reply.calls) {
+        messages.push({ role: "tool", tool_call_id: c.id, content: await this.#runTool(c, quiet) });
+      }
+    }
+    const output = `the subagent stopped after ${MAX_SUBAGENT_CALLS} model calls without an answer`;
+    return { output, isError: true };
   }
 
   /** Adds messages that arrived during the turn; true if there were any. */
@@ -303,7 +348,11 @@ export class OpenAIDriver implements ModelDriver {
     return { text, calls };
   }
 
-  async #runTool(call: RequestedCall, ctx: TurnContext): Promise<string> {
+  async #runTool(
+    call: RequestedCall,
+    ctx: TurnContext,
+    subagent?: (task: string, callId: string) => Promise<ToolOutcome>,
+  ): Promise<string> {
     if (aborted(ctx.signal)) throw new TurnAbortedError("interrupted");
     const { id, name, input } = call;
     if (input === null) {
@@ -323,7 +372,10 @@ export class OpenAIDriver implements ModelDriver {
     ctx.emit({ kind: "tool_use", id, name, input });
     let outcome: ToolOutcome;
     try {
-      outcome = await this.#execute(name, input, ctx.signal);
+      outcome =
+        name === SUBAGENT && subagent
+          ? await subagent(stringArg(input, "task"), id)
+          : await this.#execute(name, input, ctx.signal);
     } catch (err) {
       if (aborted(ctx.signal)) throw new TurnAbortedError("interrupted");
       outcome = { output: errorMessage(err), isError: true };
@@ -344,6 +396,8 @@ export class OpenAIDriver implements ModelDriver {
         return decide("Read", { file_path }, home, off);
       case "write_file":
         return decide("Write", { file_path }, home, off);
+      case SUBAGENT:
+        return decide("Agent", input, home, off);
       default:
         return decide(name, input, home, off);
     }
@@ -425,6 +479,19 @@ async function* sseData(body: ReadableStream<Uint8Array>): AsyncGenerator<string
       if (data) yield data;
     }
   }
+}
+
+function withCalls(reply: { text: string; calls: RequestedCall[] }): ChatMessage {
+  return {
+    role: "assistant",
+    content: reply.text,
+    // Upstreams re-parse arguments on every request; a malformed one would fail the session for good.
+    tool_calls: reply.calls.map((c) => ({
+      id: c.id,
+      type: "function",
+      function: { name: c.name, arguments: JSON.stringify(c.input ?? {}) },
+    })),
+  };
 }
 
 function parseArgs(args: string): Record<string, unknown> | null {

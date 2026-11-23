@@ -2278,6 +2278,115 @@
         }
       }
     },
+    "/v1/agents/{id}/uploads": {
+      "post": {
+        "tags": [
+          "chat"
+        ],
+        "summary": "Puts a file from the operator into the agent's workspace folder `uploads/`, waking its\ncomputer if it sleeps. Body: the raw file, at most 25 MiB.",
+        "operationId": "upload",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "Agent id (UUID)",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "name",
+            "in": "query",
+            "description": "The file's name. Only letters, digits, `.`, `-` and `_` are kept (others become `_`);\na name already in `uploads/` gets `-2`, `-3`, ... before its extension.",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "description": "The file, at most 25 MiB",
+          "content": {
+            "application/octet-stream": {
+              "schema": {
+                "type": "array",
+                "items": {
+                  "type": "integer",
+                  "format": "int32",
+                  "minimum": 0
+                }
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Upload"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Larger than 25 MiB",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or wrong API token",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Unknown agent",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "No sandbox",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "Far larger than 25 MiB (plain text)"
+          },
+          "502": {
+            "description": "Sandbox backend error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/v1/agents/{id}/wake": {
       "post": {
         "tags": [
@@ -8912,6 +9021,26 @@
             }
           }
         ]
+      },
+      "Upload": {
+        "type": "object",
+        "description": "A file the operator put into an agent's workspace.",
+        "required": [
+          "path",
+          "size"
+        ],
+        "properties": {
+          "path": {
+            "type": "string",
+            "description": "Where the file is, relative to the agent's workspace, e.g. `uploads/photo.png`."
+          },
+          "size": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Bytes written.",
+            "minimum": 0
+          }
+        }
       },
       "UsageDay": {
         "allOf": [

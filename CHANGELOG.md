@@ -44,6 +44,11 @@ All notable changes are listed here. The format follows
   and the members answer one at a time by the call-room rules; calling the
   group makes it the call's room. Rename, change members or delete it from
   the group's header. New migration: `rooms.name`.
+- Files, reactions and subagents in the chat: attach files with the
+  paperclip, drag and drop or paste (`POST /v1/agents/{id}/uploads` puts them
+  in the agent's `uploads/` folder, at most 25 MB each); agents react to your
+  messages with one emoji (`react` tool, `reaction` event); OpenAI-compatible
+  agents get a `subagent` tool that runs tasks in parallel with the same tools.
 
 ### Changed
 

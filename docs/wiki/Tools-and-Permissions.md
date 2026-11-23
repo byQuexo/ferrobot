@@ -12,7 +12,7 @@ off.
 | --- | --- |
 | Team | Message teammates and give them tasks |
 | Memory | Remember and recall notes |
-| Operator | Ask you questions, share files, bring teammates into calls, read the guides |
+| Operator | Ask you questions, share files, react to your messages, bring teammates into calls, read the guides |
 | Create agents | Ask to create new agents |
 | Add connectors | Ask you to add connectors |
 | Routines | Set up its own routines |
@@ -32,6 +32,30 @@ off.
 
 Connectors are switched on per agent in the same list. See
 [[Connectors and OAuth|Connectors-and-OAuth]].
+
+## Subagents
+
+An agent can split work into parallel parts without a new teammate. Claude
+(the SDK's Agent tool), Codex and Gemini CLI use their own subagents;
+OpenAI-compatible providers get ferrobot's `subagent` tool. It runs a task
+with the same model and tools and a fresh history, at most 20 model calls,
+and returns the answer. Several in one step run in parallel; their steps go
+through the same checks and show in Activities.
+
+- Subagents are off while Shell, Files or Web is off, since they run their
+  own tools.
+- Claude Code (your own login) has none.
+
+## Files and reactions in the chat
+
+- **Attach files** with the paperclip, by dropping them on the window, or by
+  pasting an image. They go into the agent's workspace folder `uploads/`
+  (at most 25 MB each, `POST /v1/agents/{id}/uploads`), waking the agent if
+  it sleeps. The message gets a line per file, like
+  `Attached: uploads/photo.png (image, 120.0 KB)`, and the agent opens them
+  with its file tools.
+- **Reactions**: an agent with **Operator** can acknowledge your message with
+  one emoji (`react`) instead of a reply. It shows on your message.
 
 ## Agents that create agents
 

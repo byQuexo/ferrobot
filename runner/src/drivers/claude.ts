@@ -79,6 +79,7 @@ export function systemAppend(agentName: string, instructions: string): string {
     "chart, a dashboard), write one self-contained .html file and share it: it opens as a",
     "page inside ferrobot. For a PDF, write the document as HTML and run",
     "`ferrobot-pdf page.html out.pdf`, then share the PDF.",
+    'To acknowledge an operator\'s message without words, react to its #id with one emoji instead of writing "ok".',
     "Messages from",
     '"routine:<name>" are scheduled tasks set up by your operator.',
     instructions.trim() ? `\nYour role:\n${instructions.trim()}` : "",

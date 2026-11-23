@@ -9,6 +9,9 @@ export type TimelineItem =
       key: string;
       at: string;
       text: string;
+      files: Attachment[];
+      /** The agent's emoji on this message. */
+      reaction: string | null;
       status: MailMessage["status"];
       /** Why the last attempt failed, on a message that was not delivered. */
       error?: string;
@@ -59,6 +62,26 @@ type Payload = Record<string, unknown>;
 
 function str(v: unknown): string {
   return typeof v === "string" ? v : "";
+}
+
+/** A file the operator attached, from a line like `Attached: uploads/photo.png (image, 120 KB)`. */
+export interface Attachment {
+  path: string;
+  kind: string;
+  size: string;
+}
+
+const ATTACHED = /^Attached: (\S+) \(([^,()]+), ([^()]+)\)$/;
+
+/** A message's text without its attachment lines, and the files they name. */
+export function splitAttachments(body: string): { text: string; files: Attachment[] } {
+  const files: Attachment[] = [];
+  const rest = body.split("\n").filter((line) => {
+    const m = ATTACHED.exec(line.trim());
+    if (m) files.push({ path: m[1] ?? "", kind: m[2] ?? "", size: m[3] ?? "" });
+    return !m;
+  });
+  return { text: rest.join("\n").trim(), files };
 }
 
 const SYSTEM_TEXT: Record<string, (p: Payload) => string> = {
@@ -123,10 +146,15 @@ export function buildTimeline(
 
   // Answers to question cards are shown on the card, not as a second bubble.
   const answers = new Map<number, QuestionAnswered>();
+  // An agent's reaction shows on the operator's message; a newer one replaces it.
+  const reactions = new Map<number, string>();
   for (const e of events) {
+    const p = e.payload as Payload;
     if (e.kind === "question_answered") {
       const a = e.payload as unknown as QuestionAnswered;
       answers.set(a.question, a);
+    } else if (e.kind === "reaction" && typeof p["message_id"] === "number") {
+      reactions.set(p["message_id"], str(p["emoji"]));
     }
   }
   const answerMessages = new Set([...answers.values()].map((a) => a.message_id));
@@ -161,7 +189,18 @@ export function buildTimeline(
     if (m.recipient === agentId) {
       if (m.sender.kind === "user") {
         const error = m.status === "failed" ? failures.get(m.id) : undefined;
-        push({ type: "user", key, at: m.created_at, text: m.body, status: m.status, error });
+        const { text, files } = splitAttachments(m.body);
+        const reaction = reactions.get(m.id) ?? null;
+        push({
+          type: "user",
+          key,
+          at: m.created_at,
+          text,
+          files,
+          reaction,
+          status: m.status,
+          error,
+        });
       } else if (m.sender.kind === "agent") {
         push({
           type: "incoming",
@@ -319,10 +358,10 @@ export function buildTimeline(
     const t = Date.parse(a.item.at) - Date.parse(b.item.at);
     return t !== 0 ? t : a.order - b.order;
   });
-  // A successful ask_user call is shown as its card instead of a tool card.
-  const isCardCall = (i: TimelineItem): boolean =>
-    i.type === "tool" && /(^|__)ask_user$/.test(i.name) && !i.isError;
-  const shown = items.map((x) => x.item).filter((i) => !isCardCall(i));
+  // A successful ask_user call shows as its card and a react call as its emoji, not as steps.
+  const isShownElsewhere = (i: TimelineItem): boolean =>
+    i.type === "tool" && /(^|__)(ask_user|react)$/.test(i.name) && !i.isError;
+  const shown = items.map((x) => x.item).filter((i) => !isShownElsewhere(i));
   // Sleep deepens in steps (paused, then stopped); the chat shows the first one.
   return shown.filter((i, n) => {
     const prev = shown[n - 1];
