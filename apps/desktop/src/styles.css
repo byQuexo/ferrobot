@@ -872,3 +872,51 @@ textarea { resize: vertical; min-height: 40px; line-height: 1.5; }
 .computer-details { margin-top: 8px; }
 .computer-details summary { cursor: pointer; font-size: 12px; color: var(--muted); }
 .computer-details[open] summary { color: var(--text-2); }
+
+/* Appearance (Settings → Appearance) and keyboard shortcuts. Defaults keep the tokens above. */
+:root { --chat-bg: var(--bg); --chat-zoom: 1; }
+:root[data-accent]:not([data-accent="blue"]) {
+  --accent: var(--accent-l); --accent-strong: var(--accent-strong-l);
+  --accent-soft: color-mix(in srgb, var(--accent) 9%, transparent);
+  --user-bubble: color-mix(in srgb, var(--accent) 9%, var(--surface));
+}
+:root[data-theme="dark"][data-accent]:not([data-accent="blue"]) {
+  --accent: var(--accent-d); --accent-strong: var(--accent-strong-d);
+  --accent-soft: color-mix(in srgb, var(--accent) 13%, transparent);
+  --user-bubble: color-mix(in srgb, var(--accent) 13%, var(--surface));
+}
+:root[data-chat-bg="tinted"] { --chat-bg: color-mix(in srgb, var(--accent) 5%, var(--bg)); }
+:root[data-chat-bg="plain"] { --chat-bg: var(--surface); }
+:root[data-text-size="small"] { --chat-zoom: 0.9; }
+:root[data-text-size="large"] { --chat-zoom: 1.15; }
+.shell > .chat, .chat-head { background: var(--chat-bg); }
+.chat-head .pair-avatars .avatar + .avatar { box-shadow: 0 0 0 2px var(--chat-bg); }
+:root[data-bubbles="solid"] .bubble-user { background: var(--accent); color: var(--accent-text); }
+/* Inside an accent bubble, links, code and the time take the bubble's text colour. */
+:root[data-bubbles="solid"] .bubble-user > * {
+  --accent: var(--accent-text);
+  --accent-soft: color-mix(in srgb, var(--accent-text) 18%, transparent);
+  --surface: var(--accent-soft); --surface-2: var(--accent-soft);
+  --border: color-mix(in srgb, var(--accent-text) 30%, transparent);
+  --text: var(--accent-text); --text-2: var(--accent-text);
+  --muted: color-mix(in srgb, var(--accent-text) 75%, transparent);
+}
+:root[data-bubbles="plain"] .bubble-user { background: var(--surface); color: var(--text); box-shadow: inset 0 0 0 1px var(--border-strong); }
+/* Zoom the rows, not the scroller: Chat's scroll pinning reads the scroller's own metrics. */
+.timeline > :not(.enter, .settled), .timeline > :is(.enter, .settled) > * { zoom: var(--chat-zoom); }
+.composer textarea { font-size: calc(14px * var(--chat-zoom)); line-height: calc(20px * var(--chat-zoom)); }
+.pref-list { list-style: none; margin: 0; padding: 0; border: 1px solid var(--border); border-radius: 12px; background: var(--surface); }
+.pref-row { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 16px; padding: 12px 16px; }
+.pref-row + .pref-row { border-top: 1px solid var(--border); }
+.pref-text { flex: 1; display: flex; flex-direction: column; gap: 2px; min-width: 160px; }
+.pref-title { font-weight: 500; }
+.pref-row .segmented { align-self: center; }
+.swatches { display: flex; flex-wrap: wrap; gap: 8px; }
+.swatch { width: 24px; height: 24px; padding: 0; border: none; border-radius: 50%; background: var(--swatch-l); }
+:root[data-theme="dark"] .swatch { background: var(--swatch-d); }
+.swatch[aria-checked="true"] { box-shadow: 0 0 0 2px var(--surface), 0 0 0 4px var(--text-2); }
+kbd { padding: 2px 8px; border: 1px solid var(--border-strong); border-radius: 6px; background: var(--surface-2); color: var(--text-2); font: 12px/20px var(--font); white-space: nowrap; }
+.switcher { list-style: none; margin: 8px 0 0; padding: 0; max-height: 50vh; overflow-y: auto; }
+.switcher li { display: flex; align-items: center; gap: 12px; padding: 8px; border-radius: 8px; cursor: pointer; }
+.switcher li[aria-selected="true"] { background: var(--surface-2); }
+.switcher-label { flex: none; font-weight: 500; }

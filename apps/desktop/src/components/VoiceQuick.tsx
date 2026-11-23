@@ -26,9 +26,14 @@ export function VoiceQuick(props: {
     const outside = (e: PointerEvent): void => {
       if (!box.current?.contains(e.target as Node)) props.onClose();
     };
+    const key = (e: KeyboardEvent): void => {
+      if (e.key === "Escape") props.onClose();
+    };
     document.addEventListener("pointerdown", outside);
+    document.addEventListener("keydown", key);
     return () => {
       document.removeEventListener("pointerdown", outside);
+      document.removeEventListener("keydown", key);
     };
   }, []);
 

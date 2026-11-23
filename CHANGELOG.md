@@ -14,6 +14,12 @@ All notable changes are listed here. The format follows
   wait for an Approve/Decline card unless Auto mode is on; dangerous ones
   (deleting `/` or home, formatting a disk, piping a download into a shell)
   are always refused.
+- Settings → Appearance: theme, accent color (8 swatches, readable in light
+  and dark mode), your bubbles (solid, soft or plain), chat background
+  (default, tinted or plain) and text size, saved on this computer.
+- Keyboard shortcuts (⌘ on macOS, Ctrl elsewhere): ⌘K goes to an agent or a
+  settings page, ⌘N, ⌘,, ⌘⇧U, ⌘I, ⌘B, ⌘1–9, Esc and ⌘/ for the list;
+  Settings → Keyboard lists them all.
 
 ### Changed
 

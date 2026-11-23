@@ -8,6 +8,7 @@ import {
   type ProviderKind,
   type StoredEvent,
 } from "../src/api.ts";
+import { ACCENTS, DEFAULT_APPEARANCE, readAppearance } from "../src/lib/appearance.ts";
 import { hash } from "../src/lib/avatar.ts";
 import { characterOf, deriveCharacter, moodOf, rerollCharacter } from "../src/lib/character.ts";
 import {
@@ -44,6 +45,7 @@ import { diagnosticsReport } from "../src/lib/diagnostics.ts";
 import { parseBlocks, parseInline } from "../src/lib/markdown.ts";
 import { modelOptions, withSaved } from "../src/lib/models.ts";
 import { moveId, orderAgents, pickSelection } from "../src/lib/order.ts";
+import { keyLabel, matchShortcut, SHORTCUTS, type KeyPress } from "../src/lib/shortcuts.ts";
 import { pollOutcome } from "../src/lib/update.ts";
 import { Speaker, hasVoiceKey, liveEvent, pcm16Base64, speakable } from "../src/lib/voice.ts";
 import {
@@ -1540,5 +1542,118 @@ describe("pickSelection", () => {
     const agents = map({ id: "c", name: "carol" }, { id: "f", name: "ferro", pinned: true });
     assert.equal(pickSelection(agents, "gone", true), "f");
     assert.equal(pickSelection(map(), "gone", true), null);
+  });
+});
+
+describe("appearance", () => {
+  it("reads stored choices and falls back to defaults for missing or unknown ones", () => {
+    assert.deepEqual(
+      readAppearance(() => null),
+      DEFAULT_APPEARANCE,
+    );
+    const stored = new Map([
+      ["ferrobot.theme", "dark"],
+      ["ferrobot.accent", "teal"],
+      ["ferrobot.bubbles", "huge"],
+      ["ferrobot.text-size", "large"],
+    ]);
+    assert.deepEqual(
+      readAppearance((k) => stored.get(k) ?? null),
+      { ...DEFAULT_APPEARANCE, theme: "dark", accent: "teal", textSize: "large" },
+    );
+  });
+
+  it("keeps every accent readable with the theme's accent text and as text on surfaces", () => {
+    const lum = (hex: string): number => {
+      const [r = 0, g = 0, b = 0] = [1, 3, 5].map((i) => {
+        const v = parseInt(hex.slice(i, i + 2), 16) / 255;
+        return v <= 0.03928 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4;
+      });
+      return 0.2126 * r + 0.7152 * g + 0.0722 * b;
+    };
+    const ratio = (a: string, b: string): number => {
+      const [hi, lo] = [lum(a), lum(b)].sort((x, y) => y - x);
+      return ((hi ?? 0) + 0.05) / ((lo ?? 0) + 0.05);
+    };
+    // Accent text and surface from styles.css: light, then dark.
+    const modes = [
+      { colors: "light", text: "#ffffff", surface: "#ffffff" },
+      { colors: "dark", text: "#10131f", surface: "#1d1f24" },
+    ] as const;
+    for (const [id, accent] of Object.entries(ACCENTS)) {
+      for (const m of modes) {
+        for (const c of accent[m.colors]) {
+          assert.ok(ratio(c, m.text) >= 4.5, `${id} ${m.colors} ${c} on accent text`);
+          assert.ok(ratio(c, m.surface) >= 4.5, `${id} ${m.colors} ${c} on surface`);
+        }
+      }
+    }
+  });
+
+  it("keeps the default accent equal to the theme's own tokens", async () => {
+    const { readFile } = await import("node:fs/promises");
+    const css = await readFile(new URL("../src/styles.css", import.meta.url), "utf8");
+    for (const c of [...ACCENTS.blue.light, ...ACCENTS.blue.dark]) {
+      assert.ok(css.includes(`--accent: ${c};`) || css.includes(`--accent-strong: ${c};`), c);
+    }
+  });
+});
+
+describe("shortcuts", () => {
+  const press = (key: string, mods: Partial<KeyPress> = {}): KeyPress => ({
+    key,
+    code: /^[0-9]$/.test(key) ? `Digit${key}` : `Key${key.toUpperCase()}`,
+    metaKey: false,
+    ctrlKey: false,
+    shiftKey: false,
+    altKey: false,
+    repeat: false,
+    isComposing: false,
+    ...mods,
+  });
+  const cmd = { metaKey: true };
+  const ctrl = { ctrlKey: true };
+
+  it("matches ⌘ on macOS and Ctrl elsewhere", () => {
+    assert.deepEqual(matchShortcut(press("k", cmd), true), { id: "switcher" });
+    assert.deepEqual(matchShortcut(press("k", ctrl), false), { id: "switcher" });
+    assert.equal(matchShortcut(press("k", ctrl), true), null);
+    assert.equal(matchShortcut(press("k", cmd), false), null);
+    assert.equal(matchShortcut(press("k", { ...cmd, ctrlKey: true }), true), null);
+  });
+
+  it("leaves plain typing alone; only Esc works without a modifier", () => {
+    for (const key of ["k", "n", ",", "/", "1", "i"])
+      assert.equal(matchShortcut(press(key), true), null);
+    assert.deepEqual(matchShortcut(press("Escape"), true), { id: "close" });
+    assert.equal(matchShortcut(press("k", { ...cmd, altKey: true }), true), null);
+    assert.equal(matchShortcut(press("k", { ...cmd, isComposing: true }), true), null);
+    assert.equal(matchShortcut(press("k", { ...cmd, repeat: true }), true), null);
+  });
+
+  it("checks Shift on letters, ignores it on punctuation, and maps digits by position", () => {
+    assert.deepEqual(matchShortcut(press("U", { ...cmd, shiftKey: true }), true), { id: "usage" });
+    assert.equal(matchShortcut(press("u", cmd), true), null);
+    assert.equal(matchShortcut(press("K", { ...cmd, shiftKey: true }), true), null);
+    assert.deepEqual(matchShortcut(press(",", cmd), true), { id: "settings" });
+    // German layout: "/" is Shift+7.
+    assert.deepEqual(matchShortcut({ ...press("/", cmd), code: "Digit7", shiftKey: true }, true), {
+      id: "help",
+    });
+    assert.deepEqual(matchShortcut(press("3", cmd), true), { id: "agent", n: 3 });
+    assert.deepEqual(matchShortcut({ ...press("&", ctrl), code: "Digit1" }, false), {
+      id: "agent",
+      n: 1,
+    });
+    assert.equal(matchShortcut(press("0", cmd), true), null);
+  });
+
+  it("writes keys the platform's way", () => {
+    const usage = SHORTCUTS.find((s) => s.id === "usage");
+    const agent = SHORTCUTS.find((s) => s.id === "agent");
+    assert.ok(usage && agent);
+    assert.equal(keyLabel(usage, true), "⌘⇧U");
+    assert.equal(keyLabel(usage, false), "Ctrl+Shift+U");
+    assert.equal(keyLabel(agent, true), "⌘1–9");
   });
 });

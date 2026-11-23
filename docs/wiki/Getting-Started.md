@@ -34,6 +34,19 @@ More fixes: [[Troubleshooting]].
 The guides under **Settings → Guides** in the app are the same pages as this
 wiki.
 
+### Keyboard shortcuts
+
+⌘ on macOS, Ctrl on Windows and Linux. **Settings → Keyboard** lists them too.
+
+- **⌘K** go to an agent or a settings page
+- **⌘N** new agent · **⌘,** settings · **⌘⇧U** usage
+- **⌘I** show or hide the details panel · **⌘B** collapse or expand the sidebar
+- **⌘1–9** the 1st to 9th agent in the sidebar
+- **Esc** close the open dialog, menu, page or panel · **⌘/** all shortcuts
+
+How the app looks (theme, accent color, bubbles, chat background, text size)
+is under **Settings → Appearance**.
+
 The desktop window itself has had far less testing than the daemon; most UI
 checks ran in a browser against a real daemon.
 
