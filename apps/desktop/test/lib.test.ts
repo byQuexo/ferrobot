@@ -39,10 +39,15 @@ import {
   callTurn,
   groupChange,
   isPass,
+  loadPushToTalk,
   meterDots,
+  micOpen,
+  nextSpeed,
   operatorSaid,
   roomTitle,
+  speedLabel,
   splitSentences,
+  talkKey,
   type CallState,
   type Line,
 } from "../src/lib/call.ts";
@@ -1349,6 +1354,71 @@ describe("voice call", () => {
     assert.equal(meterDots(0.25), 5);
     assert.equal(meterDots(1), 5);
     assert.equal(meterDots(-1), 0);
+  });
+
+  it("steps the speaking speed up and wraps to the slowest", () => {
+    assert.equal(nextSpeed(null), 1.1);
+    assert.equal(nextSpeed(1), 1.1);
+    assert.equal(nextSpeed(1.05), 1.1);
+    assert.equal(nextSpeed(0.85), 0.9);
+    assert.equal(nextSpeed(1.2), 0.7);
+    assert.equal(nextSpeed(0.7), 0.8);
+    assert.equal(speedLabel(null), "1×");
+    assert.equal(speedLabel(1.1), "1.1×");
+    assert.equal(speedLabel(1.05), "1.05×");
+    assert.equal(speedLabel(0.7000000001), "0.7×");
+  });
+
+  it("opens the microphone with push-to-talk only while held, and never when muted", () => {
+    assert.equal(micOpen(false, false, false), true);
+    assert.equal(micOpen(false, true, false), false);
+    assert.equal(micOpen(false, true, true), true);
+    assert.equal(micOpen(true, false, false), false);
+    assert.equal(micOpen(true, true, true), false);
+  });
+
+  it("holds push-to-talk with bare Space outside text fields", () => {
+    const space: KeyPress = {
+      key: " ",
+      code: "Space",
+      metaKey: false,
+      ctrlKey: false,
+      shiftKey: false,
+      altKey: false,
+      repeat: false,
+      isComposing: false,
+    };
+    const body = { tag: "BODY", editable: false };
+    assert.equal(talkKey(space, body), true);
+    assert.equal(talkKey({ ...space, repeat: true }, { tag: "BUTTON", editable: false }), true);
+    for (const tag of ["INPUT", "TEXTAREA", "SELECT"])
+      assert.equal(talkKey(space, { tag, editable: false }), false, tag);
+    assert.equal(talkKey(space, { tag: "DIV", editable: true }), false);
+    assert.equal(talkKey({ ...space, metaKey: true }, body), false);
+    assert.equal(talkKey({ ...space, shiftKey: true }, body), false);
+    assert.equal(talkKey({ ...space, isComposing: true }, body), false);
+    assert.equal(talkKey({ ...space, key: "k", code: "KeyK" }, body), false);
+  });
+
+  it("remembers push-to-talk, defaulting to voice activity", () => {
+    assert.equal(
+      loadPushToTalk((k) => (k === "ferrobot.call-talk" ? "push" : null)),
+      true,
+    );
+    assert.equal(
+      loadPushToTalk(() => "voice"),
+      false,
+    );
+    assert.equal(
+      loadPushToTalk(() => null),
+      false,
+    );
+    assert.equal(
+      loadPushToTalk(() => {
+        throw new Error("no storage");
+      }),
+      false,
+    );
   });
 });
 

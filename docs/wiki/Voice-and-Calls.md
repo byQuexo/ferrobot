@@ -39,6 +39,13 @@ Click the phone button in an agent's chat (**Start a voice call**).
 - The call bar at the top of the window shows everyone in the call and your
   microphone level, and has **Mute** and **Hang up**. It stays while you
   switch chats, Settings or Usage.
+- With ElevenLabs the bar also has the speaking speed (**1×**; click for the
+  next step, 0.7× to 1.2×). It is the same speed as in Settings and the chat's
+  sliders, so every agent speaks at it, from its next sentence.
+- **Push to talk** in the bar switches from always listening to talking only
+  while you hold **Hold to talk** or Space (outside text fields). Words count
+  once you let go and pause briefly; **Mute** still wins. This computer
+  remembers the choice.
 - Longer work: the agent says so and does it after the call, in its chat.
 - An agent cannot show question cards during a call; it asks out loud.
 

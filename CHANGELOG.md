@@ -8,6 +8,10 @@ All notable changes are listed here. The format follows
 
 ### Added
 
+- Call bar: the speaking speed (ElevenLabs; click steps 0.7×–1.2×, the same
+  speed setting as in Settings) and push-to-talk, a toggle with a hold-to-talk
+  button and Space, remembered on this computer.
+
 - Agent tags, a model switch in the chat header and a context meter. Up to five
   tags per agent show next to its name (`tags` on agents, migration v18). The
   chat header's model chip switches the model (the agent's computer restarts).
