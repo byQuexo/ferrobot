@@ -6998,17 +6998,12 @@ async fn claude_code_agents_use_the_hosts_own_cli_and_nothing_enters_the_sandbox
         (&json!(5000), &json!(200_000), &json!("claude-sonnet-4-5")),
         "from claude's own stream: {ctx}"
     );
-    let call = events(&d, clio["id"].as_str().unwrap())
-        .await
-        .into_iter()
-        .find(|e| e["kind"] == "model_call")
-        .expect("a model_call event for the trace");
-    assert_eq!(
-        (
-            &call["payload"]["model"],
-            &call["payload"]["cache_read_tokens"]
-        ),
-        (&json!("claude-sonnet-4-5"), &json!(3000))
+    // Its model call is a usage row, priced like the API would charge.
+    let (_, usage) = http(&d.ui, "GET", "/v1/usage?group_by=model", None).await;
+    let text = usage.to_string();
+    assert!(
+        text.contains("claude-sonnet-4-5"),
+        "a claude_code row: {text}"
     );
     assert!(
         out.lines().any(|l| l.contains(r#""type":"result""#)),

@@ -15,6 +15,9 @@ All notable changes are listed here. The format follows
   (`GET /v1/agents/{id}/turns/{turn_id}/trace`). Computer steps name their
   command or file. New migration: v20 (`usage.turn_id`, `usage.at_ms`).
 
+- Claude Code calls show on the Usage page: each model call `claude` reports is
+  a usage row (provider kind `claude_code`) with its tokens and a cost
+  estimated at Anthropic API prices; your subscription covers them.
 - Compact now: in the context popover, Claude Code agents can compact their
   conversation (`POST /v1/agents/{id}/compact`). The daemon runs `claude`'s
   own `/compact` on the agent's session, with no tools and none of your

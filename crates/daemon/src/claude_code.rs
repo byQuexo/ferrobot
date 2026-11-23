@@ -379,16 +379,19 @@ struct Run {
     done: bool,
     context: Option<Context>,
     context_file: PathBuf,
-    /// For the trace: the agent's turn, when the last line came and the call streaming now.
+    /// For usage and the trace: the agent's turn, when the last line came and the call
+    /// streaming now.
     state: AppState,
     agent: AgentId,
+    agent_name: String,
+    provider_id: Option<Uuid>,
     turn: Option<String>,
     last_line: time::OffsetDateTime,
     call: Option<ModelCall>,
 }
 
 impl Run {
-    /// Follows the model calls in `claude`'s stream; each becomes a `model_call` event.
+    /// Follows the model calls in `claude`'s stream; each becomes a usage row of its turn.
     async fn track_call(&mut self, line: &Value, now: time::OffsetDateTime) {
         let id = (line["type"] == "assistant")
             .then(|| line["message"]["id"].as_str())
@@ -416,23 +419,28 @@ impl Run {
         let Some(c) = self.call.take() else {
             return;
         };
-        let rfc = |t: time::OffsetDateTime| {
-            t.format(&time::format_description::well_known::Rfc3339)
-                .unwrap_or_default()
-        };
         let u = &c.usage;
-        let payload = json!({
-            "model": c.model,
-            "started_at": rfc(c.started),
-            "ended_at": rfc(c.ended),
-            "input_tokens": u["input_tokens"],
-            "output_tokens": u["output_tokens"],
-            "cache_read_tokens": u["cache_read_input_tokens"],
-            "cache_write_tokens": u["cache_creation_input_tokens"],
-        });
-        self.state
-            .record(self.agent, self.turn.clone(), "model_call", payload)
-            .await;
+        let row = ferrobot_store::UsageRecord {
+            at: c.ended,
+            agent_id: self.agent,
+            agent_name: self.agent_name.clone(),
+            provider_id: self.provider_id,
+            provider_kind: ProviderKind::ClaudeCode.as_str().into(),
+            model: c.model.unwrap_or_else(|| "unknown".into()),
+            tokens: ferrobot_store::Tokens {
+                input: u["input_tokens"].as_i64(),
+                output: u["output_tokens"].as_i64(),
+                cache_read: u["cache_read_input_tokens"].as_i64(),
+                cache_write: u["cache_creation_input_tokens"].as_i64(),
+            },
+            cost_usd: None,
+            latency_ms: i64::try_from((c.ended - c.started).whole_milliseconds()).unwrap_or(0),
+            status: ferrobot_store::UsageStatus::Ok,
+            turn_id: self.turn.clone(),
+        };
+        if let Err(e) = self.state.store.insert_usage(row).await {
+            tracing::warn!(error = %e, "cannot record a Claude Code call");
+        }
     }
 }
 
@@ -559,6 +567,8 @@ async fn start(
         context_file,
         state: state.clone(),
         agent: agent.id,
+        agent_name: agent.name.to_string(),
+        provider_id: agent.provider_id,
         turn: state.hub.current_turn(agent.id),
         last_line: time::OffsetDateTime::now_utc(),
         call: None,

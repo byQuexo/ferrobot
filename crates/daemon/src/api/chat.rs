@@ -421,8 +421,9 @@ pub(crate) async fn turn_trace(
             .is_ok_and(|p| p.kind == ProviderKind::ClaudeCode),
         None => false,
     };
-    // Older Claude Code turns predate `model_call` events.
-    let models_tracked = !claude_code || events.iter().any(|e| e.kind == "model_call");
+    // Claude Code turns before its calls were recorded have none.
+    let models_tracked =
+        !claude_code || !calls.is_empty() || events.iter().any(|e| e.kind == "model_call");
     crate::trace::build(&turn, &events, &calls, models_tracked)
         .map(Json)
         .ok_or_else(|| ApiError::NotFound("turn not found".into()))
