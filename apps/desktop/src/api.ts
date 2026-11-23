@@ -7,6 +7,7 @@ export const DEFAULT_DAEMON = "http://127.0.0.1:7878";
 type Schemas = components["schemas"];
 export type Agent = Schemas["AgentView"];
 export type AgentContext = Schemas["AgentContext"];
+export type Trace = Schemas["Trace"];
 export type Presence = Schemas["Presence"];
 export type AvatarCharacter = Schemas["AvatarCharacter"];
 export type StoredEvent = Schemas["StoredEvent"];
@@ -222,6 +223,9 @@ export class DaemonClient {
   newSession = (id: string): Promise<void> => this.#request("POST", `/v1/agents/${id}/new-session`);
   agentContext = (id: string): Promise<AgentContext> =>
     this.#request("GET", `/v1/agents/${id}/context`);
+  /** One of the agent's turns as a timeline. */
+  trace = (id: string, turn: string): Promise<Trace> =>
+    this.#request("GET", `/v1/agents/${id}/turns/${encodeURIComponent(turn)}/trace`);
   answerQuestion = (
     id: string,
     question: number,

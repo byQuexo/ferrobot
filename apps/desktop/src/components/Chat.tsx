@@ -57,6 +57,7 @@ import { CredentialFix } from "./CredentialFix.tsx";
 import { MailGroup } from "./MailGroup.tsx";
 import { QuestionCardView } from "./QuestionCard.tsx";
 import { RichText, type ChatFiles } from "./RichText.tsx";
+import { TraceDialog } from "./Trace.tsx";
 import { Button, IconButton } from "./ui.tsx";
 import { VoiceQuick } from "./VoiceQuick.tsx";
 import { VOICE_LABELS } from "./VoiceSettings.tsx";
@@ -201,6 +202,7 @@ export function Chat(props: {
   const newKey = firstNewKey(items.shown, newSince);
 
   const working = agent.presence === "working";
+  const [trace, setTrace] = useState<string | null>(null);
   // Queued means the running turn cannot take it in: stopping that turn sends it next.
   const queued = items.shown.some((i) => i.type === "user" && i.status === "pending");
   const sendNow =
@@ -330,6 +332,7 @@ export function Chat(props: {
               files={items.files}
               onActivities={props.onActivities}
               sendNow={sendNow}
+              onTrace={setTrace}
             />
           </div>
         ))}
@@ -366,6 +369,15 @@ export function Chat(props: {
         extra={<ContextMeter agent={agent} />}
         upload={(file) => client.upload(id, file)}
       />
+      {trace && (
+        <TraceDialog
+          agent={agent}
+          turn={trace}
+          onClose={() => {
+            setTrace(null);
+          }}
+        />
+      )}
     </section>
   );
 }
@@ -485,6 +497,8 @@ function Item(props: {
   onActivities?: () => void;
   /** Stops the running turn so queued messages go next; unset when nothing is queued. */
   sendNow?: (() => void) | undefined;
+  /** Opens a turn's trace. */
+  onTrace?: (turn: string) => void;
 }): JSX.Element {
   const { item, agent } = props;
   const { agents, openFile } = useApp();
@@ -498,7 +512,11 @@ function Item(props: {
             title={item.tools
               .map((t) => stepLabel(t.name, t.input, (a) => agents.get(a)?.name))
               .join("\n")}
-            onClick={props.onActivities}
+            onClick={() => {
+              const turn = item.tools.find((t) => t.turn)?.turn;
+              if (turn && props.onTrace) props.onTrace(turn);
+              else props.onActivities?.();
+            }}
           >
             <Footprints size={14} /> {stepsLabel(item.tools.length, item.seconds)}
           </button>

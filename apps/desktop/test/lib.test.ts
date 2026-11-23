@@ -1985,3 +1985,76 @@ describe("agent meta", () => {
     assert.equal(items[0]?.type === "system" && items[0].text.startsWith("New chat"), true);
   });
 });
+
+describe("trace layout", () => {
+  const span = (kind: "model" | "tool", name: string, from: number, to: number | null) => ({
+    kind,
+    name,
+    started_at: new Date(1_000_000 + from).toISOString(),
+    ended_at: to === null ? null : new Date(1_000_000 + to).toISOString(),
+    error: name === "bash" ? "no such dir" : null,
+    input: null,
+    input_tokens: null,
+    output_tokens: null,
+    cache_read_tokens: null,
+    cache_write_tokens: null,
+    cost_usd: null,
+  });
+
+  it("places bars by time, marks the slowest and counts", async () => {
+    const { layoutTrace, traceDuration } = await import("../src/lib/trace.ts");
+    const t = layoutTrace({
+      turn_id: "t",
+      started_at: new Date(1_000_000).toISOString(),
+      ended_at: new Date(1_010_000).toISOString(),
+      outcome: "completed",
+      error: null,
+      models_tracked: true,
+      spans: [
+        span("model", "m", 0, 6000),
+        span("tool", "bash", 6000, 6010),
+        span("tool", "x", 9000, 10_000),
+      ],
+    });
+    assert.deepEqual(
+      t.rows.map((r) => [r.left, Math.round(r.width * 10) / 10, r.slowest]),
+      [
+        [0, 60, true],
+        [60, 0.6, false],
+        [90, 10, false],
+      ],
+    );
+    assert.deepEqual([t.ms, t.models, t.tools, t.errors, t.running], [10_000, 1, 2, 1, false]);
+    assert.deepEqual(
+      t.rows.map((r) => r.labelAt),
+      ["after", "after", "before"],
+      "a bar at the end gets its label before it",
+    );
+    assert.deepEqual([400, 9900, 12_400, 65_000].map(traceDuration), [
+      "0.4s",
+      "9.9s",
+      "12s",
+      "1m 5s",
+    ]);
+  });
+
+  it("runs a still running turn up to now", async () => {
+    const { layoutTrace } = await import("../src/lib/trace.ts");
+    const t = layoutTrace(
+      {
+        turn_id: "t",
+        started_at: new Date(1_000_000).toISOString(),
+        ended_at: null,
+        outcome: null,
+        error: null,
+        models_tracked: false,
+        spans: [span("tool", "y", 1000, null)],
+      },
+      1_004_000,
+    );
+    assert.deepEqual(
+      [t.ms, t.running, t.rows[0]?.running, t.rows[0]?.width],
+      [4000, true, true, 75],
+    );
+  });
+});

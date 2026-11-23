@@ -1116,3 +1116,39 @@ kbd { padding: 2px 8px; border: 1px solid var(--border-strong); border-radius: 6
 .call-actions .call-speed { width: auto; min-width: 28px; padding: 0 4px; border-radius: 999px; font-size: 12px; font-weight: 600; font-variant-numeric: tabular-nums; }
 .call-actions .call-ptt[aria-pressed="true"] { background: var(--surface-2); color: var(--accent); }
 .call-actions .call-talk[aria-pressed="true"] { background: var(--accent); color: var(--accent-text); }
+
+/* Trace: a turn's steps on a timeline */
+.trace { display: flex; flex-direction: column; gap: 12px; min-width: 0; }
+.trace-stats { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); border: 1px solid var(--border); border-radius: 12px; overflow: hidden; }
+.trace-stat { display: flex; flex-direction: column; gap: 2px; padding: 10px 14px; }
+.trace-stat + .trace-stat { border-left: 1px solid var(--border); }
+.trace-stat strong { font-size: 18px; font-weight: 600; }
+.trace-search { width: 100%; }
+.trace-grid { display: flex; flex-direction: column; border: 1px solid var(--border); border-radius: 12px; overflow: hidden; }
+.trace-head, .trace-row { display: grid; grid-template-columns: minmax(140px, 34%) minmax(0, 1fr); align-items: center; min-height: 34px; }
+.trace-head { color: var(--muted); font-size: 12px; border-bottom: 1px solid var(--border); }
+.trace-head > span:first-child, .trace-label { padding: 0 12px; }
+.trace-ticks { display: flex; justify-content: space-between; padding: 0 12px; }
+.trace-row + .trace-row { border-top: 1px solid var(--border); }
+.trace-label { display: flex; align-items: center; gap: 8px; min-width: 0; color: var(--text-2); font-size: 13px; }
+.trace-root .trace-label { color: var(--text); font-weight: 500; }
+.trace-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.trace-lane { position: relative; height: 34px; border-left: 1px solid var(--border); }
+.trace-bar { position: absolute; top: 10px; height: 14px; border-radius: 4px; background: var(--muted); }
+.trace-bar.root { background: var(--surface-3); }
+.trace-bar.model { background: var(--accent); }
+.trace-bar.tool { background: var(--text-2); }
+.trace-bar.failed { background: var(--err); }
+.trace-bar.running { animation: breathe 1.8s ease-in-out infinite; }
+.trace-time { position: absolute; top: 9px; display: inline-flex; align-items: center; gap: 6px; font-size: 12px; color: var(--muted); white-space: nowrap; }
+.trace-slowest { padding: 0 6px; border-radius: 999px; background: var(--warn-soft, var(--surface-2)); color: var(--warn, var(--text)); font-weight: 600; }
+.trace-empty { padding: 12px; }
+.trace-legend { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 16px; font-size: 12px; color: var(--muted); }
+.trace-legend span { display: inline-flex; align-items: center; gap: 6px; }
+.trace-key { display: inline-block; width: 14px; height: 8px; border-radius: 3px; background: var(--muted); }
+.trace-key.model { background: var(--accent); }
+.trace-key.tool { background: var(--text-2); }
+.trace-key.failed { background: var(--err); }
+@media (prefers-reduced-motion: reduce) { .trace-bar.running { animation: none; } }
+.trace-time.inside { color: var(--bg); font-weight: 600; }
+

@@ -6,6 +6,15 @@ All notable changes are listed here. The format follows
 
 ## [Unreleased]
 
+### Added
+
+- Traces: a reply's steps line opens its turn on a timeline: the model calls
+  (from the proxy, now tagged with their turn) and tool calls with how long
+  each took, the slowest one, failures, counts and a search
+  (`GET /v1/agents/{id}/turns/{turn_id}/trace`). Claude Code turns show their
+  tool calls; their model calls are not tracked. New migration: v20
+  (`usage.turn_id`, `usage.at_ms`).
+
 ## [0.1.4] - 2026-11-23
 
 ### Added
