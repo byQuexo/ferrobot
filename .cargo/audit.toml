@@ -1,3 +1,4 @@
 [advisories]
-# url 2.5.9 fixes it but is under the 7-day publish age; bump both lockfiles and drop this on 2026-11-27.
-ignore = ["RUSTSEC-2026-0592"]
+# url 2.5.9 fixes 0592 but is under the 7-day publish age; bump both lockfiles and drop it on 2026-11-27.
+# cookie 0.18.3 (via tauri) fixes 0594, same age rule; bump the Tauri lockfile and drop it on 2026-11-30.
+ignore = ["RUSTSEC-2026-0592", "RUSTSEC-2026-0594"]

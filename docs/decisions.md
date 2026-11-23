@@ -564,6 +564,9 @@ the code and this file together.
   `blob:` URLs) is ignored in `.cargo/audit.toml` until 2.5.9 passes the 7-day
   publish age (2026-11-27): no agent can reach it, since proxied URLs keep the
   upstream's scheme and OAuth revocation checks `https` first.
+  RUSTSEC-2026-0594 (`cookie` 0.18.2 via `tauri`, private-cookie nonces can
+  repeat across `fork`) is ignored the same way until 0.18.3 passes the publish
+  age (2026-11-30), Tim's call.
 
 - **The desktop app bundles the daemon** as a Tauri sidecar
   (`tauri.release.conf.json` adds it, so dev builds need no binary). The shell
