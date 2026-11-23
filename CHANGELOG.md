@@ -36,10 +36,14 @@ All notable changes are listed here. The format follows
   account.
 - Richer chat: ```mermaid blocks draw as diagrams and ```html blocks as a
   sandboxed live preview with their styles and scripts, served by the daemon
-  like shared pages (`POST /v1/previews`; Preview/Code, Copy, Expand); shared .html and .pdf
-  files preview under their card; cleaner tables; a "New" line where unread
-  turns start; mail with several agents folds into one "N messages with K
-  agents" line.
+  like shared pages (`POST /v1/previews`; Preview/Code, Copy, Expand); shared
+  .html and .pdf files preview under their card; cleaner tables; a "New" line
+  where unread turns start; mail with several agents folds into one
+  "N messages with K agents" line.
+- Group chats: a named room of two or more agents (`/v1/groups`). Write once
+  and the members answer one at a time by the call-room rules; calling the
+  group makes it the call's room. Rename, change members or delete it from
+  the group's header. New migration: `rooms.name`.
 
 ### Changed
 

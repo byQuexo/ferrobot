@@ -31,6 +31,7 @@ import {
   callChanged,
   callClock,
   callTurn,
+  groupChange,
   isPass,
   operatorSaid,
   roomTitle,
@@ -1242,6 +1243,18 @@ describe("voice call", () => {
     const nameOf = (id: string): string | undefined => names.get(id);
     assert.equal(roomTitle(["a", "gone", "b"], nameOf), "Call · team-lead, product-compare");
     assert.equal(roomTitle(["gone"], nameOf), "Call");
+  });
+
+  it("sends a group's members only when they changed", () => {
+    assert.deepEqual(groupChange(["a", "b"], " Ops ", ["a", "b"]), { name: "Ops" });
+    assert.deepEqual(groupChange(["a", "b"], "Ops", ["b", "a"]), {
+      name: "Ops",
+      members: ["b", "a"],
+    });
+    assert.deepEqual(groupChange(["a", "b", "gone"], "Ops", ["a", "b"]), {
+      name: "Ops",
+      members: ["a", "b"],
+    });
   });
 
   it("shows how long the call runs", () => {

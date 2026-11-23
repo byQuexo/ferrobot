@@ -64,8 +64,9 @@ export class CallSession {
     };
   }
 
-  /** Starts a call with `agent`; hands-free listening needs ElevenLabs. */
-  async start(agent: string): Promise<void> {
+  /** Starts a call with `agent`, or with every member of `group`; hands-free listening needs
+   * ElevenLabs. */
+  async start(agent: string, group?: number): Promise<void> {
     if (this.state) return;
     const round = ++this.#round;
     try {
@@ -75,11 +76,13 @@ export class CallSession {
         this.#toast("Set up voice first: a key and a voice (Settings → Voice)", "info");
         return;
       }
-      const view = await this.#client.setCall([agent]);
+      const view = await (group === undefined
+        ? this.#client.setCall([agent])
+        : this.#client.callGroup(group));
       if (round !== this.#round) return;
       this.#set({
         agents: view.agents,
-        host: agent,
+        host: view.agents[0] ?? agent,
         since: Date.now(),
         muted: false,
         hearing: false,

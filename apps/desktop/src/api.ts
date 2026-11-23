@@ -282,6 +282,19 @@ export class DaemonClient {
   /** Rooms of calls with two or more agents, newest first. */
   rooms = (): Promise<Room[]> => this.#request("GET", "/v1/rooms");
   room = (id: number): Promise<RoomTranscript> => this.#request("GET", `/v1/rooms/${String(id)}`);
+  /** Group chats (named rooms), oldest first. */
+  groups = (): Promise<Room[]> => this.#request("GET", "/v1/groups");
+  createGroup = (name: string, members: string[]): Promise<Room> =>
+    this.#request("POST", "/v1/groups", { name, members });
+  updateGroup = (id: number, change: { name?: string; members?: string[] }): Promise<Room> =>
+    this.#request("PATCH", `/v1/groups/${String(id)}`, change);
+  deleteGroup = (id: number): Promise<void> => this.#request("DELETE", `/v1/groups/${String(id)}`);
+  /** The operator's message to a group; while the group is in the call, to the call. */
+  sayInGroup = (id: number, body: string): Promise<MailMessage[]> =>
+    this.#request("POST", `/v1/groups/${String(id)}/messages`, { body });
+  /** Calls every member of a group; the group is the call's room. */
+  callGroup = (id: number): Promise<CallView> =>
+    this.#request("POST", `/v1/groups/${String(id)}/call`);
 
   /** `to` null means until now; `daily` adds each group's `days`. */
   usage = (

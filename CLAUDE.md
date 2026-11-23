@@ -111,6 +111,9 @@ Principles:
   `apps/desktop/src/lib/voice.ts` — playback and recording in the UI;
   `lib/call-session.ts` — the call in the UI (outlives the chat),
   `lib/call.ts` — its sentence, barge-in and call-event rules.
+- `crates/daemon/src/api/groups.rs` — group chats: named rooms that talk by the
+  room rules outside a call (`call.rs`, the group note); calling one makes it
+  the call's room. UI: `apps/desktop/src/components/Groups.tsx`, `Rooms.tsx`.
 - `crates/daemon/src/storage.rs` — object storage (`object_store`) for snapshot
   archives, `--storage-url` (default: the data dir; `s3://` for S3/R2).
 - `crates/daemon/src/update.rs` — `/v1/update` status; `update/source.rs` — a
@@ -206,14 +209,15 @@ daemon, `docker ps -a` must be empty of ferrobot containers.
 ## Migrations
 
 - `crates/store/src/migrations.rs`, tracked with `PRAGMA user_version`.
-- Forward-only, numbered v1..v18 (v7: `providers`, `agents.provider_id`/`model`; v8:
+- Forward-only, numbered v1..v19 (v7: `providers`, `agents.provider_id`/`model`; v8:
   `global_memories`; v9: `connectors`, `agent_connectors`; v10:
   `global_memories.author`; v11: `agents.pinned`; v12: `settings`, JSON by
   key, e.g. `voice`; v13: `usage`, one row per proxied model call; v14:
   `usage.cost_usd`, OpenRouter's reported charge; v15: `agents.tools`, NULL =
   every tool group; v16: `rooms`, `room_members`, `room_lines`,
   `messages.room_id`, index `events_turn`; v17: `room_lines.invited`, NULL =
-  words said; v18: `agents.tags`, NULL = none, index `usage_agent`). Append a new entry
+  words said; v18: `agents.tags`, NULL = none, index `usage_agent`; v19:
+  `rooms.name`, NULL = a call room, else a group chat). Append a new entry
   with a `// vN: ...` comment; **never edit or reorder existing ones**.
 - Every migration gets a test (upgrade an old DB, check defaults of existing
   rows). New columns on existing tables need a default.

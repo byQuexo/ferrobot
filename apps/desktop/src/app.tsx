@@ -235,6 +235,9 @@ export function App(): JSX.Element {
     setPair(null);
     setRoom(id);
   }, []);
+  const closeRoom = useCallback(() => {
+    setRoom(null);
+  }, []);
   const [file, setFile] = useState<{ agent: string; file: number } | null>(null);
   const openFile = useCallback((agent: string, id: number) => {
     setFile({ agent, file: id });
@@ -366,7 +369,7 @@ export function App(): JSX.Element {
             }}
           />
         ) : room !== null ? (
-          <RoomView key={room} id={room} />
+          <RoomView key={room} id={room} onClose={closeRoom} />
         ) : pair ? (
           <ConversationView key={pair.join()} pair={pair} />
         ) : agent ? (

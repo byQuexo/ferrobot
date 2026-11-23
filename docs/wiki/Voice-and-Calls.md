@@ -54,6 +54,23 @@ second agent joins, the call becomes a room:
 - Rooms are listed under **Calls** in the sidebar with their transcript. Room
   lines stay out of the agents' chats.
 
+## Group chats
+
+A group is a named room you keep: **Groups → +** in the sidebar, a name and
+two or more agents.
+
+- Write once and every member reads it. They answer by the room rules above,
+  one at a time, each replying or passing, without the voice-call note.
+- **Call** in the group's header calls every member (up to four). The group
+  is the call's room, so the call's lines land in it; hanging up keeps the
+  group. An agent invited into the call joins the group.
+- **Edit** renames the group, changes its members or deletes it with its
+  messages. Members are fixed while the group is in a call.
+- Who is due next lives in memory: after a daemon restart, write again.
+- API: `/v1/groups` (list, create), `PATCH`/`DELETE /v1/groups/{id}`,
+  `POST /v1/groups/{id}/messages`, `POST /v1/groups/{id}/call`; the
+  transcript is `GET /v1/rooms/{id}`.
+
 ## Hang up
 
 - **Hang up** ends the call for everyone. The turn holding the floor is cut

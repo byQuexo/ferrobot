@@ -24,6 +24,7 @@ import { Avatar } from "./Avatar.tsx";
 import { CallWindow } from "./CallWindow.tsx";
 import { TagChips } from "./AgentMeta.tsx";
 import { ConversationList, type Pair } from "./Conversations.tsx";
+import { GroupList } from "./Groups.tsx";
 import { RoomList } from "./Rooms.tsx";
 import { Button, Dialog, IconButton, Logo } from "./ui.tsx";
 
@@ -260,6 +261,7 @@ export function Sidebar(props: {
             {list.length === 0 && agents.size > 0 && (
               <p class="muted pad">No agent matches “{filter}”.</p>
             )}
+            <GroupList active={props.room} onOpen={props.onOpenRoom} />
             <ConversationList active={props.pair} onOpen={props.onOpenPair} />
             <RoomList active={props.room} onOpen={props.onOpenRoom} />
           </nav>

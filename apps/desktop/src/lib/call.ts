@@ -310,6 +310,17 @@ export function roomTitle(members: string[], nameOf: (id: string) => string | un
   return names.length ? `Call · ${names.join(", ")}` : "Call";
 }
 
+/** A group edit for `PATCH /v1/groups/{id}`: members only when they changed, since a group in a
+ * call refuses member changes. */
+export function groupChange(
+  before: string[],
+  name: string,
+  members: string[],
+): { name: string; members?: string[] } {
+  const same = members.length === before.length && members.every((id, i) => id === before[i]);
+  return same ? { name: name.trim() } : { name: name.trim(), members };
+}
+
 /** A running call's length, e.g. `0:42` or `1:05:03`. */
 export function callClock(ms: number): string {
   const s = Math.max(0, Math.floor(ms / 1000));
