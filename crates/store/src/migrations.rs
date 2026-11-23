@@ -282,6 +282,13 @@ const MIGRATIONS: &[&str] = &[
     ALTER TABLE usage ADD COLUMN at_ms INTEGER;
     CREATE INDEX usage_turn ON usage(turn_id) WHERE turn_id IS NOT NULL;
     ",
+    // v21: old names of renamed agents, so `@old-name` still finds them; a current name wins
+    r"
+    CREATE TABLE agent_aliases (
+        name     TEXT PRIMARY KEY,
+        agent_id TEXT NOT NULL REFERENCES agents(id) ON DELETE CASCADE
+    );
+    ",
 ];
 
 pub(crate) fn run(conn: &mut Connection) -> Result<(), StoreError> {
@@ -568,5 +575,19 @@ mod tests {
             })
             .unwrap();
         assert_eq!((turn, at_ms), (None, None));
+    }
+
+    #[test]
+    fn v21_starts_without_aliases() {
+        let mut conn = Connection::open_in_memory().unwrap();
+        for sql in &MIGRATIONS[..20] {
+            conn.execute_batch(sql).unwrap();
+        }
+        conn.pragma_update(None, "user_version", 20).unwrap();
+        run(&mut conn).unwrap();
+        let n: i64 = conn
+            .query_row("SELECT count(*) FROM agent_aliases", [], |r| r.get(0))
+            .unwrap();
+        assert_eq!(n, 0);
     }
 }

@@ -211,7 +211,7 @@ daemon, `docker ps -a` must be empty of ferrobot containers.
 ## Migrations
 
 - `crates/store/src/migrations.rs`, tracked with `PRAGMA user_version`.
-- Forward-only, numbered v1..v20 (v7: `providers`, `agents.provider_id`/`model`; v8:
+- Forward-only, numbered v1..v21 (v7: `providers`, `agents.provider_id`/`model`; v8:
   `global_memories`; v9: `connectors`, `agent_connectors`; v10:
   `global_memories.author`; v11: `agents.pinned`; v12: `settings`, JSON by
   key, e.g. `voice`; v13: `usage`, one row per proxied model call; v14:
@@ -220,7 +220,8 @@ daemon, `docker ps -a` must be empty of ferrobot containers.
   `messages.room_id`, index `events_turn`; v17: `room_lines.invited`, NULL =
   words said; v18: `agents.tags`, NULL = none, index `usage_agent`; v19:
   `rooms.name`, NULL = a call room, else a group chat; v20: `usage.turn_id`,
-  `usage.at_ms`, index `usage_turn`). Append a new entry
+  `usage.at_ms`, index `usage_turn`; v21: `agent_aliases`, old names of
+  renamed agents). Append a new entry
   with a `// vN: ...` comment; **never edit or reorder existing ones**.
 - Every migration gets a test (upgrade an old DB, check defaults of existing
   rows). New columns on existing tables need a default.

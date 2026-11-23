@@ -3792,6 +3792,46 @@ async fn connectors_are_checked_when_added_changed_or_asked() {
 }
 
 #[tokio::test]
+async fn a_renamed_agent_still_answers_to_its_old_name() {
+    let d = start(Arc::new(StatefulBackend::default()), None, "127.0.0.1:0").await;
+    let scout = create(&d, json!({"name": "scout"})).await["id"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    let ferro = create(&d, json!({"name": "ferro"})).await["id"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    let path = format!("/v1/agents/{scout}");
+    let (status, _) = http(&d.ui, "PATCH", &path, Some(json!({"name": "scout-x"}))).await;
+    assert_eq!(status, 200);
+    let to_ferro = format!("/v1/agents/{ferro}/messages");
+    let (_, sent) = http(
+        &d.ui,
+        "POST",
+        &to_ferro,
+        Some(json!({"body": "ask @scout"})),
+    )
+    .await;
+    assert_eq!(
+        sent["body"],
+        format!("ask <@{scout}>"),
+        "the old name finds the agent"
+    );
+    let found = d
+        .state
+        .store
+        .get_agent_by_name(ferrobot_core::AgentName::parse("scout").unwrap())
+        .await
+        .unwrap();
+    assert_eq!(
+        found.name.as_str(),
+        "scout-x",
+        "and send_message finds it by that name"
+    );
+}
+
+#[tokio::test]
 async fn the_ui_hears_when_a_turn_takes_a_message() {
     let backend = Arc::new(StatefulBackend::default());
     let d = start(backend.clone(), None, "127.0.0.1:0").await;

@@ -15,6 +15,12 @@ All notable changes are listed here. The format follows
   (`GET /v1/agents/{id}/turns/{turn_id}/trace`). Computer steps name their
   command or file. New migration: v20 (`usage.turn_id`, `usage.at_ms`).
 
+### Fixed
+
+- A renamed agent can still be reached by its old name: agents that write
+  `@old-name` (or send to it) reach it, until another agent takes that name.
+  New migration: v21 (`agent_aliases`).
+
 ## [0.1.5] - 2026-11-23
 
 ### Fixed

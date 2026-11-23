@@ -187,6 +187,11 @@ impl Store {
                     e.into()
                 }
             })?;
+            // A new agent takes over a name another agent had before a rename.
+            c.execute(
+                "DELETE FROM agent_aliases WHERE name = ?1",
+                [row.name.as_str()],
+            )?;
             Ok(row)
         })
         .await
@@ -218,10 +223,15 @@ impl Store {
         .await
     }
 
+    /// The agent with this name, or that had it before a rename (a current name wins).
     pub async fn get_agent_by_name(&self, name: AgentName) -> Result<Agent, StoreError> {
         self.with(move |c| {
             c.query_row(
-                &format!("SELECT {COLUMNS} FROM agents WHERE name = ?1"),
+                &format!(
+                    "SELECT {COLUMNS} FROM agents
+                     WHERE name = ?1 OR id = (SELECT agent_id FROM agent_aliases WHERE name = ?1)
+                     ORDER BY name = ?1 DESC LIMIT 1"
+                ),
                 [name.as_str()],
                 |row| Ok(from_row(row)),
             )
@@ -308,7 +318,24 @@ impl Store {
         .await
     }
 
-    /// Applies `patch`; a rename onto a taken name is a [`StoreError::Conflict`].
+    /// Old names of renamed agents: (name, agent).
+    pub async fn agent_aliases(&self) -> Result<Vec<(String, AgentId)>, StoreError> {
+        self.with(|c| {
+            let mut stmt = c.prepare("SELECT name, agent_id FROM agent_aliases")?;
+            let rows =
+                stmt.query_map([], |r| Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?)))?;
+            let mut out = Vec::new();
+            for row in rows {
+                let (name, id) = row?;
+                out.push((name, id.parse().map_err(StoreError::corrupt)?));
+            }
+            Ok(out)
+        })
+        .await
+    }
+
+    /// Applies `patch`; a rename onto a taken name is a [`StoreError::Conflict`]. The old name
+    /// stays an alias, so `@old-name` still finds the agent.
     pub async fn update_agent_profile(
         &self,
         id: AgentId,
@@ -337,7 +364,13 @@ impl Store {
             .transpose()
             .map_err(StoreError::corrupt)?;
         self.update_agent(id, move |c, id| {
-            c.execute(
+            let old: Option<String> = c
+                .query_row("SELECT name FROM agents WHERE id = ?1", [&id], |r| r.get(0))
+                .optional()?;
+            let renamed = name
+                .clone()
+                .filter(|n| old.as_ref().is_some_and(|o| o != n));
+            let changed = c.execute(
                 "UPDATE agents SET name = COALESCE(?2, name),
                                    description = COALESCE(?3, description),
                                    instructions = COALESCE(?4, instructions),
@@ -365,7 +398,15 @@ impl Store {
                     set_tags,
                     tags
                 ],
-            )
+            )?;
+            if let (Some(new), Some(old)) = (renamed, old) {
+                c.execute("DELETE FROM agent_aliases WHERE name = ?1", [&new])?;
+                c.execute(
+                    "INSERT OR REPLACE INTO agent_aliases (name, agent_id) VALUES (?1, ?2)",
+                    [&old, &id],
+                )?;
+            }
+            Ok(changed)
         })
         .await
         .map_err(|e| match e {
@@ -736,6 +777,51 @@ mod tests {
         assert_eq!(
             store.get_agent(a.id).await.unwrap().tags,
             Vec::<String>::new()
+        );
+    }
+
+    #[tokio::test]
+    async fn an_old_name_finds_the_renamed_agent_until_someone_takes_it() {
+        let store = Store::open_in_memory().unwrap();
+        let ann = store.create_agent(new("ann")).await.unwrap();
+        let name = |n: &str| AgentName::parse(n).unwrap();
+        let rename = |to: &str| AgentPatch {
+            name: Some(name(to)),
+            ..AgentPatch::default()
+        };
+        store
+            .update_agent_profile(ann.id, rename("anna"))
+            .await
+            .unwrap();
+        assert_eq!(
+            store.get_agent_by_name(name("ann")).await.unwrap().id,
+            ann.id
+        );
+        assert_eq!(
+            store.agent_aliases().await.unwrap(),
+            [("ann".to_owned(), ann.id)]
+        );
+
+        let other = store.create_agent(new("ann")).await.unwrap();
+        assert_eq!(
+            store.get_agent_by_name(name("ann")).await.unwrap().id,
+            other.id
+        );
+        assert_eq!(
+            store.agent_aliases().await.unwrap(),
+            [],
+            "a current name wins"
+        );
+
+        store
+            .update_agent_profile(ann.id, rename("annie"))
+            .await
+            .unwrap();
+        store.delete_agent(ann.id).await.unwrap();
+        assert_eq!(
+            store.agent_aliases().await.unwrap(),
+            [],
+            "gone with the agent"
         );
     }
 }

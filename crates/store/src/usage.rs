@@ -366,12 +366,9 @@ mod tests {
             (calls[0].ended, calls[0].latency_ms, calls[0].ok),
             (at, 12, true)
         );
-        assert!(
-            store
-                .turn_calls(AgentId::new(), "t1".into())
-                .await
-                .unwrap()
-                .is_empty()
+        assert_eq!(
+            store.turn_calls(AgentId::new(), "t1".into()).await.unwrap(),
+            []
         );
     }
 
