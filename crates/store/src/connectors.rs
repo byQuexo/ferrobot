@@ -7,17 +7,31 @@ use uuid::Uuid;
 use crate::util::{fmt_ts, is_unique_violation, parse_ts};
 use crate::{Store, StoreError};
 
-const COLUMNS: &str = "id, name, url, created_at";
+const COLUMNS: &str = "id, name, url, created_at, command, token_env";
 
 fn from_row(row: &Row<'_>) -> Result<Connector, StoreError> {
     let id: String = row.get(0)?;
     let created: String = row.get(3)?;
+    let command: Option<String> = row.get(4)?;
     Ok(Connector {
         id: Uuid::parse_str(&id).map_err(StoreError::corrupt)?,
         name: row.get(1)?,
         url: row.get(2)?,
+        command: command
+            .map(|c| serde_json::from_str(&c))
+            .transpose()
+            .map_err(StoreError::corrupt)?,
+        token_env: row.get(5)?,
         created_at: parse_ts(&created)?,
     })
+}
+
+fn command_column(c: &Connector) -> Result<Option<String>, StoreError> {
+    c.command
+        .as_ref()
+        .map(serde_json::to_string)
+        .transpose()
+        .map_err(StoreError::corrupt)
 }
 
 fn not_found(id: Uuid) -> StoreError {
@@ -40,10 +54,19 @@ fn conflict(name: &str, e: rusqlite::Error) -> StoreError {
 
 impl Store {
     pub async fn create_connector(&self, c: Connector) -> Result<Connector, StoreError> {
+        let command = command_column(&c)?;
         self.with(move |conn| {
             conn.execute(
-                "INSERT INTO connectors (id, name, url, created_at) VALUES (?1, ?2, ?3, ?4)",
-                params![c.id.to_string(), c.name, c.url, fmt_ts(c.created_at)],
+                "INSERT INTO connectors (id, name, url, created_at, command, token_env)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+                params![
+                    c.id.to_string(),
+                    c.name,
+                    c.url,
+                    fmt_ts(c.created_at),
+                    command,
+                    c.token_env
+                ],
             )
             .map_err(|e| conflict(&c.name, e))?;
             Ok(c)
@@ -51,13 +74,15 @@ impl Store {
         .await
     }
 
-    /// Replaces `name` and `url`.
+    /// Replaces `name`, `url`, `command` and `token_env`.
     pub async fn update_connector(&self, c: Connector) -> Result<(), StoreError> {
+        let command = command_column(&c)?;
         self.with(move |conn| {
             let changed = conn
                 .execute(
-                    "UPDATE connectors SET name = ?2, url = ?3 WHERE id = ?1",
-                    params![c.id.to_string(), c.name, c.url],
+                    "UPDATE connectors SET name = ?2, url = ?3, command = ?4, token_env = ?5
+                     WHERE id = ?1",
+                    params![c.id.to_string(), c.name, c.url, command, c.token_env],
                 )
                 .map_err(|e| conflict(&c.name, e))?;
             if changed == 0 {
@@ -106,7 +131,7 @@ impl Store {
     pub async fn agent_connectors(&self, agent: AgentId) -> Result<Vec<Connector>, StoreError> {
         self.with(move |c| {
             let mut stmt = c.prepare(
-                "SELECT c.id, c.name, c.url, c.created_at FROM connectors c
+                "SELECT c.id, c.name, c.url, c.created_at, c.command, c.token_env FROM connectors c
                  JOIN agent_connectors a ON a.connector_id = c.id
                  WHERE a.agent_id = ?1 ORDER BY c.name",
             )?;
@@ -164,8 +189,23 @@ mod tests {
             id: Uuid::new_v4(),
             name: name.into(),
             url: "https://example.test/mcp".into(),
+            command: None,
+            token_env: None,
             created_at: OffsetDateTime::UNIX_EPOCH,
         }
+    }
+
+    #[tokio::test]
+    async fn a_local_server_keeps_its_command() {
+        let store = Store::open_in_memory().unwrap();
+        let local = Connector {
+            url: String::new(),
+            command: Some(vec!["npx".into(), "-y".into(), "@scope/server".into()]),
+            token_env: Some("API_TOKEN".into()),
+            ..connector("files")
+        };
+        store.create_connector(local.clone()).await.unwrap();
+        assert_eq!(store.get_connector(local.id).await.unwrap(), local);
     }
 
     #[tokio::test]

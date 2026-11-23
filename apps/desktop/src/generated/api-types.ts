@@ -1520,6 +1520,9 @@ export interface components {
         } | {
             name: string;
             url: string;
+            /** @description A local server's program and arguments (it runs on the daemon's computer). */
+            command?: string[] | null;
+            token_env?: string | null;
             auth: components["schemas"]["ConnectorAuth"];
             /** @description The agent that asked: it gets the connector and a message with the outcome. */
             requester: components["schemas"]["AgentId"];
@@ -1641,8 +1644,18 @@ export interface components {
              *     (`<name>__<tool>`).
              */
             name: string;
-            /** @description Streamable HTTP endpoint of the MCP server. */
+            /** @description Streamable HTTP endpoint of a remote MCP server; empty for a local one. */
             url: string;
+            /**
+             * @description A local MCP server: its program and arguments, started on the daemon's computer without
+             *     a shell (e.g. `["npx", "-y", "@scope/server"]`). `None`: a remote server at `url`.
+             */
+            command?: string[] | null;
+            /**
+             * @description The environment variable a local server gets the connector's Vault token in, e.g.
+             *     `GITHUB_TOKEN`.
+             */
+            token_env?: string | null;
             /** Format: date-time */
             created_at: string;
         };
@@ -1733,10 +1746,17 @@ export interface components {
              */
             name: string;
             /**
-             * @description Streamable HTTP endpoint of the MCP server.
+             * @description Streamable HTTP endpoint of a remote MCP server; leave it out for a local one.
              * @example https://api.githubcopilot.com/mcp/
              */
-            url: string;
+            url?: string;
+            /**
+             * @description A local MCP server: its program and arguments, started on this computer without a shell
+             *     (e.g. `["npx", "-y", "@scope/server"]`).
+             */
+            command?: string[] | null;
+            /** @description The environment variable a local server gets `token` in, e.g. `GITHUB_TOKEN`. */
+            token_env?: string | null;
             /**
              * @description Sent as `Authorization: Bearer <token>`. Kept in the daemon's secret store;
              *     never returned.

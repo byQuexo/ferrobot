@@ -289,6 +289,12 @@ const MIGRATIONS: &[&str] = &[
         agent_id TEXT NOT NULL REFERENCES agents(id) ON DELETE CASCADE
     );
     ",
+    // v22: local MCP servers: the command (JSON argv) and the token's environment variable;
+    // NULL = a remote server
+    r"
+    ALTER TABLE connectors ADD COLUMN command TEXT;
+    ALTER TABLE connectors ADD COLUMN token_env TEXT;
+    ",
 ];
 
 pub(crate) fn run(conn: &mut Connection) -> Result<(), StoreError> {
@@ -575,6 +581,27 @@ mod tests {
             })
             .unwrap();
         assert_eq!((turn, at_ms), (None, None));
+    }
+
+    #[test]
+    fn v22_connectors_stay_remote() {
+        let mut conn = Connection::open_in_memory().unwrap();
+        for sql in &MIGRATIONS[..21] {
+            conn.execute_batch(sql).unwrap();
+        }
+        conn.pragma_update(None, "user_version", 21).unwrap();
+        conn.execute_batch(
+            "INSERT INTO connectors (id, name, url, created_at)
+             VALUES ('c', 'gh', 'https://x', '2026-01-01T00:00:00Z');",
+        )
+        .unwrap();
+        run(&mut conn).unwrap();
+        let (command, env): (Option<String>, Option<String>) = conn
+            .query_row("SELECT command, token_env FROM connectors", [], |r| {
+                Ok((r.get(0)?, r.get(1)?))
+            })
+            .unwrap();
+        assert_eq!((command, env), (None, None));
     }
 
     #[test]

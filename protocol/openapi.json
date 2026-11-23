@@ -6192,6 +6192,22 @@
               "url": {
                 "type": "string"
               },
+              "command": {
+                "type": [
+                  "array",
+                  "null"
+                ],
+                "items": {
+                  "type": "string"
+                },
+                "description": "A local server's program and arguments (it runs on the daemon's computer)."
+              },
+              "token_env": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
               "auth": {
                 "$ref": "#/components/schemas/ConnectorAuth"
               },
@@ -6539,7 +6555,24 @@
           },
           "url": {
             "type": "string",
-            "description": "Streamable HTTP endpoint of the MCP server."
+            "description": "Streamable HTTP endpoint of a remote MCP server; empty for a local one."
+          },
+          "command": {
+            "type": [
+              "array",
+              "null"
+            ],
+            "items": {
+              "type": "string"
+            },
+            "description": "A local MCP server: its program and arguments, started on the daemon's computer without\na shell (e.g. `[\"npx\", \"-y\", \"@scope/server\"]`). `None`: a remote server at `url`."
+          },
+          "token_env": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "The environment variable a local server gets the connector's Vault token in, e.g.\n`GITHUB_TOKEN`."
           },
           "created_at": {
             "type": "string",
@@ -6756,8 +6789,7 @@
       "CreateConnector": {
         "type": "object",
         "required": [
-          "name",
-          "url"
+          "name"
         ],
         "properties": {
           "name": {
@@ -6767,8 +6799,25 @@
           },
           "url": {
             "type": "string",
-            "description": "Streamable HTTP endpoint of the MCP server.",
+            "description": "Streamable HTTP endpoint of a remote MCP server; leave it out for a local one.",
             "example": "https://api.githubcopilot.com/mcp/"
+          },
+          "command": {
+            "type": [
+              "array",
+              "null"
+            ],
+            "items": {
+              "type": "string"
+            },
+            "description": "A local MCP server: its program and arguments, started on this computer without a shell\n(e.g. `[\"npx\", \"-y\", \"@scope/server\"]`)."
+          },
+          "token_env": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "The environment variable a local server gets `token` in, e.g. `GITHUB_TOKEN`."
           },
           "token": {
             "type": [

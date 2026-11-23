@@ -709,6 +709,8 @@ mod tests {
             id: uuid::Uuid::new_v4(),
             name: name.into(),
             url: "https://example.com/mcp".into(),
+            command: None,
+            token_env: None,
             created_at: time::OffsetDateTime::UNIX_EPOCH,
         };
         let (gh, db) = (connector("github"), connector("db"));

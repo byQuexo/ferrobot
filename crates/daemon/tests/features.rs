@@ -3791,6 +3791,127 @@ async fn connectors_are_checked_when_added_changed_or_asked() {
     assert!(statuses.iter().all(|s| !s.is_null()), "{all}");
 }
 
+/// A stdio MCP server in a few lines of Python: one tool that says what it can see.
+const FAKE_LOCAL_SERVER: &str = r#"import json, os, sys
+for line in sys.stdin:
+    msg = json.loads(line)
+    if "id" not in msg:
+        continue
+    method = msg.get("method")
+    if method == "initialize":
+        res = {"protocolVersion": msg["params"]["protocolVersion"], "capabilities": {"tools": {}},
+               "serverInfo": {"name": "fake", "version": "1"}}
+    elif method == "tools/list":
+        res = {"tools": [{"name": "whoami", "description": "What it sees",
+                          "inputSchema": {"type": "object", "properties": {}}}]}
+    elif method == "tools/call":
+        seen = "token=%s manifest=%s cwd=%s" % (os.environ.get("FAKE_TOKEN", "-"),
+            os.environ.get("CARGO_MANIFEST_DIR", "-"), os.path.basename(os.getcwd()))
+        res = {"content": [{"type": "text", "text": seen}]}
+    else:
+        res = {}
+    print(json.dumps({"jsonrpc": "2.0", "id": msg["id"], "result": res}), flush=True)
+"#;
+
+#[tokio::test]
+async fn a_local_server_runs_here_with_only_its_own_token() {
+    use rmcp::model::CallToolRequestParams;
+    if std::process::Command::new("python3")
+        .arg("-V")
+        .output()
+        .is_err()
+    {
+        eprintln!("skipped: no python3 for the fake local MCP server");
+        return;
+    }
+    let dir = tempfile::tempdir().unwrap();
+    let script = dir.path().join("server.py");
+    std::fs::write(&script, FAKE_LOCAL_SERVER).unwrap();
+    let backend = Arc::new(StatefulBackend::default());
+    let d = start(backend.clone(), None, "127.0.0.1:0").await;
+    let ann = create(&d, json!({"name": "ann"})).await["id"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    let body = json!({"name": "fake", "command": ["python3", script.to_str().unwrap()],
+        "token_env": "FAKE_TOKEN", "token": "tok-local-1"});
+    let (status, conn) = http(&d.ui, "POST", "/v1/connectors", Some(body)).await;
+    assert_eq!(status, 201, "{conn}");
+    let both = json!({"name": "both", "url": "https://x.dev/mcp", "command": ["npx"]});
+    assert_eq!(
+        http(&d.ui, "POST", "/v1/connectors", Some(both)).await.0,
+        400
+    );
+
+    let assign = format!("/v1/agents/{ann}/connectors");
+    let (status, _) = http(&d.ui, "PUT", &assign, Some(json!([conn["id"]]))).await;
+    assert_eq!(status, 200);
+    let as_ann = mcp_as(&d, backend.token("ann")).await;
+    let tools = as_ann.list_all_tools().await.unwrap();
+    assert!(tools.iter().any(|t| t.name == "fake__whoami"), "{tools:?}");
+    let r = as_ann
+        .call_tool(CallToolRequestParams::new("fake__whoami"))
+        .await
+        .unwrap();
+    let text = serde_json::to_string(&r.content).unwrap();
+    assert!(
+        text.contains("token=tok-local-1"),
+        "its token, as FAKE_TOKEN: {text}"
+    );
+    assert!(
+        text.contains("manifest=-"),
+        "nothing else from the daemon's environment: {text}"
+    );
+    assert!(text.contains("cwd=fake"), "its own folder: {text}");
+}
+
+#[tokio::test]
+async fn an_agent_proposes_a_local_server_on_a_card_that_shows_its_command() {
+    let backend = Arc::new(StatefulBackend::default());
+    let d = start(backend.clone(), None, "127.0.0.1:0").await;
+    let ann = create(&d, json!({"name": "ann"})).await["id"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    // Auto mode never skips it: a local server runs code on this computer.
+    let auto = Some(json!({"auto_mode": true}));
+    assert_eq!(http(&d.ui, "PUT", "/v1/settings", auto).await.0, 200);
+    let as_ann = mcp_as(&d, backend.token("ann")).await;
+    let args = json!({"name": "notes", "command": ["npx", "-y", "@scope/notes server"],
+        "token_env": "NOTES_TOKEN", "auth": "token", "reason": "Read my notes"});
+    let qid = call(&as_ann, "add_connector", args).await["question_id"]
+        .as_i64()
+        .unwrap();
+    assert_eq!(
+        http(&d.ui, "GET", "/v1/connectors", None).await.1,
+        json!([])
+    );
+    let card = events(&d, &ann)
+        .await
+        .into_iter()
+        .find(|e| e["id"] == qid)
+        .unwrap();
+    let prompt = card["payload"]["card"]["questions"][0]["prompt"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    assert!(
+        prompt.contains("runs on this computer")
+            && prompt.contains("npx -y '@scope/notes server'")
+            && prompt.contains("NOTES_TOKEN"),
+        "{prompt}"
+    );
+    let path = format!("/v1/agents/{ann}/questions/{qid}/answer");
+    let approve = json!({"answers": [{"question_id": "q1", "values": ["approve"]}]});
+    assert_eq!(http(&d.ui, "POST", &path, Some(approve)).await.0, 202);
+    let (_, all) = http(&d.ui, "GET", "/v1/connectors", None).await;
+    assert_eq!(
+        all[0]["command"],
+        json!(["npx", "-y", "@scope/notes server"])
+    );
+    assert_eq!(all[0]["token_env"], "NOTES_TOKEN");
+}
+
 #[tokio::test]
 async fn a_renamed_agent_still_answers_to_its_old_name() {
     let d = start(Arc::new(StatefulBackend::default()), None, "127.0.0.1:0").await;

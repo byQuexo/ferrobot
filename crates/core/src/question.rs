@@ -107,6 +107,11 @@ pub enum Approval {
     AddConnector {
         name: String,
         url: String,
+        /// A local server's program and arguments (it runs on the daemon's computer).
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        command: Option<Vec<String>>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        token_env: Option<String>,
         auth: ConnectorAuth,
         /// The agent that asked: it gets the connector and a message with the outcome.
         requester: AgentId,
@@ -466,6 +471,8 @@ mod tests {
             Approval::AddConnector {
                 name: "github".into(),
                 url: "https://api.example.com/mcp".into(),
+                command: None,
+                token_env: None,
                 auth: ConnectorAuth::Token,
                 requester: AgentId::new(),
             },
