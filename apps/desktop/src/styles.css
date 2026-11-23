@@ -1080,12 +1080,11 @@ kbd { padding: 2px 8px; border: 1px solid var(--border-strong); border-radius: 6
 .react-pick button:hover, .react-pick button[aria-checked="true"] { background: var(--surface-2); }
 @media (prefers-reduced-motion: reduce) { .react-btn { transition: none; } }
 
-/* Call bar: the running call as a pill above every view */
-#app { display: flex; flex-direction: column; background: var(--sidebar); }
-.shell { min-height: 0; }
+/* Call bar: the running call as a pill floating over the main column's header */
+.shell { position: relative; }
 .call-bar {
-  display: flex; align-items: center; gap: 10px; flex: none; align-self: center;
-  max-width: calc(100% - 16px); margin-top: 8px; padding: 4px 4px 4px 6px;
+  position: absolute; grid-column: 2 / 3; grid-row: 1; top: 12px; left: 50%; transform: translateX(-50%); z-index: 5;
+  display: flex; align-items: center; gap: 10px; max-width: calc(100% - 32px); padding: 4px 4px 4px 6px;
   border: 1px solid var(--border-strong); border-radius: 999px; background: var(--surface); box-shadow: var(--shadow);
   animation: fade 0.2s var(--ease);
 }

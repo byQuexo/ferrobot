@@ -325,8 +325,8 @@ export function App(): JSX.Element {
 
   return (
     <AppContext.Provider value={ctx}>
-      <CallBar />
       <div class={`shell${withInfo ? " with-info" : ""}${rail ? " rail" : ""}`}>
+        <CallBar />
         <Sidebar
           rail={rail}
           onRail={setRail}
