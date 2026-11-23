@@ -4124,6 +4124,84 @@
         }
       }
     },
+    "/v1/memory-vault": {
+      "get": {
+        "tags": [
+          "memory"
+        ],
+        "summary": "Where memories live.",
+        "operationId": "get_memory_vault",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MemoryVaultView"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or wrong API token",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        }
+      },
+      "put": {
+        "tags": [
+          "memory"
+        ],
+        "summary": "Keeps memories in an Obsidian vault folder, or back in the built-in memory. Memories stored\nso far are copied into the vault (notes with the same key are kept).",
+        "operationId": "put_memory_vault",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SetMemoryVault"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MemoryVaultView"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Not an existing folder",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or wrong API token",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/v1/memory/{key}": {
       "delete": {
         "tags": [
@@ -7905,6 +7983,34 @@
           }
         }
       },
+      "MemoryVaultView": {
+        "type": "object",
+        "description": "Where memories live: an Obsidian vault folder, or the built-in memory.",
+        "required": [
+          "obsidian"
+        ],
+        "properties": {
+          "path": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "The vault folder; memories are Markdown notes under its `ferrobot/` folder. `null`: the\nbuilt-in memory."
+          },
+          "obsidian": {
+            "type": "boolean",
+            "description": "The folder is an Obsidian vault (it has `.obsidian`)."
+          },
+          "copied": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "description": "After a change: how many stored memories were copied into the vault.",
+            "minimum": 0
+          }
+        }
+      },
       "ModelInfo": {
         "type": "object",
         "description": "One model a picker offers.",
@@ -8911,6 +9017,18 @@
           }
         ],
         "description": "Who sent a mailbox message."
+      },
+      "SetMemoryVault": {
+        "type": "object",
+        "properties": {
+          "path": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "An existing folder (absolute, or starting with `~/`); `null` goes back to the built-in\nmemory, which still holds what it had before."
+          }
+        }
       },
       "SetPrice": {
         "allOf": [

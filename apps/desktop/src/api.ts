@@ -48,6 +48,7 @@ export type HookEvent = Schemas["HookEvent"];
 export type InstalledPlugin = Schemas["InstalledPlugin"];
 export type OtelSettings = Schemas["OtelSettings"];
 export type OtelView = Schemas["OtelView"];
+export type MemoryVaultView = Schemas["MemoryVaultView"];
 export type ModelList = Schemas["ModelList"];
 export type ModelInfo = Schemas["ModelInfo"];
 export type VoiceView = Schemas["VoiceView"];
@@ -350,6 +351,9 @@ export class DaemonClient {
   settings = (): Promise<GeneralSettings> => this.#request("GET", "/v1/settings");
   updateSettings = (s: GeneralSettings): Promise<GeneralSettings> =>
     this.#request("PUT", "/v1/settings", s);
+  memoryVault = (): Promise<MemoryVaultView> => this.#request("GET", "/v1/memory-vault");
+  setMemoryVault = (path: string | null): Promise<MemoryVaultView> =>
+    this.#request("PUT", "/v1/memory-vault", { path });
   otel = (): Promise<OtelView> => this.#request("GET", "/v1/otel");
   updateOtel = (s: OtelSettings): Promise<OtelView> => this.#request("PUT", "/v1/otel", s);
   setOtelSecret = (value: string | null): Promise<OtelView> =>

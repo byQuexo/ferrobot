@@ -405,6 +405,8 @@ impl Store {
                     "INSERT OR REPLACE INTO agent_aliases (name, agent_id) VALUES (?1, ?2)",
                     [&old, &id],
                 )?;
+                // Best effort: a failed move leaves the notes under the old name, not lost.
+                let _ = crate::vault::rename_folder(c, &old, &new);
             }
             Ok(changed)
         })

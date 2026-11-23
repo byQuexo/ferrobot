@@ -140,3 +140,69 @@ pub(crate) async fn delete_global_memory(
     state.publish(UiEvent::GlobalMemoryChanged);
     Ok(StatusCode::NO_CONTENT)
 }
+
+/// Where memories live: an Obsidian vault folder, or the built-in memory.
+#[derive(Debug, serde::Serialize, ToSchema)]
+pub(crate) struct MemoryVaultView {
+    /// The vault folder; memories are Markdown notes under its `ferrobot/` folder. `null`: the
+    /// built-in memory.
+    path: Option<String>,
+    /// The folder is an Obsidian vault (it has `.obsidian`).
+    obsidian: bool,
+    /// After a change: how many stored memories were copied into the vault.
+    copied: Option<usize>,
+}
+
+#[derive(Debug, Deserialize, ToSchema)]
+pub(crate) struct SetMemoryVault {
+    /// An existing folder (absolute, or starting with `~/`); `null` goes back to the built-in
+    /// memory, which still holds what it had before.
+    path: Option<String>,
+}
+
+fn vault_view(path: Option<std::path::PathBuf>, copied: Option<usize>) -> MemoryVaultView {
+    MemoryVaultView {
+        obsidian: path.as_ref().is_some_and(|p| p.join(".obsidian").is_dir()),
+        path: path.map(|p| p.display().to_string()),
+        copied,
+    }
+}
+
+/// Where memories live.
+#[utoipa::path(get, path = "/v1/memory-vault", tag = "memory",
+    responses((status = 200, body = MemoryVaultView)))]
+pub(crate) async fn get_memory_vault(State(state): State<AppState>) -> ApiResult<MemoryVaultView> {
+    Ok(Json(vault_view(state.store.memory_vault().await?, None)))
+}
+
+/// Keeps memories in an Obsidian vault folder, or back in the built-in memory. Memories stored
+/// so far are copied into the vault (notes with the same key are kept).
+#[utoipa::path(put, path = "/v1/memory-vault", tag = "memory",
+    request_body = SetMemoryVault,
+    responses((status = 200, body = MemoryVaultView),
+        (status = 400, description = "Not an existing folder", body = ErrorBody)))]
+pub(crate) async fn put_memory_vault(
+    State(state): State<AppState>,
+    Json(req): Json<SetMemoryVault>,
+) -> ApiResult<MemoryVaultView> {
+    let path = match req.path.as_deref().map(str::trim).filter(|p| !p.is_empty()) {
+        None => None,
+        Some(raw) => {
+            let path = match raw.strip_prefix("~/") {
+                Some(rest) => std::env::var_os("HOME")
+                    .map(|home| std::path::PathBuf::from(home).join(rest))
+                    .ok_or_else(|| ApiError::BadRequest("HOME is not set".into()))?,
+                None => std::path::PathBuf::from(raw),
+            };
+            if raw.len() > 1024 || !path.is_absolute() || !path.is_dir() {
+                return Err(ApiError::BadRequest(
+                    "the vault must be an existing folder, e.g. ~/Obsidian/Notes".into(),
+                ));
+            }
+            Some(path)
+        }
+    };
+    let copied = state.store.set_memory_vault(path.clone()).await?;
+    state.publish(UiEvent::GlobalMemoryChanged);
+    Ok(Json(vault_view(path, Some(copied))))
+}

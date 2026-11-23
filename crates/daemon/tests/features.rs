@@ -7755,3 +7755,43 @@ async fn a_finished_turn_goes_to_the_trace_endpoint_as_protobuf() {
     let (_, view) = http(&d.ui, "GET", "/v1/otel", None).await;
     assert_eq!(view["last_export"]["error"], Value::Null, "{view}");
 }
+
+#[tokio::test]
+async fn memories_move_into_an_obsidian_vault_folder() {
+    let d = start(Arc::new(StatefulBackend::default()), None, "127.0.0.1:0").await;
+    let note = json!({"key": "team", "content": "Ship daily"});
+    assert_eq!(http(&d.ui, "POST", "/v1/memory", Some(note)).await.0, 204);
+    let vault = tempfile::tempdir().unwrap();
+    std::fs::create_dir(vault.path().join(".obsidian")).unwrap();
+    let missing = json!({"path": "/no/such/folder"});
+    assert_eq!(
+        http(&d.ui, "PUT", "/v1/memory-vault", Some(missing))
+            .await
+            .0,
+        400
+    );
+    let set = json!({"path": vault.path().display().to_string()});
+    let (status, view) = http(&d.ui, "PUT", "/v1/memory-vault", Some(set)).await;
+    assert_eq!(status, 200, "{view}");
+    assert_eq!(
+        (view["obsidian"].clone(), view["copied"].clone()),
+        (json!(true), json!(1))
+    );
+    let file = vault.path().join("ferrobot/Global memory/team.md");
+    assert!(
+        std::fs::read_to_string(&file)
+            .unwrap()
+            .ends_with("Ship daily\n")
+    );
+    std::fs::write(&file, "Ship daily, edited in Obsidian\n").unwrap();
+    let (_, list) = http(&d.ui, "GET", "/v1/memory", None).await;
+    assert_eq!(list[0]["content"], "Ship daily, edited in Obsidian");
+    let (_, view) = http(
+        &d.ui,
+        "PUT",
+        "/v1/memory-vault",
+        Some(json!({"path": null})),
+    )
+    .await;
+    assert_eq!(view["path"], Value::Null);
+}

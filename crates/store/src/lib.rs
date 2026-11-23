@@ -16,6 +16,7 @@ mod snapshots;
 mod tasks;
 mod usage;
 mod util;
+mod vault;
 
 use std::path::Path;
 use std::sync::{Arc, Mutex};

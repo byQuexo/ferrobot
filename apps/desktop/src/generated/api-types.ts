@@ -963,6 +963,27 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/memory-vault": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Where memories live. */
+        get: operations["get_memory_vault"];
+        /**
+         * Keeps memories in an Obsidian vault folder, or back in the built-in memory. Memories stored
+         *     so far are copied into the vault (notes with the same key are kept).
+         */
+        put: operations["put_memory_vault"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/memory/{key}": {
         parameters: {
             query?: never;
@@ -2183,6 +2204,18 @@ export interface components {
             /** @description Global memory only: the agent that wrote it; absent = the operator. */
             author?: string | null;
         };
+        /** @description Where memories live: an Obsidian vault folder, or the built-in memory. */
+        MemoryVaultView: {
+            /**
+             * @description The vault folder; memories are Markdown notes under its `ferrobot/` folder. `null`: the
+             *     built-in memory.
+             */
+            path?: string | null;
+            /** @description The folder is an Obsidian vault (it has `.obsidian`). */
+            obsidian: boolean;
+            /** @description After a change: how many stored memories were copied into the vault. */
+            copied?: number | null;
+        };
         /** @description One model a picker offers. */
         ModelInfo: {
             /** @description The id an agent or provider uses as its `model`. */
@@ -2548,6 +2581,13 @@ export interface components {
             id: number;
             /** @enum {string} */
             kind: "routine";
+        };
+        SetMemoryVault: {
+            /**
+             * @description An existing folder (absolute, or starting with `~/`); `null` goes back to the built-in
+             *     memory, which still holds what it had before.
+             */
+            path?: string | null;
         };
         SetPrice: components["schemas"]["Price"] & {
             provider_kind: components["schemas"]["ProviderKind"];
@@ -6213,6 +6253,75 @@ export interface operations {
                 };
                 content?: never;
             };
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Missing or wrong API token */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+        };
+    };
+    get_memory_vault: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MemoryVaultView"];
+                };
+            };
+            /** @description Missing or wrong API token */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+        };
+    };
+    put_memory_vault: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SetMemoryVault"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MemoryVaultView"];
+                };
+            };
+            /** @description Not an existing folder */
             400: {
                 headers: {
                     [name: string]: unknown;

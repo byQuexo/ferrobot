@@ -71,6 +71,10 @@ pub fn router() -> Router<AppState> {
             get(memory::list_global_memory).post(memory::put_global_memory),
         )
         .route(
+            "/v1/memory-vault",
+            get(memory::get_memory_vault).put(memory::put_memory_vault),
+        )
+        .route(
             "/v1/memory/{key}",
             axum::routing::delete(memory::delete_global_memory),
         )

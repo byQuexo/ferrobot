@@ -67,6 +67,8 @@ pub const QUESTION_CARD_FILE: &str = "question-card.v1.schema.json";
         api::memory::list_global_memory,
         api::memory::put_global_memory,
         api::memory::delete_global_memory,
+        api::memory::get_memory_vault,
+        api::memory::put_memory_vault,
         api::routines::list_routines,
         api::routines::create_routine,
         api::routines::update_routine,

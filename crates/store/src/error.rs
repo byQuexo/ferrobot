@@ -14,6 +14,9 @@ pub enum StoreError {
     Conflict { entity: &'static str, key: String },
     #[error("database lock poisoned")]
     Poisoned,
+    /// Reading or writing a memory note in the Obsidian vault failed.
+    #[error("vault: {0}")]
+    Vault(String),
     #[error("blocking task failed: {0}")]
     Join(#[from] tokio::task::JoinError),
 }

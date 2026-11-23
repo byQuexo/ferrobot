@@ -30,6 +30,10 @@ All notable changes are listed here. The format follows
   attributes), with presets, keys in the keychain and the last export's
   status. Off by default; tool inputs and replies only with **Include
   content** (`/v1/otel`, `/v1/otel/secret`). Guide: Traces.
+- Memory in an Obsidian vault: in Settings → Global memory, pick your vault's
+  folder and every memory (agents' own and global) becomes a Markdown note
+  under `ferrobot/` that you can read and edit in Obsidian; stored memories
+  are copied in (`/v1/memory-vault`).
 
 ### Changed
 

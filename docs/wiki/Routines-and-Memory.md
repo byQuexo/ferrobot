@@ -53,3 +53,28 @@ The global memory is shared by every agent. Open it in
 
 Good uses: facts every agent should know, such as team names, a deploy day or
 where the docs live.
+
+## Memory in an Obsidian vault
+
+Instead of the built-in memory, memories can live as Markdown notes in your
+[Obsidian](https://obsidian.md) vault, so you read, link and edit them there.
+In **Settings → Global memory**, enter the vault's folder (for example
+`~/Obsidian/Notes`) and click **Use**.
+
+- Notes go in a `ferrobot` folder inside the vault: one folder per agent
+  (named after the agent; it follows a rename) and `Global memory` for the
+  shared one. Each memory is one note, named after its key, with the key and,
+  for global notes, the agent that wrote it in the frontmatter, and the tag
+  `ferrobot`.
+- `remember`, `recall` and `forget` and the Memory views then read and write
+  these notes. A note you add or edit in Obsidian counts too; a note without
+  frontmatter takes its file name as the key and counts as yours, so agents
+  cannot overwrite it.
+- Memories stored so far are copied in when you switch (notes with the same
+  key are kept). **Stop using it** goes back to the built-in memory, which
+  still holds what it had before the switch; notes made since stay in the
+  vault.
+- Search in the vault matches words and word beginnings, best match first.
+- Deleting an agent leaves its notes in the vault.
+- Agents only reach the vault through these tools: no agent can name a path,
+  and keys become plain file names.

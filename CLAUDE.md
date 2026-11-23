@@ -129,7 +129,9 @@ Principles:
 - `crates/daemon/src/tasks.rs` — tracked tasks: automatic report and reminder;
   `crates/store/src/tasks.rs` — task state from `task` events and the mailbox.
 - `crates/mcp/src/tools.rs` — MCP tools; `crates/mcp/src/lib.rs` — `MailboxNotifier`.
-- `crates/store/src/migrations.rs` — schema migrations.
+- `crates/store/src/migrations.rs` — schema migrations; `vault.rs` — memories as
+  Markdown notes in an Obsidian vault when the `memory_vault` setting is set
+  (`/v1/memory-vault`); `memory.rs` routes there.
 - `crates/core/src/question.rs` — question/approval cards; `tools.rs` — tool groups.
 - `runner/src/index.ts`, `runner/src/runner.ts`, `runner/src/drivers/`.
 - `apps/desktop/src/app.tsx`, `src/api.ts`, `src/components/`, `src/lib/timeline.ts`.

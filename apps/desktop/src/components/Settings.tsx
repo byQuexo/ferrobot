@@ -29,6 +29,7 @@ import { ConnectorsSettings } from "./ConnectorsSettings.tsx";
 import { DiagnosticsSettings } from "./DiagnosticsSettings.tsx";
 import { Guides } from "./Guides.tsx";
 import { Memory } from "./InfoPanel.tsx";
+import { MemoryVault } from "./MemoryVault.tsx";
 import { ProvidersSettings } from "./ProvidersSettings.tsx";
 import { TracesSettings } from "./TracesSettings.tsx";
 import { UpdatesSettings } from "./UpdatesSettings.tsx";
@@ -290,7 +291,12 @@ export function Settings(props: {
           />
         )}
         {props.section === "clis" && <ClisSettings />}
-        {props.section === "memory" && <Memory agent={null} />}
+        {props.section === "memory" && (
+          <>
+            <MemoryVault />
+            <Memory agent={null} />
+          </>
+        )}
         {props.section === "traces" && <TracesSettings />}
         {props.section === "voice" && <VoiceSettings />}
         {props.section === "updates" && <UpdatesSettings />}

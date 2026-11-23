@@ -1249,3 +1249,6 @@ input.slider:is(:focus-visible, :active)::-moz-range-thumb { box-shadow: 0 0 0 1
 .hook-add > select { flex: 0 1 190px; }
 .hook-add > input { flex: 1 1 180px; min-width: 0; }
 .hook-add > .hook-command-input { flex-basis: 260px; }
+
+/* Settings → Global memory: the Obsidian vault */
+.memory-vault { margin-bottom: 20px; }
