@@ -6547,9 +6547,14 @@ echo '{"type":"assistant","message":{"content":[{"type":"text","text":"hello"}]}
 echo '{"type":"result","subtype":"success","is_error":false,"result":"hello","session_id":"s1"}'
 "#;
 
-async fn claude_code_turn(agents: &str, token: &str, new_session: bool) -> (u16, String) {
+async fn claude_code_turn(
+    agents: &str,
+    token: &str,
+    prompt: &str,
+    new_session: bool,
+) -> (u16, String) {
     let bearer = format!("Bearer {token}");
-    let body = json!({"prompt": "hi there", "system": "be brief", "new_session": new_session});
+    let body = json!({"prompt": prompt, "system": "be brief", "new_session": new_session});
     let headers = [
         ("authorization", bearer.as_str()),
         ("content-type", "application/json"),
@@ -6603,7 +6608,7 @@ async fn claude_code_agents_use_the_hosts_own_cli_and_nothing_enters_the_sandbox
     assert!(env.keys().all(|k| k.starts_with("FERROBOT_")), "{env:?}");
 
     let token = env["FERROBOT_AGENT_TOKEN"].clone();
-    let (status, out) = claude_code_turn(&d.agents, &token, true).await;
+    let (status, out) = claude_code_turn(&d.agents, &token, "hi there", true).await;
     assert_eq!(status, 200, "{out}");
     assert!(
         out.lines().any(|l| l.contains(r#""type":"result""#)),
@@ -6638,7 +6643,7 @@ async fn claude_code_agents_use_the_hosts_own_cli_and_nothing_enters_the_sandbox
         "the token stays out of claude's environment"
     );
 
-    let (status, _) = claude_code_turn(&d.agents, &token, false).await;
+    let (status, _) = claude_code_turn(&d.agents, &token, "hi there", false).await;
     assert_eq!(status, 200);
     assert!(
         log("args.log")
@@ -6647,6 +6652,10 @@ async fn claude_code_agents_use_the_hosts_own_cli_and_nothing_enters_the_sandbox
             .unwrap()
             .contains(&format!("--resume={session}"))
     );
+
+    // `claude` would run a leading slash command on the host.
+    let (status, _) = claude_code_turn(&d.agents, &token, "/cost", false).await;
+    assert_eq!(status, 400);
 
     // Agents on other providers cannot reach the host's claude.
     let (_, ollama) = http(
@@ -6658,7 +6667,7 @@ async fn claude_code_agents_use_the_hosts_own_cli_and_nothing_enters_the_sandbox
     .await;
     create(&d, json!({"name": "otto", "provider_id": ollama["id"]})).await;
     let other = backend.envs.lock().unwrap()["otto"]["FERROBOT_AGENT_TOKEN"].clone();
-    let (status, _) = claude_code_turn(&d.agents, &other, true).await;
+    let (status, _) = claude_code_turn(&d.agents, &other, "hi there", true).await;
     assert_eq!(status, 403);
 
     let id = clio["id"].as_str().unwrap();

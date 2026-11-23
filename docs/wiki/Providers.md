@@ -135,7 +135,10 @@ proxy, and no Claude sign-in in the app.
   computer only through ferrobot's MCP tools `bash`, `read_file` and
   `write_file`, which run inside the sandbox, next to the usual ferrobot
   tools. The runner's check for destructive shell commands does not apply on
-  this path; the sandbox still contains them.
+  this path; the sandbox still contains them. `claude` itself would attach a
+  file named as `@path` and run a leading `/command` on the host, so the
+  daemon puts a space after such an `@` and refuses a prompt starting with
+  `/` or `!`.
 - **Not tracked:** the calls go from your `claude` to Anthropic, past the
   model proxy, so Usage shows no tokens or costs for these agents.
 - **Settings** shows whether `claude` is installed and logged in, with

@@ -231,7 +231,8 @@ export function Welcome(props: {
             <p>I think through your own Claude Code login on this computer. {CLAUDE_CODE_NOTICE}</p>
             <ClaudeCodeLogin
               onStatus={(s) => {
-                setSignedIn(claudeCodeState(s).ready ? claudeCode.id : null);
+                const ready = claudeCodeState(s).ready;
+                setSignedIn((cur) => (ready ? claudeCode.id : cur === claudeCode.id ? null : cur));
               }}
             />
           </Line>
@@ -245,7 +246,8 @@ export function Welcome(props: {
             <ChatgptLogin
               provider={codex}
               onStatus={(s) => {
-                setSignedIn(s.state === "signed_in" ? codex.id : null);
+                const ready = s.state === "signed_in";
+                setSignedIn((cur) => (ready ? codex.id : cur === codex.id ? null : cur));
               }}
             />
           </Line>

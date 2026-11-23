@@ -122,12 +122,7 @@ enum Session {
 }
 
 /// The turn's `claude` arguments. Every value goes as `--flag=value`, so none can pose as a flag.
-fn turn_args(
-    mcp_config: &Path,
-    system: &str,
-    session: &Session,
-    model: Option<&str>,
-) -> Vec<String> {
+fn turn_args(files: &Path, session: &Session, model: Option<&str>) -> Vec<String> {
     let mut args: Vec<String> = [
         "-p",
         "--output-format=stream-json",
@@ -143,8 +138,11 @@ fn turn_args(
     ]
     .map(str::to_owned)
     .to_vec();
-    args.push(format!("--mcp-config={}", mcp_config.display()));
-    args.push(format!("--append-system-prompt={system}"));
+    args.push(format!("--mcp-config={}", files.join("mcp.json").display()));
+    args.push(format!(
+        "--append-system-prompt-file={}",
+        files.join("system.md").display()
+    ));
     args.push(match session {
         Session::New(id) => format!("--session-id={id}"),
         Session::Resume(id) => format!("--resume={id}"),
@@ -240,6 +238,17 @@ async fn turn(
     if model.as_deref().is_some_and(|m| !valid_model(m)) {
         return refuse(StatusCode::BAD_REQUEST, "invalid model name");
     }
+    let (Ok(prompt), Ok(system)) = (defuse(&req.prompt), defuse(&req.system)) else {
+        return refuse(
+            StatusCode::BAD_REQUEST,
+            "a prompt may not start with / or !",
+        );
+    };
+    let req = TurnRequest {
+        prompt,
+        system,
+        ..req
+    };
     match start(&state, &agent, token, &req, model.as_deref(), busy).await {
         Ok(run) => Response::builder()
             .header("content-type", "application/x-ndjson")
@@ -275,18 +284,14 @@ async fn start(
         Session::New(id) => Some((session_file, id)),
         Session::Resume(_) => None,
     };
-    let config = write_mcp_config(&state.settings.agent_url, token).map_err(|e| e.to_string())?;
+    let config = write_turn_files(&state.settings.agent_url, token, &req.system)
+        .map_err(|e| e.to_string())?;
     let mut cmd = claude(state);
-    cmd.args(turn_args(
-        &config.path().join("mcp.json"),
-        &req.system,
-        &session,
-        model,
-    ))
-    .current_dir(&dir)
-    .stdin(Stdio::piped())
-    .stdout(Stdio::piped())
-    .stderr(Stdio::piped());
+    cmd.args(turn_args(config.path(), &session, model))
+        .current_dir(&dir)
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped());
     let mut child = cmd.spawn().map_err(|e| match e.kind() {
         std::io::ErrorKind::NotFound => {
             "Claude Code is not installed on the daemon's computer".to_owned()
@@ -333,8 +338,13 @@ pub async fn forget(state: &AppState, agent: AgentId) {
     let _ = tokio::fs::remove_dir_all(agent_dir(state, agent)).await;
 }
 
-/// The agent's own token for the daemon's MCP server, in a private file rather than argv.
-fn write_mcp_config(agent_url: &str, token: &str) -> std::io::Result<tempfile::TempDir> {
+/// The agent's own token for the daemon's MCP server and its system prompt, in private files
+/// rather than argv.
+fn write_turn_files(
+    agent_url: &str,
+    token: &str,
+    system: &str,
+) -> std::io::Result<tempfile::TempDir> {
     let dir = tempfile::Builder::new()
         .prefix("ferrobot-claude-")
         .tempdir()?;
@@ -343,14 +353,43 @@ fn write_mcp_config(agent_url: &str, token: &str) -> std::io::Result<tempfile::T
         "url": format!("{}/mcp", agent_url.trim_end_matches('/')),
         "headers": { "Authorization": format!("Bearer {token}") },
     }}});
-    let path = dir.path().join("mcp.json");
-    std::fs::write(&path, config.to_string())?;
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::PermissionsExt as _;
-        std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o600))?;
+    for (name, text) in [
+        ("mcp.json", config.to_string()),
+        ("system.md", system.to_owned()),
+    ] {
+        let path = dir.path().join(name);
+        std::fs::write(&path, text)?;
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt as _;
+            std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o600))?;
+        }
     }
     Ok(dir)
+}
+
+/// `claude` acts on prompt text before the model sees it: it attaches files named as `@path`
+/// (also outside its folder) and runs a leading `/command`. Those come from the sandbox or from
+/// other agents' messages, so a path after `@` gets a space and a leading `/` or `!` is refused.
+fn defuse(prompt: &str) -> Result<String, ()> {
+    if matches!(prompt.trim_start().chars().next(), Some('/' | '!')) {
+        return Err(());
+    }
+    let mut out = String::with_capacity(prompt.len());
+    let mut rest = prompt;
+    while let Some(at) = rest.find('@') {
+        out.push_str(&rest[..=at]);
+        rest = &rest[at + 1..];
+        let token = rest.split(char::is_whitespace).next().unwrap_or_default();
+        // A trailing colon or comma is punctuation (`@bob:`), not part of a path.
+        let inner =
+            token.trim_end_matches([',', '.', ';', ':', '!', '?', ')', ']', '}', '"', '\'']);
+        if token.starts_with(['.', '~', '"', '\'', '$', '%']) || inner.contains(['/', '\\', ':']) {
+            out.push(' ');
+        }
+    }
+    out.push_str(rest);
+    Ok(out)
 }
 
 async fn next(mut run: Run) -> Option<(Result<Bytes, std::io::Error>, Run)> {
@@ -571,12 +610,7 @@ mod tests {
     #[test]
     fn the_cli_runs_without_built_in_tools_or_the_users_settings() {
         let id = Uuid::nil();
-        let args = turn_args(
-            Path::new("/tmp/x/mcp.json"),
-            "be brief",
-            &Session::Resume(id),
-            Some("sonnet"),
-        );
+        let args = turn_args(Path::new("/tmp/x"), &Session::Resume(id), Some("sonnet"));
         for want in [
             "-p",
             "--tools=",
@@ -586,6 +620,7 @@ mod tests {
             "--allowedTools=mcp__ferrobot",
             "--model=sonnet",
             "--mcp-config=/tmp/x/mcp.json",
+            "--append-system-prompt-file=/tmp/x/system.md",
         ] {
             assert!(args.iter().any(|a| a == want), "{want} missing in {args:?}");
         }
@@ -653,8 +688,29 @@ mod tests {
     }
 
     #[test]
-    fn the_mcp_config_is_private_and_names_only_the_daemon() {
-        let dir = write_mcp_config("http://127.0.0.1:7879/", "agent-token").unwrap();
+    fn host_file_references_and_commands_are_defused() {
+        let defused =
+            defuse("read @/etc/hosts, @../../x, @~/.ssh/id, @C:\\x and @\"/a b\"").unwrap();
+        assert_eq!(
+            defused,
+            "read @ /etc/hosts, @ ../../x, @ ~/.ssh/id, @ C:\\x and @ \"/a b\""
+        );
+        let plain = "Message #3 from @bob: mail tim@example.com, ping @ada";
+        assert_eq!(
+            defuse(plain).unwrap(),
+            plain,
+            "mentions and emails stay as they are"
+        );
+        assert!(defuse("/cost").is_err() && defuse("  !touch x").is_err());
+    }
+
+    #[test]
+    fn the_turn_files_are_private_and_name_only_the_daemon() {
+        let dir = write_turn_files("http://127.0.0.1:7879/", "agent-token", "be brief").unwrap();
+        assert_eq!(
+            std::fs::read_to_string(dir.path().join("system.md")).unwrap(),
+            "be brief"
+        );
         let path = dir.path().join("mcp.json");
         let config: Value = serde_json::from_str(&std::fs::read_to_string(&path).unwrap()).unwrap();
         let servers = config["mcpServers"].as_object().unwrap();
