@@ -3704,6 +3704,46 @@ async fn connectors_are_checked_when_added_changed_or_asked() {
 }
 
 #[tokio::test]
+async fn the_ui_hears_when_a_turn_takes_a_message() {
+    let backend = Arc::new(StatefulBackend::default());
+    let d = start(backend.clone(), None, "127.0.0.1:0").await;
+    let id = create(&d, json!({ "name": "nova" })).await["id"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    let mut ws = connect_runner(&d.agents, &backend.token("nova")).await;
+    let mut ui = d.state.ui.subscribe();
+    let path = format!("/v1/agents/{id}/messages");
+    let sent = http(
+        &d.ui,
+        "POST",
+        &path,
+        Some(json!({"body": "check the news"})),
+    )
+    .await
+    .1["id"]
+        .as_i64()
+        .unwrap();
+    next_turn(&mut ws).await;
+    let in_flight = tokio::time::timeout(Duration::from_secs(5), async {
+        loop {
+            let event = serde_json::to_value(ui.recv().await.unwrap()).unwrap();
+            if event["type"] == "message"
+                && event["message"]["id"] == sent
+                && event["message"]["status"] == "in_flight"
+            {
+                break;
+            }
+        }
+    })
+    .await;
+    assert!(
+        in_flight.is_ok(),
+        "no longer shown as queued once its turn runs"
+    );
+}
+
+#[tokio::test]
 async fn send_now_stops_only_a_turn_that_cannot_take_the_message() {
     use ferrobot_core::protocol::TurnOutcome;
     let backend = Arc::new(StatefulBackend::default());
