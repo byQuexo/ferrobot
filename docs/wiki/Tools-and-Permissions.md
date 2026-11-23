@@ -70,15 +70,39 @@ Without Auto mode, these requests show you a card first:
   wants to give which of its agents more tools, and lists what is new. The
   agent does not wait; a message tells it whether you approved. The card stays
   open until you answer.
+- **A risky step**: see [Risky steps](#risky-steps) below. The step waits for
+  your answer, like a new agent does.
 
 A card appears in the chat of the agent you talk to: for an agent made by
 another agent, that is the chat of the agent at the top of the chain. A card
 can be answered once.
 
+## Risky steps
+
+A small rule-based classifier checks every shell command an agent runs (in any
+driver) and every connector tool it calls, before it happens:
+
+- **Safe** steps run: building, testing, reading, writing files in the
+  workspace, most commands.
+- **Risky** steps get a card unless Auto mode is on: deleting a folder
+  (`rm -r`), `git push`, `git reset --hard`, `git clean -f`, sending data with
+  `curl`/`wget` (POST, `-d`, uploads), publishing a package, `ssh`/`scp`/remote
+  `rsync`, `sudo`, killing processes, sending mail, and connector tools whose
+  names act on the outside world (send, post, create, update, delete, pay and
+  similar; reading, listing and searching stay safe). The card says what the
+  step does and why it asks.
+- **Dangerous** steps are always refused, Auto mode or not: deleting `/` or
+  the home folder, formatting a disk, writing to a raw device, piping a
+  download into a shell, a fork bomb.
+
+The classifier is plain rules, so it is fast, free and predictable, and it
+misses clever variations. The sandbox stays the real boundary.
+
 ## Auto mode
 
 Turn it on in **Settings → Agents → Auto mode**. Agents then create agents,
-their own routines and give their agents more tools without asking. A new
-agent or a tool change leaves a notice in the chat instead of a card; a new
-routine shows up under the agent's **Routines**. The agent limit, the tool limits above and your keys stay
-protected.
+their own routines and give their agents more tools without asking, and risky
+steps run without a card; dangerous ones stay blocked. A new agent or a tool
+change leaves a notice in the chat instead of a card; a new routine shows up
+under the agent's **Routines**. The agent limit, the tool limits above and
+your keys stay protected.

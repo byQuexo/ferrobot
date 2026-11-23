@@ -128,8 +128,9 @@ function AgentSettings(): JSX.Element | null {
           />
         </span>
         <span class="hint">
-          Agents create teammates without asking first. The agent limit, blocked commands and keys
-          stay protected.
+          Agents create teammates and take risky steps (deleting folders, pushing code, sending
+          through a connector) without asking first. Without it, you get a card for each risky step.
+          Dangerous commands stay blocked, and the agent limit and keys stay protected.
         </span>
       </span>
       <label>

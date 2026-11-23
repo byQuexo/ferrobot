@@ -534,6 +534,12 @@ impl ferrobot_mcp::MailboxNotifier for AppState {
             {
                 return result;
             }
+            let call = crate::tool_check::Call::Connector(&name);
+            if let Err(why) = crate::tool_check::gate(&state, agent, call).await {
+                return Ok(rmcp::model::CallToolResult::error(vec![
+                    rmcp::model::ContentBlock::text(why),
+                ]));
+            }
             crate::connectors::call(&state, agent, &name, arguments).await
         })
     }

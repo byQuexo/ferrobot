@@ -1265,6 +1265,16 @@ export interface components {
             model: string;
             /** @enum {string} */
             kind: "use_without_tools";
+        } | {
+            agent: components["schemas"]["AgentId"];
+            /** @description `shell` or the connector tool's name. */
+            tool: string;
+            /** @description The command or the call's arguments, shortened. */
+            detail: string;
+            /** @description What made the call risky, e.g. "pushes code". */
+            reason: string;
+            /** @enum {string} */
+            kind: "tool_call";
         };
         /**
          * @description A chosen character avatar look; without one, clients derive a look from the agent id.

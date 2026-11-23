@@ -131,6 +131,17 @@ pub enum Approval {
     /// The agent's model refused a request with tools (raised by the daemon). Approving turns
     /// off its tool groups and connectors so its waiting messages run as plain chat.
     UseWithoutTools { agent: AgentId, model: String },
+    /// The tool-call classifier flagged a call as risky and Auto mode is off: the call waits
+    /// for the operator.
+    ToolCall {
+        agent: AgentId,
+        /// `shell` or the connector tool's name.
+        tool: String,
+        /// The command or the call's arguments, shortened.
+        detail: String,
+        /// What made the call risky, e.g. "pushes code".
+        reason: String,
+    },
 }
 
 /// Choice value that approves an approval card; anything else declines.

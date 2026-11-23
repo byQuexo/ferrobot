@@ -549,6 +549,46 @@ fn card_prompt(
     prompt
 }
 
+/// Puts an approval card in `chat` and waits for the operator, at most
+/// [`crate::Settings::approval_timeout`]. `None`: no answer in time; the card is then locked as
+/// declined.
+pub(crate) async fn await_card(
+    state: &AppState,
+    chat: AgentId,
+    card: &QuestionEvent,
+) -> Result<Option<bool>, ApiError> {
+    let payload = serde_json::to_value(card).map_err(|e| ApiError::Internal(e.to_string()))?;
+    let event = state
+        .store
+        .append_event(chat, None, "question".into(), payload)
+        .await?;
+    let qid = event.id;
+    let (tx, mut rx) = tokio::sync::oneshot::channel();
+    state.approvals_lock().insert(qid, tx);
+    state.publish(UiEvent::Event { event });
+    state.publish_agent(chat).await;
+    if let Ok(r) = tokio::time::timeout(state.settings.approval_timeout, &mut rx).await {
+        return Ok(Some(r.unwrap_or(false)));
+    }
+    let _guard = state.answers.lock().await;
+    if state.approvals_lock().remove(&qid).is_none() {
+        // The answer raced the timeout and is already in the channel.
+        return Ok(Some(rx.try_recv().unwrap_or(false)));
+    }
+    let answered = QuestionAnswered {
+        question: qid,
+        answers: vec![QuestionAnswer {
+            question_id: "q1".into(),
+            values: vec![DECLINE.into()],
+            custom: None,
+        }],
+        message_id: None,
+    };
+    let payload = serde_json::to_value(&answered).map_err(|e| ApiError::Internal(e.to_string()))?;
+    state.record(chat, None, "question_answered", payload).await;
+    Ok(None)
+}
+
 /// Shows the operator an approval card in the chat they use for the
 /// requester (its top creator's), waits for the decision (or
 /// [`crate::Settings::approval_timeout`]) and creates the agent if approved.
@@ -595,42 +635,11 @@ pub async fn request(
             description,
         },
     );
-    let payload = serde_json::to_value(&card).map_err(|e| ApiError::Internal(e.to_string()))?;
-    let event = state
-        .store
-        .append_event(chat, None, "question".into(), payload)
-        .await?;
-    let qid = event.id;
-    let (tx, mut rx) = tokio::sync::oneshot::channel();
-    state.approvals_lock().insert(qid, tx);
-    state.publish(UiEvent::Event { event });
-
-    let approved =
-        if let Ok(r) = tokio::time::timeout(state.settings.approval_timeout, &mut rx).await {
-            r.unwrap_or(false)
-        } else {
-            let _guard = state.answers.lock().await;
-            if state.approvals_lock().remove(&qid).is_some() {
-                // Nobody answered: lock the card as declined.
-                let answered = QuestionAnswered {
-                    question: qid,
-                    answers: vec![QuestionAnswer {
-                        question_id: "q1".into(),
-                        values: vec![DECLINE.into()],
-                        custom: None,
-                    }],
-                    message_id: None,
-                };
-                let payload = serde_json::to_value(&answered)
-                    .map_err(|e| ApiError::Internal(e.to_string()))?;
-                state.record(chat, None, "question_answered", payload).await;
-                return Ok(AgentRequestOutcome::Declined {
-                    reason: "the operator did not answer in time".into(),
-                });
-            }
-            // The answer raced the timeout and is already in the channel.
-            rx.try_recv().unwrap_or(false)
-        };
+    let Some(approved) = await_card(state, chat, &card).await? else {
+        return Ok(AgentRequestOutcome::Declined {
+            reason: "the operator did not answer in time".into(),
+        });
+    };
     if !approved {
         return Ok(AgentRequestOutcome::Declined {
             reason: "the operator declined".into(),

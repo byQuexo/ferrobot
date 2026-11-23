@@ -6,6 +6,7 @@ import { dirname, join } from "node:path";
 import { createInterface } from "node:readline";
 import { setTimeout as sleep } from "node:timers/promises";
 
+import type { ToolGate } from "../gate.ts";
 import { errorMessage, log } from "../log.ts";
 import { decide, offGroups, type BuiltinGroup, type Decision } from "../permissions.ts";
 import type { TurnEvent } from "../protocol.ts";
@@ -68,6 +69,7 @@ export interface AcpDriverOptions {
   workspaceDir: string;
   /** $HOME of the agent; Gemini reads `~/.gemini/settings.json` there. */
   homeDir: string;
+  gate?: ToolGate;
 }
 
 /** Gemini CLI's built-in tools per group (checked against Gemini CLI 0.67's tool list). */
@@ -166,7 +168,7 @@ function review(
   call: ToolCallUpdate,
   home: string,
   off: ReadonlySet<BuiltinGroup>,
-): { name: string; verdict: Decision } {
+): { name: string; verdict: Decision; command?: string } {
   const { name } = toolUse(call);
   const paths = (tool: string): Decision => {
     const files = pathsOf(call);
@@ -178,8 +180,10 @@ function review(
     );
   };
   switch (call.kind ?? "other") {
-    case "execute":
-      return { name, verdict: decide("Bash", { command: commandOf(call) }, home, off) };
+    case "execute": {
+      const command = commandOf(call);
+      return { name, verdict: decide("Bash", { command }, home, off), command };
+    }
     case "fetch":
       return { name, verdict: decide("WebFetch", {}, home, off) };
     case "edit":
@@ -271,6 +275,21 @@ class Connection {
     this.#child.kill();
   }
 
+  /** Answers a request from the agent; the handler may wait (e.g. for the operator's card). */
+  async #answer(id: string | number, method: string, params: Params): Promise<void> {
+    let result: unknown;
+    try {
+      result = await this.onRequest(method, params);
+    } catch (err) {
+      log.warn("acp: could not handle a request", { method, error: errorMessage(err) });
+    }
+    this.#send(
+      result === undefined
+        ? { id, error: { code: -32601, message: `ferrobot does not handle ${method}` } }
+        : { id, result },
+    );
+  }
+
   #send(message: RpcMessage): void {
     this.#child.stdin.write(`${JSON.stringify({ jsonrpc: "2.0", ...message })}\n`);
   }
@@ -289,23 +308,7 @@ class Connection {
     const msg = parsed as RpcMessage;
     const params = msg.params ?? {};
     if (msg.id !== undefined && msg.method !== undefined) {
-      let result: unknown;
-      try {
-        result = this.onRequest(msg.method, params);
-      } catch (err) {
-        log.warn("acp: could not handle a request", {
-          method: msg.method,
-          error: errorMessage(err),
-        });
-      }
-      this.#send(
-        result === undefined
-          ? {
-              id: msg.id,
-              error: { code: -32601, message: `ferrobot does not handle ${msg.method}` },
-            }
-          : { id: msg.id, result },
-      );
+      void this.#answer(msg.id, msg.method, params);
     } else if (msg.method === "session/update") {
       this.lastUpdate = Date.now();
       try {
@@ -514,15 +517,19 @@ export class AcpDriver implements ModelDriver {
           emit(event);
       }
     };
-    conn.onRequest = (method, params) => {
+    conn.onRequest = async (method, params) => {
       if (method !== "session/request_permission" || params["sessionId"] !== session.id)
         return undefined;
       const asked = params["toolCall"] as ToolCallUpdate;
-      const { name, verdict } = review(
+      const reviewed = review(
         { ...calls.get(asked.toolCallId), ...asked },
         home,
         offGroups(ctx.tools),
       );
+      const { name } = reviewed;
+      let verdict = reviewed.verdict;
+      if (verdict.allow && reviewed.command !== undefined && this.#opts.gate)
+        verdict = await this.#opts.gate.shell(reviewed.command);
       const options = (params["options"] ?? []) as PermissionOption[];
       const pick = (kind: string): string | undefined =>
         options.find((o) => o.kind === kind)?.optionId;

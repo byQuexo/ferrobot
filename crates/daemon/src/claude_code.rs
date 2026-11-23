@@ -551,6 +551,10 @@ async fn run_computer(
     };
     let text = match name {
         "bash" => {
+            let call = crate::tool_check::Call::Shell(command);
+            if let Err(why) = crate::tool_check::gate(state, agent.id, call).await {
+                return Ok(CallToolResult::error(vec![ContentBlock::text(why)]));
+            }
             let mut req = ExecRequest::new(["timeout", BASH_TIMEOUT_S, "bash", "-lc", command]);
             req.workdir = Some(workspace.clone());
             let out = backend

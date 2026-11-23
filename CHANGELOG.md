@@ -6,6 +6,15 @@ All notable changes are listed here. The format follows
 
 ## [Unreleased]
 
+### Added
+
+- Risky steps ask first: a rule-based classifier checks every shell command
+  (all drivers) and connector tool call. Risky ones (deleting a folder,
+  `git push`, sending data out, connector tools that send or change things)
+  wait for an Approve/Decline card unless Auto mode is on; dangerous ones
+  (deleting `/` or home, formatting a disk, piping a download into a shell)
+  are always refused.
+
 ### Changed
 
 - Calmer, clearer desktop UI. Avatars show trouble and an open question card;

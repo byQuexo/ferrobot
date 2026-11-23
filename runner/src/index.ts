@@ -10,6 +10,7 @@ import { CodexDriver } from "./drivers/codex.ts";
 import { MockDriver } from "./drivers/mock.ts";
 import { OpenAIDriver } from "./drivers/openai.ts";
 import type { ModelDriver } from "./drivers/types.ts";
+import { ToolGate } from "./gate.ts";
 import { DaemonLink } from "./link.ts";
 import { errorMessage, log } from "./log.ts";
 import { FerrobotMcp } from "./mcp-client.ts";
@@ -73,6 +74,7 @@ async function main(): Promise<void> {
 }
 
 function createDriver(config: RunnerConfig, session: SessionStore): ModelDriver {
+  const gate = new ToolGate(config.daemonUrl, config.token);
   switch (config.driver) {
     case "claude":
       return new ClaudeDriver({
@@ -81,6 +83,7 @@ function createDriver(config: RunnerConfig, session: SessionStore): ModelDriver 
         workspaceDir: config.workspaceDir,
         model: config.model,
         session,
+        gate,
       });
     case "openai":
       return new OpenAIDriver({
@@ -90,6 +93,7 @@ function createDriver(config: RunnerConfig, session: SessionStore): ModelDriver 
         workspaceDir: config.workspaceDir,
         stateDir: config.stateDir,
         mcp: new FerrobotMcp(mcpUrl(config.daemonUrl), config.token),
+        gate,
       });
     case "codex":
       return new CodexDriver({
@@ -100,6 +104,7 @@ function createDriver(config: RunnerConfig, session: SessionStore): ModelDriver 
         token: config.token,
         workspaceDir: config.workspaceDir,
         stateDir: config.stateDir,
+        gate,
       });
     case "acp":
       return new AcpDriver({
@@ -109,6 +114,7 @@ function createDriver(config: RunnerConfig, session: SessionStore): ModelDriver 
         token: config.token,
         workspaceDir: config.workspaceDir,
         homeDir: homedir(),
+        gate,
       });
     case "claude_code":
       return new ClaudeCodeDriver({ daemonUrl: config.daemonUrl, token: config.token });

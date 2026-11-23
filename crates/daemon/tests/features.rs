@@ -6679,3 +6679,73 @@ async fn claude_code_agents_use_the_hosts_own_cli_and_nothing_enters_the_sandbox
         "its folder goes with the agent"
     );
 }
+
+async fn tool_check(agents: &str, token: &str, command: &str) -> Value {
+    let bearer = format!("Bearer {token}");
+    let headers = [
+        ("authorization", bearer.as_str()),
+        ("content-type", "application/json"),
+    ];
+    let body = json!({ "command": command }).to_string();
+    let (status, _, out) = http_raw(
+        agents,
+        "POST",
+        "/runner/tool-check",
+        &headers,
+        body.as_bytes(),
+    )
+    .await;
+    assert_eq!(status, 200);
+    serde_json::from_slice(&out).unwrap()
+}
+
+#[tokio::test]
+async fn risky_tool_calls_wait_for_a_card_unless_auto_mode_is_on() {
+    let backend = Arc::new(StatefulBackend::default());
+    let d = start(backend.clone(), None, "127.0.0.1:0").await;
+    let (_, ollama) = http(
+        &d.ui,
+        "POST",
+        "/v1/providers",
+        Some(json!({"name": "ol", "kind": "ollama", "default_model": "qwen3"})),
+    )
+    .await;
+    let agent = create(&d, json!({"name": "toolie", "provider_id": ollama["id"]})).await;
+    let id = agent["id"].as_str().unwrap().to_owned();
+    let token = backend.envs.lock().unwrap()["toolie"]["FERROBOT_AGENT_TOKEN"].clone();
+
+    assert_eq!(
+        tool_check(&d.agents, &token, "cargo test").await["allow"],
+        true
+    );
+    let blocked = tool_check(&d.agents, &token, "rm -rf /").await;
+    assert_eq!(blocked["allow"], false);
+    assert!(blocked["reason"].as_str().unwrap().starts_with("blocked"));
+
+    // Risky: the call waits for the operator's card.
+    let mut last = 0;
+    for (answer, allowed) in [("approve", true), ("decline", false)] {
+        let (agents, tok) = (d.agents.clone(), token.clone());
+        let waiting =
+            tokio::spawn(async move { tool_check(&agents, &tok, "git push origin main").await });
+        let qid = approval_card(&d, &id, last).await;
+        last = qid;
+        assert_eq!(decide(&d, &id, qid, answer).await.0, 202);
+        let got = waiting.await.unwrap();
+        assert_eq!(got["allow"], allowed, "{answer}: {got}");
+    }
+
+    // Auto mode: risky calls run without a card; dangerous ones stay blocked.
+    let auto = json!({"auto_mode": true});
+    assert_eq!(http(&d.ui, "PUT", "/v1/settings", Some(auto)).await.0, 200);
+    let before = events(&d, &id).await.len();
+    assert_eq!(
+        tool_check(&d.agents, &token, "git push origin main").await["allow"],
+        true
+    );
+    assert_eq!(events(&d, &id).await.len(), before, "no card in Auto mode");
+    assert_eq!(
+        tool_check(&d.agents, &token, "mkfs.ext4 /dev/sda").await["allow"],
+        false
+    );
+}

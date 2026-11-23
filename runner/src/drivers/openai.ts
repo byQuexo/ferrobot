@@ -5,6 +5,7 @@ import { randomUUID } from "node:crypto";
 import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
 import { dirname, join, resolve } from "node:path";
 
+import type { ToolGate } from "../gate.ts";
 import { errorMessage, log } from "../log.ts";
 import type { FerrobotMcp } from "../mcp-client.ts";
 import { decide, offGroups, type BuiltinGroup, type Decision } from "../permissions.ts";
@@ -71,6 +72,7 @@ export interface OpenAIDriverOptions {
   stateDir: string;
   mcp: FerrobotMcp;
   fetch?: typeof fetch;
+  gate?: ToolGate;
 }
 
 function functionTool(name: string, description: string, properties: Record<string, unknown>) {
@@ -310,7 +312,10 @@ export class OpenAIDriver implements ModelDriver {
       ctx.emit({ kind: "tool_result", id, output, is_error: true });
       return output;
     }
-    const verdict = this.#decide(name, input, offGroups(ctx.tools));
+    let verdict = this.#decide(name, input, offGroups(ctx.tools));
+    const command = input["command"];
+    if (verdict.allow && name === "bash" && this.#opts.gate)
+      verdict = await this.#opts.gate.shell(typeof command === "string" ? command : "");
     if (!verdict.allow) {
       ctx.emit({ kind: "tool_denied", name, reason: verdict.reason });
       return verdict.reason;

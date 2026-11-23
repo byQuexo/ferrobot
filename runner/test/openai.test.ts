@@ -7,6 +7,7 @@ import { describe, it } from "node:test";
 import { ConfigError, loadConfig } from "../src/config.ts";
 import { OpenAIDriver, plainSchema, type ChatMessage } from "../src/drivers/openai.ts";
 import { TurnAbortedError, type TurnContext } from "../src/drivers/types.ts";
+import { ToolGate } from "../src/gate.ts";
 import type { FerrobotMcp } from "../src/mcp-client.ts";
 import type { TurnEvent } from "../src/protocol.ts";
 
@@ -55,6 +56,7 @@ interface Setup {
   stateDir?: string;
   fetch?: typeof fetch;
   mcpCall?: (name: string, args: Record<string, unknown>) => Promise<unknown>;
+  gate?: ToolGate;
 }
 
 function setup(opts: Setup = {}) {
@@ -89,6 +91,7 @@ function setup(opts: Setup = {}) {
     stateDir,
     mcp,
     fetch: opts.fetch ?? fakeFetch,
+    ...(opts.gate ? { gate: opts.gate } : {}),
   });
   return { driver, sent, mcpCalls, workspaceDir, stateDir };
 }
@@ -261,6 +264,34 @@ describe("OpenAIDriver", () => {
       tool_call_id: "r",
       content: "x",
     });
+  });
+
+  it("asks the daemon's classifier before a shell command runs", async () => {
+    const asked: string[] = [];
+    const daemon = ((_url: URL, init: RequestInit) => {
+      const { command } = JSON.parse(init.body as string) as { command: string };
+      asked.push(command);
+      const allow = !command.startsWith("git push");
+      const reason = allow ? null : "the operator declined: pushes code";
+      return Promise.resolve(Response.json({ allow, reason }));
+    }) as unknown as typeof fetch;
+    const gate = new ToolGate(new URL("http://daemon:7879"), "agent-token", daemon);
+    const { driver, sent } = setup({
+      gate,
+      replies: [
+        [
+          call(0, { name: "bash", arguments: '{"command":"git push origin main"}' }, "a"),
+          call(1, { name: "read_file", arguments: '{"path":"notes.md"}' }, "b"),
+        ],
+        [text("ok")],
+      ],
+    });
+    const { ctx, events } = context();
+    await driver.runTurn(ctx);
+    assert.deepEqual(asked, ["git push origin main"], "only shell commands are checked");
+    assert.equal(events.find((e) => e.kind === "tool_denied")?.kind, "tool_denied");
+    const tools = at(sent, 1).body.messages.filter((m) => m.role === "tool");
+    assert.equal(at(tools, 0).content, "the operator declined: pushes code");
   });
 
   it("refuses calls the policy blocks and tells the model why", async () => {
@@ -548,5 +579,16 @@ describe("plainSchema", () => {
         tags: { type: "array", items: { type: "string" } },
       },
     });
+  });
+});
+
+describe("tool gate", () => {
+  it("fails closed when the daemon can't answer", async () => {
+    const down = (() => Promise.reject(new Error("ECONNREFUSED"))) as unknown as typeof fetch;
+    const broken = (() =>
+      Promise.resolve(new Response("", { status: 500 }))) as unknown as typeof fetch;
+    const url = new URL("http://daemon:7879");
+    assert.equal((await new ToolGate(url, "t", down).shell("ls")).allow, false);
+    assert.equal((await new ToolGate(url, "t", broken).shell("ls")).allow, false);
   });
 });

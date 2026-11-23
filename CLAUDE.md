@@ -86,6 +86,9 @@ Principles:
   host's own, unmodified `claude -p` per turn (`/host/claude-code/turn`), built-in
   tools off, none of the user's settings, the sandbox reached through MCP tools
   (`bash`, `read_file`, `write_file`); `GET /v1/claude-code` reports its login state.
+- `crates/daemon/src/tool_check.rs` — the rule-based tool-call classifier: safe, risky
+  (an approval card unless Auto mode is on) or dangerous (refused); gates connector calls,
+  Claude Code's `bash` and, via `/runner/tool-check` (`runner/src/gate.ts`), every driver's shell.
 - `crates/daemon/src/connectors.rs`, `api/connectors.rs` — connectors: the daemon
   is the MCP client of remote MCP servers and lends their tools to assigned
   agents through `/mcp` (tokens in the keychain, never in a sandbox), and the
@@ -246,6 +249,9 @@ daemon, `docker ps -a` must be empty of ferrobot containers.
   its creator's, checked in the daemon in every mode, Auto mode included.
   `set_agent_tools` changes only agents the caller created (never itself), to at most
   the caller's own; narrowing applies at once, anything new needs a card unless Auto mode is on.
+- **Risky steps need a card unless Auto mode is on; dangerous ones are always
+  refused** (`tool_check.rs`). The runner asks before every shell command and
+  fails closed when the check can't answer.
 - **`FERROBOT_MAX_AGENTS`** (default 10) applies to `POST /v1/agents` and to
   `create_agent` (both through `daemon::agents::create`).
 - Question cards are answered at most once (`409` after).

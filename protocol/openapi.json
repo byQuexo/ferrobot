@@ -5303,6 +5303,40 @@
                 ]
               }
             }
+          },
+          {
+            "type": "object",
+            "description": "The tool-call classifier flagged a call as risky and Auto mode is off: the call waits\nfor the operator.",
+            "required": [
+              "agent",
+              "tool",
+              "detail",
+              "reason",
+              "kind"
+            ],
+            "properties": {
+              "agent": {
+                "$ref": "#/components/schemas/AgentId"
+              },
+              "tool": {
+                "type": "string",
+                "description": "`shell` or the connector tool's name."
+              },
+              "detail": {
+                "type": "string",
+                "description": "The command or the call's arguments, shortened."
+              },
+              "reason": {
+                "type": "string",
+                "description": "What made the call risky, e.g. \"pushes code\"."
+              },
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "tool_call"
+                ]
+              }
+            }
           }
         ],
         "description": "What an approval card asks the operator to allow; the decision goes to the waiting tool\ncall, not to the agent's mailbox."
