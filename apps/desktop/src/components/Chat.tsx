@@ -869,6 +869,9 @@ function MicButton(props: {
 const MAX_UPLOAD = 25 * 1024 * 1024;
 
 /** The message box of a chat or call room (`chat` is its id). */
+/** Unsent text per chat, so it survives switching to Settings or another chat (not a restart). */
+const drafts = new Map<string, string>();
+
 export function Composer(props: {
   chat: string;
   placeholder: string;
@@ -884,7 +887,11 @@ export function Composer(props: {
   mentions?: Agent[];
 }): JSX.Element {
   const { run } = useApp();
-  const [text, setText] = useState("");
+  const [text, setTextNow] = useState(() => drafts.get(props.chat) ?? "");
+  const setText = (value: string): void => {
+    drafts.set(props.chat, value);
+    setTextNow(value);
+  };
   const [pick, setPick] = useState<{ query: string; at: number; n: number } | null>(null);
   const options = pick
     ? (props.mentions ?? []).filter((a) => a.name.toLowerCase().startsWith(pick.query)).slice(0, 8)
@@ -912,6 +919,8 @@ export function Composer(props: {
   useEffect(() => {
     ref.current?.focus();
     setFiles([]);
+    setTextNow(drafts.get(props.chat) ?? "");
+    setPick(null);
   }, [props.chat]);
   useEffect(() => {
     if (!canAttach) return;
