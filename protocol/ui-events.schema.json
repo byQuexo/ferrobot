@@ -96,6 +96,13 @@
         "status": {
           "$ref": "#/$defs/AgentStatus"
         },
+        "tags": {
+          "description": "The operator's labels for the agent, in order.",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
         "tools": {
           "description": "Tool groups the agent may use; its connectors are its assignment.",
           "items": {

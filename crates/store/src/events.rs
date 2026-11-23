@@ -145,6 +145,24 @@ impl Store {
         .await
     }
 
+    /// Whether the operator started a new session (a `new_session` event) after `agent`'s last
+    /// turn began; a `message_in` steered into a running turn does not count as a turn.
+    pub async fn new_session_pending(&self, agent: AgentId) -> Result<bool, StoreError> {
+        self.with(move |c| {
+            let kind: Option<String> = c
+                .query_row(
+                    "SELECT kind FROM events WHERE agent_id = ?1 AND (kind = 'new_session'
+                         OR (kind = 'message_in' AND json_extract(payload, '$.steered') IS NULL))
+                     ORDER BY id DESC LIMIT 1",
+                    [agent.to_string()],
+                    |r| r.get(0),
+                )
+                .optional()?;
+            Ok(kind.as_deref() == Some("new_session"))
+        })
+        .await
+    }
+
     /// Events of `agent` with id greater than `after` (oldest first).
     pub async fn events_after(
         &self,
@@ -213,5 +231,31 @@ mod tests {
         let rest = store.events_after(a.id, e1.id, 10).await.unwrap();
         assert_eq!(rest.len(), 1);
         assert_eq!(rest[0].kind, "status");
+    }
+
+    #[tokio::test]
+    async fn new_session_waits_for_the_next_turn() {
+        let store = Store::open_in_memory().unwrap();
+        let a = store
+            .create_agent(NewAgent {
+                created_by: None,
+                name: AgentName::parse("alice").unwrap(),
+                description: String::new(),
+                instructions: String::new(),
+            })
+            .await
+            .unwrap();
+        let add = |kind: &str, payload: serde_json::Value| {
+            store.append_event(a.id, None, kind.into(), payload)
+        };
+        assert!(!store.new_session_pending(a.id).await.unwrap());
+        add("message_in", serde_json::json!({})).await.unwrap();
+        add("new_session", serde_json::json!({})).await.unwrap();
+        add("message_in", serde_json::json!({"steered": true}))
+            .await
+            .unwrap();
+        assert!(store.new_session_pending(a.id).await.unwrap());
+        add("message_in", serde_json::json!({})).await.unwrap();
+        assert!(!store.new_session_pending(a.id).await.unwrap());
     }
 }

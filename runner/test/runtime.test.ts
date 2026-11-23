@@ -103,6 +103,32 @@ describe("Runner", () => {
     assert.equal((await session.load()).sessionId, "s-1");
   });
 
+  it("starts a fresh session when the turn asks for one", async () => {
+    const seen: (string | null)[] = [];
+    const driver: ModelDriver = {
+      name: "fake",
+      runTurn: (ctx) => {
+        seen.push(ctx.sessionId);
+        return Promise.resolve({ result: null, sessionId: `s-${String(seen.length)}` });
+      },
+      close: () => Promise.resolve(),
+    };
+    const dir = mkdtempSync(join(tmpdir(), "ferrobot-"));
+    const session = new SessionStore(dir);
+    const sent: RunnerFrame[] = [];
+    const runner = new Runner(
+      { driver, session, agentName: "a", send: (f) => sent.push(f) > 0 },
+      "old",
+    );
+    const done = (n: number) => () => sent.filter((f) => f.type === "turn_done").length === n;
+    runner.handle(turn("t1"));
+    await waitFor(done(1));
+    runner.handle({ ...turn("t2"), new_session: true });
+    await waitFor(done(2));
+    assert.deepEqual(seen, ["old", null]);
+    assert.equal((await session.load()).sessionId, "s-2");
+  });
+
   it("hands mid-turn messages to a steering driver and reports the seen ones", async () => {
     const sent: RunnerFrame[] = [];
     let release = (): void => undefined;

@@ -3425,6 +3425,7 @@ async fn connectors_lend_upstream_tools_to_assigned_agents_only() {
         model: None,
         tools: None,
         connectors: None,
+        tags: Vec::new(),
     };
     let cal = ferrobot_daemon::agents::create(&d.state, spec, Some(ann.parse().unwrap()))
         .await
@@ -4556,6 +4557,7 @@ async fn new_agents_greet_the_operator_first() {
         model: None,
         tools: None,
         connectors: None,
+        tags: Vec::new(),
     };
     let ivy = ferrobot_daemon::agents::create(&d.state, spec, Some(gia))
         .await
@@ -6621,6 +6623,9 @@ async fn claude_code_agents_use_the_hosts_own_cli_and_nothing_enters_the_sandbox
     )
     .await;
     let clio = create(&d, json!({"name": "clio", "provider_id": provider["id"]})).await;
+    let context = format!("/v1/agents/{}/context", clio["id"].as_str().unwrap());
+    let (_, ctx) = http(&d.ui, "GET", &context, None).await;
+    assert_eq!(ctx["tracked"], false, "not proxied: {ctx}");
     let env = backend.envs.lock().unwrap()["clio"].clone();
     assert_eq!(env["FERROBOT_DRIVER"], "claude_code");
     // No key, no Claude login and no claude config: only ferrobot's own settings.
@@ -6806,4 +6811,103 @@ async fn risky_tool_calls_wait_for_a_card_unless_auto_mode_is_on() {
         tool_check(&d.agents, &token, "mkfs.ext4 /dev/sda").await["allow"],
         false
     );
+}
+
+#[tokio::test]
+async fn agent_tags_are_checked_and_kept() {
+    let d = start(Arc::new(StatefulBackend::default()), None, "127.0.0.1:0").await;
+    let a = create(&d, json!({"name": "tia", "tags": [" ops ", "nightly"]})).await;
+    assert_eq!(a["tags"], json!(["ops", "nightly"]));
+    let path = format!("/v1/agents/{}", a["id"].as_str().unwrap());
+    let too_long = "x".repeat(21);
+    for bad in [
+        json!(["a", "b", "c", "d", "e", "f"]),
+        json!([" "]),
+        json!([too_long]),
+        json!(["ops", "ops "]),
+    ] {
+        let (status, _) = http(&d.ui, "PATCH", &path, Some(json!({ "tags": bad }))).await;
+        assert_eq!(status, 400, "{bad}");
+    }
+    let (status, _) = http(
+        &d.ui,
+        "POST",
+        "/v1/agents",
+        Some(json!({"name": "tom", "tags": ["x", "x"]})),
+    )
+    .await;
+    assert_eq!(status, 400);
+    let (_, all) = http(&d.ui, "GET", "/v1/agents", None).await;
+    assert_eq!(
+        all.as_array().unwrap().len(),
+        1,
+        "a bad tag creates nothing"
+    );
+
+    let twenty = "é".repeat(20);
+    let (_, a) = http(&d.ui, "PATCH", &path, Some(json!({ "tags": [twenty] }))).await;
+    assert_eq!(a["tags"], json!([twenty]), "characters, not bytes");
+    let (_, a) = http(&d.ui, "PATCH", &path, Some(json!({"description": "x"}))).await;
+    assert_eq!(a["tags"], json!([twenty]), "omitted tags stay");
+    let (_, a) = http(&d.ui, "PATCH", &path, Some(json!({"tags": []}))).await;
+    assert_eq!(a["tags"], json!([]));
+}
+
+#[tokio::test]
+async fn context_is_the_newest_call_since_the_last_new_chat() {
+    use ferrobot_store::{Tokens, UsageRecord, UsageStatus};
+    let d = start(Arc::new(StatefulBackend::default()), None, "127.0.0.1:0").await;
+    let a = create(&d, json!({"name": "cora"})).await;
+    let id: AgentId = a["id"].as_str().unwrap().parse().unwrap();
+    let path = format!("/v1/agents/{id}/context");
+    let (status, ctx) = http(&d.ui, "GET", &path, None).await;
+    assert_eq!(status, 200, "{ctx}");
+    assert_eq!(
+        (&ctx["tracked"], &ctx["tokens"]),
+        (&json!(true), &Value::Null)
+    );
+
+    let now = time::OffsetDateTime::now_utc();
+    let row = |ago: i64, input: Option<i64>, status| UsageRecord {
+        at: now - time::Duration::seconds(ago),
+        agent_id: id,
+        agent_name: "cora".into(),
+        provider_id: None,
+        provider_kind: "anthropic".into(),
+        model: "claude-opus-5-5".into(),
+        tokens: Tokens {
+            input,
+            output: Some(9),
+            cache_read: Some(1000),
+            cache_write: Some(500),
+        },
+        cost_usd: None,
+        latency_ms: 5,
+        status,
+    };
+    for r in [
+        row(60, Some(2000), UsageStatus::Ok),
+        row(50, Some(1), UsageStatus::Error),
+        row(40, None, UsageStatus::Ok),
+    ] {
+        d.state.store.insert_usage(r).await.unwrap();
+    }
+    let (_, ctx) = http(&d.ui, "GET", &path, None).await;
+    assert_eq!(
+        (&ctx["tokens"], &ctx["window"], &ctx["model"]),
+        (&json!(3500), &json!(1_000_000), &json!("claude-opus-5-5")),
+        "input plus cache of the newest call with counts"
+    );
+
+    let (status, _) = http(&d.ui, "POST", &format!("/v1/agents/{id}/new-session"), None).await;
+    assert_eq!(status, 204);
+    let (_, ctx) = http(&d.ui, "GET", &path, None).await;
+    assert_eq!(ctx["tokens"], Value::Null, "a new chat starts empty");
+    d.state
+        .store
+        .insert_usage(row(0, Some(10), UsageStatus::Ok))
+        .await
+        .unwrap();
+    let (_, ctx) = http(&d.ui, "GET", &path, None).await;
+    assert_eq!(ctx["tokens"], 1510);
 }

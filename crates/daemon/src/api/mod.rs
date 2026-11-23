@@ -65,6 +65,8 @@ pub fn router() -> Router<AppState> {
         .route("/v1/conversations/{a}/{b}", get(chat::conversation_thread))
         .route("/v1/agents/{id}/interrupt", post(chat::interrupt))
         .route("/v1/agents/{id}/retry", post(chat::retry))
+        .route("/v1/agents/{id}/new-session", post(chat::new_session))
+        .route("/v1/agents/{id}/context", get(usage::get_context))
         .route(
             "/v1/agents/{id}/questions/{qid}/answer",
             post(chat::answer_question),

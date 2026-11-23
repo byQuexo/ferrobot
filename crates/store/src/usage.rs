@@ -1,11 +1,11 @@
 //! Model usage: one row per proxied model call, counts and metadata only.
 
 use ferrobot_core::AgentId;
-use rusqlite::params;
+use rusqlite::{OptionalExtension, params};
 use time::OffsetDateTime;
 use uuid::Uuid;
 
-use crate::util::fmt_ts;
+use crate::util::{fmt_ts, parse_ts};
 use crate::{Store, StoreError};
 
 /// How a proxied call ended.
@@ -102,6 +102,15 @@ pub struct UsageSlice {
     pub reported_cost_usd: Option<f64>,
 }
 
+/// What an agent's newest model call was sent.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ContextUsage {
+    pub at: OffsetDateTime,
+    pub model: String,
+    /// Input plus cache reads and writes.
+    pub tokens: i64,
+}
+
 /// Whole seconds keep the stored RFC 3339 strings the same width, so they sort as times.
 fn ts(at: OffsetDateTime) -> String {
     fmt_ts(
@@ -136,6 +145,40 @@ impl Store {
                 ],
             )?;
             Ok(())
+        })
+        .await
+    }
+
+    /// `agent`'s newest successful call with token counts, of `model` if given, since its last
+    /// `new_session` event (rows of that second count: usage times are whole seconds).
+    pub async fn context_usage(
+        &self,
+        agent: AgentId,
+        model: Option<String>,
+    ) -> Result<Option<ContextUsage>, StoreError> {
+        self.with(move |c| {
+            let row: Option<(String, String, i64)> = c
+                .query_row(
+                    "SELECT at, model, input_tokens + COALESCE(cache_read_tokens, 0)
+                                + COALESCE(cache_write_tokens, 0)
+                     FROM usage WHERE agent_id = ?1 AND status = 'ok' AND input_tokens IS NOT NULL
+                       AND (?2 IS NULL OR model = ?2)
+                       AND at >= COALESCE((SELECT substr(created_at, 1, 19) || '.000000Z'
+                           FROM events WHERE agent_id = ?1 AND kind = 'new_session'
+                           ORDER BY id DESC LIMIT 1), '')
+                     ORDER BY id DESC LIMIT 1",
+                    params![agent.to_string(), model],
+                    |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)),
+                )
+                .optional()?;
+            row.map(|(at, model, tokens)| {
+                Ok(ContextUsage {
+                    at: parse_ts(&at)?,
+                    model,
+                    tokens,
+                })
+            })
+            .transpose()
         })
         .await
     }

@@ -64,6 +64,8 @@ fn every_routed_path_is_documented() {
         "/v1/conversations/{a}/{b}",
         "/v1/agents/{id}/interrupt",
         "/v1/agents/{id}/retry",
+        "/v1/agents/{id}/new-session",
+        "/v1/agents/{id}/context",
         "/v1/agents/{id}/questions/{qid}/answer",
         "/v1/agents/{id}/memory",
         "/v1/agents/{id}/memory/{key}",
@@ -116,7 +118,7 @@ fn every_routed_path_is_documented() {
     }
     assert_eq!(
         documented.len(),
-        60,
+        62,
         "undocumented extra paths: {documented:?}"
     );
 }
@@ -171,6 +173,7 @@ fn ui_events_validate_against_schema() {
         sandbox_id: Some("ferrobot-alice".into()),
         session_id: None,
         pinned: false,
+        tags: vec!["ops".into()],
         tools: vec![
             ferrobot_core::ToolGroup::Team,
             ferrobot_core::ToolGroup::Shell,

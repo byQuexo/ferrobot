@@ -332,6 +332,51 @@ async fn interrupt_reaches_runner() {
     assert_eq!(status, 404);
 }
 
+#[tokio::test]
+async fn new_session_marks_only_the_next_turn() {
+    let backend = Arc::new(FakeBackend::default());
+    let d = start(backend.clone(), None, "127.0.0.1:0").await;
+    let (_, cy) = http(&d.ui, "POST", "/v1/agents", Some(json!({"name": "cy"}))).await;
+    let cy_id = cy["id"].as_str().unwrap().to_owned();
+    let token = backend.envs.lock().unwrap()["cy"]["FERROBOT_AGENT_TOKEN"].clone();
+    let unknown = "/v1/agents/00000000-0000-4000-8000-000000000000/new-session";
+    assert_eq!(http(&d.ui, "POST", unknown, None).await.0, 404);
+    let reset = format!("/v1/agents/{cy_id}/new-session");
+    assert_eq!(http(&d.ui, "POST", &reset, None).await.0, 204);
+
+    let mut ws = connect_runner(&d.agents, &token).await;
+    for (body, fresh) in [("one", true), ("two", false)] {
+        http(
+            &d.ui,
+            "POST",
+            &format!("/v1/agents/{cy_id}/messages"),
+            Some(json!({ "body": body })),
+        )
+        .await;
+        let DaemonFrame::Turn {
+            turn_id,
+            new_session,
+            ..
+        } = next_frame(&mut ws).await
+        else {
+            panic!("expected a turn");
+        };
+        assert_eq!(new_session, fresh, "{body}");
+        send(
+            &mut ws,
+            &RunnerFrame::TurnDone {
+                turn_id,
+                outcome: TurnOutcome::Completed,
+                session_id: Some(format!("s-{body}")),
+                result: None,
+                error: None,
+                steered: vec![],
+            },
+        )
+        .await;
+    }
+}
+
 #[test]
 fn openapi_conformance_check_rejects_wrong_shapes() {
     use common::assert_conforms;

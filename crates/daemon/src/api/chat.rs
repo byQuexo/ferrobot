@@ -275,6 +275,27 @@ pub(crate) async fn interrupt(
     }))
 }
 
+/// Starts a new chat: the agent's next turn begins a fresh model session without the earlier
+/// messages. The chat history stays visible.
+#[utoipa::path(post, path = "/v1/agents/{id}/new-session", tag = "chat",
+    params(("id" = String, Path, description = "Agent id (UUID)")),
+    responses((status = 204, description = "The agent's next turn starts fresh"),
+        (status = 404, description = "Unknown agent", body = ErrorBody)))]
+pub(crate) async fn new_session(
+    State(state): State<AppState>,
+    Path(id): Path<String>,
+) -> Result<StatusCode, ApiError> {
+    let id = parse_id(&id)?;
+    state.store.get_agent(id).await?;
+    // The event is the pending reset: it survives restarts and a sleeping runner.
+    let event = state
+        .store
+        .append_event(id, None, "new_session".into(), serde_json::json!({}))
+        .await?;
+    state.publish(UiEvent::Event { event });
+    Ok(StatusCode::NO_CONTENT)
+}
+
 /// Clears the agent's credential or tools problem so its waiting messages run; if it still
 /// stands, the next model call sets it again.
 #[utoipa::path(post, path = "/v1/agents/{id}/retry", tag = "chat",

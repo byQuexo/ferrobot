@@ -30,6 +30,9 @@ pub enum DaemonFrame {
         /// Display name of the sender (`user` or the agent name).
         sender_name: String,
         body: String,
+        /// Start a fresh model session for this turn: the operator asked for a new chat.
+        #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+        new_session: bool,
     },
     /// A message that arrived during turn `turn_id` (only with `hello.steering`); queued again
     /// unless `turn_done.steered` lists it.

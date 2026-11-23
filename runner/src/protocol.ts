@@ -28,6 +28,8 @@ export const daemonFrameSchema = z.discriminatedUnion("type", [
     sender: senderSchema,
     sender_name: z.string(),
     body: z.string(),
+    /** Start a fresh model session: the operator asked for a new chat. */
+    new_session: z.boolean().optional(),
   }),
   z.object({
     type: z.literal("steer"),

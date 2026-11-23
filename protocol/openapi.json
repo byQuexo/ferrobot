@@ -710,6 +710,57 @@
         }
       }
     },
+    "/v1/agents/{id}/context": {
+      "get": {
+        "tags": [
+          "usage"
+        ],
+        "summary": "How full the agent's context is.",
+        "operationId": "get_context",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "Agent id (UUID)",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AgentContext"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or wrong API token",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Unknown agent",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/v1/agents/{id}/events": {
       "get": {
         "tags": [
@@ -1265,6 +1316,51 @@
                 }
               }
             }
+          },
+          "401": {
+            "description": "Missing or wrong API token",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Unknown agent",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/agents/{id}/new-session": {
+      "post": {
+        "tags": [
+          "chat"
+        ],
+        "summary": "Starts a new chat: the agent's next turn begins a fresh model session without the earlier\nmessages. The chat history stays visible.",
+        "operationId": "new_session",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "Agent id (UUID)",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "The agent's next turn starts fresh"
           },
           "401": {
             "description": "Missing or wrong API token",
@@ -5059,9 +5155,60 @@
             },
             "description": "Tool groups the agent may use; its connectors are its assignment."
           },
+          "tags": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "The operator's labels for the agent, in order."
+          },
           "created_at": {
             "type": "string",
             "format": "date-time"
+          }
+        }
+      },
+      "AgentContext": {
+        "type": "object",
+        "description": "How full an agent's context is, read from its newest proxied model call.",
+        "required": [
+          "tracked"
+        ],
+        "properties": {
+          "tracked": {
+            "type": "boolean",
+            "description": "Whether the daemon sees the agent's model calls: `false` on Claude Code, which runs on\nthe host's own login and not through the model proxy."
+          },
+          "tokens": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64",
+            "description": "Input plus cache read and write tokens of the newest call since the last new chat;\n`null` before there is one."
+          },
+          "window": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64",
+            "description": "Context window of `model` in tokens; `null` when not known."
+          },
+          "model": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "The model of that call, else the agent's configured model."
+          },
+          "at": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time",
+            "description": "When that call was made."
           }
         }
       },
@@ -5776,6 +5923,13 @@
               "$ref": "#/components/schemas/ToolGroup"
             },
             "description": "Tool groups the agent may use; omitted: all. Connectors are assigned with\n`PUT /v1/agents/{id}/connectors`."
+          },
+          "tags": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Labels for the operator: at most 5, each 1-20 characters after trimming, no duplicates."
           }
         }
       },
@@ -7915,6 +8069,16 @@
               "$ref": "#/components/schemas/ToolGroup"
             },
             "description": "Tool groups the agent may use (any; the subset rule binds only agents creating\nagents). A connected runner applies them from its next turn."
+          },
+          "tags": {
+            "type": [
+              "array",
+              "null"
+            ],
+            "items": {
+              "type": "string"
+            },
+            "description": "Replaces the tags (same rules as on create); `[]` removes them."
           }
         }
       },

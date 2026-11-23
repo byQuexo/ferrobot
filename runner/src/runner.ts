@@ -92,6 +92,10 @@ export class Runner {
     };
     let done: RunnerFrame;
     try {
+      if (turn.new_session) {
+        this.#sessionId = null;
+        await this.#deps.session.save(null);
+      }
       const out = await this.#deps.driver.runTurn({
         turn,
         instructions: this.#instructions,

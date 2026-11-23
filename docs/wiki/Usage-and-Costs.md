@@ -72,6 +72,16 @@ of the week is used. Hover a ring for its reset time.
   and are left out.
 - Readings are cached for a minute. Account details are never returned.
 
+## Context meter
+
+The ring by a chat's message box shows how full the agent's context is: the
+input, cache read and cache write tokens of its newest proxied call, against
+the model's window (Claude 4.6 and later, Fable and Gemini 1M, older Claude
+200K, GPT-5 400K; other models say "unknown"). Claude Code agents run on your
+own login outside the proxy, so they show "not tracked". New chat in its
+popover makes the agent's next turn start a fresh session; the chat history
+stays. Compacting a conversation on demand is not offered.
+
 ## API
 
 All routes need the operator token; the shapes are in `protocol/openapi.json`.
@@ -85,3 +95,5 @@ All routes need the operator token; the shapes are in `protocol/openapi.json`.
 - `GET /v1/limits` returns, per Claude Code or ChatGPT-signed-in Codex
   provider, `five_hour` and `weekly` (`used_percent`, `resets`: Claude Code's
   own words or an RFC 3339 time for Codex), or an `error`.
+- `GET /v1/agents/{id}/context` returns `tracked`, `tokens`, `window`, `model`
+  and `at` for the context meter.
