@@ -95,6 +95,7 @@ tested against fakes on a machine without KVM.
 | v0.1.2 | done | The first-run setup shows the ChatGPT sign-in for Codex once. |
 | v0.1.3 | done | Opt-in Claude Code (your own login): your own claude CLI and subscription, on the host. |
 | v0.1.4 | done | Group chats, reactions, uploads, richer chat, plan limits, tags and model switch, Appearance, shortcuts, the call bar. |
+| v0.1.5 | done | Fix: a message no longer shows as queued while its turn runs. |
 
 Ideas beyond this list are on [[Ideas]].
 

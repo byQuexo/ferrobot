@@ -8,12 +8,20 @@ All notable changes are listed here. The format follows
 
 ### Added
 
-- Traces: a reply's steps line opens its turn on a timeline: the model calls
-  (from the proxy, now tagged with their turn) and tool calls with how long
-  each took, the slowest one, failures, counts and a search
-  (`GET /v1/agents/{id}/turns/{turn_id}/trace`). Claude Code turns show their
-  tool calls; their model calls are not tracked. New migration: v20
-  (`usage.turn_id`, `usage.at_ms`).
+- Traces: a reply's steps (in its footer, by the reaction button) open its
+  turn on a timeline: model calls (from the proxy, now tagged with their turn,
+  or for Claude Code from its own stream) and tool calls with how long each
+  took, the slowest one, failures, counts and a search
+  (`GET /v1/agents/{id}/turns/{turn_id}/trace`). Computer steps name their
+  command or file. New migration: v20 (`usage.turn_id`, `usage.at_ms`).
+
+## [0.1.5] - 2026-11-23
+
+### Fixed
+
+- A message an agent was already working on still showed as "queued" with
+  **Send now**, which would have stopped that very turn: the daemon now tells
+  the app when a turn takes a message.
 
 ## [0.1.4] - 2026-11-23
 
@@ -222,7 +230,8 @@ First public release.
   allowlist per API family, no redirects, header allowlists both ways, agent
   tokens blanked in committed images.
 
-[Unreleased]: https://github.com/byQuexo/ferrobot/compare/v0.1.4...HEAD
+[Unreleased]: https://github.com/byQuexo/ferrobot/compare/v0.1.5...HEAD
+[0.1.5]: https://github.com/byQuexo/ferrobot/compare/v0.1.4...v0.1.5
 [0.1.4]: https://github.com/byQuexo/ferrobot/compare/v0.1.3...v0.1.4
 [0.1.3]: https://github.com/byQuexo/ferrobot/compare/v0.1.2...v0.1.3
 [0.1.2]: https://github.com/byQuexo/ferrobot/compare/v0.1.1...v0.1.2
