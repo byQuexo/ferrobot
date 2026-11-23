@@ -18,6 +18,9 @@ All notable changes are listed here. The format follows
 - Claude Code calls show on the Usage page: each model call `claude` reports is
   a usage row (provider kind `claude_code`) with its tokens and a cost
   estimated at Anthropic API prices; your subscription covers them.
+- Calls with several agents: an agent without a voice of its own speaks with an
+  `ElevenLabs` voice from your account that no one else in the call uses (by
+  its place in the call); the host keeps the default.
 - Compact now: in the context popover, Claude Code agents can compact their
   conversation (`POST /v1/agents/{id}/compact`). The daemon runs `claude`'s
   own `/compact` on the agent's session, with no tools and none of your

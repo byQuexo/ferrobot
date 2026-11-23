@@ -5160,6 +5160,28 @@ async fn voice_speaks_and_listens_with_keys_kept_in_the_daemon() {
     assert_eq!(status, 200);
     assert_eq!(last()["path"], "/v1/text-to-speech/bobvoice/stream");
 
+    // In a call, an agent without a voice of its own speaks with one nobody else there uses.
+    let host = create(&d, json!({"name": "hal"})).await["id"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    let guest = create(&d, json!({"name": "gus"})).await["id"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    let both = Some(json!({"agents": [host, guest]}));
+    assert_eq!(http(&d.ui, "PUT", "/v1/call", both).await.0, 200);
+    for (who, voice) in [(&host, "voice123"), (&guest, "id-Ada")] {
+        let body = json!({ "text": "Hi", "agent_id": who }).to_string();
+        let headers = [("content-type", "application/json")];
+        let (status, _, _) =
+            http_raw(&d.ui, "POST", "/v1/voice/speech", &headers, body.as_bytes()).await;
+        assert_eq!(status, 200);
+        assert_eq!(last()["path"], format!("/v1/text-to-speech/{voice}/stream"));
+    }
+    let hang_up = Some(json!({"agents": []}));
+    assert_eq!(http(&d.ui, "PUT", "/v1/call", hang_up).await.0, 200);
+
     // The account's voices (all pages) and speech models, fetched with the key.
     let (status, catalog) = http(&d.ui, "GET", "/v1/voice/catalog", None).await;
     assert_eq!(status, 200, "{catalog}");

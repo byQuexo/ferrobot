@@ -301,9 +301,13 @@ async fn speak(state: &AppState, req: &SpeechRequest) -> Result<Response, ApiErr
         )));
     }
     let r = ready(state).await?;
-    let voice = r
-        .settings
-        .voice_of(r.provider, req.agent_id)
+    let in_call = match req.agent_id {
+        Some(agent) => call_voice(state, &r, agent).await,
+        None => None,
+    };
+    let voice = in_call
+        .as_deref()
+        .or_else(|| r.settings.voice_of(r.provider, req.agent_id))
         .ok_or_else(|| ApiError::Conflict("pick a voice in the voice settings".into()))?;
     let model = r
         .settings
@@ -397,16 +401,8 @@ pub(crate) struct VoiceCatalog {
 /// Most voices fetched (pages of 100), so a huge library stays quick.
 const MAX_VOICE_PAGES: usize = 3;
 
-/// The voices and speech models of the configured provider, fetched live.
-#[utoipa::path(get, path = "/v1/voice/catalog", tag = "voice",
-    responses((status = 200, body = VoiceCatalog),
-        (status = 409, description = "Voice off, not set up or no key", body = ErrorBody),
-        (status = 502, description = "The provider failed", body = ErrorBody)))]
-pub(crate) async fn catalog(State(state): State<AppState>) -> ApiResult<VoiceCatalog> {
-    let r = ready(&state).await?;
-    if r.provider != VoiceProvider::Elevenlabs {
-        return Ok(Json(VoiceCatalog::default()));
-    }
+/// The `ElevenLabs` account's voices, fetched live.
+async fn account_voices(state: &AppState, r: &Ready) -> Result<Vec<VoiceOption>, ApiError> {
     let base = r.base.trim_end_matches('/');
     let json = |response: reqwest::Response| async move {
         response
@@ -437,6 +433,88 @@ pub(crate) async fn catalog(State(state): State<AppState>) -> ApiResult<VoiceCat
             break;
         }
     }
+    Ok(voices)
+}
+
+/// How long the account's voice list is reused for picking call voices.
+const VOICE_POOL_TTL: std::time::Duration = std::time::Duration::from_secs(600);
+
+/// The last voice list: (provider address, when, voice ids).
+type Pool = Option<(String, std::time::Instant, Vec<String>)>;
+
+static VOICE_POOL: std::sync::Mutex<Pool> = std::sync::Mutex::new(None);
+
+/// The account's voice ids, by name, cached for [`VOICE_POOL_TTL`]; empty when not listable.
+async fn voice_pool(state: &AppState, r: &Ready) -> Vec<String> {
+    if r.provider != VoiceProvider::Elevenlabs {
+        return Vec::new();
+    }
+    let fresh = |c: &Pool| {
+        c.as_ref()
+            .filter(|(base, at, _)| *base == r.base && at.elapsed() < VOICE_POOL_TTL)
+            .map(|(_, _, ids)| ids.clone())
+    };
+    if let Some(ids) = fresh(
+        &VOICE_POOL
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner),
+    ) {
+        return ids;
+    }
+    let Ok(mut voices) = account_voices(state, r).await else {
+        return Vec::new();
+    };
+    voices.sort_by_key(|v| v.name.to_lowercase());
+    let ids: Vec<String> = voices.into_iter().map(|v| v.voice_id).collect();
+    *VOICE_POOL
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner) =
+        Some((r.base.clone(), std::time::Instant::now(), ids.clone()));
+    ids
+}
+
+/// The `place`-th voice of `pool` that nobody in the call speaks with yet (`taken`).
+fn distinct_voice(place: usize, pool: &[String], taken: &[&str]) -> Option<String> {
+    pool.iter()
+        .filter(|v| !taken.contains(&v.as_str()))
+        .nth(place.checked_sub(1)?)
+        .cloned()
+}
+
+/// In a call with several agents, one without a voice of its own speaks with a voice no other
+/// agent in the call uses, by its place in the call; the host keeps the default.
+async fn call_voice(state: &AppState, r: &Ready, agent: AgentId) -> Option<String> {
+    let (agents, _) = state.call_view().await;
+    let place = agents.iter().position(|a| *a == agent)?;
+    if place == 0 || r.settings.agent_voices.contains_key(&agent) {
+        return None;
+    }
+    let taken: Vec<&str> = agents
+        .iter()
+        .filter(|a| **a == agents[0] || r.settings.agent_voices.contains_key(a))
+        .filter_map(|a| r.settings.voice_of(r.provider, Some(*a)))
+        .collect();
+    distinct_voice(place, &voice_pool(state, r).await, &taken)
+}
+
+/// The voices and speech models of the configured provider, fetched live.
+#[utoipa::path(get, path = "/v1/voice/catalog", tag = "voice",
+    responses((status = 200, body = VoiceCatalog),
+        (status = 409, description = "Voice off, not set up or no key", body = ErrorBody),
+        (status = 502, description = "The provider failed", body = ErrorBody)))]
+pub(crate) async fn catalog(State(state): State<AppState>) -> ApiResult<VoiceCatalog> {
+    let r = ready(&state).await?;
+    if r.provider != VoiceProvider::Elevenlabs {
+        return Ok(Json(VoiceCatalog::default()));
+    }
+    let base = r.base.trim_end_matches('/');
+    let json = |response: reqwest::Response| async move {
+        response
+            .json::<serde_json::Value>()
+            .await
+            .map_err(|_| ApiError::Upstream("the voice provider sent no list".into()))
+    };
+    let mut voices = account_voices(&state, &r).await?;
     voices.sort_by_key(|v| v.name.to_lowercase());
     let models = state
         .http
@@ -624,4 +702,30 @@ pub(crate) async fn get_room(
         lines: state.store.room_lines(id, 1000).await?,
         speaking: state.floor_of(id).await,
     }))
+}
+
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn call_agents_without_a_voice_get_distinct_ones() {
+        let pool: Vec<String> = ["a", "b", "c"].map(String::from).to_vec();
+        assert_eq!(
+            super::distinct_voice(0, &pool, &[]),
+            None,
+            "the host keeps the default"
+        );
+        assert_eq!(
+            super::distinct_voice(1, &pool, &["a"]).as_deref(),
+            Some("b")
+        );
+        assert_eq!(
+            super::distinct_voice(2, &pool, &["a"]).as_deref(),
+            Some("c")
+        );
+        assert_eq!(
+            super::distinct_voice(3, &pool, &["a"]),
+            None,
+            "out of voices: the default"
+        );
+    }
 }
