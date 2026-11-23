@@ -8,21 +8,36 @@ import { setTimeout as sleep } from "node:timers/promises";
 import { api, encode, studio, WAIT_MS } from "./lib.mjs";
 
 const PROVIDER = process.env.DEMO_PROVIDER ?? "anthropic";
-const ASK =
-  "Find out how to do retries with backoff in Rust using the backon crate, then have builder write a working example.";
-const ENV_CHECK = "env | grep -E 'TOKEN|KEY|URL' | sed -E 's/=.*/=•••/'";
+const MODEL = process.env.DEMO_MODEL ?? "sonnet";
+const GROUP = "Launch crew";
+const REACT =
+  "When your operator writes to you in your own chat, first react to their message with one fitting emoji (the react tool, with its Message #id). Never react to [ferrobot] notes.";
 
-const RESEARCHER = `You research how to do things and brief your teammates. Keep chat replies to one or two short sentences.
-- Read library docs with the deepwiki connector tools; the backon crate lives in the Xuanwo/backon repo. One or two questions are enough.
-- Before you hand off code, ask the operator one question with ask_user: prompt "Async (tokio) or blocking?", choices "Async (tokio)" and "Blocking". Then end your turn.
-- When the answer arrives, give the build to builder with assign_task: a small example where an operation fails twice and succeeds on the third try, retried with backon's ExponentialBuilder, printing each attempt. Name the dependencies: backon = "1", and for async tokio = { version = "1", features = ["full"] }.
-- When builder's answer arrives, write report.html: one small self-contained page with a title, three sentences on how backon retries work, the code and the program's output, light styling. Share it with share_file, then reply in one sentence.`;
+const RESEARCHER = `You research and write for the team. Keep chat replies to one or two short sentences.
+- In a group chat, answer in one short sentence. Asked what you take on: the release notes.
+- ${REACT}
+- Asked for release notes from an attached file: read it, write notes.html (one self-contained page: a title, three short sections with two bullets each, light styling, nothing external), share it with share_file, then reply in one sentence that names notes.html.`;
 
-const BUILDER = `You write and run code on your own computer. Keep chat replies short.
-Rust is installed: start every shell command that uses cargo with \`. ~/.cargo/env && \`.
-For a coding task: create the project in a new folder in your workspace, write Cargo.toml (edition 2021, exactly the dependency versions you are given) and src/main.rs, run cargo run, and fix errors until it works.
-After it runs, show the operator which credentials your computer holds: run exactly this as its own command, nothing chained: ${ENV_CHECK}
-Answer with the code and the program's output, nothing else.`;
+const BUILDER = `You build small web things. Keep chat replies to one short sentence.
+- In a group chat, answer in one short sentence. Asked what you take on: the launch page. Asked for a diagram: one short sentence, then a \`\`\`mermaid block with a flowchart LR of at most six nodes with short labels.
+- ${REACT}
+- Asked for a widget: reply with one short sentence and one \`\`\`html block, nothing else: a self-contained page under 50 lines with inline <style> and <script> that fills the frame (html and body: margin 0, height 100vh) with its own dark background and large centred text, which the script updates every second. Do not write files or run commands for it.`;
+
+const TEAM = [
+  ["researcher", "Researches and writes the notes", RESEARCHER, ["docs", "release"]],
+  ["builder", "Builds the launch page", BUILDER, ["web", "frontend"]],
+];
+
+// The file attached with the paperclip.
+const CHANGELOG = `# ferrobot 0.1.5
+- Group chats: write once and every agent answers in turn; @ one agent to ask only it.
+- Reactions: agents react to your messages with an emoji, and you to theirs.
+- Richer chat: Mermaid diagrams, live HTML previews, shared pages preview under their card.
+- Attach files with the paperclip, drag and drop or paste.
+- Tags, a model switch and a context ring for every agent.
+- Plan limits of Claude Code and Codex sign-ins on the Usage page.
+- Settings, Appearance: accent colour, bubbles, text size. Cmd+K jumps anywhere.
+`;
 
 const CUTS = {
   hero: [
@@ -32,8 +47,7 @@ const CUTS = {
       width: 1280,
       holdMax: 0.9,
       waitMax: 0.8,
-      skip: ["builder-create"],
-      gif: { file: "docs/assets/demo.gif", width: 800, fps: 8 },
+      gif: { file: "docs/assets/demo.gif", width: 800, fps: 6 },
     },
     {
       name: "x",
@@ -41,7 +55,7 @@ const CUTS = {
       width: 1280,
       holdMax: 0.9,
       waitMax: 0.8,
-      skip: ["create", "builder-create"],
+      skip: ["appearance"],
     },
     {
       name: "linkedin",
@@ -102,22 +116,21 @@ async function greeted(name) {
   }
   await finished(name);
 }
-async function ensureClis() {
-  const want = ["gcc", "libc6-dev"];
-  let clis = await api("GET", "/v1/clis");
-  if (want.some((p) => !clis.packages.includes(p))) {
-    clis = await api("PUT", "/v1/clis", { packages: [...new Set([...clis.packages, ...want])] });
-  }
-  while (clis.status === "building") {
-    await sleep(2000);
-    clis = await api("GET", "/v1/clis");
-  }
-  if (clis.status !== "ready") throw new Error(`CLI image: ${clis.status} ${clis.error ?? ""}`);
+/** The provider DEMO_PROVIDER names; none (the mock) only for keyless dry runs. */
+async function demoProvider() {
+  const provider = (await api("GET", "/v1/providers")).find((p) => p.name === PROVIDER);
+  if (!provider && process.env.DEMO_PROVIDER) throw new Error(`no provider named ${PROVIDER}`);
+  return provider;
 }
-async function exec(name, script) {
-  const a = await agentNamed(name);
-  const out = await api("POST", `/v1/agents/${a.id}/exec`, { cmd: ["bash", "-c", script] });
-  if (out.exit_code !== 0) throw new Error(`${name}: ${out.stderr.slice(-800)}`);
+/** Waits until each of `names` said something in the group after line `from`, and nobody holds the floor. */
+async function answered(group, from, names) {
+  const ids = await Promise.all(names.map(async (n) => (await agentNamed(n)).id));
+  for (let i = 0; i < WAIT_MS / 500; i++) {
+    const room = await api("GET", `/v1/rooms/${String(group)}`);
+    const spoke = room.lines.slice(from).map((l) => l.speaker.id);
+    if (!room.speaking && ids.every((id) => spoke.includes(id))) return;
+    await sleep(500);
+  }
 }
 
 /** Locators and moves shared by the scenes. */
@@ -160,21 +173,14 @@ function moves(k) {
       await k.click(chat().getByLabel("Send"));
       await k.zoom(null);
     },
-    /** Opens a tool card and zooms on its result. */
-    expand: async (card) => {
-      await k.click(card.locator(".tool-head"));
-      await k.zoom(card.locator(".tool-body pre").last(), 1.35);
-    },
-    newAgent: async (name, description, switches = []) => {
-      await k.click(page().locator('.sidebar .brand [aria-label="New agent"]'));
-      const dialog = page().locator('.dialog[aria-label="New agent"]');
-      await k.type(dialog.getByPlaceholder("e.g. researcher"), name, 45);
-      await k.type(dialog.getByPlaceholder("One line shown in the agent list"), description, 25);
-      for (const label of switches) {
-        await k.click(dialog.getByRole("switch", { name: label, exact: true }));
-      }
-      await k.click(dialog.getByRole("button", { name: "Create agent" }));
-      await page().locator(`section.chat[aria-label="Chat with ${name}"]`).waitFor();
+    /** Opens a chat or settings page through ⌘K. */
+    jump: async (query, ready) => {
+      await page().keyboard.press("ControlOrMeta+k");
+      const box = page().getByRole("combobox", { name: "Agent or settings page" });
+      await k.type(box, query, 110);
+      await k.hold(500);
+      await box.press("Enter");
+      await page().locator(ready).waitFor();
     },
   };
 }
@@ -184,114 +190,153 @@ async function hero(k) {
   const page = () => k.page;
   await page().emulateMedia({ colorScheme: "dark" });
   await removeAgents(["researcher", "builder"]);
+  for (const g of await api("GET", "/v1/groups"))
+    if (g.name === GROUP) await api("DELETE", `/v1/groups/${String(g.id)}`);
   await api("PUT", "/v1/settings", { ...(await api("GET", "/v1/settings")), auto_mode: false });
-  await ensureClis();
-  if (!(await api("GET", "/v1/connectors")).some((c) => c.name === "deepwiki")) {
-    await page().getByRole("button", { name: "Settings", exact: true }).click();
-    await page().locator("button.settings-tab", { hasText: "Connectors" }).click();
-    await page().getByRole("button", { name: "Add DeepWiki" }).click();
-    await page().locator(".provider-row", { hasText: "connected" }).waitFor({ timeout: 60_000 });
-    await page().getByRole("button", { name: "Close settings" }).click();
+  const provider = await demoProvider();
+  for (const [name, description, instructions, tags] of TEAM)
+    await api("POST", "/v1/agents", {
+      name,
+      description,
+      instructions,
+      tags,
+      ...(provider ? { provider_id: provider.id, model: MODEL } : {}),
+    });
+  for (const [name] of TEAM) {
+    await connected(name);
+    await greeted(name);
+    await api("POST", `/v1/agents/${(await agentNamed(name)).id}/read`);
   }
+  const changelog = join(process.env.DEMO_FRAMES ?? "", "changelog.md");
+  writeFileSync(changelog, CHANGELOG);
 
   await k.start();
-  await k.optional("create", async () => {
-    await k.hold(600);
-    await k.caption("Two agents, each with its own computer");
-    await m.newAgent("researcher", "Finds answers in the docs", ["deepwiki", "Web"]);
-  });
-  await k.optional("builder-create", () =>
-    k.fast(() => m.newAgent("builder", "Writes and runs code")),
-  );
-  await k.offscreen(async () => {
-    const provider = (await api("GET", "/v1/providers")).find((p) => p.name === PROVIDER);
-    for (const [name, instructions] of [
-      ["researcher", RESEARCHER],
-      ["builder", BUILDER],
-    ]) {
-      const a = await agentNamed(name);
-      if (provider && a.provider_id !== provider.id)
-        throw new Error(`${name} is not on ${PROVIDER}`);
-      await api("PATCH", `/v1/agents/${a.id}`, { instructions });
-      await connected(name);
-    }
-    await exec("builder", readFileSync(new URL("warm-rust.sh", import.meta.url), "utf8"));
-    // A running turn keeps its prompt: the ask must not land in the greeting turn, before the role.
-    for (const name of ["researcher", "builder"]) await greeted(name);
-    await m.open("researcher");
-    await m.activities();
-    await k.caption(null);
-  });
-
-  await k.caption("Ask researcher");
-  await m.say(ASK, 16);
-  await k.caption("It reads the backon docs through the DeepWiki connector");
-  const wiki = m.tool("deepwiki__").first();
-  await k.wait(wiki);
-  await k.zoom(wiki, 1.35);
-  await k.hold(1300);
-
-  const card = m.chat().locator("form.qcard").first();
-  await k.wait(card);
-  await k.caption("…and asks you when it matters");
-  await k.zoom(card, 1.45);
-  await k.hold(900);
-  await k.click(card.getByRole("radio", { name: /tokio/i }));
-  await k.click(card.getByRole("button", { name: "Send answers" }));
-
-  await k.caption("It hands the build to builder");
-  const handoff = m.tool("assign_task").first();
-  await k.wait(handoff);
-  await k.zoom(handoff, 1.4);
-  await k.hold(1000);
+  await k.caption("A team of agents, each with its own computer");
+  await k.zoom(page().locator(".sidebar"), 1.5);
+  await k.hold(1600);
   await k.zoom(null);
 
-  await m.open("builder");
-  await k.caption("builder writes the code and runs cargo on its own computer");
-  const envCard = m.tool("Bash", "env | grep").first();
-  await k.wait(envCard);
-  const run = m.tool("Bash", "cargo run").first();
-  await m.expand(run);
-  await k.hold(2000);
-  // Click at zoom 1: a target outside the zoomed view makes Playwright scroll under the transform.
+  await k.caption("Group chats: write once, the whole team answers");
+  await k.click(page().getByRole("button", { name: "New group" }));
+  const dialog = page().locator('.dialog[aria-label="New group"]');
+  await k.type(dialog.getByPlaceholder("e.g. Release team"), GROUP, 45);
+  for (const [name] of TEAM) await k.click(dialog.locator("label.check", { hasText: name }));
+  await k.click(dialog.getByRole("button", { name: "Create" }));
+  await page().locator(`section.chat[aria-label="${GROUP}"]`).waitFor();
+  const group = (await api("GET", "/v1/groups")).find((g) => g.name === GROUP).id;
+  const lines = async () => (await api("GET", `/v1/rooms/${String(group)}`)).lines.length;
+
+  let from = await lines();
+  await m.say("Morning, team! 0.1.5 ships on Friday. One line each: what do you take on?", 16);
+  await k.wait(() => answered(group, from, ["researcher", "builder"]));
+  await k.zoom(m.chat().locator(".timeline"), 1.3);
+  await k.hold(1500);
   await k.zoom(null);
-  await k.caption(
-    "ANTHROPIC_API_KEY here is the agent's own token. The real key never enters the sandbox.",
-  );
-  await m.expand(envCard);
-  await k.pause(3000);
+
+  await k.caption("@ one agent, and only that one answers");
+  const box = m.chat().locator("form.composer textarea");
+  await k.zoom(box, 1.5);
+  await k.click(box);
+  await k.type(box, "@b", 140);
+  await k.hold(700);
+  await k.click(m.chat().locator('.mention-pick [role="option"]', { hasText: "builder" }));
+  await k.type(box, "sketch the release flow as a diagram", 16);
+  await k.hold(300);
+  from = await lines();
+  await k.click(m.chat().getByLabel("Send"));
+  await k.zoom(m.chat().locator(".row-user").last(), 1.5);
+  await k.hold(1200);
+  await k.zoom(null);
+  await k.caption("Mermaid diagrams draw right in the chat");
+  await k.wait(async () => {
+    await answered(group, from, ["builder"]);
+    await m.chat().locator("img.mermaid-img").last().waitFor({ timeout: WAIT_MS });
+  });
+  await k.zoom(m.chat().locator(".row-agent").last(), 1.35);
+  await k.hold(2200);
   await k.zoom(null);
 
   await m.open("researcher");
-  await k.caption("builder reports back; researcher shares the report");
-  const file = m.chat().locator("button.file-card").last();
+  await k.caption("Tags, the model and how full its context is, at a glance");
+  await k.zoom(m.chat().locator(".chat-name"), 2);
+  await k.hold(1400);
+  await k.zoom(m.chat().locator(".ctx-ring"), 2);
+  await k.hold(1100);
+  await k.zoom(null);
+  await k.caption("Attach files with the paperclip");
+  const chooser = page().waitForEvent("filechooser");
+  await k.click(m.chat().getByLabel("Attach files"));
+  await (await chooser).setFiles(changelog);
+  await m.say("Turn this into release notes and share them as a page.", 16);
+
+  await k.caption("⌘K jumps to any agent");
+  await m.jump("bui", 'section.chat[aria-label="Chat with builder"]');
+  await k.caption(null);
+  await m.say("Make a live countdown to Friday's launch, Nov 27 at 14:00 UTC.", 16);
+  await k.caption("Agents react to your messages…");
+  const mine = m.chat().locator(".row-user").last();
+  await k.wait(mine.locator(".reaction"));
+  await k.zoom(mine, 1.6);
+  await k.hold(1100);
+  await k.zoom(null);
+  await k.caption("…and answer with live HTML: styled, and its script runs");
+  const frame = m.chat().locator("iframe.block-frame").last();
   await k.wait(async () => {
-    await file.waitFor({ timeout: WAIT_MS });
-    await finished("researcher");
+    await finished("builder");
+    await frame.waitFor({ timeout: WAIT_MS });
   });
-  await k.zoom(m.chat().locator(".bubble-agent").last(), 1.4);
+  await k.zoom(frame, 1.35);
+  await k.hold(2600);
+  await k.zoom(null);
+
+  await k.caption("…and you react to theirs");
+  const reply = m.chat().locator(".bubble-agent").last();
+  await reply.hover();
+  await k.click(reply.getByRole("button", { name: "React" }));
+  await k.click(reply.getByRole("menuitemradio", { name: "🎉" }));
+  await k.zoom(reply.locator(".msg-foot"), 2);
+  await k.hold(1000);
+  await k.zoom(null);
+
+  await k.wait(() => finished("researcher"));
+  await k.caption("A New line marks what you missed");
+  await m.open("researcher");
+  const divider = m.chat().locator(".new-divider");
+  await divider.scrollIntoViewIfNeeded({ timeout: 5000 }).catch(() => undefined);
+  await k.zoom(divider, 1.5);
   await k.hold(1300);
   await k.zoom(null);
-  const app = page();
-  const popup = app.context().waitForEvent("page");
-  await k.click(file);
-  await k.follow(await popup);
-  await k.caption("The report opens from a signed share link");
-  await k.hold(2500);
-  await k.page.mouse.wheel(0, 500);
-  await k.hold(1200);
-  const share = k.page;
-  await k.follow(app);
-  await share.close();
-
-  await k.caption("Every model call is counted, with its estimated cost");
-  await k.click(app.getByRole("button", { name: "Usage", exact: true }));
-  await k.click(app.locator(".chips button", { hasText: "Today" }));
-  await k.zoom(app.locator(".usage-page .usage-totals"), 1.4);
-  await k.hold(2500);
+  await k.caption("Shared pages preview right under their card");
+  const shared = m.chat().locator(".file-share").last();
+  await shared.scrollIntoViewIfNeeded({ timeout: 5000 }).catch(() => undefined);
+  await k.zoom(shared, 1.3);
+  await k.hold(2400);
   await k.zoom(null);
+
+  // Reading a plan's limits runs the host's CLI for a few seconds; the daemon keeps them a minute.
+  await k.offscreen(() => api("GET", "/v1/limits"));
+  await k.caption("Your Claude plan's 5-hour and weekly limits, on Usage");
+  await k.click(page().getByRole("button", { name: "Usage", exact: true }));
+  const limits = page().locator(".usage-limits");
+  await k.wait(limits.locator(".usage-ring").first());
+  await k.zoom(limits, 2.2);
+  await k.hold(2200);
+  await k.zoom(null);
+
+  await k.optional("appearance", async () => {
+    await k.caption("Make it yours: ⌘K, Appearance, an accent colour");
+    await m.jump("appear", '.swatches[aria-label="Accent color"]');
+    await k.zoom(page().locator(".pref-list"), 1.3);
+    await k.click(page().getByRole("radio", { name: "Pink" }));
+    await k.hold(1400);
+    await k.zoom(null);
+    await k.click(page().getByRole("button", { name: "Close settings" }));
+    await k.click(page().locator('section[aria-label="Groups"] button.convo-row'));
+    await k.caption(null);
+    await k.hold(1800);
+  });
   await k.caption(null);
-  await k.hold(800);
+  await k.hold(600);
 }
 
 /** The clips start in researcher's chat; the hero leaves researcher behind, else it is created. */

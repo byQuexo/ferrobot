@@ -12,7 +12,7 @@
 [![macOS](https://img.shields.io/badge/macOS-universal-lightgrey?logo=apple)](#download)
 [![Windows](https://img.shields.io/badge/Windows-x64-lightgrey?logo=windows)](#download)
 
-![ferrobot demo: researcher reads the backon docs through the DeepWiki connector, asks you a question and hands the build to builder, which runs cargo on its own computer; then a shared report and the cost in Usage](docs/assets/demo.gif)
+![ferrobot demo: a group chat where researcher and builder both answer, and an @-mention gets a Mermaid diagram from builder alone; tags, model and context ring in a chat; a file attached with the paperclip; builder reacts with an emoji and answers with a live HTML countdown, and you react back; a New line and a shared page previewed in the chat; Claude plan limits on Usage; an accent colour from Settings, Appearance](docs/assets/demo.gif)
 
 </div>
 

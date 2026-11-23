@@ -8,6 +8,12 @@ import { dirname, join } from "node:path";
 const { DEMO_API: API, DEMO_UI: UI } = process.env;
 const token = () => readFileSync(process.env.DEMO_TOKEN_FILE ?? "", "utf8").trim();
 export const WAIT_MS = Number(process.env.DEMO_WAIT_S ?? 300) * 1000;
+// DEMO_DRY=1: a keyless run goes past the model replies the mock never gives, to check every click.
+const DRY = process.env.DEMO_DRY === "1";
+const unlessDry = (err) => {
+  if (!DRY) throw err;
+  console.warn(`dry run, skipped: ${String(err).split("\n")[0]}`);
+};
 
 const require = createRequire(import.meta.url);
 const root = execFileSync("npm", ["root", "-g"], { encoding: "utf8" }).trim();
@@ -229,7 +235,7 @@ export async function studio(framesDir) {
         badged(async () => {
           if (typeof target === "function") await target();
           else await target.waitFor({ timeout });
-        }),
+        }).catch(unlessDry),
       ),
     /** Steps shown at 2x with the badge, uncut. */
     fast: (fn) => segment("fast", () => badged(fn)),
@@ -268,6 +274,7 @@ export async function studio(framesDir) {
     },
     glide,
     zoom: async (locator, scale) => {
+      if (DRY && locator && (await locator.count()) === 0) return unlessDry(`nothing to zoom on`);
       const rect = locator ? await locator.evaluate((el) => window.__demo.layoutRect(el)) : null;
       await page.evaluate(([r, sc]) => window.__demo.zoom(r, sc), [rect, scale]);
       await pause(850);
