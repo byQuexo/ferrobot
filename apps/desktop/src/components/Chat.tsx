@@ -32,18 +32,22 @@ import { isPass } from "../lib/call.ts";
 import { clockTime, statusOf, stepLabel, stepsLabel, toolLabel } from "../lib/format.ts";
 import {
   buildTimeline,
+  firstNewKey,
   foldSteps,
   groupExchanges,
   sharedFiles,
+  unreadSince,
   withoutRoomTurns,
   type DisplayItem,
   type Exchange,
   type TimelineItem,
 } from "../lib/timeline.ts";
 import { hasVoiceKey, record, startLive, type LiveSession, type Recording } from "../lib/voice.ts";
+import { FilePreview } from "./FilePreview.tsx";
 import { fileSize } from "./FileViewer.tsx";
 import { Avatar } from "./Avatar.tsx";
 import { CredentialFix } from "./CredentialFix.tsx";
+import { MailGroup } from "./MailGroup.tsx";
 import { QuestionCardView } from "./QuestionCard.tsx";
 import { RichText, type ChatFiles } from "./RichText.tsx";
 import { Button, IconButton } from "./ui.tsx";
@@ -69,6 +73,8 @@ export function Chat(props: {
   const [routines, setRoutines] = useState<Routine[]>([]);
   const [live, setLive] = useState<Map<string, string>>(new Map());
   const [loaded, setLoaded] = useState(false);
+  // Where the "New" divider goes, fixed when the chat opens: reading it zeroes `unread`.
+  const [newSince, setNewSince] = useState<number | null>(null);
   const [voiceView, setVoiceView] = useState<VoiceView | null>(null);
   const [quick, setQuick] = useState(false);
   useEffect(() => {
@@ -86,6 +92,8 @@ export function Chat(props: {
     setMessages([]);
     setEvents([]);
     setLive(new Map());
+    setNewSince(null);
+    const unread = agent.unread;
     const load = async (): Promise<void> => {
       const all = await client.allEvents(id);
       const [msgs, rts] = await Promise.all([client.messages(id), client.routines(id)]);
@@ -93,6 +101,8 @@ export function Chat(props: {
       setMessages(msgs);
       setEvents(all);
       setRoutines(rts);
+      const chat = withoutRoomTurns(msgs, all, new Map());
+      setNewSince(unreadSince(chat.messages, chat.events, unread));
       setLoaded(true);
       void client.markRead(id).catch(() => undefined);
     };
@@ -176,10 +186,12 @@ export function Chat(props: {
   // Keep the view pinned to the bottom unless the user scrolled up.
   const scroller = useRef<HTMLDivElement>(null);
   const pinned = useRef(true);
-  useLayoutEffect(() => {
+  const pin = (): void => {
     const el = scroller.current;
     if (el && pinned.current) el.scrollTop = el.scrollHeight;
-  }, [items.shown, items.trail]);
+  };
+  useLayoutEffect(pin, [items.shown, items.trail]);
+  const newKey = firstNewKey(items.shown, newSince);
 
   const working = agent.presence === "working";
   const status = statusOf(agent);
@@ -268,6 +280,8 @@ export function Chat(props: {
           const el = e.currentTarget;
           pinned.current = el.scrollHeight - el.scrollTop - el.clientHeight < 80;
         }}
+        // Diagrams and frames grow the chat when they load.
+        onLoadCapture={pin}
       >
         {loaded && items.shown.length === 0 && (
           <div class="chat-empty">
@@ -281,6 +295,11 @@ export function Chat(props: {
         )}
         {items.shown.map((item) => (
           <div key={item.key} class={fresh(item.key) ? "enter" : "settled"}>
+            {item.key === newKey && (
+              <div class="row new-divider" role="separator">
+                <span>New</span>
+              </div>
+            )}
             <Item item={item} agent={agent} files={items.files} onActivities={props.onActivities} />
           </div>
         ))}
@@ -401,7 +420,11 @@ function Item(props: {
         </div>
       );
     case "exchange":
-      return <ExchangeHint item={item} agent={agent} />;
+      return item.peers.length > 1 ? (
+        <MailGroup item={item} />
+      ) : (
+        <ExchangeHint item={item} agent={agent} />
+      );
     case "user":
       return (
         <>
@@ -440,7 +463,7 @@ function Item(props: {
       );
     case "file":
       return (
-        <div class="row row-agent">
+        <div class="row row-agent file-share">
           <button
             type="button"
             class="file-card"
@@ -454,6 +477,7 @@ function Item(props: {
               {fileSize(item.size)} · {clockTime(item.at)}
             </span>
           </button>
+          <FilePreview agent={agent.id} file={item.id} name={item.name} />
         </div>
       );
     case "incoming":

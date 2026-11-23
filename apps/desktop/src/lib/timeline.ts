@@ -332,13 +332,16 @@ export function buildTimeline(
 export type A2aItem = Extract<TimelineItem, { type: "incoming" | "outgoing" }>;
 type ToolItem = Extract<TimelineItem, { type: "tool" }>;
 
-/** A run of agent-to-agent mail with one peer, shown collapsed in the chat. */
+/** A run of agent-to-agent mail, shown collapsed in the chat. */
 export interface Exchange {
   type: "exchange";
   key: string;
   at: string;
+  /** The first peer. */
   peerId: string;
   peerName: string;
+  /** Every peer's id, in order of first mail; more than one makes a multi-agent run. */
+  peers: string[];
   messages: A2aItem[];
   /** The `send_message` calls that produced the outgoing messages. */
   tools: ToolItem[];
@@ -359,8 +362,8 @@ const isSendCall = (i: TimelineItem): i is ToolItem =>
   i.type === "tool" && i.denied === null && /(^|__)send_message$/.test(i.name);
 
 /**
- * Folds consecutive agent-to-agent mail with one peer, and the `send_message` calls right
- * before it, into one `exchange`; anything else in between (user mail, replies, tools) ends it.
+ * Folds consecutive agent-to-agent mail, with one peer or several, and the `send_message` calls
+ * right before it, into one `exchange`; anything else in between (user mail, replies, tools) ends it.
  */
 export function groupExchanges(items: readonly TimelineItem[]): DisplayItem[] {
   const out: DisplayItem[] = [];
@@ -376,21 +379,17 @@ export function groupExchanges(items: readonly TimelineItem[]): DisplayItem[] {
       continue;
     }
     if (item.type === "incoming" || item.type === "outgoing") {
-      let run = cur.run;
-      if (run?.peerId !== item.peerId) {
-        close();
-        const peerName = item.type === "incoming" ? item.from : item.to;
-        run = {
-          type: "exchange",
-          key: `x-${item.key}`,
-          at: item.at,
-          peerId: item.peerId,
-          peerName,
-          messages: [],
-          tools: [],
-        };
-        cur.run = run;
-      }
+      const run = (cur.run ??= {
+        type: "exchange",
+        key: `x-${item.key}`,
+        at: item.at,
+        peerId: item.peerId,
+        peerName: item.type === "incoming" ? item.from : item.to,
+        peers: [],
+        messages: [],
+        tools: [],
+      });
+      if (!run.peers.includes(item.peerId)) run.peers.push(item.peerId);
       run.tools.push(...calls);
       run.messages.push(item);
       calls = [];
@@ -403,6 +402,63 @@ export function groupExchanges(items: readonly TimelineItem[]): DisplayItem[] {
   close();
   out.push(...calls);
   return out;
+}
+
+/** A row of an expanded multi-agent exchange. */
+export interface ExchangeRow {
+  key: string;
+  at: string;
+  type: A2aItem["type"];
+  text: string;
+  peers: { id: string; name: string }[];
+}
+
+/** One row per message; the same text sent to several agents in a row is one broadcast row. */
+export function exchangeRows(messages: readonly A2aItem[]): ExchangeRow[] {
+  const rows: ExchangeRow[] = [];
+  for (const m of messages) {
+    const peer = { id: m.peerId, name: m.type === "incoming" ? m.from : m.to };
+    const last = rows[rows.length - 1];
+    if (
+      m.type === "outgoing" &&
+      last?.type === "outgoing" &&
+      last.text === m.text &&
+      !last.peers.some((p) => p.id === m.peerId)
+    )
+      last.peers.push(peer);
+    else rows.push({ key: m.key, at: m.at, type: m.type, text: m.text, peers: [peer] });
+  }
+  return rows;
+}
+
+/**
+ * When the unread part of a chat starts: the first event of the oldest of the last `unread`
+ * finished turns, or the mail that started that turn if it is older. `null`: nothing unread.
+ */
+export function unreadSince(
+  messages: readonly MailMessage[],
+  events: readonly StoredEvent[],
+  unread: number,
+): number | null {
+  if (unread <= 0) return null;
+  const done = events.filter((e) => e.kind === "turn_done" && e.turn_id);
+  const turn = (done[done.length - unread] ?? done[0])?.turn_id;
+  if (!turn) return null;
+  let since = Infinity;
+  for (const e of events) {
+    if (e.turn_id !== turn) continue;
+    since = Math.min(since, Date.parse(e.created_at));
+    const id = (e.payload as Payload)["message_id"];
+    const mail = e.kind === "message_in" ? messages.find((m) => m.id === id) : undefined;
+    if (mail) since = Math.min(since, Date.parse(mail.created_at));
+  }
+  return since;
+}
+
+/** The key of the first item since `since` that is not the operator's own message. */
+export function firstNewKey(items: readonly DisplayItem[], since: number | null): string | null {
+  if (since === null) return null;
+  return items.find((i) => i.type !== "user" && Date.parse(i.at) >= since)?.key ?? null;
 }
 
 /** Files shared in a chat by name (latest wins), so mentions can open them. */

@@ -25,6 +25,11 @@ All notable changes are listed here. The format follows
   with the reset time on hover (`GET /v1/limits`). Read from the host's own
   `claude` (`/usage`, no model call) and `codex app-server`; never the
   account.
+- Richer chat: ```mermaid blocks draw as diagrams and ```html blocks as a
+  sandboxed live preview (Preview/Code, Copy, Expand); shared .html and .pdf
+  files preview under their card; cleaner tables; a "New" line where unread
+  turns start; mail with several agents folds into one "N messages with K
+  agents" line.
 
 ### Changed
 

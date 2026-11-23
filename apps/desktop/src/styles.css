@@ -943,3 +943,42 @@ kbd { padding: 2px 8px; border: 1px solid var(--border-strong); border-radius: 6
 .usage-ring .used { stroke: var(--accent); }
 .usage-ring .used.high { stroke: var(--err); }
 .usage-ring text { fill: var(--text); font-size: 10px; text-anchor: middle; dominant-baseline: central; font-variant-numeric: tabular-nums; }
+/* Chat rendering: tables, diagram and page previews, file previews, the "New" divider, mail with several agents */
+.md-table { width: fit-content; max-width: 100%; border: 1px solid var(--border); border-radius: var(--radius-sm); }
+.rich th, .rich td { padding: 6px 12px; border: none; border-bottom: 1px solid var(--border); }
+.rich tbody tr:last-child td { border-bottom: none; }
+.rich th { color: var(--text-2); white-space: nowrap; }
+.block { margin: 8px 0; border: 1px solid var(--border); border-radius: var(--radius-sm); background: var(--surface); overflow: hidden; }
+.block-head { display: flex; align-items: center; gap: 4px; padding: 4px 4px 4px 12px; border-bottom: 1px solid var(--border); background: var(--surface-2); font-size: 12px; }
+.block-label { font-weight: 500; color: var(--text-2); }
+.block-toggle { display: inline-flex; padding: 2px; margin-right: 4px; border-radius: 6px; background: var(--surface-3); }
+.block-toggle button { padding: 1px 8px; border: none; border-radius: 4px; background: none; color: var(--muted); font-size: 12px; }
+.block-toggle button[aria-pressed="true"] { background: var(--surface); color: var(--text); box-shadow: var(--shadow); }
+.block-btn { display: grid; place-items: center; width: 26px; height: 26px; border: none; border-radius: 6px; background: none; color: var(--muted); }
+.block-btn:hover { background: var(--surface-3); color: var(--text); }
+.block-body > .code-block { margin: 0; border-radius: 0; }
+.block-frame { display: block; width: 100%; height: 320px; border: none; background: #fff; }
+.block-error { margin: 0; padding: 8px 12px; border-top: 1px solid var(--border); font-size: 12px; color: var(--err); }
+.mermaid-img { display: block; max-width: 100%; height: auto; margin: 0 auto; padding: 12px; }
+.mermaid-loading { height: 120px; }
+/* Off screen but laid out: Mermaid measures its text here. */
+.mermaid-host { position: fixed; top: 0; left: -10000px; width: 1200px; font-size: 16px; visibility: hidden; pointer-events: none; }
+/* `.dialog` comes later in this file and overrode the full-window width. */
+.dialog.dialog-full { width: calc(100vw - 32px); }
+.block-expanded { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+.block-expanded > * { flex: 1; min-height: 0; margin: 0; }
+.block-expanded > .block-frame { height: auto; }
+.block-expanded > .mermaid-img { width: 100%; max-width: none; object-fit: contain; }
+.block-expanded > .block-error { flex: none; }
+.file-share { flex-direction: column; gap: 8px; }
+.file-preview { align-self: stretch; max-width: 640px; margin: 0; }
+.file-preview-body { height: 360px; }
+.file-preview-body iframe { display: block; width: 100%; height: 100%; border: none; background: #fff; }
+.new-divider { align-items: center; gap: 8px; color: var(--accent); font-size: 12px; font-weight: 500; }
+.new-divider::before { content: ""; flex: 1; height: 1px; background: var(--accent); opacity: 0.4; }
+.exchange .pair-avatars .avatar + .avatar, .mail-row .pair-avatars .avatar + .avatar { margin-left: -6px; box-shadow: 0 0 0 2px var(--bg); }
+.mail-row { padding: 8px 12px; }
+.mail-row-head { width: 100%; margin: 0; padding: 0; border: none; background: none; text-align: left; }
+.mail-row.open .mail-row-head { margin-bottom: 4px; }
+.mail-row .chev { flex: none; color: var(--muted); transition: transform 0.15s var(--ease); }
+.mail-row.open .chev { transform: rotate(90deg); }

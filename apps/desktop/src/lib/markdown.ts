@@ -20,7 +20,8 @@ export type Block =
       items: { text: string; depth: number }[];
     }
   | { kind: "quote"; text: string }
-  | { kind: "code"; text: string }
+  /** `lang`: the fence's info word, lowercase; `open`: no closing fence yet (still streaming). */
+  | { kind: "code"; text: string; lang?: string; open?: true }
   | { kind: "hr" }
   | { kind: "table"; head: string[]; rows: string[][] };
 
@@ -45,14 +46,21 @@ export function parseBlocks(src: string): Block[] {
   };
   for (let i = 0; i < lines.length; i++) {
     const line = lines[i] ?? "";
-    if (/^\s*```/.test(line)) {
+    const fence = /^\s*```\s*([\w+-]*)/.exec(line);
+    if (fence) {
       flush();
       const code: string[] = [];
       // A fence indented in a list item indents its code lines as far.
       const indent = new RegExp(`^ {0,${String(line.length - line.trimStart().length)}}`);
       while (++i < lines.length && !/^\s*```/.test(lines[i] ?? ""))
         code.push((lines[i] ?? "").replace(indent, ""));
-      out.push({ kind: "code", text: code.join("\n") });
+      const lang = fence[1]?.toLowerCase();
+      out.push({
+        kind: "code",
+        text: code.join("\n"),
+        ...(lang ? { lang } : {}),
+        ...(i >= lines.length ? { open: true as const } : {}),
+      });
       continue;
     }
     const heading = /^(#{1,6})\s+(.*)$/.exec(line);

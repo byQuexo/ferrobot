@@ -544,6 +544,71 @@ describe("groupExchanges", () => {
     assert.equal(x.messages.length, 2);
     assert.equal(x.tools.length, 1);
   });
+
+  it("folds a run with several peers into one, with a broadcast as one row", async () => {
+    const { groupExchanges, exchangeRows } = await import("../src/lib/timeline.ts");
+    const CAT = "33333333-3333-4333-8333-333333333333";
+    const three = { ...names, agents: new Map([...names.agents, [CAT, "cat"]]) };
+    const items = buildTimeline(
+      ME,
+      [
+        msg(1, { kind: "agent", id: ME }, BOB, "standup?", "2026-01-01T10:00:01Z"),
+        msg(2, { kind: "agent", id: ME }, CAT, "standup?", "2026-01-01T10:00:02Z"),
+        msg(3, { kind: "agent", id: CAT }, ME, "yes", "2026-01-01T10:00:03Z"),
+        msg(4, { kind: "user" }, ME, "and?", "2026-01-01T10:00:04Z"),
+        msg(5, { kind: "agent", id: BOB }, ME, "late", "2026-01-01T10:00:05Z"),
+      ],
+      [],
+      new Map(),
+      three,
+    );
+    const shown = groupExchanges(items);
+    assert.deepEqual(
+      shown.map((i) => i.type),
+      ["exchange", "user", "exchange"],
+    );
+    const [multi, , single] = shown;
+    assert.ok(multi?.type === "exchange" && single?.type === "exchange");
+    assert.deepEqual(multi.peers, [BOB, CAT]);
+    assert.deepEqual(single.peers, [BOB]);
+    assert.deepEqual(
+      exchangeRows(multi.messages).map((r) => [r.type, r.peers.map((p) => p.name)]),
+      [
+        ["outgoing", ["bob", "cat"]],
+        ["incoming", ["cat"]],
+      ],
+    );
+  });
+});
+
+describe("new divider", () => {
+  it("starts at the mail that began the oldest unread turn, skipping the operator", async () => {
+    const { groupExchanges, unreadSince, firstNewKey } = await import("../src/lib/timeline.ts");
+    const messages = [
+      msg(1, { kind: "user" }, ME, "hi", "2026-01-01T10:00:00Z"),
+      msg(2, { kind: "agent", id: BOB }, ME, "ping", "2026-01-01T10:01:00Z"),
+      msg(3, { kind: "user" }, ME, "more", "2026-01-01T10:03:00Z"),
+    ];
+    const events = [
+      ev(10, "message_in", { message_id: 1 }, "2026-01-01T10:00:01Z", "t1"),
+      ev(11, "assistant_text", { text: "hello" }, "2026-01-01T10:00:02Z", "t1"),
+      ev(12, "turn_done", { outcome: "done" }, "2026-01-01T10:00:03Z", "t1"),
+      ev(20, "message_in", { message_id: 2 }, "2026-01-01T10:01:01Z", "t2"),
+      ev(21, "assistant_text", { text: "pong" }, "2026-01-01T10:01:02Z", "t2"),
+      ev(22, "turn_done", { outcome: "done" }, "2026-01-01T10:01:03Z", "t2"),
+      ev(30, "message_in", { message_id: 3 }, "2026-01-01T10:03:01Z", "t3"),
+      ev(31, "assistant_text", { text: "sure" }, "2026-01-01T10:03:02Z", "t3"),
+      ev(32, "turn_done", { outcome: "done" }, "2026-01-01T10:03:03Z", "t3"),
+    ];
+    const shown = groupExchanges(buildTimeline(ME, messages, events, new Map(), names));
+    const at = (unread: number): string | null =>
+      firstNewKey(shown, unreadSince(messages, events, unread));
+    assert.equal(at(0), null);
+    assert.equal(at(1), "e31");
+    // Bob's mail started the turn, so it is new too.
+    assert.equal(at(2), "x-m2");
+    assert.equal(at(9), "e11");
+  });
 });
 
 describe("question cards", () => {
@@ -646,6 +711,13 @@ describe("markdown", () => {
     );
     assert.deepEqual(parseInline("[x](javascript:alert(1))"), [
       { text: "[x](javascript:alert(1))" },
+    ]);
+  });
+
+  it("keeps a fence's language and marks a fence that is still open", () => {
+    assert.deepEqual(parseBlocks("```Mermaid\ngraph TD\n```\n\n```html\n<b>hi"), [
+      { kind: "code", text: "graph TD", lang: "mermaid" },
+      { kind: "code", text: "<b>hi", lang: "html", open: true },
     ]);
   });
 

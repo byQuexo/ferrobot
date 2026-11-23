@@ -1,5 +1,5 @@
 // Markdown for chat messages, rendered as elements: no HTML is ever
-// interpreted, and links are http(s) only.
+// interpreted in the app (```html previews run in a sandboxed frame), and links are http(s) only.
 import type { JSX } from "preact";
 import { FileText, Link } from "lucide-preact";
 
@@ -9,6 +9,7 @@ import { splitWikiLinks } from "../lib/guides.ts";
 import { parseBlocks, parseInline, type Block, type Inline } from "../lib/markdown.ts";
 import { mentionsAsText, splitMentions } from "../lib/mentions.ts";
 import { Avatar } from "./Avatar.tsx";
+import { CodeBlock, isPreviewLang } from "./CodeBlock.tsx";
 
 type Plain = (text: string) => string;
 /** Opens a wiki page; set only for guides, so chat text never turns `[[x]]` into links. */
@@ -69,6 +70,9 @@ function BlockView(props: {
         </blockquote>
       );
     case "code":
+      // A block still streaming shows as code, so its preview does not redraw on every word.
+      if (isPreviewLang(block.lang) && !block.open)
+        return <CodeBlock lang={block.lang} code={plain(block.text)} />;
       return (
         <pre class="code-block">
           <code>{plain(block.text)}</code>
