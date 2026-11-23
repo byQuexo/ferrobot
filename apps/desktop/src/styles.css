@@ -1097,3 +1097,6 @@ kbd { padding: 2px 8px; border: 1px solid var(--border-strong); border-radius: 6
 .call-meter.playing i { background: var(--accent); animation: meter 0.9s ease-in-out infinite; animation-delay: calc(var(--i) * 0.12s); }
 @keyframes meter { 50% { height: 14px; } }
 @media (prefers-reduced-motion: reduce) { .call-meter.playing i { animation: none; height: 8px; } }
+
+/* "Send now" on a queued message */
+.meta .send-now { margin-left: 8px; font: inherit; }

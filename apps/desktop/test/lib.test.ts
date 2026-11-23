@@ -1825,6 +1825,12 @@ describe("shortcuts", () => {
     assert.equal(matchShortcut(press("k", ctrl), true), null);
     assert.equal(matchShortcut(press("k", cmd), false), null);
     assert.equal(matchShortcut(press("k", { ...cmd, ctrlKey: true }), true), null);
+    assert.deepEqual(matchShortcut(press("Enter", cmd), true), { id: "send-now" });
+    assert.equal(matchShortcut(press("Enter"), true), null, "plain Enter sends a message");
+    const sendNow = SHORTCUTS.find((s) => s.id === "send-now");
+    assert.ok(sendNow);
+    assert.equal(keyLabel(sendNow, true), "⌘↵");
+    assert.equal(keyLabel(sendNow, false), "Ctrl+Enter");
   });
 
   it("leaves plain typing alone; only Esc works without a modifier", () => {

@@ -50,6 +50,10 @@ All notable changes are listed here. The format follows
   messages with one emoji (`react` tool, `reaction` event); OpenAI-compatible
   agents get a `subagent` tool that runs tasks in parallel with the same tools.
 
+- Queued messages get **Send now** (and ⌘↵ / Ctrl+Enter): it stops the
+  agent's running turn so what you queued goes next; listed under
+  Settings → Keyboard.
+
 ### Changed
 
 - An agent's `add_connector` card no longer asks for the token: approving it

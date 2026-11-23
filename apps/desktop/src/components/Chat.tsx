@@ -46,6 +46,7 @@ import {
   type TimelineItem,
 } from "../lib/timeline.ts";
 import { mentionQuery } from "../lib/mentions.ts";
+import { isMac, keyLabel, SHORTCUTS, useShortcuts } from "../lib/shortcuts.ts";
 import { hasVoiceKey, record, startLive, type LiveSession, type Recording } from "../lib/voice.ts";
 import { AttachmentChips, previews } from "./Attachments.tsx";
 import { FilePreview } from "./FilePreview.tsx";
@@ -200,6 +201,17 @@ export function Chat(props: {
   const newKey = firstNewKey(items.shown, newSince);
 
   const working = agent.presence === "working";
+  // Queued means the running turn cannot take it in: stopping that turn sends it next.
+  const queued = items.shown.some((i) => i.type === "user" && i.status === "pending");
+  const sendNow =
+    working && queued
+      ? (): void => {
+          void run(() => client.interrupt(id));
+        }
+      : undefined;
+  useShortcuts((shortcut) => {
+    if (shortcut === "send-now") sendNow?.();
+  });
   const status = statusOf(agent);
   const problem = agent.credential_error ?? agent.tools_unsupported;
 
@@ -310,7 +322,13 @@ export function Chat(props: {
                 <span>New</span>
               </div>
             )}
-            <Item item={item} agent={agent} files={items.files} onActivities={props.onActivities} />
+            <Item
+              item={item}
+              agent={agent}
+              files={items.files}
+              onActivities={props.onActivities}
+              sendNow={sendNow}
+            />
           </div>
         ))}
         {working &&
@@ -462,6 +480,8 @@ function Item(props: {
   agent: Agent;
   files?: ChatFiles;
   onActivities?: () => void;
+  /** Stops the running turn so queued messages go next; unset when nothing is queued. */
+  sendNow?: (() => void) | undefined;
 }): JSX.Element {
   const { item, agent } = props;
   const { agents, openFile } = useApp();
@@ -501,6 +521,16 @@ function Item(props: {
                   : item.status === "failed"
                     ? " · not delivered"
                     : ""}
+                {item.status === "pending" && props.sendNow && (
+                  <button
+                    type="button"
+                    class="text-link send-now"
+                    title={`Stop the running turn so this goes now${SEND_NOW ? ` (${keyLabel(SEND_NOW, isMac())})` : ""}`}
+                    onClick={props.sendNow}
+                  >
+                    Send now
+                  </button>
+                )}
               </span>
               {item.reaction && (
                 <span class="reaction" title={`${agent.name} reacted`}>
@@ -869,6 +899,8 @@ function MicButton(props: {
 const MAX_UPLOAD = 25 * 1024 * 1024;
 
 /** The message box of a chat or call room (`chat` is its id). */
+const SEND_NOW = SHORTCUTS.find((s) => s.id === "send-now");
+
 /** Unsent text per chat, so it survives switching to Settings or another chat (not a restart). */
 const drafts = new Map<string, string>();
 
@@ -1062,6 +1094,11 @@ export function Composer(props: {
             else if (e.key === "Escape") setPick(null);
             else return;
             e.preventDefault();
+            return;
+          }
+          if (e.key === "Enter" && (e.metaKey || e.ctrlKey) && !e.isComposing) {
+            e.preventDefault();
+            void send();
             return;
           }
           if (e.key === "Enter" && !e.shiftKey && !e.isComposing) {

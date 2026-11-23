@@ -11,6 +11,7 @@ export type ShortcutId =
   | "sidebar"
   | "agent"
   | "help"
+  | "send-now"
   | "close";
 
 export interface Shortcut {
@@ -30,6 +31,7 @@ export const SHORTCUTS: Shortcut[] = [
   { id: "sidebar", key: "b", label: "Collapse or expand the sidebar" },
   { id: "agent", key: "1", label: "Open the 1st to 9th agent in the sidebar" },
   { id: "help", key: "/", label: "Keyboard shortcuts" },
+  { id: "send-now", key: "enter", label: "Send queued messages now (stops the running turn)" },
   { id: "close", key: "escape", label: "Close the open dialog, menu, page or panel" },
 ];
 
@@ -56,7 +58,8 @@ export function matchShortcut(e: KeyPress, mac: boolean): { id: ShortcutId; n?: 
 /** How a shortcut is written: ⌘⇧U on macOS, Ctrl+Shift+U elsewhere. */
 export function keyLabel(s: Shortcut, mac: boolean): string {
   if (s.id === "close") return "Esc";
-  const key = s.id === "agent" ? "1–9" : s.key.toUpperCase();
+  const key =
+    s.id === "agent" ? "1–9" : s.key === "enter" ? (mac ? "↵" : "Enter") : s.key.toUpperCase();
   return mac ? `⌘${s.shift ? "⇧" : ""}${key}` : `Ctrl+${s.shift ? "Shift+" : ""}${key}`;
 }
 
