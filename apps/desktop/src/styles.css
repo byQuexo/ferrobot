@@ -1157,3 +1157,8 @@ kbd { padding: 2px 8px; border: 1px solid var(--border-strong); border-radius: 6
 .msg-steps:hover { background: var(--surface-2); color: var(--text); }
 .trace-label svg { flex: none; }
 
+/* The sidebar corner's note when a newer release is out */
+.sidebar-foot { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.update-note { display: inline-flex; align-items: center; gap: 6px; margin-left: auto; padding: 3px 8px; border: none; border-radius: 999px; background: var(--accent-soft); color: var(--accent-strong, var(--accent)); font: inherit; font-size: 12px; font-weight: 600; cursor: pointer; }
+.update-note:hover { background: var(--accent); color: var(--accent-text); }
+

@@ -24,6 +24,7 @@ import { TagChips } from "./AgentMeta.tsx";
 import { ConversationList, type Pair } from "./Conversations.tsx";
 import { GroupList } from "./Groups.tsx";
 import { RoomList } from "./Rooms.tsx";
+import { UpdateNotice } from "./UpdateNotice.tsx";
 import { Button, Dialog, IconButton, Logo } from "./ui.tsx";
 
 /** Drag-and-drop and the right-click menu, shared by both kinds of agent entries. */
@@ -49,6 +50,8 @@ export function Sidebar(props: {
   onOpenRoom: (id: number) => void;
   onCreate: () => void;
   onSettings: () => void;
+  /** Opens Settings → Updates. */
+  onUpdates: () => void;
   settingsOpen: boolean;
   onUsage: () => void;
   usageOpen: boolean;
@@ -360,6 +363,7 @@ export function Sidebar(props: {
           <span class="conn-dot" />
           <span class={props.rail ? "sr-only" : undefined}>{connLabel}</span>
         </span>
+        <UpdateNotice onOpen={props.onUpdates} rail={props.rail} />
       </footer>
     </aside>
   );

@@ -344,6 +344,10 @@ export function App(): JSX.Element {
             setDialog("create");
           }}
           onSettings={toggleSettings}
+          onUpdates={() => {
+            setUsage(false);
+            setSettings("updates");
+          }}
           settingsOpen={settings !== null}
           onUsage={toggleUsage}
           usageOpen={usage}
