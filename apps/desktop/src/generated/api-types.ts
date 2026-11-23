@@ -1400,11 +1400,11 @@ export interface components {
             /** Format: date-time */
             created_at: string;
         };
-        /** @description How full an agent's context is, read from its newest proxied model call. */
+        /** @description How full an agent's context is, read from its newest model call. */
         AgentContext: {
             /**
-             * @description Whether the daemon sees the agent's model calls: `false` on Claude Code, which runs on
-             *     the host's own login and not through the model proxy.
+             * @description Whether the daemon knows the agent's context size: from the model proxy, or on Claude
+             *     Code from the token counts its own stream reports. `true` today; kept for older clients.
              */
             tracked: boolean;
             /**

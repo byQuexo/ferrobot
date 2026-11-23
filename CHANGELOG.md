@@ -12,8 +12,8 @@ All notable changes are listed here. The format follows
   tags per agent show next to its name (`tags` on agents, migration v18). The
   chat header's model chip switches the model (the agent's computer restarts).
   A ring by the message box shows how full the agent's context is
-  (`GET /v1/agents/{id}/context`, from its newest proxied call; Claude Code is
-  not tracked) and offers New chat (`POST /v1/agents/{id}/new-session`): the
+  (`GET /v1/agents/{id}/context`, from its newest model call; for Claude Code
+  from the token counts `claude` reports in its stream) and offers New chat (`POST /v1/agents/{id}/new-session`): the
   agent's next turn starts a fresh model session (`new_session` on the runner's
   `turn` frame; older runners ignore it).
 

@@ -78,7 +78,8 @@ The ring by a chat's message box shows how full the agent's context is: the
 input, cache read and cache write tokens of its newest proxied call, against
 the model's window (Claude 4.6 and later, Fable and Gemini 1M, older Claude
 200K, GPT-5 400K; other models say "unknown"). Claude Code agents run on your
-own login outside the proxy, so they show "not tracked". New chat in its
+own login outside the proxy, so their ring comes from the token counts
+`claude` reports for its newest call (their cost stays untracked). New chat in its
 popover makes the agent's next turn start a fresh session; the chat history
 stays. Compacting a conversation on demand is not offered.
 

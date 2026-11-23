@@ -6684,8 +6684,8 @@ env > "$here/env.log"
 for a in "$@"; do case "$a" in --mcp-config=*) cat "${a#--mcp-config=}" > "$here/mcp.log" ;; esac; done
 cat > "$here/prompt.log"
 echo '{"type":"system","subtype":"init","session_id":"s1","tools":[]}'
-echo '{"type":"assistant","message":{"content":[{"type":"text","text":"hello"}]},"parent_tool_use_id":null,"session_id":"s1"}'
-echo '{"type":"result","subtype":"success","is_error":false,"result":"hello","session_id":"s1"}'
+echo '{"type":"assistant","message":{"model":"claude-sonnet-4-5","content":[{"type":"text","text":"hello"}],"usage":{"input_tokens":1200,"cache_read_input_tokens":3000,"cache_creation_input_tokens":800,"output_tokens":50}},"parent_tool_use_id":null,"session_id":"s1"}'
+echo '{"type":"result","subtype":"success","is_error":false,"result":"hello","session_id":"s1","modelUsage":{"claude-sonnet-4-5":{"contextWindow":200000}}}'
 "#;
 
 async fn claude_code_turn(
@@ -6745,7 +6745,11 @@ async fn claude_code_agents_use_the_hosts_own_cli_and_nothing_enters_the_sandbox
     let clio = create(&d, json!({"name": "clio", "provider_id": provider["id"]})).await;
     let context = format!("/v1/agents/{}/context", clio["id"].as_str().unwrap());
     let (_, ctx) = http(&d.ui, "GET", &context, None).await;
-    assert_eq!(ctx["tracked"], false, "not proxied: {ctx}");
+    assert_eq!(
+        (&ctx["tracked"], &ctx["tokens"], &ctx["model"]),
+        (&json!(true), &Value::Null, &json!("sonnet")),
+        "no turn yet: {ctx}"
+    );
     let env = backend.envs.lock().unwrap()["clio"].clone();
     assert_eq!(env["FERROBOT_DRIVER"], "claude_code");
     // No key, no Claude login and no claude config: only ferrobot's own settings.
@@ -6754,6 +6758,12 @@ async fn claude_code_agents_use_the_hosts_own_cli_and_nothing_enters_the_sandbox
     let token = env["FERROBOT_AGENT_TOKEN"].clone();
     let (status, out) = claude_code_turn(&d.agents, &token, "hi there", true).await;
     assert_eq!(status, 200, "{out}");
+    let (_, ctx) = http(&d.ui, "GET", &context, None).await;
+    assert_eq!(
+        (&ctx["tokens"], &ctx["window"], &ctx["model"]),
+        (&json!(5000), &json!(200_000), &json!("claude-sonnet-4-5")),
+        "from claude's own stream: {ctx}"
+    );
     assert!(
         out.lines().any(|l| l.contains(r#""type":"result""#)),
         "{out}"

@@ -375,11 +375,11 @@ pub(crate) async fn put_prices(
     Ok(Json(pricing::effective(new)))
 }
 
-/// How full an agent's context is, read from its newest proxied model call.
+/// How full an agent's context is, read from its newest model call.
 #[derive(Debug, Serialize, ToSchema)]
 pub(crate) struct AgentContext {
-    /// Whether the daemon sees the agent's model calls: `false` on Claude Code, which runs on
-    /// the host's own login and not through the model proxy.
+    /// Whether the daemon knows the agent's context size: from the model proxy, or on Claude
+    /// Code from the token counts its own stream reports. `true` today; kept for older clients.
     tracked: bool,
     /// Input plus cache read and write tokens of the newest call since the last new chat;
     /// `null` before there is one.
@@ -412,12 +412,24 @@ pub(crate) async fn get_context(
         .as_ref()
         .is_some_and(|p| p.kind == ProviderKind::ClaudeCode)
     {
+        let fresh = !state.store.new_session_pending(agent.id).await?;
+        let saved = crate::claude_code::context(&state, agent.id)
+            .await
+            .filter(|_| fresh);
+        let model = saved.as_ref().and_then(|c| c.model.clone()).or_else(|| {
+            agent
+                .model
+                .or_else(|| provider.and_then(|p| p.default_model))
+        });
         return Ok(Json(AgentContext {
-            tracked: false,
-            tokens: None,
-            window: None,
-            model: None,
-            at: None,
+            tracked: true,
+            tokens: saved.as_ref().map(|c| c.tokens),
+            window: saved
+                .as_ref()
+                .and_then(|c| c.window)
+                .or_else(|| model.as_deref().and_then(context_window)),
+            model,
+            at: saved.map(|c| c.at),
         }));
     }
     // shortcut: an agent on its provider's default can show a side call on a smaller model; name the driver's main model here if that misleads.
