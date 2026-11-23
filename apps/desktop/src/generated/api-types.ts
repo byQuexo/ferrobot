@@ -2487,8 +2487,8 @@ export interface components {
             /** @description Why the turn failed. */
             error?: string | null;
             /**
-             * @description Whether model calls are in `spans`: `false` on Claude Code, whose calls do not pass the
-             *     daemon's model proxy.
+             * @description Whether model calls are in `spans`: from the model proxy, or on Claude Code from its own
+             *     stream (`model_call` events); `false` for Claude Code turns from before those.
              */
             models_tracked: boolean;
             spans: components["schemas"]["Span"][];

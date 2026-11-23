@@ -8710,7 +8710,7 @@
           },
           "models_tracked": {
             "type": "boolean",
-            "description": "Whether model calls are in `spans`: `false` on Claude Code, whose calls do not pass the\ndaemon's model proxy."
+            "description": "Whether model calls are in `spans`: from the model proxy, or on Claude Code from its own\nstream (`model_call` events); `false` for Claude Code turns from before those."
           },
           "spans": {
             "type": "array",
