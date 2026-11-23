@@ -90,8 +90,8 @@ export function Chat(props: {
   const voiceEnabled = voiceView?.enabled !== false;
   const inCall = callState !== null && !callState.ending && callState.agents.includes(id);
   // A one-on-one call happens here; a call with a room is spoken to in the room.
-  const send = (body: string): Promise<unknown> =>
-    inCall && callState.room === null ? call.say(body) : client.send(id, body);
+  const send = (body: string, now?: boolean): Promise<unknown> =>
+    inCall && callState.room === null ? call.say(body) : client.send(id, body, now);
 
   useEffect(() => {
     let cancelled = false;
@@ -210,7 +210,9 @@ export function Chat(props: {
         }
       : undefined;
   useShortcuts((shortcut) => {
-    if (shortcut === "send-now") sendNow?.();
+    // In the message box the box handles it, with what was typed.
+    if (shortcut === "send-now" && !(document.activeElement instanceof HTMLTextAreaElement))
+      sendNow?.();
   });
   const status = statusOf(agent);
   const problem = agent.credential_error ?? agent.tools_unsupported;
@@ -356,6 +358,7 @@ export function Chat(props: {
             : `Message ${agent.name}`
         }
         send={send}
+        sendNow={sendNow}
         voice={voiceEnabled ? voiceView : null}
         onTalk={() => {
           call.quiet();
@@ -907,7 +910,10 @@ const drafts = new Map<string, string>();
 export function Composer(props: {
   chat: string;
   placeholder: string;
-  send: (body: string) => Promise<unknown>;
+  /** `now`: ⌘↵, send it ahead of a running turn that cannot take it. */
+  send: (body: string, now?: boolean) => Promise<unknown>;
+  /** Pushes what is already queued; unset when nothing is. */
+  sendNow?: (() => void) | undefined;
   /** `null`: voice is off, no microphone. */
   voice: VoiceView | null;
   onTalk: () => void;
@@ -971,9 +977,13 @@ export function Composer(props: {
     el.style.height = `${String(Math.min(el.scrollHeight, 200))}px`;
   }, [text]);
 
-  const send = async (): Promise<void> => {
+  const send = async (now = false): Promise<void> => {
     const body = text.trim();
-    if ((!body && files.length === 0) || sending) return;
+    if (!body && files.length === 0) {
+      if (now) props.sendNow?.();
+      return;
+    }
+    if (sending) return;
     setSending(true);
     const ok = await run(async () => {
       const big = files.find((f) => f.size > MAX_UPLOAD);
@@ -986,7 +996,7 @@ export function Composer(props: {
         if (image) previews.set(`${props.chat}/${done.path}`, URL.createObjectURL(file));
         lines.push(`Attached: ${done.path} (${image ? "image" : "file"}, ${fileSize(done.size)})`);
       }
-      return props.send([body, ...lines].filter(Boolean).join("\n"));
+      return props.send([body, ...lines].filter(Boolean).join("\n"), now);
     });
     setSending(false);
     if (ok) {
@@ -1098,7 +1108,7 @@ export function Composer(props: {
           }
           if (e.key === "Enter" && (e.metaKey || e.ctrlKey) && !e.isComposing) {
             e.preventDefault();
-            void send();
+            void send(true);
             return;
           }
           if (e.key === "Enter" && !e.shiftKey && !e.isComposing) {

@@ -40,6 +40,10 @@ pub(crate) struct PostMessage {
     /// 1..32768 bytes after trimming. `@name` mentions of existing agents are
     /// stored as `<@agent-id>` tokens, and the limit counts them as stored.
     body: String,
+    /// Send now: if the agent is in a turn that cannot take the message (its runner does not
+    /// steer), that turn stops so the message goes next. Otherwise it waits for the turn to end.
+    #[serde(default)]
+    now: bool,
 }
 
 /// Sends a message from the operator (`user`) to an agent's mailbox. Wakes
@@ -69,6 +73,9 @@ pub(crate) async fn post_message(
     state.publish(UiEvent::Message {
         message: msg.clone(),
     });
+    if req.now && state.hub.turn_holds_messages(id) {
+        state.hub.interrupt(id);
+    }
     Ok((StatusCode::ACCEPTED, Json(msg)))
 }
 

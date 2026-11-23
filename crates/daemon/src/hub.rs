@@ -19,6 +19,8 @@ struct Conn {
     current_turn: Option<String>,
     /// The runner's `protocol_version`.
     protocol: u32,
+    /// Whether the runner takes messages into a running turn.
+    steering: bool,
 }
 
 /// Registry of live runner connections plus one wake-up signal per agent.
@@ -62,7 +64,13 @@ impl Hub {
 
     /// Registers a connection, replacing (and thereby closing) an older one.
     /// Returns the connection id used for unregistering.
-    pub fn register(&self, agent: AgentId, out: mpsc::Sender<DaemonFrame>, protocol: u32) -> u64 {
+    pub fn register(
+        &self,
+        agent: AgentId,
+        out: mpsc::Sender<DaemonFrame>,
+        protocol: u32,
+        steering: bool,
+    ) -> u64 {
         let id = self.next_id.fetch_add(1, Ordering::Relaxed);
         let mut inner = self.lock();
         inner.activity.insert(agent, Instant::now());
@@ -73,6 +81,7 @@ impl Hub {
                 out,
                 current_turn: None,
                 protocol,
+                steering,
             },
         );
         id
@@ -153,6 +162,16 @@ impl Hub {
 
     pub fn is_connected(&self, agent: AgentId) -> bool {
         self.lock().conns.contains_key(&agent)
+    }
+
+    /// True while the agent is in a turn its runner cannot hand a new message to: the message
+    /// waits for the turn to end.
+    // shortcut: a steering runner's call room turn does not take chat messages either; it counts as taking them here.
+    pub fn turn_holds_messages(&self, agent: AgentId) -> bool {
+        self.lock()
+            .conns
+            .get(&agent)
+            .is_some_and(|c| c.current_turn.is_some() && !c.steering)
     }
 
     /// True while the agent's runner is executing a turn.

@@ -31,7 +31,7 @@ export const SHORTCUTS: Shortcut[] = [
   { id: "sidebar", key: "b", label: "Collapse or expand the sidebar" },
   { id: "agent", key: "1", label: "Open the 1st to 9th agent in the sidebar" },
   { id: "help", key: "/", label: "Keyboard shortcuts" },
-  { id: "send-now", key: "enter", label: "Send queued messages now (stops the running turn)" },
+  { id: "send-now", key: "enter", label: "Send now, ahead of a turn that cannot take it" },
   { id: "close", key: "escape", label: "Close the open dialog, menu, page or panel" },
 ];
 

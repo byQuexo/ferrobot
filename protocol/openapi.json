@@ -7484,6 +7484,10 @@
           "body": {
             "type": "string",
             "description": "1..32768 bytes after trimming. `@name` mentions of existing agents are\nstored as `<@agent-id>` tokens, and the limit counts them as stored."
+          },
+          "now": {
+            "type": "boolean",
+            "description": "Send now: if the agent is in a turn that cannot take the message (its runner does not\nsteer), that turn stops so the message goes next. Otherwise it waits for the turn to end."
           }
         }
       },

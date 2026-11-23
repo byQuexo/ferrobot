@@ -3704,6 +3704,57 @@ async fn connectors_are_checked_when_added_changed_or_asked() {
 }
 
 #[tokio::test]
+async fn send_now_stops_only_a_turn_that_cannot_take_the_message() {
+    use ferrobot_core::protocol::TurnOutcome;
+    let backend = Arc::new(StatefulBackend::default());
+    let d = start(backend.clone(), None, "127.0.0.1:0").await;
+    for (name, steering) in [("quill", false), ("stella", true)] {
+        let id = create(&d, json!({ "name": name })).await["id"]
+            .as_str()
+            .unwrap()
+            .to_owned();
+        let mut ws = connect_runner_with(&d.agents, &backend.token(name), steering).await;
+        let path = format!("/v1/agents/{id}/messages");
+        let post = |body: Value| {
+            let (ui, path) = (d.ui.clone(), path.clone());
+            async move {
+                http(&ui, "POST", &path, Some(body)).await.1["id"]
+                    .as_i64()
+                    .unwrap()
+            }
+        };
+        post(json!({"body": "find flights"})).await;
+        let (turn_id, _, _) = next_turn(&mut ws).await;
+        let now = post(json!({"body": "hotels instead", "now": true})).await;
+        match next_frame(&mut ws).await {
+            DaemonFrame::Interrupt { turn_id: t } if !steering => {
+                assert_eq!(t, turn_id);
+                let done = RunnerFrame::TurnDone {
+                    turn_id,
+                    outcome: TurnOutcome::Interrupted,
+                    session_id: None,
+                    result: None,
+                    error: None,
+                    steered: vec![],
+                };
+                ws.send(Message::text(serde_json::to_string(&done).unwrap()))
+                    .await
+                    .unwrap();
+                let (_, message_id, body) = next_turn(&mut ws).await;
+                assert_eq!((message_id, body.as_str()), (now, "hotels instead"));
+            }
+            DaemonFrame::Steer { message_id, .. } if steering => {
+                assert_eq!(
+                    message_id, now,
+                    "a steering runner takes it; its turn goes on"
+                );
+            }
+            other => panic!("{name}: {other:?}"),
+        }
+    }
+}
+
+#[tokio::test]
 async fn messages_reach_a_running_turn_when_the_runner_can_take_them() {
     use ferrobot_core::protocol::TurnOutcome;
     let backend = Arc::new(StatefulBackend::default());

@@ -198,8 +198,9 @@ export class DaemonClient {
     }
     return all;
   };
-  send = (id: string, body: string): Promise<MailMessage> =>
-    this.#request("POST", `/v1/agents/${id}/messages`, { body });
+  /** `now`: stop a running turn that cannot take the message, so it goes next. */
+  send = (id: string, body: string, now = false): Promise<MailMessage> =>
+    this.#request("POST", `/v1/agents/${id}/messages`, now ? { body, now } : { body });
   upload = (id: string, file: File): Promise<Upload> =>
     this.#request(
       "POST",

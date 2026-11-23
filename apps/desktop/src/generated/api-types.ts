@@ -2041,6 +2041,11 @@ export interface components {
              *     stored as `<@agent-id>` tokens, and the limit counts them as stored.
              */
             body: string;
+            /**
+             * @description Send now: if the agent is in a turn that cannot take the message (its runner does not
+             *     steer), that turn stops so the message goes next. Otherwise it waits for the turn to end.
+             */
+            now?: boolean;
         };
         /**
          * @description What an agent is doing right now, for status badges.

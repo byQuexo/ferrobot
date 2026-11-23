@@ -90,7 +90,9 @@ async fn run_connection(state: AppState, agent: Agent, socket: WebSocket) {
         }
     };
     let (out_tx, mut out_rx) = mpsc::channel::<DaemonFrame>(32);
-    let conn_id = state.hub.register(agent.id, out_tx.clone(), protocol);
+    let conn_id = state
+        .hub
+        .register(agent.id, out_tx.clone(), protocol, steering);
     let Some(agent) = admit(&state, agent.id, conn_id, protocol, &mut stream).await else {
         return;
     };

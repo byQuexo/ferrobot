@@ -49,9 +49,10 @@ All notable changes are listed here. The format follows
   in the agent's `uploads/` folder, at most 25 MB each); agents react to your
   messages with one emoji (`react` tool, `reaction` event); OpenAI-compatible
   agents get a `subagent` tool that runs tasks in parallel with the same tools.
-- Queued messages get **Send now** (and ⌘↵ / Ctrl+Enter): it stops the
-  agent's running turn so what you queued goes next; listed under
-  Settings → Keyboard.
+- Send now: ⌘↵ (Ctrl+Enter) sends what you typed ahead of a running turn,
+  and queued messages get a **Send now** link. The daemon stops the turn only
+  when the agent's runner cannot take messages mid-turn (`now` on
+  `POST /v1/agents/{id}/messages`); listed under Settings → Keyboard.
 
 ### Changed
 
