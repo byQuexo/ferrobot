@@ -18,9 +18,15 @@ In rough order. Nothing here has a date.
 3. **Windows and updates.** More testing of the Windows app (installer,
    Credential Manager, Codex), and a release with signed update files, so the
    in-app updater runs against a real release for the first time.
-4. **Later.** Moving warm agents to cold sleep under memory pressure (F4d),
-   computer use inside sandboxes, a native macOS app on the same `/v1` API, and
-   optional self-hosted S3-compatible storage. Smaller ideas are on [[Ideas]].
+4. **Computer use.** Each agent's computer gets a screen: a virtual desktop
+   with a browser inside the sandbox, tools to look at it and click and type,
+   screenshots in the chat's step trail, and a live view in the Computer tab.
+   Like every other tool it stays inside the sandbox, goes through the tool
+   groups (a new `computer` group, off by default) and the risky-step
+   classifier, and works with any model that accepts images.
+5. **Later.** Moving warm agents to cold sleep under memory pressure (F4d), a
+   native macOS app on the same `/v1` API, and optional self-hosted
+   S3-compatible storage. Smaller ideas are on [[Ideas]].
 
 Status words: **done** (built and tested, gaps noted), **partial** (code
 written, key parts never run), **open** (not built), **deliberately

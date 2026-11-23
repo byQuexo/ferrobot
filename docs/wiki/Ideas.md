@@ -4,8 +4,6 @@ promise; what is planned and how far it got is on the [[Roadmap]].
 ## Agents and sandboxes
 
 - A file browser and a terminal in the agent's info panel.
-- Computer use inside sandboxes: a virtual desktop, browser automation and
-  screenshots in the timeline.
 - CLIs that need a login (`gh`, `vercel`, `stripe`) through a daemon-side
   proxy that swaps in the token, the way the model proxy does, for services
   without an MCP server.
