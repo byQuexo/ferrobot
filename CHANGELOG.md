@@ -6,6 +6,8 @@ All notable changes are listed here. The format follows
 
 ## [Unreleased]
 
+## [0.1.4] - 2026-11-23
+
 ### Added
 
 - Call bar: the speaking speed (ElevenLabs; click steps 0.7×–1.2×, the same
@@ -211,7 +213,8 @@ First public release.
   allowlist per API family, no redirects, header allowlists both ways, agent
   tokens blanked in committed images.
 
-[Unreleased]: https://github.com/byQuexo/ferrobot/compare/v0.1.3...HEAD
+[Unreleased]: https://github.com/byQuexo/ferrobot/compare/v0.1.4...HEAD
+[0.1.4]: https://github.com/byQuexo/ferrobot/compare/v0.1.3...v0.1.4
 [0.1.3]: https://github.com/byQuexo/ferrobot/compare/v0.1.2...v0.1.3
 [0.1.2]: https://github.com/byQuexo/ferrobot/compare/v0.1.1...v0.1.2
 [0.1.1]: https://github.com/byQuexo/ferrobot/compare/v0.1.0...v0.1.1
