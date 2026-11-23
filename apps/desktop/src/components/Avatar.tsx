@@ -18,6 +18,7 @@ export function Avatar(props: {
   const size = props.size ?? 36;
   const src = props.preview ?? (props.agent.avatar_url ? client.url(props.agent.avatar_url) : null);
   const seed = props.agent.id ?? props.agent.name;
+  const agentInfo = props.agent as Partial<Agent>;
   const style = { width: `${String(size)}px`, height: `${String(size)}px` };
   return (
     <span class={`avatar${src ? "" : " avatar-char"}`} style={style}>
@@ -26,7 +27,14 @@ export function Avatar(props: {
       ) : (
         <CharacterFace
           look={characterOf(props.agent)}
-          mood={moodOf(props.mood ?? props.presence)}
+          mood={
+            props.mood
+              ? moodOf(props.mood)
+              : moodOf(props.presence, {
+                  trouble: Boolean(agentInfo.credential_error ?? agentInfo.tools_unsupported),
+                  waiting: (agentInfo.waiting ?? 0) > 0,
+                })
+          }
           blinkDelay={blinkDelay(seed)}
         />
       )}

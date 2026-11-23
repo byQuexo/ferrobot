@@ -336,6 +336,10 @@ export function App(): JSX.Element {
             onSignIn={
               agentProvider?.kind === "codex" && !agentProvider.has_key ? openProviders : undefined
             }
+            onActivities={() => {
+              setInfoOpen(true);
+              setTab("activities");
+            }}
           />
         ) : welcome ? (
           <Welcome

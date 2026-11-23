@@ -11,16 +11,19 @@ import {
 import { hash } from "../src/lib/avatar.ts";
 import { characterOf, deriveCharacter, moodOf, rerollCharacter } from "../src/lib/character.ts";
 import {
+  computerSummary,
   linkLabel,
   relativeTime,
+  rowLine,
   statusOf,
   stepLabel,
+  stepsLabel,
   toolLabel,
   toolsSummary,
 } from "../src/lib/format.ts";
 import { GUIDES, splitWikiLinks } from "../src/lib/guides.ts";
 import { providerReady, welcomeStep } from "../src/lib/welcome.ts";
-import { buildTimeline, sharedFiles, withoutRoomTurns } from "../src/lib/timeline.ts";
+import { buildTimeline, foldSteps, sharedFiles, withoutRoomTurns } from "../src/lib/timeline.ts";
 import {
   CallScript,
   firstClause,
@@ -122,6 +125,10 @@ describe("avatar", () => {
     assert.equal(moodOf("starting"), "thinking");
     assert.equal(moodOf("sleeping"), "sleeping");
     assert.equal(moodOf("awake"), "idle");
+    // Trouble, then an open card, outrank what the agent does.
+    assert.equal(moodOf("error"), "trouble");
+    assert.equal(moodOf("working", { trouble: true, waiting: true }), "trouble");
+    assert.equal(moodOf("awake", { waiting: true }), "waiting");
     assert.equal(moodOf(undefined), "idle");
   });
 });
@@ -681,6 +688,120 @@ describe("welcome", () => {
     // Without a key Codex needs a ChatGPT sign-in, which only the welcome itself checks.
     assert.equal(providerReady(provider("codex", false)), false);
     assert.equal(welcomeStep({ ...base, providers: [provider("codex", false)] }), "key");
+  });
+});
+
+describe("ui polish", () => {
+  const agent = {
+    presence: "awake" as const,
+    credential_error: null,
+    tools_unsupported: null,
+    waiting: 0,
+    last_reply: null,
+    description: "Reviews code",
+  };
+  const now = Date.parse("2026-11-23T12:00:00Z");
+
+  it("puts a problem, an open card, work, then the last reply on the sidebar row", () => {
+    assert.deepEqual(rowLine(agent, now), { text: "Reviews code", tone: "", time: "" });
+    const replied = { ...agent, last_reply: { text: "Done.", at: "2026-11-23T11:55:00Z" } };
+    assert.deepEqual(rowLine(replied, now), { text: "Done.", tone: "", time: "5 min" });
+    assert.equal(rowLine({ ...replied, presence: "working" }, now).text, "Working…");
+    const md = {
+      ...agent,
+      last_reply: { text: "# AI news: **Nvidia** `x`", at: "2026-11-23T11:55:00Z" },
+    };
+    assert.equal(rowLine(md, now).text, "AI news: Nvidia x");
+    assert.equal(rowLine({ ...replied, waiting: 2 }, now).text, "2 questions for you");
+    assert.equal(rowLine({ ...replied, waiting: 2, presence: "error" }, now).tone, "bad");
+  });
+
+  it("labels steps, the computer and the Claude Code computer tools in plain words", () => {
+    assert.equal(stepsLabel(1, 0.2), "1 step");
+    assert.equal(stepsLabel(3, 40.4), "3 steps · 40 s");
+    assert.equal(
+      computerSummary("running", { idle_s: 60, warm_after_s: 300 }),
+      "Idle 1 min · pauses in 4 min",
+    );
+    assert.equal(
+      computerSummary("running", { idle_s: 1, idle_timeout_s: 900 }),
+      "Busy just now · sleeps in 14 min",
+    );
+    assert.equal(computerSummary("paused", { idle_s: 999 }), "Paused · resumes quickly");
+    const none = (): undefined => undefined;
+    assert.equal(
+      stepLabel("mcp__ferrobot__bash", { command: "ls" }, none),
+      "Working on its computer",
+    );
+    assert.equal(stepLabel("mcp__ferrobot__remember", {}, none), "Taking notes");
+  });
+
+  it("gives a failed turn one quiet line unless a bubble already says why", () => {
+    const at = "2026-11-23T12:00:00Z";
+    const mail = (id: number, sender: MailMessage["sender"]): MailMessage => ({
+      ...msg(id, sender, ME, "hi", at),
+      status: "failed",
+    });
+    const fail = (id: number, turn: string, message: number | null): StoredEvent[] => [
+      ev(id, "message_in", message === null ? {} : { message_id: message }, at, turn),
+      ev(id + 1, "turn_done", { outcome: "failed", error: "boom" }, at, turn),
+    ];
+    const events = [
+      ...fail(1, "greet", null),
+      ...fail(3, "u1", 1),
+      ...fail(5, "b1", 2),
+      ...fail(7, "b2", 2),
+    ];
+    const messages = [mail(1, { kind: "user" }), mail(2, { kind: "agent", id: BOB })];
+    const quiet = buildTimeline(ME, messages, events, new Map(), names).flatMap((i) =>
+      i.type === "error" ? [i.quiet === true] : [],
+    );
+    // greeting: yes; the user's message: its bubble; bob's mail: only the last retry.
+    assert.deepEqual(quiet, [true, false, false, true]);
+  });
+
+  it("folds finished tool runs into one line and keeps the running one apart", () => {
+    const tool = (n: number, at: string) =>
+      ({
+        type: "tool",
+        key: `t${String(n)}`,
+        at,
+        name: "bash",
+        input: {},
+        output: "",
+        isError: false,
+        denied: null,
+        turn: "t",
+      }) as const;
+    const text = {
+      type: "assistant",
+      key: "a",
+      at: "2026-11-23T12:01:00Z",
+      text: "ok",
+      streaming: false,
+    } as const;
+    const items = [
+      tool(1, "2026-11-23T12:00:00Z"),
+      tool(2, "2026-11-23T12:00:40Z"),
+      text,
+      tool(3, "2026-11-23T12:02:00Z"),
+    ];
+    const done = foldSteps(items, false);
+    assert.deepEqual(
+      done.shown.map((i) => i.type),
+      ["steps", "assistant", "steps"],
+    );
+    const first = done.shown[0];
+    assert.equal(first?.type === "steps" ? first.seconds : null, 40);
+    const running = foldSteps(items, true);
+    assert.deepEqual(
+      running.shown.map((i) => i.type),
+      ["steps", "assistant"],
+    );
+    assert.deepEqual(
+      running.live.map((t) => t.key),
+      ["t3"],
+    );
   });
 });
 

@@ -18,7 +18,7 @@ import {
 
 import type { Agent } from "../api.ts";
 import { useApp } from "../context.ts";
-import { statusOf } from "../lib/format.ts";
+import { rowLine, statusOf } from "../lib/format.ts";
 import { loadOrder, moveId, orderAgents, saveOrder } from "../lib/order.ts";
 import { Avatar } from "./Avatar.tsx";
 import { CallWindow } from "./CallWindow.tsx";
@@ -502,6 +502,7 @@ function AgentRow(props: {
 }): JSX.Element {
   const a = props.agent;
   const status = statusOf(a);
+  const line = rowLine(a);
   const { class: drop, ...row } = props.row;
   return (
     <div class={`agent-row-wrap${drop}`} {...row}>
@@ -509,7 +510,7 @@ function AgentRow(props: {
         type="button"
         class={`agent-row${props.active ? " active" : ""}`}
         aria-current={props.active ? "page" : undefined}
-        title={`${a.name} · ${status.label}`}
+        title={[a.name, status.label, a.description].filter(Boolean).join(" · ")}
         onClick={() => {
           props.onSelect(a.id);
         }}
@@ -518,12 +519,9 @@ function AgentRow(props: {
         <span class="agent-row-text">
           <span class="agent-row-top">
             <span class="agent-name">{a.name}</span>
+            {line.time && <span class="agent-time">{line.time}</span>}
           </span>
-          {a.credential_error || a.tools_unsupported ? (
-            <span class="agent-desc bad">{status.label}</span>
-          ) : (
-            <span class="agent-desc">{a.description || "No description"}</span>
-          )}
+          <span class={`agent-desc${line.tone ? ` ${line.tone}` : ""}`}>{line.text}</span>
         </span>
         {a.unread > 0 && (
           <span class="badge" aria-label={`${String(a.unread)} unread`}>

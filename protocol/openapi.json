@@ -5065,7 +5065,8 @@
             "required": [
               "connected",
               "presence",
-              "unread"
+              "unread",
+              "waiting"
             ],
             "properties": {
               "connected": {
@@ -5104,6 +5105,23 @@
                   {
                     "$ref": "#/components/schemas/ToolsUnsupported",
                     "description": "Set while the agent's model can't use tools and the operator has not turned them off;\nits turns wait."
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "waiting": {
+                "type": "integer",
+                "format": "int32",
+                "description": "Question cards waiting for the operator's answer.",
+                "minimum": 0
+              },
+              "last_reply": {
+                "oneOf": [
+                  {
+                    "$ref": "#/components/schemas/LastReply",
+                    "description": "The agent's newest reply, cut to a preview."
                   },
                   {
                     "type": "null"
@@ -6170,6 +6188,24 @@
           },
           "name": {
             "type": "string"
+          }
+        }
+      },
+      "LastReply": {
+        "type": "object",
+        "description": "The start of an agent's newest reply.",
+        "required": [
+          "text",
+          "at"
+        ],
+        "properties": {
+          "text": {
+            "type": "string",
+            "description": "At most 160 characters."
+          },
+          "at": {
+            "type": "string",
+            "description": "When the reply came (RFC 3339)."
           }
         }
       },

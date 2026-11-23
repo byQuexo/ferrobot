@@ -427,6 +427,49 @@ impl Store {
         .await
     }
 
+    /// Question cards per agent that are still waiting for the operator's answer.
+    pub async fn waiting_counts(&self) -> Result<HashMap<AgentId, u32>, StoreError> {
+        self.with(|c| {
+            let mut stmt = c.prepare(
+                "SELECT q.agent_id, COUNT(*) FROM events q WHERE q.kind = 'question'
+                   AND NOT EXISTS (SELECT 1 FROM events a WHERE a.agent_id = q.agent_id
+                       AND a.kind = 'question_answered'
+                       AND json_extract(a.payload, '$.question') = q.id)
+                 GROUP BY q.agent_id",
+            )?;
+            let mut rows = stmt.query([])?;
+            let mut out = HashMap::new();
+            while let Some(row) = rows.next()? {
+                let id: String = row.get(0)?;
+                out.insert(id.parse()?, row.get(1)?);
+            }
+            Ok(out)
+        })
+        .await
+    }
+
+    /// Each agent's newest reply text and when it came; a call's lines are not replies.
+    pub async fn last_replies(&self) -> Result<HashMap<AgentId, (String, String)>, StoreError> {
+        self.with(|c| {
+            let mut stmt = c.prepare(
+                "SELECT e.agent_id, json_extract(e.payload, '$.text'), e.created_at FROM events e
+                 WHERE e.id IN (SELECT MAX(x.id) FROM events x WHERE x.kind = 'assistant_text'
+                     AND NOT EXISTS (SELECT 1 FROM events m WHERE m.turn_id = x.turn_id
+                         AND m.kind = 'message_in' AND json_extract(m.payload, '$.room_id') IS NOT NULL)
+                     GROUP BY x.agent_id)",
+            )?;
+            let mut rows = stmt.query([])?;
+            let mut out = HashMap::new();
+            while let Some(row) = rows.next()? {
+                let id: String = row.get(0)?;
+                let text: Option<String> = row.get(1)?;
+                out.insert(id.parse()?, (text.unwrap_or_default(), row.get(2)?));
+            }
+            Ok(out)
+        })
+        .await
+    }
+
     async fn update_agent<F>(&self, id: AgentId, f: F) -> Result<(), StoreError>
     where
         F: FnOnce(&rusqlite::Connection, String) -> rusqlite::Result<usize> + Send + 'static,
@@ -586,6 +629,41 @@ mod tests {
         assert_eq!(store.unread_counts().await.unwrap()[&a.id], 2);
         store.mark_read(a.id).await.unwrap();
         assert_eq!(store.unread_counts().await.unwrap(), none);
+    }
+
+    #[tokio::test]
+    async fn open_questions_and_the_newest_reply() {
+        let store = Store::open_in_memory().unwrap();
+        let a = store.create_agent(new("alice")).await.unwrap();
+        let ev = |kind: &str, payload: serde_json::Value| {
+            store.append_event(a.id, None, kind.into(), payload)
+        };
+        ev("assistant_text", serde_json::json!({"text": "first"}))
+            .await
+            .unwrap();
+        let q1 = ev("question", serde_json::json!({})).await.unwrap();
+        ev("question", serde_json::json!({})).await.unwrap();
+        ev("assistant_text", serde_json::json!({"text": "second"}))
+            .await
+            .unwrap();
+        // A line in a call is not a reply.
+        let call = Some("call-turn".to_owned());
+        let room = serde_json::json!({"room_id": 1});
+        store
+            .append_event(a.id, call.clone(), "message_in".into(), room)
+            .await
+            .unwrap();
+        let pass = serde_json::json!({"text": "(pass)"});
+        store
+            .append_event(a.id, call, "assistant_text".into(), pass)
+            .await
+            .unwrap();
+        assert_eq!(store.waiting_counts().await.unwrap()[&a.id], 2);
+        ev("question_answered", serde_json::json!({"question": q1.id}))
+            .await
+            .unwrap();
+        assert_eq!(store.waiting_counts().await.unwrap()[&a.id], 1);
+        assert_eq!(store.last_replies().await.unwrap()[&a.id].0, "second");
     }
 
     #[tokio::test]

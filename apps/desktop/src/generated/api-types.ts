@@ -1215,6 +1215,12 @@ export interface components {
             avatar_url?: string | null;
             credential_error?: components["schemas"]["CredentialError"] | null;
             tools_unsupported?: components["schemas"]["ToolsUnsupported"] | null;
+            /**
+             * Format: int32
+             * @description Question cards waiting for the operator's answer.
+             */
+            waiting: number;
+            last_reply?: components["schemas"]["LastReply"] | null;
         };
         AnswerQuestion: {
             /** @description One answer per question of the card. */
@@ -1632,6 +1638,13 @@ export interface components {
         LanguageOption: {
             code: string;
             name: string;
+        };
+        /** @description The start of an agent's newest reply. */
+        LastReply: {
+            /** @description At most 160 characters. */
+            text: string;
+            /** @description When the reply came (RFC 3339). */
+            at: string;
         };
         /**
          * @description How live speech is cut into messages.

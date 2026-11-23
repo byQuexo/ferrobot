@@ -16,7 +16,7 @@
   --surface: #ffffff;
   --surface-2: #f3f4f6;
   --surface-3: #e8eaee;
-  --sidebar: #f6f7f9;
+  --sidebar: #f1f2f5;
   --border: #ebedf0;
   --border-strong: #dcdfe4;
   --text: #16181d;
@@ -50,13 +50,13 @@
 }
 
 :root[data-theme="dark"] {
-  --bg: #121316;
-  --surface: #18191d;
-  --surface-2: #202227;
-  --surface-3: #2a2d33;
-  --sidebar: #15161a;
-  --border: #25272d;
-  --border-strong: #33363d;
+  --bg: #17181c;
+  --surface: #1d1f24;
+  --surface-2: #26282e;
+  --surface-3: #31343b;
+  --sidebar: #0f1013;
+  --border: #2b2d34;
+  --border-strong: #3b3e46;
   --text: #ececef;
   --text-2: #c1c4cc;
   --muted: #8a8f99;
@@ -126,6 +126,7 @@ b, strong { font-weight: 600; }
 
 /* ---------- shell ---------- */
 .shell {
+  background: var(--sidebar);
   display: grid;
   grid-template-columns: var(--sidebar-w) minmax(0, 1fr);
   height: 100%;
@@ -234,6 +235,21 @@ textarea { resize: vertical; min-height: 40px; line-height: 1.5; }
 /* sleeping: eyes closed, slow breathing, muted color */
 .m-sleeping .char-figure { animation: char-breathe 4s ease-in-out infinite; filter: saturate(0.55); }
 @keyframes char-breathe { 50% { transform: scale(1.03); } }
+
+/* Something is wrong: a small shiver now and then, eyes down. */
+.m-trouble .char-figure { animation: char-shiver 2.8s ease-in-out infinite; filter: saturate(0.7); }
+.m-trouble .char-look { transform: translateY(1.6px); }
+.m-trouble .char-cheek { fill: var(--err); opacity: 0.55; }
+@keyframes char-shiver {
+  0%, 80%, 100% { transform: translateX(0) rotate(0); }
+  84% { transform: translateX(-0.9px) rotate(-3deg); }
+  88% { transform: translateX(0.9px) rotate(3deg); }
+  92% { transform: translateX(-0.5px) rotate(-1.5deg); }
+}
+/* A question card waits for the operator: a light bob, looking up at them. */
+.m-waiting .char-figure { animation: char-bob 1.6s ease-in-out infinite; }
+.m-waiting .char-look { transform: translateY(-2.2px); }
+@keyframes char-bob { 50% { transform: translateY(-2.2px); } }
 .presence-dot {
   position: absolute; right: -1px; bottom: -1px; width: 28%; height: 28%; min-width: 10px; min-height: 10px;
   border-radius: 50%; border: 2px solid var(--sidebar); background: var(--sleep);
@@ -259,7 +275,7 @@ textarea { resize: vertical; min-height: 40px; line-height: 1.5; }
 /* ---------- sidebar ---------- */
 .sidebar {
   display: flex; flex-direction: column; min-height: 0; overflow: hidden;
-  background: var(--sidebar); border-right: 1px solid var(--border);
+  background: var(--sidebar);
 }
 .brand { display: flex; align-items: center; padding: 16px 8px 12px 16px; }
 .brand .logo { flex: none; }
@@ -286,6 +302,8 @@ textarea { resize: vertical; min-height: 40px; line-height: 1.5; }
 .agent-name { font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .agent-desc { color: var(--muted); font-size: 13px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .agent-desc.bad { color: var(--err); }
+.agent-desc.wait { color: var(--accent); }
+.agent-time { margin-left: auto; flex: none; font-size: 11px; color: var(--muted); font-variant-numeric: tabular-nums; }
 .badge {
   min-width: 20px; height: 20px; padding: 0 4px; border-radius: 999px; display: grid; place-items: center;
   background: var(--accent); color: var(--accent-text); font-size: 12px; font-weight: 500; font-variant-numeric: tabular-nums;
@@ -445,10 +463,11 @@ textarea { resize: vertical; min-height: 40px; line-height: 1.5; }
 .tool-head .chev { transition: transform 0.15s var(--ease); color: var(--muted); flex: none; }
 .tool-card.open { width: 100%; }
 .tool-card.open .chev { transform: rotate(90deg); }
-.tool-name { font-family: var(--mono); font-size: 12px; font-weight: 500; color: var(--text); }
+.tool-name { font-size: 13px; font-weight: 500; color: var(--text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.tool-body > .tool-label:first-child { display: flex; align-items: center; gap: 6px; margin-top: 0; font-family: var(--mono); }
 .tool-server { font-size: 12px; padding: 0 4px; border-radius: 4px; background: var(--surface-2); color: var(--muted); }
 .tool-summary { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--muted); }
-.tool-state { font-size: 12px; font-weight: 500; }
+.tool-state { margin-left: auto; flex: none; font-size: 12px; font-weight: 500; }
 .s-ok { color: var(--ok); }
 .s-running { color: var(--warn); }
 .s-error, .s-denied { color: var(--err); }
@@ -519,7 +538,7 @@ textarea { resize: vertical; min-height: 40px; line-height: 1.5; }
 .field-row { display: flex; align-items: center; justify-content: space-between; }
 
 /* ---------- info panel ---------- */
-.info { display: flex; flex-direction: column; min-height: 0; background: var(--sidebar); border-left: 1px solid var(--border); }
+.info { display: flex; flex-direction: column; min-height: 0; background: var(--sidebar); }
 .tabs { display: grid; grid-template-columns: repeat(5, 1fr); gap: 2px; margin: 12px 12px 0; padding: 2px; border-radius: 12px; background: var(--surface-2); }
 .tabs button {
   display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px; height: 44px; padding: 0 2px;
@@ -826,3 +845,30 @@ textarea { resize: vertical; min-height: 40px; line-height: 1.5; }
 .guide .rich h4 { margin-top: 24px; font-size: 15px; }
 .guide .rich h5 { margin-top: 16px; }
 .guide .rich .md-table { overflow-x: auto; margin-bottom: 8px; }
+
+/* The middle view sits on the window as a raised, rounded panel. */
+.shell > :nth-child(2) { margin: 8px 0; border-radius: var(--radius); box-shadow: var(--shadow); overflow: hidden; background: var(--bg); }
+.shell:not(.with-info) > :nth-child(2) { margin-right: 8px; }
+
+/* The chat's step trail, folded steps and quiet failed turns */
+.step-trail { display: flex; flex-direction: column; gap: 2px; padding: 4px 2px; min-width: 0; }
+.step-trail .step-now { padding: 0; }
+.step-old { color: var(--muted); font-size: 12px; opacity: 0.6; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; animation: rise 0.25s var(--ease) both; }
+.step-old:first-child:not(:only-of-type) { opacity: 0.35; }
+.steps-line, .turn-failed {
+  display: inline-flex; align-items: center; gap: 6px; border: none; background: none;
+  color: var(--muted); font-size: 12px; padding: 4px 10px; border-radius: 999px;
+}
+.steps-line:hover, .turn-failed:hover { background: var(--surface-2); color: var(--text-2); }
+.turn-failed { color: var(--warn); }
+
+/* New items rise in; what was there when the chat opened does not. */
+.enter, .settled { display: contents; }
+.enter > * { animation: rise 0.28s var(--ease) both; }
+
+/* Activities grouped by turn, the Computer tab's folded details */
+.act-turn { font-size: 11px; font-weight: 500; color: var(--muted); padding: 8px 2px 0; }
+.act-turn:first-child { padding-top: 0; }
+.computer-details { margin-top: 8px; }
+.computer-details summary { cursor: pointer; font-size: 12px; color: var(--muted); }
+.computer-details[open] summary { color: var(--text-2); }

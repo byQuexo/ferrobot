@@ -6,6 +6,23 @@ All notable changes are listed here. The format follows
 
 ## [Unreleased]
 
+### Changed
+
+- Calmer, clearer desktop UI. Avatars show trouble and an open question card;
+  the agent list shows what an agent is doing or its last reply with the time
+  (`waiting` and `last_reply` on agents); finished tool runs fold into one
+  "N steps · 40 s" line that opens Activities, with a short live trail while
+  the agent works; a failed turn with no undelivered message leaves one quiet
+  line; Activities lead with plain words, grouped by turn; the Computer tab
+  starts with a plain summary; notices get icons; new items rise in; the middle
+  view is a raised panel with fewer lines and stronger dark-mode layers; Edit
+  moves out of the chat header (it stays in the Profile tab).
+- The README demo records in dark mode.
+
+### Fixed
+
+- Calls whose agents were all deleted no longer show as empty "Call" rows.
+
 ## [0.1.3] - 2026-11-23
 
 ### Added

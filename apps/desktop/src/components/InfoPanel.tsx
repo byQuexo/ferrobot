@@ -1,4 +1,4 @@
-import type { JSX } from "preact";
+import { Fragment, type JSX } from "preact";
 import { useEffect, useState } from "preact/hooks";
 import {
   Activity,
@@ -28,7 +28,14 @@ import type {
   StoredEvent,
 } from "../api.ts";
 import { useApp } from "../context.ts";
-import { dateTime, duration, presenceLabel, relativeTime, statusOf } from "../lib/format.ts";
+import {
+  computerSummary,
+  dateTime,
+  duration,
+  presenceLabel,
+  relativeTime,
+  statusOf,
+} from "../lib/format.ts";
 import { buildTimeline, type TimelineItem } from "../lib/timeline.ts";
 import { Avatar } from "./Avatar.tsx";
 import { CredentialFix } from "./CredentialFix.tsx";
@@ -248,37 +255,42 @@ function Computer(props: { agent: Agent }): JSX.Element {
           <Cpu size={24} />
           <div>
             <strong>{presenceLabel(info.presence)}</strong>
-            <span class="muted small">
-              {info.state ? `Container ${info.state}` : "No container"}
-              {info.connected ? " · runner connected" : ""}
-            </span>
+            <span class="muted small">{computerSummary(props.agent.status, info)}</span>
           </div>
         </div>
-        <div class="kv">
-          <span>Backend</span>
-          <span>{info.backend ?? "—"}</span>
-          <span>Sandbox</span>
-          <span class="mono ellipsis" title={info.sandbox_id ?? ""}>
-            {info.sandbox_id ?? "—"}
-          </span>
-          <span>Idle</span>
-          <span>
-            {paused
-              ? "paused, resumes quickly"
-              : archived
-                ? "archived, restores on wake"
-                : asleep
-                  ? "asleep"
-                  : duration(info.idle_s)}
-            {!asleep && info.warm_after_s ? ` · pauses after ${duration(info.warm_after_s)}` : ""}
-            {!paused && !asleep && info.idle_timeout_s
-              ? ` · sleeps after ${duration(info.idle_timeout_s)}`
-              : ""}
-            {paused && info.idle_timeout_s
-              ? ` · sleeps after ${duration(info.idle_timeout_s)} idle`
-              : ""}
-          </span>
-        </div>
+        <details class="computer-details">
+          <summary>Details</summary>
+          <div class="kv">
+            <span>Container</span>
+            <span>
+              {info.state ?? "none"}
+              {info.connected ? " · runner connected" : ""}
+            </span>
+            <span>Backend</span>
+            <span>{info.backend ?? "—"}</span>
+            <span>Sandbox</span>
+            <span class="mono ellipsis" title={info.sandbox_id ?? ""}>
+              {info.sandbox_id ?? "—"}
+            </span>
+            <span>Idle</span>
+            <span>
+              {paused
+                ? "paused, resumes quickly"
+                : archived
+                  ? "archived, restores on wake"
+                  : asleep
+                    ? "asleep"
+                    : duration(info.idle_s)}
+              {!asleep && info.warm_after_s ? ` · pauses after ${duration(info.warm_after_s)}` : ""}
+              {!paused && !asleep && info.idle_timeout_s
+                ? ` · sleeps after ${duration(info.idle_timeout_s)}`
+                : ""}
+              {paused && info.idle_timeout_s
+                ? ` · sleeps after ${duration(info.idle_timeout_s)} idle`
+                : ""}
+            </span>
+          </div>
+        </details>
         <div class="row-actions">
           {asleep ? (
             <Button
@@ -782,17 +794,24 @@ function Activities(props: { agent: Agent }): JSX.Element {
       </Empty>
     );
   }
+  // Newest first, grouped by the turn that made the calls.
+  const turnOf = (i: (typeof items)[number]): string | null => (i.type === "tool" ? i.turn : null);
   return (
     <div class="stack activities">
-      {items.map((i) =>
-        i.type === "tool" ? (
-          <ToolCard key={i.key} item={i} />
-        ) : (
-          <div key={i.key} class="notice notice-error">
-            {i.text} · {relativeTime(i.at)}
-          </div>
-        ),
-      )}
+      {items.map((i, n) => {
+        const prev = items[n - 1];
+        const head = n === 0 || turnOf(i) === null || turnOf(prev ?? i) !== turnOf(i);
+        return (
+          <Fragment key={i.key}>
+            {head && <div class="act-turn">{relativeTime(i.at)}</div>}
+            {i.type === "tool" ? (
+              <ToolCard item={i} />
+            ) : (
+              <div class="notice notice-error">{i.text}</div>
+            )}
+          </Fragment>
+        );
+      })}
     </div>
   );
 }

@@ -25,12 +25,14 @@ export function RoomList(props: {
       if (e.type === "room") load();
     });
   }, [client, listen]);
-  if (rooms.length === 0) return null;
+  // A room outlives deleted agents; one with none left has nothing to show.
+  const shown = rooms.filter((r) => r.members.some((id) => agents.has(id)));
+  if (shown.length === 0) return null;
   const nameOf = (id: string): string | undefined => agents.get(id)?.name;
   return (
     <section class="convo-section" aria-label="Calls">
       <h2 class="section-label">Calls</h2>
-      {rooms.map((r) => (
+      {shown.map((r) => (
         <button
           key={r.id}
           type="button"

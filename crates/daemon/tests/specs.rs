@@ -15,7 +15,7 @@ use ferrobot_core::{
     MailMessage, MailStatus, Sender,
 };
 use ferrobot_daemon::views::{
-    AgentView, CredentialError, CredentialProblem, Presence, ToolsUnsupported,
+    AgentView, CredentialError, CredentialProblem, LastReply, Presence, ToolsUnsupported,
 };
 use ferrobot_daemon::{UiEvent, spec};
 use ferrobot_store::{Room, RoomLine, StoredEvent};
@@ -213,6 +213,11 @@ fn ui_events_validate_against_schema() {
                     model: "dolphin".into(),
                     reason: "or can't run dolphin with tools".into(),
                     since: OffsetDateTime::UNIX_EPOCH,
+                }),
+                waiting: 1,
+                last_reply: Some(LastReply {
+                    text: "Done: the report is in your files.".into(),
+                    at: "2026-11-23T12:00:00Z".into(),
                 }),
             }),
         },

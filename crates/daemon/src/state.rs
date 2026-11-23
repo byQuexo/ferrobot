@@ -330,7 +330,13 @@ impl AppState {
             .append_event(agent, turn_id, kind.to_owned(), payload)
             .await
         {
-            Ok(event) => self.publish(UiEvent::Event { event }),
+            Ok(event) => {
+                self.publish(UiEvent::Event { event });
+                // The agent list shows open cards.
+                if kind == "question" || kind == "question_answered" {
+                    self.publish_agent(agent).await;
+                }
+            }
             Err(e) => tracing::error!(error = %e, %agent, kind, "failed to record event"),
         }
     }
@@ -419,6 +425,10 @@ impl ferrobot_mcp::MailboxNotifier for AppState {
         self.publish(UiEvent::Event {
             event: event.clone(),
         });
+        if event.kind == "question" {
+            let (state, agent) = (self.clone(), event.agent_id);
+            tokio::spawn(async move { state.publish_agent(agent).await });
+        }
     }
 
     fn request_connector(

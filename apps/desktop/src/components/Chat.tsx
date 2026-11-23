@@ -6,27 +6,33 @@ import {
   ArrowDownLeft,
   ArrowUpRight,
   CalendarClock,
+  Camera,
   ChevronRight,
   CircleStop,
+  Footprints,
   MessagesSquare,
   Info,
   Mic,
-  Pencil,
+  Moon,
   Phone,
   PhoneOff,
   SendHorizontal,
+  RotateCcw,
   ShieldAlert,
   SlidersHorizontal,
   Square,
+  Sun,
+  UserPlus,
   Wrench,
 } from "lucide-preact";
 
 import type { Agent, MailMessage, Routine, StoredEvent, VoiceView } from "../api.ts";
 import { useApp } from "../context.ts";
 import { isPass } from "../lib/call.ts";
-import { clockTime, statusOf, stepLabel, toolLabel } from "../lib/format.ts";
+import { clockTime, statusOf, stepLabel, stepsLabel, toolLabel } from "../lib/format.ts";
 import {
   buildTimeline,
+  foldSteps,
   groupExchanges,
   sharedFiles,
   withoutRoomTurns,
@@ -52,6 +58,8 @@ export function Chat(props: {
   onVault: () => void;
   /** Set when the agent's model needs a ChatGPT sign-in rather than a key. */
   onSignIn?: () => void;
+  /** Opens the details panel on Activities. */
+  onActivities: () => void;
 }): JSX.Element {
   const { client, agents, listen, run, call, callState } = useApp();
   const agent = props.agent;
@@ -144,24 +152,26 @@ export function Chat(props: {
     };
     const chat = withoutRoomTurns(messages, events, live);
     const all = buildTimeline(id, chat.messages, chat.events, chat.live, names);
-    // Tool calls and turn errors live on the Activities tab; the chat shows the conversation.
-    const shown = groupExchanges(all.filter((i) => i.type !== "tool" && i.type !== "error"));
-    // The current activity: the newest step since the message being worked on.
-    let start = all.length - 1;
-    while (start >= 0 && !["user", "incoming", "routine"].includes(all[start]?.type ?? "")) start--;
-    const last = all
-      .slice(start + 1)
-      .filter((i) => i.type === "tool")
-      .pop();
+    // Tool calls fold into "N steps" lines; their details and most turn errors live on
+    // Activities. The running run shows as a short trail instead.
+    const grouped = groupExchanges(all.filter((i) => i.type !== "error" || i.quiet === true));
+    const { shown, live: running } = foldSteps(grouped, agent.presence === "working");
     const nameOf = (agentId: string): string | undefined => agents.get(agentId)?.name;
     const files: ChatFiles = { agent: id, byName: sharedFiles(events) };
     return {
       shown,
       files,
       roomTurn: chat.roomTurn,
-      step: last?.type === "tool" ? stepLabel(last.name, last.input, nameOf) : "Getting started",
+      trail: running.slice(-3).map((t) => stepLabel(t.name, t.input, nameOf)),
     };
-  }, [id, messages, events, live, agents, routines]);
+  }, [id, messages, events, live, agents, routines, agent.presence]);
+
+  // New items rise in; the history that was there when the chat opened does not.
+  const firstSeen = useRef(new Map<string, number>());
+  const now = Date.now();
+  for (const item of items.shown)
+    if (!firstSeen.current.has(item.key)) firstSeen.current.set(item.key, loaded ? now : 0);
+  const fresh = (key: string): boolean => now - (firstSeen.current.get(key) ?? 0) < 600;
 
   // Keep the view pinned to the bottom unless the user scrolled up.
   const scroller = useRef<HTMLDivElement>(null);
@@ -169,7 +179,7 @@ export function Chat(props: {
   useLayoutEffect(() => {
     const el = scroller.current;
     if (el && pinned.current) el.scrollTop = el.scrollHeight;
-  }, [items.shown, items.step]);
+  }, [items.shown, items.trail]);
 
   const working = agent.presence === "working";
   const status = statusOf(agent);
@@ -242,9 +252,6 @@ export function Chat(props: {
             </IconButton>
           </span>
         )}
-        <IconButton label="Edit agent" onClick={props.onEdit}>
-          <Pencil size={18} />
-        </IconButton>
         <IconButton
           label={props.infoOpen ? "Hide details" : "Show details"}
           onClick={props.onToggleInfo}
@@ -273,15 +280,22 @@ export function Chat(props: {
           </div>
         )}
         {items.shown.map((item) => (
-          <Item key={item.key} item={item} agent={agent} files={items.files} />
+          <div key={item.key} class={fresh(item.key) ? "enter" : "settled"}>
+            <Item item={item} agent={agent} files={items.files} onActivities={props.onActivities} />
+          </div>
         ))}
         {working &&
           !items.roomTurn &&
           !items.shown.some((i) => i.type === "assistant" && i.streaming) && (
             <div class="row row-agent">
               <Avatar agent={agent} size={28} mood="working" />
-              <div class="step-now" role="status">
-                {items.step}…
+              <div class="step-trail" role="status">
+                {items.trail.slice(0, -1).map((step, n) => (
+                  <span key={`${String(n)}-${step}`} class="step-old">
+                    {step}
+                  </span>
+                ))}
+                <span class="step-now">{items.trail.at(-1) ?? "Getting started"}…</span>
               </div>
             </div>
           )}
@@ -351,10 +365,41 @@ function ExchangeHint(props: { item: Exchange; agent: Agent }): JSX.Element {
   );
 }
 
-function Item(props: { item: DisplayItem; agent: Agent; files?: ChatFiles }): JSX.Element {
+const NOTICE_ICONS: Record<string, typeof Moon> = {
+  sleeping: Moon,
+  awake: Sun,
+  snapshot: Camera,
+  restored: RotateCcw,
+  sandbox_restarted: RotateCcw,
+  agent_created: UserPlus,
+  agent_tools_changed: Wrench,
+  stopped: CircleStop,
+};
+
+function Item(props: {
+  item: DisplayItem;
+  agent: Agent;
+  files?: ChatFiles;
+  onActivities?: () => void;
+}): JSX.Element {
   const { item, agent } = props;
   const { agents, openFile } = useApp();
   switch (item.type) {
+    case "steps":
+      return (
+        <div class="row row-center">
+          <button
+            type="button"
+            class="steps-line"
+            title={item.tools
+              .map((t) => stepLabel(t.name, t.input, (a) => agents.get(a)?.name))
+              .join("\n")}
+            onClick={props.onActivities}
+          >
+            <Footprints size={14} /> {stepsLabel(item.tools.length, item.seconds)}
+          </button>
+        </div>
+      );
     case "exchange":
       return <ExchangeHint item={item} agent={agent} />;
     case "user":
@@ -471,19 +516,22 @@ function Item(props: { item: DisplayItem; agent: Agent; files?: ChatFiles }): JS
     case "error":
       return (
         <div class="row row-center">
-          <div class="notice notice-error">
-            <AlertTriangle size={16} /> {item.text}
-          </div>
+          <button type="button" class="turn-failed" title={item.text} onClick={props.onActivities}>
+            <AlertTriangle size={14} /> Turn failed · {clockTime(item.at)} · details
+          </button>
         </div>
       );
-    case "system":
+    case "system": {
+      const Icon = NOTICE_ICONS[item.kind];
       return (
         <div class="row row-center">
           <div class="notice">
+            {Icon && <Icon size={14} />}
             {item.text} · {clockTime(item.at)}
           </div>
         </div>
       );
+    }
   }
 }
 
@@ -506,19 +554,12 @@ function prettyOutput(text: string): string {
   }
 }
 
-/** One-line summary of a tool input, e.g. `to: bob, body: "hi"`. */
-function summary(input: unknown): string {
-  if (input === null || typeof input !== "object") return "";
-  return Object.entries(input as Record<string, unknown>)
-    .slice(0, 3)
-    .map(([k, v]) => `${k}: ${typeof v === "string" ? v : JSON.stringify(v)}`)
-    .join(", ");
-}
-
 export function ToolCard(props: { item: Extract<TimelineItem, { type: "tool" }> }): JSX.Element {
   const { item } = props;
+  const { agents } = useApp();
   const [open, setOpen] = useState(false);
   const label = toolLabel(item.name);
+  const headline = stepLabel(item.name, item.input, (id) => agents.get(id)?.name);
   const state =
     item.denied !== null
       ? "denied"
@@ -540,11 +581,8 @@ export function ToolCard(props: { item: Extract<TimelineItem, { type: "tool" }> 
         >
           <ChevronRight size={16} class="chev" />
           {state === "denied" ? <ShieldAlert size={16} /> : <Wrench size={16} />}
-          <span class="tool-name">{label.tool}</span>
-          {label.server && <span class="tool-server">{label.server}</span>}
-          <span class="tool-summary">
-            {state === "denied" ? `Blocked: ${item.denied ?? ""}` : summary(item.input)}
-          </span>
+          <span class="tool-name">{headline}</span>
+          {state === "denied" && <span class="tool-summary">Blocked: {item.denied ?? ""}</span>}
           <span class={`tool-state s-${state}`}>
             {state === "running"
               ? "Running"
@@ -557,6 +595,10 @@ export function ToolCard(props: { item: Extract<TimelineItem, { type: "tool" }> 
         </button>
         {open && (
           <div class="tool-body">
+            <div class="tool-label">
+              {label.tool}
+              {label.server && <span class="tool-server">{label.server}</span>}
+            </div>
             {item.input !== null && (
               <>
                 <div class="tool-label">Input</div>

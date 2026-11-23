@@ -26,6 +26,8 @@ export type TimelineItem =
       output: string | null;
       isError: boolean;
       denied: string | null;
+      /** The turn that made the call. */
+      turn: string | null;
     }
   | {
       type: "question";
@@ -36,8 +38,15 @@ export type TimelineItem =
       answered: QuestionAnswered | null;
     }
   | { type: "file"; key: string; at: string; id: number; name: string; size: number }
-  | { type: "error"; key: string; at: string; text: string }
-  | { type: "system"; key: string; at: string; text: string };
+  | {
+      type: "error";
+      key: string;
+      at: string;
+      text: string;
+      /** A failed turn the chat shows as one quiet line: no undelivered bubble says it already. */
+      quiet?: boolean;
+    }
+  | { type: "system"; key: string; at: string; text: string; kind: string };
 
 export interface Names {
   /** Agent id -> name. */
@@ -124,14 +133,26 @@ export function buildTimeline(
   // Turn errors stay on the Activities tab, except the last one of a message that failed.
   const turnMessage = new Map<string, number>();
   const failures = new Map<number, string>();
+  const lastFailedTurn = new Map<number, string>();
   for (const e of events) {
     const p = e.payload as Payload;
     if (e.kind === "message_in" && e.turn_id && typeof p["message_id"] === "number")
       turnMessage.set(e.turn_id, p["message_id"]);
     const message = e.turn_id ? turnMessage.get(e.turn_id) : undefined;
-    if (e.kind === "turn_done" && p["outcome"] === "failed" && message !== undefined)
+    if (e.kind === "turn_done" && p["outcome"] === "failed" && message !== undefined) {
       failures.set(message, str(p["error"]) || "The turn failed");
+      if (e.turn_id) lastFailedTurn.set(message, e.turn_id);
+    }
   }
+  const fromUser = new Set(
+    messages.filter((m) => m.sender.kind === "user" && m.recipient === agentId).map((m) => m.id),
+  );
+  // Retries of the same message fail alike: only the last one gets a line.
+  const quietFailure = (turn: string | null): boolean => {
+    const message = turn ? turnMessage.get(turn) : undefined;
+    if (message === undefined) return true;
+    return !fromUser.has(message) && lastFailedTurn.get(message) === turn;
+  };
 
   for (const m of messages) {
     const key = `m${String(m.id)}`;
@@ -211,6 +232,7 @@ export function buildTimeline(
           output: null,
           isError: false,
           denied: null,
+          turn: e.turn_id ?? null,
         };
         const id = str(p["id"]);
         if (id) tools.set(id, item);
@@ -245,6 +267,7 @@ export function buildTimeline(
           output: null,
           isError: true,
           denied: str(p["reason"]),
+          turn: e.turn_id ?? null,
         });
         break;
       case "credential_error":
@@ -271,14 +294,15 @@ export function buildTimeline(
             key,
             at: e.created_at,
             text: str(p["error"]) || "The turn failed",
+            quiet: quietFailure(e.turn_id ?? null),
           });
         } else if (p["outcome"] === "interrupted") {
-          push({ type: "system", key, at: e.created_at, text: "Stopped" });
+          push({ type: "system", key, at: e.created_at, text: "Stopped", kind: "stopped" });
         }
         break;
       default: {
         const text = SYSTEM_TEXT[e.kind]?.(p);
-        if (text) push({ type: "system", key, at: e.created_at, text });
+        if (text) push({ type: "system", key, at: e.created_at, text, kind: e.kind });
       }
     }
   }
@@ -320,7 +344,16 @@ export interface Exchange {
   tools: ToolItem[];
 }
 
-export type DisplayItem = TimelineItem | Exchange;
+/** A finished run of tool calls, shown in the chat as one line that opens Activities. */
+export interface Steps {
+  type: "steps";
+  key: string;
+  at: string;
+  tools: ToolItem[];
+  seconds: number;
+}
+
+export type DisplayItem = TimelineItem | Exchange | Steps;
 
 const isSendCall = (i: TimelineItem): i is ToolItem =>
   i.type === "tool" && i.denied === null && /(^|__)send_message$/.test(i.name);
@@ -380,4 +413,35 @@ export function sharedFiles(events: readonly StoredEvent[]): Map<string, number>
     if (e.kind === "file" && typeof name === "string") out.set(name, e.id);
   }
   return out;
+}
+
+/**
+ * Folds each run of tool calls into one `steps` line. While the agent works, the run at the
+ * end is still going: it comes back as `live` for the chat's step trail instead.
+ */
+export function foldSteps(
+  items: readonly DisplayItem[],
+  working: boolean,
+): { shown: DisplayItem[]; live: ToolItem[] } {
+  const shown: DisplayItem[] = [];
+  let run: ToolItem[] = [];
+  const close = (): void => {
+    const [first, last] = [run[0], run[run.length - 1]];
+    if (first && last) {
+      const seconds = (Date.parse(last.at) - Date.parse(first.at)) / 1000;
+      shown.push({ type: "steps", key: `s-${first.key}`, at: first.at, tools: run, seconds });
+    }
+    run = [];
+  };
+  for (const item of items) {
+    if (item.type === "tool") {
+      run.push(item);
+      continue;
+    }
+    close();
+    shown.push(item);
+  }
+  if (working) return { shown, live: run };
+  close();
+  return { shown, live: [] };
 }

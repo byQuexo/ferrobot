@@ -168,6 +168,17 @@
                 }
               ]
             },
+            "last_reply": {
+              "oneOf": [
+                {
+                  "$ref": "#/$defs/LastReply",
+                  "description": "The agent's newest reply, cut to a preview."
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
             "presence": {
               "$ref": "#/$defs/Presence"
             },
@@ -187,12 +198,19 @@
               "format": "int32",
               "minimum": 0,
               "type": "integer"
+            },
+            "waiting": {
+              "description": "Question cards waiting for the operator's answer.",
+              "format": "int32",
+              "minimum": 0,
+              "type": "integer"
             }
           },
           "required": [
             "connected",
             "presence",
-            "unread"
+            "unread",
+            "waiting"
           ],
           "type": "object"
         }
@@ -272,6 +290,24 @@
         "rejected"
       ],
       "type": "string"
+    },
+    "LastReply": {
+      "description": "The start of an agent's newest reply.",
+      "properties": {
+        "at": {
+          "description": "When the reply came (RFC 3339).",
+          "type": "string"
+        },
+        "text": {
+          "description": "At most 160 characters.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "text",
+        "at"
+      ],
+      "type": "object"
     },
     "MailMessage": {
       "description": "One message in an agent's mailbox.",
