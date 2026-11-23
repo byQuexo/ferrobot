@@ -81,7 +81,9 @@ the model's window (Claude 4.6 and later, Fable and Gemini 1M, older Claude
 own login outside the proxy, so their ring comes from the token counts
 `claude` reports for its newest call (their cost stays untracked). New chat in its
 popover makes the agent's next turn start a fresh session; the chat history
-stays. Compacting a conversation on demand is not offered.
+stays. **Compact now** (Claude Code agents) has the daemon run `claude`'s own
+`/compact` on the agent's session, so its model keeps a summary instead of
+the whole history; it never runs from message text.
 
 ## API
 

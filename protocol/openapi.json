@@ -660,6 +660,81 @@
         }
       }
     },
+    "/v1/agents/{id}/compact": {
+      "post": {
+        "tags": [
+          "chat"
+        ],
+        "summary": "Compacts the agent's conversation: its model keeps a summary instead of the whole history,\nso its context shrinks. Claude Code agents only (their own `/compact`, run by the daemon).",
+        "operationId": "compact",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "Agent id (UUID)",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Compacted"
+          },
+          "400": {
+            "description": "Not a Claude Code agent",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or wrong API token",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Unknown agent",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Nothing to compact yet, or the agent is in a turn",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "Claude Code failed to compact",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/v1/agents/{id}/connectors": {
       "get": {
         "tags": [
@@ -5912,7 +5987,8 @@
         "type": "object",
         "description": "How full an agent's context is, read from its newest model call.",
         "required": [
-          "tracked"
+          "tracked",
+          "compact"
         ],
         "properties": {
           "tracked": {
@@ -5949,6 +6025,10 @@
             ],
             "format": "date-time",
             "description": "When that call was made."
+          },
+          "compact": {
+            "type": "boolean",
+            "description": "Whether `POST /v1/agents/{id}/compact` works for this agent (Claude Code agents)."
           }
         }
       },

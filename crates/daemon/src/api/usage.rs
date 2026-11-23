@@ -392,6 +392,8 @@ pub(crate) struct AgentContext {
     #[serde(with = "time::serde::rfc3339::option")]
     #[schema(value_type = Option<String>, format = DateTime)]
     at: Option<OffsetDateTime>,
+    /// Whether `POST /v1/agents/{id}/compact` works for this agent (Claude Code agents).
+    compact: bool,
 }
 
 /// How full the agent's context is.
@@ -430,6 +432,7 @@ pub(crate) async fn get_context(
                 .or_else(|| model.as_deref().and_then(context_window)),
             model,
             at: saved.map(|c| c.at),
+            compact: true,
         }));
     }
     // shortcut: an agent on its provider's default can show a side call on a smaller model; name the driver's main model here if that misleads.
@@ -447,6 +450,7 @@ pub(crate) async fn get_context(
         window: model.as_deref().and_then(context_window),
         model,
         at: usage.map(|u| u.at),
+        compact: false,
     }))
 }
 

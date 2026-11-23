@@ -106,6 +106,73 @@ fn login_of(auth_status: &str) -> (bool, Option<String>) {
     (auth["loggedIn"] == true, method)
 }
 
+/// How long `claude` may take to compact a session (it is a model call).
+const COMPACT_TIMEOUT: Duration = Duration::from_secs(180);
+
+/// Why a session could not be compacted.
+#[derive(Debug)]
+pub enum CompactError {
+    /// No session yet, or the agent is in a turn.
+    NotNow(&'static str),
+    /// `claude` failed or did not answer.
+    Failed(String),
+}
+
+/// Compacts the agent's session with `claude`'s own `/compact`. The daemon runs it on the
+/// operator's word, never from message text, with no tools and none of the user's settings.
+pub async fn compact(state: &AppState, agent: AgentId) -> Result<String, CompactError> {
+    let dir = agent_dir(state, agent);
+    let session: Uuid = tokio::fs::read_to_string(dir.join("session"))
+        .await
+        .ok()
+        .and_then(|s| s.trim().parse().ok())
+        .ok_or(CompactError::NotNow(
+            "there is no conversation to compact yet",
+        ))?;
+    if state.hub.is_working(agent) {
+        return Err(CompactError::NotNow(
+            "the agent is in a turn; try again when it is done",
+        ));
+    }
+    let _busy = Busy::take(agent).ok_or(CompactError::NotNow(
+        "the agent is in a turn; try again when it is done",
+    ))?;
+    let mut cmd = claude(state);
+    cmd.args([
+        "-p",
+        "--setting-sources=",
+        "--tools=",
+        "--strict-mcp-config",
+        "--output-format=json",
+        &format!("--resume={session}"),
+        "/compact",
+    ])
+    .current_dir(&dir)
+    .kill_on_drop(true);
+    let failed = |why: &str| CompactError::Failed(why.to_owned());
+    let out = tokio::time::timeout(COMPACT_TIMEOUT, cmd.output())
+        .await
+        .map_err(|_| failed("Claude Code took too long to compact"))?
+        .map_err(|e| CompactError::Failed(format!("cannot start claude: {e}")))?;
+    let report: Value =
+        serde_json::from_slice(&out.stdout).map_err(|_| failed("Claude Code gave no answer"))?;
+    if report["is_error"] == true {
+        return Err(failed(
+            report["result"].as_str().unwrap_or("compacting failed"),
+        ));
+    }
+    if let Some(id) = report["session_id"]
+        .as_str()
+        .and_then(|s| s.parse::<Uuid>().ok())
+        && id != session
+    {
+        let _ = tokio::fs::write(dir.join("session"), id.to_string()).await;
+    }
+    // The ring would show the old size until the next turn reports the new one.
+    let _ = tokio::fs::remove_file(dir.join("context.json")).await;
+    Ok(report["result"].as_str().unwrap_or_default().to_owned())
+}
+
 /// The seat's 5-hour and weekly use from `claude`'s own `/usage` report, which makes no model
 /// call. The report also names the account and its habits; only the two limit lines are kept.
 pub async fn plan_limits(state: &AppState) -> Result<PlanLimits, String> {

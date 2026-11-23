@@ -223,6 +223,8 @@ export class DaemonClient {
   newSession = (id: string): Promise<void> => this.#request("POST", `/v1/agents/${id}/new-session`);
   agentContext = (id: string): Promise<AgentContext> =>
     this.#request("GET", `/v1/agents/${id}/context`);
+  /** Shrinks the agent's context to a summary (Claude Code agents). */
+  compact = (id: string): Promise<void> => this.#request("POST", `/v1/agents/${id}/compact`);
   /** One of the agent's turns as a timeline. */
   trace = (id: string, turn: string): Promise<Trace> =>
     this.#request("GET", `/v1/agents/${id}/turns/${encodeURIComponent(turn)}/trace`);

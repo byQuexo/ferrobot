@@ -59,6 +59,7 @@ pub const QUESTION_CARD_FILE: &str = "question-card.v1.schema.json";
         api::chat::retry,
         api::chat::new_session,
         api::chat::turn_trace,
+        api::chat::compact,
         api::chat::answer_question,
         api::memory::list_memory,
         api::memory::put_memory,

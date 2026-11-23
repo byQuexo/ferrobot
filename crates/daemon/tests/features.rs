@@ -6895,6 +6895,12 @@ case "$1" in
   --version) echo "9.9.9 (Claude Code)"; exit 0 ;;
   auth) echo '{"loggedIn": true, "authMethod": "claude.ai", "email": "someone@example.com"}'; exit 0 ;;
 esac
+case "$*" in *" /compact")
+  echo "$*" >> "$here/compact-args.log"
+  session="$(printf '%s\n' "$@" | sed -n 's/^--resume=//p')"
+  printf '%s\n' "{\"type\":\"result\",\"subtype\":\"success\",\"is_error\":false,\"result\":\"Compacted\",\"session_id\":\"$session\"}"
+  exit 0 ;;
+esac
 case "$*" in *" /usage")
   echo "$*" >> "$here/usage-args.log"
   env > "$here/usage-env.log"
@@ -6972,6 +6978,12 @@ async fn claude_code_agents_use_the_hosts_own_cli_and_nothing_enters_the_sandbox
         (&json!(true), &Value::Null, &json!("sonnet")),
         "no turn yet: {ctx}"
     );
+    let compact = format!("/v1/agents/{}/compact", clio["id"].as_str().unwrap());
+    assert_eq!(
+        http(&d.ui, "POST", &compact, None).await.0,
+        409,
+        "nothing to compact"
+    );
     let env = backend.envs.lock().unwrap()["clio"].clone();
     assert_eq!(env["FERROBOT_DRIVER"], "claude_code");
     // No key, no Claude login and no claude config: only ferrobot's own settings.
@@ -7026,6 +7038,27 @@ async fn claude_code_agents_use_the_hosts_own_cli_and_nothing_enters_the_sandbox
         log("mcp.log").contains(&format!("Bearer {token}")),
         "the agent's own token for /mcp"
     );
+    // Compacting runs claude's own /compact on that session, with no tools, on the daemon's word.
+    assert_eq!(http(&d.ui, "POST", &compact, None).await.0, 204);
+    let compacted = log("compact-args.log");
+    assert!(
+        compacted.contains(&format!("--resume={session}"))
+            && compacted.contains("--tools= ")
+            && compacted.trim_end().ends_with("/compact"),
+        "{compacted}"
+    );
+    let (_, ctx) = http(&d.ui, "GET", &context, None).await;
+    assert_eq!(
+        ctx["tokens"],
+        Value::Null,
+        "the old size is gone until the next turn"
+    );
+    let kinds: Vec<_> = events(&d, clio["id"].as_str().unwrap())
+        .await
+        .into_iter()
+        .map(|e| e["kind"].as_str().unwrap_or_default().to_owned())
+        .collect();
+    assert!(kinds.iter().any(|k| k == "compacted"), "{kinds:?}");
     assert!(
         !log("env.log").contains(&token),
         "the token stays out of claude's environment"

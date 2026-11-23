@@ -30,6 +30,7 @@ pub(super) fn router() -> Router<AppState> {
         .route("/v1/agents/{id}/retry", post(retry))
         .route("/v1/agents/{id}/new-session", post(new_session))
         .route("/v1/agents/{id}/turns/{turn_id}/trace", get(turn_trace))
+        .route("/v1/agents/{id}/compact", post(compact))
         .route(
             "/v1/agents/{id}/questions/{qid}/answer",
             post(answer_question),
@@ -358,6 +359,45 @@ pub(crate) async fn interrupt(
     Ok(Json(Interrupted {
         turn_id: state.hub.interrupt(id),
     }))
+}
+
+/// Compacts the agent's conversation: its model keeps a summary instead of the whole history,
+/// so its context shrinks. Claude Code agents only (their own `/compact`, run by the daemon).
+#[utoipa::path(post, path = "/v1/agents/{id}/compact", tag = "chat",
+    params(("id" = String, Path, description = "Agent id (UUID)")),
+    responses((status = 204, description = "Compacted"),
+        (status = 400, description = "Not a Claude Code agent", body = ErrorBody),
+        (status = 404, description = "Unknown agent", body = ErrorBody),
+        (status = 409, description = "Nothing to compact yet, or the agent is in a turn", body = ErrorBody),
+        (status = 502, description = "Claude Code failed to compact", body = ErrorBody)))]
+pub(crate) async fn compact(
+    State(state): State<AppState>,
+    Path(id): Path<String>,
+) -> Result<StatusCode, ApiError> {
+    let agent = state.store.get_agent(parse_id(&id)?).await?;
+    let claude_code = match agent.provider_id {
+        Some(p) => state
+            .store
+            .get_provider(p)
+            .await
+            .is_ok_and(|p| p.kind == ProviderKind::ClaudeCode),
+        None => false,
+    };
+    if !claude_code {
+        return Err(ApiError::BadRequest(
+            "compacting works for Claude Code agents for now".into(),
+        ));
+    }
+    match crate::claude_code::compact(&state, agent.id).await {
+        Ok(_) => {
+            state
+                .record(agent.id, None, "compacted", serde_json::json!({}))
+                .await;
+            Ok(StatusCode::NO_CONTENT)
+        }
+        Err(crate::claude_code::CompactError::NotNow(why)) => Err(ApiError::Conflict(why.into())),
+        Err(crate::claude_code::CompactError::Failed(why)) => Err(ApiError::Upstream(why)),
+    }
 }
 
 /// One of the agent's turns as a timeline: its model calls and tool calls with their times.

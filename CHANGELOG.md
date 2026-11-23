@@ -15,6 +15,11 @@ All notable changes are listed here. The format follows
   (`GET /v1/agents/{id}/turns/{turn_id}/trace`). Computer steps name their
   command or file. New migration: v20 (`usage.turn_id`, `usage.at_ms`).
 
+- Compact now: in the context popover, Claude Code agents can compact their
+  conversation (`POST /v1/agents/{id}/compact`). The daemon runs `claude`'s
+  own `/compact` on the agent's session, with no tools and none of your
+  settings; message text can still never run a slash command.
+
 ### Fixed
 
 - A renamed agent can still be reached by its old name: agents that write

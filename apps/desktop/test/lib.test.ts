@@ -1963,7 +1963,7 @@ describe("agent meta", () => {
   });
 
   it("fills the context meter and clamps it", () => {
-    const ctx = { tracked: true, tokens: 50_000, window: 200_000, model: "m" };
+    const ctx = { tracked: true, tokens: 50_000, window: 200_000, model: "m", compact: false };
     assert.deepEqual(contextMeter(ctx), {
       percent: 25,
       title: "Context 25% full",
@@ -1972,7 +1972,7 @@ describe("agent meta", () => {
     assert.equal(contextMeter({ ...ctx, tokens: 250_000 }).percent, 100);
     assert.equal(contextMeter({ ...ctx, tokens: null }).percent, 0);
     assert.equal(contextMeter({ ...ctx, window: null }).percent, null);
-    assert.equal(contextMeter({ tracked: false }).title, "Context not tracked");
+    assert.equal(contextMeter({ tracked: false, compact: false }).title, "Context not tracked");
   });
 
   it("shows a new chat in the timeline", () => {
