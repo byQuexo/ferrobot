@@ -2354,3 +2354,21 @@ describe("trace layout", () => {
     );
   });
 });
+
+describe("local server commands", () => {
+  it("splits like a shell and shows quoted arguments", async () => {
+    const { commandLine, splitCommand } = await import("../src/lib/connectors.ts");
+    assert.deepEqual(splitCommand(" npx -y  @scope/server '/Users/me/My Vault' "), [
+      "npx",
+      "-y",
+      "@scope/server",
+      "/Users/me/My Vault",
+    ]);
+    assert.deepEqual(splitCommand('node "a \\"b\\"" c\\ d'), ["node", 'a "b"', "c d"]);
+    assert.deepEqual(splitCommand("   "), []);
+    assert.equal(
+      commandLine(["npx", "-y", "@scope/server", "/Users/me/My Vault"]),
+      "npx -y @scope/server '/Users/me/My Vault'",
+    );
+  });
+});

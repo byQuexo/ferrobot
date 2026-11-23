@@ -52,6 +52,12 @@ an MCP client and lists its tools. The row shows the result:
 Open the agent's **Edit agent** dialog. Its **Tools** list has a switch per
 connector. Changes apply from the agent's next turn.
 
+- **Local servers** (for example an `npx` server, or one that reads a folder on
+  this computer such as an Obsidian vault): **Add a custom connector** → *A local
+  server on this computer*, then its command. ferrobot starts it when it starts,
+  without a shell and with a cleared environment; if it reads a token from the
+  environment, name the variable and put the token in **Vault**. It runs with
+  your rights outside the agents' sandboxes, so only add servers you trust.
 - An agent can ask for a connector with its `add_connector` tool. You see a
   card with the name and URL; approve it and the connector is added and given
   to the agent. No card asks for a key: put a token in **Vault** yourself. The

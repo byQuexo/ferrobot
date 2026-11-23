@@ -82,3 +82,38 @@ export function usedByLabel(names: string[]): string {
   const head = shown.slice(0, -1);
   return `Used by ${head.length > 0 ? `${head.join(", ")} and ` : ""}${shown.at(-1) ?? ""}`;
 }
+
+/** A command line split like a shell would: spaces separate, quotes keep spaces, `\` escapes. */
+export function splitCommand(line: string): string[] {
+  const out: string[] = [];
+  let cur = "";
+  let quote: string | null = null;
+  let started = false;
+  for (let i = 0; i < line.length; i++) {
+    const c = line[i] ?? "";
+    if (quote) {
+      if (c === quote) quote = null;
+      else if (c === "\\" && quote === '"' && i + 1 < line.length) cur += line[++i] ?? "";
+      else cur += c;
+    } else if (c === "'" || c === '"') {
+      quote = c;
+      started = true;
+    } else if (c === "\\" && i + 1 < line.length) {
+      cur += line[++i] ?? "";
+      started = true;
+    } else if (/\s/.test(c)) {
+      if (started) out.push(cur);
+      cur = "";
+      started = false;
+    } else {
+      cur += c;
+      started = true;
+    }
+  }
+  if (started) out.push(cur);
+  return out;
+}
+
+/** A local server's command for display: arguments with spaces in single quotes. */
+export const commandLine = (argv: readonly string[]): string =>
+  argv.map((a) => (/^[\w@/.:=+,-]+$/.test(a) ? a : `'${a.replace(/'/g, "'\\''")}'`)).join(" ");

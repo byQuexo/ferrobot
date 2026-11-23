@@ -30,6 +30,12 @@ All notable changes are listed here. The format follows
 - Calls with several agents: an agent without a voice of its own speaks with an
   `ElevenLabs` voice from your account that no one else in the call uses (by
   its place in the call); the host keeps the default.
+- Local MCP servers: a connector can be a command (for example an `npx` server)
+  that ferrobot starts on this computer when it starts, without a shell and
+  with a cleared environment; its token goes in as the environment variable you
+  name. Agents can propose one with `add_connector` (`command`); the card shows
+  the exact command and Auto mode never skips it. New migration: v22
+  (`connectors.command`, `connectors.token_env`).
 - Compact now: in the context popover, Claude Code agents can compact their
   conversation (`POST /v1/agents/{id}/compact`). The daemon runs `claude`'s
   own `/compact` on the agent's session, with no tools and none of your

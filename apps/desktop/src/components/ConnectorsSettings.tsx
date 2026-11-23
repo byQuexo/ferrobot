@@ -30,10 +30,12 @@ import { type CatalogEntry, type CatalogKind, groupCatalog, isAdded } from "../l
 import {
   checkDot,
   checkLabel,
+  commandLine,
   entryOf,
   monogram,
   needOf,
   ownAppEntry,
+  splitCommand,
   tileHue,
   usedByLabel,
   usersOf,
@@ -151,6 +153,9 @@ export function ConnectorsSettings(props: {
   const [query, setQuery] = useState("");
   const [name, setName] = useState("");
   const [url, setUrl] = useState("");
+  const [local, setLocal] = useState(false);
+  const [commandText, setCommandText] = useState("");
+  const [tokenEnv, setTokenEnv] = useState("");
   const [ownApp, setOwnApp] = useState(false);
   const [app, setApp] = useState<AppDraft>(EMPTY_APP);
   const [editApp, setEditApp] = useState<({ id: string } & AppDraft) | null>(null);
@@ -283,21 +288,34 @@ export function ConnectorsSettings(props: {
   const preset = ownAppEntry(url);
   const lockedApp = preset !== undefined;
   const withApp = ownApp || lockedApp;
-  const canAdd = !busy && !!name.trim() && !!url.trim() && !(withApp && !app.clientId.trim());
+  const canAdd =
+    !busy &&
+    !!name.trim() &&
+    (local
+      ? splitCommand(commandText).length > 0
+      : !!url.trim() && !(withApp && !app.clientId.trim()));
 
   const add = (): Promise<void> =>
     run(async () => {
-      const c = await client.createConnector({
-        name: name.trim(),
-        url: url.trim(),
-        ...(withApp
+      const c = await client.createConnector(
+        local
           ? {
-              client_id: app.clientId.trim() || null,
-              issuer: app.issuer.trim() || null,
-              scopes: scopesOf(app.scopes),
+              name: name.trim(),
+              command: splitCommand(commandText),
+              token_env: tokenEnv.trim() || null,
             }
-          : {}),
-      });
+          : {
+              name: name.trim(),
+              url: url.trim(),
+              ...(withApp
+                ? {
+                    client_id: app.clientId.trim() || null,
+                    issuer: app.issuer.trim() || null,
+                    scopes: scopesOf(app.scopes),
+                  }
+                : {}),
+            },
+      );
       toastIfFailed(c);
       setAdding(false);
     });
@@ -352,10 +370,17 @@ export function ConnectorsSettings(props: {
                         {checkLabel(c, busyCheck)}
                       </span>
                     </div>
-                    <span class="muted small conn-url" title={c.url}>
-                      {c.url}
-                      {c.client_id ? " · own OAuth app" : ""}
-                    </span>
+                    {c.command ? (
+                      <span class="muted small conn-url" title={commandLine(c.command)}>
+                        Runs here: {commandLine(c.command)}
+                        {c.token_env ? ` · token as ${c.token_env}` : ""}
+                      </span>
+                    ) : (
+                      <span class="muted small conn-url" title={c.url}>
+                        {c.url}
+                        {c.client_id ? " · own OAuth app" : ""}
+                      </span>
+                    )}
                     <span class="small conn-users">{usedByLabel(users.get(c.id) ?? [])}</span>
                     {need && (
                       <div class="conn-next">
@@ -622,38 +647,103 @@ export function ConnectorsSettings(props: {
                 Lowercase letters, digits and dashes. Its tools show up as name__tool.
               </span>
             </label>
-            <label>
-              URL
-              <input
-                value={url}
-                placeholder="https://host/mcp"
-                onInput={(e) => {
-                  const next = e.currentTarget.value;
-                  setUrl(next);
-                  const entry = ownAppEntry(next);
-                  if (entry?.app && !app.issuer.trim()) {
-                    setApp({
-                      ...app,
-                      issuer: entry.app.issuer,
-                      scopes: entry.app.scopes.join(" "),
-                    });
-                  }
-                }}
-              />
-            </label>
-            <label class="check">
-              <input
-                type="checkbox"
-                checked={withApp}
-                disabled={lockedApp}
-                onChange={(e) => {
-                  setOwnApp(e.currentTarget.checked);
-                }}
-              />
-              Use my own OAuth app{lockedApp ? " (this server needs one)" : ""}
-            </label>
-            {withApp && <AppFields draft={app} onChange={setApp} redirectUri={redirectUri} />}
-            {withApp && !app.clientId.trim() && (
+            {!preset && (
+              <fieldset class="conn-kind">
+                <legend>Where it runs</legend>
+                <label class="check">
+                  <input
+                    type="radio"
+                    name="conn-kind"
+                    checked={!local}
+                    onChange={() => {
+                      setLocal(false);
+                    }}
+                  />
+                  A remote server (URL)
+                </label>
+                <label class="check">
+                  <input
+                    type="radio"
+                    name="conn-kind"
+                    checked={local}
+                    onChange={() => {
+                      setLocal(true);
+                    }}
+                  />
+                  A local server on this computer (command)
+                </label>
+              </fieldset>
+            )}
+            {local && (
+              <>
+                <label>
+                  Command
+                  <input
+                    value={commandText}
+                    placeholder="npx -y package-name"
+                    onInput={(e) => {
+                      setCommandText(e.currentTarget.value);
+                    }}
+                  />
+                  <span class="hint">
+                    Runs on this computer with your rights, outside the agents’ sandboxes, when
+                    ferrobot starts. Only add servers you trust.
+                  </span>
+                </label>
+                <label>
+                  Token variable (optional)
+                  <input
+                    value={tokenEnv}
+                    placeholder="e.g. API_TOKEN"
+                    onInput={(e) => {
+                      setTokenEnv(e.currentTarget.value);
+                    }}
+                  />
+                  <span class="hint">
+                    If the server reads a token from the environment: put the token in Vault after
+                    adding it.
+                  </span>
+                </label>
+              </>
+            )}
+            {!local && (
+              <label>
+                URL
+                <input
+                  value={url}
+                  placeholder="https://host/mcp"
+                  onInput={(e) => {
+                    const next = e.currentTarget.value;
+                    setUrl(next);
+                    const entry = ownAppEntry(next);
+                    if (entry?.app && !app.issuer.trim()) {
+                      setApp({
+                        ...app,
+                        issuer: entry.app.issuer,
+                        scopes: entry.app.scopes.join(" "),
+                      });
+                    }
+                  }}
+                />
+              </label>
+            )}
+            {!local && (
+              <label class="check">
+                <input
+                  type="checkbox"
+                  checked={withApp}
+                  disabled={lockedApp}
+                  onChange={(e) => {
+                    setOwnApp(e.currentTarget.checked);
+                  }}
+                />
+                Use my own OAuth app{lockedApp ? " (this server needs one)" : ""}
+              </label>
+            )}
+            {!local && withApp && (
+              <AppFields draft={app} onChange={setApp} redirectUri={redirectUri} />
+            )}
+            {!local && withApp && !app.clientId.trim() && (
               <span class="hint">
                 Enter your OAuth app’s client ID. No app yet?{" "}
                 <button type="button" class="text-link" onClick={props.onGuide}>

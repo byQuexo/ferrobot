@@ -91,7 +91,8 @@ Principles:
   (an approval card unless Auto mode is on) or dangerous (refused); gates connector calls,
   Claude Code's `bash` and, via `/runner/tool-check` (`runner/src/gate.ts`), every driver's shell.
 - `crates/daemon/src/connectors.rs`, `api/connectors.rs` — connectors: the daemon
-  is the MCP client of remote MCP servers and lends their tools to assigned
+  is the MCP client of remote MCP servers, and of local ones it starts on this
+  computer over stdio (`command`, a cleared environment), and lends their tools to assigned
   agents through `/mcp` (tokens in the keychain, never in a sandbox), and the
   `add_connector` approval card (Approve/Decline; tokens go in Settings → Vault);
   `oauth.rs` — their OAuth sign-in (rmcp's client, loopback callback).
@@ -211,7 +212,7 @@ daemon, `docker ps -a` must be empty of ferrobot containers.
 ## Migrations
 
 - `crates/store/src/migrations.rs`, tracked with `PRAGMA user_version`.
-- Forward-only, numbered v1..v21 (v7: `providers`, `agents.provider_id`/`model`; v8:
+- Forward-only, numbered v1..v22 (v7: `providers`, `agents.provider_id`/`model`; v8:
   `global_memories`; v9: `connectors`, `agent_connectors`; v10:
   `global_memories.author`; v11: `agents.pinned`; v12: `settings`, JSON by
   key, e.g. `voice`; v13: `usage`, one row per proxied model call; v14:
@@ -221,7 +222,8 @@ daemon, `docker ps -a` must be empty of ferrobot containers.
   words said; v18: `agents.tags`, NULL = none, index `usage_agent`; v19:
   `rooms.name`, NULL = a call room, else a group chat; v20: `usage.turn_id`,
   `usage.at_ms`, index `usage_turn`; v21: `agent_aliases`, old names of
-  renamed agents). Append a new entry
+  renamed agents; v22: `connectors.command`, `connectors.token_env`, NULL = a
+  remote server). Append a new entry
   with a `// vN: ...` comment; **never edit or reorder existing ones**.
 - Every migration gets a test (upgrade an old DB, check defaults of existing
   rows). New columns on existing tables need a default.
@@ -264,6 +266,11 @@ daemon, `docker ps -a` must be empty of ferrobot containers.
 - **`FERROBOT_MAX_AGENTS`** (default 10) applies to `POST /v1/agents` and to
   `create_agent` (both through `daemon::agents::create`).
 - Question cards are answered at most once (`409` after).
+- **Local MCP servers run on the host only on the operator's word**: added in
+  Settings, or through an agent's `add_connector` card that shows the exact
+  command; Auto mode never skips that card. They start without a shell, with a
+  cleared environment (`PATH`, `HOME`, user, locale, temp, and the connector's
+  Vault token under `token_env`), so no model key or operator token reaches them.
 - **No card asks for a key.** An agent's `add_connector` card is
   Approve/Decline only; connector tokens are typed in Settings → Vault. Agent
   cards cannot carry `secret` fields (`ask_user` refuses them), the answer
