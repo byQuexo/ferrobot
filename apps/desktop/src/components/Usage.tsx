@@ -3,8 +3,10 @@ import { useEffect, useRef, useState } from "preact/hooks";
 import { ArrowDown, ArrowUp, ChartColumn, Download, Pencil, X } from "lucide-preact";
 
 import type {
+  LimitWindow,
   PriceEntry,
   ProviderKind,
+  ProviderLimits,
   UsageGroup,
   UsageGroupBy,
   UsageReport,
@@ -16,14 +18,21 @@ import {
   costLabel,
   count,
   dayLabel,
+  freshTokens,
+  metricOf,
   niceTicks,
   rangeOf,
+  resetLabel,
+  shareLabel,
+  slotOf,
   sortGroups,
   stackDays,
   tickLabel,
   usageCsv,
   usd,
   zoneDays,
+  type DayStack,
+  type Metric,
   type RangeKind,
   type SortKey,
 } from "../lib/usage.ts";
@@ -35,11 +44,11 @@ const RANGES: [RangeKind, string][] = [
   ["30d", "30 days"],
   ["custom", "Custom"],
 ];
-type Breakdown = Exclude<UsageGroupBy, "day">;
+type Breakdown = Exclude<UsageGroupBy, "provider">;
 const BREAKDOWNS: [Breakdown, string][] = [
-  ["provider", "Provider"],
   ["model", "Model"],
   ["agent", "Agent"],
+  ["day", "Day"],
 ];
 const COLUMNS: [SortKey, string][] = [
   ["calls", "Calls"],
@@ -65,7 +74,7 @@ export function Usage(props: { onClose: () => void }): JSX.Element {
   const [reports, setReports] = useState<Reports | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [prices, setPrices] = useState<PriceEntry[]>([]);
-  const [by, setBy] = useState<Breakdown>("provider");
+  const [by, setBy] = useState<Breakdown>("model");
   const [sort, setSort] = useState<{ key: SortKey; desc: boolean }>({
     key: "cost_usd",
     desc: true,
@@ -73,6 +82,7 @@ export function Usage(props: { onClose: () => void }): JSX.Element {
   const [editing, setEditing] = useState<string | null>(null);
   const [reload, setReload] = useState(0);
   const [claudeCode, setClaudeCode] = useState(false);
+  const [limits, setLimits] = useState<ProviderLimits[]>([]);
   const span = rangeOf(range, new Date(), custom);
 
   useEffect(() => {
@@ -82,6 +92,8 @@ export function Usage(props: { onClose: () => void }): JSX.Element {
       },
       () => undefined,
     );
+    // Apart from the reports: reading a plan's limits runs the host's CLI and can take seconds.
+    client.limits().then(setLimits, () => undefined);
   }, []);
 
   useEffect(() => {
@@ -96,8 +108,8 @@ export function Usage(props: { onClose: () => void }): JSX.Element {
         const [day, provider, model, agent, p] = await Promise.all([
           report("day"),
           report("provider", true),
-          report("model", true),
-          report("agent", true),
+          report("model"),
+          report("agent"),
           client.prices(),
         ]);
         if (!live) return;
@@ -115,7 +127,7 @@ export function Usage(props: { onClose: () => void }): JSX.Element {
 
   const groups = reports ? sortGroups(reports[by].groups, sort.key, sort.desc) : [];
   const byLabel = BREAKDOWNS.find(([id]) => id === by)?.[1] ?? "";
-  const timeZone = reports?.[by].timezone ?? "UTC";
+  const timeZone = reports?.provider.timezone ?? "UTC";
   const exportCsv = (): void => {
     const url = URL.createObjectURL(new Blob([usageCsv(groups, by)], { type: "text/csv" }));
     const a = document.createElement("a");
@@ -126,6 +138,11 @@ export function Usage(props: { onClose: () => void }): JSX.Element {
       URL.revokeObjectURL(url);
     }, 1000);
   };
+
+  const totals = reports?.provider.totals;
+  const metric = totals ? chartMetric(totals) : "cost";
+  const dates = span ? zoneDays(span.from, span.to, new Date(), timeZone) : [];
+  const stack = reports ? stackDays(reports.provider.groups, dates, metric) : null;
 
   return (
     <main class="usage-page" aria-label="Usage">
@@ -144,6 +161,7 @@ export function Usage(props: { onClose: () => void }): JSX.Element {
               </p>
             )}
           </div>
+          {limits.length > 0 && <Limits limits={limits} />}
           <IconButton label="Close usage" onClick={props.onClose}>
             <X size={18} />
           </IconButton>
@@ -200,27 +218,30 @@ export function Usage(props: { onClose: () => void }): JSX.Element {
               Retry
             </Button>
           </Empty>
-        ) : !reports ? (
+        ) : !reports || !totals || !stack ? (
           <Skeleton lines={8} />
-        ) : reports.day.totals.calls === 0 ? (
+        ) : totals.calls === 0 ? (
           <Empty icon={<ChartColumn size={28} />} title="No model calls in this range" />
         ) : (
           <>
-            <Totals report={reports.day} />
+            <Summary report={reports.provider} stack={stack} metric={metric} />
+            <DayChart stack={stack} metric={metric} dates={dates} />
+            <TokenTotals totals={totals} />
             <div class="usage-bar">
-              <div class="chips" role="group" aria-label="Break down by">
+              <div class="tabs usage-tabs" role="tablist" aria-label="Break down by">
                 {BREAKDOWNS.map(([id, label]) => (
                   <button
                     key={id}
                     type="button"
-                    class={`chip${by === id ? " on" : ""}`}
-                    aria-pressed={by === id}
+                    role="tab"
+                    aria-selected={by === id}
+                    class={by === id ? "active" : ""}
                     onClick={() => {
                       setBy(id);
                       setEditing(null);
                     }}
                   >
-                    By {label.toLowerCase()}
+                    {label}
                   </button>
                 ))}
               </div>
@@ -229,12 +250,6 @@ export function Usage(props: { onClose: () => void }): JSX.Element {
                 <Download size={16} /> Export CSV
               </Button>
             </div>
-            <DayChart
-              report={reports[by]}
-              totals={reports.day.totals}
-              dates={zoneDays(span.from, span.to, new Date(), timeZone)}
-              by={byLabel.toLowerCase()}
-            />
             <table class="usage-table">
               <thead>
                 <tr>
@@ -265,13 +280,123 @@ export function Usage(props: { onClose: () => void }): JSX.Element {
               </tbody>
             </table>
             <p class="muted small">
-              Unknown: no price for that model (set one with the pencil on the model list). Not
-              tracked: the API reported no tokens. Chart days are in {timeZone}.
+              Unknown: no price for that model (set one with the pencil on the Model tab). Not
+              tracked: the API reported no tokens. Chart days are in {timeZone}; Day rows are UTC
+              dates.
             </p>
           </>
         )}
       </section>
     </main>
+  );
+}
+
+/** The range's total and each provider's part of it, in the chart's colours. */
+function Summary(props: { report: UsageReport; stack: DayStack; metric: Metric }): JSX.Element {
+  const t = props.report.totals;
+  const providers = [...props.report.groups].sort(
+    (a, b) => metricOf(b, props.metric) - metricOf(a, props.metric),
+  );
+  return (
+    <>
+      <div class="usage-hero">
+        <b class="usage-total">{costLabel(t)}</b>
+        <span class="muted small">
+          {t.calls.toLocaleString("en")} calls · estimate · USD
+          {t.unknown_cost_calls > 0 && ` · ${String(t.unknown_cost_calls)} with an unknown price`}
+          {t.not_tracked_calls > 0 && ` · ${String(t.not_tracked_calls)} not tracked`}
+        </span>
+      </div>
+      <ul class="usage-providers" aria-label="Providers">
+        {providers.map((g) => (
+          <li key={g.key}>
+            <i class={`usage-swatch ${slotOf(props.stack.series, g.key)}`} />
+            <span class="usage-name" title={g.label}>
+              {g.label}
+            </span>
+            <b class="num">{costLabel(g)}</b>
+            <span class="num muted">
+              {shareLabel(metricOf(g, props.metric), metricOf(t, props.metric))}
+            </span>
+            <span class="num muted">{count(metricOf(g, "tokens"))} tokens</span>
+          </li>
+        ))}
+      </ul>
+    </>
+  );
+}
+
+function TokenTotals(props: { totals: UsageTotals }): JSX.Element {
+  const t = props.totals;
+  const cells: [string, number][] = [
+    ["Tokens without cache reads", freshTokens(t)],
+    ["Cache reads", t.cache_read_tokens],
+    ["Uncached input", t.input_tokens],
+    ["Cache writes", t.cache_write_tokens],
+    ["Output", t.output_tokens],
+  ];
+  return (
+    <div class="usage-tokens">
+      {cells.map(([label, n]) => (
+        <div key={label}>
+          <span class="muted small">{label}</span>
+          <b>{count(n)}</b>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function Limits(props: { limits: ProviderLimits[] }): JSX.Element {
+  return (
+    <div class="usage-limits" role="group" aria-label="Plan limits">
+      {props.limits.map((l) => (
+        <div key={l.provider_id} class="usage-limit">
+          <span class="usage-limit-name" title={l.name}>
+            {l.name}
+          </span>
+          {l.error ? (
+            <span class="muted small" title={l.error}>
+              Limits unavailable
+            </span>
+          ) : (
+            <span class="usage-rings">
+              <Ring label="5h" window={l.five_hour} />
+              <Ring label="Week" window={l.weekly} />
+            </span>
+          )}
+        </div>
+      ))}
+    </div>
+  );
+}
+
+const RING_R = 14;
+const RING_C = 2 * Math.PI * RING_R;
+
+function Ring(props: { label: string; window?: LimitWindow | null }): JSX.Element | null {
+  const w = props.window;
+  if (!w) return null;
+  const used = Math.min(100, Math.max(0, w.used_percent));
+  const text = `${props.label}: ${String(Math.round(used))}% used${w.resets ? `, resets ${resetLabel(w.resets)}` : ""}`;
+  return (
+    <span class="usage-ring" role="img" aria-label={text} title={text}>
+      <svg width="36" height="36" viewBox="0 0 36 36" aria-hidden="true">
+        <circle class="track" cx="18" cy="18" r={RING_R} />
+        <circle
+          class={`used${used >= 90 ? " high" : ""}`}
+          cx="18"
+          cy="18"
+          r={RING_R}
+          stroke-dasharray={`${String((used / 100) * RING_C)} ${String(RING_C)}`}
+          transform="rotate(-90 18 18)"
+        />
+        <text x="18" y="18">
+          {Math.round(used)}
+        </text>
+      </svg>
+      {props.label}
+    </span>
   );
 }
 
@@ -303,37 +428,6 @@ function SortHeader(props: {
   );
 }
 
-function Totals(props: { report: UsageReport }): JSX.Element {
-  const t = props.report.totals;
-  const tokens = t.input_tokens + t.output_tokens + t.cache_read_tokens + t.cache_write_tokens;
-  return (
-    <div class="usage-totals">
-      <div class="card">
-        <span class="muted small">Estimated cost</span>
-        <b class="usage-big">{costLabel(t)}</b>
-        {t.unknown_cost_calls > 0 && (
-          <span class="muted small">{t.unknown_cost_calls} calls with an unknown price</span>
-        )}
-      </div>
-      <div class="card">
-        <span class="muted small">Tokens</span>
-        <b class="usage-big">{count(tokens)}</b>
-        <span class="muted small">
-          {count(t.input_tokens)} in · {count(t.output_tokens)} out · {count(t.cache_read_tokens)}{" "}
-          cache read · {count(t.cache_write_tokens)} cache write
-        </span>
-      </div>
-      <div class="card">
-        <span class="muted small">Calls</span>
-        <b class="usage-big">{t.calls.toLocaleString("en")}</b>
-        {t.not_tracked_calls > 0 && (
-          <span class="muted small">{t.not_tracked_calls} not tracked</span>
-        )}
-      </div>
-    </div>
-  );
-}
-
 const [LEFT, RIGHT, TOP, PLOT, AXIS] = [56, 16, 8, 160, 24];
 
 /** A rectangle path with its top corners rounded by `r`. */
@@ -344,13 +438,8 @@ function columnPath(x: number, y: number, w: number, h: number, r: number): stri
     .join(" ");
 }
 
-/** Estimated cost per day (tokens when no cost is known), stacked by the breakdown. */
-function DayChart(props: {
-  report: UsageReport;
-  totals: UsageTotals;
-  dates: string[];
-  by: string;
-}): JSX.Element {
+/** Estimated cost per day (tokens when no cost is known), stacked by provider. */
+function DayChart(props: { stack: DayStack; metric: Metric; dates: string[] }): JSX.Element {
   const box = useRef<HTMLDivElement>(null);
   const [width, setWidth] = useState(0);
   const [active, setActive] = useState<number | null>(null);
@@ -366,8 +455,8 @@ function DayChart(props: {
     };
   }, []);
 
-  const metric = chartMetric(props.totals);
-  const { series, columns } = stackDays(props.report.groups, props.dates, metric);
+  const { metric } = props;
+  const { series, columns } = props.stack;
   const ticks = niceTicks(Math.max(0, ...columns.map((c) => c.total)));
   const [top, step] = [ticks[ticks.length - 1] ?? 1, ticks[1] ?? 1];
   const band = Math.max(width - LEFT - RIGHT, 0) / Math.max(columns.length, 1);
@@ -376,8 +465,8 @@ function DayChart(props: {
   const y = (v: number): number => TOP + PLOT - (v / top) * PLOT;
   const center = (i: number): number => LEFT + band * (i + 0.5);
   const value = (n: number): string => (metric === "cost" ? usd(n) : count(n));
-  const slot = (s: number): string => (series[s]?.key === "" ? "other" : `s${String(s)}`);
-  const title = `${metric === "cost" ? "Estimated cost" : "Tokens"} per day${series.length > 1 ? ` by ${props.by}` : ""}`;
+  const slot = (s: number): string => slotOf(series, series[s]?.key ?? "");
+  const title = `${metric === "cost" ? "Estimated cost" : "Tokens"} per day${series.length > 1 ? " by provider" : ""}`;
   const peak = columns.reduce<(typeof columns)[number] | undefined>(
     (a, c) => (!a || c.total > a.total ? c : a),
     undefined,
@@ -485,16 +574,6 @@ function DayChart(props: {
           )}
         </div>
       </div>
-      {series.length > 1 && (
-        <div class="usage-legend">
-          {series.map((s, i) => (
-            <span key={s.key} title={s.label}>
-              <i class={`usage-swatch ${slot(i)}`} />
-              {s.label}
-            </span>
-          ))}
-        </div>
-      )}
     </figure>
   );
 }

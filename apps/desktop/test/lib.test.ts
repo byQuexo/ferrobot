@@ -51,8 +51,12 @@ import { Speaker, hasVoiceKey, liveEvent, pcm16Base64, speakable } from "../src/
 import {
   chartMetric,
   costLabel,
+  freshTokens,
   niceTicks,
   rangeOf,
+  resetLabel,
+  shareLabel,
+  slotOf,
   sortGroups,
   stackDays,
   tickLabel,
@@ -1361,6 +1365,33 @@ describe("usage", () => {
       ]),
       'name,cost\r\n"a ""b"", c",1.5\r\n\'=SUM(A1),\r\n',
     );
+  });
+
+  it("gives providers their chart colour, share and fresh tokens", () => {
+    const series = [
+      { key: "a", label: "a" },
+      { key: "b", label: "b" },
+      { key: "", label: "Other" },
+    ];
+    assert.deepEqual(
+      ["a", "b", "folded"].map((k) => slotOf(series, k)),
+      ["s0", "s1", "other"],
+    );
+    assert.deepEqual(
+      [shareLabel(1, 3), shareLabel(0.001, 3), shareLabel(0, 3), shareLabel(1, 0)],
+      ["33%", "<1%", "0%", "0%"],
+    );
+    const t = { ...group("a", 1), input_tokens: 10, output_tokens: 5 };
+    assert.equal(freshTokens({ ...t, cache_read_tokens: 1000, cache_write_tokens: 2 }), 17);
+  });
+
+  it("shows Claude Code's reset words as they are and Codex times locally", () => {
+    assert.equal(
+      resetLabel("Nov 26 at 6:59am (Europe/Berlin)"),
+      "Nov 26 at 6:59am (Europe/Berlin)",
+    );
+    const local = resetLabel("2026-11-26T05:59:00Z");
+    assert.match(local, /^Nov 26, \d{1,2}:\d{2}\s?[AP]M$/);
   });
 });
 

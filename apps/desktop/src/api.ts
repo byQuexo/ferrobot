@@ -50,6 +50,8 @@ export type UsageGroup = Schemas["UsageGroup"];
 export type UsageTotals = Schemas["UsageTotals"];
 export type PriceEntry = Schemas["PriceEntry"];
 export type SetPrice = Schemas["SetPrice"];
+export type ProviderLimits = Schemas["ProviderLimits"];
+export type LimitWindow = Schemas["LimitWindow"];
 export type GeneralSettings = Schemas["GeneralSettings"];
 export type UpdateInfo = Schemas["UpdateInfo"];
 export type Diagnostics = Schemas["Diagnostics"];
@@ -288,6 +290,8 @@ export class DaemonClient {
   /** Replaces all of the operator's own prices. */
   setPrices = (prices: SetPrice[]): Promise<PriceEntry[]> =>
     this.#request("PUT", "/v1/usage/prices", prices);
+  /** 5-hour and weekly plan use of Claude Code and ChatGPT-signed-in Codex providers. */
+  limits = (): Promise<ProviderLimits[]> => this.#request("GET", "/v1/limits");
   clis = (): Promise<ClisView> => this.#request("GET", "/v1/clis");
   /** Saves the packages and starts building their image. */
   updateClis = (packages: string[]): Promise<ClisView> =>

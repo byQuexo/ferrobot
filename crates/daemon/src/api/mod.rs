@@ -104,6 +104,7 @@ pub fn router() -> Router<AppState> {
         .route("/v1/diagnostics", get(diagnostics::get_diagnostics))
         .route("/v1/diagnostics/log", get(diagnostics::get_log))
         .route("/v1/usage", get(usage::get_usage))
+        .route("/v1/limits", get(usage::get_limits))
         .route(
             "/v1/usage/prices",
             get(usage::get_prices).put(usage::put_prices),

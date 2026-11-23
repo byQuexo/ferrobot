@@ -16,6 +16,7 @@ use utoipa::{IntoParams, ToSchema};
 use super::ApiResult;
 use crate::AppState;
 use crate::error::{ApiError, ErrorBody};
+use crate::limits::ProviderLimits;
 use crate::pricing::{self, Price, PriceEntry, Prices};
 
 const MAX_MODEL: usize = 200;
@@ -300,6 +301,14 @@ pub(crate) async fn get_usage(
             .collect(),
         timezone: zone.map(|(_, name)| name),
     }))
+}
+
+/// How much of their 5-hour and weekly plan limits the host's Claude Code login and each Codex
+/// provider signed in with `ChatGPT` have used, read from the CLIs (cached for a minute).
+#[utoipa::path(get, path = "/v1/limits", tag = "usage",
+    responses((status = 200, body = Vec<ProviderLimits>)))]
+pub(crate) async fn get_limits(State(state): State<AppState>) -> ApiResult<Vec<ProviderLimits>> {
+    Ok(Json(crate::limits::all(&state).await?))
 }
 
 /// Prices in USD per 1M tokens: the operator's overrides, then the shipped

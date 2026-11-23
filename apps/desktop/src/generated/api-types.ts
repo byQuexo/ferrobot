@@ -677,6 +677,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/limits": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * How much of their 5-hour and weekly plan limits the host's Claude Code login and each Codex
+         *     provider signed in with `ChatGPT` have used, read from the CLIs (cached for a minute).
+         */
+        get: operations["get_limits"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/memory": {
         parameters: {
             query?: never;
@@ -1656,6 +1676,18 @@ export interface components {
             /** @description When the reply came (RFC 3339). */
             at: string;
         };
+        LimitWindow: {
+            /**
+             * Format: double
+             * @description 0-100.
+             */
+            used_percent: number;
+            /**
+             * @description When the window starts over: Claude Code's own words (e.g. `Nov 26 at 6:59am
+             *     (Europe/Berlin)`), or an RFC 3339 time for Codex.
+             */
+            resets?: string | null;
+        };
         /**
          * @description How live speech is cut into messages.
          * @enum {string}
@@ -1763,6 +1795,10 @@ export interface components {
             /** @description Open this in a browser on the daemon's computer to sign in. */
             authorization_url: string;
         };
+        PlanLimits: {
+            five_hour?: components["schemas"]["LimitWindow"] | null;
+            weekly?: components["schemas"]["LimitWindow"] | null;
+        };
         PostMessage: {
             /**
              * @description 1..32768 bytes after trimming. `@name` mentions of existing agents are
@@ -1829,6 +1865,14 @@ export interface components {
          * @enum {string}
          */
         ProviderKind: "anthropic" | "openai" | "gemini" | "bedrock" | "vertex" | "openrouter" | "ollama" | "openai_compatible" | "codex" | "gemini_cli" | "claude_code";
+        ProviderLimits: components["schemas"]["PlanLimits"] & {
+            /** Format: uuid */
+            provider_id: string;
+            name: string;
+            kind: components["schemas"]["ProviderKind"];
+            /** @description Why the limits could not be read. */
+            error?: string | null;
+        };
         ProviderView: components["schemas"]["Provider"] & {
             /** @description Whether an API key is stored. The key itself is never returned. */
             has_key: boolean;
@@ -4749,6 +4793,34 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["Health"];
+                };
+            };
+        };
+    };
+    get_limits: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProviderLimits"][];
+                };
+            };
+            /** @description Missing or wrong API token */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
                 };
             };
         };

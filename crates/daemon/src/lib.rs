@@ -14,6 +14,7 @@ pub mod error;
 pub mod files;
 pub mod hub;
 pub mod lifecycle;
+pub mod limits;
 pub mod logs;
 pub mod models;
 pub mod no_tools;

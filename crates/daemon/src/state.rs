@@ -257,6 +257,8 @@ pub struct AppState {
     pub oauth: Arc<crate::oauth::OAuth>,
     /// Model lists recently fetched from providers.
     pub model_lists: Arc<crate::models::ModelCache>,
+    /// Plan limits recently read from the host's Claude Code and Codex.
+    pub limits: Arc<crate::limits::LimitsCache>,
     /// What speech and transcription may still spend this minute.
     pub voice: Arc<Mutex<crate::voice::Budget>>,
     /// The operator's voice call (in memory: a restart ends it). Async, so a change and its
@@ -298,6 +300,7 @@ impl AppState {
             link_key: Arc::default(),
             oauth: Arc::default(),
             model_lists: Arc::default(),
+            limits: Arc::default(),
             voice: Arc::default(),
             call: Arc::default(),
             update: Arc::default(),

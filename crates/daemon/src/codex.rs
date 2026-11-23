@@ -10,11 +10,14 @@ use std::time::{Duration, Instant};
 use base64::Engine as _;
 use serde::Serialize;
 use serde_json::{Value, json};
+use time::OffsetDateTime;
+use time::format_description::well_known::Rfc3339;
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader, Lines};
 use tokio::process::{Child, ChildStdin, ChildStdout, Command};
 use uuid::Uuid;
 
 use crate::AppState;
+use crate::limits::{LimitWindow, PlanLimits};
 
 /// Where the `ChatGPT` Codex backend lives (the same URL Codex uses itself).
 pub const CHATGPT_CODEX_UPSTREAM: &str = "https://chatgpt.com/backend-api/codex";
@@ -378,6 +381,52 @@ async fn auth_status(state: &AppState, provider: Uuid, token: bool) -> Result<Va
     Ok(status)
 }
 
+/// A `ChatGPT` sign-in's 5-hour and weekly use (`account/rateLimits/read`, codex 0.166).
+pub async fn plan_limits(state: &AppState, provider: Uuid) -> Result<PlanLimits, String> {
+    let home = Home::open(state, provider).await?;
+    let mut server = AppServer::start(&state.settings.codex_bin, home.dir.path()).await?;
+    let read = server
+        .request(
+            "account/rateLimits/read",
+            json!({"excludeResetCreditDetails": true}),
+        )
+        .await;
+    // A token refresh may have rewritten auth.json.
+    home.save(state).await?;
+    Ok(limits_from(&read?["rateLimits"]))
+}
+
+/// The windows by their length, as plans may order them differently.
+fn limits_from(snapshot: &Value) -> PlanLimits {
+    let mut limits = PlanLimits::default();
+    for (i, w) in [&snapshot["primary"], &snapshot["secondary"]]
+        .into_iter()
+        .enumerate()
+    {
+        let Some(used_percent) = w["usedPercent"].as_f64() else {
+            continue;
+        };
+        // shortcut: `resetsAt` read as Unix seconds (codex-rs docs; the 0.166 schema names no unit).
+        let resets = w["resetsAt"]
+            .as_i64()
+            .and_then(|s| OffsetDateTime::from_unix_timestamp(s).ok())
+            .and_then(|t| t.format(&Rfc3339).ok());
+        let window = Some(LimitWindow {
+            used_percent,
+            resets,
+        });
+        if w["windowDurationMins"]
+            .as_u64()
+            .map_or(i == 1, |mins| mins > 24 * 60)
+        {
+            limits.weekly = window;
+        } else {
+            limits.five_hour = window;
+        }
+    }
+    limits
+}
+
 /// Forgets a provider's sign-in (the provider was deleted).
 pub async fn forget(state: &AppState, provider: Uuid) -> Result<(), String> {
     let _ = tokio::fs::remove_dir_all(state.settings.codex_home.join(provider.to_string())).await;
@@ -477,6 +526,39 @@ mod tests {
         );
         let gcloud = crate::proxy::CachedToken(Some(("ya29.secret".into(), Instant::now())));
         assert!(!format!("{gcloud:?}").contains("ya29"));
+    }
+
+    #[test]
+    fn rate_limit_windows_go_by_their_length() {
+        let snapshot = json!({
+            "primary": {"usedPercent": 40, "windowDurationMins": 10080, "resetsAt": 4_102_444_800_i64},
+            "secondary": {"usedPercent": 12, "windowDurationMins": 300, "resetsAt": null},
+        });
+        let limits = limits_from(&snapshot);
+        assert_eq!(
+            limits.weekly,
+            Some(LimitWindow {
+                used_percent: 40.0,
+                resets: Some("2100-01-01T00:00:00Z".into())
+            })
+        );
+        assert_eq!(
+            limits.five_hour,
+            Some(LimitWindow {
+                used_percent: 12.0,
+                resets: None
+            })
+        );
+        let no_length = json!({"primary": {"usedPercent": 5}, "secondary": null});
+        assert_eq!(
+            limits_from(&no_length).five_hour,
+            Some(LimitWindow {
+                used_percent: 5.0,
+                resets: None
+            }),
+            "no length: the first window is the short one"
+        );
+        assert_eq!(limits_from(&Value::Null), PlanLimits::default());
     }
 
     #[test]

@@ -772,9 +772,6 @@ textarea { resize: vertical; min-height: 40px; line-height: 1.5; }
 .usage-bar { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; margin: 4px 0 16px; }
 .usage-dates { display: flex; align-items: center; gap: 8px; }
 .usage-dates input { width: auto; }
-.usage-totals { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 12px; margin-bottom: 20px; }
-.usage-totals .card { display: flex; flex-direction: column; gap: 4px; }
-.usage-big { font-size: 20px; font-weight: 500; font-variant-numeric: tabular-nums; }
 .usage-chart { margin: 0 0 20px; }
 .usage-plot { position: relative; height: 192px; margin-top: 8px; }
 .usage-plot svg { display: block; overflow: visible; font-size: 12px; font-variant-numeric: tabular-nums; }
@@ -797,8 +794,6 @@ textarea { resize: vertical; min-height: 40px; line-height: 1.5; }
 }
 .usage-tip.flip { transform: translateX(-100%); }
 .usage-key { display: inline-block; width: 12px; height: 2px; margin-right: 6px; border-radius: 1px; vertical-align: middle; }
-.usage-legend { display: flex; flex-wrap: wrap; gap: 4px 16px; margin-top: 4px; font-size: 12px; color: var(--text-2); }
-.usage-legend span { display: inline-flex; align-items: center; gap: 6px; max-width: 240px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .usage-swatch { flex: none; width: 10px; height: 10px; border-radius: 3px; }
 .usage-table { width: 100%; border-collapse: collapse; font-size: 13px; margin-bottom: 10px; }
 .usage-table th, .usage-table td { padding: 8px; border-bottom: 1px solid var(--border); text-align: left; }
@@ -920,3 +915,31 @@ kbd { padding: 2px 8px; border: 1px solid var(--border-strong); border-radius: 6
 .switcher li { display: flex; align-items: center; gap: 12px; padding: 8px; border-radius: 8px; cursor: pointer; }
 .switcher li[aria-selected="true"] { background: var(--surface-2); }
 .switcher-label { flex: none; font-weight: 500; }
+/* Usage page: total, providers, token totals, tabs and plan-limit rings */
+.usage-hero { display: flex; flex-direction: column; gap: 2px; margin-bottom: 16px; }
+.usage-total { font-size: 36px; line-height: 44px; font-weight: 500; font-variant-numeric: tabular-nums; }
+.usage-providers { list-style: none; margin: 0 0 20px; padding: 0; font-size: 13px; }
+.usage-providers li { display: grid; grid-template-columns: 10px minmax(0, 1fr) auto 3.5em 7.5em; align-items: center; gap: 12px; padding: 8px 0; border-bottom: 1px solid var(--border); }
+.usage-providers .num { text-align: right; font-weight: 500; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.usage-providers .s0 { background: var(--series-1); }
+.usage-providers .s1 { background: var(--series-2); }
+.usage-providers .s2 { background: var(--series-3); }
+.usage-providers .s3 { background: var(--series-4); }
+.usage-providers .s4 { background: var(--series-5); }
+.usage-providers .other { background: var(--muted); }
+.usage-tokens { display: grid; grid-template-columns: repeat(auto-fit, minmax(128px, 1fr)); gap: 12px; margin-bottom: 20px; padding: 12px 0; border-top: 1px solid var(--border); border-bottom: 1px solid var(--border); }
+.usage-tokens div { display: flex; flex-direction: column; gap: 2px; }
+.usage-tokens b { font-size: 16px; font-weight: 500; font-variant-numeric: tabular-nums; }
+.usage-tabs { display: inline-grid; grid-template-columns: repeat(3, auto); margin: 0; }
+.usage-tabs button { height: 30px; padding: 0 14px; }
+.usage-limits { display: flex; flex-wrap: wrap; gap: 16px; }
+.usage-limit { display: flex; flex-direction: column; align-items: center; gap: 4px; }
+.usage-limit-name { max-width: 120px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 12px; color: var(--text-2); }
+.usage-rings { display: flex; gap: 8px; }
+.usage-ring { display: flex; flex-direction: column; align-items: center; font-size: 11px; color: var(--muted); cursor: default; }
+.usage-ring svg { display: block; }
+.usage-ring circle { fill: none; stroke-width: 4; }
+.usage-ring .track { stroke: var(--surface-3); }
+.usage-ring .used { stroke: var(--accent); }
+.usage-ring .used.high { stroke: var(--err); }
+.usage-ring text { fill: var(--text); font-size: 10px; text-anchor: middle; dominant-baseline: central; font-variant-numeric: tabular-nums; }

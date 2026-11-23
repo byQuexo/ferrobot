@@ -117,6 +117,7 @@ pub const QUESTION_CARD_FILE: &str = "question-card.v1.schema.json";
         api::usage::get_usage,
         api::usage::get_prices,
         api::usage::put_prices,
+        api::usage::get_limits,
         api::update::get_update,
         api::update::start_update,
         api::diagnostics::get_diagnostics,
@@ -143,7 +144,7 @@ pub const QUESTION_CARD_FILE: &str = "question-card.v1.schema.json";
         (name = "connectors", description = "Remote MCP servers whose tools agents can use"),
         (name = "clis", description = "Command-line tools in every agent's sandbox"),
         (name = "voice", description = "Speech and transcription for the operator's chat"),
-        (name = "usage", description = "Model calls, tokens and estimated cost"),
+        (name = "usage", description = "Model calls, tokens, estimated cost and plan limits"),
         (name = "settings", description = "Daemon-wide operator settings"),
     )
 )]

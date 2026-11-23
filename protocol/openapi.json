@@ -3013,6 +3013,39 @@
         ]
       }
     },
+    "/v1/limits": {
+      "get": {
+        "tags": [
+          "usage"
+        ],
+        "summary": "How much of their 5-hour and weekly plan limits the host's Claude Code login and each Codex\nprovider signed in with `ChatGPT` have used, read from the CLIs (cached for a minute).",
+        "operationId": "get_limits",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/ProviderLimits"
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or wrong API token",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/v1/memory": {
       "get": {
         "tags": [
@@ -6243,6 +6276,26 @@
           }
         }
       },
+      "LimitWindow": {
+        "type": "object",
+        "required": [
+          "used_percent"
+        ],
+        "properties": {
+          "used_percent": {
+            "type": "number",
+            "format": "double",
+            "description": "0-100."
+          },
+          "resets": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "When the window starts over: Claude Code's own words (e.g. `Nov 26 at 6:59am\n(Europe/Berlin)`), or an RFC 3339 time for Codex."
+          }
+        }
+      },
       "LiveMode": {
         "type": "string",
         "description": "How live speech is cut into messages.",
@@ -6531,6 +6584,31 @@
           }
         }
       },
+      "PlanLimits": {
+        "type": "object",
+        "properties": {
+          "five_hour": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/LimitWindow"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "weekly": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/LimitWindow"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        }
+      },
       "PostMessage": {
         "type": "object",
         "required": [
@@ -6696,6 +6774,40 @@
           "codex",
           "gemini_cli",
           "claude_code"
+        ]
+      },
+      "ProviderLimits": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/PlanLimits"
+          },
+          {
+            "type": "object",
+            "required": [
+              "provider_id",
+              "name",
+              "kind"
+            ],
+            "properties": {
+              "provider_id": {
+                "type": "string",
+                "format": "uuid"
+              },
+              "name": {
+                "type": "string"
+              },
+              "kind": {
+                "$ref": "#/components/schemas/ProviderKind"
+              },
+              "error": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "description": "Why the limits could not be read."
+              }
+            }
+          }
         ]
       },
       "ProviderView": {
@@ -8446,7 +8558,7 @@
     },
     {
       "name": "usage",
-      "description": "Model calls, tokens and estimated cost"
+      "description": "Model calls, tokens, estimated cost and plan limits"
     },
     {
       "name": "settings",

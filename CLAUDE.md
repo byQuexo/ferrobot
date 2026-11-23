@@ -76,7 +76,8 @@ Principles:
 - `crates/daemon/src/proxy.rs` — model proxy; `auth.rs` — operator token.
 - `crates/daemon/src/usage.rs` — token counts read from proxied responses;
   `pricing.rs` + `config/pricing.toml` — prices and cost estimates;
-  `api/usage.rs` — `/v1/usage`.
+  `api/usage.rs` — `/v1/usage`, `/v1/limits`; `limits.rs` — plan limits
+  of the host's Claude Code and Codex sign-ins (60 s cache).
 - `crates/daemon/src/api/providers.rs`, `secrets.rs` — model providers and
   their keychain-stored keys; `crates/core/src/provider.rs` — provider kinds.
 - `crates/daemon/src/codex.rs` — host-side `codex app-server`: ChatGPT

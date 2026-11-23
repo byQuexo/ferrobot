@@ -104,6 +104,7 @@ fn every_routed_path_is_documented() {
         "/v1/rooms/{id}",
         "/v1/usage",
         "/v1/usage/prices",
+        "/v1/limits",
         "/v1/settings",
         "/v1/update",
         "/v1/diagnostics",
@@ -115,7 +116,7 @@ fn every_routed_path_is_documented() {
     }
     assert_eq!(
         documented.len(),
-        59,
+        60,
         "undocumented extra paths: {documented:?}"
     );
 }

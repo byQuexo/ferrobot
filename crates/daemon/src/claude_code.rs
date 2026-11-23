@@ -27,6 +27,7 @@ use tokio::process::{Child, ChildStdout, Command};
 use uuid::Uuid;
 
 use crate::AppState;
+use crate::limits::{LimitWindow, PlanLimits};
 
 const STATUS_TIMEOUT: Duration = Duration::from_secs(20);
 const BASH_TIMEOUT_S: &str = "120";
@@ -103,6 +104,46 @@ fn login_of(auth_status: &str) -> (bool, Option<String>) {
     let auth: Value = serde_json::from_str(auth_status).unwrap_or_default();
     let method = auth["authMethod"].as_str().map(str::to_owned);
     (auth["loggedIn"] == true, method)
+}
+
+/// The seat's 5-hour and weekly use from `claude`'s own `/usage` report, which makes no model
+/// call. The report also names the account and its habits; only the two limit lines are kept.
+pub async fn plan_limits(state: &AppState) -> Result<PlanLimits, String> {
+    let dir = tempfile::tempdir().map_err(|e| e.to_string())?;
+    let mut cmd = claude(state);
+    cmd.args([
+        "-p",
+        "--setting-sources=",
+        "--tools=",
+        "--no-session-persistence",
+        "--output-format=json",
+        "/usage",
+    ])
+    .current_dir(dir.path());
+    let out = stdout_of(cmd)
+        .await
+        .ok_or("Claude Code is not installed or did not answer")?;
+    let report: Value =
+        serde_json::from_str(&out).map_err(|_| "Claude Code gave no usage report")?;
+    Ok(limits_of(report["result"].as_str().unwrap_or_default()))
+}
+
+/// Reads `Current session: 18% used · resets Nov 23 at 9:39pm (Europe/Berlin)` and the
+/// `Current week (all models):` line alike.
+fn limits_of(report: &str) -> PlanLimits {
+    let window = |prefix: &str| {
+        report.lines().find_map(|line| {
+            let (used, rest) = line.trim().strip_prefix(prefix)?.split_once("% used")?;
+            Some(LimitWindow {
+                used_percent: used.trim().parse().ok()?,
+                resets: rest.split_once("resets ").map(|(_, r)| r.trim().to_owned()),
+            })
+        })
+    };
+    PlanLimits {
+        five_hour: window("Current session:"),
+        weekly: window("Current week (all models):"),
+    }
 }
 
 fn valid_model(model: &str) -> bool {
@@ -659,6 +700,34 @@ mod tests {
                 "{key} is needed to find the user's own login"
             );
         }
+    }
+
+    #[test]
+    fn plan_limits_keep_only_the_session_and_all_models_week() {
+        let report = "You are currently using your subscription to power your Claude Code usage
+
+Current session: 23% used · resets Nov 23 at 9:39pm (Europe/Berlin)
+Current week (all models): 64% used · resets Nov 26 at 6:59am (Europe/Berlin)
+Current week (Fable): 3% used · resets Nov 26 at 6:59am (Europe/Berlin)
+
+What's contributing to your usage?
+Approximate · sessions on this machine only · shares overlap
+
+Last 24h · 1485 requests · 11 sessions
+  86%  Review sessions active over many hours · whole sessions with requests in 8 or more separate hours
+  Top subagents: general-purpose 12%";
+        let window = |used_percent: f64, resets: &str| LimitWindow {
+            used_percent,
+            resets: Some(resets.to_owned()),
+        };
+        assert_eq!(
+            limits_of(report),
+            PlanLimits {
+                five_hour: Some(window(23.0, "Nov 23 at 9:39pm (Europe/Berlin)")),
+                weekly: Some(window(64.0, "Nov 26 at 6:59am (Europe/Berlin)")),
+            }
+        );
+        assert_eq!(limits_of("Not logged in"), PlanLimits::default());
     }
 
     #[test]

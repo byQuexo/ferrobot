@@ -2623,6 +2623,8 @@ while IFS= read -r line; do
       else
         printf '{"id":%s,"result":{"authMethod":null}}\n' "$id"
       fi ;;
+    *'"account/rateLimits/read"'*)
+      printf '{"id":%s,"result":{"rateLimits":{"primary":{"usedPercent":12,"windowDurationMins":300,"resetsAt":4102444800},"secondary":{"usedPercent":40,"windowDurationMins":10080,"resetsAt":null}}}}\n' "$id" ;;
     *'"account/login/start"'*)
       printf '{"id":%s,"result":{"type":"chatgptDeviceCode","loginId":"l1","verificationUrl":"https://auth.example/device","userCode":"ABCD-1234"}}\n' "$id"
       printf '{"tokens":"signed-in"}' > "$AUTH"
@@ -2693,6 +2695,17 @@ async fn codex_providers_use_a_key_or_the_hosts_chatgpt_login() {
         (s["state"] == "signed_in").then_some(())
     })
     .await;
+    let (status, limits) = http(&d.ui, "GET", "/v1/limits", None).await;
+    assert_eq!(status, 200, "{limits}");
+    assert_eq!(
+        limits.as_array().unwrap().len(),
+        1,
+        "not the keyed one: {limits}"
+    );
+    assert_eq!(limits[0]["provider_id"], chat["id"]);
+    assert_eq!(limits[0]["five_hour"]["used_percent"], 12.0);
+    assert_eq!(limits[0]["five_hour"]["resets"], "2100-01-01T00:00:00Z");
+    assert_eq!(limits[0]["weekly"]["used_percent"], 40.0);
     create(&d, json!({"name": "chad", "provider_id": chat["id"]})).await;
     let env = backend.envs.lock().unwrap()["chad"].clone();
     assert!(!env.values().any(|v| v.contains("eyJhbGciOiJub25lIn0")));
@@ -6538,6 +6551,12 @@ case "$1" in
   --version) echo "9.9.9 (Claude Code)"; exit 0 ;;
   auth) echo '{"loggedIn": true, "authMethod": "claude.ai", "email": "someone@example.com"}'; exit 0 ;;
 esac
+case "$*" in *" /usage")
+  echo "$*" >> "$here/usage-args.log"
+  env > "$here/usage-env.log"
+  printf '%s\n' '{"type":"result","subtype":"success","is_error":false,"total_cost_usd":0,"result":"Signed in as someone@example.com\n\nCurrent session: 18% used · resets Nov 23 at 9:39pm (Europe/Berlin)\nCurrent week (all models): 63% used · resets Nov 26 at 6:59am (Europe/Berlin)\nCurrent week (Fable): 3% used"}'
+  exit 0 ;;
+esac
 echo "$*" >> "$here/args.log"
 env > "$here/env.log"
 for a in "$@"; do case "$a" in --mcp-config=*) cat "${a#--mcp-config=}" > "$here/mcp.log" ;; esac; done
@@ -6669,6 +6688,45 @@ async fn claude_code_agents_use_the_hosts_own_cli_and_nothing_enters_the_sandbox
     let other = backend.envs.lock().unwrap()["otto"]["FERROBOT_AGENT_TOKEN"].clone();
     let (status, _) = claude_code_turn(&d.agents, &other, "hi there", true).await;
     assert_eq!(status, 403);
+
+    // Plan limits come from claude's own /usage: no model call, only the two limit lines.
+    let (status, limits) = http(&d.ui, "GET", "/v1/limits", None).await;
+    assert_eq!(status, 200, "{limits}");
+    assert_eq!(
+        limits.as_array().unwrap().len(),
+        1,
+        "not the Ollama provider: {limits}"
+    );
+    assert_eq!(limits[0]["kind"], "claude_code");
+    assert_eq!(limits[0]["five_hour"]["used_percent"], 18.0);
+    assert_eq!(
+        limits[0]["weekly"]["resets"],
+        "Nov 26 at 6:59am (Europe/Berlin)"
+    );
+    assert!(!limits.to_string().contains("example.com"), "{limits}");
+    let usage = log("usage-args.log");
+    for flag in [
+        "-p",
+        "--tools=",
+        "--setting-sources=",
+        "--no-session-persistence",
+    ] {
+        assert!(
+            usage.split(' ').any(|a| a == flag),
+            "{flag} missing: {usage}"
+        );
+    }
+    assert!(
+        !log("usage-env.log")
+            .lines()
+            .any(|l| l.starts_with("ANTHROPIC_"))
+    );
+    http(&d.ui, "GET", "/v1/limits", None).await;
+    assert_eq!(
+        log("usage-args.log").lines().count(),
+        1,
+        "read once a minute"
+    );
 
     let id = clio["id"].as_str().unwrap();
     assert!(data.join("claude-code").join(id).join("session").exists());

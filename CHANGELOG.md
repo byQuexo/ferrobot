@@ -20,6 +20,11 @@ All notable changes are listed here. The format follows
 - Keyboard shortcuts (⌘ on macOS, Ctrl elsewhere): ⌘K goes to an agent or a
   settings page, ⌘N, ⌘,, ⌘⇧U, ⌘I, ⌘B, ⌘1–9, Esc and ⌘/ for the list;
   Settings → Keyboard lists them all.
+- Plan limits: with a Claude Code provider or a Codex provider signed in with
+  ChatGPT, the Usage header shows rings for the 5-hour and weekly windows,
+  with the reset time on hover (`GET /v1/limits`). Read from the host's own
+  `claude` (`/usage`, no model call) and `codex app-server`; never the
+  account.
 
 ### Changed
 
@@ -33,6 +38,9 @@ All notable changes are listed here. The format follows
   view is a raised panel with fewer lines and stronger dark-mode layers; Edit
   moves out of the chat header (it stays in the Profile tab).
 - The README demo records in dark mode.
+- A clearer Usage page: the range's total cost up front, providers with their
+  share, daily cost stacked by provider, a token totals row, and a breakdown
+  with Model, Agent and Day tabs.
 
 ### Fixed
 
