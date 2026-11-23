@@ -484,6 +484,10 @@ async fn run_turn(
     state
         .record(agent, Some(turn_id.clone()), "message_in", payload)
         .await;
+    // Claimed, it is in flight: the chat must stop showing it as queued.
+    if let Some(m) = &msg {
+        state.publish_message(m.id).await;
+    }
     state
         .hub
         .set_current_turn(agent, conn_id, Some(turn_id.clone()));
