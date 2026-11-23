@@ -182,6 +182,7 @@ function moves(k) {
 async function hero(k) {
   const m = moves(k);
   const page = () => k.page;
+  await page().emulateMedia({ colorScheme: "dark" });
   await removeAgents(["researcher", "builder"]);
   await api("PUT", "/v1/settings", { ...(await api("GET", "/v1/settings")), auto_mode: false });
   await ensureClis();
