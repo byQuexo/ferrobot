@@ -6866,7 +6866,7 @@ env > "$here/env.log"
 for a in "$@"; do case "$a" in --mcp-config=*) cat "${a#--mcp-config=}" > "$here/mcp.log" ;; esac; done
 cat > "$here/prompt.log"
 echo '{"type":"system","subtype":"init","session_id":"s1","tools":[]}'
-echo '{"type":"assistant","message":{"model":"claude-sonnet-4-5","content":[{"type":"text","text":"hello"}],"usage":{"input_tokens":1200,"cache_read_input_tokens":3000,"cache_creation_input_tokens":800,"output_tokens":50}},"parent_tool_use_id":null,"session_id":"s1"}'
+echo '{"type":"assistant","message":{"id":"msg_1","model":"claude-sonnet-4-5","content":[{"type":"text","text":"hello"}],"usage":{"input_tokens":1200,"cache_read_input_tokens":3000,"cache_creation_input_tokens":800,"output_tokens":50}},"parent_tool_use_id":null,"session_id":"s1"}'
 echo '{"type":"result","subtype":"success","is_error":false,"result":"hello","session_id":"s1","modelUsage":{"claude-sonnet-4-5":{"contextWindow":200000}}}'
 "#;
 
@@ -6945,6 +6945,18 @@ async fn claude_code_agents_use_the_hosts_own_cli_and_nothing_enters_the_sandbox
         (&ctx["tokens"], &ctx["window"], &ctx["model"]),
         (&json!(5000), &json!(200_000), &json!("claude-sonnet-4-5")),
         "from claude's own stream: {ctx}"
+    );
+    let call = events(&d, clio["id"].as_str().unwrap())
+        .await
+        .into_iter()
+        .find(|e| e["kind"] == "model_call")
+        .expect("a model_call event for the trace");
+    assert_eq!(
+        (
+            &call["payload"]["model"],
+            &call["payload"]["cache_read_tokens"]
+        ),
+        (&json!("claude-sonnet-4-5"), &json!(3000))
     );
     assert!(
         out.lines().any(|l| l.contains(r#""type":"result""#)),

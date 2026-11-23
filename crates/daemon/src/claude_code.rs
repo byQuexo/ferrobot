@@ -289,6 +289,16 @@ pub async fn context(state: &AppState, agent: AgentId) -> Option<Context> {
     serde_json::from_slice(&raw).ok()
 }
 
+/// The model call whose reply is streaming: `claude`'s assistant lines carry its message id.
+struct ModelCall {
+    id: String,
+    model: Option<String>,
+    /// When the line before its first one arrived: the call began then.
+    started: time::OffsetDateTime,
+    ended: time::OffsetDateTime,
+    usage: Value,
+}
+
 /// A running turn; dropping it (the runner hung up) kills `claude` and removes its MCP config.
 struct Run {
     lines: Lines<BufReader<ChildStdout>>,
@@ -302,6 +312,61 @@ struct Run {
     done: bool,
     context: Option<Context>,
     context_file: PathBuf,
+    /// For the trace: the agent's turn, when the last line came and the call streaming now.
+    state: AppState,
+    agent: AgentId,
+    turn: Option<String>,
+    last_line: time::OffsetDateTime,
+    call: Option<ModelCall>,
+}
+
+impl Run {
+    /// Follows the model calls in `claude`'s stream; each becomes a `model_call` event.
+    async fn track_call(&mut self, line: &Value, now: time::OffsetDateTime) {
+        let id = (line["type"] == "assistant")
+            .then(|| line["message"]["id"].as_str())
+            .flatten();
+        if let (Some(c), Some(id)) = (self.call.as_mut(), id)
+            && c.id == id
+        {
+            c.ended = now;
+            c.usage = line["message"]["usage"].clone();
+            return;
+        }
+        self.flush_call().await;
+        if let Some(id) = id {
+            self.call = Some(ModelCall {
+                id: id.to_owned(),
+                model: line["message"]["model"].as_str().map(str::to_owned),
+                started: self.last_line,
+                ended: now,
+                usage: line["message"]["usage"].clone(),
+            });
+        }
+    }
+
+    async fn flush_call(&mut self) {
+        let Some(c) = self.call.take() else {
+            return;
+        };
+        let rfc = |t: time::OffsetDateTime| {
+            t.format(&time::format_description::well_known::Rfc3339)
+                .unwrap_or_default()
+        };
+        let u = &c.usage;
+        let payload = json!({
+            "model": c.model,
+            "started_at": rfc(c.started),
+            "ended_at": rfc(c.ended),
+            "input_tokens": u["input_tokens"],
+            "output_tokens": u["output_tokens"],
+            "cache_read_tokens": u["cache_read_input_tokens"],
+            "cache_write_tokens": u["cache_creation_input_tokens"],
+        });
+        self.state
+            .record(self.agent, self.turn.clone(), "model_call", payload)
+            .await;
+    }
 }
 
 /// Runs one turn on the host's `claude` and streams its stream-json lines back to the runner.
@@ -425,6 +490,11 @@ async fn start(
         done: false,
         context: None,
         context_file,
+        state: state.clone(),
+        agent: agent.id,
+        turn: state.hub.current_turn(agent.id),
+        last_line: time::OffsetDateTime::now_utc(),
+        call: None,
     })
 }
 
@@ -500,13 +570,17 @@ async fn next(mut run: Run) -> Option<(Result<Bytes, std::io::Error>, Run)> {
         return None;
     }
     if let Ok(Some(line)) = run.lines.next_line().await {
+        let now = time::OffsetDateTime::now_utc();
         if let Ok(v) = serde_json::from_str::<Value>(&line) {
             run.saw_result |= v["type"] == "result";
             Context::read(&mut run.context, &v);
+            run.track_call(&v, now).await;
         }
+        run.last_line = now;
         return Some((Ok(Bytes::from(line + "\n")), run));
     }
     run.done = true;
+    run.flush_call().await;
     if let Some(context) = run.context.take()
         && let Ok(raw) = serde_json::to_vec(&context)
     {

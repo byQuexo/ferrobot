@@ -59,8 +59,8 @@ pub struct Trace {
     pub outcome: Option<String>,
     /// Why the turn failed.
     pub error: Option<String>,
-    /// Whether model calls are in `spans`: `false` on Claude Code, whose calls do not pass the
-    /// daemon's model proxy.
+    /// Whether model calls are in `spans`: from the model proxy, or on Claude Code from its own
+    /// stream (`model_call` events); `false` for Claude Code turns from before those.
     pub models_tracked: bool,
     pub spans: Vec<Span>,
 }
@@ -141,6 +141,29 @@ pub fn build(
                     "denied: {}",
                     p["reason"].as_str().unwrap_or_default()
                 ));
+                trace.spans.push(s);
+            }
+            // Claude Code's own model calls, read from its stream (they skip the proxy).
+            "model_call" => {
+                let at = |k: &str| {
+                    p[k].as_str()
+                        .and_then(|t| {
+                            OffsetDateTime::parse(t, &time::format_description::well_known::Rfc3339)
+                                .ok()
+                        })
+                        .unwrap_or(e.created_at)
+                };
+                let mut s = span(
+                    SpanKind::Model,
+                    text(&p["model"]).unwrap_or_else(|| "model".into()),
+                    at("started_at"),
+                );
+                s.ended_at = Some(at("ended_at"));
+                s.input_tokens = p["input_tokens"].as_i64();
+                s.output_tokens = p["output_tokens"].as_i64();
+                s.cache_read_tokens = p["cache_read_tokens"].as_i64();
+                s.cache_write_tokens = p["cache_write_tokens"].as_i64();
+                trace.started_at = trace.started_at.min(s.started_at);
                 trace.spans.push(s);
             }
             "turn_done" => {
@@ -290,5 +313,29 @@ mod tests {
         assert_eq!(t.spans[4].input, None, "a large input stays out");
         assert_eq!(t.spans[0].cache_read_tokens, Some(100));
         assert!(build("t", &[], &calls, true).is_none());
+    }
+
+    #[test]
+    fn claude_codes_model_calls_come_from_its_stream() {
+        let events = [
+            ev(1, 0, "message_in", json!({})),
+            ev(
+                2,
+                1500,
+                "model_call",
+                json!({"model": "claude-opus", "started_at": "2026-11-18T11:06:40.100Z", "ended_at": "2026-11-18T11:06:41.500Z", "input_tokens": 3, "cache_read_tokens": 900}),
+            ),
+            ev(3, 2000, "turn_done", json!({"outcome": "completed"})),
+        ];
+        let t = build("t", &events, &[], true).unwrap();
+        let s = &t.spans[0];
+        assert_eq!(
+            (s.kind, s.name.as_str(), s.cache_read_tokens),
+            (SpanKind::Model, "claude-opus", Some(900))
+        );
+        assert_eq!(
+            s.ended_at.map(|e| (e - s.started_at).whole_milliseconds()),
+            Some(1400)
+        );
     }
 }
