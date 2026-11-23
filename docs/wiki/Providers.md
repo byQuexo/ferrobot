@@ -169,11 +169,16 @@ out, and agents cannot change either.
   when a session starts or ends. A hook gets the event as JSON on stdin;
   exit code 2 before a tool call blocks it. See Claude Code's
   [hooks reference](https://code.claude.com/docs/en/hooks).
+- **Subagents** (off by default) turn on Claude Code's own `Task` tool, so
+  an agent can hand work to Claude Code subagents (`general-purpose`,
+  `Explore`, and those of plugins you switched on). They get the same ferrobot
+  tools and no built-in ones, so they too work only in the agent's computer.
+  The turn ends when they are done; they use more of your plan.
 - **Plugins** are the ones installed in your Claude Code
-  (`claude plugin install ...`). Their hooks run. Their skills, commands and
-  subagents need Claude Code's built-in tools, which stay off. Their MCP
-  servers do not start; add one under Connectors as a local server, which
-  shows you its command first.
+  (`claude plugin install ...`). Their hooks run, and their subagents when
+  Subagents is on. Their skills and commands need Claude Code's built-in
+  tools, which stay off. Their MCP servers do not start; add one under
+  Connectors as a local server, which shows you its command first.
 - `claude`, its hooks and plugins get the daemon's environment without
   Anthropic and Claude Code variables, the operator token (`FERROBOT_*`) or
   storage keys (`AWS_*`).

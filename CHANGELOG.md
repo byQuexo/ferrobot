@@ -19,7 +19,9 @@ All notable changes are listed here. The format follows
 - Settings → Claude Code: hooks and plugins for agents on Claude Code (your
   own login). Hooks are commands that run on this computer before or after a
   tool call, when a turn or session starts or ends; installed plugins can be
-  switched on (their hooks run; their MCP servers go through Connectors).
+  switched on (their hooks run; their MCP servers go through Connectors), and
+  a Subagents switch turns on Claude Code's own subagents (`Task`), which get
+  only ferrobot's tools.
   ferrobot passes only these (`--settings`, `--plugin-dir`); your own Claude
   Code settings stay out, and agents cannot change them
   (`/v1/claude-code/settings`, `/v1/claude-code/plugins`).

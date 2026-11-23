@@ -6739,6 +6739,11 @@
             },
             "description": "Installed plugins (`name@marketplace`) turned on for agents.",
             "default": []
+          },
+          "subagents": {
+            "type": "boolean",
+            "description": "Claude Code's own subagents (its `Task` tool). They get the same ferrobot tools and\nstill reach the sandbox only through MCP; they use more of the seat.",
+            "default": false
           }
         }
       },

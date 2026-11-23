@@ -63,6 +63,19 @@ export function ClaudeCodeSettings(): JSX.Element | null {
         these.
       </p>
 
+      <ul class="pref-list">
+        <PrefRow
+          title="Subagents"
+          hint="Claude Code’s own subagents. They get the same ferrobot tools, so they work in the agent’s computer too, and use more of your plan."
+        >
+          <Switch
+            checked={settings.subagents}
+            label="Subagents"
+            onChange={(v) => void save({ ...settings, subagents: v })}
+          />
+        </PrefRow>
+      </ul>
+
       <h3 class="pref-head">Hooks</h3>
       <ul class="pref-list">
         {settings.hooks.map((h, i) => (
@@ -163,8 +176,9 @@ export function ClaudeCodeSettings(): JSX.Element | null {
         </ul>
       )}
       <p class="hint">
-        A plugin’s hooks run. Its skills, commands and subagents need Claude Code’s built-in tools,
-        which stay off. Its MCP servers don’t start: add them under Connectors as a local server.
+        A plugin’s hooks run, and its subagents when Subagents is on. Its skills and commands need
+        Claude Code’s built-in tools, which stay off. Its MCP servers don’t start: add them under
+        Connectors as a local server.
       </p>
     </section>
   );

@@ -108,6 +108,9 @@ pub struct ClaudeCodeSettings {
     pub hooks: Vec<Hook>,
     /// Installed plugins (`name@marketplace`) turned on for agents.
     pub plugins: Vec<String>,
+    /// Claude Code's own subagents (its `Task` tool). They get the same ferrobot tools and
+    /// still reach the sandbox only through MCP; they use more of the seat.
+    pub subagents: bool,
 }
 
 /// A plugin installed in the host's Claude Code.
@@ -223,9 +226,17 @@ fn settings_file(hooks: &[Hook]) -> Value {
     json!({ "hooks": events })
 }
 
-/// Turn-time hooks and the folders of the operator's plugins that are still installed. Fails
-/// rather than run a turn without a hook the operator may rely on as a guard.
-async fn extensions(state: &AppState) -> Result<(Value, Vec<PathBuf>), String> {
+/// What the operator added to every turn beyond the bare CLI.
+#[derive(Debug, Default)]
+struct Extensions {
+    /// Folders of the operator's plugins that are still installed.
+    plugins: Vec<PathBuf>,
+    subagents: bool,
+}
+
+/// Turn-time hooks and extensions. Fails rather than run a turn without a hook the operator
+/// may rely on as a guard.
+async fn extensions(state: &AppState) -> Result<(Value, Extensions), String> {
     let settings = load_settings(state).await?;
     let plugins = if settings.plugins.is_empty() {
         Vec::new()
@@ -237,7 +248,11 @@ async fn extensions(state: &AppState) -> Result<(Value, Vec<PathBuf>), String> {
             .map(|p| p.path)
             .collect()
     };
-    Ok((settings_file(&settings.hooks), plugins))
+    let extensions = Extensions {
+        plugins,
+        subagents: settings.subagents,
+    };
+    Ok((settings_file(&settings.hooks), extensions))
 }
 
 fn claude(state: &AppState) -> Command {
@@ -423,17 +438,23 @@ fn turn_args(
     files: &Path,
     session: &Session,
     model: Option<&str>,
-    plugins: &[PathBuf],
+    extensions: &Extensions,
 ) -> Vec<String> {
+    // No built-in tool may run on the host; the sandbox is reached through MCP only. Subagents
+    // (`Task`) get the same tools, so they stay in the sandbox too.
+    let (tools, allowed) = if extensions.subagents {
+        ("--tools=Task", "--allowedTools=mcp__ferrobot,Task")
+    } else {
+        ("--tools=", "--allowedTools=mcp__ferrobot")
+    };
     let mut args: Vec<String> = [
         "-p",
         "--output-format=stream-json",
         "--verbose",
         "--include-partial-messages",
-        // No built-in tool may run on the host; the sandbox is reached through MCP only.
-        "--tools=",
+        tools,
         "--strict-mcp-config",
-        "--allowedTools=mcp__ferrobot",
+        allowed,
         "--permission-mode=dontAsk",
         // Not the user's own hooks, plugins, CLAUDE.md or settings.
         "--setting-sources=",
@@ -451,7 +472,8 @@ fn turn_args(
         files.join("settings.json").display()
     ));
     args.extend(
-        plugins
+        extensions
+            .plugins
             .iter()
             .map(|dir| format!("--plugin-dir={}", dir.display())),
     );
@@ -729,11 +751,11 @@ async fn start(
         Session::New(id) => Some((session_file, id)),
         Session::Resume(_) => None,
     };
-    let (settings, plugins) = extensions(state).await?;
+    let (settings, extensions) = extensions(state).await?;
     let config = write_turn_files(&state.settings.agent_url, token, &req.system, &settings)
         .map_err(|e| e.to_string())?;
     let mut cmd = claude(state);
-    cmd.args(turn_args(config.path(), &session, model, &plugins))
+    cmd.args(turn_args(config.path(), &session, model, &extensions))
         .current_dir(&dir)
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
@@ -1112,12 +1134,15 @@ mod tests {
     #[test]
     fn the_cli_runs_without_built_in_tools_or_the_users_settings() {
         let id = Uuid::nil();
-        let plugin = PathBuf::from("/plugins/fmt");
+        let extensions = Extensions {
+            plugins: vec![PathBuf::from("/plugins/fmt")],
+            subagents: false,
+        };
         let args = turn_args(
             Path::new("/tmp/x"),
             &Session::Resume(id),
             Some("sonnet"),
-            std::slice::from_ref(&plugin),
+            &extensions,
         );
         for want in [
             "-p",
@@ -1135,6 +1160,16 @@ mod tests {
             assert!(args.iter().any(|a| a == want), "{want} missing in {args:?}");
         }
         assert!(args.contains(&format!("--resume={id}")));
+        let subagents = Extensions {
+            subagents: true,
+            ..Extensions::default()
+        };
+        let with = turn_args(Path::new("/tmp/x"), &Session::Resume(id), None, &subagents);
+        let tools: Vec<&String> = with
+            .iter()
+            .filter(|a| a.starts_with("--tools") || a.starts_with("--allowedTools"))
+            .collect();
+        assert_eq!(tools, ["--tools=Task", "--allowedTools=mcp__ferrobot,Task"]);
         // `--bare` would stop claude from reading the user's own login.
         assert!(
             !args
@@ -1312,6 +1347,7 @@ Last 24h · 1485 requests · 11 sessions
         let mut ok = ClaudeCodeSettings {
             hooks: vec![hook(HookEvent::PostToolUse, Some("  "), "  fmt.sh ")],
             plugins: vec!["fmt@market".into(), "fmt@market".into()],
+            subagents: false,
         };
         validate(&mut ok).unwrap();
         assert_eq!(ok.hooks[0], hook(HookEvent::PostToolUse, None, "fmt.sh"));

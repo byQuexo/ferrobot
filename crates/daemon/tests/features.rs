@@ -7659,7 +7659,10 @@ async fn operator_uploads_land_in_the_agents_workspace() {
 async fn only_the_operator_sets_claude_code_hooks_and_plugins() {
     let d = start(Arc::new(StatefulBackend::default()), None, "127.0.0.1:0").await;
     let (status, body) = http(&d.ui, "GET", "/v1/claude-code/settings", None).await;
-    assert_eq!((status, body), (200, json!({"hooks": [], "plugins": []})));
+    assert_eq!(
+        (status, body),
+        (200, json!({"hooks": [], "plugins": [], "subagents": false}))
+    );
     let hooks = json!({
         "hooks": [{"event": "PreToolUse", "matcher": "mcp__ferrobot__bash", "command": " ./guard.sh "}],
         "plugins": ["fmt@market"],

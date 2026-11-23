@@ -1701,6 +1701,12 @@ export interface components {
              * @default []
              */
             plugins: string[];
+            /**
+             * @description Claude Code's own subagents (its `Task` tool). They get the same ferrobot tools and
+             *     still reach the sandbox only through MCP; they use more of the seat.
+             * @default false
+             */
+            subagents: boolean;
         };
         /** @description Whether the host's `claude` is installed and signed in; never its account details. */
         ClaudeCodeStatus: {

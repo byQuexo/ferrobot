@@ -246,7 +246,8 @@ daemon, `docker ps -a` must be empty of ferrobot containers.
   ferrobot; the opt-in Claude Code provider runs the host's own, unmodified
   `claude` (built-in tools off, none of the user's settings: only the hooks and
   plugins the operator sets in Settings → Claude Code, which agents cannot
-  change) and reaches the sandbox only through MCP. Connector OAuth is fine.
+  change; the operator's Subagents switch adds only `Task`) and reaches the
+  sandbox only through MCP. Connector OAuth is fine.
 - **Operator token on `/v1`.** Every UI route requires
   `Authorization: Bearer <token>` (`FERROBOT_API_TOKEN` or
   `<data dir>/api-token`); only `/v1/health` and `/v1/oauth/callback` (single-use
