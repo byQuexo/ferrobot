@@ -1190,3 +1190,52 @@ kbd { padding: 2px 8px; border: 1px solid var(--border-strong); border-radius: 6
 .limit-bar.full i { background: var(--err); }
 .limit-error { display: flex; flex-direction: column; align-items: flex-start; gap: 8px; color: var(--text-2); }
 
+/* Voice UX: dialogs over popovers, sliders, Settings → Voice, the chat's voice popover, call volume */
+.overlay { z-index: 25; }
+.toasts { z-index: 35; }
+input.slider {
+  -webkit-appearance: none; appearance: none; width: 100%; height: 20px; margin: 0; padding: 0;
+  border: none; border-radius: 0; background: transparent; box-shadow: none; cursor: pointer;
+}
+input.slider:focus { box-shadow: none; }
+input.slider::-webkit-slider-runnable-track { height: 4px; border-radius: 999px; background: linear-gradient(to right, var(--accent) var(--fill), var(--surface-3) var(--fill)); }
+input.slider::-webkit-slider-thumb {
+  -webkit-appearance: none; width: 16px; height: 16px; margin-top: -6px; border-radius: 50%;
+  background: #fff; box-shadow: 0 0 0 1px var(--border-strong), 0 1px 3px rgba(0, 0, 0, 0.2); transition: box-shadow 0.15s;
+}
+input.slider:is(:focus-visible, :active)::-webkit-slider-thumb { box-shadow: 0 0 0 1px var(--accent), 0 0 0 4px var(--accent-soft); }
+input.slider::-moz-range-track { height: 4px; border-radius: 999px; background: var(--surface-3); }
+input.slider::-moz-range-progress { height: 4px; border-radius: 999px; background: var(--accent); }
+input.slider::-moz-range-thumb { width: 16px; height: 16px; border: none; border-radius: 50%; background: #fff; box-shadow: 0 0 0 1px var(--border-strong), 0 1px 3px rgba(0, 0, 0, 0.2); }
+input.slider:is(:focus-visible, :active)::-moz-range-thumb { box-shadow: 0 0 0 1px var(--accent), 0 0 0 4px var(--accent-soft); }
+.pref-head { margin: 28px 0 8px; font-size: 13px; font-weight: 500; color: var(--text-2); }
+.pref-head:first-child { margin-top: 0; }
+.pref-sub { margin: -4px 0 8px; font-size: 12px; color: var(--muted); }
+.voice-settings a { color: var(--accent); }
+.pref-row > :is(select, .choice-custom, .voice-key, .pref-slider) { flex: 0 1 280px; min-width: 0; }
+.voice-key { display: flex; align-items: center; gap: 8px; }
+.voice-key input { flex: 1; min-width: 0; }
+.voice-key-state { display: inline-flex; align-items: center; gap: 8px; margin-right: auto; font-size: 13px; color: var(--text-2); }
+.pref-confirm { flex-basis: 100%; display: flex; flex-wrap: wrap; align-items: center; gap: 8px; padding: 8px 12px; border-radius: var(--radius-sm); background: var(--surface-2); font-size: 13px; color: var(--text-2); }
+.pref-confirm .btn-primary { margin-left: auto; }
+.pref-slider { display: flex; align-items: center; gap: 12px; }
+.pref-slider output { flex: none; min-width: 48px; text-align: right; font-size: 13px; font-variant-numeric: tabular-nums; color: var(--text-2); }
+.voice-quick-wrap { display: inline-flex; }
+:is(.voice-quick-wrap, .call-volume) > .icon-btn[aria-expanded="true"] { background: var(--surface-2); color: var(--accent); }
+.voice-quick { width: 280px; gap: 14px; padding: 8px 14px 16px; box-shadow: var(--shadow-lg); animation: rise 0.15s var(--ease); }
+.voice-quick-head { display: flex; align-items: center; gap: 8px; margin-right: -8px; font-size: 13px; font-weight: 500; color: var(--text); }
+.voice-quick-head > span { flex: 1; min-width: 0; }
+.voice-quick .pop-field { display: flex; flex-direction: column; gap: 6px; font-size: 12px; font-weight: 500; color: var(--muted); }
+.voice-quick select { height: 32px; padding: 4px 10px; font-size: 13px; font-weight: 400; color: var(--text); }
+.pop-label { display: flex; align-items: baseline; justify-content: space-between; }
+.pop-label output { font-variant-numeric: tabular-nums; color: var(--text-2); }
+.call-volume { position: relative; display: inline-flex; }
+.call-volume-pop {
+  position: absolute; top: calc(100% + 10px); left: 50%; transform: translateX(-50%);
+  display: flex; flex-direction: column; align-items: center; gap: 6px; width: 40px; padding: 14px 0 8px;
+  border: 1px solid var(--border); border-radius: 999px; background: var(--surface); box-shadow: var(--shadow-lg); animation: fade 0.15s var(--ease);
+}
+.call-volume-track { position: relative; width: 20px; height: 104px; }
+.call-volume-track input.slider { position: absolute; top: 50%; left: 50%; width: 104px; transform: translate(-50%, -50%) rotate(-90deg); }
+.call-volume-pop output { font-size: 11px; font-weight: 600; font-variant-numeric: tabular-nums; color: var(--text-2); }
+

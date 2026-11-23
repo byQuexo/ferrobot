@@ -5,7 +5,7 @@ import { ACCENTS, CHOICES, type Appearance } from "../lib/appearance.ts";
 /** A settings row: title and hint on the left, its control on the right. */
 export function PrefRow(props: {
   title: string;
-  hint?: string;
+  hint?: ComponentChildren;
   children: ComponentChildren;
 }): JSX.Element {
   return (

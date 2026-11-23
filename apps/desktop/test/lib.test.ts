@@ -33,6 +33,7 @@ import {
 } from "../src/lib/timeline.ts";
 import {
   CallScript,
+  clampVolume,
   firstClause,
   callChanged,
   callClock,
@@ -40,6 +41,7 @@ import {
   groupChange,
   isPass,
   loadPushToTalk,
+  loadVolume,
   meterDots,
   micOpen,
   nextSpeed,
@@ -48,6 +50,7 @@ import {
   speedLabel,
   splitSentences,
   talkKey,
+  volumeLabel,
   type CallState,
   type Line,
 } from "../src/lib/call.ts";
@@ -71,7 +74,15 @@ import { addTag, contextMeter } from "../src/lib/agent-meta.ts";
 import { moveId, orderAgents, pickSelection } from "../src/lib/order.ts";
 import { keyLabel, matchShortcut, SHORTCUTS, type KeyPress } from "../src/lib/shortcuts.ts";
 import { pollOutcome } from "../src/lib/update.ts";
-import { Speaker, hasVoiceKey, liveEvent, pcm16Base64, speakable } from "../src/lib/voice.ts";
+import {
+  Speaker,
+  hasVoiceKey,
+  liveEvent,
+  pcm16Base64,
+  pickProvider,
+  speakable,
+  switchProvider,
+} from "../src/lib/voice.ts";
 import {
   chartMetric,
   costLabel,
@@ -1052,6 +1063,56 @@ describe("voice", () => {
     assert.equal(hasVoiceKey(view(null, ["elevenlabs"])), false);
   });
 
+  it("sets up a provider in one go: its key, then its voices", () => {
+    const view = (
+      provider: VoiceView["provider"],
+      keyed: VoiceProvider[],
+      picks: Partial<VoiceView> = {},
+    ): VoiceView =>
+      ({
+        provider,
+        agent_voices: {},
+        ...picks,
+        providers: (["elevenlabs", "openrouter"] as const).map((kind) => ({
+          kind,
+          has_key: keyed.includes(kind),
+        })),
+      }) as VoiceView;
+    const fresh = view(null, []);
+    assert.equal(
+      pickProvider(fresh, null, "elevenlabs"),
+      "key",
+      "a first provider asks for its key",
+    );
+    assert.equal(pickProvider(view(null, ["elevenlabs"]), null, "elevenlabs"), "use");
+    const set = view("elevenlabs", ["elevenlabs"]);
+    assert.equal(pickProvider(set, "elevenlabs", "elevenlabs"), "same");
+    assert.equal(pickProvider(set, "elevenlabs", "openrouter"), "key");
+    assert.equal(pickProvider(set, "openrouter", "elevenlabs"), "back", "nothing saved yet");
+    assert.equal(
+      pickProvider(view("elevenlabs", ["elevenlabs", "openrouter"]), null, "openrouter"),
+      "use",
+    );
+    const voiced = view("elevenlabs", ["elevenlabs", "openrouter"], { agent_voices: { a: "v1" } });
+    assert.equal(
+      pickProvider(voiced, "elevenlabs", "openrouter"),
+      "confirm",
+      "picks would be lost",
+    );
+    assert.equal(pickProvider(voiced, "elevenlabs", "openrouter", true), "use");
+    assert.equal(
+      pickProvider(view("elevenlabs", [], { tts_model: "m" }), "elevenlabs", "openrouter"),
+      "confirm",
+    );
+    assert.deepEqual(switchProvider("openrouter"), {
+      provider: "openrouter",
+      voice: null,
+      tts_model: null,
+      stt_model: null,
+      agent_voices: {},
+    });
+  });
+
   it("reads the words of a message, not its Markdown or code", () => {
     const text = [
       "## Done",
@@ -1432,6 +1493,94 @@ describe("voice call", () => {
       }),
       false,
     );
+  });
+
+  it("remembers the call volume, full when nothing sensible is stored", () => {
+    assert.equal(
+      loadVolume((k) => (k === "ferrobot.call-volume" ? "0.35" : null)),
+      0.35,
+    );
+    assert.equal(
+      loadVolume(() => "0"),
+      0,
+      "0 is muted, not missing",
+    );
+    assert.equal(
+      loadVolume(() => null),
+      1,
+    );
+    assert.equal(
+      loadVolume(() => ""),
+      1,
+    );
+    assert.equal(
+      loadVolume(() => "loud"),
+      1,
+    );
+    assert.equal(
+      loadVolume(() => "7"),
+      1,
+    );
+    assert.equal(
+      loadVolume(() => "-2"),
+      0,
+    );
+    assert.equal(
+      loadVolume(() => {
+        throw new Error("no storage");
+      }),
+      1,
+    );
+    assert.equal(clampVolume(0.7 + 0.1), 0.8, "whole percents");
+    assert.equal(clampVolume(Number.NaN), 1);
+    assert.equal(volumeLabel(0), "muted");
+    assert.equal(volumeLabel(0.35), "35%");
+  });
+
+  it("plays speech at the call volume, the clip playing included, and keeps playing at 0", async () => {
+    const global = globalThis as unknown as { Audio?: unknown };
+    const playing: FakeAudio[] = [];
+    class FakeAudio {
+      onended: (() => void) | null = null;
+      onerror: (() => void) | null = null;
+      onpause: (() => void) | null = null;
+      preload = "";
+      src = "";
+      volume = 1;
+      play(): Promise<void> {
+        playing.push(this);
+        return Promise.resolve();
+      }
+      pause(): void {
+        this.onpause?.();
+      }
+    }
+    const before = global.Audio;
+    global.Audio = FakeAudio;
+    try {
+      const speaker = new Speaker(
+        (text) => text,
+        (err) => {
+          throw err;
+        },
+      );
+      const tick = (): Promise<void> => new Promise((r) => setTimeout(r, 5));
+      speaker.setVolume(0.5);
+      speaker.say("one", "a");
+      speaker.say("two", "a");
+      await tick();
+      const first = playing[0];
+      assert.ok(first);
+      assert.equal(first.volume, 0.5);
+      speaker.setVolume(0);
+      assert.equal(first.volume, 0, "the clip playing gets quieter at once");
+      assert.ok(speaker.busy, "muted speech still plays, so the call's timing stays");
+      first.onended?.();
+      await tick();
+      assert.equal(playing[1]?.volume, 0, "a clip loaded earlier plays at the new volume");
+    } finally {
+      global.Audio = before;
+    }
   });
 });
 

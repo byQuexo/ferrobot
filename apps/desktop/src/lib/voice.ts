@@ -1,11 +1,39 @@
 // Voice in the chat with browser built-ins only: <audio> plays what the
 // daemon's speech endpoint returns, MediaRecorder records the operator.
-import type { VoiceView } from "../api.ts";
+import type { UpdateVoice, VoiceProvider, VoiceView } from "../api.ts";
 import { mentionsAsText } from "./mentions.ts";
 
 /** Whether the chosen voice provider has its key, so dictation can work. */
 export const hasVoiceKey = (v: VoiceView): boolean =>
   v.providers.some((p) => p.kind === v.provider && p.has_key);
+
+/**
+ * What choosing `kind` in Settings → Voice does while `shown` is selected: nothing, go back to
+ * the saved provider, ask first (the picked voices would be lost), switch at once (its key is
+ * stored) or ask for its key (saving it switches).
+ */
+export function pickProvider(
+  view: VoiceView,
+  shown: VoiceProvider | null,
+  kind: VoiceProvider,
+  confirmed = false,
+): "same" | "back" | "confirm" | "use" | "key" {
+  if (kind === shown) return "same";
+  if (kind === view.provider) return "back";
+  const picks =
+    view.voice || view.tts_model || view.stt_model || Object.keys(view.agent_voices ?? {}).length;
+  if (view.provider && picks && !confirmed) return "confirm";
+  return view.providers.some((p) => p.kind === kind && p.has_key) ? "use" : "key";
+}
+
+/** The settings that switch to `kind`: voices and models belong to one provider. */
+export const switchProvider = (kind: VoiceProvider): Partial<UpdateVoice> => ({
+  provider: kind,
+  voice: null,
+  tts_model: null,
+  stt_model: null,
+  agent_voices: {},
+});
 
 /** Longer replies are cut; the rest stays in the chat. */
 export const MAX_SPOKEN = 1500;
@@ -56,6 +84,7 @@ export class Speaker {
   #busy = false;
   /** Set by `keepOnly`: no other voice is played until `stop`. */
   #keep: { agent: string | undefined } | null = null;
+  #volume = 1;
 
   constructor(urlOf: (text: string, agent?: string) => string, onError: (err: unknown) => void) {
     this.#urlOf = urlOf;
@@ -78,6 +107,12 @@ export class Speaker {
     return [...this.#played.filter((p) => p.ended >= since).map((p) => p.text), this.#now?.text]
       .filter(Boolean)
       .join(" ");
+  }
+
+  /** Playback volume (0..1) of what plays now and next; 0 keeps playing, silently. */
+  setVolume(v: number): void {
+    this.#volume = v;
+    if (this.#audio) this.#audio.volume = v;
   }
 
   /** Queues `text`, spoken with `agent`'s voice if it has one. */
@@ -138,6 +173,7 @@ export class Speaker {
       }
       this.#now = next;
       const audio = next.audio ?? this.#load(next);
+      audio.volume = this.#volume;
       this.#audio = audio;
       this.onSpeaking(next.agent ?? null);
       await new Promise<void>((resolve) => {

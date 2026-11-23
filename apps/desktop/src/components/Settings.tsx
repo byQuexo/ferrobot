@@ -270,7 +270,7 @@ export function Settings(props: {
         )}
         {props.section === "clis" && <ClisSettings />}
         {props.section === "memory" && <Memory agent={null} />}
-        {props.section === "voice" && <VoiceSettings onVault={vault} />}
+        {props.section === "voice" && <VoiceSettings />}
         {props.section === "updates" && <UpdatesSettings />}
         {props.section === "diagnostics" && <DiagnosticsSettings />}
         {props.section === "guides" && <Guides page={props.guide} onPage={props.onGuide} />}

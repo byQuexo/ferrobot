@@ -1,50 +1,54 @@
 import type { JSX } from "preact";
 import { useEffect, useRef, useState } from "preact/hooks";
+import { Play, SlidersHorizontal } from "lucide-preact";
 
-import type { Agent, VoiceCatalog, VoiceView } from "../api.ts";
+import type { Agent, UpdateVoice, VoiceCatalog, VoiceView } from "../api.ts";
 import { useApp } from "../context.ts";
-import { Button } from "./ui.tsx";
-import { languagesOf, voiceUpdate } from "./VoiceSettings.tsx";
+import { speedLabel } from "../lib/call.ts";
+import { withSaved } from "../lib/models.ts";
+import { IconButton, Slider, useDismiss } from "./ui.tsx";
+import { languagesOf, patchVoice } from "./VoiceSettings.tsx";
 
-/** Voice, language and speed for this chat, changed on the fly; saved right away. */
+/** The chat header's sliders button and its popover: this agent's voice, language and speed,
+ * saved right away. */
 export function VoiceQuick(props: {
   agent: Agent;
-  view: VoiceView;
+  view: VoiceView | null;
   onView: (v: VoiceView) => void;
-  onClose: () => void;
 }): JSX.Element {
   const { client, toast } = useApp();
+  const [open, setOpen] = useState(false);
   const [catalog, setCatalog] = useState<VoiceCatalog | null>(null);
-  const [speed, setSpeed] = useState(props.view.speed ?? 1);
-  const box = useRef<HTMLDivElement>(null);
+  const [speed, setSpeed] = useState<number | null>(null);
+  const [testing, setTesting] = useState(false);
+  const wrap = useRef<HTMLSpanElement>(null);
+  const saving = useRef(Promise.resolve());
   const { view } = props;
   const id = props.agent.id;
-  const elevenlabs = view.provider === "elevenlabs";
+  const elevenlabs = view?.provider === "elevenlabs";
 
+  useDismiss(wrap, open, (escape) => {
+    setOpen(false);
+    if (escape) wrap.current?.querySelector("button")?.focus();
+  });
   useEffect(() => {
+    if (!open) return;
+    setSpeed(null);
+    wrap.current?.querySelector<HTMLElement>(".voice-quick select, .voice-quick input")?.focus();
     if (elevenlabs) client.voiceCatalog().then(setCatalog, () => undefined);
-    const outside = (e: PointerEvent): void => {
-      if (!box.current?.contains(e.target as Node)) props.onClose();
-    };
-    const key = (e: KeyboardEvent): void => {
-      if (e.key === "Escape") props.onClose();
-    };
-    document.addEventListener("pointerdown", outside);
-    document.addEventListener("keydown", key);
-    return () => {
-      document.removeEventListener("pointerdown", outside);
-      document.removeEventListener("keydown", key);
-    };
-  }, []);
+  }, [open]);
 
-  const save = async (changes: Parameters<typeof voiceUpdate>[1]): Promise<void> => {
-    try {
-      props.onView(await client.updateVoice(voiceUpdate(view, changes)));
-    } catch (err) {
-      toast(err instanceof Error ? err.message : String(err));
-    }
+  const save = (changes: Partial<UpdateVoice>): void => {
+    saving.current = saving.current.then(async () => {
+      try {
+        props.onView(await patchVoice(client, changes));
+      } catch (err) {
+        toast(err instanceof Error ? err.message : String(err));
+      }
+    });
   };
   const test = async (): Promise<void> => {
+    setTesting(true);
     try {
       const url = URL.createObjectURL(
         await client.speech(`Hi, I'm ${props.agent.name}. This is how I sound.`, id),
@@ -56,72 +60,98 @@ export function VoiceQuick(props: {
       await audio.play();
     } catch (err) {
       toast(err instanceof Error ? err.message : String(err));
+    } finally {
+      setTesting(false);
     }
   };
 
-  const mine = view.agent_voices?.[id] ?? "";
+  const mine = view?.agent_voices?.[id] ?? "";
+  const voices: [string, string][] =
+    catalog?.voices.map((v) => [
+      v.voice_id,
+      `${v.name}${v.languages.length ? ` · ${v.languages.join(", ")}` : ""}`,
+    ]) ?? [];
+  const shownSpeed = speed ?? view?.speed ?? 1;
   return (
-    <div class="voice-quick" ref={box} role="dialog" aria-label="Voice for this chat">
-      {elevenlabs && (
-        <label>
-          Voice of {props.agent.name}
-          <select
-            value={mine}
-            onChange={(e) => {
-              const v = e.currentTarget.value;
-              const voices = Object.fromEntries(
-                Object.entries(view.agent_voices ?? {}).filter(([agent]) => agent !== id),
-              );
-              if (v) voices[id] = v;
-              void save({ agent_voices: voices });
-            }}
-          >
-            <option value="">Default voice</option>
-            {catalog?.voices.map((v) => (
-              <option key={v.voice_id} value={v.voice_id}>
-                {v.name}
-                {v.languages.length ? ` · ${v.languages.join(", ")}` : ""}
-              </option>
-            ))}
-            {mine && !catalog?.voices.some((v) => v.voice_id === mine) && (
-              <option value={mine}>{mine}</option>
-            )}
-          </select>
-        </label>
+    <span class="voice-quick-wrap" ref={wrap}>
+      <IconButton
+        label="Voice, language and speed"
+        expanded={open}
+        onClick={() => {
+          setOpen(!open);
+        }}
+      >
+        <SlidersHorizontal size={18} />
+      </IconButton>
+      {open && view && (
+        <div class="voice-quick" role="dialog" aria-label={`Voice of ${props.agent.name}`}>
+          <header class="voice-quick-head">
+            <span class="ellipsis">Voice of {props.agent.name}</span>
+            <IconButton label="Test voice" disabled={testing} onClick={() => void test()}>
+              <Play size={16} />
+            </IconButton>
+          </header>
+          {elevenlabs && (
+            <label class="pop-field">
+              Voice
+              <select
+                value={mine}
+                onChange={(e) => {
+                  const v = e.currentTarget.value;
+                  const rest = Object.fromEntries(
+                    Object.entries(view.agent_voices ?? {}).filter(([agent]) => agent !== id),
+                  );
+                  save({ agent_voices: v ? { ...rest, [id]: v } : rest });
+                }}
+              >
+                <option value="">Default voice</option>
+                {withSaved(voices, mine).map(([v, label]) => (
+                  <option key={v} value={v}>
+                    {label}
+                  </option>
+                ))}
+              </select>
+            </label>
+          )}
+          <label class="pop-field">
+            Language
+            <select
+              value={view.language ?? ""}
+              onChange={(e) => {
+                save({ language: e.currentTarget.value || null });
+              }}
+            >
+              <option value="">Detect automatically</option>
+              {withSaved(languagesOf(catalog, view.tts_model), view.language ?? "").map(
+                ([code, name]) => (
+                  <option key={code} value={code}>
+                    {name}
+                  </option>
+                ),
+              )}
+            </select>
+          </label>
+          {elevenlabs && (
+            <div class="pop-field">
+              <span class="pop-label">
+                Speed <output aria-hidden="true">{speedLabel(shownSpeed)}</output>
+              </span>
+              <Slider
+                label="Speed"
+                text={speedLabel(shownSpeed)}
+                min={0.7}
+                max={1.2}
+                step={0.05}
+                value={shownSpeed}
+                onInput={setSpeed}
+                onChange={(s) => {
+                  save({ speed: s === 1 ? null : s });
+                }}
+              />
+            </div>
+          )}
+        </div>
       )}
-      <label>
-        Language
-        <select
-          value={view.language ?? ""}
-          onChange={(e) => void save({ language: e.currentTarget.value || null })}
-        >
-          <option value="">Detect automatically</option>
-          {languagesOf(catalog, view.tts_model).map(([code, name]) => (
-            <option key={code} value={code}>
-              {name}
-            </option>
-          ))}
-        </select>
-      </label>
-      {elevenlabs && (
-        <label>
-          Speed · {speed.toFixed(2)}×
-          <input
-            type="range"
-            min={0.7}
-            max={1.2}
-            step={0.05}
-            value={speed}
-            onInput={(e) => {
-              setSpeed(Number(e.currentTarget.value));
-            }}
-            onChange={() => void save({ speed: speed === 1 ? null : speed })}
-          />
-        </label>
-      )}
-      <Button small variant="secondary" onClick={() => void test()}>
-        Test voice
-      </Button>
-    </div>
+    </span>
   );
 }

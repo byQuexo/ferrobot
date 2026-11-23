@@ -20,7 +20,6 @@ import {
   SendHorizontal,
   RotateCcw,
   ShieldAlert,
-  SlidersHorizontal,
   Smile,
   Square,
   Sun,
@@ -84,7 +83,6 @@ export function Chat(props: {
   // Where the "New" divider goes, fixed when the chat opens: reading it zeroes `unread`.
   const [newSince, setNewSince] = useState<number | null>(null);
   const [voiceView, setVoiceView] = useState<VoiceView | null>(null);
-  const [quick, setQuick] = useState(false);
   useEffect(() => {
     client.voice().then(setVoiceView, () => undefined);
   }, [client]);
@@ -266,25 +264,7 @@ export function Chat(props: {
         )}
         {voiceEnabled && (
           <span class="voice-tools">
-            <IconButton
-              label="Voice, language and speed"
-              onClick={() => {
-                setQuick(!quick);
-              }}
-              pressed={quick}
-            >
-              <SlidersHorizontal size={18} />
-            </IconButton>
-            {quick && voiceView && (
-              <VoiceQuick
-                agent={agent}
-                view={voiceView}
-                onView={setVoiceView}
-                onClose={() => {
-                  setQuick(false);
-                }}
-              />
-            )}
+            <VoiceQuick agent={agent} view={voiceView} onView={setVoiceView} />
             <IconButton
               label={
                 inCall

@@ -14,6 +14,15 @@ All notable changes are listed here. The format follows
   took, the slowest one, failures, counts and a search
   (`GET /v1/agents/{id}/turns/{turn_id}/trace`). Computer steps name their
   command or file. New migration: v20 (`usage.turn_id`, `usage.at_ms`).
+- Call volume: a speaker button in the call bar opens a small slider for how
+  loud the agents speak (0 mutes them); this computer remembers it.
+
+### Changed
+
+- Settings → Voice is one flow in the new card look: pick the provider, paste
+  its key right there, and your voices load at once. Every change saves by
+  itself (no Save button); switching providers asks first when it would clear
+  your voice picks. The chat's voice popover got the same look.
 
 - Claude Code calls show on the Usage page: each model call `claude` reports is
   a usage row (provider kind `claude_code`) with its tokens and a cost
@@ -44,6 +53,8 @@ All notable changes are listed here. The format follows
 - A renamed agent can still be reached by its old name: agents that write
   `@old-name` (or send to it) reach it, until another agent takes that name.
   New migration: v21 (`agent_aliases`).
+- The chat's voice popover stayed open on top of dialogs such as Edit agent;
+  it now closes when a dialog opens, and dialogs always sit above popovers.
 
 ## [0.1.5] - 2026-11-23
 
