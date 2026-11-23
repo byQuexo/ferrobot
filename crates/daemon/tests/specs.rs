@@ -123,7 +123,7 @@ fn every_routed_path_is_documented() {
     }
     assert_eq!(
         documented.len(),
-        70,
+        71,
         "undocumented extra paths: {documented:?}"
     );
 }

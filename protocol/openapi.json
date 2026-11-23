@@ -2353,6 +2353,66 @@
         }
       }
     },
+    "/v1/agents/{id}/turns/{turn_id}/trace": {
+      "get": {
+        "tags": [
+          "chat"
+        ],
+        "summary": "One of the agent's turns as a timeline: its model calls and tool calls with their times.",
+        "operationId": "turn_trace",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "Agent id (UUID)",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "turn_id",
+            "in": "path",
+            "description": "Turn id, as on the turn's events",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Trace"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or wrong API token",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Unknown agent or turn",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/v1/agents/{id}/uploads": {
       "post": {
         "tags": [
@@ -8424,6 +8484,93 @@
           }
         }
       },
+      "Span": {
+        "type": "object",
+        "description": "One step of a turn.",
+        "required": [
+          "kind",
+          "name",
+          "started_at"
+        ],
+        "properties": {
+          "kind": {
+            "$ref": "#/components/schemas/SpanKind"
+          },
+          "name": {
+            "type": "string",
+            "description": "The model id, or the tool's name."
+          },
+          "started_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "ended_at": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time",
+            "description": "`null` while it runs."
+          },
+          "error": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Why it failed; `null` when it did not."
+          },
+          "input": {
+            "type": [
+              "object",
+              "null"
+            ],
+            "description": "A tool's input when small (up to 4 KiB), for its label."
+          },
+          "input_tokens": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64"
+          },
+          "output_tokens": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64"
+          },
+          "cache_read_tokens": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64"
+          },
+          "cache_write_tokens": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64"
+          },
+          "cost_usd": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "format": "double",
+            "description": "What the provider said the call cost (`OpenRouter`); `null` otherwise."
+          }
+        }
+      },
+      "SpanKind": {
+        "type": "string",
+        "enum": [
+          "model",
+          "tool"
+        ]
+      },
       "SpeechRequest": {
         "type": "object",
         "required": [
@@ -8519,6 +8666,57 @@
           "since": {
             "type": "string",
             "format": "date-time"
+          }
+        }
+      },
+      "Trace": {
+        "type": "object",
+        "description": "A turn and its steps, oldest first.",
+        "required": [
+          "turn_id",
+          "started_at",
+          "models_tracked",
+          "spans"
+        ],
+        "properties": {
+          "turn_id": {
+            "type": "string"
+          },
+          "started_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "ended_at": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time",
+            "description": "`null` while the turn runs."
+          },
+          "outcome": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "`completed`, `interrupted` or `failed`; `null` while it runs."
+          },
+          "error": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Why the turn failed."
+          },
+          "models_tracked": {
+            "type": "boolean",
+            "description": "Whether model calls are in `spans`: `false` on Claude Code, whose calls do not pass the\ndaemon's model proxy."
+          },
+          "spans": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Span"
+            }
           }
         }
       },

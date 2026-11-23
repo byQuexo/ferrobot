@@ -30,6 +30,7 @@ pub mod storage;
 pub mod supervisor;
 pub mod tasks;
 pub mod tool_check;
+pub mod trace;
 pub mod update;
 pub mod usage;
 pub mod views;

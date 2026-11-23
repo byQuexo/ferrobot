@@ -1149,6 +1149,94 @@ async fn fake_upstream() -> String {
 }
 
 #[tokio::test]
+async fn a_turns_trace_lines_up_its_model_and_tool_calls() {
+    use ferrobot_core::protocol::TurnEvent;
+    let upstream = fake_upstream().await;
+    let backend = Arc::new(StatefulBackend::default());
+    let d = start_with(backend.clone(), None, "127.0.0.1:0", |s| {
+        s.driver = "claude".into();
+        s.anthropic_api_key = Some("sk-real-secret".into());
+        s.anthropic_upstream = upstream;
+    })
+    .await;
+    let id = create(&d, json!({"name": "tia"})).await["id"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    let token = backend.envs.lock().unwrap()["tia"]["FERROBOT_AGENT_TOKEN"].clone();
+    let mut ws = connect_runner(&d.agents, &token).await;
+    let path = format!("/v1/agents/{id}/messages");
+    http(&d.ui, "POST", &path, Some(json!({"body": "plan it"}))).await;
+    let (turn_id, _, _) = next_turn(&mut ws).await;
+
+    let model = |body: &'static [u8]| {
+        let (agents, token) = (d.agents.clone(), token.clone());
+        async move {
+            let headers = [
+                ("x-api-key", token.as_str()),
+                ("content-type", "application/json"),
+            ];
+            http_raw(&agents, "POST", "/model/v1/messages", &headers, body)
+                .await
+                .0
+        }
+    };
+    assert_eq!(
+        model(br#"{"model":"claude-test","stream":true}"#).await,
+        200
+    );
+    for event in [
+        TurnEvent::ToolUse {
+            id: Some("a".into()),
+            name: "read_file".into(),
+            input: json!({"path": "brief.md"}),
+        },
+        TurnEvent::ToolResult {
+            id: Some("a".into()),
+            output: "no such file".into(),
+            is_error: true,
+        },
+    ] {
+        let frame = RunnerFrame::Event {
+            turn_id: turn_id.clone(),
+            event,
+        };
+        ws.send(Message::text(serde_json::to_string(&frame).unwrap()))
+            .await
+            .unwrap();
+    }
+    answer(&mut ws, turn_id.clone(), "done").await;
+    let agent: AgentId = id.parse().unwrap();
+    eventually("the turn to end", Duration::from_secs(5), || async {
+        (!d.state.hub.is_working(agent)).then_some(())
+    })
+    .await;
+    // A call outside any turn stays out of every trace.
+    assert_eq!(model(br#"{"model":"elsewhere","stream":true}"#).await, 200);
+
+    let trace = format!("/v1/agents/{id}/turns/{turn_id}/trace");
+    let t = eventually("the finished trace", Duration::from_secs(5), || async {
+        let (_, t) = http(&d.ui, "GET", &trace, None).await;
+        (t["outcome"] == "completed" && t["spans"].as_array().is_some_and(|s| s.len() == 2))
+            .then_some(t)
+    })
+    .await;
+    assert_eq!(t["models_tracked"], true);
+    let spans = t["spans"].as_array().unwrap();
+    assert_eq!(
+        (&spans[0]["kind"], &spans[0]["name"]),
+        (&json!("model"), &json!("claude-test"))
+    );
+    assert_eq!(
+        (&spans[1]["kind"], &spans[1]["name"], &spans[1]["error"]),
+        (&json!("tool"), &json!("read_file"), &json!("no such file"))
+    );
+    assert_eq!(spans[1]["input"], json!({"path": "brief.md"}));
+    let missing = format!("/v1/agents/{id}/turns/nope/trace");
+    assert_eq!(http(&d.ui, "GET", &missing, None).await.0, 404);
+}
+
+#[tokio::test]
 async fn model_proxy_swaps_key_and_streams() {
     let upstream = fake_upstream().await;
     let backend = Arc::new(StatefulBackend::default());
@@ -5825,6 +5913,7 @@ async fn usage_filters_groups_and_price_overrides() {
         cost_usd: None,
         latency_ms: 5,
         status: UsageStatus::Ok,
+        turn_id: None,
     };
     for r in [
         row(
@@ -5971,6 +6060,7 @@ async fn usage_days_follow_the_daemon_time_zone() {
         cost_usd: None,
         latency_ms: 5,
         status: UsageStatus::Ok,
+        turn_id: None,
     };
     // 23:30 and 00:30 in Berlin: one UTC day, two local days.
     for r in [
@@ -6055,6 +6145,7 @@ async fn usage_totals_add_up_in_every_grouping() {
             cost_usd: None,
             latency_ms: 5,
             status: UsageStatus::Ok,
+            turn_id: None,
         };
     for r in [
         row("2026-11-19T10:00:00Z", amy, "house-model", 1_000_000, None),
@@ -7065,6 +7156,7 @@ async fn context_is_the_newest_call_since_the_last_new_chat() {
         cost_usd: None,
         latency_ms: 5,
         status,
+        turn_id: None,
     };
     for r in [
         row(60, Some(2000), UsageStatus::Ok),

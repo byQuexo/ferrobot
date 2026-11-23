@@ -474,6 +474,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/agents/{id}/turns/{turn_id}/trace": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** One of the agent's turns as a timeline: its model calls and tool calls with their times. */
+        get: operations["turn_trace"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/agents/{id}/uploads": {
         parameters: {
             query?: never;
@@ -2387,6 +2404,38 @@ export interface components {
             /** @description Free-form label (default `manual`, max 64 bytes). */
             label?: string;
         };
+        /** @description One step of a turn. */
+        Span: {
+            kind: components["schemas"]["SpanKind"];
+            /** @description The model id, or the tool's name. */
+            name: string;
+            /** Format: date-time */
+            started_at: string;
+            /**
+             * Format: date-time
+             * @description `null` while it runs.
+             */
+            ended_at?: string | null;
+            /** @description Why it failed; `null` when it did not. */
+            error?: string | null;
+            /** @description A tool's input when small (up to 4 KiB), for its label. */
+            input?: Record<string, never> | null;
+            /** Format: int64 */
+            input_tokens?: number | null;
+            /** Format: int64 */
+            output_tokens?: number | null;
+            /** Format: int64 */
+            cache_read_tokens?: number | null;
+            /** Format: int64 */
+            cache_write_tokens?: number | null;
+            /**
+             * Format: double
+             * @description What the provider said the call cost (`OpenRouter`); `null` otherwise.
+             */
+            cost_usd?: number | null;
+        };
+        /** @enum {string} */
+        SpanKind: "model" | "tool";
         SpeechRequest: {
             /** @description What to say: 1-4096 characters. */
             text: string;
@@ -2422,6 +2471,27 @@ export interface components {
             reason: string;
             /** Format: date-time */
             since: string;
+        };
+        /** @description A turn and its steps, oldest first. */
+        Trace: {
+            turn_id: string;
+            /** Format: date-time */
+            started_at: string;
+            /**
+             * Format: date-time
+             * @description `null` while the turn runs.
+             */
+            ended_at?: string | null;
+            /** @description `completed`, `interrupted` or `failed`; `null` while it runs. */
+            outcome?: string | null;
+            /** @description Why the turn failed. */
+            error?: string | null;
+            /**
+             * @description Whether model calls are in `spans`: `false` on Claude Code, whose calls do not pass the
+             *     daemon's model proxy.
+             */
+            models_tracked: boolean;
+            spans: components["schemas"]["Span"][];
         };
         /** @description What was said. Both providers answer `{"text": ...}` (plus fields we ignore). */
         Transcript: {
@@ -4505,6 +4575,48 @@ export interface operations {
             };
             /** @description Sandbox backend error */
             502: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+        };
+    };
+    turn_trace: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Agent id (UUID) */
+                id: string;
+                /** @description Turn id, as on the turn's events */
+                turn_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Trace"];
+                };
+            };
+            /** @description Missing or wrong API token */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Unknown agent or turn */
+            404: {
                 headers: {
                     [name: string]: unknown;
                 };

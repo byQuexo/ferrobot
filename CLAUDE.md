@@ -119,6 +119,8 @@ Principles:
 - `crates/daemon/src/update.rs` — `/v1/update` status; `update/source.rs` — a
   debug build pulls `main`, rebuilds and re-execs itself (debug builds only).
 - `crates/daemon/src/lifecycle.rs`, `supervisor.rs`, `scheduler.rs`, `runner_ws.rs`.
+- `crates/daemon/src/trace.rs` — a turn as a timeline (model calls from usage rows tagged
+  with the turn, tool calls from its events); `GET /v1/agents/{id}/turns/{turn_id}/trace`.
 - `crates/daemon/src/tasks.rs` — tracked tasks: automatic report and reminder;
   `crates/store/src/tasks.rs` — task state from `task` events and the mailbox.
 - `crates/mcp/src/tools.rs` — MCP tools; `crates/mcp/src/lib.rs` — `MailboxNotifier`.
@@ -209,7 +211,7 @@ daemon, `docker ps -a` must be empty of ferrobot containers.
 ## Migrations
 
 - `crates/store/src/migrations.rs`, tracked with `PRAGMA user_version`.
-- Forward-only, numbered v1..v19 (v7: `providers`, `agents.provider_id`/`model`; v8:
+- Forward-only, numbered v1..v20 (v7: `providers`, `agents.provider_id`/`model`; v8:
   `global_memories`; v9: `connectors`, `agent_connectors`; v10:
   `global_memories.author`; v11: `agents.pinned`; v12: `settings`, JSON by
   key, e.g. `voice`; v13: `usage`, one row per proxied model call; v14:
@@ -217,7 +219,8 @@ daemon, `docker ps -a` must be empty of ferrobot containers.
   every tool group; v16: `rooms`, `room_members`, `room_lines`,
   `messages.room_id`, index `events_turn`; v17: `room_lines.invited`, NULL =
   words said; v18: `agents.tags`, NULL = none, index `usage_agent`; v19:
-  `rooms.name`, NULL = a call room, else a group chat). Append a new entry
+  `rooms.name`, NULL = a call room, else a group chat; v20: `usage.turn_id`,
+  `usage.at_ms`, index `usage_turn`). Append a new entry
   with a `// vN: ...` comment; **never edit or reorder existing ones**.
 - Every migration gets a test (upgrade an old DB, check defaults of existing
   rows). New columns on existing tables need a default.

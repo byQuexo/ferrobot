@@ -39,6 +39,8 @@ pub(crate) struct Call {
     provider_id: Option<uuid::Uuid>,
     provider_kind: String,
     pub model: String,
+    /// The agent's turn when the call began, for its trace.
+    turn_id: Option<String>,
 }
 
 /// The model named in a request path (Bedrock `model/<id>/`, Vertex and Gemini `models/<m>:`).
@@ -90,6 +92,7 @@ impl Call {
             provider_id: agent.provider_id,
             provider_kind: provider_kind.into(),
             model,
+            turn_id: state.hub.current_turn(agent.id),
         }
     }
 
@@ -119,6 +122,7 @@ impl Call {
             cost_usd,
             latency_ms: i64::try_from(self.started.elapsed().as_millis()).unwrap_or(i64::MAX),
             status,
+            turn_id: self.turn_id,
         };
         // A drop during shutdown has no runtime left; that row is lost.
         if let Ok(rt) = tokio::runtime::Handle::try_current() {
@@ -534,6 +538,7 @@ mod tests {
             provider_id: None,
             provider_kind: "anthropic".into(),
             model: "m".into(),
+            turn_id: None,
         };
         let mut m = Meter::new(call, family, true, content_type);
         m.call = None;
