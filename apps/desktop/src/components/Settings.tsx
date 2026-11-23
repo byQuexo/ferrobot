@@ -5,6 +5,7 @@ import {
   BookOpen,
   Bot,
   Brain,
+  Code,
   Cpu,
   Keyboard,
   KeyRound,
@@ -21,6 +22,7 @@ import { useApp } from "../context.ts";
 import type { Appearance } from "../lib/appearance.ts";
 import { isMac, keyLabel, SHORTCUTS } from "../lib/shortcuts.ts";
 import { AppearanceSettings, PrefRow } from "./AppearanceSettings.tsx";
+import { ClaudeCodeSettings } from "./ClaudeCodeSettings.tsx";
 import { ClisSettings } from "./ClisSettings.tsx";
 import { ConnectorsSettings } from "./ConnectorsSettings.tsx";
 import { DiagnosticsSettings } from "./DiagnosticsSettings.tsx";
@@ -36,6 +38,7 @@ export type SettingsSection =
   | "providers"
   | "vault"
   | "agents"
+  | "claude-code"
   | "connectors"
   | "clis"
   | "memory"
@@ -58,6 +61,13 @@ export const SECTIONS: [SettingsSection, string, string, typeof KeyRound, string
   ],
   ["providers", "Model providers", "The models your agents run on. Their keys live in Vault.", Cpu],
   ["agents", "Agents", "What agents may do without asking you.", Bot],
+  [
+    "claude-code",
+    "Claude Code",
+    "Hooks and plugins for agents that run on Claude Code.",
+    Code,
+    "Providers",
+  ],
   [
     "memory",
     "Global memory",
@@ -97,7 +107,7 @@ export const SECTIONS: [SettingsSection, string, string, typeof KeyRound, string
 /** The sidebar's categories, in order; together they hold every section once. */
 const GROUPS: [string, SettingsSection[]][] = [
   ["General", ["appearance", "keyboard", "voice"]],
-  ["Agents", ["providers", "agents", "memory"]],
+  ["Agents", ["providers", "agents", "claude-code", "memory"]],
   ["Tools & keys", ["connectors", "clis", "vault"]],
   ["App", ["updates", "diagnostics", "guides"]],
 ];
@@ -260,6 +270,7 @@ export function Settings(props: {
         {props.section === "providers" && <ProvidersSettings onVault={vault} />}
         {props.section === "vault" && <VaultSettings focus={vaultFocus} />}
         {props.section === "agents" && <AgentSettings />}
+        {props.section === "claude-code" && <ClaudeCodeSettings />}
         {props.section === "connectors" && (
           <ConnectorsSettings
             onVault={vaultAt}

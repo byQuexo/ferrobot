@@ -134,6 +134,14 @@ fn integrations() -> Router<AppState> {
         .route("/v1/providers/{id}/models", get(providers::provider_models))
         .route("/v1/claude-code", get(providers::claude_code_status))
         .route(
+            "/v1/claude-code/settings",
+            get(providers::claude_code_settings).put(providers::put_claude_code_settings),
+        )
+        .route(
+            "/v1/claude-code/plugins",
+            get(providers::claude_code_plugins),
+        )
+        .route(
             "/v1/provider-kinds/{kind}/models",
             get(providers::kind_models),
         )

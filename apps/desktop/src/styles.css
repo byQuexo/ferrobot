@@ -1243,3 +1243,9 @@ input.slider:is(:focus-visible, :active)::-moz-range-thumb { box-shadow: 0 0 0 1
 .conn-kind { display: flex; flex-direction: column; gap: 6px; margin: 0; padding: 0; border: none; }
 .conn-kind legend { padding: 0; margin-bottom: 4px; font-weight: 500; }
 
+
+/* Settings → Claude Code */
+.hook-command { flex: 1 1 200px; min-width: 0; overflow-wrap: anywhere; font-size: 12px; }
+.hook-add > select { flex: 0 1 190px; }
+.hook-add > input { flex: 1 1 180px; min-width: 0; }
+.hook-add > .hook-command-input { flex-basis: 260px; }

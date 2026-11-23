@@ -131,7 +131,8 @@ proxy, and no Claude sign-in in the app.
   [Legal and compliance](https://code.claude.com/docs/en/legal-and-compliance).
 - **Host, not sandbox:** `claude` and its login stay on the daemon's
   computer. It runs with its built-in tools off and none of your settings,
-  hooks, plugins, CLAUDE.md or claude.ai connectors. It reaches the agent's
+  hooks, plugins, CLAUDE.md or claude.ai connectors (only the hooks and
+  plugins you set for ferrobot, below). It reaches the agent's
   computer only through ferrobot's MCP tools `bash`, `read_file` and
   `write_file`, which run inside the sandbox, next to the usual ferrobot
   tools. The runner's check for destructive shell commands does not apply on
@@ -139,8 +140,10 @@ proxy, and no Claude sign-in in the app.
   file named as `@path` and run a leading `/command` on the host, so the
   daemon puts a space after such an `@` and refuses a prompt starting with
   `/` or `!`.
-- **Not tracked:** the calls go from your `claude` to Anthropic, past the
-  model proxy, so Usage shows no tokens or costs for these agents.
+- **Usage:** the calls go from your `claude` to Anthropic, past the model
+  proxy. The daemon reads their tokens from `claude`'s own output, so Usage
+  shows them, with a cost estimate at API prices (your seat is not billed
+  per token).
 - **Settings** shows whether `claude` is installed and logged in, with
   **Check again** after you log in in a terminal.
 - **Sessions:** each agent works in its own folder in the data dir
@@ -151,6 +154,31 @@ proxy, and no Claude sign-in in the app.
   the next one. `--claude-bin` sets the CLI's path; the daemon also looks
   where its installer puts it (`~/.local/bin`, on Windows
   `%USERPROFILE%\.local\bin`).
+
+### Hooks and plugins
+
+**Settings → Claude Code** sets hooks and plugins for every agent on Claude
+Code. They are ferrobot's own: the daemon writes a settings file with only
+these hooks for each turn (`--settings`) and loads each plugin you switch on
+from its install folder (`--plugin-dir`). Your own `~/.claude` settings stay
+out, and agents cannot change either.
+
+- **Hooks** are shell commands that run on this computer, outside the
+  sandboxes, when an event fires: before or after a tool call (optionally only
+  for some tools, e.g. `mcp__ferrobot__bash`), when a turn starts or ends, or
+  when a session starts or ends. A hook gets the event as JSON on stdin;
+  exit code 2 before a tool call blocks it. See Claude Code's
+  [hooks reference](https://code.claude.com/docs/en/hooks).
+- **Plugins** are the ones installed in your Claude Code
+  (`claude plugin install ...`). Their hooks run. Their skills, commands and
+  subagents need Claude Code's built-in tools, which stay off. Their MCP
+  servers do not start; add one under Connectors as a local server, which
+  shows you its command first.
+- `claude`, its hooks and plugins get the daemon's environment without
+  Anthropic and Claude Code variables, the operator token (`FERROBOT_*`) or
+  storage keys (`AWS_*`).
+- If the settings cannot be read, or Claude Code cannot list its plugins
+  while one is on, the turn does not start rather than run without them.
 
 ## Voice providers
 

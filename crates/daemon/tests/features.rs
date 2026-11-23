@@ -7654,3 +7654,37 @@ async fn operator_uploads_land_in_the_agents_workspace() {
         "nothing else written"
     );
 }
+
+#[tokio::test]
+async fn only_the_operator_sets_claude_code_hooks_and_plugins() {
+    let d = start(Arc::new(StatefulBackend::default()), None, "127.0.0.1:0").await;
+    let (status, body) = http(&d.ui, "GET", "/v1/claude-code/settings", None).await;
+    assert_eq!((status, body), (200, json!({"hooks": [], "plugins": []})));
+    let hooks = json!({
+        "hooks": [{"event": "PreToolUse", "matcher": "mcp__ferrobot__bash", "command": " ./guard.sh "}],
+        "plugins": ["fmt@market"],
+    });
+    let (status, body) = http(&d.ui, "PUT", "/v1/claude-code/settings", Some(hooks)).await;
+    assert_eq!(status, 200, "{body}");
+    assert_eq!(body["hooks"][0]["command"], "./guard.sh");
+    let (_, body) = http(&d.ui, "GET", "/v1/claude-code/settings", None).await;
+    assert_eq!(body["plugins"], json!(["fmt@market"]));
+    let matcher_on_stop = json!({"hooks": [{"event": "Stop", "matcher": "Bash", "command": "x"}]});
+    let (status, _) = http(
+        &d.ui,
+        "PUT",
+        "/v1/claude-code/settings",
+        Some(matcher_on_stop),
+    )
+    .await;
+    assert_eq!(status, 400);
+    let (status, _, _) = http_raw(
+        &d.ui,
+        "PUT",
+        "/v1/claude-code/settings",
+        &[("Authorization", ""), ("Content-Type", "application/json")],
+        br#"{"hooks":[]}"#,
+    )
+    .await;
+    assert_eq!(status, 401);
+}

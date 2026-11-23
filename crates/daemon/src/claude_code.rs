@@ -45,10 +45,199 @@ pub struct ClaudeCodeStatus {
 }
 
 /// Variables the daemon may hold that would move `claude` off the user's own login (keys,
-/// tokens, another provider) or make it think it runs inside another Claude Code.
+/// tokens, another provider), make it think it runs inside another Claude Code, or hand the
+/// daemon's own secrets (operator token, storage keys) to hooks and plugins.
 fn foreign(key: &OsStr) -> bool {
     let key = key.to_string_lossy();
-    key.starts_with("ANTHROPIC_") || key.starts_with("CLAUDE_CODE_") || key == "CLAUDECODE"
+    ["ANTHROPIC_", "CLAUDE_CODE_", "FERROBOT_", "AWS_"]
+        .iter()
+        .any(|prefix| key.starts_with(prefix))
+        || key == "CLAUDECODE"
+}
+
+const SETTING: &str = "claude_code";
+const MAX_HOOKS: usize = 32;
+const MAX_PLUGINS: usize = 32;
+const MAX_COMMAND: usize = 4096;
+const MAX_MATCHER: usize = 200;
+
+/// When a hook runs. Only events that fire in a `claude -p` turn.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, utoipa::ToSchema)]
+pub enum HookEvent {
+    SessionStart,
+    UserPromptSubmit,
+    PreToolUse,
+    PostToolUse,
+    Stop,
+    SessionEnd,
+}
+
+impl HookEvent {
+    fn name(self) -> &'static str {
+        match self {
+            Self::SessionStart => "SessionStart",
+            Self::UserPromptSubmit => "UserPromptSubmit",
+            Self::PreToolUse => "PreToolUse",
+            Self::PostToolUse => "PostToolUse",
+            Self::Stop => "Stop",
+            Self::SessionEnd => "SessionEnd",
+        }
+    }
+
+    fn per_tool(self) -> bool {
+        matches!(self, Self::PreToolUse | Self::PostToolUse)
+    }
+}
+
+/// A shell command Claude Code runs on this computer, outside the sandboxes, when `event` fires.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, utoipa::ToSchema)]
+pub struct Hook {
+    pub event: HookEvent,
+    /// The tools it runs for, as Claude Code matches them (e.g. `mcp__ferrobot__bash`);
+    /// tool events only. `null`: every tool.
+    #[serde(default)]
+    pub matcher: Option<String>,
+    pub command: String,
+}
+
+/// Hooks and plugins for agents on Claude Code. Only the operator sets them; the user's own
+/// Claude Code settings stay out.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize, utoipa::ToSchema)]
+#[serde(default)]
+pub struct ClaudeCodeSettings {
+    pub hooks: Vec<Hook>,
+    /// Installed plugins (`name@marketplace`) turned on for agents.
+    pub plugins: Vec<String>,
+}
+
+/// A plugin installed in the host's Claude Code.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, utoipa::ToSchema)]
+pub struct InstalledPlugin {
+    /// `name@marketplace`.
+    pub id: String,
+    pub version: Option<String>,
+    #[serde(skip)]
+    path: PathBuf,
+}
+
+/// Trims and checks the operator's hooks and plugins.
+pub fn validate(settings: &mut ClaudeCodeSettings) -> Result<(), String> {
+    if settings.hooks.len() > MAX_HOOKS || settings.plugins.len() > MAX_PLUGINS {
+        return Err(format!(
+            "at most {MAX_HOOKS} hooks and {MAX_PLUGINS} plugins"
+        ));
+    }
+    for hook in &mut settings.hooks {
+        hook.command = hook.command.trim().to_owned();
+        if hook.command.is_empty()
+            || hook.command.len() > MAX_COMMAND
+            || hook.command.contains('\0')
+        {
+            return Err(format!("a hook needs a command of 1-{MAX_COMMAND} bytes"));
+        }
+        hook.matcher = hook
+            .matcher
+            .as_deref()
+            .map(str::trim)
+            .filter(|m| !m.is_empty())
+            .map(str::to_owned);
+        if let Some(matcher) = &hook.matcher {
+            if !hook.event.per_tool() {
+                return Err(format!("{} hooks have no tool matcher", hook.event.name()));
+            }
+            if matcher.len() > MAX_MATCHER || matcher.chars().any(char::is_control) {
+                return Err(format!("a matcher has at most {MAX_MATCHER} characters"));
+            }
+        }
+    }
+    let mut seen = HashSet::new();
+    settings.plugins.retain(|id| seen.insert(id.clone()));
+    let part = |s: &str| {
+        !s.is_empty()
+            && s.chars()
+                .all(|c| c.is_ascii_alphanumeric() || "._-".contains(c))
+    };
+    if let Some(bad) = settings
+        .plugins
+        .iter()
+        .find(|id| id.len() > 200 || !id.split_once('@').is_some_and(|(n, m)| part(n) && part(m)))
+    {
+        return Err(format!("{bad} is not a plugin id (name@marketplace)"));
+    }
+    Ok(())
+}
+
+pub async fn load_settings(state: &AppState) -> Result<ClaudeCodeSettings, String> {
+    match state.store.get_setting(SETTING).await {
+        Ok(Some(raw)) => {
+            serde_json::from_str(&raw).map_err(|e| format!("Claude Code settings: {e}"))
+        }
+        Ok(None) => Ok(ClaudeCodeSettings::default()),
+        Err(e) => Err(e.to_string()),
+    }
+}
+
+pub async fn save_settings(
+    state: &AppState,
+    settings: &ClaudeCodeSettings,
+) -> Result<(), crate::error::ApiError> {
+    let raw = serde_json::to_string(settings)
+        .map_err(|e| crate::error::ApiError::Internal(e.to_string()))?;
+    Ok(state.store.put_setting(SETTING, raw).await?)
+}
+
+/// The plugins installed in the host's Claude Code, from `claude plugin list`.
+pub async fn installed_plugins(state: &AppState) -> Result<Vec<InstalledPlugin>, String> {
+    let mut cmd = claude(state);
+    cmd.args(["plugin", "list", "--json"]);
+    let out = stdout_of(cmd)
+        .await
+        .ok_or("Claude Code is not installed or did not answer")?;
+    let list: Vec<Value> =
+        serde_json::from_str(&out).map_err(|_| "Claude Code gave no plugin list")?;
+    Ok(list
+        .iter()
+        .filter_map(|p| {
+            Some(InstalledPlugin {
+                id: p["id"].as_str()?.to_owned(),
+                version: p["version"].as_str().map(str::to_owned),
+                path: PathBuf::from(p["installPath"].as_str()?),
+            })
+        })
+        .collect())
+}
+
+/// The `--settings` file: the operator's hooks and nothing else, so no setting can bring back
+/// built-in tools, another login or the user's own configuration.
+fn settings_file(hooks: &[Hook]) -> Value {
+    let mut events = serde_json::Map::new();
+    for hook in hooks {
+        let mut group = json!({ "hooks": [{ "type": "command", "command": hook.command }] });
+        if let Some(matcher) = &hook.matcher {
+            group["matcher"] = json!(matcher);
+        }
+        if let Value::Array(groups) = events.entry(hook.event.name()).or_insert_with(|| json!([])) {
+            groups.push(group);
+        }
+    }
+    json!({ "hooks": events })
+}
+
+/// Turn-time hooks and the folders of the operator's plugins that are still installed. Fails
+/// rather than run a turn without a hook the operator may rely on as a guard.
+async fn extensions(state: &AppState) -> Result<(Value, Vec<PathBuf>), String> {
+    let settings = load_settings(state).await?;
+    let plugins = if settings.plugins.is_empty() {
+        Vec::new()
+    } else {
+        installed_plugins(state)
+            .await?
+            .into_iter()
+            .filter(|p| settings.plugins.contains(&p.id))
+            .map(|p| p.path)
+            .collect()
+    };
+    Ok((settings_file(&settings.hooks), plugins))
 }
 
 fn claude(state: &AppState) -> Command {
@@ -230,7 +419,12 @@ enum Session {
 }
 
 /// The turn's `claude` arguments. Every value goes as `--flag=value`, so none can pose as a flag.
-fn turn_args(files: &Path, session: &Session, model: Option<&str>) -> Vec<String> {
+fn turn_args(
+    files: &Path,
+    session: &Session,
+    model: Option<&str>,
+    plugins: &[PathBuf],
+) -> Vec<String> {
     let mut args: Vec<String> = [
         "-p",
         "--output-format=stream-json",
@@ -251,6 +445,16 @@ fn turn_args(files: &Path, session: &Session, model: Option<&str>) -> Vec<String
         "--append-system-prompt-file={}",
         files.join("system.md").display()
     ));
+    // The operator's hooks from Settings; plugins only as the operator turned them on.
+    args.push(format!(
+        "--settings={}",
+        files.join("settings.json").display()
+    ));
+    args.extend(
+        plugins
+            .iter()
+            .map(|dir| format!("--plugin-dir={}", dir.display())),
+    );
     args.push(match session {
         Session::New(id) => format!("--session-id={id}"),
         Session::Resume(id) => format!("--resume={id}"),
@@ -525,10 +729,11 @@ async fn start(
         Session::New(id) => Some((session_file, id)),
         Session::Resume(_) => None,
     };
-    let config = write_turn_files(&state.settings.agent_url, token, &req.system)
+    let (settings, plugins) = extensions(state).await?;
+    let config = write_turn_files(&state.settings.agent_url, token, &req.system, &settings)
         .map_err(|e| e.to_string())?;
     let mut cmd = claude(state);
-    cmd.args(turn_args(config.path(), &session, model))
+    cmd.args(turn_args(config.path(), &session, model, &plugins))
         .current_dir(&dir)
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
@@ -588,12 +793,13 @@ pub async fn forget(state: &AppState, agent: AgentId) {
     let _ = tokio::fs::remove_dir_all(agent_dir(state, agent)).await;
 }
 
-/// The agent's own token for the daemon's MCP server and its system prompt, in private files
-/// rather than argv.
+/// The agent's own token for the daemon's MCP server, its system prompt and the operator's
+/// hooks, in private files rather than argv.
 fn write_turn_files(
     agent_url: &str,
     token: &str,
     system: &str,
+    settings: &Value,
 ) -> std::io::Result<tempfile::TempDir> {
     let dir = tempfile::Builder::new()
         .prefix("ferrobot-claude-")
@@ -606,6 +812,7 @@ fn write_turn_files(
     for (name, text) in [
         ("mcp.json", config.to_string()),
         ("system.md", system.to_owned()),
+        ("settings.json", settings.to_string()),
     ] {
         let path = dir.path().join(name);
         std::fs::write(&path, text)?;
@@ -905,7 +1112,13 @@ mod tests {
     #[test]
     fn the_cli_runs_without_built_in_tools_or_the_users_settings() {
         let id = Uuid::nil();
-        let args = turn_args(Path::new("/tmp/x"), &Session::Resume(id), Some("sonnet"));
+        let plugin = PathBuf::from("/plugins/fmt");
+        let args = turn_args(
+            Path::new("/tmp/x"),
+            &Session::Resume(id),
+            Some("sonnet"),
+            std::slice::from_ref(&plugin),
+        );
         for want in [
             "-p",
             "--tools=",
@@ -916,6 +1129,8 @@ mod tests {
             "--model=sonnet",
             "--mcp-config=/tmp/x/mcp.json",
             "--append-system-prompt-file=/tmp/x/system.md",
+            "--settings=/tmp/x/settings.json",
+            "--plugin-dir=/plugins/fmt",
         ] {
             assert!(args.iter().any(|a| a == want), "{want} missing in {args:?}");
         }
@@ -941,6 +1156,8 @@ mod tests {
             "CLAUDE_CODE_OAUTH_TOKEN",
             "CLAUDE_CODE_USE_BEDROCK",
             "CLAUDECODE",
+            "FERROBOT_API_TOKEN",
+            "AWS_SECRET_ACCESS_KEY",
         ] {
             assert!(foreign(OsStr::new(key)), "{key}");
         }
@@ -1029,7 +1246,17 @@ Last 24h · 1485 requests · 11 sessions
 
     #[test]
     fn the_turn_files_are_private_and_name_only_the_daemon() {
-        let dir = write_turn_files("http://127.0.0.1:7879/", "agent-token", "be brief").unwrap();
+        let dir = write_turn_files(
+            "http://127.0.0.1:7879/",
+            "agent-token",
+            "be brief",
+            &settings_file(&[]),
+        )
+        .unwrap();
+        assert_eq!(
+            std::fs::read_to_string(dir.path().join("settings.json")).unwrap(),
+            r#"{"hooks":{}}"#
+        );
         assert_eq!(
             std::fs::read_to_string(dir.path().join("system.md")).unwrap(),
             "be brief"
@@ -1046,6 +1273,68 @@ Last 24h · 1485 requests · 11 sessions
                 std::fs::metadata(&path).unwrap().permissions().mode() & 0o777,
                 0o600
             );
+        }
+    }
+
+    fn hook(event: HookEvent, matcher: Option<&str>, command: &str) -> Hook {
+        Hook {
+            event,
+            matcher: matcher.map(str::to_owned),
+            command: command.into(),
+        }
+    }
+
+    #[test]
+    fn the_settings_file_holds_only_the_operators_hooks() {
+        let file = settings_file(&[
+            hook(
+                HookEvent::PreToolUse,
+                Some("mcp__ferrobot__bash"),
+                "guard.sh",
+            ),
+            hook(HookEvent::PreToolUse, None, "log.sh"),
+            hook(HookEvent::Stop, None, "notify.sh"),
+        ]);
+        assert_eq!(
+            file,
+            json!({ "hooks": {
+                "PreToolUse": [
+                    { "matcher": "mcp__ferrobot__bash", "hooks": [{ "type": "command", "command": "guard.sh" }] },
+                    { "hooks": [{ "type": "command", "command": "log.sh" }] },
+                ],
+                "Stop": [{ "hooks": [{ "type": "command", "command": "notify.sh" }] }],
+            }})
+        );
+    }
+
+    #[test]
+    fn hooks_and_plugins_are_checked() {
+        let mut ok = ClaudeCodeSettings {
+            hooks: vec![hook(HookEvent::PostToolUse, Some("  "), "  fmt.sh ")],
+            plugins: vec!["fmt@market".into(), "fmt@market".into()],
+        };
+        validate(&mut ok).unwrap();
+        assert_eq!(ok.hooks[0], hook(HookEvent::PostToolUse, None, "fmt.sh"));
+        assert_eq!(ok.plugins, ["fmt@market"]);
+        for bad in [
+            ClaudeCodeSettings {
+                hooks: vec![hook(HookEvent::Stop, Some("Bash"), "x")],
+                ..ClaudeCodeSettings::default()
+            },
+            ClaudeCodeSettings {
+                hooks: vec![hook(HookEvent::Stop, None, " ")],
+                ..ClaudeCodeSettings::default()
+            },
+            ClaudeCodeSettings {
+                plugins: vec!["--plugin-dir=/x".into()],
+                ..ClaudeCodeSettings::default()
+            },
+            ClaudeCodeSettings {
+                plugins: vec!["fmt@../x".into()],
+                ..ClaudeCodeSettings::default()
+            },
+        ] {
+            assert!(validate(&mut bad.clone()).is_err(), "{bad:?}");
         }
     }
 }

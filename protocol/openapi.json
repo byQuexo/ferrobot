@@ -2843,6 +2843,127 @@
         }
       }
     },
+    "/v1/claude-code/plugins": {
+      "get": {
+        "tags": [
+          "providers"
+        ],
+        "summary": "Plugins installed in the host's Claude Code (`claude plugin list`).",
+        "operationId": "claude_code_plugins",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/InstalledPlugin"
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or wrong API token",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "Claude Code did not answer",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/claude-code/settings": {
+      "get": {
+        "tags": [
+          "providers"
+        ],
+        "summary": "Hooks and plugins for agents on Claude Code. Only the operator sets them; agents cannot.",
+        "operationId": "claude_code_settings",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ClaudeCodeSettings"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or wrong API token",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        }
+      },
+      "put": {
+        "tags": [
+          "providers"
+        ],
+        "summary": "Replaces the hooks and plugins for agents on Claude Code, from their next turn on. Hooks\nrun on this computer, outside the sandboxes; the user's own Claude Code settings stay out.",
+        "operationId": "put_claude_code_settings",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ClaudeCodeSettings"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ClaudeCodeSettings"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid hook or plugin id",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or wrong API token",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/v1/clis": {
       "get": {
         "tags": [
@@ -6473,6 +6594,27 @@
           }
         }
       },
+      "ClaudeCodeSettings": {
+        "type": "object",
+        "description": "Hooks and plugins for agents on Claude Code. Only the operator sets them; the user's own\nClaude Code settings stay out.",
+        "properties": {
+          "hooks": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Hook"
+            },
+            "default": []
+          },
+          "plugins": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Installed plugins (`name@marketplace`) turned on for agents.",
+            "default": []
+          }
+        }
+      },
       "ClaudeCodeStatus": {
         "type": "object",
         "description": "Whether the host's `claude` is installed and signed in; never its account details.",
@@ -7282,6 +7424,60 @@
           "anthropic_key": {
             "type": "boolean",
             "description": "Whether the daemon has its own `ANTHROPIC_API_KEY` for agents without a provider."
+          }
+        }
+      },
+      "Hook": {
+        "type": "object",
+        "description": "A shell command Claude Code runs on this computer, outside the sandboxes, when `event` fires.",
+        "required": [
+          "event",
+          "command"
+        ],
+        "properties": {
+          "event": {
+            "$ref": "#/components/schemas/HookEvent"
+          },
+          "matcher": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "The tools it runs for, as Claude Code matches them (e.g. `mcp__ferrobot__bash`);\ntool events only. `null`: every tool."
+          },
+          "command": {
+            "type": "string"
+          }
+        }
+      },
+      "HookEvent": {
+        "type": "string",
+        "description": "When a hook runs. Only events that fire in a `claude -p` turn.",
+        "enum": [
+          "SessionStart",
+          "UserPromptSubmit",
+          "PreToolUse",
+          "PostToolUse",
+          "Stop",
+          "SessionEnd"
+        ]
+      },
+      "InstalledPlugin": {
+        "type": "object",
+        "description": "A plugin installed in the host's Claude Code.",
+        "required": [
+          "id"
+        ],
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "`name@marketplace`."
+          },
+          "version": {
+            "type": [
+              "string",
+              "null"
+            ]
           }
         }
       },

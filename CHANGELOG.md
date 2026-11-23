@@ -16,8 +16,19 @@ All notable changes are listed here. The format follows
   command or file. New migration: v20 (`usage.turn_id`, `usage.at_ms`).
 - Call volume: a speaker button in the call bar opens a small slider for how
   loud the agents speak (0 mutes them); this computer remembers it.
+- Settings → Claude Code: hooks and plugins for agents on Claude Code (your
+  own login). Hooks are commands that run on this computer before or after a
+  tool call, when a turn or session starts or ends; installed plugins can be
+  switched on (their hooks run; their MCP servers go through Connectors).
+  ferrobot passes only these (`--settings`, `--plugin-dir`); your own Claude
+  Code settings stay out, and agents cannot change them
+  (`/v1/claude-code/settings`, `/v1/claude-code/plugins`).
 
 ### Changed
+
+- `claude` (Claude Code agents) no longer gets the daemon's `FERROBOT_*` and
+  `AWS_*` variables, so hooks and plugins never see the operator token or
+  storage keys.
 
 - Settings → Voice is one flow in the new card look: pick the provider, paste
   its key right there, and your voices load at once. Every change saves by

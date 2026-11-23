@@ -11,7 +11,7 @@ use uuid::Uuid;
 
 use super::ApiResult;
 use super::agents::explicit;
-use crate::claude_code::ClaudeCodeStatus;
+use crate::claude_code::{ClaudeCodeSettings, ClaudeCodeStatus, InstalledPlugin};
 use crate::codex::{self, DeviceCode, LoginStatus};
 use crate::error::{ApiError, ErrorBody};
 use crate::models::{self, ModelList};
@@ -274,6 +274,46 @@ pub(crate) async fn claude_code_status(
     State(state): State<AppState>,
 ) -> ApiResult<ClaudeCodeStatus> {
     Ok(Json(crate::claude_code::status(&state).await))
+}
+
+/// Hooks and plugins for agents on Claude Code. Only the operator sets them; agents cannot.
+#[utoipa::path(get, path = "/v1/claude-code/settings", tag = "providers",
+    responses((status = 200, body = ClaudeCodeSettings)))]
+pub(crate) async fn claude_code_settings(
+    State(state): State<AppState>,
+) -> ApiResult<ClaudeCodeSettings> {
+    crate::claude_code::load_settings(&state)
+        .await
+        .map(Json)
+        .map_err(ApiError::Internal)
+}
+
+/// Replaces the hooks and plugins for agents on Claude Code, from their next turn on. Hooks
+/// run on this computer, outside the sandboxes; the user's own Claude Code settings stay out.
+#[utoipa::path(put, path = "/v1/claude-code/settings", tag = "providers",
+    request_body = ClaudeCodeSettings,
+    responses((status = 200, body = ClaudeCodeSettings),
+        (status = 400, description = "Invalid hook or plugin id", body = ErrorBody)))]
+pub(crate) async fn put_claude_code_settings(
+    State(state): State<AppState>,
+    Json(mut settings): Json<ClaudeCodeSettings>,
+) -> ApiResult<ClaudeCodeSettings> {
+    crate::claude_code::validate(&mut settings).map_err(ApiError::BadRequest)?;
+    crate::claude_code::save_settings(&state, &settings).await?;
+    Ok(Json(settings))
+}
+
+/// Plugins installed in the host's Claude Code (`claude plugin list`).
+#[utoipa::path(get, path = "/v1/claude-code/plugins", tag = "providers",
+    responses((status = 200, body = [InstalledPlugin]),
+        (status = 502, description = "Claude Code did not answer", body = ErrorBody)))]
+pub(crate) async fn claude_code_plugins(
+    State(state): State<AppState>,
+) -> ApiResult<Vec<InstalledPlugin>> {
+    crate::claude_code::installed_plugins(&state)
+        .await
+        .map(Json)
+        .map_err(ApiError::Upstream)
 }
 
 /// Models to offer for a provider: its own list fetched with the stored key (cached for a

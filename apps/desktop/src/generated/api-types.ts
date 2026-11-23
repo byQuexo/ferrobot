@@ -610,6 +610,44 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/claude-code/plugins": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Plugins installed in the host's Claude Code (`claude plugin list`). */
+        get: operations["claude_code_plugins"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/claude-code/settings": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Hooks and plugins for agents on Claude Code. Only the operator sets them; agents cannot. */
+        get: operations["claude_code_settings"];
+        /**
+         * Replaces the hooks and plugins for agents on Claude Code, from their next turn on. Hooks
+         *     run on this computer, outside the sandboxes; the user's own Claude Code settings stay out.
+         */
+        put: operations["put_claude_code_settings"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/clis": {
         parameters: {
             query?: never;
@@ -1616,6 +1654,19 @@ export interface components {
             /** @description Stable value reported in the answer; defaults to the label. */
             value?: string;
         };
+        /**
+         * @description Hooks and plugins for agents on Claude Code. Only the operator sets them; the user's own
+         *     Claude Code settings stay out.
+         */
+        ClaudeCodeSettings: {
+            /** @default [] */
+            hooks: components["schemas"]["Hook"][];
+            /**
+             * @description Installed plugins (`name@marketplace`) turned on for agents.
+             * @default []
+             */
+            plugins: string[];
+        };
         /** @description Whether the host's `claude` is installed and signed in; never its account details. */
         ClaudeCodeStatus: {
             installed: boolean;
@@ -1954,6 +2005,27 @@ export interface components {
             sandbox_error?: string | null;
             /** @description Whether the daemon has its own `ANTHROPIC_API_KEY` for agents without a provider. */
             anthropic_key: boolean;
+        };
+        /** @description A shell command Claude Code runs on this computer, outside the sandboxes, when `event` fires. */
+        Hook: {
+            event: components["schemas"]["HookEvent"];
+            /**
+             * @description The tools it runs for, as Claude Code matches them (e.g. `mcp__ferrobot__bash`);
+             *     tool events only. `null`: every tool.
+             */
+            matcher?: string | null;
+            command: string;
+        };
+        /**
+         * @description When a hook runs. Only events that fire in a `claude -p` turn.
+         * @enum {string}
+         */
+        HookEvent: "SessionStart" | "UserPromptSubmit" | "PreToolUse" | "PostToolUse" | "Stop" | "SessionEnd";
+        /** @description A plugin installed in the host's Claude Code. */
+        InstalledPlugin: {
+            /** @description `name@marketplace`. */
+            id: string;
+            version?: string | null;
         };
         Interrupted: {
             /** @description The interrupted turn, or null if the agent was idle. */
@@ -5019,6 +5091,112 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ClaudeCodeStatus"];
+                };
+            };
+            /** @description Missing or wrong API token */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+        };
+    };
+    claude_code_plugins: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["InstalledPlugin"][];
+                };
+            };
+            /** @description Missing or wrong API token */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Claude Code did not answer */
+            502: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+        };
+    };
+    claude_code_settings: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ClaudeCodeSettings"];
+                };
+            };
+            /** @description Missing or wrong API token */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+        };
+    };
+    put_claude_code_settings: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ClaudeCodeSettings"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ClaudeCodeSettings"];
+                };
+            };
+            /** @description Invalid hook or plugin id */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
                 };
             };
             /** @description Missing or wrong API token */

@@ -42,6 +42,10 @@ export type UpdateConnector = Schemas["UpdateConnector"];
 export type DeviceCode = Schemas["DeviceCode"];
 export type LoginStatus = Schemas["LoginStatus"];
 export type ClaudeCodeStatus = Schemas["ClaudeCodeStatus"];
+export type ClaudeCodeSettings = Schemas["ClaudeCodeSettings"];
+export type Hook = Schemas["Hook"];
+export type HookEvent = Schemas["HookEvent"];
+export type InstalledPlugin = Schemas["InstalledPlugin"];
 export type ModelList = Schemas["ModelList"];
 export type ModelInfo = Schemas["ModelInfo"];
 export type VoiceView = Schemas["VoiceView"];
@@ -159,6 +163,12 @@ export class DaemonClient {
   chatgptLoginStatus = (id: string): Promise<LoginStatus> =>
     this.#request("GET", `/v1/providers/${id}/chatgpt-login`);
   claudeCode = (): Promise<ClaudeCodeStatus> => this.#request("GET", "/v1/claude-code");
+  claudeCodeSettings = (): Promise<ClaudeCodeSettings> =>
+    this.#request("GET", "/v1/claude-code/settings");
+  updateClaudeCodeSettings = (s: ClaudeCodeSettings): Promise<ClaudeCodeSettings> =>
+    this.#request("PUT", "/v1/claude-code/settings", s);
+  claudeCodePlugins = (): Promise<InstalledPlugin[]> =>
+    this.#request("GET", "/v1/claude-code/plugins");
   providerModels = (id: string): Promise<ModelList> =>
     this.#request("GET", `/v1/providers/${id}/models`);
   kindModels = (kind: ProviderKind): Promise<ModelList> =>
