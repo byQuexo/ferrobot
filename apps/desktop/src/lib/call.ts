@@ -1,5 +1,6 @@
 // What happens in the operator's voice call: which agent lines to speak and when,
 // what counts as the operator talking, and who is in the call.
+import type { KeyPress } from "./shortcuts.ts";
 import { MAX_SPOKEN } from "./voice.ts";
 
 /** One piece of an agent's reply to read aloud with its voice. */
@@ -310,6 +311,17 @@ export function roomTitle(members: string[], nameOf: (id: string) => string | un
   return names.length ? `Call · ${names.join(", ")}` : "Call";
 }
 
+/** A group edit for `PATCH /v1/groups/{id}`: members only when they changed, since a group in a
+ * call refuses member changes. */
+export function groupChange(
+  before: string[],
+  name: string,
+  members: string[],
+): { name: string; members?: string[] } {
+  const same = members.length === before.length && members.every((id, i) => id === before[i]);
+  return same ? { name: name.trim() } : { name: name.trim(), members };
+}
+
 /** A running call's length, e.g. `0:42` or `1:05:03`. */
 export function callClock(ms: number): string {
   const s = Math.max(0, Math.floor(ms / 1000));
@@ -317,4 +329,51 @@ export function callClock(ms: number): string {
   const h = Math.floor(s / 3600);
   const m = Math.floor((s % 3600) / 60);
   return h ? `${String(h)}:${two(m)}:${two(s % 60)}` : `${String(m)}:${two(s % 60)}`;
+}
+
+/** Dots in the call bar's level meter. */
+export const METER_DOTS = 5;
+
+/** How many meter dots a microphone level (RMS, 0..1) lights; the root lifts quiet speech. */
+export const meterDots = (rms: number): number =>
+  Math.min(METER_DOTS, Math.round(Math.sqrt(Math.max(0, rms)) * METER_DOTS * 2));
+
+/** Speeds the call bar steps through (ElevenLabs takes 0.7-1.2). */
+export const CALL_SPEEDS = [0.7, 0.8, 0.9, 1, 1.1, 1.2] as const;
+
+/** The next speed up from `speed` (`null`: normal), back to the slowest after the fastest. */
+export const nextSpeed = (speed: number | null): number =>
+  CALL_SPEEDS.find((s) => s > (speed ?? 1) + 0.001) ?? CALL_SPEEDS[0];
+
+/** A speed as the call bar shows it, e.g. `1×` or `1.05×`. */
+export const speedLabel = (speed: number | null): string =>
+  `${String(Number((speed ?? 1).toFixed(2)))}×`;
+
+/** Whether the operator's microphone counts: never muted, with push-to-talk only while held. */
+export const micOpen = (muted: boolean, pushToTalk: boolean, held: boolean): boolean =>
+  !muted && (!pushToTalk || held);
+
+/** Whether a key press holds push-to-talk: bare Space, unless the focused element takes typing. */
+export function talkKey(e: KeyPress, focus: { tag: string; editable: boolean }): boolean {
+  if (e.code !== "Space" || e.metaKey || e.ctrlKey || e.altKey || e.shiftKey) return false;
+  return !e.isComposing && !focus.editable && !["INPUT", "TEXTAREA", "SELECT"].includes(focus.tag);
+}
+
+const TALK_KEY = "ferrobot.call-talk";
+
+/** Whether push-to-talk was chosen on this computer; voice activity otherwise. */
+export function loadPushToTalk(get = (key: string) => localStorage.getItem(key)): boolean {
+  try {
+    return get(TALK_KEY) === "push";
+  } catch {
+    return false;
+  }
+}
+
+export function savePushToTalk(on: boolean): void {
+  try {
+    localStorage.setItem(TALK_KEY, on ? "push" : "voice");
+  } catch {
+    // Storage can be unavailable; the mode then lasts until the app closes.
+  }
 }

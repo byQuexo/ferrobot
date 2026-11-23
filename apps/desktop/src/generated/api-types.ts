@@ -4,6 +4,23 @@
  */
 
 export interface paths {
+    "/artifacts/previews/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** A HTML block by signed, expiring link, as a sandboxed page. */
+        get: operations["preview"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/artifacts/{id}/{file_id}": {
         parameters: {
             query?: never;
@@ -98,6 +115,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/agents/{id}/context": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** How full the agent's context is. */
+        get: operations["get_context"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/agents/{id}/events": {
         parameters: {
             query?: never;
@@ -112,6 +146,27 @@ export interface paths {
         get: operations["list_events"];
         put?: never;
         post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/agents/{id}/events/{event_id}/reaction": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Reacts to one of the agent's messages (an `assistant_text` event) with one emoji. The agent
+         *     hears of it in a short `[ferrobot]` note from the operator, which starts a turn; the chat shows
+         *     the emoji on its message (a `user_reaction` event naming the note as `note_id`), not the note.
+         */
+        post: operations["react"];
         delete?: never;
         options?: never;
         head?: never;
@@ -225,6 +280,26 @@ export interface paths {
          *     the agent if it sleeps.
          */
         post: operations["post_message"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/agents/{id}/new-session": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Starts a new chat: the agent's next turn begins a fresh model session without the earlier
+         *     messages. The chat history stays visible.
+         */
+        post: operations["new_session"];
         delete?: never;
         options?: never;
         head?: never;
@@ -393,6 +468,26 @@ export interface paths {
          *     starts (or resumes) it again.
          */
         post: operations["stop"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/agents/{id}/uploads": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Puts a file from the operator into the agent's workspace folder `uploads/`, waking its
+         *     computer if it sleeps. Body: the raw file, at most 25 MiB.
+         */
+        post: operations["upload"];
         delete?: never;
         options?: never;
         head?: never;
@@ -660,6 +755,84 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/groups": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Group chats, oldest first. */
+        get: operations["list_groups"];
+        put?: never;
+        /** Creates a group chat. Its transcript is `GET /v1/rooms/{id}`. */
+        post: operations["create_group"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/groups/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /** Deletes a group with its transcript; a member's running turn in it is cut off. */
+        delete: operations["delete_group"];
+        options?: never;
+        head?: never;
+        /** Renames a group or replaces its members; a conversation going on continues with them. */
+        patch: operations["update_group"];
+        trace?: never;
+    };
+    "/v1/groups/{id}/call": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Calls the group: every member joins a voice call whose room is the group, so its lines land
+         *     there. The first member hosts. End it with `PUT /v1/call` and no agents.
+         */
+        post: operations["call_group"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/groups/{id}/messages": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Sends the operator's message to the group: a line that is due for every member. They answer
+         *     one at a time in join order, each with what it has not read yet, or pass; at most four agent
+         *     lines in a row, then the group waits for the operator. Their messages (`room_id` set) stay
+         *     out of chats. While the group is in a call, the message goes to the call.
+         */
+        post: operations["post_group_message"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/health": {
         parameters: {
             query?: never;
@@ -669,6 +842,26 @@ export interface paths {
         };
         /** Daemon identity and configuration summary. */
         get: operations["health"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/limits": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * How much of their 5-hour and weekly plan limits the host's Claude Code login and each Codex
+         *     provider signed in with `ChatGPT` have used, read from the CLIs (cached for a minute).
+         */
+        get: operations["get_limits"];
         put?: never;
         post?: never;
         delete?: never;
@@ -726,6 +919,26 @@ export interface paths {
         get: operations["oauth_callback"];
         put?: never;
         post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/previews": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Serves a HTML block from the chat as a page, so its inline styles and scripts run under
+         *     the shared pages' policy (no network) instead of being blocked by the app's.
+         */
+        post: operations["create_preview"];
         delete?: never;
         options?: never;
         head?: never;
@@ -853,7 +1066,7 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** One call room: who took part and what was said. */
+        /** One call room or group: who is in it and what was said. */
         get: operations["get_room"];
         put?: never;
         post?: never;
@@ -1182,8 +1395,36 @@ export interface components {
             pinned?: boolean;
             /** @description Tool groups the agent may use; its connectors are its assignment. */
             tools?: components["schemas"]["ToolGroup"][];
+            /** @description The operator's labels for the agent, in order. */
+            tags?: string[];
             /** Format: date-time */
             created_at: string;
+        };
+        /** @description How full an agent's context is, read from its newest model call. */
+        AgentContext: {
+            /**
+             * @description Whether the daemon knows the agent's context size: from the model proxy, or on Claude
+             *     Code from the token counts its own stream reports. `true` today; kept for older clients.
+             */
+            tracked: boolean;
+            /**
+             * Format: int64
+             * @description Input plus cache read and write tokens of the newest call since the last new chat;
+             *     `null` before there is one.
+             */
+            tokens?: number | null;
+            /**
+             * Format: int64
+             * @description Context window of `model` in tokens; `null` when not known.
+             */
+            window?: number | null;
+            /** @description The model of that call, else the agent's configured model. */
+            model?: string | null;
+            /**
+             * Format: date-time
+             * @description When that call was made.
+             */
+            at?: string | null;
         };
         /**
          * Format: uuid
@@ -1215,6 +1456,12 @@ export interface components {
             avatar_url?: string | null;
             credential_error?: components["schemas"]["CredentialError"] | null;
             tools_unsupported?: components["schemas"]["ToolsUnsupported"] | null;
+            /**
+             * Format: int32
+             * @description Question cards waiting for the operator's answer.
+             */
+            waiting: number;
+            last_reply?: components["schemas"]["LastReply"] | null;
         };
         AnswerQuestion: {
             /** @description One answer per question of the card. */
@@ -1259,6 +1506,16 @@ export interface components {
             model: string;
             /** @enum {string} */
             kind: "use_without_tools";
+        } | {
+            agent: components["schemas"]["AgentId"];
+            /** @description `shell` or the connector tool's name. */
+            tool: string;
+            /** @description The command or the call's arguments, shortened. */
+            detail: string;
+            /** @description What made the call risky, e.g. "pushes code". */
+            reason: string;
+            /** @enum {string} */
+            kind: "tool_call";
         };
         /**
          * @description A chosen character avatar look; without one, clients derive a look from the agent id.
@@ -1427,6 +1684,8 @@ export interface components {
              *     `PUT /v1/agents/{id}/connectors`.
              */
             tools?: components["schemas"]["ToolGroup"][] | null;
+            /** @description Labels for the operator: at most 5, each 1-20 characters after trimming, no duplicates. */
+            tags?: string[];
         };
         CreateConnector: {
             /**
@@ -1458,6 +1717,12 @@ export interface components {
              *     needed with `client_id`. Sign-ins through any other server are refused.
              */
             issuer?: string | null;
+        };
+        CreateGroup: {
+            /** @description 1-64 characters. */
+            name: string;
+            /** @description At least two agents; the first hosts the group's calls. */
+            members: components["schemas"]["AgentId"][];
         };
         CreateProvider: {
             /**
@@ -1600,6 +1865,13 @@ export interface components {
              */
             agent_names: string | null;
         };
+        GroupMessage: {
+            /**
+             * @description 1..19316 bytes after trimming, counting `@name` mentions as their stored `<@agent-id>`
+             *     tokens.
+             */
+            body: string;
+        };
         Health: {
             name: string;
             version: string;
@@ -1632,6 +1904,25 @@ export interface components {
         LanguageOption: {
             code: string;
             name: string;
+        };
+        /** @description The start of an agent's newest reply. */
+        LastReply: {
+            /** @description At most 160 characters. */
+            text: string;
+            /** @description When the reply came (RFC 3339). */
+            at: string;
+        };
+        LimitWindow: {
+            /**
+             * Format: double
+             * @description 0-100.
+             */
+            used_percent: number;
+            /**
+             * @description When the window starts over: Claude Code's own words (e.g. `Nov 26 at 6:59am
+             *     (Europe/Berlin)`), or an RFC 3339 time for Codex.
+             */
+            resets?: string | null;
         };
         /**
          * @description How live speech is cut into messages.
@@ -1740,18 +2031,38 @@ export interface components {
             /** @description Open this in a browser on the daemon's computer to sign in. */
             authorization_url: string;
         };
+        PlanLimits: {
+            five_hour?: components["schemas"]["LimitWindow"] | null;
+            weekly?: components["schemas"]["LimitWindow"] | null;
+        };
         PostMessage: {
             /**
              * @description 1..32768 bytes after trimming. `@name` mentions of existing agents are
              *     stored as `<@agent-id>` tokens, and the limit counts them as stored.
              */
             body: string;
+            /**
+             * @description Send now: if the agent is in a turn that cannot take the message (its runner does not
+             *     steer), that turn stops so the message goes next. Otherwise it waits for the turn to end.
+             */
+            now?: boolean;
         };
         /**
          * @description What an agent is doing right now, for status badges.
          * @enum {string}
          */
         Presence: "working" | "awake" | "starting" | "sleeping" | "error";
+        PreviewLink: {
+            /**
+             * @description The block as a sandboxed page (relative to the daemon), a signed link that works for
+             *     30 minutes.
+             */
+            url: string;
+        };
+        PreviewRequest: {
+            /** @description The block's HTML, at most 512 KiB. */
+            html: string;
+        };
         /** @description USD per 1M tokens. */
         Price: {
             /** Format: double */
@@ -1806,6 +2117,14 @@ export interface components {
          * @enum {string}
          */
         ProviderKind: "anthropic" | "openai" | "gemini" | "bedrock" | "vertex" | "openrouter" | "ollama" | "openai_compatible" | "codex" | "gemini_cli" | "claude_code";
+        ProviderLimits: components["schemas"]["PlanLimits"] & {
+            /** Format: uuid */
+            provider_id: string;
+            name: string;
+            kind: components["schemas"]["ProviderKind"];
+            /** @description Why the limits could not be read. */
+            error?: string | null;
+        };
         ProviderView: components["schemas"]["Provider"] & {
             /** @description Whether an API key is stored. The key itself is never returned. */
             has_key: boolean;
@@ -1872,17 +2191,26 @@ export interface components {
          * @enum {string}
          */
         QuestionKind: "single" | "multi" | "text" | "secret";
-        /** @description A voice call with two or more agents; kept as history once the call ended. */
+        ReactionRequest: {
+            /** @description One emoji, e.g. 👍. A new reaction replaces your earlier one on that message. */
+            emoji: string;
+        };
+        /**
+         * @description A voice call with two or more agents, kept as history once the call ended; or, with a name,
+         *     a group chat, kept until deleted.
+         */
         Room: {
             /** Format: int64 */
             id: number;
-            /** @description Every agent that took part, in the order they joined. */
+            /** @description The group's name; `null`: a call room. */
+            name?: string | null;
+            /** @description Every agent that took part (a group: its members), in the order they joined. */
             members: components["schemas"]["AgentId"][];
             /** Format: date-time */
             created_at: string;
             /**
              * Format: date-time
-             * @description When the call ended; `null` while it runs.
+             * @description When the call ended; `null` while it runs, and always for a group.
              */
             ended_at?: string | null;
         };
@@ -1907,6 +2235,7 @@ export interface components {
         RoomTranscript: components["schemas"]["Room"] & {
             /** @description Oldest first; the last 1000. */
             lines: components["schemas"]["RoomLine"][];
+            speaking?: components["schemas"]["AgentId"] | null;
         };
         /** @description A prompt an agent receives on a cron schedule. */
         Routine: {
@@ -2147,6 +2476,17 @@ export interface components {
             line: components["schemas"]["RoomLine"];
             /** @enum {string} */
             type: "room_line";
+        } | {
+            /** Format: int64 */
+            room_id: number;
+            /** @enum {string} */
+            type: "room_deleted";
+        } | {
+            /** Format: int64 */
+            room_id: number;
+            agent?: components["schemas"]["AgentId"] | null;
+            /** @enum {string} */
+            type: "room_floor";
         };
         /** @description Partial profile update. Omitted fields stay unchanged. */
         UpdateAgent: {
@@ -2175,6 +2515,8 @@ export interface components {
              *     agents). A connected runner applies them from its next turn.
              */
             tools?: components["schemas"]["ToolGroup"][] | null;
+            /** @description Replaces the tags (same rules as on create); `[]` removes them. */
+            tags?: string[] | null;
         };
         /** @description A new CLI package list. */
         UpdateClis: {
@@ -2199,6 +2541,12 @@ export interface components {
             scopes?: string[] | null;
             /** @description Issuer of the own OAuth app. */
             issuer?: string | null;
+        };
+        UpdateGroup: {
+            /** @description 1-64 characters; omitted keeps the name. */
+            name?: string | null;
+            /** @description At least two agents; omitted keeps them. Those who stay keep their place. */
+            members?: components["schemas"]["AgentId"][] | null;
         };
         /** @description This daemon's version and self-update status. */
         UpdateInfo: {
@@ -2248,6 +2596,16 @@ export interface components {
              *     daemon's secret store; never returned.
              */
             api_key?: string | null;
+        };
+        /** @description A file the operator put into an agent's workspace. */
+        Upload: {
+            /** @description Where the file is, relative to the agent's workspace, e.g. `uploads/photo.png`. */
+            path: string;
+            /**
+             * Format: int64
+             * @description Bytes written.
+             */
+            size: number;
         };
         UsageDay: components["schemas"]["UsageTotals"] & {
             /** @description Date in the report's `timezone`, `YYYY-MM-DD`. */
@@ -2389,6 +2747,52 @@ export interface components {
 }
 export type $defs = Record<string, never>;
 export interface operations {
+    preview: {
+        parameters: {
+            query?: {
+                /** @description Expiry of the link (unix seconds), from `url`. */
+                exp?: number;
+                /** @description Signature of the link, from `url`. */
+                sig?: string;
+            };
+            header?: never;
+            path: {
+                /** @description Block id, from `POST /v1/previews` */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The page */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "text/html": string;
+                };
+            };
+            /** @description Missing or wrong API token */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Unknown block, or the link expired */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+        };
+    };
     page: {
         parameters: {
             query?: {
@@ -2900,6 +3304,46 @@ export interface operations {
             };
         };
     };
+    get_context: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Agent id (UUID) */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AgentContext"];
+                };
+            };
+            /** @description Missing or wrong API token */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Unknown agent */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+        };
+    };
     list_events: {
         parameters: {
             query?: {
@@ -2933,6 +3377,60 @@ export interface operations {
                 };
             };
             /** @description Unknown agent */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+        };
+    };
+    react: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Agent id (UUID) */
+                id: string;
+                /** @description Id of the agent's `assistant_text` event */
+                event_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ReactionRequest"];
+            };
+        };
+        responses: {
+            /** @description Recorded, and the agent was told */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Not one emoji */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Missing or wrong API token */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Unknown agent or message */
             404: {
                 headers: {
                     [name: string]: unknown;
@@ -3304,6 +3802,45 @@ export interface operations {
                 content: {
                     "application/json": components["schemas"]["ErrorBody"];
                 };
+            };
+            /** @description Missing or wrong API token */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Unknown agent */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+        };
+    };
+    new_session: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Agent id (UUID) */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The agent's next turn starts fresh */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
             /** @description Missing or wrong API token */
             401: {
@@ -3965,6 +4502,91 @@ export interface operations {
                 content: {
                     "application/json": components["schemas"]["ErrorBody"];
                 };
+            };
+            /** @description Sandbox backend error */
+            502: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+        };
+    };
+    upload: {
+        parameters: {
+            query: {
+                /**
+                 * @description The file's name. Only letters, digits, `.`, `-` and `_` are kept (others become `_`);
+                 *     a name already in `uploads/` gets `-2`, `-3`, ... before its extension.
+                 */
+                name: string;
+            };
+            header?: never;
+            path: {
+                /** @description Agent id (UUID) */
+                id: string;
+            };
+            cookie?: never;
+        };
+        /** @description The file, at most 25 MiB */
+        requestBody: {
+            content: {
+                "application/octet-stream": number[];
+            };
+        };
+        responses: {
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Upload"];
+                };
+            };
+            /** @description Larger than 25 MiB */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Missing or wrong API token */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Unknown agent */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description No sandbox */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Far larger than 25 MiB (plain text) */
+            413: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
             /** @description Sandbox backend error */
             502: {
@@ -4711,6 +5333,305 @@ export interface operations {
             };
         };
     };
+    list_groups: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Room"][];
+                };
+            };
+            /** @description Missing or wrong API token */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+        };
+    };
+    create_group: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CreateGroup"];
+            };
+        };
+        responses: {
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Room"];
+                };
+            };
+            /** @description Bad name or fewer than two agents */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Missing or wrong API token */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Unknown agent */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+        };
+    };
+    delete_group: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Group (room) id */
+                id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Deleted */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Missing or wrong API token */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Unknown group */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description The group is in a call */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+        };
+    };
+    update_group: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Group (room) id */
+                id: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["UpdateGroup"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Room"];
+                };
+            };
+            /** @description Bad name or fewer than two agents */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Missing or wrong API token */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Unknown group or agent */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Members changed while the group is in a call */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+        };
+    };
+    call_group: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Group (room) id */
+                id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CallView"];
+                };
+            };
+            /** @description More than 4 members */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Missing or wrong API token */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Unknown group */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Voice is switched off, or a call is running */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+        };
+    };
+    post_group_message: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Group (room) id */
+                id: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["GroupMessage"];
+            };
+        };
+        responses: {
+            /** @description Queued: the next speaker's message (none while a member still answers) */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MailMessage"][];
+                };
+            };
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Missing or wrong API token */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Unknown group */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+        };
+    };
     health: {
         parameters: {
             query?: never;
@@ -4726,6 +5647,34 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["Health"];
+                };
+            };
+        };
+    };
+    get_limits: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProviderLimits"][];
+                };
+            };
+            /** @description Missing or wrong API token */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
                 };
             };
         };
@@ -4871,6 +5820,47 @@ export interface operations {
                 };
                 content: {
                     "text/html": string;
+                };
+            };
+            /** @description Missing or wrong API token */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+        };
+    };
+    create_preview: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PreviewRequest"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PreviewLink"];
+                };
+            };
+            /** @description Larger than 512 KiB */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
                 };
             };
             /** @description Missing or wrong API token */

@@ -34,7 +34,7 @@
           "type": "object"
         },
         {
-          "description": "An agent wants to add a connector (`add_connector` tool). Approving creates it with the\ntoken typed into the card and gives it to the agent; the token only ever goes to `url`.",
+          "description": "An agent wants to add a connector (`add_connector` tool). Approving creates it and gives\nit to the agent; a token, if it takes one, goes in under Settings, never on a card.",
           "properties": {
             "auth": {
               "$ref": "#/$defs/ConnectorAuth"
@@ -158,6 +158,40 @@
           "required": [
             "agent",
             "model",
+            "kind"
+          ],
+          "type": "object"
+        },
+        {
+          "description": "The tool-call classifier flagged a call as risky and Auto mode is off: the call waits\nfor the operator.",
+          "properties": {
+            "agent": {
+              "$ref": "#/$defs/AgentId"
+            },
+            "detail": {
+              "description": "The command or the call's arguments, shortened.",
+              "type": "string"
+            },
+            "kind": {
+              "enum": [
+                "tool_call"
+              ],
+              "type": "string"
+            },
+            "reason": {
+              "description": "What made the call risky, e.g. \"pushes code\".",
+              "type": "string"
+            },
+            "tool": {
+              "description": "`shell` or the connector tool's name.",
+              "type": "string"
+            }
+          },
+          "required": [
+            "agent",
+            "tool",
+            "detail",
+            "reason",
             "kind"
           ],
           "type": "object"

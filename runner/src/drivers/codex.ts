@@ -6,6 +6,7 @@ import { createInterface } from "node:readline";
 import { setTimeout as sleep } from "node:timers/promises";
 
 import { errorMessage, log } from "../log.ts";
+import type { ToolGate } from "../gate.ts";
 import { decide, offGroups, type BuiltinGroup, type Decision } from "../permissions.ts";
 import type { TurnEvent } from "../protocol.ts";
 import { aborted, clip, systemAppend, toolResultText, turnPrompt } from "./claude.ts";
@@ -65,6 +66,7 @@ export interface CodexDriverOptions {
   token: string;
   workspaceDir: string;
   stateDir: string;
+  gate?: ToolGate;
 }
 
 /** `$CODEX_HOME/config.toml`. Names the token's env var; never holds a secret. Tools of `off`
@@ -171,11 +173,11 @@ function review(
   filesByItem: ReadonlyMap<string, string[]>,
   home: string,
   off: ReadonlySet<BuiltinGroup>,
-): { name: string; verdict: Decision } | null {
+): { name: string; verdict: Decision; command?: string } | null {
   switch (method) {
     case "item/commandExecution/requestApproval": {
       const command = typeof params["command"] === "string" ? params["command"] : "";
-      return { name: "Bash", verdict: decide("Bash", { command }, home, off) };
+      return { name: "Bash", verdict: decide("Bash", { command }, home, off), command };
     }
     case "item/fileChange/requestApproval": {
       // The request names only the item; its paths arrived with item/started.
@@ -284,6 +286,22 @@ class AppServer {
     this.#child.kill();
   }
 
+  /** Answers a request from Codex; the handler may wait (e.g. for the operator's card). */
+  async #answer(id: string | number, method: string, params: Params): Promise<void> {
+    let result: unknown;
+    try {
+      result = await this.onRequest(method, params);
+    } catch (err) {
+      log.warn("codex: could not handle a request", { method, error: errorMessage(err) });
+    }
+    // Codex waits for every answer, so an unhandled request gets an error, never silence.
+    this.#send(
+      result === undefined
+        ? { id, error: { code: -32601, message: `ferrobot does not handle ${method}` } }
+        : { id, result },
+    );
+  }
+
   #send(message: RpcMessage): void {
     this.#child.stdin.write(`${JSON.stringify(message)}\n`);
   }
@@ -302,24 +320,7 @@ class AppServer {
     const msg = parsed as RpcMessage;
     const params = msg.params ?? {};
     if (msg.id !== undefined && msg.method !== undefined) {
-      let result: unknown;
-      try {
-        result = this.onRequest(msg.method, params);
-      } catch (err) {
-        log.warn("codex: could not handle a request", {
-          method: msg.method,
-          error: errorMessage(err),
-        });
-      }
-      // Codex waits for every answer, so an unhandled request gets an error, never silence.
-      this.#send(
-        result === undefined
-          ? {
-              id: msg.id,
-              error: { code: -32601, message: `ferrobot does not handle ${msg.method}` },
-            }
-          : { id: msg.id, result },
-      );
+      void this.#answer(msg.id, msg.method, params);
     } else if (msg.method !== undefined) {
       try {
         this.onNotification(msg.method, params);
@@ -396,7 +397,7 @@ export class CodexDriver implements ModelDriver {
       );
     }
     try {
-      await server.request("initialize", { clientInfo: { name: "ferrobot", version: "0.1.3" } });
+      await server.request("initialize", { clientInfo: { name: "ferrobot", version: "0.1.4" } });
       server.notify("initialized");
     } catch (err) {
       server.kill();
@@ -492,12 +493,15 @@ export class CodexDriver implements ModelDriver {
           break;
       }
     };
-    server.onRequest = (method, params) => {
+    server.onRequest = async (method, params) => {
       if (!ours(params)) return undefined;
       const reviewed = review(method, params, filesByItem, home, offGroups(ctx.tools));
       if (!reviewed) return undefined;
-      if (reviewed.verdict.allow) return { decision: "accept" };
-      emit({ kind: "tool_denied", name: reviewed.name, reason: reviewed.verdict.reason });
+      let verdict = reviewed.verdict;
+      if (verdict.allow && reviewed.command !== undefined && this.#opts.gate)
+        verdict = await this.#opts.gate.shell(reviewed.command);
+      if (verdict.allow) return { decision: "accept" };
+      emit({ kind: "tool_denied", name: reviewed.name, reason: verdict.reason });
       return { decision: "decline" };
     };
 

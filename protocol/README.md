@@ -86,7 +86,8 @@ rename or instructions edit; they apply from the next turn). Turn events (field 
 (streamed text, not stored), `assistant_text`, `tool_use` with an `id`, and
 `tool_result` referencing that id. A turn's `sender` is `user`,
 `agent:<id>` or `routine:<id>` (the `sender_name` of a routine turn is
-`routine:<name>`).
+`routine:<name>`). A `turn` with `new_session: true` starts a fresh model session
+(the operator asked for a new chat); the field is omitted otherwise.
 
 ## Question cards (agent → UI)
 

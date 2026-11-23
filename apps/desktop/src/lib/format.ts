@@ -80,6 +80,60 @@ export function duration(seconds: number): string {
   return `${String(Math.floor(seconds / 3600))} h ${String(Math.floor((seconds % 3600) / 60))} min`;
 }
 
+const COMPUTER_TOOLS = new Set(["bash", "read_file", "write_file"]);
+
+/** The agent list's second line: a problem, an open card, work, then the newest reply. */
+export function rowLine(
+  a: Pick<
+    Agent,
+    "presence" | "credential_error" | "tools_unsupported" | "waiting" | "last_reply" | "description"
+  >,
+  now: number = Date.now(),
+): { text: string; tone: "bad" | "wait" | ""; time: string } {
+  if (a.credential_error || a.tools_unsupported || a.presence === "error")
+    return { text: statusOf(a).label, tone: "bad", time: "" };
+  if (a.waiting > 0) {
+    const text =
+      a.waiting === 1 ? "Waiting for your answer" : `${String(a.waiting)} questions for you`;
+    return { text, tone: "wait", time: "" };
+  }
+  if (a.presence === "working") return { text: "Working…", tone: "", time: "" };
+  if (a.last_reply?.text) {
+    const time = relativeTime(a.last_reply.at, now).replace(/ ago$/, "");
+    // A preview, not Markdown: drop heading, emphasis, quote and code marks.
+    const text = a.last_reply.text
+      .replace(/[#*`>]+/g, "")
+      .replace(/\s+/g, " ")
+      .trim();
+    return { text, tone: "", time };
+  }
+  return { text: a.description || "No description", tone: "", time: "" };
+}
+
+/** A finished run of tool calls in the chat, e.g. "3 steps · 40 s". */
+export function stepsLabel(count: number, seconds: number): string {
+  const steps = `${String(count)} ${count === 1 ? "step" : "steps"}`;
+  return seconds >= 1 ? `${steps} · ${duration(Math.round(seconds))}` : steps;
+}
+
+/** The Computer tab's first line, in plain words. */
+export function computerSummary(
+  status: Agent["status"],
+  info: { idle_s: number; warm_after_s?: number | null; idle_timeout_s?: number | null },
+): string {
+  const after = (limit: number | null | undefined): number | null =>
+    limit ? Math.max(0, limit - info.idle_s) : null;
+  if (status === "paused") return "Paused · resumes quickly";
+  if (status === "archived") return "Archived · restores on wake";
+  if (status === "stopped") return "Asleep · a message wakes it";
+  const parts = [info.idle_s < 5 ? "Busy just now" : `Idle ${duration(info.idle_s)}`];
+  const pause = after(info.warm_after_s);
+  const sleep = after(info.idle_timeout_s);
+  if (pause !== null) parts.push(`pauses in ${duration(pause)}`);
+  else if (sleep !== null) parts.push(`sleeps in ${duration(sleep)}`);
+  return parts.join(" · ");
+}
+
 /** What a running tool call is doing, in a few words, for the chat. */
 export function stepLabel(
   name: string,
@@ -92,7 +146,8 @@ export function stepLabel(
   const str = (key: string): string => (typeof args[key] === "string" ? args[key] : "");
   const short = (s: string): string => (s.length > 48 ? `${s.slice(0, 47)}…` : s);
   const file = (s: string): string => s.split("/").filter(Boolean).pop() ?? "a file";
-  if (server === "ferrobot") {
+  // The Claude Code driver's computer tools come through ferrobot's MCP server.
+  if (server === "ferrobot" && !COMPUTER_TOOLS.has(tool)) {
     const connector = tool.split("__");
     if (connector.length > 1) return `Using ${connector[0] ?? tool}`;
     const to = str("to").replace(/^@/, "");
@@ -108,7 +163,7 @@ export function stepLabel(
     };
     return labels[tool] ?? `Using ${tool}`;
   }
-  if (server) return `Using ${server}`;
+  if (server && server !== "ferrobot") return `Using ${server}`;
   // The model's own words for what the step does (Claude's Bash, our bash tool).
   const said = str("description").trim();
   if (said) return short(said.charAt(0).toUpperCase() + said.slice(1));

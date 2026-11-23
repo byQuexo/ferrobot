@@ -23,3 +23,11 @@ export function mentionsAsText(text: string, nameOf: (id: string) => string | un
     .map((p) => ("text" in p ? p.text : `@${nameOf(p.mention) ?? "unknown-agent"}`))
     .join("");
 }
+
+/** The `@name` being typed just before `caret`: `query` (lower case) and `at`, the `@`'s index. */
+export function mentionQuery(text: string, caret: number): { query: string; at: number } | null {
+  const m = /(?:^|\s)@([a-z0-9-]*)$/i.exec(text.slice(0, caret));
+  if (!m) return null;
+  const query = m[1] ?? "";
+  return { query: query.toLowerCase(), at: caret - query.length - 1 };
+}

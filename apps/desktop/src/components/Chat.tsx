@@ -6,38 +6,55 @@ import {
   ArrowDownLeft,
   ArrowUpRight,
   CalendarClock,
+  Camera,
   ChevronRight,
   CircleStop,
+  Footprints,
   MessagesSquare,
   Info,
   Mic,
-  Pencil,
+  Moon,
+  Paperclip,
   Phone,
   PhoneOff,
   SendHorizontal,
+  RotateCcw,
   ShieldAlert,
   SlidersHorizontal,
+  Smile,
   Square,
+  Sun,
+  UserPlus,
   Wrench,
+  X,
 } from "lucide-preact";
 
-import type { Agent, MailMessage, Routine, StoredEvent, VoiceView } from "../api.ts";
+import type { Agent, MailMessage, Routine, StoredEvent, Upload, VoiceView } from "../api.ts";
 import { useApp } from "../context.ts";
 import { isPass } from "../lib/call.ts";
-import { clockTime, statusOf, stepLabel, toolLabel } from "../lib/format.ts";
+import { clockTime, statusOf, stepLabel, stepsLabel, toolLabel } from "../lib/format.ts";
 import {
   buildTimeline,
+  firstNewKey,
+  foldSteps,
   groupExchanges,
   sharedFiles,
+  unreadSince,
   withoutRoomTurns,
   type DisplayItem,
   type Exchange,
   type TimelineItem,
 } from "../lib/timeline.ts";
+import { mentionQuery } from "../lib/mentions.ts";
+import { isMac, keyLabel, SHORTCUTS, useShortcuts } from "../lib/shortcuts.ts";
 import { hasVoiceKey, record, startLive, type LiveSession, type Recording } from "../lib/voice.ts";
+import { AttachmentChips, previews } from "./Attachments.tsx";
+import { FilePreview } from "./FilePreview.tsx";
 import { fileSize } from "./FileViewer.tsx";
+import { ContextMeter, ModelChip, TagChips } from "./AgentMeta.tsx";
 import { Avatar } from "./Avatar.tsx";
 import { CredentialFix } from "./CredentialFix.tsx";
+import { MailGroup } from "./MailGroup.tsx";
 import { QuestionCardView } from "./QuestionCard.tsx";
 import { RichText, type ChatFiles } from "./RichText.tsx";
 import { Button, IconButton } from "./ui.tsx";
@@ -52,6 +69,8 @@ export function Chat(props: {
   onVault: () => void;
   /** Set when the agent's model needs a ChatGPT sign-in rather than a key. */
   onSignIn?: () => void;
+  /** Opens the details panel on Activities. */
+  onActivities: () => void;
 }): JSX.Element {
   const { client, agents, listen, run, call, callState } = useApp();
   const agent = props.agent;
@@ -61,6 +80,8 @@ export function Chat(props: {
   const [routines, setRoutines] = useState<Routine[]>([]);
   const [live, setLive] = useState<Map<string, string>>(new Map());
   const [loaded, setLoaded] = useState(false);
+  // Where the "New" divider goes, fixed when the chat opens: reading it zeroes `unread`.
+  const [newSince, setNewSince] = useState<number | null>(null);
   const [voiceView, setVoiceView] = useState<VoiceView | null>(null);
   const [quick, setQuick] = useState(false);
   useEffect(() => {
@@ -69,8 +90,8 @@ export function Chat(props: {
   const voiceEnabled = voiceView?.enabled !== false;
   const inCall = callState !== null && !callState.ending && callState.agents.includes(id);
   // A one-on-one call happens here; a call with a room is spoken to in the room.
-  const send = (body: string): Promise<unknown> =>
-    inCall && callState.room === null ? call.say(body) : client.send(id, body);
+  const send = (body: string, now?: boolean): Promise<unknown> =>
+    inCall && callState.room === null ? call.say(body) : client.send(id, body, now);
 
   useEffect(() => {
     let cancelled = false;
@@ -78,6 +99,8 @@ export function Chat(props: {
     setMessages([]);
     setEvents([]);
     setLive(new Map());
+    setNewSince(null);
+    const unread = agent.unread;
     const load = async (): Promise<void> => {
       const all = await client.allEvents(id);
       const [msgs, rts] = await Promise.all([client.messages(id), client.routines(id)]);
@@ -85,6 +108,8 @@ export function Chat(props: {
       setMessages(msgs);
       setEvents(all);
       setRoutines(rts);
+      const chat = withoutRoomTurns(msgs, all, new Map());
+      setNewSince(unreadSince(chat.messages, chat.events, unread));
       setLoaded(true);
       void client.markRead(id).catch(() => undefined);
     };
@@ -144,34 +169,51 @@ export function Chat(props: {
     };
     const chat = withoutRoomTurns(messages, events, live);
     const all = buildTimeline(id, chat.messages, chat.events, chat.live, names);
-    // Tool calls and turn errors live on the Activities tab; the chat shows the conversation.
-    const shown = groupExchanges(all.filter((i) => i.type !== "tool" && i.type !== "error"));
-    // The current activity: the newest step since the message being worked on.
-    let start = all.length - 1;
-    while (start >= 0 && !["user", "incoming", "routine"].includes(all[start]?.type ?? "")) start--;
-    const last = all
-      .slice(start + 1)
-      .filter((i) => i.type === "tool")
-      .pop();
+    // Tool calls fold into "N steps" lines; their details and most turn errors live on
+    // Activities. The running run shows as a short trail instead.
+    const grouped = groupExchanges(all.filter((i) => i.type !== "error" || i.quiet === true));
+    const { shown, live: running } = foldSteps(grouped, agent.presence === "working");
     const nameOf = (agentId: string): string | undefined => agents.get(agentId)?.name;
     const files: ChatFiles = { agent: id, byName: sharedFiles(events) };
     return {
       shown,
       files,
       roomTurn: chat.roomTurn,
-      step: last?.type === "tool" ? stepLabel(last.name, last.input, nameOf) : "Getting started",
+      trail: running.slice(-3).map((t) => stepLabel(t.name, t.input, nameOf)),
     };
-  }, [id, messages, events, live, agents, routines]);
+  }, [id, messages, events, live, agents, routines, agent.presence]);
+
+  // New items rise in; the history that was there when the chat opened does not.
+  const firstSeen = useRef(new Map<string, number>());
+  const now = Date.now();
+  for (const item of items.shown)
+    if (!firstSeen.current.has(item.key)) firstSeen.current.set(item.key, loaded ? now : 0);
+  const fresh = (key: string): boolean => now - (firstSeen.current.get(key) ?? 0) < 600;
 
   // Keep the view pinned to the bottom unless the user scrolled up.
   const scroller = useRef<HTMLDivElement>(null);
   const pinned = useRef(true);
-  useLayoutEffect(() => {
+  const pin = (): void => {
     const el = scroller.current;
     if (el && pinned.current) el.scrollTop = el.scrollHeight;
-  }, [items.shown, items.step]);
+  };
+  useLayoutEffect(pin, [items.shown, items.trail]);
+  const newKey = firstNewKey(items.shown, newSince);
 
   const working = agent.presence === "working";
+  // Queued means the running turn cannot take it in: stopping that turn sends it next.
+  const queued = items.shown.some((i) => i.type === "user" && i.status === "pending");
+  const sendNow =
+    working && queued
+      ? (): void => {
+          void run(() => client.interrupt(id));
+        }
+      : undefined;
+  useShortcuts((shortcut) => {
+    // In the message box the box handles it, with what was typed.
+    if (shortcut === "send-now" && !(document.activeElement instanceof HTMLTextAreaElement))
+      sendNow?.();
+  });
   const status = statusOf(agent);
   const problem = agent.credential_error ?? agent.tools_unsupported;
 
@@ -180,7 +222,11 @@ export function Chat(props: {
       <header class="chat-head">
         <Avatar agent={agent} size={40} presence={status.presence} />
         <div class="chat-title">
-          <h1>{agent.name}</h1>
+          <div class="chat-name">
+            <h1>{agent.name}</h1>
+            <TagChips tags={agent.tags} />
+            <ModelChip agent={agent} />
+          </div>
           <span class={`chat-sub p-${status.presence}`} title={problem?.reason}>
             <span class="dot" />
             {status.label}
@@ -242,9 +288,6 @@ export function Chat(props: {
             </IconButton>
           </span>
         )}
-        <IconButton label="Edit agent" onClick={props.onEdit}>
-          <Pencil size={18} />
-        </IconButton>
         <IconButton
           label={props.infoOpen ? "Hide details" : "Show details"}
           onClick={props.onToggleInfo}
@@ -261,6 +304,8 @@ export function Chat(props: {
           const el = e.currentTarget;
           pinned.current = el.scrollHeight - el.scrollTop - el.clientHeight < 80;
         }}
+        // Diagrams and frames grow the chat when they load.
+        onLoadCapture={pin}
       >
         {loaded && items.shown.length === 0 && (
           <div class="chat-empty">
@@ -273,15 +318,33 @@ export function Chat(props: {
           </div>
         )}
         {items.shown.map((item) => (
-          <Item key={item.key} item={item} agent={agent} files={items.files} />
+          <div key={item.key} class={fresh(item.key) ? "enter" : "settled"}>
+            {item.key === newKey && (
+              <div class="row new-divider" role="separator">
+                <span>New</span>
+              </div>
+            )}
+            <Item
+              item={item}
+              agent={agent}
+              files={items.files}
+              onActivities={props.onActivities}
+              sendNow={sendNow}
+            />
+          </div>
         ))}
         {working &&
           !items.roomTurn &&
           !items.shown.some((i) => i.type === "assistant" && i.streaming) && (
             <div class="row row-agent">
               <Avatar agent={agent} size={28} mood="working" />
-              <div class="step-now" role="status">
-                {items.step}…
+              <div class="step-trail" role="status">
+                {items.trail.slice(0, -1).map((step, n) => (
+                  <span key={`${String(n)}-${step}`} class="step-old">
+                    {step}
+                  </span>
+                ))}
+                <span class="step-now">{items.trail.at(-1) ?? "Getting started"}…</span>
               </div>
             </div>
           )}
@@ -295,12 +358,65 @@ export function Chat(props: {
             : `Message ${agent.name}`
         }
         send={send}
+        sendNow={sendNow}
         voice={voiceEnabled ? voiceView : null}
         onTalk={() => {
           call.quiet();
         }}
+        extra={<ContextMeter agent={agent} />}
+        upload={(file) => client.upload(id, file)}
       />
     </section>
+  );
+}
+
+const REACTIONS = ["👍", "❤️", "😂", "🎉", "🤔", "👎"];
+
+/** Your emoji on an agent's message; the agent hears of it and may act on it. */
+function ReactButton(props: { agent: string; event: number; current: string | null }): JSX.Element {
+  const { client, run } = useApp();
+  const [open, setOpen] = useState(false);
+  return (
+    <span
+      class="react"
+      onFocusOut={(e) => {
+        if (!e.currentTarget.contains(e.relatedTarget as Node | null)) setOpen(false);
+      }}
+      onKeyDown={(e) => {
+        if (e.key === "Escape") setOpen(false);
+      }}
+    >
+      <button
+        type="button"
+        class="react-btn"
+        aria-label="React"
+        title="React"
+        aria-expanded={open}
+        onClick={() => {
+          setOpen(!open);
+        }}
+      >
+        <Smile size={14} />
+      </button>
+      {open && (
+        <span class="react-pick" role="menu" aria-label="React with">
+          {REACTIONS.map((emoji) => (
+            <button
+              key={emoji}
+              type="button"
+              role="menuitemradio"
+              aria-checked={props.current === emoji}
+              onClick={() => {
+                setOpen(false);
+                void run(() => client.react(props.agent, props.event, emoji));
+              }}
+            >
+              {emoji}
+            </button>
+          ))}
+        </span>
+      )}
+    </span>
   );
 }
 
@@ -351,18 +467,56 @@ function ExchangeHint(props: { item: Exchange; agent: Agent }): JSX.Element {
   );
 }
 
-function Item(props: { item: DisplayItem; agent: Agent; files?: ChatFiles }): JSX.Element {
+const NOTICE_ICONS: Record<string, typeof Moon> = {
+  sleeping: Moon,
+  awake: Sun,
+  snapshot: Camera,
+  restored: RotateCcw,
+  sandbox_restarted: RotateCcw,
+  agent_created: UserPlus,
+  agent_tools_changed: Wrench,
+  stopped: CircleStop,
+};
+
+function Item(props: {
+  item: DisplayItem;
+  agent: Agent;
+  files?: ChatFiles;
+  onActivities?: () => void;
+  /** Stops the running turn so queued messages go next; unset when nothing is queued. */
+  sendNow?: (() => void) | undefined;
+}): JSX.Element {
   const { item, agent } = props;
   const { agents, openFile } = useApp();
   switch (item.type) {
+    case "steps":
+      return (
+        <div class="row row-center">
+          <button
+            type="button"
+            class="steps-line"
+            title={item.tools
+              .map((t) => stepLabel(t.name, t.input, (a) => agents.get(a)?.name))
+              .join("\n")}
+            onClick={props.onActivities}
+          >
+            <Footprints size={14} /> {stepsLabel(item.tools.length, item.seconds)}
+          </button>
+        </div>
+      );
     case "exchange":
-      return <ExchangeHint item={item} agent={agent} />;
+      return item.peers.length > 1 ? (
+        <MailGroup item={item} />
+      ) : (
+        <ExchangeHint item={item} agent={agent} />
+      );
     case "user":
       return (
         <>
           <div class="row row-user">
             <div class="bubble bubble-user">
-              <RichText text={item.text} />
+              {item.files.length > 0 && <AttachmentChips agent={agent.id} files={item.files} />}
+              {item.text && <RichText text={item.text} />}
               <span class="meta">
                 {clockTime(item.at)}
                 {item.status === "pending"
@@ -370,7 +524,22 @@ function Item(props: { item: DisplayItem; agent: Agent; files?: ChatFiles }): JS
                   : item.status === "failed"
                     ? " · not delivered"
                     : ""}
+                {item.status === "pending" && props.sendNow && (
+                  <button
+                    type="button"
+                    class="text-link send-now"
+                    title={`Stop the running turn so this goes now${SEND_NOW ? ` (${keyLabel(SEND_NOW, isMac())})` : ""}`}
+                    onClick={props.sendNow}
+                  >
+                    Send now
+                  </button>
+                )}
               </span>
+              {item.reaction && (
+                <span class="reaction" title={`${agent.name} reacted`}>
+                  {item.reaction}
+                </span>
+              )}
             </div>
           </div>
           {item.error && (
@@ -389,13 +558,25 @@ function Item(props: { item: DisplayItem; agent: Agent; files?: ChatFiles }): JS
             class={`bubble-agent${item.streaming ? " streaming" : ""}${isPass(item.text) ? " pass" : ""}`}
           >
             <RichText text={item.text} files={props.files} />
-            {!item.streaming && <span class="meta">{clockTime(item.at)}</span>}
+            {!item.streaming && (
+              <span class="meta msg-foot">
+                {clockTime(item.at)}
+                {item.reaction && (
+                  <span class="reaction-mine" title="Your reaction">
+                    {item.reaction}
+                  </span>
+                )}
+                {item.id !== null && (
+                  <ReactButton agent={agent.id} event={item.id} current={item.reaction} />
+                )}
+              </span>
+            )}
           </div>
         </div>
       );
     case "file":
       return (
-        <div class="row row-agent">
+        <div class="row row-agent file-share">
           <button
             type="button"
             class="file-card"
@@ -409,6 +590,7 @@ function Item(props: { item: DisplayItem; agent: Agent; files?: ChatFiles }): JS
               {fileSize(item.size)} · {clockTime(item.at)}
             </span>
           </button>
+          <FilePreview agent={agent.id} file={item.id} name={item.name} />
         </div>
       );
     case "incoming":
@@ -471,19 +653,22 @@ function Item(props: { item: DisplayItem; agent: Agent; files?: ChatFiles }): JS
     case "error":
       return (
         <div class="row row-center">
-          <div class="notice notice-error">
-            <AlertTriangle size={16} /> {item.text}
-          </div>
+          <button type="button" class="turn-failed" title={item.text} onClick={props.onActivities}>
+            <AlertTriangle size={14} /> Turn failed · {clockTime(item.at)} · details
+          </button>
         </div>
       );
-    case "system":
+    case "system": {
+      const Icon = NOTICE_ICONS[item.kind];
       return (
         <div class="row row-center">
           <div class="notice">
+            {Icon && <Icon size={14} />}
             {item.text} · {clockTime(item.at)}
           </div>
         </div>
       );
+    }
   }
 }
 
@@ -506,19 +691,12 @@ function prettyOutput(text: string): string {
   }
 }
 
-/** One-line summary of a tool input, e.g. `to: bob, body: "hi"`. */
-function summary(input: unknown): string {
-  if (input === null || typeof input !== "object") return "";
-  return Object.entries(input as Record<string, unknown>)
-    .slice(0, 3)
-    .map(([k, v]) => `${k}: ${typeof v === "string" ? v : JSON.stringify(v)}`)
-    .join(", ");
-}
-
 export function ToolCard(props: { item: Extract<TimelineItem, { type: "tool" }> }): JSX.Element {
   const { item } = props;
+  const { agents } = useApp();
   const [open, setOpen] = useState(false);
   const label = toolLabel(item.name);
+  const headline = stepLabel(item.name, item.input, (id) => agents.get(id)?.name);
   const state =
     item.denied !== null
       ? "denied"
@@ -540,11 +718,8 @@ export function ToolCard(props: { item: Extract<TimelineItem, { type: "tool" }> 
         >
           <ChevronRight size={16} class="chev" />
           {state === "denied" ? <ShieldAlert size={16} /> : <Wrench size={16} />}
-          <span class="tool-name">{label.tool}</span>
-          {label.server && <span class="tool-server">{label.server}</span>}
-          <span class="tool-summary">
-            {state === "denied" ? `Blocked: ${item.denied ?? ""}` : summary(item.input)}
-          </span>
+          <span class="tool-name">{headline}</span>
+          {state === "denied" && <span class="tool-summary">Blocked: {item.denied ?? ""}</span>}
           <span class={`tool-state s-${state}`}>
             {state === "running"
               ? "Running"
@@ -557,6 +732,10 @@ export function ToolCard(props: { item: Extract<TimelineItem, { type: "tool" }> 
         </button>
         {open && (
           <div class="tool-body">
+            <div class="tool-label">
+              {label.tool}
+              {label.server && <span class="tool-server">{label.server}</span>}
+            </div>
             {item.input !== null && (
               <>
                 <div class="tool-label">Input</div>
@@ -720,24 +899,77 @@ function MicButton(props: {
   );
 }
 
+const MAX_UPLOAD = 25 * 1024 * 1024;
+
 /** The message box of a chat or call room (`chat` is its id). */
+const SEND_NOW = SHORTCUTS.find((s) => s.id === "send-now");
+
+/** Unsent text per chat, so it survives switching to Settings or another chat (not a restart). */
+const drafts = new Map<string, string>();
+
 export function Composer(props: {
   chat: string;
   placeholder: string;
-  send: (body: string) => Promise<unknown>;
+  /** `now`: ⌘↵, send it ahead of a running turn that cannot take it. */
+  send: (body: string, now?: boolean) => Promise<unknown>;
+  /** Pushes what is already queued; unset when nothing is. */
+  sendNow?: (() => void) | undefined;
   /** `null`: voice is off, no microphone. */
   voice: VoiceView | null;
   onTalk: () => void;
+  /** Shown before the buttons, e.g. the chat's context meter. */
+  extra?: JSX.Element;
+  /** Puts a file into the agent's workspace; without it nothing can be attached. */
+  upload?: (file: File) => Promise<Upload>;
+  /** Agents `@` offers to name; without them typing `@` opens nothing. */
+  mentions?: Agent[];
 }): JSX.Element {
   const { run } = useApp();
-  const [text, setText] = useState("");
+  const [text, setTextNow] = useState(() => drafts.get(props.chat) ?? "");
+  const setText = (value: string): void => {
+    drafts.set(props.chat, value);
+    setTextNow(value);
+  };
+  const [pick, setPick] = useState<{ query: string; at: number; n: number } | null>(null);
+  const options = pick
+    ? (props.mentions ?? []).filter((a) => a.name.toLowerCase().startsWith(pick.query)).slice(0, 8)
+    : [];
+  const choose = (agent: Agent): void => {
+    const el = ref.current;
+    if (!el || !pick) return;
+    const end = pick.at + agent.name.length + 2;
+    setText(`${text.slice(0, pick.at)}@${agent.name} ${text.slice(el.selectionStart)}`);
+    setPick(null);
+    requestAnimationFrame(() => {
+      el.setSelectionRange(end, end);
+    });
+  };
   const current = useRef(text);
   current.current = text;
+  const [files, setFiles] = useState<File[]>([]);
   const [sending, setSending] = useState(false);
   const ref = useRef<HTMLTextAreaElement>(null);
+  const picker = useRef<HTMLInputElement>(null);
+  const canAttach = props.upload !== undefined;
+  const attach = (list: ArrayLike<File>): void => {
+    setFiles((prev) => [...prev, ...Array.from(list)]);
+  };
   useEffect(() => {
     ref.current?.focus();
+    setFiles([]);
+    setTextNow(drafts.get(props.chat) ?? "");
+    setPick(null);
   }, [props.chat]);
+  useEffect(() => {
+    if (!canAttach) return;
+    const drop = (e: DragEvent): void => {
+      attach(e.dataTransfer?.files ?? []);
+    };
+    window.addEventListener("drop", drop);
+    return () => {
+      window.removeEventListener("drop", drop);
+    };
+  }, [canAttach]);
   useLayoutEffect(() => {
     const el = ref.current;
     if (!el) return;
@@ -745,13 +977,32 @@ export function Composer(props: {
     el.style.height = `${String(Math.min(el.scrollHeight, 200))}px`;
   }, [text]);
 
-  const send = async (): Promise<void> => {
+  const send = async (now = false): Promise<void> => {
     const body = text.trim();
-    if (!body || sending) return;
+    if (!body && files.length === 0) {
+      if (now) props.sendNow?.();
+      return;
+    }
+    if (sending) return;
     setSending(true);
-    const ok = await run(() => props.send(body));
+    const ok = await run(async () => {
+      const big = files.find((f) => f.size > MAX_UPLOAD);
+      if (big) throw new Error(`${big.name} is larger than 25 MB`);
+      const lines: string[] = [];
+      for (const file of files) {
+        const done = await props.upload?.(file);
+        if (!done) continue;
+        const image = file.type.startsWith("image/");
+        if (image) previews.set(`${props.chat}/${done.path}`, URL.createObjectURL(file));
+        lines.push(`Attached: ${done.path} (${image ? "image" : "file"}, ${fileSize(done.size)})`);
+      }
+      return props.send([body, ...lines].filter(Boolean).join("\n"), now);
+    });
     setSending(false);
-    if (ok) setText("");
+    if (ok) {
+      setText("");
+      setFiles([]);
+    }
   };
 
   return (
@@ -762,21 +1013,111 @@ export function Composer(props: {
         void send();
       }}
     >
+      {pick && options.length > 0 && (
+        <ul class="mention-pick" role="listbox" aria-label="Agents">
+          {options.map((a, i) => (
+            <li
+              key={a.id}
+              role="option"
+              aria-selected={i === pick.n % options.length}
+              onMouseDown={(e) => {
+                e.preventDefault();
+                choose(a);
+              }}
+            >
+              <Avatar agent={a} size={20} />
+              {a.name}
+            </li>
+          ))}
+        </ul>
+      )}
+      {files.length > 0 && (
+        <div class="attachments pending">
+          {files.map((f, n) => (
+            <span key={`${String(n)}-${f.name}`} class="attachment">
+              <Paperclip size={14} />
+              <span>{f.name}</span>
+              <button
+                type="button"
+                aria-label={`Remove ${f.name}`}
+                onClick={() => {
+                  setFiles(files.filter((_, i) => i !== n));
+                }}
+              >
+                <X size={14} />
+              </button>
+            </span>
+          ))}
+        </div>
+      )}
+      {canAttach && (
+        <>
+          <input
+            ref={picker}
+            type="file"
+            multiple
+            hidden
+            onChange={(e) => {
+              attach(e.currentTarget.files ?? []);
+              e.currentTarget.value = "";
+            }}
+          />
+          <button
+            type="button"
+            class="attach"
+            aria-label="Attach files"
+            title="Attach files (or drop or paste them)"
+            onClick={() => picker.current?.click()}
+          >
+            <Paperclip size={18} />
+          </button>
+        </>
+      )}
       <textarea
         ref={ref}
         rows={1}
         value={text}
         placeholder={props.placeholder}
+        aria-expanded={options.length > 0}
         onInput={(e) => {
-          setText(e.currentTarget.value);
+          const { value, selectionStart } = e.currentTarget;
+          setText(value);
+          if (props.mentions) {
+            const found = mentionQuery(value, selectionStart);
+            setPick(found && { ...found, n: 0 });
+          }
+        }}
+        onPaste={(e) => {
+          const images = Array.from(e.clipboardData?.files ?? []).filter((f) =>
+            f.type.startsWith("image/"),
+          );
+          if (!canAttach || images.length === 0) return;
+          e.preventDefault();
+          attach(images);
         }}
         onKeyDown={(e) => {
+          const chosen = pick && options[pick.n % options.length];
+          if (pick && chosen && !e.isComposing) {
+            const step = { ArrowDown: 1, ArrowUp: options.length - 1 }[e.key];
+            if (step !== undefined) setPick({ ...pick, n: (pick.n + step) % options.length });
+            else if (e.key === "Enter" || e.key === "Tab") choose(chosen);
+            else if (e.key === "Escape") setPick(null);
+            else return;
+            e.preventDefault();
+            return;
+          }
+          if (e.key === "Enter" && (e.metaKey || e.ctrlKey) && !e.isComposing) {
+            e.preventDefault();
+            void send(true);
+            return;
+          }
           if (e.key === "Enter" && !e.shiftKey && !e.isComposing) {
             e.preventDefault();
             void send();
           }
         }}
       />
+      {props.extra}
       {props.voice && (
         <MicButton
           chat={props.chat}
@@ -789,7 +1130,7 @@ export function Composer(props: {
       <button
         type="submit"
         class="send"
-        disabled={!text.trim() || sending}
+        disabled={(!text.trim() && files.length === 0) || sending}
         aria-label="Send"
         title="Send (Enter)"
       >

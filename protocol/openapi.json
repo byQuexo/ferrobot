@@ -10,7 +10,7 @@
       "name": "MIT OR Apache-2.0",
       "identifier": "MIT OR Apache-2.0"
     },
-    "version": "0.1.3"
+    "version": "0.1.4"
   },
   "servers": [
     {
@@ -19,6 +19,78 @@
     }
   ],
   "paths": {
+    "/artifacts/previews/{id}": {
+      "get": {
+        "tags": [
+          "chat"
+        ],
+        "summary": "A HTML block by signed, expiring link, as a sandboxed page.",
+        "operationId": "preview",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "Block id, from `POST /v1/previews`",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "exp",
+            "in": "query",
+            "description": "Expiry of the link (unix seconds), from `url`.",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "format": "int64",
+              "minimum": 0
+            }
+          },
+          {
+            "name": "sig",
+            "in": "query",
+            "description": "Signature of the link, from `url`.",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The page",
+            "content": {
+              "text/html": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or wrong API token",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Unknown block, or the link expired",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/artifacts/{id}/{file_id}": {
       "get": {
         "tags": [
@@ -710,6 +782,57 @@
         }
       }
     },
+    "/v1/agents/{id}/context": {
+      "get": {
+        "tags": [
+          "usage"
+        ],
+        "summary": "How full the agent's context is.",
+        "operationId": "get_context",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "Agent id (UUID)",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AgentContext"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or wrong API token",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Unknown agent",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/v1/agents/{id}/events": {
       "get": {
         "tags": [
@@ -763,6 +886,81 @@
           },
           "404": {
             "description": "Unknown agent",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/agents/{id}/events/{event_id}/reaction": {
+      "post": {
+        "tags": [
+          "chat"
+        ],
+        "summary": "Reacts to one of the agent's messages (an `assistant_text` event) with one emoji. The agent\nhears of it in a short `[ferrobot]` note from the operator, which starts a turn; the chat shows\nthe emoji on its message (a `user_reaction` event naming the note as `note_id`), not the note.",
+        "operationId": "react",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "Agent id (UUID)",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "event_id",
+            "in": "path",
+            "description": "Id of the agent's `assistant_text` event",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ReactionRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "204": {
+            "description": "Recorded, and the agent was told"
+          },
+          "400": {
+            "description": "Not one emoji",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or wrong API token",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Unknown agent or message",
             "content": {
               "application/json": {
                 "schema": {
@@ -1265,6 +1463,51 @@
                 }
               }
             }
+          },
+          "401": {
+            "description": "Missing or wrong API token",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Unknown agent",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/agents/{id}/new-session": {
+      "post": {
+        "tags": [
+          "chat"
+        ],
+        "summary": "Starts a new chat: the agent's next turn begins a fresh model session without the earlier\nmessages. The chat history stays visible.",
+        "operationId": "new_session",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "Agent id (UUID)",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "The agent's next turn starts fresh"
           },
           "401": {
             "description": "Missing or wrong API token",
@@ -2096,6 +2339,115 @@
                 }
               }
             }
+          },
+          "502": {
+            "description": "Sandbox backend error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/agents/{id}/uploads": {
+      "post": {
+        "tags": [
+          "chat"
+        ],
+        "summary": "Puts a file from the operator into the agent's workspace folder `uploads/`, waking its\ncomputer if it sleeps. Body: the raw file, at most 25 MiB.",
+        "operationId": "upload",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "Agent id (UUID)",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "name",
+            "in": "query",
+            "description": "The file's name. Only letters, digits, `.`, `-` and `_` are kept (others become `_`);\na name already in `uploads/` gets `-2`, `-3`, ... before its extension.",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "description": "The file, at most 25 MiB",
+          "content": {
+            "application/octet-stream": {
+              "schema": {
+                "type": "array",
+                "items": {
+                  "type": "integer",
+                  "format": "int32",
+                  "minimum": 0
+                }
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Upload"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Larger than 25 MiB",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or wrong API token",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Unknown agent",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "No sandbox",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "Far larger than 25 MiB (plain text)"
           },
           "502": {
             "description": "Sandbox backend error",
@@ -2990,6 +3342,380 @@
         }
       }
     },
+    "/v1/groups": {
+      "get": {
+        "tags": [
+          "groups"
+        ],
+        "summary": "Group chats, oldest first.",
+        "operationId": "list_groups",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/Room"
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or wrong API token",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "groups"
+        ],
+        "summary": "Creates a group chat. Its transcript is `GET /v1/rooms/{id}`.",
+        "operationId": "create_group",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateGroup"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Room"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad name or fewer than two agents",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or wrong API token",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Unknown agent",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/groups/{id}": {
+      "delete": {
+        "tags": [
+          "groups"
+        ],
+        "summary": "Deletes a group with its transcript; a member's running turn in it is cut off.",
+        "operationId": "delete_group",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "Group (room) id",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Deleted"
+          },
+          "401": {
+            "description": "Missing or wrong API token",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Unknown group",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "The group is in a call",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        }
+      },
+      "patch": {
+        "tags": [
+          "groups"
+        ],
+        "summary": "Renames a group or replaces its members; a conversation going on continues with them.",
+        "operationId": "update_group",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "Group (room) id",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateGroup"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Room"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad name or fewer than two agents",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or wrong API token",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Unknown group or agent",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Members changed while the group is in a call",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/groups/{id}/call": {
+      "post": {
+        "tags": [
+          "groups"
+        ],
+        "summary": "Calls the group: every member joins a voice call whose room is the group, so its lines land\nthere. The first member hosts. End it with `PUT /v1/call` and no agents.",
+        "operationId": "call_group",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "Group (room) id",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CallView"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "More than 4 members",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or wrong API token",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Unknown group",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Voice is switched off, or a call is running",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/groups/{id}/messages": {
+      "post": {
+        "tags": [
+          "groups"
+        ],
+        "summary": "Sends the operator's message to the group: a line that is due for every member. They answer\none at a time in join order, each with what it has not read yet, or pass; at most four agent\nlines in a row, then the group waits for the operator. Their messages (`room_id` set) stay\nout of chats. While the group is in a call, the message goes to the call.",
+        "operationId": "post_group_message",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "Group (room) id",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/GroupMessage"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "202": {
+            "description": "Queued: the next speaker's message (none while a member still answers)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/MailMessage"
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or wrong API token",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Unknown group",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/v1/health": {
       "get": {
         "tags": [
@@ -3011,6 +3737,39 @@
         "security": [
           {}
         ]
+      }
+    },
+    "/v1/limits": {
+      "get": {
+        "tags": [
+          "usage"
+        ],
+        "summary": "How much of their 5-hour and weekly plan limits the host's Claude Code login and each Codex\nprovider signed in with `ChatGPT` have used, read from the CLIs (cached for a minute).",
+        "operationId": "get_limits",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/ProviderLimits"
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or wrong API token",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        }
       }
     },
     "/v1/memory": {
@@ -3205,6 +3964,56 @@
               "text/html": {
                 "schema": {
                   "type": "string"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or wrong API token",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/previews": {
+      "post": {
+        "tags": [
+          "chat"
+        ],
+        "summary": "Serves a HTML block from the chat as a page, so its inline styles and scripts run under\nthe shared pages' policy (no network) instead of being blocked by the app's.",
+        "operationId": "create_preview",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PreviewRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PreviewLink"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Larger than 512 KiB",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
                 }
               }
             }
@@ -3715,7 +4524,7 @@
         "tags": [
           "voice"
         ],
-        "summary": "One call room: who took part and what was said.",
+        "summary": "One call room or group: who is in it and what was said.",
         "operationId": "get_room",
         "parameters": [
           {
@@ -5026,9 +5835,60 @@
             },
             "description": "Tool groups the agent may use; its connectors are its assignment."
           },
+          "tags": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "The operator's labels for the agent, in order."
+          },
           "created_at": {
             "type": "string",
             "format": "date-time"
+          }
+        }
+      },
+      "AgentContext": {
+        "type": "object",
+        "description": "How full an agent's context is, read from its newest model call.",
+        "required": [
+          "tracked"
+        ],
+        "properties": {
+          "tracked": {
+            "type": "boolean",
+            "description": "Whether the daemon knows the agent's context size: from the model proxy, or on Claude\nCode from the token counts its own stream reports. `true` today; kept for older clients."
+          },
+          "tokens": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64",
+            "description": "Input plus cache read and write tokens of the newest call since the last new chat;\n`null` before there is one."
+          },
+          "window": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64",
+            "description": "Context window of `model` in tokens; `null` when not known."
+          },
+          "model": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "The model of that call, else the agent's configured model."
+          },
+          "at": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time",
+            "description": "When that call was made."
           }
         }
       },
@@ -5065,7 +5925,8 @@
             "required": [
               "connected",
               "presence",
-              "unread"
+              "unread",
+              "waiting"
             ],
             "properties": {
               "connected": {
@@ -5104,6 +5965,23 @@
                   {
                     "$ref": "#/components/schemas/ToolsUnsupported",
                     "description": "Set while the agent's model can't use tools and the operator has not turned them off;\nits turns wait."
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "waiting": {
+                "type": "integer",
+                "format": "int32",
+                "description": "Question cards waiting for the operator's answer.",
+                "minimum": 0
+              },
+              "last_reply": {
+                "oneOf": [
+                  {
+                    "$ref": "#/components/schemas/LastReply",
+                    "description": "The agent's newest reply, cut to a preview."
                   },
                   {
                     "type": "null"
@@ -5159,7 +6037,7 @@
           },
           {
             "type": "object",
-            "description": "An agent wants to add a connector (`add_connector` tool). Approving creates it with the\ntoken typed into the card and gives it to the agent; the token only ever goes to `url`.",
+            "description": "An agent wants to add a connector (`add_connector` tool). Approving creates it and gives\nit to the agent; a token, if it takes one, goes in under Settings, never on a card.",
             "required": [
               "name",
               "url",
@@ -5282,6 +6160,40 @@
                 "type": "string",
                 "enum": [
                   "use_without_tools"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "description": "The tool-call classifier flagged a call as risky and Auto mode is off: the call waits\nfor the operator.",
+            "required": [
+              "agent",
+              "tool",
+              "detail",
+              "reason",
+              "kind"
+            ],
+            "properties": {
+              "agent": {
+                "$ref": "#/components/schemas/AgentId"
+              },
+              "tool": {
+                "type": "string",
+                "description": "`shell` or the connector tool's name."
+              },
+              "detail": {
+                "type": "string",
+                "description": "The command or the call's arguments, shortened."
+              },
+              "reason": {
+                "type": "string",
+                "description": "What made the call risky, e.g. \"pushes code\"."
+              },
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "tool_call"
                 ]
               }
             }
@@ -5691,6 +6603,13 @@
               "$ref": "#/components/schemas/ToolGroup"
             },
             "description": "Tool groups the agent may use; omitted: all. Connectors are assigned with\n`PUT /v1/agents/{id}/connectors`."
+          },
+          "tags": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Labels for the operator: at most 5, each 1-20 characters after trimming, no duplicates."
           }
         }
       },
@@ -5745,6 +6664,26 @@
               "null"
             ],
             "description": "The authorization server the app belongs to (e.g. `https://accounts.google.com`);\nneeded with `client_id`. Sign-ins through any other server are refused."
+          }
+        }
+      },
+      "CreateGroup": {
+        "type": "object",
+        "required": [
+          "name",
+          "members"
+        ],
+        "properties": {
+          "name": {
+            "type": "string",
+            "description": "1-64 characters."
+          },
+          "members": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AgentId"
+            },
+            "description": "At least two agents; the first hosts the group's calls."
           }
         }
       },
@@ -6086,6 +7025,18 @@
           }
         }
       },
+      "GroupMessage": {
+        "type": "object",
+        "required": [
+          "body"
+        ],
+        "properties": {
+          "body": {
+            "type": "string",
+            "description": "1..19316 bytes after trimming, counting `@name` mentions as their stored `<@agent-id>`\ntokens."
+          }
+        }
+      },
       "Health": {
         "type": "object",
         "required": [
@@ -6170,6 +7121,44 @@
           },
           "name": {
             "type": "string"
+          }
+        }
+      },
+      "LastReply": {
+        "type": "object",
+        "description": "The start of an agent's newest reply.",
+        "required": [
+          "text",
+          "at"
+        ],
+        "properties": {
+          "text": {
+            "type": "string",
+            "description": "At most 160 characters."
+          },
+          "at": {
+            "type": "string",
+            "description": "When the reply came (RFC 3339)."
+          }
+        }
+      },
+      "LimitWindow": {
+        "type": "object",
+        "required": [
+          "used_percent"
+        ],
+        "properties": {
+          "used_percent": {
+            "type": "number",
+            "format": "double",
+            "description": "0-100."
+          },
+          "resets": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "When the window starts over: Claude Code's own words (e.g. `Nov 26 at 6:59am\n(Europe/Berlin)`), or an RFC 3339 time for Codex."
           }
         }
       },
@@ -6461,6 +7450,31 @@
           }
         }
       },
+      "PlanLimits": {
+        "type": "object",
+        "properties": {
+          "five_hour": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/LimitWindow"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "weekly": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/LimitWindow"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        }
+      },
       "PostMessage": {
         "type": "object",
         "required": [
@@ -6470,6 +7484,10 @@
           "body": {
             "type": "string",
             "description": "1..32768 bytes after trimming. `@name` mentions of existing agents are\nstored as `<@agent-id>` tokens, and the limit counts them as stored."
+          },
+          "now": {
+            "type": "boolean",
+            "description": "Send now: if the agent is in a turn that cannot take the message (its runner does not\nsteer), that turn stops so the message goes next. Otherwise it waits for the turn to end."
           }
         }
       },
@@ -6483,6 +7501,30 @@
           "sleeping",
           "error"
         ]
+      },
+      "PreviewLink": {
+        "type": "object",
+        "required": [
+          "url"
+        ],
+        "properties": {
+          "url": {
+            "type": "string",
+            "description": "The block as a sandboxed page (relative to the daemon), a signed link that works for\n30 minutes."
+          }
+        }
+      },
+      "PreviewRequest": {
+        "type": "object",
+        "required": [
+          "html"
+        ],
+        "properties": {
+          "html": {
+            "type": "string",
+            "description": "The block's HTML, at most 512 KiB."
+          }
+        }
       },
       "Price": {
         "type": "object",
@@ -6626,6 +7668,40 @@
           "codex",
           "gemini_cli",
           "claude_code"
+        ]
+      },
+      "ProviderLimits": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/PlanLimits"
+          },
+          {
+            "type": "object",
+            "required": [
+              "provider_id",
+              "name",
+              "kind"
+            ],
+            "properties": {
+              "provider_id": {
+                "type": "string",
+                "format": "uuid"
+              },
+              "name": {
+                "type": "string"
+              },
+              "kind": {
+                "$ref": "#/components/schemas/ProviderKind"
+              },
+              "error": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "description": "Why the limits could not be read."
+              }
+            }
+          }
         ]
       },
       "ProviderView": {
@@ -6813,9 +7889,21 @@
           "secret"
         ]
       },
+      "ReactionRequest": {
+        "type": "object",
+        "required": [
+          "emoji"
+        ],
+        "properties": {
+          "emoji": {
+            "type": "string",
+            "description": "One emoji, e.g. 👍. A new reaction replaces your earlier one on that message."
+          }
+        }
+      },
       "Room": {
         "type": "object",
-        "description": "A voice call with two or more agents; kept as history once the call ended.",
+        "description": "A voice call with two or more agents, kept as history once the call ended; or, with a name,\na group chat, kept until deleted.",
         "required": [
           "id",
           "members",
@@ -6826,12 +7914,19 @@
             "type": "integer",
             "format": "int64"
           },
+          "name": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "The group's name; `null`: a call room."
+          },
           "members": {
             "type": "array",
             "items": {
               "$ref": "#/components/schemas/AgentId"
             },
-            "description": "Every agent that took part, in the order they joined."
+            "description": "Every agent that took part (a group: its members), in the order they joined."
           },
           "created_at": {
             "type": "string",
@@ -6843,7 +7938,7 @@
               "null"
             ],
             "format": "date-time",
-            "description": "When the call ended; `null` while it runs."
+            "description": "When the call ended; `null` while it runs, and always for a group."
           }
         }
       },
@@ -6904,6 +7999,17 @@
                   "$ref": "#/components/schemas/RoomLine"
                 },
                 "description": "Oldest first; the last 1000."
+              },
+              "speaking": {
+                "oneOf": [
+                  {
+                    "$ref": "#/components/schemas/AgentId",
+                    "description": "The member whose turn it is (writing or speaking), if any; `room_floor` events follow it."
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
               }
             }
           }
@@ -7627,7 +8733,7 @@
           },
           {
             "type": "object",
-            "description": "A call room opened, gained a member or ended.",
+            "description": "A call room opened, gained a member or ended; or a group was created or changed.",
             "required": [
               "room",
               "type"
@@ -7646,7 +8752,7 @@
           },
           {
             "type": "object",
-            "description": "Something was said in a call room.",
+            "description": "Something was said in a call room or group.",
             "required": [
               "line",
               "type"
@@ -7659,6 +8765,56 @@
                 "type": "string",
                 "enum": [
                   "room_line"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "description": "A group was deleted.",
+            "required": [
+              "room_id",
+              "type"
+            ],
+            "properties": {
+              "room_id": {
+                "type": "integer",
+                "format": "int64"
+              },
+              "type": {
+                "type": "string",
+                "enum": [
+                  "room_deleted"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "description": "Whose turn it is in a call room or group; `None`: nobody's.",
+            "required": [
+              "room_id",
+              "type"
+            ],
+            "properties": {
+              "room_id": {
+                "type": "integer",
+                "format": "int64"
+              },
+              "agent": {
+                "oneOf": [
+                  {
+                    "$ref": "#/components/schemas/AgentId"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "type": {
+                "type": "string",
+                "enum": [
+                  "room_floor"
                 ]
               }
             }
@@ -7733,6 +8889,16 @@
               "$ref": "#/components/schemas/ToolGroup"
             },
             "description": "Tool groups the agent may use (any; the subset rule binds only agents creating\nagents). A connected runner applies them from its next turn."
+          },
+          "tags": {
+            "type": [
+              "array",
+              "null"
+            ],
+            "items": {
+              "type": "string"
+            },
+            "description": "Replaces the tags (same rules as on create); `[]` removes them."
           }
         }
       },
@@ -7803,6 +8969,28 @@
               "null"
             ],
             "description": "Issuer of the own OAuth app."
+          }
+        }
+      },
+      "UpdateGroup": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "1-64 characters; omitted keeps the name."
+          },
+          "members": {
+            "type": [
+              "array",
+              "null"
+            ],
+            "items": {
+              "$ref": "#/components/schemas/AgentId"
+            },
+            "description": "At least two agents; omitted keeps them. Those who stay keep their place."
           }
         }
       },
@@ -7965,6 +9153,26 @@
             }
           }
         ]
+      },
+      "Upload": {
+        "type": "object",
+        "description": "A file the operator put into an agent's workspace.",
+        "required": [
+          "path",
+          "size"
+        ],
+        "properties": {
+          "path": {
+            "type": "string",
+            "description": "Where the file is, relative to the agent's workspace, e.g. `uploads/photo.png`."
+          },
+          "size": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Bytes written.",
+            "minimum": 0
+          }
+        }
       },
       "UsageDay": {
         "allOf": [
@@ -8375,8 +9583,12 @@
       "description": "Speech and transcription for the operator's chat"
     },
     {
+      "name": "groups",
+      "description": "Group chats: write once to several agents, or call them"
+    },
+    {
       "name": "usage",
-      "description": "Model calls, tokens and estimated cost"
+      "description": "Model calls, tokens, estimated cost and plan limits"
     },
     {
       "name": "settings",

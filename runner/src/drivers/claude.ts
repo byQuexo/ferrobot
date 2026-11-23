@@ -14,6 +14,7 @@ import {
 import { log } from "../log.ts";
 import { CLAUDE_SUBAGENT_TOOLS, CLAUDE_TOOLS, decide, offGroups } from "../permissions.ts";
 import type { SteerFrame, TurnEvent } from "../protocol.ts";
+import type { ToolGate } from "../gate.ts";
 import type { SessionStore } from "../session.ts";
 import type { ModelDriver, TurnContext, TurnResult } from "./types.ts";
 import { TurnAbortedError } from "./types.ts";
@@ -34,6 +35,7 @@ export interface ClaudeDriverOptions {
   model: string | undefined;
   session: SessionStore;
   query?: QueryFn;
+  gate?: ToolGate;
 }
 
 /** Text appended to the SDK's default system prompt. */
@@ -77,6 +79,7 @@ export function systemAppend(agentName: string, instructions: string): string {
     "chart, a dashboard), write one self-contained .html file and share it: it opens as a",
     "page inside ferrobot. For a PDF, write the document as HTML and run",
     "`ferrobot-pdf page.html out.pdf`, then share the PDF.",
+    'To acknowledge an operator\'s message without words, react to its #id with one emoji instead of writing "ok".',
     "Messages from",
     '"routine:<name>" are scheduled tasks set up by your operator.',
     instructions.trim() ? `\nYour role:\n${instructions.trim()}` : "",
@@ -293,11 +296,14 @@ export class ClaudeDriver implements ModelDriver {
     ctx.signal.addEventListener("abort", onAbort, { once: true });
 
     const off = offGroups(ctx.tools);
-    const canUseTool: CanUseTool = (toolName, input) => {
-      const verdict = decide(toolName, input, home, off);
-      if (verdict.allow) return Promise.resolve({ behavior: "allow", updatedInput: input });
+    const canUseTool: CanUseTool = async (toolName, input) => {
+      let verdict = decide(toolName, input, home, off);
+      const command = input["command"];
+      if (verdict.allow && toolName === "Bash" && this.#opts.gate)
+        verdict = await this.#opts.gate.shell(typeof command === "string" ? command : "");
+      if (verdict.allow) return { behavior: "allow", updatedInput: input };
       emit({ kind: "tool_denied", name: toolName, reason: verdict.reason });
-      return Promise.resolve({ behavior: "deny", message: verdict.reason });
+      return { behavior: "deny", message: verdict.reason };
     };
     const audit: HookCallback = async (input) => {
       if (input.hook_event_name === "PreToolUse") {

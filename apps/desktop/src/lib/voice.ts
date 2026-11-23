@@ -255,6 +255,8 @@ export async function startLive(
     committed: (text: string) => void;
     /** The session ended on its own (a provider error or a dropped connection). */
     error: (message: string) => void;
+    /** The microphone's level (RMS, 0..1) per audio chunk, 0 while muted. */
+    level?: (rms: number) => void;
   },
 ): Promise<LiveSession> {
   if (!(navigator.mediaDevices as MediaDevices | undefined))
@@ -313,6 +315,10 @@ export async function startLive(
   proc.onaudioprocess = (e) => {
     const input = e.inputBuffer.getChannelData(0);
     send(muted ? new Float32Array(input.length) : input, false);
+    if (!on.level) return;
+    let sum = 0;
+    if (!muted) for (const s of input) sum += s * s;
+    on.level(Math.sqrt(sum / input.length));
   };
   source.connect(proc);
   proc.connect(ctx.destination);

@@ -8,29 +8,46 @@ import {
   type ProviderKind,
   type StoredEvent,
 } from "../src/api.ts";
+import { ACCENTS, DEFAULT_APPEARANCE, readAppearance } from "../src/lib/appearance.ts";
 import { hash } from "../src/lib/avatar.ts";
 import { characterOf, deriveCharacter, moodOf, rerollCharacter } from "../src/lib/character.ts";
 import {
+  computerSummary,
   linkLabel,
   relativeTime,
+  rowLine,
   statusOf,
   stepLabel,
+  stepsLabel,
   toolLabel,
   toolsSummary,
 } from "../src/lib/format.ts";
 import { GUIDES, splitWikiLinks } from "../src/lib/guides.ts";
 import { providerReady, welcomeStep } from "../src/lib/welcome.ts";
-import { buildTimeline, sharedFiles, withoutRoomTurns } from "../src/lib/timeline.ts";
+import {
+  buildTimeline,
+  foldSteps,
+  sharedFiles,
+  splitAttachments,
+  withoutRoomTurns,
+} from "../src/lib/timeline.ts";
 import {
   CallScript,
   firstClause,
   callChanged,
   callClock,
   callTurn,
+  groupChange,
   isPass,
+  loadPushToTalk,
+  meterDots,
+  micOpen,
+  nextSpeed,
   operatorSaid,
   roomTitle,
+  speedLabel,
   splitSentences,
+  talkKey,
   type CallState,
   type Line,
 } from "../src/lib/call.ts";
@@ -39,15 +56,21 @@ import { checkDot, checkLabel, ownAppEntry } from "../src/lib/connectors.ts";
 import { claudeCodeState } from "../src/lib/claude-code.ts";
 import { diagnosticsReport } from "../src/lib/diagnostics.ts";
 import { parseBlocks, parseInline } from "../src/lib/markdown.ts";
-import { modelOptions, withSaved } from "../src/lib/models.ts";
+import { modelLabel, modelOptions, withSaved } from "../src/lib/models.ts";
+import { addTag, contextMeter } from "../src/lib/agent-meta.ts";
 import { moveId, orderAgents, pickSelection } from "../src/lib/order.ts";
+import { keyLabel, matchShortcut, SHORTCUTS, type KeyPress } from "../src/lib/shortcuts.ts";
 import { pollOutcome } from "../src/lib/update.ts";
 import { Speaker, hasVoiceKey, liveEvent, pcm16Base64, speakable } from "../src/lib/voice.ts";
 import {
   chartMetric,
   costLabel,
+  freshTokens,
   niceTicks,
   rangeOf,
+  resetLabel,
+  shareLabel,
+  slotOf,
   sortGroups,
   stackDays,
   tickLabel,
@@ -122,6 +145,10 @@ describe("avatar", () => {
     assert.equal(moodOf("starting"), "thinking");
     assert.equal(moodOf("sleeping"), "sleeping");
     assert.equal(moodOf("awake"), "idle");
+    // Trouble, then an open card, outrank what the agent does.
+    assert.equal(moodOf("error"), "trouble");
+    assert.equal(moodOf("working", { trouble: true, waiting: true }), "trouble");
+    assert.equal(moodOf("awake", { waiting: true }), "waiting");
     assert.equal(moodOf(undefined), "idle");
   });
 });
@@ -222,6 +249,27 @@ describe("format", () => {
 });
 
 describe("buildTimeline", () => {
+  it("shows the operator's reaction on the agent's message and hides the note it sent", () => {
+    const items = buildTimeline(
+      ME,
+      [
+        msg(1, { kind: "user" }, ME, "plan it", "2026-01-01T10:00:00Z"),
+        msg(2, { kind: "user" }, ME, "[ferrobot] Your operator reacted 👍", "2026-01-01T10:00:09Z"),
+      ],
+      [
+        ev(10, "assistant_text", { text: "Here is the plan." }, "2026-01-01T10:00:05Z"),
+        ev(11, "user_reaction", { event_id: 10, emoji: "😂", note_id: 2 }, "2026-01-01T10:00:08Z"),
+        ev(12, "user_reaction", { event_id: 10, emoji: "👍", note_id: 2 }, "2026-01-01T10:00:09Z"),
+      ],
+      new Map(),
+      names,
+    );
+    assert.deepEqual(
+      items.map((i) => (i.type === "assistant" ? [i.type, i.id, i.reaction] : [i.type])),
+      [["user"], ["assistant", 10, "👍"]],
+    );
+  });
+
   it("orders messages and events and pairs tool results", () => {
     const items = buildTimeline(
       ME,
@@ -458,6 +506,44 @@ describe("buildTimeline", () => {
     assert.ok(items[0]?.type === "tool" && items[0].denied === "outside workspace");
     assert.ok(items[1]?.type === "error" && items[1].text === "model unavailable");
   });
+
+  it("splits attachment lines off a message", () => {
+    assert.deepEqual(
+      splitAttachments(
+        "Look at these\nAttached: uploads/photo-2.png (image, 120.5 KB)\nAttached: uploads/notes (file, 12 B)",
+      ),
+      {
+        text: "Look at these",
+        files: [
+          { path: "uploads/photo-2.png", kind: "image", size: "120.5 KB" },
+          { path: "uploads/notes", kind: "file", size: "12 B" },
+        ],
+      },
+    );
+    assert.deepEqual(splitAttachments("Attached: uploads/a.pdf (file, 2.0 MB)"), {
+      text: "",
+      files: [{ path: "uploads/a.pdf", kind: "file", size: "2.0 MB" }],
+    });
+    const plain = "Attached: my thoughts (see below)\nAttached: x (a, b) and more";
+    assert.deepEqual(splitAttachments(plain), { text: plain, files: [] });
+  });
+
+  it("shows an agent's latest reaction on the message and hides its react calls", () => {
+    const items = buildTimeline(
+      ME,
+      [msg(1, { kind: "user" }, ME, "Book it", "2026-01-01T10:00:00Z")],
+      [
+        ev(2, "tool_use", { id: "r1", name: "mcp__ferrobot__react" }, "2026-01-01T10:00:01Z"),
+        ev(3, "tool_result", { id: "r1", output: "{}", is_error: false }, "2026-01-01T10:00:01Z"),
+        ev(4, "reaction", { message_id: 1, emoji: "👀" }, "2026-01-01T10:00:01Z", ""),
+        ev(5, "reaction", { message_id: 1, emoji: "👍" }, "2026-01-01T10:00:02Z", ""),
+      ],
+      new Map(),
+      names,
+    );
+    assert.equal(items.length, 1);
+    assert.ok(items[0]?.type === "user" && items[0].reaction === "👍");
+  });
 });
 
 describe("DaemonClient", () => {
@@ -489,6 +575,16 @@ describe("mentions", () => {
       mentionsAsText(`<@${ME}>`, () => undefined),
       "@unknown-agent",
     );
+  });
+
+  it("finds the @name being typed at the caret", async () => {
+    const { mentionQuery } = await import("../src/lib/mentions.ts");
+    assert.deepEqual(mentionQuery("hi @Bo", 6), { query: "bo", at: 3 });
+    assert.deepEqual(mentionQuery("@", 1), { query: "", at: 0 });
+    assert.deepEqual(mentionQuery("@ann ok\n@c", 10), { query: "c", at: 8 });
+    assert.equal(mentionQuery("mail@bob", 8), null, "not inside a word");
+    assert.equal(mentionQuery("@bob hi", 7), null, "a finished name");
+    assert.deepEqual(mentionQuery("@bob hi", 3), { query: "bo", at: 0 }, "up to the caret");
   });
 });
 
@@ -530,6 +626,71 @@ describe("groupExchanges", () => {
     assert.equal(x.peerId, BOB);
     assert.equal(x.messages.length, 2);
     assert.equal(x.tools.length, 1);
+  });
+
+  it("folds a run with several peers into one, with a broadcast as one row", async () => {
+    const { groupExchanges, exchangeRows } = await import("../src/lib/timeline.ts");
+    const CAT = "33333333-3333-4333-8333-333333333333";
+    const three = { ...names, agents: new Map([...names.agents, [CAT, "cat"]]) };
+    const items = buildTimeline(
+      ME,
+      [
+        msg(1, { kind: "agent", id: ME }, BOB, "standup?", "2026-01-01T10:00:01Z"),
+        msg(2, { kind: "agent", id: ME }, CAT, "standup?", "2026-01-01T10:00:02Z"),
+        msg(3, { kind: "agent", id: CAT }, ME, "yes", "2026-01-01T10:00:03Z"),
+        msg(4, { kind: "user" }, ME, "and?", "2026-01-01T10:00:04Z"),
+        msg(5, { kind: "agent", id: BOB }, ME, "late", "2026-01-01T10:00:05Z"),
+      ],
+      [],
+      new Map(),
+      three,
+    );
+    const shown = groupExchanges(items);
+    assert.deepEqual(
+      shown.map((i) => i.type),
+      ["exchange", "user", "exchange"],
+    );
+    const [multi, , single] = shown;
+    assert.ok(multi?.type === "exchange" && single?.type === "exchange");
+    assert.deepEqual(multi.peers, [BOB, CAT]);
+    assert.deepEqual(single.peers, [BOB]);
+    assert.deepEqual(
+      exchangeRows(multi.messages).map((r) => [r.type, r.peers.map((p) => p.name)]),
+      [
+        ["outgoing", ["bob", "cat"]],
+        ["incoming", ["cat"]],
+      ],
+    );
+  });
+});
+
+describe("new divider", () => {
+  it("starts at the mail that began the oldest unread turn, skipping the operator", async () => {
+    const { groupExchanges, unreadSince, firstNewKey } = await import("../src/lib/timeline.ts");
+    const messages = [
+      msg(1, { kind: "user" }, ME, "hi", "2026-01-01T10:00:00Z"),
+      msg(2, { kind: "agent", id: BOB }, ME, "ping", "2026-01-01T10:01:00Z"),
+      msg(3, { kind: "user" }, ME, "more", "2026-01-01T10:03:00Z"),
+    ];
+    const events = [
+      ev(10, "message_in", { message_id: 1 }, "2026-01-01T10:00:01Z", "t1"),
+      ev(11, "assistant_text", { text: "hello" }, "2026-01-01T10:00:02Z", "t1"),
+      ev(12, "turn_done", { outcome: "done" }, "2026-01-01T10:00:03Z", "t1"),
+      ev(20, "message_in", { message_id: 2 }, "2026-01-01T10:01:01Z", "t2"),
+      ev(21, "assistant_text", { text: "pong" }, "2026-01-01T10:01:02Z", "t2"),
+      ev(22, "turn_done", { outcome: "done" }, "2026-01-01T10:01:03Z", "t2"),
+      ev(30, "message_in", { message_id: 3 }, "2026-01-01T10:03:01Z", "t3"),
+      ev(31, "assistant_text", { text: "sure" }, "2026-01-01T10:03:02Z", "t3"),
+      ev(32, "turn_done", { outcome: "done" }, "2026-01-01T10:03:03Z", "t3"),
+    ];
+    const shown = groupExchanges(buildTimeline(ME, messages, events, new Map(), names));
+    const at = (unread: number): string | null =>
+      firstNewKey(shown, unreadSince(messages, events, unread));
+    assert.equal(at(0), null);
+    assert.equal(at(1), "e31");
+    // Bob's mail started the turn, so it is new too.
+    assert.equal(at(2), "x-m2");
+    assert.equal(at(9), "e11");
   });
 });
 
@@ -636,6 +797,13 @@ describe("markdown", () => {
     ]);
   });
 
+  it("keeps a fence's language and marks a fence that is still open", () => {
+    assert.deepEqual(parseBlocks("```Mermaid\ngraph TD\n```\n\n```html\n<b>hi"), [
+      { kind: "code", text: "graph TD", lang: "mermaid" },
+      { kind: "code", text: "<b>hi", lang: "html", open: true },
+    ]);
+  });
+
   it("joins wrapped list items and keeps the number after a code block", () => {
     const md = "1. Install it\n   and start it.\n\n   ```\n   run\n   ```\n\n2. Done\n\n   later";
     assert.deepEqual(parseBlocks(md), [
@@ -681,6 +849,122 @@ describe("welcome", () => {
     // Without a key Codex needs a ChatGPT sign-in, which only the welcome itself checks.
     assert.equal(providerReady(provider("codex", false)), false);
     assert.equal(welcomeStep({ ...base, providers: [provider("codex", false)] }), "key");
+  });
+});
+
+describe("ui polish", () => {
+  const agent = {
+    presence: "awake" as const,
+    credential_error: null,
+    tools_unsupported: null,
+    waiting: 0,
+    last_reply: null,
+    description: "Reviews code",
+  };
+  const now = Date.parse("2026-11-23T12:00:00Z");
+
+  it("puts a problem, an open card, work, then the last reply on the sidebar row", () => {
+    assert.deepEqual(rowLine(agent, now), { text: "Reviews code", tone: "", time: "" });
+    const replied = { ...agent, last_reply: { text: "Done.", at: "2026-11-23T11:55:00Z" } };
+    assert.deepEqual(rowLine(replied, now), { text: "Done.", tone: "", time: "5 min" });
+    assert.equal(rowLine({ ...replied, presence: "working" }, now).text, "Working…");
+    const md = {
+      ...agent,
+      last_reply: { text: "# AI news: **Nvidia** `x`", at: "2026-11-23T11:55:00Z" },
+    };
+    assert.equal(rowLine(md, now).text, "AI news: Nvidia x");
+    assert.equal(rowLine({ ...replied, waiting: 2 }, now).text, "2 questions for you");
+    assert.equal(rowLine({ ...replied, waiting: 2, presence: "error" }, now).tone, "bad");
+  });
+
+  it("labels steps, the computer and the Claude Code computer tools in plain words", () => {
+    assert.equal(stepsLabel(1, 0.2), "1 step");
+    assert.equal(stepsLabel(3, 40.4), "3 steps · 40 s");
+    assert.equal(
+      computerSummary("running", { idle_s: 60, warm_after_s: 300 }),
+      "Idle 1 min · pauses in 4 min",
+    );
+    assert.equal(
+      computerSummary("running", { idle_s: 1, idle_timeout_s: 900 }),
+      "Busy just now · sleeps in 14 min",
+    );
+    assert.equal(computerSummary("paused", { idle_s: 999 }), "Paused · resumes quickly");
+    const none = (): undefined => undefined;
+    assert.equal(
+      stepLabel("mcp__ferrobot__bash", { command: "ls" }, none),
+      "Working on its computer",
+    );
+    assert.equal(stepLabel("mcp__ferrobot__remember", {}, none), "Taking notes");
+  });
+
+  it("gives a failed turn one quiet line unless a bubble already says why", () => {
+    const at = "2026-11-23T12:00:00Z";
+    const mail = (id: number, sender: MailMessage["sender"]): MailMessage => ({
+      ...msg(id, sender, ME, "hi", at),
+      status: "failed",
+    });
+    const fail = (id: number, turn: string, message: number | null): StoredEvent[] => [
+      ev(id, "message_in", message === null ? {} : { message_id: message }, at, turn),
+      ev(id + 1, "turn_done", { outcome: "failed", error: "boom" }, at, turn),
+    ];
+    const events = [
+      ...fail(1, "greet", null),
+      ...fail(3, "u1", 1),
+      ...fail(5, "b1", 2),
+      ...fail(7, "b2", 2),
+    ];
+    const messages = [mail(1, { kind: "user" }), mail(2, { kind: "agent", id: BOB })];
+    const quiet = buildTimeline(ME, messages, events, new Map(), names).flatMap((i) =>
+      i.type === "error" ? [i.quiet === true] : [],
+    );
+    // greeting: yes; the user's message: its bubble; bob's mail: only the last retry.
+    assert.deepEqual(quiet, [true, false, false, true]);
+  });
+
+  it("folds finished tool runs into one line and keeps the running one apart", () => {
+    const tool = (n: number, at: string) =>
+      ({
+        type: "tool",
+        key: `t${String(n)}`,
+        at,
+        name: "bash",
+        input: {},
+        output: "",
+        isError: false,
+        denied: null,
+        turn: "t",
+      }) as const;
+    const text = {
+      type: "assistant",
+      key: "a",
+      at: "2026-11-23T12:01:00Z",
+      text: "ok",
+      streaming: false,
+      id: 1,
+      reaction: null,
+    } as const;
+    const items = [
+      tool(1, "2026-11-23T12:00:00Z"),
+      tool(2, "2026-11-23T12:00:40Z"),
+      text,
+      tool(3, "2026-11-23T12:02:00Z"),
+    ];
+    const done = foldSteps(items, false);
+    assert.deepEqual(
+      done.shown.map((i) => i.type),
+      ["steps", "assistant", "steps"],
+    );
+    const first = done.shown[0];
+    assert.equal(first?.type === "steps" ? first.seconds : null, 40);
+    const running = foldSteps(items, true);
+    assert.deepEqual(
+      running.shown.map((i) => i.type),
+      ["steps", "assistant"],
+    );
+    assert.deepEqual(
+      running.live.map((t) => t.key),
+      ["t3"],
+    );
   });
 });
 
@@ -1044,10 +1328,97 @@ describe("voice call", () => {
     assert.equal(roomTitle(["gone"], nameOf), "Call");
   });
 
+  it("sends a group's members only when they changed", () => {
+    assert.deepEqual(groupChange(["a", "b"], " Ops ", ["a", "b"]), { name: "Ops" });
+    assert.deepEqual(groupChange(["a", "b"], "Ops", ["b", "a"]), {
+      name: "Ops",
+      members: ["b", "a"],
+    });
+    assert.deepEqual(groupChange(["a", "b", "gone"], "Ops", ["a", "b"]), {
+      name: "Ops",
+      members: ["a", "b"],
+    });
+  });
+
   it("shows how long the call runs", () => {
     assert.equal(callClock(0), "0:00");
     assert.equal(callClock(42_900), "0:42");
     assert.equal(callClock(3_903_000), "1:05:03");
+  });
+
+  it("lights meter dots by microphone level", () => {
+    assert.equal(meterDots(0), 0);
+    assert.equal(meterDots(0.001), 0);
+    assert.equal(meterDots(0.01), 1);
+    assert.equal(meterDots(0.1), 3);
+    assert.equal(meterDots(0.25), 5);
+    assert.equal(meterDots(1), 5);
+    assert.equal(meterDots(-1), 0);
+  });
+
+  it("steps the speaking speed up and wraps to the slowest", () => {
+    assert.equal(nextSpeed(null), 1.1);
+    assert.equal(nextSpeed(1), 1.1);
+    assert.equal(nextSpeed(1.05), 1.1);
+    assert.equal(nextSpeed(0.85), 0.9);
+    assert.equal(nextSpeed(1.2), 0.7);
+    assert.equal(nextSpeed(0.7), 0.8);
+    assert.equal(speedLabel(null), "1×");
+    assert.equal(speedLabel(1.1), "1.1×");
+    assert.equal(speedLabel(1.05), "1.05×");
+    assert.equal(speedLabel(0.7000000001), "0.7×");
+  });
+
+  it("opens the microphone with push-to-talk only while held, and never when muted", () => {
+    assert.equal(micOpen(false, false, false), true);
+    assert.equal(micOpen(false, true, false), false);
+    assert.equal(micOpen(false, true, true), true);
+    assert.equal(micOpen(true, false, false), false);
+    assert.equal(micOpen(true, true, true), false);
+  });
+
+  it("holds push-to-talk with bare Space outside text fields", () => {
+    const space: KeyPress = {
+      key: " ",
+      code: "Space",
+      metaKey: false,
+      ctrlKey: false,
+      shiftKey: false,
+      altKey: false,
+      repeat: false,
+      isComposing: false,
+    };
+    const body = { tag: "BODY", editable: false };
+    assert.equal(talkKey(space, body), true);
+    assert.equal(talkKey({ ...space, repeat: true }, { tag: "BUTTON", editable: false }), true);
+    for (const tag of ["INPUT", "TEXTAREA", "SELECT"])
+      assert.equal(talkKey(space, { tag, editable: false }), false, tag);
+    assert.equal(talkKey(space, { tag: "DIV", editable: true }), false);
+    assert.equal(talkKey({ ...space, metaKey: true }, body), false);
+    assert.equal(talkKey({ ...space, shiftKey: true }, body), false);
+    assert.equal(talkKey({ ...space, isComposing: true }, body), false);
+    assert.equal(talkKey({ ...space, key: "k", code: "KeyK" }, body), false);
+  });
+
+  it("remembers push-to-talk, defaulting to voice activity", () => {
+    assert.equal(
+      loadPushToTalk((k) => (k === "ferrobot.call-talk" ? "push" : null)),
+      true,
+    );
+    assert.equal(
+      loadPushToTalk(() => "voice"),
+      false,
+    );
+    assert.equal(
+      loadPushToTalk(() => null),
+      false,
+    );
+    assert.equal(
+      loadPushToTalk(() => {
+        throw new Error("no storage");
+      }),
+      false,
+    );
   });
 });
 
@@ -1239,6 +1610,33 @@ describe("usage", () => {
       'name,cost\r\n"a ""b"", c",1.5\r\n\'=SUM(A1),\r\n',
     );
   });
+
+  it("gives providers their chart colour, share and fresh tokens", () => {
+    const series = [
+      { key: "a", label: "a" },
+      { key: "b", label: "b" },
+      { key: "", label: "Other" },
+    ];
+    assert.deepEqual(
+      ["a", "b", "folded"].map((k) => slotOf(series, k)),
+      ["s0", "s1", "other"],
+    );
+    assert.deepEqual(
+      [shareLabel(1, 3), shareLabel(0.001, 3), shareLabel(0, 3), shareLabel(1, 0)],
+      ["33%", "<1%", "0%", "0%"],
+    );
+    const t = { ...group("a", 1), input_tokens: 10, output_tokens: 5 };
+    assert.equal(freshTokens({ ...t, cache_read_tokens: 1000, cache_write_tokens: 2 }), 17);
+  });
+
+  it("shows Claude Code's reset words as they are and Codex times locally", () => {
+    assert.equal(
+      resetLabel("Nov 26 at 6:59am (Europe/Berlin)"),
+      "Nov 26 at 6:59am (Europe/Berlin)",
+    );
+    const local = resetLabel("2026-11-26T05:59:00Z");
+    assert.match(local, /^Nov \d{1,2}, \d{1,2}:\d{2}\s?[AP]M$/);
+  });
 });
 
 describe("catalog", () => {
@@ -1419,5 +1817,171 @@ describe("pickSelection", () => {
     const agents = map({ id: "c", name: "carol" }, { id: "f", name: "ferro", pinned: true });
     assert.equal(pickSelection(agents, "gone", true), "f");
     assert.equal(pickSelection(map(), "gone", true), null);
+  });
+});
+
+describe("appearance", () => {
+  it("reads stored choices and falls back to defaults for missing or unknown ones", () => {
+    assert.deepEqual(
+      readAppearance(() => null),
+      DEFAULT_APPEARANCE,
+    );
+    const stored = new Map([
+      ["ferrobot.theme", "dark"],
+      ["ferrobot.accent", "teal"],
+      ["ferrobot.bubbles", "huge"],
+      ["ferrobot.text-size", "large"],
+    ]);
+    assert.deepEqual(
+      readAppearance((k) => stored.get(k) ?? null),
+      { ...DEFAULT_APPEARANCE, theme: "dark", accent: "teal", textSize: "large" },
+    );
+  });
+
+  it("keeps every accent readable with the theme's accent text and as text on surfaces", () => {
+    const lum = (hex: string): number => {
+      const [r = 0, g = 0, b = 0] = [1, 3, 5].map((i) => {
+        const v = parseInt(hex.slice(i, i + 2), 16) / 255;
+        return v <= 0.03928 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4;
+      });
+      return 0.2126 * r + 0.7152 * g + 0.0722 * b;
+    };
+    const ratio = (a: string, b: string): number => {
+      const [hi, lo] = [lum(a), lum(b)].sort((x, y) => y - x);
+      return ((hi ?? 0) + 0.05) / ((lo ?? 0) + 0.05);
+    };
+    // Accent text and surface from styles.css: light, then dark.
+    const modes = [
+      { colors: "light", text: "#ffffff", surface: "#ffffff" },
+      { colors: "dark", text: "#10131f", surface: "#1d1f24" },
+    ] as const;
+    for (const [id, accent] of Object.entries(ACCENTS)) {
+      for (const m of modes) {
+        for (const c of accent[m.colors]) {
+          assert.ok(ratio(c, m.text) >= 4.5, `${id} ${m.colors} ${c} on accent text`);
+          assert.ok(ratio(c, m.surface) >= 4.5, `${id} ${m.colors} ${c} on surface`);
+        }
+      }
+    }
+  });
+
+  it("keeps the default accent equal to the theme's own tokens", async () => {
+    const { readFile } = await import("node:fs/promises");
+    const css = await readFile(new URL("../src/styles.css", import.meta.url), "utf8");
+    for (const c of [...ACCENTS.blue.light, ...ACCENTS.blue.dark]) {
+      assert.ok(css.includes(`--accent: ${c};`) || css.includes(`--accent-strong: ${c};`), c);
+    }
+  });
+});
+
+describe("shortcuts", () => {
+  const press = (key: string, mods: Partial<KeyPress> = {}): KeyPress => ({
+    key,
+    code: /^[0-9]$/.test(key) ? `Digit${key}` : `Key${key.toUpperCase()}`,
+    metaKey: false,
+    ctrlKey: false,
+    shiftKey: false,
+    altKey: false,
+    repeat: false,
+    isComposing: false,
+    ...mods,
+  });
+  const cmd = { metaKey: true };
+  const ctrl = { ctrlKey: true };
+
+  it("matches ⌘ on macOS and Ctrl elsewhere", () => {
+    assert.deepEqual(matchShortcut(press("k", cmd), true), { id: "switcher" });
+    assert.deepEqual(matchShortcut(press("k", ctrl), false), { id: "switcher" });
+    assert.equal(matchShortcut(press("k", ctrl), true), null);
+    assert.equal(matchShortcut(press("k", cmd), false), null);
+    assert.equal(matchShortcut(press("k", { ...cmd, ctrlKey: true }), true), null);
+    assert.deepEqual(matchShortcut(press("Enter", cmd), true), { id: "send-now" });
+    assert.equal(matchShortcut(press("Enter"), true), null, "plain Enter sends a message");
+    const sendNow = SHORTCUTS.find((s) => s.id === "send-now");
+    assert.ok(sendNow);
+    assert.equal(keyLabel(sendNow, true), "⌘↵");
+    assert.equal(keyLabel(sendNow, false), "Ctrl+Enter");
+  });
+
+  it("leaves plain typing alone; only Esc works without a modifier", () => {
+    for (const key of ["k", "n", ",", "/", "1", "i"])
+      assert.equal(matchShortcut(press(key), true), null);
+    assert.deepEqual(matchShortcut(press("Escape"), true), { id: "close" });
+    assert.equal(matchShortcut(press("k", { ...cmd, altKey: true }), true), null);
+    assert.equal(matchShortcut(press("k", { ...cmd, isComposing: true }), true), null);
+    assert.equal(matchShortcut(press("k", { ...cmd, repeat: true }), true), null);
+  });
+
+  it("checks Shift on letters, ignores it on punctuation, and maps digits by position", () => {
+    assert.deepEqual(matchShortcut(press("U", { ...cmd, shiftKey: true }), true), { id: "usage" });
+    assert.equal(matchShortcut(press("u", cmd), true), null);
+    assert.equal(matchShortcut(press("K", { ...cmd, shiftKey: true }), true), null);
+    assert.deepEqual(matchShortcut(press(",", cmd), true), { id: "settings" });
+    // German layout: "/" is Shift+7.
+    assert.deepEqual(matchShortcut({ ...press("/", cmd), code: "Digit7", shiftKey: true }, true), {
+      id: "help",
+    });
+    assert.deepEqual(matchShortcut(press("3", cmd), true), { id: "agent", n: 3 });
+    assert.deepEqual(matchShortcut({ ...press("&", ctrl), code: "Digit1" }, false), {
+      id: "agent",
+      n: 1,
+    });
+    assert.equal(matchShortcut(press("0", cmd), true), null);
+  });
+
+  it("writes keys the platform's way", () => {
+    const usage = SHORTCUTS.find((s) => s.id === "usage");
+    const agent = SHORTCUTS.find((s) => s.id === "agent");
+    assert.ok(usage && agent);
+    assert.equal(keyLabel(usage, true), "⌘⇧U");
+    assert.equal(keyLabel(usage, false), "Ctrl+Shift+U");
+    assert.equal(keyLabel(agent, true), "⌘1–9");
+  });
+});
+
+describe("agent meta", () => {
+  it("adds tags under the daemon's rules", () => {
+    assert.deepEqual(addTag(["ops"], "  nightly "), { tags: ["ops", "nightly"] });
+    assert.deepEqual(addTag([], "é".repeat(20)), { tags: ["é".repeat(20)] });
+    for (const [tags, raw] of [
+      [[], "   "],
+      [[], "x".repeat(21)],
+      [["ops"], "ops "],
+      [["a", "b", "c", "d", "e"], "f"],
+    ] as const) {
+      assert.ok("error" in addTag(tags, raw), raw);
+    }
+  });
+
+  it("labels the model an agent runs", () => {
+    const provider = { default_model: "gpt-x" };
+    assert.equal(modelLabel({ model: "m1", provider_id: "p" }, provider), "m1");
+    assert.equal(modelLabel({ model: null, provider_id: "p" }, provider), "gpt-x");
+    assert.equal(modelLabel({ model: null, provider_id: "p" }, undefined), "provider default");
+    assert.equal(modelLabel({ model: null, provider_id: null }, undefined), "default");
+  });
+
+  it("fills the context meter and clamps it", () => {
+    const ctx = { tracked: true, tokens: 50_000, window: 200_000, model: "m" };
+    assert.deepEqual(contextMeter(ctx), {
+      percent: 25,
+      title: "Context 25% full",
+      detail: "50K of 200K tokens",
+    });
+    assert.equal(contextMeter({ ...ctx, tokens: 250_000 }).percent, 100);
+    assert.equal(contextMeter({ ...ctx, tokens: null }).percent, 0);
+    assert.equal(contextMeter({ ...ctx, window: null }).percent, null);
+    assert.equal(contextMeter({ tracked: false }).title, "Context not tracked");
+  });
+
+  it("shows a new chat in the timeline", () => {
+    const items = buildTimeline(
+      ME,
+      [],
+      [ev(1, "new_session", {}, "2026-11-23T10:00:00Z", "")],
+      new Map(),
+      names,
+    );
+    assert.equal(items[0]?.type === "system" && items[0].text.startsWith("New chat"), true);
   });
 });

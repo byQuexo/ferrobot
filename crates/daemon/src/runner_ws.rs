@@ -90,14 +90,16 @@ async fn run_connection(state: AppState, agent: Agent, socket: WebSocket) {
         }
     };
     let (out_tx, mut out_rx) = mpsc::channel::<DaemonFrame>(32);
-    let conn_id = state.hub.register(agent.id, out_tx.clone(), protocol);
+    let conn_id = state
+        .hub
+        .register(agent.id, out_tx.clone(), protocol, steering);
     let Some(agent) = admit(&state, agent.id, conn_id, protocol, &mut stream).await else {
         return;
     };
     if let Some(sid) = session_id.clone()
         && agent.session_id.as_deref() != Some(&sid)
     {
-        let _ = state.store.set_agent_session(agent.id, sid).await;
+        let _ = state.store.set_agent_session(agent.id, Some(sid)).await;
     }
     let welcome = DaemonFrame::Welcome {
         protocol_version: PROTOCOL_VERSION,
@@ -253,7 +255,7 @@ async fn handle_frame(state: &AppState, agent: &Agent, done_tx: &mpsc::Sender<Do
             steered,
         }) => {
             if let Some(sid) = session_id {
-                let _ = state.store.set_agent_session(agent.id, sid).await;
+                let _ = state.store.set_agent_session(agent.id, Some(sid)).await;
             }
             // First, so a recorded `turn_done` means the call already has the turn's line.
             state.call_turn_done(agent.id, &turn_id, outcome).await;
@@ -473,6 +475,12 @@ async fn run_turn(
     if let Some(room) = room {
         payload["room_id"] = room.into();
     }
+    // Read before this turn's `message_in`, which settles it.
+    let new_session = matches!(state.store.new_session_pending(agent).await, Ok(true));
+    if new_session {
+        // So a runner that restarts before its first fresh turn is not offered the old session.
+        let _ = state.store.set_agent_session(agent, None).await;
+    }
     state
         .record(agent, Some(turn_id.clone()), "message_in", payload)
         .await;
@@ -495,6 +503,7 @@ async fn run_turn(
         sender,
         sender_name: from,
         body,
+        new_session,
     };
     if out.send(frame).await.is_err() {
         return false; // reader cleanup requeues

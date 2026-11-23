@@ -27,6 +27,7 @@ use tokio::process::{Child, ChildStdout, Command};
 use uuid::Uuid;
 
 use crate::AppState;
+use crate::limits::{LimitWindow, PlanLimits};
 
 const STATUS_TIMEOUT: Duration = Duration::from_secs(20);
 const BASH_TIMEOUT_S: &str = "120";
@@ -103,6 +104,46 @@ fn login_of(auth_status: &str) -> (bool, Option<String>) {
     let auth: Value = serde_json::from_str(auth_status).unwrap_or_default();
     let method = auth["authMethod"].as_str().map(str::to_owned);
     (auth["loggedIn"] == true, method)
+}
+
+/// The seat's 5-hour and weekly use from `claude`'s own `/usage` report, which makes no model
+/// call. The report also names the account and its habits; only the two limit lines are kept.
+pub async fn plan_limits(state: &AppState) -> Result<PlanLimits, String> {
+    let dir = tempfile::tempdir().map_err(|e| e.to_string())?;
+    let mut cmd = claude(state);
+    cmd.args([
+        "-p",
+        "--setting-sources=",
+        "--tools=",
+        "--no-session-persistence",
+        "--output-format=json",
+        "/usage",
+    ])
+    .current_dir(dir.path());
+    let out = stdout_of(cmd)
+        .await
+        .ok_or("Claude Code is not installed or did not answer")?;
+    let report: Value =
+        serde_json::from_str(&out).map_err(|_| "Claude Code gave no usage report")?;
+    Ok(limits_of(report["result"].as_str().unwrap_or_default()))
+}
+
+/// Reads `Current session: 18% used · resets Nov 23 at 9:39pm (Europe/Berlin)` and the
+/// `Current week (all models):` line alike.
+fn limits_of(report: &str) -> PlanLimits {
+    let window = |prefix: &str| {
+        report.lines().find_map(|line| {
+            let (used, rest) = line.trim().strip_prefix(prefix)?.split_once("% used")?;
+            Some(LimitWindow {
+                used_percent: used.trim().parse().ok()?,
+                resets: rest.split_once("resets ").map(|(_, r)| r.trim().to_owned()),
+            })
+        })
+    };
+    PlanLimits {
+        five_hour: window("Current session:"),
+        weekly: window("Current week (all models):"),
+    }
 }
 
 fn valid_model(model: &str) -> bool {
@@ -191,6 +232,63 @@ impl Drop for Busy {
     }
 }
 
+/// How full a Claude Code agent's context was at its newest model call, from the token counts
+/// `claude` reports in its own stream; kept beside its session for the context meter.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Context {
+    /// Input plus cache read and write tokens of that call.
+    pub tokens: i64,
+    pub model: Option<String>,
+    /// The context window `claude` named for that model, if it did.
+    pub window: Option<i64>,
+    #[serde(with = "time::serde::rfc3339")]
+    pub at: time::OffsetDateTime,
+}
+
+impl Context {
+    /// Takes in one stream-json line: an assistant message's usage, or the result's window.
+    fn read(context: &mut Option<Self>, line: &Value) {
+        match line["type"].as_str() {
+            Some("assistant") => {
+                let message = &line["message"];
+                let usage = &message["usage"];
+                let tokens: i64 = [
+                    "input_tokens",
+                    "cache_read_input_tokens",
+                    "cache_creation_input_tokens",
+                ]
+                .iter()
+                .filter_map(|k| usage[*k].as_i64())
+                .sum();
+                if tokens > 0 {
+                    *context = Some(Self {
+                        tokens,
+                        model: message["model"].as_str().map(str::to_owned),
+                        window: None,
+                        at: time::OffsetDateTime::now_utc(),
+                    });
+                }
+            }
+            Some("result") => {
+                if let Some(c) = context.as_mut() {
+                    let usage = &line["modelUsage"];
+                    let of = c.model.as_deref().map(|m| &usage[m]);
+                    c.window = of.and_then(|u| u["contextWindow"].as_i64());
+                }
+            }
+            _ => {}
+        }
+    }
+}
+
+/// The agent's context as its newest Claude Code turn left it.
+pub async fn context(state: &AppState, agent: AgentId) -> Option<Context> {
+    let raw = tokio::fs::read(agent_dir(state, agent).join("context.json"))
+        .await
+        .ok()?;
+    serde_json::from_slice(&raw).ok()
+}
+
 /// A running turn; dropping it (the runner hung up) kills `claude` and removes its MCP config.
 struct Run {
     lines: Lines<BufReader<ChildStdout>>,
@@ -202,6 +300,8 @@ struct Run {
     remember: Option<(PathBuf, Uuid)>,
     saw_result: bool,
     done: bool,
+    context: Option<Context>,
+    context_file: PathBuf,
 }
 
 /// Runs one turn on the host's `claude` and streams its stream-json lines back to the runner.
@@ -275,6 +375,7 @@ async fn start(
         .await
         .map_err(|e| e.to_string())?;
     let session_file = dir.join("session");
+    let context_file = dir.join("context.json");
     let saved = tokio::fs::read_to_string(&session_file).await.ok();
     let session = match saved.and_then(|s| s.trim().parse().ok()) {
         Some(id) if !req.new_session => Session::Resume(id),
@@ -322,6 +423,8 @@ async fn start(
         remember,
         saw_result: false,
         done: false,
+        context: None,
+        context_file,
     })
 }
 
@@ -397,10 +500,18 @@ async fn next(mut run: Run) -> Option<(Result<Bytes, std::io::Error>, Run)> {
         return None;
     }
     if let Ok(Some(line)) = run.lines.next_line().await {
-        run.saw_result |= serde_json::from_str::<Value>(&line).is_ok_and(|v| v["type"] == "result");
+        if let Ok(v) = serde_json::from_str::<Value>(&line) {
+            run.saw_result |= v["type"] == "result";
+            Context::read(&mut run.context, &v);
+        }
         return Some((Ok(Bytes::from(line + "\n")), run));
     }
     run.done = true;
+    if let Some(context) = run.context.take()
+        && let Ok(raw) = serde_json::to_vec(&context)
+    {
+        let _ = tokio::fs::write(&run.context_file, raw).await;
+    }
     let status = run.child.wait().await;
     let stderr = (&mut run.stderr).await.unwrap_or_default();
     if status.as_ref().is_ok_and(std::process::ExitStatus::success) {
@@ -551,6 +662,10 @@ async fn run_computer(
     };
     let text = match name {
         "bash" => {
+            let call = crate::tool_check::Call::Shell(command);
+            if let Err(why) = crate::tool_check::gate(state, agent.id, call).await {
+                return Ok(CallToolResult::error(vec![ContentBlock::text(why)]));
+            }
             let mut req = ExecRequest::new(["timeout", BASH_TIMEOUT_S, "bash", "-lc", command]);
             req.workdir = Some(workspace.clone());
             let out = backend
@@ -608,6 +723,35 @@ mod tests {
     use super::*;
 
     #[test]
+    fn context_is_the_newest_calls_tokens_with_the_window_claude_names() {
+        let mut context = None;
+        let line = |l: &str| serde_json::from_str::<Value>(l).unwrap();
+        Context::read(&mut context, &line(r#"{"type":"system","subtype":"init"}"#));
+        assert_eq!(context, None);
+        Context::read(
+            &mut context,
+            &line(
+                r#"{"type":"assistant","message":{"model":"m1","usage":{"input_tokens":10,"cache_read_input_tokens":100,"cache_creation_input_tokens":5,"output_tokens":7}}}"#,
+            ),
+        );
+        Context::read(
+            &mut context,
+            &line(
+                r#"{"type":"assistant","message":{"model":"m1","usage":{"input_tokens":12,"cache_read_input_tokens":200,"output_tokens":3}}}"#,
+            ),
+        );
+        Context::read(
+            &mut context,
+            &line(r#"{"type":"result","modelUsage":{"m1":{"contextWindow":200000}}}"#),
+        );
+        let c = context.unwrap();
+        assert_eq!(
+            (c.tokens, c.model.as_deref(), c.window),
+            (212, Some("m1"), Some(200_000))
+        );
+    }
+
+    #[test]
     fn the_cli_runs_without_built_in_tools_or_the_users_settings() {
         let id = Uuid::nil();
         let args = turn_args(Path::new("/tmp/x"), &Session::Resume(id), Some("sonnet"));
@@ -655,6 +799,34 @@ mod tests {
                 "{key} is needed to find the user's own login"
             );
         }
+    }
+
+    #[test]
+    fn plan_limits_keep_only_the_session_and_all_models_week() {
+        let report = "You are currently using your subscription to power your Claude Code usage
+
+Current session: 23% used · resets Nov 23 at 9:39pm (Europe/Berlin)
+Current week (all models): 64% used · resets Nov 26 at 6:59am (Europe/Berlin)
+Current week (Fable): 3% used · resets Nov 26 at 6:59am (Europe/Berlin)
+
+What's contributing to your usage?
+Approximate · sessions on this machine only · shares overlap
+
+Last 24h · 1485 requests · 11 sessions
+  86%  Review sessions active over many hours · whole sessions with requests in 8 or more separate hours
+  Top subagents: general-purpose 12%";
+        let window = |used_percent: f64, resets: &str| LimitWindow {
+            used_percent,
+            resets: Some(resets.to_owned()),
+        };
+        assert_eq!(
+            limits_of(report),
+            PlanLimits {
+                five_hour: Some(window(23.0, "Nov 23 at 9:39pm (Europe/Berlin)")),
+                weekly: Some(window(64.0, "Nov 26 at 6:59am (Europe/Berlin)")),
+            }
+        );
+        assert_eq!(limits_of("Not logged in"), PlanLimits::default());
     }
 
     #[test]

@@ -44,6 +44,8 @@ struct StatefulBackend {
     images: Mutex<HashMap<String, Option<String>>>,
     /// Held by a test to keep `build_image` running.
     build_gate: tokio::sync::Mutex<()>,
+    /// Path and length of every `write_file`.
+    written: Mutex<Vec<(String, usize)>>,
 }
 
 impl StatefulBackend {
@@ -115,9 +117,13 @@ impl SandboxBackend for StatefulBackend {
     async fn write_file(
         &self,
         _: &SandboxHandle,
-        _: &SandboxPath,
-        _: &[u8],
+        p: &SandboxPath,
+        bytes: &[u8],
     ) -> Result<(), SandboxError> {
+        self.written
+            .lock()
+            .unwrap()
+            .push((p.to_string(), bytes.len()));
         Ok(())
     }
     async fn snapshot(&self, h: &SandboxHandle, label: &str) -> Result<SnapshotRef, SandboxError> {
@@ -2623,6 +2629,8 @@ while IFS= read -r line; do
       else
         printf '{"id":%s,"result":{"authMethod":null}}\n' "$id"
       fi ;;
+    *'"account/rateLimits/read"'*)
+      printf '{"id":%s,"result":{"rateLimits":{"primary":{"usedPercent":12,"windowDurationMins":300,"resetsAt":4102444800},"secondary":{"usedPercent":40,"windowDurationMins":10080,"resetsAt":null}}}}\n' "$id" ;;
     *'"account/login/start"'*)
       printf '{"id":%s,"result":{"type":"chatgptDeviceCode","loginId":"l1","verificationUrl":"https://auth.example/device","userCode":"ABCD-1234"}}\n' "$id"
       printf '{"tokens":"signed-in"}' > "$AUTH"
@@ -2693,6 +2701,17 @@ async fn codex_providers_use_a_key_or_the_hosts_chatgpt_login() {
         (s["state"] == "signed_in").then_some(())
     })
     .await;
+    let (status, limits) = http(&d.ui, "GET", "/v1/limits", None).await;
+    assert_eq!(status, 200, "{limits}");
+    assert_eq!(
+        limits.as_array().unwrap().len(),
+        1,
+        "not the keyed one: {limits}"
+    );
+    assert_eq!(limits[0]["provider_id"], chat["id"]);
+    assert_eq!(limits[0]["five_hour"]["used_percent"], 12.0);
+    assert_eq!(limits[0]["five_hour"]["resets"], "2100-01-01T00:00:00Z");
+    assert_eq!(limits[0]["weekly"]["used_percent"], 40.0);
     create(&d, json!({"name": "chad", "provider_id": chat["id"]})).await;
     let env = backend.envs.lock().unwrap()["chad"].clone();
     assert!(!env.values().any(|v| v.contains("eyJhbGciOiJub25lIn0")));
@@ -3412,6 +3431,7 @@ async fn connectors_lend_upstream_tools_to_assigned_agents_only() {
         model: None,
         tools: None,
         connectors: None,
+        tags: Vec::new(),
     };
     let cal = ferrobot_daemon::agents::create(&d.state, spec, Some(ann.parse().unwrap()))
         .await
@@ -3684,6 +3704,57 @@ async fn connectors_are_checked_when_added_changed_or_asked() {
 }
 
 #[tokio::test]
+async fn send_now_stops_only_a_turn_that_cannot_take_the_message() {
+    use ferrobot_core::protocol::TurnOutcome;
+    let backend = Arc::new(StatefulBackend::default());
+    let d = start(backend.clone(), None, "127.0.0.1:0").await;
+    for (name, steering) in [("quill", false), ("stella", true)] {
+        let id = create(&d, json!({ "name": name })).await["id"]
+            .as_str()
+            .unwrap()
+            .to_owned();
+        let mut ws = connect_runner_with(&d.agents, &backend.token(name), steering).await;
+        let path = format!("/v1/agents/{id}/messages");
+        let post = |body: Value| {
+            let (ui, path) = (d.ui.clone(), path.clone());
+            async move {
+                http(&ui, "POST", &path, Some(body)).await.1["id"]
+                    .as_i64()
+                    .unwrap()
+            }
+        };
+        post(json!({"body": "find flights"})).await;
+        let (turn_id, _, _) = next_turn(&mut ws).await;
+        let now = post(json!({"body": "hotels instead", "now": true})).await;
+        match next_frame(&mut ws).await {
+            DaemonFrame::Interrupt { turn_id: t } if !steering => {
+                assert_eq!(t, turn_id);
+                let done = RunnerFrame::TurnDone {
+                    turn_id,
+                    outcome: TurnOutcome::Interrupted,
+                    session_id: None,
+                    result: None,
+                    error: None,
+                    steered: vec![],
+                };
+                ws.send(Message::text(serde_json::to_string(&done).unwrap()))
+                    .await
+                    .unwrap();
+                let (_, message_id, body) = next_turn(&mut ws).await;
+                assert_eq!((message_id, body.as_str()), (now, "hotels instead"));
+            }
+            DaemonFrame::Steer { message_id, .. } if steering => {
+                assert_eq!(
+                    message_id, now,
+                    "a steering runner takes it; its turn goes on"
+                );
+            }
+            other => panic!("{name}: {other:?}"),
+        }
+    }
+}
+
+#[tokio::test]
 async fn messages_reach_a_running_turn_when_the_runner_can_take_them() {
     use ferrobot_core::protocol::TurnOutcome;
     let backend = Arc::new(StatefulBackend::default());
@@ -3765,6 +3836,117 @@ async fn messages_reach_a_running_turn_when_the_runner_can_take_them() {
         (json!("delivered"), json!("delivered"))
     );
     assert_eq!(status(trains), "in_flight");
+}
+
+#[tokio::test]
+async fn the_operator_reacts_to_an_agent_message_and_the_agent_is_told() {
+    let d = start(Arc::new(StatefulBackend::default()), None, "127.0.0.1:0").await;
+    let ann = create(&d, json!({"name": "ann"})).await["id"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    let ann_id: AgentId = ann.parse().unwrap();
+    let said = d
+        .state
+        .store
+        .append_event(
+            ann_id,
+            Some("t1".into()),
+            "assistant_text".into(),
+            json!({"text": "Here is the plan."}),
+        )
+        .await
+        .unwrap();
+    let react = |event: i64, emoji: &str| {
+        let (ui, path) = (
+            d.ui.clone(),
+            format!("/v1/agents/{ann}/events/{event}/reaction"),
+        );
+        let body = json!({ "emoji": emoji });
+        async move { http(&ui, "POST", &path, Some(body)).await.0 }
+    };
+    assert_eq!(react(said.id, " 👍 ").await, 204);
+
+    let note = mail(&d, &ann).await.pop().unwrap();
+    assert_eq!(
+        note["body"],
+        "[ferrobot] Your operator reacted 👍 to your message: \"Here is the plan.\". Act on it \
+         only if it asks for something, like a fix or an answer; otherwise end your turn without \
+         a reply."
+    );
+    assert_eq!(note["sender"]["kind"], "user");
+    let shown = events(&d, &ann).await;
+    let reaction = shown.iter().find(|e| e["kind"] == "user_reaction").unwrap();
+    assert_eq!(
+        reaction["payload"],
+        json!({"event_id": said.id, "emoji": "👍", "note_id": note["id"]})
+    );
+
+    assert_eq!(react(said.id, "ok").await, 400, "one emoji only");
+    let not_a_reply = d
+        .state
+        .store
+        .append_event(ann_id, None, "file".into(), json!({}))
+        .await
+        .unwrap();
+    assert_eq!(react(not_a_reply.id, "👍").await, 404);
+    assert_eq!(react(said.id + 1000, "👍").await, 404);
+}
+
+#[tokio::test]
+async fn html_blocks_from_the_chat_open_as_sandboxed_pages() {
+    let d = start(Arc::new(StatefulBackend::default()), None, "127.0.0.1:0").await;
+    let html = "<style>h1{color:red}</style><h1>Hi</h1><script>document.title='x'</script>";
+    let post = |body: Value| http(&d.ui, "POST", "/v1/previews", Some(body));
+    let (status, link) = post(json!({ "html": html })).await;
+    assert_eq!(status, 200, "{link}");
+    let url = link["url"].as_str().unwrap().to_owned();
+    let id = url
+        .strip_prefix("/artifacts/previews/")
+        .and_then(|rest| rest.split('?').next())
+        .unwrap()
+        .to_owned();
+    let (_, again) = post(json!({ "html": html })).await;
+    assert!(
+        again["url"].as_str().unwrap().contains(&id),
+        "the same block keeps its id"
+    );
+
+    let no_token = [("Authorization", "")];
+    let (status, headers, body) = http_raw(&d.ui, "GET", &url, &no_token, b"").await;
+    assert_eq!(status, 200);
+    assert_eq!(String::from_utf8_lossy(&body), html);
+    let csp = headers
+        .iter()
+        .find(|(k, _)| k.eq_ignore_ascii_case("content-security-policy"))
+        .map(|(_, v)| v.clone())
+        .unwrap();
+    assert!(
+        csp.starts_with("sandbox allow-scripts;")
+            && csp.contains("connect-src 'none'")
+            && !csp.contains("allow-same-origin"),
+        "{csp}"
+    );
+
+    let get = |url: String| {
+        let ui = d.ui.clone();
+        async move { http_raw(&ui, "GET", &url, &no_token, b"").await.0 }
+    };
+    let last = if url.ends_with('0') { '1' } else { '0' };
+    assert_eq!(get(format!("{}{last}", &url[..url.len() - 1])).await, 404);
+    assert_eq!(get(format!("/artifacts/previews/{id}")).await, 404);
+    let expired = files::preview_link(&d.state, &id, 1).await.unwrap();
+    assert_eq!(get(expired).await, 404, "links expire");
+    let unknown = files::fresh_preview_link(&d.state, &"0".repeat(64))
+        .await
+        .unwrap();
+    assert_eq!(get(unknown).await, 404);
+
+    let (status, _) = post(json!({ "html": "x".repeat(files::MAX_BLOCK_BYTES + 1) })).await;
+    assert_eq!(status, 400);
+    let (status, _, _) =
+        http_raw(&d.ui, "POST", "/v1/previews", &no_token, br#"{"html":"x"}"#).await;
+    assert_eq!(status, 401, "only the operator stores blocks");
 }
 
 #[tokio::test]
@@ -4543,6 +4725,7 @@ async fn new_agents_greet_the_operator_first() {
         model: None,
         tools: None,
         connectors: None,
+        tags: Vec::new(),
     };
     let ivy = ferrobot_daemon::agents::create(&d.state, spec, Some(gia))
         .await
@@ -5990,7 +6173,7 @@ async fn agents_get_connectors_through_a_card_whose_token_they_never_see() {
         .as_str()
         .unwrap()
         .to_owned();
-    // Auto mode skips agent cards, never one that takes a key.
+    // Auto mode does not skip a connector card.
     let auto = Some(json!({"auto_mode": true}));
     assert_eq!(http(&d.ui, "PUT", "/v1/settings", auto).await.0, 200);
     let mut ui = d.state.ui.subscribe();
@@ -6008,44 +6191,47 @@ async fn agents_get_connectors_through_a_card_whose_token_they_never_see() {
         .into_iter()
         .find(|e| e["id"] == qid)
         .unwrap();
-    let questions = &card["payload"]["card"]["questions"];
+    let questions = card["payload"]["card"]["questions"].as_array().unwrap();
     let prompt = questions[0]["prompt"].as_str().unwrap();
     assert!(prompt.contains(&url), "{prompt}");
-    assert!(prompt.contains("goes only to 127.0.0.1"), "{prompt}");
-    assert_eq!(questions[1]["kind"], "secret");
+    assert!(prompt.contains("Settings → Vault"), "{prompt}");
+    assert_eq!(questions.len(), 1, "no card asks for a key");
 
     let path = format!("/v1/agents/{ann}/questions/{qid}/answer");
-    let answer = |token: Option<&str>| {
-        json!({"answers": [
-            {"question_id": "q1", "values": ["approve"]},
-            {"question_id": "token", "custom": token}]})
-    };
-    let (status, _) = http(&d.ui, "POST", &path, Some(answer(None))).await;
-    assert_eq!(status, 400, "approving needs the token");
-    let (status, answered) = http(&d.ui, "POST", &path, Some(answer(Some(TOKEN)))).await;
+    let approve = json!({"answers": [{"question_id": "q1", "values": ["approve"]}]});
+    let (status, answered) = http(&d.ui, "POST", &path, Some(approve.clone())).await;
     assert_eq!(status, 202, "{answered}");
-    let (status, _) = http(&d.ui, "POST", &path, Some(answer(Some(TOKEN)))).await;
+    let (status, _) = http(&d.ui, "POST", &path, Some(approve)).await;
     assert_eq!(status, 409, "answered once");
 
-    // ann has the connector, and the token went to the URL on the card...
+    // ann has the connector; its tools work once the operator puts the token in Settings.
     let (_, ids) = http(&d.ui, "GET", &format!("/v1/agents/{ann}/connectors"), None).await;
     assert_eq!(ids.as_array().unwrap().len(), 1);
-    let tools = mcp_as(&d, backend.token("ann"))
-        .await
-        .list_all_tools()
-        .await
-        .unwrap();
-    assert!(
-        tools.iter().any(|t| t.name == "gh__list_agents"),
-        "{tools:?}"
-    );
+    let gh_tools = || async {
+        mcp_as(&d, backend.token("ann"))
+            .await
+            .list_all_tools()
+            .await
+            .unwrap()
+            .iter()
+            .any(|t| t.name == "gh__list_agents")
+    };
+    assert!(!gh_tools().await, "no token yet");
+    let id = http(&d.ui, "GET", "/v1/connectors", None).await.1[0]["id"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    let set = Some(json!({ "token": TOKEN }));
+    let (status, _) = http(&d.ui, "PATCH", &format!("/v1/connectors/{id}"), set).await;
+    assert_eq!(status, 200);
+    assert!(gh_tools().await);
     assert!(seen.lock().unwrap().contains(&format!("Bearer {TOKEN}")));
     let mail_now = mail(&d, &ann).await;
     assert!(
-        mail_now.iter().any(|m| m["body"]
-            .as_str()
-            .unwrap()
-            .contains("added the connector \"gh\"")),
+        mail_now.iter().any(|m| {
+            let body = m["body"].as_str().unwrap();
+            body.contains("added the connector \"gh\"") && body.contains("Settings → Vault")
+        }),
         "{mail_now:?}"
     );
 
@@ -6538,13 +6724,19 @@ case "$1" in
   --version) echo "9.9.9 (Claude Code)"; exit 0 ;;
   auth) echo '{"loggedIn": true, "authMethod": "claude.ai", "email": "someone@example.com"}'; exit 0 ;;
 esac
+case "$*" in *" /usage")
+  echo "$*" >> "$here/usage-args.log"
+  env > "$here/usage-env.log"
+  printf '%s\n' '{"type":"result","subtype":"success","is_error":false,"total_cost_usd":0,"result":"Signed in as someone@example.com\n\nCurrent session: 18% used · resets Nov 23 at 9:39pm (Europe/Berlin)\nCurrent week (all models): 63% used · resets Nov 26 at 6:59am (Europe/Berlin)\nCurrent week (Fable): 3% used"}'
+  exit 0 ;;
+esac
 echo "$*" >> "$here/args.log"
 env > "$here/env.log"
 for a in "$@"; do case "$a" in --mcp-config=*) cat "${a#--mcp-config=}" > "$here/mcp.log" ;; esac; done
 cat > "$here/prompt.log"
 echo '{"type":"system","subtype":"init","session_id":"s1","tools":[]}'
-echo '{"type":"assistant","message":{"content":[{"type":"text","text":"hello"}]},"parent_tool_use_id":null,"session_id":"s1"}'
-echo '{"type":"result","subtype":"success","is_error":false,"result":"hello","session_id":"s1"}'
+echo '{"type":"assistant","message":{"model":"claude-sonnet-4-5","content":[{"type":"text","text":"hello"}],"usage":{"input_tokens":1200,"cache_read_input_tokens":3000,"cache_creation_input_tokens":800,"output_tokens":50}},"parent_tool_use_id":null,"session_id":"s1"}'
+echo '{"type":"result","subtype":"success","is_error":false,"result":"hello","session_id":"s1","modelUsage":{"claude-sonnet-4-5":{"contextWindow":200000}}}'
 "#;
 
 async fn claude_code_turn(
@@ -6602,6 +6794,13 @@ async fn claude_code_agents_use_the_hosts_own_cli_and_nothing_enters_the_sandbox
     )
     .await;
     let clio = create(&d, json!({"name": "clio", "provider_id": provider["id"]})).await;
+    let context = format!("/v1/agents/{}/context", clio["id"].as_str().unwrap());
+    let (_, ctx) = http(&d.ui, "GET", &context, None).await;
+    assert_eq!(
+        (&ctx["tracked"], &ctx["tokens"], &ctx["model"]),
+        (&json!(true), &Value::Null, &json!("sonnet")),
+        "no turn yet: {ctx}"
+    );
     let env = backend.envs.lock().unwrap()["clio"].clone();
     assert_eq!(env["FERROBOT_DRIVER"], "claude_code");
     // No key, no Claude login and no claude config: only ferrobot's own settings.
@@ -6610,6 +6809,12 @@ async fn claude_code_agents_use_the_hosts_own_cli_and_nothing_enters_the_sandbox
     let token = env["FERROBOT_AGENT_TOKEN"].clone();
     let (status, out) = claude_code_turn(&d.agents, &token, "hi there", true).await;
     assert_eq!(status, 200, "{out}");
+    let (_, ctx) = http(&d.ui, "GET", &context, None).await;
+    assert_eq!(
+        (&ctx["tokens"], &ctx["window"], &ctx["model"]),
+        (&json!(5000), &json!(200_000), &json!("claude-sonnet-4-5")),
+        "from claude's own stream: {ctx}"
+    );
     assert!(
         out.lines().any(|l| l.contains(r#""type":"result""#)),
         "{out}"
@@ -6670,6 +6875,45 @@ async fn claude_code_agents_use_the_hosts_own_cli_and_nothing_enters_the_sandbox
     let (status, _) = claude_code_turn(&d.agents, &other, "hi there", true).await;
     assert_eq!(status, 403);
 
+    // Plan limits come from claude's own /usage: no model call, only the two limit lines.
+    let (status, limits) = http(&d.ui, "GET", "/v1/limits", None).await;
+    assert_eq!(status, 200, "{limits}");
+    assert_eq!(
+        limits.as_array().unwrap().len(),
+        1,
+        "not the Ollama provider: {limits}"
+    );
+    assert_eq!(limits[0]["kind"], "claude_code");
+    assert_eq!(limits[0]["five_hour"]["used_percent"], 18.0);
+    assert_eq!(
+        limits[0]["weekly"]["resets"],
+        "Nov 26 at 6:59am (Europe/Berlin)"
+    );
+    assert!(!limits.to_string().contains("example.com"), "{limits}");
+    let usage = log("usage-args.log");
+    for flag in [
+        "-p",
+        "--tools=",
+        "--setting-sources=",
+        "--no-session-persistence",
+    ] {
+        assert!(
+            usage.split(' ').any(|a| a == flag),
+            "{flag} missing: {usage}"
+        );
+    }
+    assert!(
+        !log("usage-env.log")
+            .lines()
+            .any(|l| l.starts_with("ANTHROPIC_"))
+    );
+    http(&d.ui, "GET", "/v1/limits", None).await;
+    assert_eq!(
+        log("usage-args.log").lines().count(),
+        1,
+        "read once a minute"
+    );
+
     let id = clio["id"].as_str().unwrap();
     assert!(data.join("claude-code").join(id).join("session").exists());
     let (status, _) = http(&d.ui, "DELETE", &format!("/v1/agents/{id}"), None).await;
@@ -6677,5 +6921,381 @@ async fn claude_code_agents_use_the_hosts_own_cli_and_nothing_enters_the_sandbox
     assert!(
         !data.join("claude-code").join(id).exists(),
         "its folder goes with the agent"
+    );
+}
+
+async fn tool_check(agents: &str, token: &str, command: &str) -> Value {
+    let bearer = format!("Bearer {token}");
+    let headers = [
+        ("authorization", bearer.as_str()),
+        ("content-type", "application/json"),
+    ];
+    let body = json!({ "command": command }).to_string();
+    let (status, _, out) = http_raw(
+        agents,
+        "POST",
+        "/runner/tool-check",
+        &headers,
+        body.as_bytes(),
+    )
+    .await;
+    assert_eq!(status, 200);
+    serde_json::from_slice(&out).unwrap()
+}
+
+#[tokio::test]
+async fn risky_tool_calls_wait_for_a_card_unless_auto_mode_is_on() {
+    let backend = Arc::new(StatefulBackend::default());
+    let d = start(backend.clone(), None, "127.0.0.1:0").await;
+    let (_, ollama) = http(
+        &d.ui,
+        "POST",
+        "/v1/providers",
+        Some(json!({"name": "ol", "kind": "ollama", "default_model": "qwen3"})),
+    )
+    .await;
+    let agent = create(&d, json!({"name": "toolie", "provider_id": ollama["id"]})).await;
+    let id = agent["id"].as_str().unwrap().to_owned();
+    let token = backend.envs.lock().unwrap()["toolie"]["FERROBOT_AGENT_TOKEN"].clone();
+
+    assert_eq!(
+        tool_check(&d.agents, &token, "cargo test").await["allow"],
+        true
+    );
+    let blocked = tool_check(&d.agents, &token, "rm -rf /").await;
+    assert_eq!(blocked["allow"], false);
+    assert!(blocked["reason"].as_str().unwrap().starts_with("blocked"));
+
+    // Risky: the call waits for the operator's card.
+    let mut last = 0;
+    for (answer, allowed) in [("approve", true), ("decline", false)] {
+        let (agents, tok) = (d.agents.clone(), token.clone());
+        let waiting =
+            tokio::spawn(async move { tool_check(&agents, &tok, "git push origin main").await });
+        let qid = approval_card(&d, &id, last).await;
+        last = qid;
+        assert_eq!(decide(&d, &id, qid, answer).await.0, 202);
+        let got = waiting.await.unwrap();
+        assert_eq!(got["allow"], allowed, "{answer}: {got}");
+    }
+
+    // Auto mode: risky calls run without a card; dangerous ones stay blocked.
+    let auto = json!({"auto_mode": true});
+    assert_eq!(http(&d.ui, "PUT", "/v1/settings", Some(auto)).await.0, 200);
+    let before = events(&d, &id).await.len();
+    assert_eq!(
+        tool_check(&d.agents, &token, "git push origin main").await["allow"],
+        true
+    );
+    assert_eq!(events(&d, &id).await.len(), before, "no card in Auto mode");
+    assert_eq!(
+        tool_check(&d.agents, &token, "mkfs.ext4 /dev/sda").await["allow"],
+        false
+    );
+}
+
+#[tokio::test]
+async fn agent_tags_are_checked_and_kept() {
+    let d = start(Arc::new(StatefulBackend::default()), None, "127.0.0.1:0").await;
+    let a = create(&d, json!({"name": "tia", "tags": [" ops ", "nightly"]})).await;
+    assert_eq!(a["tags"], json!(["ops", "nightly"]));
+    let path = format!("/v1/agents/{}", a["id"].as_str().unwrap());
+    let too_long = "x".repeat(21);
+    for bad in [
+        json!(["a", "b", "c", "d", "e", "f"]),
+        json!([" "]),
+        json!([too_long]),
+        json!(["ops", "ops "]),
+    ] {
+        let (status, _) = http(&d.ui, "PATCH", &path, Some(json!({ "tags": bad }))).await;
+        assert_eq!(status, 400, "{bad}");
+    }
+    let (status, _) = http(
+        &d.ui,
+        "POST",
+        "/v1/agents",
+        Some(json!({"name": "tom", "tags": ["x", "x"]})),
+    )
+    .await;
+    assert_eq!(status, 400);
+    let (_, all) = http(&d.ui, "GET", "/v1/agents", None).await;
+    assert_eq!(
+        all.as_array().unwrap().len(),
+        1,
+        "a bad tag creates nothing"
+    );
+
+    let twenty = "é".repeat(20);
+    let (_, a) = http(&d.ui, "PATCH", &path, Some(json!({ "tags": [twenty] }))).await;
+    assert_eq!(a["tags"], json!([twenty]), "characters, not bytes");
+    let (_, a) = http(&d.ui, "PATCH", &path, Some(json!({"description": "x"}))).await;
+    assert_eq!(a["tags"], json!([twenty]), "omitted tags stay");
+    let (_, a) = http(&d.ui, "PATCH", &path, Some(json!({"tags": []}))).await;
+    assert_eq!(a["tags"], json!([]));
+}
+
+#[tokio::test]
+async fn context_is_the_newest_call_since_the_last_new_chat() {
+    use ferrobot_store::{Tokens, UsageRecord, UsageStatus};
+    let d = start(Arc::new(StatefulBackend::default()), None, "127.0.0.1:0").await;
+    let a = create(&d, json!({"name": "cora"})).await;
+    let id: AgentId = a["id"].as_str().unwrap().parse().unwrap();
+    let path = format!("/v1/agents/{id}/context");
+    let (status, ctx) = http(&d.ui, "GET", &path, None).await;
+    assert_eq!(status, 200, "{ctx}");
+    assert_eq!(
+        (&ctx["tracked"], &ctx["tokens"]),
+        (&json!(true), &Value::Null)
+    );
+
+    let now = time::OffsetDateTime::now_utc();
+    let row = |ago: i64, input: Option<i64>, status| UsageRecord {
+        at: now - time::Duration::seconds(ago),
+        agent_id: id,
+        agent_name: "cora".into(),
+        provider_id: None,
+        provider_kind: "anthropic".into(),
+        model: "claude-opus-5-5".into(),
+        tokens: Tokens {
+            input,
+            output: Some(9),
+            cache_read: Some(1000),
+            cache_write: Some(500),
+        },
+        cost_usd: None,
+        latency_ms: 5,
+        status,
+    };
+    for r in [
+        row(60, Some(2000), UsageStatus::Ok),
+        row(50, Some(1), UsageStatus::Error),
+        row(40, None, UsageStatus::Ok),
+    ] {
+        d.state.store.insert_usage(r).await.unwrap();
+    }
+    let (_, ctx) = http(&d.ui, "GET", &path, None).await;
+    assert_eq!(
+        (&ctx["tokens"], &ctx["window"], &ctx["model"]),
+        (&json!(3500), &json!(1_000_000), &json!("claude-opus-5-5")),
+        "input plus cache of the newest call with counts"
+    );
+
+    let (status, _) = http(&d.ui, "POST", &format!("/v1/agents/{id}/new-session"), None).await;
+    assert_eq!(status, 204);
+    let (_, ctx) = http(&d.ui, "GET", &path, None).await;
+    assert_eq!(ctx["tokens"], Value::Null, "a new chat starts empty");
+    d.state
+        .store
+        .insert_usage(row(-60, Some(10), UsageStatus::Ok))
+        .await
+        .unwrap();
+    let (_, ctx) = http(&d.ui, "GET", &path, None).await;
+    assert_eq!(ctx["tokens"], 1510);
+}
+
+#[tokio::test]
+async fn groups_talk_by_room_rules_and_a_call_to_one_lands_in_it() {
+    let backend = Arc::new(StatefulBackend::default());
+    let d = start(backend.clone(), None, "127.0.0.1:0").await;
+    let mut ids = Vec::new();
+    for name in ["ann", "bob", "cy"] {
+        let agent = create(&d, json!({ "name": name })).await;
+        ids.push(agent["id"].as_str().unwrap().parse::<AgentId>().unwrap());
+    }
+    let [ann, bob, cy] = ids[..] else {
+        unreachable!()
+    };
+    let unknown = "00000000-0000-4000-8000-000000000099";
+    for (body, status) in [
+        (json!({"name": " ", "members": [ann, bob]}), 400),
+        (json!({"name": "Ops", "members": [ann, ann]}), 400),
+        (json!({"name": "Ops", "members": [ann, unknown]}), 404),
+    ] {
+        let (got, err) = http(&d.ui, "POST", "/v1/groups", Some(body)).await;
+        assert_eq!(got, status, "{err}");
+    }
+    let new = json!({"name": " Ops ", "members": [ann, bob]});
+    let (status, group) = http(&d.ui, "POST", "/v1/groups", Some(new)).await;
+    assert_eq!(status, 201, "{group}");
+    assert_eq!(
+        (&group["name"], &group["members"]),
+        (&json!("Ops"), &json!([ann, bob]))
+    );
+    let id = group["id"].as_i64().unwrap();
+    let path = format!("/v1/groups/{id}");
+    assert_eq!(
+        http(&d.ui, "GET", "/v1/groups", None).await.1,
+        json!([group])
+    );
+    assert_eq!(http(&d.ui, "GET", "/v1/rooms", None).await.1, json!([]));
+    let post = |body: &'static str| {
+        let (ui, path) = (d.ui.clone(), format!("{path}/messages"));
+        async move {
+            let (status, sent) = http(&ui, "POST", &path, Some(json!({ "body": body }))).await;
+            assert_eq!(status, 202, "{sent}");
+            sent
+        }
+    };
+
+    // Written once: members answer one at a time with the group note, out of their chats.
+    let sent = post("Status?").await;
+    assert_eq!(
+        (&sent[0]["recipient"], &sent[0]["room_id"]),
+        (&json!(ann), &json!(id))
+    );
+    let (_, room) = http(&d.ui, "GET", &format!("/v1/rooms/{id}"), None).await;
+    assert_eq!(room["speaking"], json!(ann), "whose turn it is");
+    let mut ann_ws = connect_runner(&d.agents, &backend.token("ann")).await;
+    let mut bob_ws = connect_runner(&d.agents, &backend.token("bob")).await;
+    let body = say_turn(&mut ann_ws, "All green.").await;
+    assert!(body.starts_with("(Group chat:"), "{body}");
+    assert!(
+        !body.contains("Voice call") && !body.contains("You host"),
+        "{body}"
+    );
+    assert!(
+        body.ends_with("In the group since your last turn:\nThe operator: Status?"),
+        "{body}"
+    );
+    let body = say_turn(&mut bob_ws, "Agreed.").await;
+    assert!(
+        body.ends_with("The operator: Status?\n@ann: All green."),
+        "{body}"
+    );
+    assert!(
+        say_turn(&mut ann_ws, "(pass)")
+            .await
+            .ends_with("@bob: Agreed.")
+    );
+    turns_done(&d, ann, 2).await;
+    quiet(&mut bob_ws).await;
+    let lines = lines_reach(&d, id, 3).await;
+    let said: Vec<_> = lines.iter().map(|l| l.1.as_str()).collect();
+    assert_eq!(said, ["Status?", "All green.", "Agreed."]);
+    assert!(received(&d, ann).await.is_empty() && received(&d, bob).await.is_empty());
+
+    let change = json!({"name": "Ops team", "members": [cy, bob]});
+    let (status, changed) = http(&d.ui, "PATCH", &path, Some(change)).await;
+    assert_eq!(status, 200, "{changed}");
+    assert_eq!(
+        (&changed["name"], &changed["members"]),
+        (&json!("Ops team"), &json!([bob, cy])),
+        "bob keeps its place"
+    );
+
+    // Called, the group is the call's room: members are fixed and nothing is written meanwhile.
+    let (status, view) = http(&d.ui, "POST", &format!("{path}/call"), None).await;
+    assert_eq!(
+        (status, view),
+        (200, json!({"agents": [bob, cy], "room_id": id}))
+    );
+    assert_eq!(
+        http(&d.ui, "POST", &format!("{path}/call"), None).await.0,
+        409
+    );
+    let change = json!({"name": "Renamed", "members": [ann, bob]});
+    assert_eq!(http(&d.ui, "PATCH", &path, Some(change)).await.0, 409);
+    assert_eq!(http(&d.ui, "DELETE", &path, None).await.0, 409);
+    let (_, room) = http(&d.ui, "GET", &format!("/v1/rooms/{id}"), None).await;
+    assert_eq!(room["name"], "Ops team");
+    post("Next?").await;
+    let body = say_turn(&mut bob_ws, "Deploying.").await;
+    assert!(
+        body.starts_with("(Voice call:") && body.contains("(You host the call."),
+        "{body}"
+    );
+    let mut cy_ws = connect_runner(&d.agents, &backend.token("cy")).await;
+    assert!(
+        say_turn(&mut cy_ws, "(pass)")
+            .await
+            .ends_with("@bob: Deploying.")
+    );
+    lines_reach(&d, id, 5).await;
+    // Hanging up cuts off a turn still holding the floor, so cy's pass must be settled first.
+    turns_done(&d, cy, 1).await;
+
+    // Hung up, the group stays and talks outside the call again.
+    let hang_up = json!({"agents": []});
+    assert_eq!(http(&d.ui, "PUT", "/v1/call", Some(hang_up)).await.0, 200);
+    let (_, room) = http(&d.ui, "GET", &format!("/v1/rooms/{id}"), None).await;
+    assert_eq!(room["ended_at"], Value::Null);
+    assert_eq!(http(&d.ui, "GET", "/v1/rooms", None).await.1, json!([]));
+    post("Thanks").await;
+    assert!(
+        say_turn(&mut bob_ws, "(pass)")
+            .await
+            .starts_with("(Group chat:")
+    );
+    assert!(
+        say_turn(&mut cy_ws, "(pass)")
+            .await
+            .starts_with("(Group chat:")
+    );
+    turns_done(&d, cy, 2).await;
+
+    // A line naming a member is that member's to answer; the others only hear it.
+    let sent = post("@cy ship it?").await;
+    assert_eq!(sent[0]["recipient"], json!(cy));
+    say_turn(&mut cy_ws, "Shipped.").await;
+    turns_done(&d, cy, 3).await;
+    quiet(&mut bob_ws).await;
+    let (_, room) = http(&d.ui, "GET", &format!("/v1/rooms/{id}"), None).await;
+    assert_eq!(room["speaking"], Value::Null, "nobody's turn");
+
+    assert_eq!(http(&d.ui, "DELETE", &path, None).await.0, 204);
+    assert_eq!(
+        http(&d.ui, "GET", &format!("/v1/rooms/{id}"), None).await.0,
+        404
+    );
+    assert_eq!(http(&d.ui, "GET", "/v1/groups", None).await.1, json!([]));
+    assert_eq!(room_mail(&d, cy).await, 0, "its turns went with it");
+}
+
+#[tokio::test]
+async fn operator_uploads_land_in_the_agents_workspace() {
+    let backend = Arc::new(StatefulBackend::default());
+    let d = start(backend.clone(), None, "127.0.0.1:0").await;
+    let ann = create(&d, json!({"name": "ann"})).await["id"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    let upload = async |agent: &str, name: &str, auth: &[(&str, &str)], body: &[u8]| {
+        let path = format!("/v1/agents/{agent}/uploads?name={name}");
+        let (status, _, body) = http_raw(&d.ui, "POST", &path, auth, body).await;
+        (
+            status,
+            serde_json::from_slice::<Value>(&body).unwrap_or(Value::Null),
+        )
+    };
+
+    let (status, body) = upload(&ann, "..%2Fsecret%2FReport%20(1).pdf", &[], &[7; 1234]).await;
+    assert_eq!(status, 201, "{body}");
+    assert_eq!(
+        body,
+        json!({"path": "uploads/Report__1_.pdf", "size": 1234})
+    );
+    assert_eq!(
+        *backend.written.lock().unwrap(),
+        [(
+            "/home/node/workspace/uploads/Report__1_.pdf".to_owned(),
+            1234
+        )]
+    );
+
+    let big = vec![0; 25 * 1024 * 1024 + 1];
+    let (status, body) = upload(&ann, "big.bin", &[], &big).await;
+    assert_eq!(status, 400, "{body}");
+    assert_eq!(
+        upload(&ann, "x.txt", &[("Authorization", "")], b"hi")
+            .await
+            .0,
+        401
+    );
+    let unknown = "00000000-0000-0000-0000-000000000001";
+    assert_eq!(upload(unknown, "x.txt", &[], b"hi").await.0, 404);
+    assert_eq!(
+        backend.written.lock().unwrap().len(),
+        1,
+        "nothing else written"
     );
 }

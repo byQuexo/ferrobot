@@ -1,0 +1,9 @@
+{
+  "type": "turn",
+  "turn_id": "turn-4",
+  "message_id": 12,
+  "sender": { "kind": "user" },
+  "sender_name": "user",
+  "body": "Let's start over.",
+  "new_session": true
+}

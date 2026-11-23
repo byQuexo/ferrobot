@@ -12,7 +12,7 @@ off.
 | --- | --- |
 | Team | Message teammates and give them tasks |
 | Memory | Remember and recall notes |
-| Operator | Ask you questions, share files, bring teammates into calls, read the guides |
+| Operator | Ask you questions, share files, react to your messages, bring teammates into calls, read the guides |
 | Create agents | Ask to create new agents |
 | Add connectors | Ask you to add connectors |
 | Routines | Set up its own routines |
@@ -32,6 +32,30 @@ off.
 
 Connectors are switched on per agent in the same list. See
 [[Connectors and OAuth|Connectors-and-OAuth]].
+
+## Subagents
+
+An agent can split work into parallel parts without a new teammate. Claude
+uses the SDK's Agent tool; OpenAI-compatible providers get ferrobot's
+`subagent` tool. It runs a task with the same model and tools and a fresh
+history, at most 20 model calls, and returns the answer. Several in one step
+run in parallel; their steps go through the same checks and show in
+Activities.
+
+- Subagents are off while Shell, Files or Web is off, since they run their
+  own tools. Where Codex or Gemini CLI offer their own, the same rule applies.
+- Claude Code (your own login) has none.
+
+## Files and reactions in the chat
+
+- **Attach files** with the paperclip, by dropping them on the window, or by
+  pasting an image. They go into the agent's workspace folder `uploads/`
+  (at most 25 MB each, `POST /v1/agents/{id}/uploads`), waking the agent if
+  it sleeps. The message gets a line per file, like
+  `Attached: uploads/photo.png (image, 120.0 KB)`, and the agent opens them
+  with its file tools.
+- **Reactions**: an agent with **Operator** can acknowledge your message with
+  one emoji (`react`) instead of a reply. It shows on your message.
 
 ## Agents that create agents
 
@@ -64,21 +88,45 @@ Without Auto mode, these requests show you a card first:
   minutes (`FERROBOT_APPROVAL_TIMEOUT`, 300 s); no answer counts as declined.
 - **Create a routine** (`create_routine`): the same rule, but the agent does
   not wait. A message tells it whether you approved.
-- **Add a connector** (`add_connector`): always a card, Auto mode or not. For
-  a token it has a hidden field; the token goes straight to Vault.
+- **Add a connector** (`add_connector`): always a card, Auto mode or not. It
+  never asks for a key: a token goes in Vault, where you type it yourself.
 - **Give an agent more tools** (`set_agent_tools`): the card says which agent
   wants to give which of its agents more tools, and lists what is new. The
   agent does not wait; a message tells it whether you approved. The card stays
   open until you answer.
+- **A risky step**: see [Risky steps](#risky-steps) below. The step waits for
+  your answer, like a new agent does.
 
 A card appears in the chat of the agent you talk to: for an agent made by
 another agent, that is the chat of the agent at the top of the chain. A card
 can be answered once.
 
+## Risky steps
+
+A small rule-based classifier checks every shell command an agent runs (in any
+driver) and every connector tool it calls, before it happens:
+
+- **Safe** steps run: building, testing, reading, writing files in the
+  workspace, most commands.
+- **Risky** steps get a card unless Auto mode is on: deleting a folder
+  (`rm -r`), `git push`, `git reset --hard`, `git clean -f`, sending data with
+  `curl`/`wget` (POST, `-d`, uploads), publishing a package, `ssh`/`scp`/remote
+  `rsync`, `sudo`, killing processes, sending mail, and connector tools whose
+  names act on the outside world (send, post, create, update, delete, pay and
+  similar; reading, listing and searching stay safe). The card says what the
+  step does and why it asks.
+- **Dangerous** steps are always refused, Auto mode or not: deleting `/` or
+  the home folder, formatting a disk, writing to a raw device, piping a
+  download into a shell, a fork bomb.
+
+The classifier is plain rules, so it is fast, free and predictable, and it
+misses clever variations. The sandbox stays the real boundary.
+
 ## Auto mode
 
 Turn it on in **Settings → Agents → Auto mode**. Agents then create agents,
-their own routines and give their agents more tools without asking. A new
-agent or a tool change leaves a notice in the chat instead of a card; a new
-routine shows up under the agent's **Routines**. The agent limit, the tool limits above and your keys stay
-protected.
+their own routines and give their agents more tools without asking, and risky
+steps run without a card; dangerous ones stay blocked. A new agent or a tool
+change leaves a notice in the chat instead of a card; a new routine shows up
+under the agent's **Routines**. The agent limit, the tool limits above and
+your keys stay protected.

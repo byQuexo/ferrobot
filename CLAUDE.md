@@ -76,7 +76,8 @@ Principles:
 - `crates/daemon/src/proxy.rs` — model proxy; `auth.rs` — operator token.
 - `crates/daemon/src/usage.rs` — token counts read from proxied responses;
   `pricing.rs` + `config/pricing.toml` — prices and cost estimates;
-  `api/usage.rs` — `/v1/usage`.
+  `api/usage.rs` — `/v1/usage`, `/v1/limits`; `limits.rs` — plan limits
+  of the host's Claude Code and Codex sign-ins (60 s cache).
 - `crates/daemon/src/api/providers.rs`, `secrets.rs` — model providers and
   their keychain-stored keys; `crates/core/src/provider.rs` — provider kinds.
 - `crates/daemon/src/codex.rs` — host-side `codex app-server`: ChatGPT
@@ -86,10 +87,13 @@ Principles:
   host's own, unmodified `claude -p` per turn (`/host/claude-code/turn`), built-in
   tools off, none of the user's settings, the sandbox reached through MCP tools
   (`bash`, `read_file`, `write_file`); `GET /v1/claude-code` reports its login state.
+- `crates/daemon/src/tool_check.rs` — the rule-based tool-call classifier: safe, risky
+  (an approval card unless Auto mode is on) or dangerous (refused); gates connector calls,
+  Claude Code's `bash` and, via `/runner/tool-check` (`runner/src/gate.ts`), every driver's shell.
 - `crates/daemon/src/connectors.rs`, `api/connectors.rs` — connectors: the daemon
   is the MCP client of remote MCP servers and lends their tools to assigned
   agents through `/mcp` (tokens in the keychain, never in a sandbox), and the
-  `add_connector` approval card with its hidden token field;
+  `add_connector` approval card (Approve/Decline; tokens go in Settings → Vault);
   `oauth.rs` — their OAuth sign-in (rmcp's client, loopback callback).
 - `crates/daemon/src/clis.rs`, `api/clis.rs` — CLIs: keyless Debian packages
   built into one shared sandbox image (Docker, `build_image` in
@@ -107,6 +111,9 @@ Principles:
   `apps/desktop/src/lib/voice.ts` — playback and recording in the UI;
   `lib/call-session.ts` — the call in the UI (outlives the chat),
   `lib/call.ts` — its sentence, barge-in and call-event rules.
+- `crates/daemon/src/api/groups.rs` — group chats: named rooms that talk by the
+  room rules outside a call (`call.rs`, the group note); calling one makes it
+  the call's room. UI: `apps/desktop/src/components/Groups.tsx`, `Rooms.tsx`.
 - `crates/daemon/src/storage.rs` — object storage (`object_store`) for snapshot
   archives, `--storage-url` (default: the data dir; `s3://` for S3/R2).
 - `crates/daemon/src/update.rs` — `/v1/update` status; `update/source.rs` — a
@@ -202,14 +209,15 @@ daemon, `docker ps -a` must be empty of ferrobot containers.
 ## Migrations
 
 - `crates/store/src/migrations.rs`, tracked with `PRAGMA user_version`.
-- Forward-only, numbered v1..v17 (v7: `providers`, `agents.provider_id`/`model`; v8:
+- Forward-only, numbered v1..v19 (v7: `providers`, `agents.provider_id`/`model`; v8:
   `global_memories`; v9: `connectors`, `agent_connectors`; v10:
   `global_memories.author`; v11: `agents.pinned`; v12: `settings`, JSON by
   key, e.g. `voice`; v13: `usage`, one row per proxied model call; v14:
   `usage.cost_usd`, OpenRouter's reported charge; v15: `agents.tools`, NULL =
   every tool group; v16: `rooms`, `room_members`, `room_lines`,
   `messages.room_id`, index `events_turn`; v17: `room_lines.invited`, NULL =
-  words said). Append a new entry
+  words said; v18: `agents.tags`, NULL = none, index `usage_agent`; v19:
+  `rooms.name`, NULL = a call room, else a group chat). Append a new entry
   with a `// vN: ...` comment; **never edit or reorder existing ones**.
 - Every migration gets a test (upgrade an old DB, check defaults of existing
   rows). New columns on existing tables need a default.
@@ -246,13 +254,17 @@ daemon, `docker ps -a` must be empty of ferrobot containers.
   its creator's, checked in the daemon in every mode, Auto mode included.
   `set_agent_tools` changes only agents the caller created (never itself), to at most
   the caller's own; narrowing applies at once, anything new needs a card unless Auto mode is on.
+- **Risky steps need a card unless Auto mode is on; dangerous ones are always
+  refused** (`tool_check.rs`). The runner asks before every shell command and
+  fails closed when the check can't answer.
 - **`FERROBOT_MAX_AGENTS`** (default 10) applies to `POST /v1/agents` and to
   `create_agent` (both through `daemon::agents::create`).
 - Question cards are answered at most once (`409` after).
-- **A secret typed into a card goes only to the URL on that card.** Only
-  daemon cards carry `secret` fields (`ask_user` refuses them); the answer
-  route strips the value before anything is recorded, broadcast or sent, and
-  agents can never refer to stored secrets.
+- **No card asks for a key.** An agent's `add_connector` card is
+  Approve/Decline only; connector tokens are typed in Settings → Vault. Agent
+  cards cannot carry `secret` fields (`ask_user` refuses them), the answer
+  route strips any secret value before anything is recorded, broadcast or
+  sent, and agents can never refer to stored secrets.
 
 ## Open items
 

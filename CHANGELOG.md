@@ -6,6 +6,86 @@ All notable changes are listed here. The format follows
 
 ## [Unreleased]
 
+## [0.1.4] - 2026-11-23
+
+### Added
+
+- Call bar: the speaking speed (ElevenLabs; click steps 0.7×–1.2×, the same
+  speed setting as in Settings) and push-to-talk, a toggle with a hold-to-talk
+  button and Space, remembered on this computer.
+
+- Agent tags, a model switch in the chat header and a context meter. Up to five
+  tags per agent show next to its name (`tags` on agents, migration v18). The
+  chat header's model chip switches the model (the agent's computer restarts).
+  A ring by the message box shows how full the agent's context is
+  (`GET /v1/agents/{id}/context`, from its newest model call; for Claude Code
+  from the token counts `claude` reports in its stream) and offers New chat (`POST /v1/agents/{id}/new-session`): the
+  agent's next turn starts a fresh model session (`new_session` on the runner's
+  `turn` frame; older runners ignore it).
+
+- Risky steps ask first: a rule-based classifier checks every shell command
+  (all drivers) and connector tool call. Risky ones (deleting a folder,
+  `git push`, sending data out, connector tools that send or change things)
+  wait for an Approve/Decline card unless Auto mode is on; dangerous ones
+  (deleting `/` or home, formatting a disk, piping a download into a shell)
+  are always refused.
+- Settings → Appearance: theme, accent color (8 swatches, readable in light
+  and dark mode), your bubbles (solid, soft or plain), chat background
+  (default, tinted or plain) and text size, saved on this computer.
+- Keyboard shortcuts (⌘ on macOS, Ctrl elsewhere): ⌘K goes to an agent or a
+  settings page, ⌘N, ⌘,, ⌘⇧U, ⌘I, ⌘B, ⌘1–9, Esc and ⌘/ for the list;
+  Settings → Keyboard lists them all.
+- Plan limits: with a Claude Code provider or a Codex provider signed in with
+  ChatGPT, the Usage header shows rings for the 5-hour and weekly windows,
+  with the reset time on hover (`GET /v1/limits`). Read from the host's own
+  `claude` (`/usage`, no model call) and `codex app-server`; never the
+  account.
+- Richer chat: ```mermaid blocks draw as diagrams and ```html blocks as a
+  sandboxed live preview with their styles and scripts, served by the daemon
+  like shared pages (`POST /v1/previews`; Preview/Code, Copy, Expand); shared
+  .html and .pdf files preview under their card; cleaner tables; a "New" line
+  where unread turns start; mail with several agents folds into one
+  "N messages with K agents" line.
+- Group chats: a named room of two or more agents (`/v1/groups`). Write once
+  and the members answer one at a time by the call-room rules; calling the
+  group makes it the call's room. Rename, change members or delete it from
+  the group's header. New migration: `rooms.name`.
+- Files, reactions and subagents in the chat: attach files with the
+  paperclip, drag and drop or paste (`POST /v1/agents/{id}/uploads` puts them
+  in the agent's `uploads/` folder, at most 25 MB each); agents react to your
+  messages with one emoji (`react` tool, `reaction` event); OpenAI-compatible
+  agents get a `subagent` tool that runs tasks in parallel with the same tools.
+- Send now: ⌘↵ (Ctrl+Enter) sends what you typed ahead of a running turn,
+  and queued messages get a **Send now** link. The daemon stops the turn only
+  when the agent's runner cannot take messages mid-turn (`now` on
+  `POST /v1/agents/{id}/messages`); listed under Settings → Keyboard.
+
+### Changed
+
+- An agent's `add_connector` card no longer asks for the token: approving it
+  adds the connector and gives it to the agent, and you put its token in
+  Settings → Vault. No card asks for a key.
+- Calmer, clearer desktop UI. Avatars show trouble and an open question card;
+  the agent list shows what an agent is doing or its last reply with the time
+  (`waiting` and `last_reply` on agents); finished tool runs fold into one
+  "N steps · 40 s" line that opens Activities, with a short live trail while
+  the agent works; a failed turn with no undelivered message leaves one quiet
+  line; Activities lead with plain words, grouped by turn; the Computer tab
+  starts with a plain summary; notices get icons; new items rise in; the middle
+  view is a raised panel with fewer lines and stronger dark-mode layers; Edit
+  moves out of the chat header (it stays in the Profile tab).
+- The README demo records in dark mode.
+- A clearer Usage page: the range's total cost up front, providers with their
+  share, daily cost stacked by provider, a token totals row, and a breakdown
+  with Model, Agent and Day tabs.
+- The voice call moves from the sidebar to a bar at the top of the window, so
+  it stays in view on every page: every agent in the call, a microphone level
+  meter, the call's length, and Open chat, Mute and Hang up.
+
+### Fixed
+
+- Calls whose agents were all deleted no longer show as empty "Call" rows.
+
 ## [0.1.3] - 2026-11-23
 
 ### Added
@@ -133,7 +213,8 @@ First public release.
   allowlist per API family, no redirects, header allowlists both ways, agent
   tokens blanked in committed images.
 
-[Unreleased]: https://github.com/byQuexo/ferrobot/compare/v0.1.3...HEAD
+[Unreleased]: https://github.com/byQuexo/ferrobot/compare/v0.1.4...HEAD
+[0.1.4]: https://github.com/byQuexo/ferrobot/compare/v0.1.3...v0.1.4
 [0.1.3]: https://github.com/byQuexo/ferrobot/compare/v0.1.2...v0.1.3
 [0.1.2]: https://github.com/byQuexo/ferrobot/compare/v0.1.1...v0.1.2
 [0.1.1]: https://github.com/byQuexo/ferrobot/compare/v0.1.0...v0.1.1

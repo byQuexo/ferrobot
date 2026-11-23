@@ -96,6 +96,13 @@
         "status": {
           "$ref": "#/$defs/AgentStatus"
         },
+        "tags": {
+          "description": "The operator's labels for the agent, in order.",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
         "tools": {
           "description": "Tool groups the agent may use; its connectors are its assignment.",
           "items": {
@@ -168,6 +175,17 @@
                 }
               ]
             },
+            "last_reply": {
+              "oneOf": [
+                {
+                  "$ref": "#/$defs/LastReply",
+                  "description": "The agent's newest reply, cut to a preview."
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
             "presence": {
               "$ref": "#/$defs/Presence"
             },
@@ -187,12 +205,19 @@
               "format": "int32",
               "minimum": 0,
               "type": "integer"
+            },
+            "waiting": {
+              "description": "Question cards waiting for the operator's answer.",
+              "format": "int32",
+              "minimum": 0,
+              "type": "integer"
             }
           },
           "required": [
             "connected",
             "presence",
-            "unread"
+            "unread",
+            "waiting"
           ],
           "type": "object"
         }
@@ -272,6 +297,24 @@
         "rejected"
       ],
       "type": "string"
+    },
+    "LastReply": {
+      "description": "The start of an agent's newest reply.",
+      "properties": {
+        "at": {
+          "description": "When the reply came (RFC 3339).",
+          "type": "string"
+        },
+        "text": {
+          "description": "At most 160 characters.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "text",
+        "at"
+      ],
+      "type": "object"
     },
     "MailMessage": {
       "description": "One message in an agent's mailbox.",
@@ -358,14 +401,14 @@
       "type": "string"
     },
     "Room": {
-      "description": "A voice call with two or more agents; kept as history once the call ended.",
+      "description": "A voice call with two or more agents, kept as history once the call ended; or, with a name,\na group chat, kept until deleted.",
       "properties": {
         "created_at": {
           "format": "date-time",
           "type": "string"
         },
         "ended_at": {
-          "description": "When the call ended; `null` while it runs.",
+          "description": "When the call ended; `null` while it runs, and always for a group.",
           "format": "date-time",
           "type": [
             "string",
@@ -377,11 +420,18 @@
           "type": "integer"
         },
         "members": {
-          "description": "Every agent that took part, in the order they joined.",
+          "description": "Every agent that took part (a group: its members), in the order they joined.",
           "items": {
             "$ref": "#/$defs/AgentId"
           },
           "type": "array"
+        },
+        "name": {
+          "description": "The group's name; `null`: a call room.",
+          "type": [
+            "string",
+            "null"
+          ]
         }
       },
       "required": [
@@ -766,7 +816,7 @@
           "type": "object"
         },
         {
-          "description": "A call room opened, gained a member or ended.",
+          "description": "A call room opened, gained a member or ended; or a group was created or changed.",
           "properties": {
             "room": {
               "$ref": "#/$defs/Room"
@@ -785,7 +835,7 @@
           "type": "object"
         },
         {
-          "description": "Something was said in a call room.",
+          "description": "Something was said in a call room or group.",
           "properties": {
             "line": {
               "$ref": "#/$defs/RoomLine"
@@ -799,6 +849,56 @@
           },
           "required": [
             "line",
+            "type"
+          ],
+          "type": "object"
+        },
+        {
+          "description": "A group was deleted.",
+          "properties": {
+            "room_id": {
+              "format": "int64",
+              "type": "integer"
+            },
+            "type": {
+              "enum": [
+                "room_deleted"
+              ],
+              "type": "string"
+            }
+          },
+          "required": [
+            "room_id",
+            "type"
+          ],
+          "type": "object"
+        },
+        {
+          "description": "Whose turn it is in a call room or group; `None`: nobody's.",
+          "properties": {
+            "agent": {
+              "oneOf": [
+                {
+                  "$ref": "#/$defs/AgentId"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "room_id": {
+              "format": "int64",
+              "type": "integer"
+            },
+            "type": {
+              "enum": [
+                "room_floor"
+              ],
+              "type": "string"
+            }
+          },
+          "required": [
+            "room_id",
             "type"
           ],
           "type": "object"

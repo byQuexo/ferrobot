@@ -204,3 +204,33 @@ const compact = new Intl.NumberFormat("en", { notation: "compact", maximumFracti
 export function count(n: number): string {
   return compact.format(n);
 }
+
+/** Colour class of a group in a stack: `s0`…`s4`, or `other` once folded. */
+export function slotOf(series: DayStack["series"], key: string): string {
+  const i = series.findIndex((s) => s.key === key);
+  return i < 0 || key === "" ? "other" : `s${String(i)}`;
+}
+
+/** Everything but cache reads, which cost a fraction of fresh input. */
+export function freshTokens(t: UsageTotals): number {
+  return t.input_tokens + t.cache_write_tokens + t.output_tokens;
+}
+
+/** "42%", "<1%" or "0%". */
+export function shareLabel(part: number, total: number): string {
+  if (!(total > 0) || part <= 0) return "0%";
+  const pct = (part / total) * 100;
+  return pct < 1 ? "<1%" : `${String(Math.round(pct))}%`;
+}
+
+const resetTime = new Intl.DateTimeFormat("en", {
+  month: "short",
+  day: "numeric",
+  hour: "numeric",
+  minute: "2-digit",
+});
+
+/** A Codex reset (RFC 3339) in local time; Claude Code's own words stay as they are. */
+export function resetLabel(resets: string): string {
+  return /^\d{4}-\d{2}-\d{2}T/.test(resets) ? resetTime.format(Date.parse(resets)) : resets;
+}

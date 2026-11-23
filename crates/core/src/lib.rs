@@ -16,7 +16,7 @@ pub use agent::{
 };
 pub use connector::{Connector, ConnectorAuth};
 pub use error::CoreError;
-pub use mail::{MailMessage, MailStatus, Sender};
+pub use mail::{MailMessage, MailStatus, Sender, is_reaction};
 pub use provider::{Provider, ProviderKind, UpstreamAuth};
 pub use tools::ToolGroup;
 

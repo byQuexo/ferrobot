@@ -4,7 +4,7 @@ import { hash } from "./avatar.ts";
 export type Character = AvatarCharacter;
 export type Body = Character["body"];
 export type Eyes = Character["eyes"];
-export type Mood = "idle" | "thinking" | "working" | "sleeping";
+export type Mood = "idle" | "thinking" | "working" | "sleeping" | "trouble" | "waiting";
 
 export const BODIES: readonly Body[] = ["blob", "bean", "pebble", "sprout"];
 export const EYES: readonly Eyes[] = ["dots", "ovals", "wide", "visor"];
@@ -40,14 +40,19 @@ export function rerollCharacter(current: Character, random: () => number = Math.
   }
 }
 
-export function moodOf(presence: Presence | undefined): Mood {
+/** A problem, then an open question card, outrank what the agent is doing. */
+export function moodOf(
+  presence: Presence | undefined,
+  flags: { trouble?: boolean; waiting?: boolean } = {},
+): Mood {
+  if (presence === "error" || flags.trouble) return "trouble";
+  if (flags.waiting) return "waiting";
   switch (presence) {
     case "working":
       return "working";
     case "starting":
       return "thinking";
     case "sleeping":
-    case "error":
       return "sleeping";
     default:
       return "idle";

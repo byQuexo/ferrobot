@@ -13,7 +13,7 @@ DEMO_API=http://127.0.0.1:17990 DEMO_TOKEN_FILE=<data dir>/api-token scripts/dem
   `libc6-dev` under CLI packages, because `warm-rust.sh` needs a linker for builder's Rust.
 - **Keyless dry runs**: without `DEMO_API`, it starts its own daemon with the mock driver on 17992.
   The story then stops at the first model reply; use it to check the clicks and the encode.
-- **Scenes:** `hero` writes `docs/assets/demo.{mp4,gif}` and the X and LinkedIn cuts in
+- **Scenes:** `hero` (dark mode) writes `docs/assets/demo.{mp4,gif}` and the X and LinkedIn cuts in
   `docs/launch/media/`; `keycard`, `routine`, `memory` and `usage` write the clips in
   `docs/assets/clips/`; `shots` writes light and dark screenshots to `docs/screenshots/`. Record
   `hero` first, because the others reuse its agents, and `usage` and `shots` last.

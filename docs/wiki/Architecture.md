@@ -42,8 +42,9 @@ different trust:
   HTTP and WebSocket API for the operator. Every `/v1` route needs the
   operator token as `Authorization: Bearer <token>`, except `GET /v1/health`
   and the OAuth callback for connector sign-ins (guarded by a single-use
-  `state` instead). Pages of files agents share are served under
-  `/artifacts/` with signed links that expire after 30 minutes.
+  `state` instead). Pages of files agents share, and ```html blocks from the
+  chat (`POST /v1/previews`, kept in memory), are served under `/artifacts/`
+  with signed links that expire after 30 minutes, sandboxed with no network.
   The token is generated on first start into `<data dir>/api-token` (mode
   0600), or set with `--api-token` / `FERROBOT_API_TOKEN`. `GET` requests may
   pass `?access_token=` instead, for WebSockets and images. It is plain HTTP
@@ -160,6 +161,7 @@ Every driver uses it, authenticated with the agent's token:
 | `ask_user` | Shows the operator a question card; the answers come back as a message. |
 | `create_agent` | Asks the operator to approve a new agent (unless Auto mode is on), then creates it. |
 | `share_file` | Copies a file from the sandbox to object storage and shows it in the chat. |
+| `react` | Puts one emoji on a message the operator sent the agent (a `reaction` event); a new one replaces the old. |
 | `remember`, `recall`, `forget` | Memory with full-text search; `global: true` shares an entry with all agents. |
 
 `create_agent` waits for an Approve/Decline card. No answer within

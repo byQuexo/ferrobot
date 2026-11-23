@@ -6,6 +6,7 @@ export const DEFAULT_DAEMON = "http://127.0.0.1:7878";
 // which in turn is generated from the daemon's Rust types. Do not hand-edit.
 type Schemas = components["schemas"];
 export type Agent = Schemas["AgentView"];
+export type AgentContext = Schemas["AgentContext"];
 export type Presence = Schemas["Presence"];
 export type AvatarCharacter = Schemas["AvatarCharacter"];
 export type StoredEvent = Schemas["StoredEvent"];
@@ -33,6 +34,8 @@ export type Connector = Schemas["ConnectorView"];
 export type ToolGroup = Schemas["ToolGroup"];
 export type ConnectorCheck = Schemas["ConnectorCheck"];
 export type SharedFile = Schemas["SharedFileView"];
+export type PreviewLink = Schemas["PreviewLink"];
+export type Upload = Schemas["Upload"];
 export type CreateConnector = Schemas["CreateConnector"];
 export type UpdateConnector = Schemas["UpdateConnector"];
 export type DeviceCode = Schemas["DeviceCode"];
@@ -50,6 +53,8 @@ export type UsageGroup = Schemas["UsageGroup"];
 export type UsageTotals = Schemas["UsageTotals"];
 export type PriceEntry = Schemas["PriceEntry"];
 export type SetPrice = Schemas["SetPrice"];
+export type ProviderLimits = Schemas["ProviderLimits"];
+export type LimitWindow = Schemas["LimitWindow"];
 export type GeneralSettings = Schemas["GeneralSettings"];
 export type UpdateInfo = Schemas["UpdateInfo"];
 export type Diagnostics = Schemas["Diagnostics"];
@@ -193,13 +198,30 @@ export class DaemonClient {
     }
     return all;
   };
-  send = (id: string, body: string): Promise<MailMessage> =>
-    this.#request("POST", `/v1/agents/${id}/messages`, { body });
+  /** `now`: stop a running turn that cannot take the message, so it goes next. */
+  send = (id: string, body: string, now = false): Promise<MailMessage> =>
+    this.#request("POST", `/v1/agents/${id}/messages`, now ? { body, now } : { body });
+  upload = (id: string, file: File): Promise<Upload> =>
+    this.#request(
+      "POST",
+      `/v1/agents/${id}/uploads?name=${encodeURIComponent(file.name)}`,
+      file,
+      "application/octet-stream",
+    );
   markRead = (id: string): Promise<void> => this.#request("POST", `/v1/agents/${id}/read`);
+  /** Reacts to the agent's message (its `assistant_text` event); the agent is told. */
+  react = (agent: string, event: number, emoji: string): Promise<void> =>
+    this.#request("POST", `/v1/agents/${agent}/events/${String(event)}/reaction`, { emoji });
   sharedFile = (agent: string, file: number): Promise<SharedFile> =>
     this.#request("GET", `/v1/agents/${agent}/files/${String(file)}`);
+  /** A ```html block from the chat, served by the daemon as a sandboxed page. */
+  preview = (html: string): Promise<PreviewLink> => this.#request("POST", "/v1/previews", { html });
   interrupt = (id: string): Promise<unknown> => this.#request("POST", `/v1/agents/${id}/interrupt`);
   retry = (id: string): Promise<Agent> => this.#request("POST", `/v1/agents/${id}/retry`);
+  /** The agent's next turn starts a fresh model session; the chat stays. */
+  newSession = (id: string): Promise<void> => this.#request("POST", `/v1/agents/${id}/new-session`);
+  agentContext = (id: string): Promise<AgentContext> =>
+    this.#request("GET", `/v1/agents/${id}/context`);
   answerQuestion = (
     id: string,
     question: number,
@@ -272,6 +294,19 @@ export class DaemonClient {
   /** Rooms of calls with two or more agents, newest first. */
   rooms = (): Promise<Room[]> => this.#request("GET", "/v1/rooms");
   room = (id: number): Promise<RoomTranscript> => this.#request("GET", `/v1/rooms/${String(id)}`);
+  /** Group chats (named rooms), oldest first. */
+  groups = (): Promise<Room[]> => this.#request("GET", "/v1/groups");
+  createGroup = (name: string, members: string[]): Promise<Room> =>
+    this.#request("POST", "/v1/groups", { name, members });
+  updateGroup = (id: number, change: { name?: string; members?: string[] }): Promise<Room> =>
+    this.#request("PATCH", `/v1/groups/${String(id)}`, change);
+  deleteGroup = (id: number): Promise<void> => this.#request("DELETE", `/v1/groups/${String(id)}`);
+  /** The operator's message to a group; while the group is in the call, to the call. */
+  sayInGroup = (id: number, body: string): Promise<MailMessage[]> =>
+    this.#request("POST", `/v1/groups/${String(id)}/messages`, { body });
+  /** Calls every member of a group; the group is the call's room. */
+  callGroup = (id: number): Promise<CallView> =>
+    this.#request("POST", `/v1/groups/${String(id)}/call`);
 
   /** `to` null means until now; `daily` adds each group's `days`. */
   usage = (
@@ -288,6 +323,8 @@ export class DaemonClient {
   /** Replaces all of the operator's own prices. */
   setPrices = (prices: SetPrice[]): Promise<PriceEntry[]> =>
     this.#request("PUT", "/v1/usage/prices", prices);
+  /** 5-hour and weekly plan use of Claude Code and ChatGPT-signed-in Codex providers. */
+  limits = (): Promise<ProviderLimits[]> => this.#request("GET", "/v1/limits");
   clis = (): Promise<ClisView> => this.#request("GET", "/v1/clis");
   /** Saves the packages and starts building their image. */
   updateClis = (packages: string[]): Promise<ClisView> =>

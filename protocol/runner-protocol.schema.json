@@ -73,6 +73,10 @@
               "format": "int64",
               "type": "integer"
             },
+            "new_session": {
+              "description": "Start a fresh model session for this turn: the operator asked for a new chat.",
+              "type": "boolean"
+            },
             "sender": {
               "$ref": "#/$defs/Sender"
             },

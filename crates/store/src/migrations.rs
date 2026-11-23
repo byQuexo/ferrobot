@@ -267,6 +267,14 @@ const MIGRATIONS: &[&str] = &[
     ",
     // v17: the agent a room line invited (the line is the topic it got); NULL = words said
     "ALTER TABLE room_lines ADD COLUMN invited TEXT;",
+    // v18: the operator's tags on an agent, a JSON array; NULL = none. An agent's newest usage
+    // row is its context size.
+    r"
+    ALTER TABLE agents ADD COLUMN tags TEXT;
+    CREATE INDEX usage_agent ON usage(agent_id, id);
+    ",
+    // v19: a room with a name is a group chat, kept until deleted; NULL = a call room
+    "ALTER TABLE rooms ADD COLUMN name TEXT;",
 ];
 
 pub(crate) fn run(conn: &mut Connection) -> Result<(), StoreError> {
@@ -496,5 +504,41 @@ mod tests {
             .query_row("SELECT invited FROM room_lines", [], |r| r.get(0))
             .unwrap();
         assert_eq!(invited, None);
+    }
+
+    #[test]
+    fn v17_agents_have_no_tags() {
+        let mut conn = Connection::open_in_memory().unwrap();
+        for sql in &MIGRATIONS[..17] {
+            conn.execute_batch(sql).unwrap();
+        }
+        conn.pragma_update(None, "user_version", 17).unwrap();
+        conn.execute_batch(
+            "INSERT INTO agents (id, name, instructions, status, created_at)
+             VALUES ('00000000-0000-4000-8000-000000000001', 'alice', 'x', 'running',
+                     '2026-01-01T00:00:00Z');",
+        )
+        .unwrap();
+        run(&mut conn).unwrap();
+        let tags: Option<String> = conn
+            .query_row("SELECT tags FROM agents", [], |r| r.get(0))
+            .unwrap();
+        assert_eq!(tags, None);
+    }
+
+    #[test]
+    fn v19_rooms_stay_call_rooms() {
+        let mut conn = Connection::open_in_memory().unwrap();
+        for sql in &MIGRATIONS[..18] {
+            conn.execute_batch(sql).unwrap();
+        }
+        conn.pragma_update(None, "user_version", 18).unwrap();
+        conn.execute_batch("INSERT INTO rooms (created_at) VALUES ('2026-01-01T00:00:00Z');")
+            .unwrap();
+        run(&mut conn).unwrap();
+        let name: Option<String> = conn
+            .query_row("SELECT name FROM rooms", [], |r| r.get(0))
+            .unwrap();
+        assert_eq!(name, None, "an existing room is a call room");
     }
 }

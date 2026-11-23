@@ -3,7 +3,7 @@
 use std::collections::BTreeMap;
 
 use axum::Json;
-use axum::extract::{Query, State};
+use axum::extract::{Path, Query, State};
 use chrono::{NaiveDateTime, TimeZone};
 use chrono_tz::Tz;
 use ferrobot_core::{AgentId, ProviderKind};
@@ -13,9 +13,10 @@ use time::OffsetDateTime;
 use time::format_description::well_known::Rfc3339;
 use utoipa::{IntoParams, ToSchema};
 
-use super::ApiResult;
+use super::{ApiResult, parse_id};
 use crate::AppState;
 use crate::error::{ApiError, ErrorBody};
+use crate::limits::ProviderLimits;
 use crate::pricing::{self, Price, PriceEntry, Prices};
 
 const MAX_MODEL: usize = 200;
@@ -302,6 +303,14 @@ pub(crate) async fn get_usage(
     }))
 }
 
+/// How much of their 5-hour and weekly plan limits the host's Claude Code login and each Codex
+/// provider signed in with `ChatGPT` have used, read from the CLIs (cached for a minute).
+#[utoipa::path(get, path = "/v1/limits", tag = "usage",
+    responses((status = 200, body = Vec<ProviderLimits>)))]
+pub(crate) async fn get_limits(State(state): State<AppState>) -> ApiResult<Vec<ProviderLimits>> {
+    Ok(Json(crate::limits::all(&state).await?))
+}
+
 /// Prices in USD per 1M tokens: the operator's overrides, then the shipped
 /// table. Unlisted Ollama models cost 0.
 #[utoipa::path(get, path = "/v1/usage/prices", tag = "usage",
@@ -364,4 +373,159 @@ pub(crate) async fn put_prices(
     let raw = serde_json::to_string(&new).map_err(|e| ApiError::Internal(e.to_string()))?;
     state.store.put_setting(pricing::SETTING, raw).await?;
     Ok(Json(pricing::effective(new)))
+}
+
+/// How full an agent's context is, read from its newest model call.
+#[derive(Debug, Serialize, ToSchema)]
+pub(crate) struct AgentContext {
+    /// Whether the daemon knows the agent's context size: from the model proxy, or on Claude
+    /// Code from the token counts its own stream reports. `true` today; kept for older clients.
+    tracked: bool,
+    /// Input plus cache read and write tokens of the newest call since the last new chat;
+    /// `null` before there is one.
+    tokens: Option<i64>,
+    /// Context window of `model` in tokens; `null` when not known.
+    window: Option<i64>,
+    /// The model of that call, else the agent's configured model.
+    model: Option<String>,
+    /// When that call was made.
+    #[serde(with = "time::serde::rfc3339::option")]
+    #[schema(value_type = Option<String>, format = DateTime)]
+    at: Option<OffsetDateTime>,
+}
+
+/// How full the agent's context is.
+#[utoipa::path(get, path = "/v1/agents/{id}/context", tag = "usage",
+    params(("id" = String, Path, description = "Agent id (UUID)")),
+    responses((status = 200, body = AgentContext),
+        (status = 404, description = "Unknown agent", body = ErrorBody)))]
+pub(crate) async fn get_context(
+    State(state): State<AppState>,
+    Path(id): Path<String>,
+) -> ApiResult<AgentContext> {
+    let agent = state.store.get_agent(parse_id(&id)?).await?;
+    let provider = match agent.provider_id {
+        Some(p) => state.store.get_provider(p).await.ok(),
+        None => None,
+    };
+    if provider
+        .as_ref()
+        .is_some_and(|p| p.kind == ProviderKind::ClaudeCode)
+    {
+        let fresh = !state.store.new_session_pending(agent.id).await?;
+        let saved = crate::claude_code::context(&state, agent.id)
+            .await
+            .filter(|_| fresh);
+        let model = saved.as_ref().and_then(|c| c.model.clone()).or_else(|| {
+            agent
+                .model
+                .or_else(|| provider.and_then(|p| p.default_model))
+        });
+        return Ok(Json(AgentContext {
+            tracked: true,
+            tokens: saved.as_ref().map(|c| c.tokens),
+            window: saved
+                .as_ref()
+                .and_then(|c| c.window)
+                .or_else(|| model.as_deref().and_then(context_window)),
+            model,
+            at: saved.map(|c| c.at),
+        }));
+    }
+    // shortcut: an agent on its provider's default can show a side call on a smaller model; name the driver's main model here if that misleads.
+    let configured = agent
+        .model
+        .or_else(|| provider.and_then(|p| p.default_model));
+    let usage = state
+        .store
+        .context_usage(agent.id, configured.clone())
+        .await?;
+    let model = usage.as_ref().map(|u| u.model.clone()).or(configured);
+    Ok(Json(AgentContext {
+        tracked: true,
+        tokens: usage.as_ref().map(|u| u.tokens),
+        window: model.as_deref().and_then(context_window),
+        model,
+        at: usage.map(|u| u.at),
+    }))
+}
+
+/// Context window in tokens of a model id as providers write it (with `anthropic.`, `models/` or
+/// `vendor/` prefixes); `None` when not known.
+// shortcut: a hand-kept table of model families; read windows from the providers' model lists if it falls behind.
+fn context_window(model: &str) -> Option<i64> {
+    let m = model.to_ascii_lowercase();
+    let id = m.rsplit('/').next().unwrap_or(&m);
+    if m.contains("[1m]") || m.ends_with("-1m") {
+        Some(1_000_000)
+    } else if id.contains("claude") {
+        Some(if claude_has_1m(id) {
+            1_000_000
+        } else {
+            200_000
+        })
+    } else if id.contains("gemini") {
+        Some(1_048_576)
+    } else if id.starts_with("gpt-4.1") {
+        Some(1_047_576)
+    } else if id.starts_with("gpt-5") {
+        Some(400_000)
+    } else if id.starts_with("gpt-4o") || id.starts_with("gpt-oss") {
+        Some(128_000)
+    } else if ["o1", "o3", "o4"].iter().any(|p| id.starts_with(p)) {
+        Some(200_000)
+    } else {
+        None
+    }
+}
+
+/// Fable, Mythos and Opus, Sonnet or Haiku 4.6 and later have 1M tokens; older Claude 200K.
+fn claude_has_1m(id: &str) -> bool {
+    let words: Vec<&str> = id.split(|c: char| !c.is_ascii_alphanumeric()).collect();
+    if words.iter().any(|w| matches!(*w, "fable" | "mythos")) {
+        return true;
+    }
+    let Some(family) = words
+        .iter()
+        .position(|w| matches!(*w, "opus" | "sonnet" | "haiku"))
+    else {
+        return false;
+    };
+    // A date like `20250514` is not a version number.
+    let version = |i: usize| {
+        words
+            .get(family + i)
+            .and_then(|w| w.parse::<u32>().ok())
+            .filter(|n| *n < 100)
+    };
+    version(1).is_some_and(|major| major > 4 || (major == 4 && version(2).unwrap_or(0) >= 6))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::context_window;
+
+    #[test]
+    fn context_windows_by_model_family() {
+        let cases = [
+            ("claude-opus-5-5", Some(1_000_000)),
+            ("claude-sonnet-4-6", Some(1_000_000)),
+            ("us.anthropic.claude-opus-4-6-v1:0", Some(1_000_000)),
+            ("claude-fable-5-2", Some(1_000_000)),
+            ("claude-haiku-4-5-20251001", Some(200_000)),
+            ("claude-sonnet-4-20250514", Some(200_000)),
+            ("anthropic/claude-sonnet-4.5", Some(200_000)),
+            ("claude-sonnet-4-5[1m]", Some(1_000_000)),
+            ("claude-3-5-sonnet-20241022", Some(200_000)),
+            ("gemini-2.5-pro", Some(1_048_576)),
+            ("openai/gpt-5.1-codex", Some(400_000)),
+            ("gpt-4o-mini", Some(128_000)),
+            ("o4-mini", Some(200_000)),
+            ("tencent/hy4-flash", None),
+            ("llama3.2", None),
+        ];
+        for (model, window) in cases {
+            assert_eq!(context_window(model), window, "{model}");
+        }
+    }
 }

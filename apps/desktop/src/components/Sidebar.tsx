@@ -7,7 +7,6 @@ import {
   PanelLeftClose,
   PanelLeftOpen,
   Pencil,
-  Phone,
   Pin,
   Plus,
   Search,
@@ -18,11 +17,12 @@ import {
 
 import type { Agent } from "../api.ts";
 import { useApp } from "../context.ts";
-import { statusOf } from "../lib/format.ts";
+import { rowLine, statusOf } from "../lib/format.ts";
 import { loadOrder, moveId, orderAgents, saveOrder } from "../lib/order.ts";
 import { Avatar } from "./Avatar.tsx";
-import { CallWindow } from "./CallWindow.tsx";
+import { TagChips } from "./AgentMeta.tsx";
 import { ConversationList, type Pair } from "./Conversations.tsx";
+import { GroupList } from "./Groups.tsx";
 import { RoomList } from "./Rooms.tsx";
 import { Button, Dialog, IconButton, Logo } from "./ui.tsx";
 
@@ -55,7 +55,7 @@ export function Sidebar(props: {
   online: boolean;
   onDeleted: (id: string) => void;
 }): JSX.Element {
-  const { agents, client, run, callState } = useApp();
+  const { agents, client, run } = useApp();
   const [filter, setFilter] = useState("");
   const [order, setOrder] = useState<string[]>(loadOrder);
   const [drop, setDrop] = useState<{ id: string; after: boolean } | null>(null);
@@ -155,27 +155,11 @@ export function Sidebar(props: {
     />
   );
   const connLabel = props.online ? "Daemon connected" : "Daemon offline";
-  const callLabel = callState?.ending
-    ? "Call ended"
-    : callState?.muted
-      ? "Voice call, muted"
-      : "Voice call";
 
   return (
     <aside class={`sidebar${props.rail ? " rail" : ""}`} ref={aside}>
       {props.rail ? (
         <>
-          {callState && (
-            <button
-              type="button"
-              class={`rail-call${callState.ending ? " ending" : callState.muted ? " muted" : ""}`}
-              aria-label={`${callLabel}: show the controls`}
-              title={`${callLabel}: show the controls`}
-              onClick={toggle}
-            >
-              <Phone size={18} />
-            </button>
-          )}
           <nav class="rail-list" aria-label="Agents">
             {railAgents.filter((a) => a.pinned).map(railItem)}
             {railAgents.some((a) => a.pinned) && railAgents.some((a) => !a.pinned) && (
@@ -217,7 +201,6 @@ export function Sidebar(props: {
               <PanelLeftClose size={18} />
             </IconButton>
           </header>
-          <CallWindow />
           <label class="search">
             <Search size={16} aria-hidden="true" />
             <input
@@ -259,6 +242,7 @@ export function Sidebar(props: {
             {list.length === 0 && agents.size > 0 && (
               <p class="muted pad">No agent matches “{filter}”.</p>
             )}
+            <GroupList active={props.room} onOpen={props.onOpenRoom} />
             <ConversationList active={props.pair} onOpen={props.onOpenPair} />
             <RoomList active={props.room} onOpen={props.onOpenRoom} />
           </nav>
@@ -502,6 +486,7 @@ function AgentRow(props: {
 }): JSX.Element {
   const a = props.agent;
   const status = statusOf(a);
+  const line = rowLine(a);
   const { class: drop, ...row } = props.row;
   return (
     <div class={`agent-row-wrap${drop}`} {...row}>
@@ -509,7 +494,7 @@ function AgentRow(props: {
         type="button"
         class={`agent-row${props.active ? " active" : ""}`}
         aria-current={props.active ? "page" : undefined}
-        title={`${a.name} · ${status.label}`}
+        title={[a.name, status.label, a.description].filter(Boolean).join(" · ")}
         onClick={() => {
           props.onSelect(a.id);
         }}
@@ -518,12 +503,10 @@ function AgentRow(props: {
         <span class="agent-row-text">
           <span class="agent-row-top">
             <span class="agent-name">{a.name}</span>
+            <TagChips tags={a.tags} />
+            {line.time && <span class="agent-time">{line.time}</span>}
           </span>
-          {a.credential_error || a.tools_unsupported ? (
-            <span class="agent-desc bad">{status.label}</span>
-          ) : (
-            <span class="agent-desc">{a.description || "No description"}</span>
-          )}
+          <span class={`agent-desc${line.tone ? ` ${line.tone}` : ""}`}>{line.text}</span>
         </span>
         {a.unread > 0 && (
           <span class="badge" aria-label={`${String(a.unread)} unread`}>

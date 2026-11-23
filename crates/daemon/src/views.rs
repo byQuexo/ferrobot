@@ -77,6 +77,37 @@ pub struct AgentView {
     /// Set while the agent's model can't use tools and the operator has not turned them off;
     /// its turns wait.
     pub tools_unsupported: Option<ToolsUnsupported>,
+    /// Question cards waiting for the operator's answer.
+    pub waiting: u32,
+    /// The agent's newest reply, cut to a preview.
+    pub last_reply: Option<LastReply>,
+}
+
+/// The start of an agent's newest reply.
+#[derive(Debug, Clone, Serialize, ToSchema)]
+pub struct LastReply {
+    /// At most 160 characters.
+    pub text: String,
+    /// When the reply came (RFC 3339).
+    pub at: String,
+}
+
+/// Per-agent counts the agent list shows, read once for all agents.
+#[derive(Debug, Default)]
+pub struct Counts {
+    unread: std::collections::HashMap<AgentId, u32>,
+    waiting: std::collections::HashMap<AgentId, u32>,
+    replies: std::collections::HashMap<AgentId, (String, String)>,
+}
+
+impl Counts {
+    pub async fn load(state: &AppState) -> Result<Self, ApiError> {
+        Ok(Self {
+            unread: state.store.unread_counts().await?,
+            waiting: state.store.waiting_counts().await?,
+            replies: state.store.last_replies().await?,
+        })
+    }
 }
 
 pub fn presence(agent: &Agent, connected: bool, working: bool) -> Presence {
@@ -89,15 +120,27 @@ pub fn presence(agent: &Agent, connected: bool, working: bool) -> Presence {
     }
 }
 
-pub fn view(state: &AppState, agent: Agent, unread: u32) -> AgentView {
+pub fn view(state: &AppState, agent: Agent, counts: &Counts) -> AgentView {
     let connected = state.hub.is_connected(agent.id);
     let working = state.hub.is_working(agent.id);
+    let id = agent.id;
     AgentView {
+        unread: counts.unread.get(&id).copied().unwrap_or(0),
+        waiting: counts.waiting.get(&id).copied().unwrap_or(0),
+        last_reply: counts.replies.get(&id).map(|(text, at)| LastReply {
+            text: text
+                .split_whitespace()
+                .collect::<Vec<_>>()
+                .join(" ")
+                .chars()
+                .take(160)
+                .collect(),
+            at: at.clone(),
+        }),
         presence: presence(&agent, connected, working),
         avatar_url: (agent.avatar_rev > 0)
             .then(|| format!("/v1/agents/{}/avatar?v={}", agent.id, agent.avatar_rev)),
         connected,
-        unread,
         credential_error: state.hub.credential_error(agent.id),
         tools_unsupported: state.hub.tools_unsupported(agent.id),
         agent,
@@ -106,26 +149,16 @@ pub fn view(state: &AppState, agent: Agent, unread: u32) -> AgentView {
 
 pub async fn agent_view(state: &AppState, id: AgentId) -> Result<AgentView, ApiError> {
     let agent = state.store.get_agent(id).await?;
-    let unread = state
-        .store
-        .unread_counts()
-        .await?
-        .get(&id)
-        .copied()
-        .unwrap_or(0);
-    Ok(view(state, agent, unread))
+    Ok(view(state, agent, &Counts::load(state).await?))
 }
 
 pub async fn all_agents(state: &AppState) -> Result<Vec<AgentView>, ApiError> {
-    let unread = state.store.unread_counts().await?;
+    let counts = Counts::load(state).await?;
     Ok(state
         .store
         .list_agents()
         .await?
         .into_iter()
-        .map(|a| {
-            let n = unread.get(&a.id).copied().unwrap_or(0);
-            view(state, a, n)
-        })
+        .map(|a| view(state, a, &counts))
         .collect())
 }

@@ -19,6 +19,10 @@ use crate::{AppState, lifecycle};
 
 /// Upper bound for the one-line description.
 pub const MAX_DESCRIPTION_BYTES: usize = 280;
+/// Most tags an agent can have.
+pub const MAX_TAGS: usize = 5;
+/// Longest tag, in characters.
+pub const MAX_TAG_CHARS: usize = 20;
 /// Default for [`crate::Settings::max_agents`].
 pub const DEFAULT_MAX_AGENTS: usize = 10;
 /// Default for [`crate::Settings::approval_timeout`].
@@ -40,6 +44,8 @@ pub struct AgentSpec {
     /// Names of the creator's connectors; `None`: all of them. The operator assigns
     /// connectors separately.
     pub connectors: Option<Vec<String>>,
+    /// The operator's labels; agents create agents without any.
+    pub tags: Vec<String>,
 }
 
 impl From<ferrobot_mcp::AgentRequest> for AgentSpec {
@@ -53,6 +59,7 @@ impl From<ferrobot_mcp::AgentRequest> for AgentSpec {
             model: None,
             tools: r.tools,
             connectors: r.connectors,
+            tags: Vec::new(),
         }
     }
 }
@@ -413,6 +420,29 @@ pub(crate) fn check_description(d: &str) -> Result<(), ApiError> {
     Ok(())
 }
 
+/// The tags trimmed, if there are at most [`MAX_TAGS`] distinct ones of 1 to [`MAX_TAG_CHARS`]
+/// characters.
+pub(crate) fn check_tags(tags: Vec<String>) -> Result<Vec<String>, ApiError> {
+    if tags.len() > MAX_TAGS {
+        return Err(ApiError::BadRequest(format!("at most {MAX_TAGS} tags")));
+    }
+    let mut out: Vec<String> = Vec::with_capacity(tags.len());
+    for tag in tags {
+        let tag = tag.trim().to_owned();
+        let chars = tag.chars().count();
+        if chars == 0 || chars > MAX_TAG_CHARS || tag.chars().any(char::is_control) {
+            return Err(ApiError::BadRequest(format!(
+                "tags must be 1-{MAX_TAG_CHARS} characters"
+            )));
+        }
+        if out.contains(&tag) {
+            return Err(ApiError::BadRequest(format!("tag {tag:?} is there twice")));
+        }
+        out.push(tag);
+    }
+    Ok(out)
+}
+
 pub(crate) fn check_character(c: Option<&AvatarCharacter>) -> Result<(), ApiError> {
     match c {
         Some(c) if !c.is_valid() => {
@@ -450,6 +480,7 @@ pub async fn create(
     spec: AgentSpec,
     created_by: Option<AgentId>,
 ) -> Result<Agent, ApiError> {
+    let tags = check_tags(spec.tags.clone())?;
     let (provider_id, model) = match (created_by, spec.provider_id, &spec.model) {
         (Some(creator), None, None) => {
             let creator = state.store.get_agent(creator).await?;
@@ -483,10 +514,12 @@ pub async fn create(
                 provider_id: Some(provider_id),
                 model: Some(model.clone()),
                 tools: Some(tools.clone()),
+                tags: Some(tags.clone()),
                 ..AgentPatch::default()
             },
         )
         .await?;
+    agent.tags = tags;
     agent.character = spec.character;
     agent.provider_id = provider_id;
     agent.model = model;
@@ -549,6 +582,46 @@ fn card_prompt(
     prompt
 }
 
+/// Puts an approval card in `chat` and waits for the operator, at most
+/// [`crate::Settings::approval_timeout`]. `None`: no answer in time; the card is then locked as
+/// declined.
+pub(crate) async fn await_card(
+    state: &AppState,
+    chat: AgentId,
+    card: &QuestionEvent,
+) -> Result<Option<bool>, ApiError> {
+    let payload = serde_json::to_value(card).map_err(|e| ApiError::Internal(e.to_string()))?;
+    let event = state
+        .store
+        .append_event(chat, None, "question".into(), payload)
+        .await?;
+    let qid = event.id;
+    let (tx, mut rx) = tokio::sync::oneshot::channel();
+    state.approvals_lock().insert(qid, tx);
+    state.publish(UiEvent::Event { event });
+    state.publish_agent(chat).await;
+    if let Ok(r) = tokio::time::timeout(state.settings.approval_timeout, &mut rx).await {
+        return Ok(Some(r.unwrap_or(false)));
+    }
+    let _guard = state.answers.lock().await;
+    if state.approvals_lock().remove(&qid).is_none() {
+        // The answer raced the timeout and is already in the channel.
+        return Ok(Some(rx.try_recv().unwrap_or(false)));
+    }
+    let answered = QuestionAnswered {
+        question: qid,
+        answers: vec![QuestionAnswer {
+            question_id: "q1".into(),
+            values: vec![DECLINE.into()],
+            custom: None,
+        }],
+        message_id: None,
+    };
+    let payload = serde_json::to_value(&answered).map_err(|e| ApiError::Internal(e.to_string()))?;
+    state.record(chat, None, "question_answered", payload).await;
+    Ok(None)
+}
+
 /// Shows the operator an approval card in the chat they use for the
 /// requester (its top creator's), waits for the decision (or
 /// [`crate::Settings::approval_timeout`]) and creates the agent if approved.
@@ -595,42 +668,11 @@ pub async fn request(
             description,
         },
     );
-    let payload = serde_json::to_value(&card).map_err(|e| ApiError::Internal(e.to_string()))?;
-    let event = state
-        .store
-        .append_event(chat, None, "question".into(), payload)
-        .await?;
-    let qid = event.id;
-    let (tx, mut rx) = tokio::sync::oneshot::channel();
-    state.approvals_lock().insert(qid, tx);
-    state.publish(UiEvent::Event { event });
-
-    let approved =
-        if let Ok(r) = tokio::time::timeout(state.settings.approval_timeout, &mut rx).await {
-            r.unwrap_or(false)
-        } else {
-            let _guard = state.answers.lock().await;
-            if state.approvals_lock().remove(&qid).is_some() {
-                // Nobody answered: lock the card as declined.
-                let answered = QuestionAnswered {
-                    question: qid,
-                    answers: vec![QuestionAnswer {
-                        question_id: "q1".into(),
-                        values: vec![DECLINE.into()],
-                        custom: None,
-                    }],
-                    message_id: None,
-                };
-                let payload = serde_json::to_value(&answered)
-                    .map_err(|e| ApiError::Internal(e.to_string()))?;
-                state.record(chat, None, "question_answered", payload).await;
-                return Ok(AgentRequestOutcome::Declined {
-                    reason: "the operator did not answer in time".into(),
-                });
-            }
-            // The answer raced the timeout and is already in the channel.
-            rx.try_recv().unwrap_or(false)
-        };
+    let Some(approved) = await_card(state, chat, &card).await? else {
+        return Ok(AgentRequestOutcome::Declined {
+            reason: "the operator did not answer in time".into(),
+        });
+    };
     if !approved {
         return Ok(AgentRequestOutcome::Declined {
             reason: "the operator declined".into(),

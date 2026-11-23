@@ -14,6 +14,7 @@ pub mod error;
 pub mod files;
 pub mod hub;
 pub mod lifecycle;
+pub mod limits;
 pub mod logs;
 pub mod models;
 pub mod no_tools;
@@ -28,6 +29,7 @@ pub mod state;
 pub mod storage;
 pub mod supervisor;
 pub mod tasks;
+pub mod tool_check;
 pub mod update;
 pub mod usage;
 pub mod views;
@@ -76,6 +78,7 @@ pub fn agent_router(state: AppState) -> Router {
     Router::new()
         .merge(runner_ws::router().with_state(state.clone()))
         .merge(proxy::router().with_state(state.clone()))
-        .merge(claude_code::router().with_state(state))
+        .merge(claude_code::router().with_state(state.clone()))
+        .merge(tool_check::router().with_state(state))
         .nest("/mcp", mcp)
 }

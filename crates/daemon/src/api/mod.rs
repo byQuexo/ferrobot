@@ -6,6 +6,7 @@ pub(crate) mod clis;
 pub(crate) mod connectors;
 pub(crate) mod diagnostics;
 pub(crate) mod files;
+pub(crate) mod groups;
 pub(crate) mod memory;
 pub(crate) mod providers;
 pub(crate) mod routines;
@@ -36,8 +37,7 @@ pub fn router() -> Router<AppState> {
     Router::new()
         .merge(integrations())
         .route("/v1/health", get(health))
-        .route("/v1/agents/{id}/files/{file_id}", get(files::shared_file))
-        .route("/artifacts/{id}/{file_id}", get(files::page))
+        .merge(files::router())
         .route("/v1/ws", get(ws::ui_ws))
         .route(
             "/v1/agents",
@@ -55,20 +55,8 @@ pub fn router() -> Router<AppState> {
                 .put(agents::put_avatar)
                 .delete(agents::delete_avatar),
         )
-        .route(
-            "/v1/agents/{id}/messages",
-            get(chat::list_messages).post(chat::post_message),
-        )
-        .route("/v1/agents/{id}/events", get(chat::list_events))
-        .route("/v1/agents/{id}/read", post(chat::mark_read))
-        .route("/v1/conversations", get(chat::list_conversations))
-        .route("/v1/conversations/{a}/{b}", get(chat::conversation_thread))
-        .route("/v1/agents/{id}/interrupt", post(chat::interrupt))
-        .route("/v1/agents/{id}/retry", post(chat::retry))
-        .route(
-            "/v1/agents/{id}/questions/{qid}/answer",
-            post(chat::answer_question),
-        )
+        .merge(chat::router())
+        .route("/v1/agents/{id}/context", get(usage::get_context))
         .route(
             "/v1/agents/{id}/memory",
             get(memory::list_memory).post(memory::put_memory),
@@ -104,6 +92,7 @@ pub fn router() -> Router<AppState> {
         .route("/v1/diagnostics", get(diagnostics::get_diagnostics))
         .route("/v1/diagnostics/log", get(diagnostics::get_log))
         .route("/v1/usage", get(usage::get_usage))
+        .route("/v1/limits", get(usage::get_limits))
         .route(
             "/v1/usage/prices",
             get(usage::get_prices).put(usage::put_prices),
@@ -186,6 +175,16 @@ fn integrations() -> Router<AppState> {
         .route("/v1/call/messages", post(voice::post_call_message))
         .route("/v1/rooms", get(voice::list_rooms))
         .route("/v1/rooms/{id}", get(voice::get_room))
+        .route(
+            "/v1/groups",
+            get(groups::list_groups).post(groups::create_group),
+        )
+        .route(
+            "/v1/groups/{id}",
+            axum::routing::patch(groups::update_group).delete(groups::delete_group),
+        )
+        .route("/v1/groups/{id}/messages", post(groups::post_group_message))
+        .route("/v1/groups/{id}/call", post(groups::call_group))
         .route(
             "/v1/voice/transcription",
             post(voice::transcription).layer(axum::extract::DefaultBodyLimit::max(

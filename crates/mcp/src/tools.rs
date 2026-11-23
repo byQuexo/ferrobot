@@ -305,6 +305,14 @@ pub struct ShareFileResult {
 }
 
 #[derive(Debug, Deserialize, JsonSchema)]
+pub struct ReactArgs {
+    /// The `#id` of a message your operator sent you, as in "Message #7 from user".
+    pub message_id: i64,
+    /// One emoji, e.g. 👍. It replaces your earlier reaction on that message.
+    pub emoji: String,
+}
+
+#[derive(Debug, Deserialize, JsonSchema)]
 pub struct InviteToCallArgs {
     /// The teammate to bring in: its id or `@name`.
     pub agent: String,
@@ -898,10 +906,11 @@ impl FerrobotTools {
 
     #[tool(
         description = "Ask your operator to add a connector (a remote MCP server) and give it to \
-        you. They see a card with its name and URL and, for `token`, a hidden field for the token: \
-        you never see the token, so never ask for keys, passwords or tokens in chat or with \
+        you. They see a card with its name and URL. For `token` they put the token in Settings \
+        themselves: you never see it, so never ask for keys, passwords or tokens in chat or with \
         ask_user. Does not wait: a message tells you when it was added or declined; its tools \
-        (`<name>__<tool>`) work from your next turn after that. Finish your turn after asking."
+        (`<name>__<tool>`) work from your next turn after that, or once the token is in. Finish \
+        your turn after asking."
     )]
     async fn add_connector(
         &self,
@@ -956,6 +965,48 @@ impl FerrobotTools {
             name: shared.name,
             size: shared.size,
         }))
+    }
+
+    #[tool(
+        description = "React to a message your operator sent you with one emoji; it shows on \
+        their message in your chat. Use it to acknowledge without words instead of replying \
+        \"ok\". A new reaction replaces your earlier one on that message."
+    )]
+    async fn react(
+        &self,
+        Extension(parts): Extension<http::request::Parts>,
+        Parameters(args): Parameters<ReactArgs>,
+    ) -> ToolResult<Ack> {
+        let me = caller(&parts)?.0.id;
+        let emoji = args.emoji.trim();
+        if !ferrobot_core::is_reaction(emoji) {
+            return Err(ErrorData::invalid_params(
+                "emoji must be one emoji, like 👍",
+                None,
+            ));
+        }
+        let store = &self.state.store;
+        let theirs = store
+            .get_message(args.message_id)
+            .await
+            .ok()
+            .filter(|m| m.sender == Sender::User && m.recipient == me && m.room_id.is_none());
+        if theirs.is_none() {
+            return Err(ErrorData::invalid_params(
+                format!(
+                    "message #{} is not one your operator sent you in your chat",
+                    args.message_id
+                ),
+                None,
+            ));
+        }
+        let payload = serde_json::json!({ "message_id": args.message_id, "emoji": emoji });
+        let event = store
+            .append_event(me, None, "reaction".into(), payload)
+            .await
+            .map_err(store_err)?;
+        self.state.notifier.event_recorded(&event);
+        Ok(Json(Ack { ok: true }))
     }
 
     #[tool(
@@ -1169,9 +1220,8 @@ pub(crate) fn group_of(tool: &str) -> Option<ToolGroup> {
             ToolGroup::Team
         }
         "remember" | "recall" | "forget" => ToolGroup::Memory,
-        "ask_user" | "share_file" | "invite_to_call" | "hang_up" | "list_guides" | "read_guide" => {
-            ToolGroup::Operator
-        }
+        "ask_user" | "share_file" | "invite_to_call" | "hang_up" | "list_guides" | "read_guide"
+        | "react" => ToolGroup::Operator,
         "create_agent" | "set_agent_tools" => ToolGroup::CreateAgents,
         "add_connector" => ToolGroup::AddConnectors,
         "create_routine" => ToolGroup::Routines,

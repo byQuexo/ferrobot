@@ -119,6 +119,7 @@ async fn tools_act_as_the_authenticated_agent() {
             "list_agents",
             "list_guides",
             "list_tasks",
+            "react",
             "read_guide",
             "read_mailbox",
             "recall",
@@ -325,6 +326,29 @@ async fn tools_act_as_the_authenticated_agent() {
     let bad =
         json!({"questions": [{"prompt": "?", "kind": "single", "choices": [{"label": "only"}]}]});
     assert!(call(&alice, "ask_user", bad).await.is_err());
+
+    // Reactions go only on the operator's own messages to the caller.
+    let to_alice = store
+        .enqueue_message(Sender::User, ids[0], "Book the train".into(), None)
+        .await
+        .unwrap();
+    let to_bob = store
+        .enqueue_message(Sender::User, ids[1], "Hi bob".into(), None)
+        .await
+        .unwrap();
+    let react = |id: i64, emoji: &str| json!({"message_id": id, "emoji": emoji});
+    call(&alice, "react", react(to_alice.id, " 👍 "))
+        .await
+        .unwrap();
+    let events = store.events_after(ids[0], 0, 20).await.unwrap();
+    let r = events.iter().rfind(|e| e.kind == "reaction").unwrap();
+    assert_eq!(r.payload, json!({"message_id": to_alice.id, "emoji": "👍"}));
+    assert!(call(&alice, "react", react(to_bob.id, "👍")).await.is_err());
+    assert!(call(&alice, "react", react(9999, "👍")).await.is_err());
+    for bad in ["", "ok", "👍 👍", &"👍".repeat(9)] {
+        let refused = call(&alice, "react", react(to_alice.id, bad)).await;
+        assert!(refused.is_err(), "{bad:?}");
+    }
 
     let made = call(
         &alice,

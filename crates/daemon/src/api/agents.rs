@@ -11,7 +11,7 @@ use serde::Deserialize;
 use utoipa::{IntoParams, ToSchema};
 
 use super::{ApiResult, check_len, parse_id};
-use crate::agents::{self, AgentSpec, check_character, check_description};
+use crate::agents::{self, AgentSpec, check_character, check_description, check_tags};
 use crate::error::{ApiError, ErrorBody};
 use crate::views::{self, AgentView};
 use crate::{AppState, lifecycle};
@@ -53,6 +53,9 @@ pub(crate) struct CreateAgent {
     /// `PUT /v1/agents/{id}/connectors`.
     #[serde(default)]
     tools: Option<Vec<ToolGroup>>,
+    /// Labels for the operator: at most 5, each 1-20 characters after trimming, no duplicates.
+    #[serde(default)]
+    tags: Vec<String>,
 }
 
 /// Distinguishes an omitted field (`None`) from an explicit `null` (`Some(None)`).
@@ -90,6 +93,7 @@ pub(crate) async fn create_agent(
             model: req.model,
             tools: req.tools,
             connectors: None,
+            tags: req.tags,
         },
         None,
     )
@@ -152,6 +156,8 @@ pub(crate) struct UpdateAgent {
     /// Tool groups the agent may use (any; the subset rule binds only agents creating
     /// agents). A connected runner applies them from its next turn.
     tools: Option<Vec<ToolGroup>>,
+    /// Replaces the tags (same rules as on create); `[]` removes them.
+    tags: Option<Vec<String>>,
 }
 
 /// Edits an agent's profile.
@@ -177,6 +183,7 @@ pub(crate) async fn update_agent(
         check_len("instructions", i)?;
     }
     check_character(req.character.flatten().as_ref())?;
+    let tags = req.tags.map(check_tags).transpose()?;
     let reconfigure = name.is_some() || req.instructions.is_some() || req.tools.is_some();
     let model_change = req.provider_id.is_some() || req.model.is_some();
     let (provider_id, model) = if model_change {
@@ -201,6 +208,7 @@ pub(crate) async fn update_agent(
                 model,
                 pinned: req.pinned,
                 tools: req.tools,
+                tags,
             },
         )
         .await?;

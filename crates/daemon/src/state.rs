@@ -221,10 +221,17 @@ pub enum UiEvent {
         room_id: Option<i64>,
         hung_up: Option<AgentId>,
     },
-    /// A call room opened, gained a member or ended.
+    /// A call room opened, gained a member or ended; or a group was created or changed.
     Room { room: Room },
-    /// Something was said in a call room.
+    /// Something was said in a call room or group.
     RoomLine { line: RoomLine },
+    /// A group was deleted.
+    RoomDeleted { room_id: i64 },
+    /// Whose turn it is in a call room or group; `None`: nobody's.
+    RoomFloor {
+        room_id: i64,
+        agent: Option<AgentId>,
+    },
 }
 
 /// Shared daemon state. Cheap to clone.
@@ -253,15 +260,19 @@ pub struct AppState {
     pub connectors: Arc<crate::connectors::Sessions>,
     /// Signs links to shared files; loaded from the secret store once.
     pub link_key: Arc<tokio::sync::OnceCell<ring::hmac::Key>>,
+    /// HTML blocks from the chat, served as pages.
+    pub previews: Arc<crate::files::Previews>,
     /// Connector OAuth sign-ins waiting for the browser, refresh locks.
     pub oauth: Arc<crate::oauth::OAuth>,
     /// Model lists recently fetched from providers.
     pub model_lists: Arc<crate::models::ModelCache>,
+    /// Plan limits recently read from the host's Claude Code and Codex.
+    pub limits: Arc<crate::limits::LimitsCache>,
     /// What speech and transcription may still spend this minute.
     pub voice: Arc<Mutex<crate::voice::Budget>>,
-    /// The operator's voice call (in memory: a restart ends it). Async, so a change and its
-    /// room's rows in the store happen as one step.
-    pub call: Arc<tokio::sync::Mutex<crate::call::Call>>,
+    /// The operator's voice call and group chats' turns (in memory: a restart ends them). Async,
+    /// so a change and its room's rows in the store happen as one step.
+    pub rooms: Arc<tokio::sync::Mutex<crate::call::Rooms>>,
     /// The running or last source update (in memory: the restarted daemon starts idle).
     pub update: Arc<Mutex<crate::update::UpdateInfo>>,
     /// Where the CLI image build stands.
@@ -296,10 +307,12 @@ impl AppState {
             codex: Arc::default(),
             connectors: Arc::default(),
             link_key: Arc::default(),
+            previews: Arc::default(),
             oauth: Arc::default(),
             model_lists: Arc::default(),
+            limits: Arc::default(),
             voice: Arc::default(),
-            call: Arc::default(),
+            rooms: Arc::default(),
             update: Arc::default(),
             clis: Arc::default(),
             started: std::time::Instant::now(),
@@ -330,7 +343,13 @@ impl AppState {
             .append_event(agent, turn_id, kind.to_owned(), payload)
             .await
         {
-            Ok(event) => self.publish(UiEvent::Event { event }),
+            Ok(event) => {
+                self.publish(UiEvent::Event { event });
+                // The agent list shows open cards.
+                if kind == "question" || kind == "question_answered" {
+                    self.publish_agent(agent).await;
+                }
+            }
             Err(e) => tracing::error!(error = %e, %agent, kind, "failed to record event"),
         }
     }
@@ -419,6 +438,10 @@ impl ferrobot_mcp::MailboxNotifier for AppState {
         self.publish(UiEvent::Event {
             event: event.clone(),
         });
+        if event.kind == "question" {
+            let (state, agent) = (self.clone(), event.agent_id);
+            tokio::spawn(async move { state.publish_agent(agent).await });
+        }
     }
 
     fn request_connector(
@@ -523,6 +546,12 @@ impl ferrobot_mcp::MailboxNotifier for AppState {
                 crate::claude_code::call_computer(&state, agent, &name, arguments.as_ref()).await
             {
                 return result;
+            }
+            let call = crate::tool_check::Call::Connector(&name);
+            if let Err(why) = crate::tool_check::gate(&state, agent, call).await {
+                return Ok(rmcp::model::CallToolResult::error(vec![
+                    rmcp::model::ContentBlock::text(why),
+                ]));
             }
             crate::connectors::call(&state, agent, &name, arguments).await
         })

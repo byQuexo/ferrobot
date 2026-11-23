@@ -15,7 +15,7 @@ use ferrobot_core::{
     MailMessage, MailStatus, Sender,
 };
 use ferrobot_daemon::views::{
-    AgentView, CredentialError, CredentialProblem, Presence, ToolsUnsupported,
+    AgentView, CredentialError, CredentialProblem, LastReply, Presence, ToolsUnsupported,
 };
 use ferrobot_daemon::{UiEvent, spec};
 use ferrobot_store::{Room, RoomLine, StoredEvent};
@@ -64,6 +64,8 @@ fn every_routed_path_is_documented() {
         "/v1/conversations/{a}/{b}",
         "/v1/agents/{id}/interrupt",
         "/v1/agents/{id}/retry",
+        "/v1/agents/{id}/new-session",
+        "/v1/agents/{id}/context",
         "/v1/agents/{id}/questions/{qid}/answer",
         "/v1/agents/{id}/memory",
         "/v1/agents/{id}/memory/{key}",
@@ -92,6 +94,7 @@ fn every_routed_path_is_documented() {
         "/v1/connectors/{id}/check",
         "/v1/oauth/callback",
         "/v1/agents/{id}/files/{file_id}",
+        "/v1/agents/{id}/uploads",
         "/artifacts/{id}/{file_id}",
         "/v1/voice",
         "/v1/voice/speech",
@@ -102,8 +105,13 @@ fn every_routed_path_is_documented() {
         "/v1/call/messages",
         "/v1/rooms",
         "/v1/rooms/{id}",
+        "/v1/groups",
+        "/v1/groups/{id}",
+        "/v1/groups/{id}/messages",
+        "/v1/groups/{id}/call",
         "/v1/usage",
         "/v1/usage/prices",
+        "/v1/limits",
         "/v1/settings",
         "/v1/update",
         "/v1/diagnostics",
@@ -115,7 +123,7 @@ fn every_routed_path_is_documented() {
     }
     assert_eq!(
         documented.len(),
-        59,
+        70,
         "undocumented extra paths: {documented:?}"
     );
 }
@@ -170,6 +178,7 @@ fn ui_events_validate_against_schema() {
         sandbox_id: Some("ferrobot-alice".into()),
         session_id: None,
         pinned: false,
+        tags: vec!["ops".into()],
         tools: vec![
             ferrobot_core::ToolGroup::Team,
             ferrobot_core::ToolGroup::Shell,
@@ -214,6 +223,11 @@ fn ui_events_validate_against_schema() {
                     reason: "or can't run dolphin with tools".into(),
                     since: OffsetDateTime::UNIX_EPOCH,
                 }),
+                waiting: 1,
+                last_reply: Some(LastReply {
+                    text: "Done: the report is in your files.".into(),
+                    at: "2026-11-23T12:00:00Z".into(),
+                }),
             }),
         },
         UiEvent::Delta {
@@ -234,11 +248,13 @@ fn ui_events_validate_against_schema() {
         UiEvent::Room {
             room: Room {
                 id: 3,
+                name: Some("Ops".into()),
                 members: vec![agent.id],
                 created_at: OffsetDateTime::UNIX_EPOCH,
                 ended_at: None,
             },
         },
+        UiEvent::RoomDeleted { room_id: 3 },
         UiEvent::RoomLine {
             line: RoomLine {
                 id: 1,

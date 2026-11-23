@@ -36,8 +36,16 @@ Click the phone button in an agent's chat (**Start a voice call**).
   spoken sentences, no lists or links.
 - With ElevenLabs the call listens hands-free. With OpenRouter, replies are
   read aloud and you dictate with the microphone.
-- The call window has **Mute** and **Hang up**. The call keeps running while
-  you switch to other chats.
+- The call bar at the top of the window shows everyone in the call and your
+  microphone level, and has **Mute** and **Hang up**. It stays while you
+  switch chats, Settings or Usage.
+- With ElevenLabs the bar also has the speaking speed (**1×**; click for the
+  next step, 0.7× to 1.2×). It is the same speed as in Settings and the chat's
+  sliders, so every agent speaks at it, within a sentence or two.
+- **Push to talk** in the bar switches from always listening to talking only
+  while you hold **Hold to talk** or Space (outside text fields). Words count
+  once you let go and pause briefly; **Mute** still wins. This computer
+  remembers the choice.
 - Longer work: the agent says so and does it after the call, in its chat.
 - An agent cannot show question cards during a call; it asks out loud.
 
@@ -53,6 +61,23 @@ second agent joins, the call becomes a room:
 - After four agent lines in a row the room waits for you.
 - Rooms are listed under **Calls** in the sidebar with their transcript. Room
   lines stay out of the agents' chats.
+
+## Group chats
+
+A group is a named room you keep: **Groups → +** in the sidebar, a name and
+two or more agents.
+
+- Write once and every member reads it. They answer by the room rules above,
+  one at a time, each replying or passing, without the voice-call note.
+- **Call** in the group's header calls every member (up to four). The group
+  is the call's room, so the call's lines land in it; hanging up keeps the
+  group. An agent invited into the call joins the group.
+- **Edit** renames the group, changes its members or deletes it with its
+  messages. Members are fixed while the group is in a call.
+- Who is due next lives in memory: after a daemon restart, write again.
+- API: `/v1/groups` (list, create), `PATCH`/`DELETE /v1/groups/{id}`,
+  `POST /v1/groups/{id}/messages`, `POST /v1/groups/{id}/call`; the
+  transcript is `GET /v1/rooms/{id}`.
 
 ## Hang up
 

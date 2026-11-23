@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { existsSync, mkdtempSync, readFileSync } from "node:fs";
+import { existsSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { basename, join } from "node:path";
 import { describe, it } from "node:test";
@@ -7,6 +7,7 @@ import { describe, it } from "node:test";
 import { ConfigError, loadConfig } from "../src/config.ts";
 import { OpenAIDriver, plainSchema, type ChatMessage } from "../src/drivers/openai.ts";
 import { TurnAbortedError, type TurnContext } from "../src/drivers/types.ts";
+import { ToolGate } from "../src/gate.ts";
 import type { FerrobotMcp } from "../src/mcp-client.ts";
 import type { TurnEvent } from "../src/protocol.ts";
 
@@ -55,6 +56,7 @@ interface Setup {
   stateDir?: string;
   fetch?: typeof fetch;
   mcpCall?: (name: string, args: Record<string, unknown>) => Promise<unknown>;
+  gate?: ToolGate;
 }
 
 function setup(opts: Setup = {}) {
@@ -89,6 +91,7 @@ function setup(opts: Setup = {}) {
     stateDir,
     mcp,
     fetch: opts.fetch ?? fakeFetch,
+    ...(opts.gate ? { gate: opts.gate } : {}),
   });
   return { driver, sent, mcpCalls, workspaceDir, stateDir };
 }
@@ -135,7 +138,7 @@ describe("OpenAIDriver", () => {
     assert.deepEqual(req.body.stream_options, { include_usage: true });
     assert.deepEqual(
       req.body.tools.map((t) => t.function.name),
-      ["bash", "read_file", "write_file"],
+      ["bash", "read_file", "write_file", "subagent"],
     );
     const system = at(req.body.messages, 0);
     assert.equal(system.role, "system");
@@ -261,6 +264,34 @@ describe("OpenAIDriver", () => {
       tool_call_id: "r",
       content: "x",
     });
+  });
+
+  it("asks the daemon's classifier before a shell command runs", async () => {
+    const asked: string[] = [];
+    const daemon = ((_url: URL, init: RequestInit) => {
+      const { command } = JSON.parse(init.body as string) as { command: string };
+      asked.push(command);
+      const allow = !command.startsWith("git push");
+      const reason = allow ? null : "the operator declined: pushes code";
+      return Promise.resolve(Response.json({ allow, reason }));
+    }) as unknown as typeof fetch;
+    const gate = new ToolGate(new URL("http://daemon:7879"), "agent-token", daemon);
+    const { driver, sent } = setup({
+      gate,
+      replies: [
+        [
+          call(0, { name: "bash", arguments: '{"command":"git push origin main"}' }, "a"),
+          call(1, { name: "read_file", arguments: '{"path":"notes.md"}' }, "b"),
+        ],
+        [text("ok")],
+      ],
+    });
+    const { ctx, events } = context();
+    await driver.runTurn(ctx);
+    assert.deepEqual(asked, ["git push origin main"], "only shell commands are checked");
+    assert.equal(events.find((e) => e.kind === "tool_denied")?.kind, "tool_denied");
+    const tools = at(sent, 1).body.messages.filter((m) => m.role === "tool");
+    assert.equal(at(tools, 0).content, "the operator declined: pushes code");
   });
 
   it("refuses calls the policy blocks and tells the model why", async () => {
@@ -500,6 +531,87 @@ describe("OpenAIDriver", () => {
     await assert.rejects(driver.runTurn(context().ctx), /50 model calls/);
     assert.equal(sent.length, 50);
   });
+
+  it("runs subagents in parallel with their own history and returns their answers", async () => {
+    const sent: Sent["body"][] = [];
+    let waiting = 0;
+    let release = (): void => undefined;
+    const both = new Promise<string>((resolve) => {
+      release = () => {
+        resolve("both");
+      };
+    });
+    const parallel = async (): Promise<void> => {
+      if (++waiting === 2) release();
+      const late = new Promise<string>((resolve) => setTimeout(resolve, 2000, "late").unref());
+      if ((await Promise.race([both, late])) !== "both") throw new Error("not run in parallel");
+    };
+    const fakeFetch = (async (_url: string, init: RequestInit) => {
+      const body = JSON.parse(init.body as string) as Sent["body"];
+      sent.push(body);
+      const task = at(body.messages, 1).content;
+      const first = body.messages.length === 2;
+      if (task.includes("find A")) {
+        if (!first) return sse([text("A is 1")]);
+        await parallel();
+        return sse([call(0, { name: "read_file", arguments: '{"path":"a.txt"}' }, "c1")]);
+      }
+      if (task.includes("find B")) {
+        await parallel();
+        return sse([text("B is 2")]);
+      }
+      return sse(
+        first
+          ? [
+              call(0, { name: "subagent", arguments: '{"task":"find A"}' }, "sa"),
+              call(1, { name: "subagent", arguments: '{"task":"find B"}' }, "sb"),
+            ]
+          : [text("A is 1, B is 2")],
+      );
+    }) as typeof fetch;
+    const { driver, workspaceDir } = setup({ fetch: fakeFetch });
+    writeFileSync(join(workspaceDir, "a.txt"), "1");
+    const { ctx, events } = context();
+    assert.equal((await driver.runTurn(ctx)).result, "A is 1, B is 2");
+
+    assert.deepEqual(at(sent, -1).messages.slice(-2), [
+      { role: "tool", tool_call_id: "sa", content: "A is 1" },
+      { role: "tool", tool_call_id: "sb", content: "B is 2" },
+    ]);
+    const sub = sent.find((b) => at(b.messages, 1).content.includes("find A"));
+    assert.equal(sub?.messages.length, 2, "its own history");
+    assert.ok(!sub.tools.some((t) => t.function.name === "subagent"), "no nested subagents");
+    const results = events.flatMap((e) =>
+      e.kind === "tool_result" ? [`${e.id ?? ""}=${e.output}`] : [],
+    );
+    assert.deepEqual(results.sort(), ["sa/c1=1", "sa=A is 1", "sb=B is 2"]);
+    const said = events.flatMap((e) => (e.kind === "assistant_delta" ? [e.text] : []));
+    assert.equal(said.join(""), "A is 1, B is 2", "subagent text stays out of the chat");
+  });
+
+  it("stops a subagent at its step cap and tells the model", async () => {
+    const denied = [call(0, { name: "read_file", arguments: '{"path":"/etc/hosts"}' }, "x")];
+    const { driver, sent } = setup({
+      replies: [
+        [call(0, { name: "subagent", arguments: '{"task":"loop"}' }, "s")],
+        ...Array.from({ length: 20 }, () => denied),
+        [text("it gave up")],
+      ],
+    });
+    const { ctx, events } = context();
+    assert.equal((await driver.runTurn(ctx)).result, "it gave up");
+    assert.equal(sent.length, 22);
+    const output = "the subagent stopped after 20 model calls without an answer";
+    assert.deepEqual(at(at(sent, -1).body.messages, -1), {
+      role: "tool",
+      tool_call_id: "s",
+      content: output,
+    });
+    assert.deepEqual(
+      events.find((e) => e.kind === "tool_result" && e.id === "s"),
+      { kind: "tool_result", id: "s", output, is_error: true },
+    );
+  });
 });
 
 describe("openai config", () => {
@@ -548,5 +660,16 @@ describe("plainSchema", () => {
         tags: { type: "array", items: { type: "string" } },
       },
     });
+  });
+});
+
+describe("tool gate", () => {
+  it("fails closed when the daemon can't answer", async () => {
+    const down = (() => Promise.reject(new Error("ECONNREFUSED"))) as unknown as typeof fetch;
+    const broken = (() =>
+      Promise.resolve(new Response("", { status: 500 }))) as unknown as typeof fetch;
+    const url = new URL("http://daemon:7879");
+    assert.equal((await new ToolGate(url, "t", down).shell("ls")).allow, false);
+    assert.equal((await new ToolGate(url, "t", broken).shell("ls")).allow, false);
   });
 });

@@ -1,6 +1,6 @@
 import type { JSX } from "preact";
 import { useCallback, useEffect, useMemo, useRef, useState } from "preact/hooks";
-import { pickSelection } from "./lib/order.ts";
+import { loadOrder, orderAgents, pickSelection } from "./lib/order.ts";
 import { Bot, KeyRound, Plus, WifiOff } from "lucide-preact";
 
 import {
@@ -13,8 +13,10 @@ import {
   type UiEvent,
 } from "./api.ts";
 import { AgentDialog } from "./components/AgentDialog.tsx";
+import { CallBar } from "./components/CallBar.tsx";
 import { FileViewer } from "./components/FileViewer.tsx";
-import { Settings, type SettingsSection } from "./components/Settings.tsx";
+import { QuickSwitcher } from "./components/QuickSwitcher.tsx";
+import { Settings, ShortcutList, type SettingsSection } from "./components/Settings.tsx";
 import { Chat } from "./components/Chat.tsx";
 import { ConversationView, type Pair } from "./components/Conversations.tsx";
 import { InfoPanel, type InfoTab } from "./components/InfoPanel.tsx";
@@ -22,11 +24,18 @@ import { RoomView } from "./components/Rooms.tsx";
 import { Sidebar } from "./components/Sidebar.tsx";
 import { Usage } from "./components/Usage.tsx";
 import { Welcome } from "./components/Welcome.tsx";
-import { Button, Empty } from "./components/ui.tsx";
+import { Button, Dialog, Empty } from "./components/ui.tsx";
 import { AppContext, type AppContextValue } from "./context.ts";
 import type { CallState } from "./lib/call.ts";
 import { CallSession } from "./lib/call-session.ts";
-import { applyTheme, followSystem, loadTheme, type ThemePref } from "./lib/theme.ts";
+import {
+  applyAppearance,
+  followSystem,
+  loadAppearance,
+  saveAppearance,
+  type Appearance,
+} from "./lib/appearance.ts";
+import { useShortcuts } from "./lib/shortcuts.ts";
 import { welcomeStep } from "./lib/welcome.ts";
 
 interface Toast {
@@ -86,16 +95,19 @@ export function App(): JSX.Element {
   );
   const [rail, setRail] = useState(initialRail);
   const [tab, setTab] = useState<InfoTab>("profile");
-  const [theme, setTheme] = useState<ThemePref>(loadTheme);
+  const [look, setLook] = useState<Appearance>(loadAppearance);
+  const [switcher, setSwitcher] = useState(false);
+  const [shortcuts, setShortcuts] = useState(false);
   const [toasts, setToasts] = useState<Toast[]>([]);
   const listeners = useRef(new Set<(e: UiEvent) => void>());
-  const themeRef = useRef(theme);
+  const lookRef = useRef(look);
 
   useEffect(() => {
-    themeRef.current = theme;
-    applyTheme(theme);
-  }, [theme]);
-  useEffect(() => followSystem(() => themeRef.current), []);
+    lookRef.current = look;
+    applyAppearance(look);
+    saveAppearance(look);
+  }, [look]);
+  useEffect(() => followSystem(() => lookRef.current), []);
   useEffect(() => {
     localStorage.setItem("ferrobot.info", infoOpen ? "open" : "closed");
   }, [infoOpen]);
@@ -224,6 +236,9 @@ export function App(): JSX.Element {
     setPair(null);
     setRoom(id);
   }, []);
+  const closeRoom = useCallback(() => {
+    setRoom(null);
+  }, []);
   const [file, setFile] = useState<{ agent: string; file: number } | null>(null);
   const openFile = useCallback((agent: string, id: number) => {
     setFile({ agent, file: id });
@@ -264,10 +279,54 @@ export function App(): JSX.Element {
     skipped,
   });
   const withInfo = agent && infoOpen && !pair && room === null && !settings && !usage;
+  const toggleSettings = (): void => {
+    setUsage(false);
+    setSettings(settings ? null : "appearance");
+  };
+  const toggleUsage = (): void => {
+    setSettings(null);
+    setUsage(!usage);
+  };
+  useShortcuts((id, n) => {
+    switch (id) {
+      case "switcher":
+        setSwitcher(true);
+        break;
+      case "new-agent":
+        setDialog("create");
+        break;
+      case "settings":
+        toggleSettings();
+        break;
+      case "usage":
+        toggleUsage();
+        break;
+      case "details":
+        setInfoOpen(!infoOpen);
+        break;
+      case "sidebar":
+        setRail(!rail);
+        break;
+      case "agent": {
+        const target = orderAgents([...agents.values()], loadOrder())[(n ?? 1) - 1];
+        if (target) openAgent(target.id);
+        break;
+      }
+      case "help":
+        setShortcuts(true);
+        break;
+      case "close":
+        if (settings) setSettings(null);
+        else if (usage) setUsage(false);
+        else if (withInfo) setInfoOpen(false);
+        break;
+    }
+  });
 
   return (
     <AppContext.Provider value={ctx}>
       <div class={`shell${withInfo ? " with-info" : ""}${rail ? " rail" : ""}`}>
+        <CallBar />
         <Sidebar
           rail={rail}
           onRail={setRail}
@@ -284,15 +343,9 @@ export function App(): JSX.Element {
           onCreate={() => {
             setDialog("create");
           }}
-          onSettings={() => {
-            setUsage(false);
-            setSettings(settings ? null : "providers");
-          }}
+          onSettings={toggleSettings}
           settingsOpen={settings !== null}
-          onUsage={() => {
-            setSettings(null);
-            setUsage(!usage);
-          }}
+          onUsage={toggleUsage}
           usageOpen={usage}
           online={online}
           onDeleted={(id) => {
@@ -306,8 +359,8 @@ export function App(): JSX.Element {
             onClose={() => {
               setSettings(null);
             }}
-            theme={theme}
-            onTheme={setTheme}
+            look={look}
+            onLook={setLook}
             guide={guide}
             onGuide={openGuide}
           />
@@ -318,7 +371,7 @@ export function App(): JSX.Element {
             }}
           />
         ) : room !== null ? (
-          <RoomView key={room} id={room} />
+          <RoomView key={room} id={room} onClose={closeRoom} />
         ) : pair ? (
           <ConversationView key={pair.join()} pair={pair} />
         ) : agent ? (
@@ -336,6 +389,10 @@ export function App(): JSX.Element {
             onSignIn={
               agentProvider?.kind === "codex" && !agentProvider.has_key ? openProviders : undefined
             }
+            onActivities={() => {
+              setInfoOpen(true);
+              setTab("activities");
+            }}
           />
         ) : welcome ? (
           <Welcome
@@ -424,6 +481,32 @@ export function App(): JSX.Element {
             setDialog(null);
           }}
         />
+      )}
+      {switcher && (
+        <QuickSwitcher
+          onAgent={(id) => {
+            setSwitcher(false);
+            openAgent(id);
+          }}
+          onSection={(s) => {
+            setSwitcher(false);
+            setUsage(false);
+            setSettings(s);
+          }}
+          onClose={() => {
+            setSwitcher(false);
+          }}
+        />
+      )}
+      {shortcuts && (
+        <Dialog
+          title="Keyboard shortcuts"
+          onClose={() => {
+            setShortcuts(false);
+          }}
+        >
+          <ShortcutList />
+        </Dialog>
       )}
       <div class="toasts" role="status" aria-live="polite">
         {toasts.map((t) => (

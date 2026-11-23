@@ -9,6 +9,9 @@ export type TimelineItem =
       key: string;
       at: string;
       text: string;
+      files: Attachment[];
+      /** The agent's emoji on this message. */
+      reaction: string | null;
       status: MailMessage["status"];
       /** Why the last attempt failed, on a message that was not delivered. */
       error?: string;
@@ -16,7 +19,17 @@ export type TimelineItem =
   | { type: "incoming"; key: string; at: string; text: string; from: string; peerId: string }
   | { type: "routine"; key: string; at: string; text: string; routine: string | null }
   | { type: "outgoing"; key: string; at: string; text: string; to: string; peerId: string }
-  | { type: "assistant"; key: string; at: string; text: string; streaming: boolean }
+  | {
+      type: "assistant";
+      key: string;
+      at: string;
+      text: string;
+      streaming: boolean;
+      /** Its `assistant_text` event; `null` while it streams. */
+      id: number | null;
+      /** The operator's emoji on this message. */
+      reaction: string | null;
+    }
   | {
       type: "tool";
       key: string;
@@ -26,6 +39,8 @@ export type TimelineItem =
       output: string | null;
       isError: boolean;
       denied: string | null;
+      /** The turn that made the call. */
+      turn: string | null;
     }
   | {
       type: "question";
@@ -36,8 +51,15 @@ export type TimelineItem =
       answered: QuestionAnswered | null;
     }
   | { type: "file"; key: string; at: string; id: number; name: string; size: number }
-  | { type: "error"; key: string; at: string; text: string }
-  | { type: "system"; key: string; at: string; text: string };
+  | {
+      type: "error";
+      key: string;
+      at: string;
+      text: string;
+      /** A failed turn the chat shows as one quiet line: no undelivered bubble says it already. */
+      quiet?: boolean;
+    }
+  | { type: "system"; key: string; at: string; text: string; kind: string };
 
 export interface Names {
   /** Agent id -> name. */
@@ -52,6 +74,26 @@ function str(v: unknown): string {
   return typeof v === "string" ? v : "";
 }
 
+/** A file the operator attached, from a line like `Attached: uploads/photo.png (image, 120 KB)`. */
+export interface Attachment {
+  path: string;
+  kind: string;
+  size: string;
+}
+
+const ATTACHED = /^Attached: (\S+) \(([^,()]+), ([^()]+)\)$/;
+
+/** A message's text without its attachment lines, and the files they name. */
+export function splitAttachments(body: string): { text: string; files: Attachment[] } {
+  const files: Attachment[] = [];
+  const rest = body.split("\n").filter((line) => {
+    const m = ATTACHED.exec(line.trim());
+    if (m) files.push({ path: m[1] ?? "", kind: m[2] ?? "", size: m[3] ?? "" });
+    return !m;
+  });
+  return { text: rest.join("\n").trim(), files };
+}
+
 const SYSTEM_TEXT: Record<string, (p: Payload) => string> = {
   sleeping: (p) =>
     str(p["reason"]) === "idle" ? "Went to sleep after being idle" : "Went to sleep",
@@ -62,6 +104,7 @@ const SYSTEM_TEXT: Record<string, (p: Payload) => string> = {
   agent_created: (p) => `${str(p["by"])} created ${str(p["name"])} (auto mode)`,
   agent_tools_changed: (p) => `${str(p["by"])} changed the tools of ${str(p["name"])} (auto mode)`,
   runner_refused: (p) => str(p["reason"]),
+  new_session: () => "New chat: the agent starts fresh from here",
 };
 
 /**
@@ -113,10 +156,21 @@ export function buildTimeline(
 
   // Answers to question cards are shown on the card, not as a second bubble.
   const answers = new Map<number, QuestionAnswered>();
+  // An agent's reaction shows on the operator's message; a newer one replaces it.
+  const reactions = new Map<number, string>();
+  // The operator's shows on the agent's message; the note that told the agent stays hidden.
+  const mine = new Map<number, string>();
+  const notes = new Set<number>();
   for (const e of events) {
+    const p = e.payload as Payload;
     if (e.kind === "question_answered") {
       const a = e.payload as unknown as QuestionAnswered;
       answers.set(a.question, a);
+    } else if (e.kind === "reaction" && typeof p["message_id"] === "number") {
+      reactions.set(p["message_id"], str(p["emoji"]));
+    } else if (e.kind === "user_reaction" && typeof p["event_id"] === "number") {
+      mine.set(p["event_id"], str(p["emoji"]));
+      if (typeof p["note_id"] === "number") notes.add(p["note_id"]);
     }
   }
   const answerMessages = new Set([...answers.values()].map((a) => a.message_id));
@@ -124,22 +178,45 @@ export function buildTimeline(
   // Turn errors stay on the Activities tab, except the last one of a message that failed.
   const turnMessage = new Map<string, number>();
   const failures = new Map<number, string>();
+  const lastFailedTurn = new Map<number, string>();
   for (const e of events) {
     const p = e.payload as Payload;
     if (e.kind === "message_in" && e.turn_id && typeof p["message_id"] === "number")
       turnMessage.set(e.turn_id, p["message_id"]);
     const message = e.turn_id ? turnMessage.get(e.turn_id) : undefined;
-    if (e.kind === "turn_done" && p["outcome"] === "failed" && message !== undefined)
+    if (e.kind === "turn_done" && p["outcome"] === "failed" && message !== undefined) {
       failures.set(message, str(p["error"]) || "The turn failed");
+      if (e.turn_id) lastFailedTurn.set(message, e.turn_id);
+    }
   }
+  const fromUser = new Set(
+    messages.filter((m) => m.sender.kind === "user" && m.recipient === agentId).map((m) => m.id),
+  );
+  // Retries of the same message fail alike: only the last one gets a line.
+  const quietFailure = (turn: string | null): boolean => {
+    const message = turn ? turnMessage.get(turn) : undefined;
+    if (message === undefined) return true;
+    return !fromUser.has(message) && lastFailedTurn.get(message) === turn;
+  };
 
   for (const m of messages) {
     const key = `m${String(m.id)}`;
-    if (answerMessages.has(m.id)) continue;
+    if (answerMessages.has(m.id) || notes.has(m.id)) continue;
     if (m.recipient === agentId) {
       if (m.sender.kind === "user") {
         const error = m.status === "failed" ? failures.get(m.id) : undefined;
-        push({ type: "user", key, at: m.created_at, text: m.body, status: m.status, error });
+        const { text, files } = splitAttachments(m.body);
+        const reaction = reactions.get(m.id) ?? null;
+        push({
+          type: "user",
+          key,
+          at: m.created_at,
+          text,
+          files,
+          reaction,
+          status: m.status,
+          error,
+        });
       } else if (m.sender.kind === "agent") {
         push({
           type: "incoming",
@@ -186,7 +263,15 @@ export function buildTimeline(
       case "assistant_text":
         if (e.turn_id) finished.add(e.turn_id);
         if (afterCredentialError) break;
-        push({ type: "assistant", key, at: e.created_at, text: str(p["text"]), streaming: false });
+        push({
+          type: "assistant",
+          key,
+          at: e.created_at,
+          text: str(p["text"]),
+          streaming: false,
+          id: e.id,
+          reaction: mine.get(e.id) ?? null,
+        });
         break;
       case "question": {
         const card = (p["card"] ?? null) as QuestionCard | null;
@@ -211,6 +296,7 @@ export function buildTimeline(
           output: null,
           isError: false,
           denied: null,
+          turn: e.turn_id ?? null,
         };
         const id = str(p["id"]);
         if (id) tools.set(id, item);
@@ -245,6 +331,7 @@ export function buildTimeline(
           output: null,
           isError: true,
           denied: str(p["reason"]),
+          turn: e.turn_id ?? null,
         });
         break;
       case "credential_error":
@@ -271,14 +358,15 @@ export function buildTimeline(
             key,
             at: e.created_at,
             text: str(p["error"]) || "The turn failed",
+            quiet: quietFailure(e.turn_id ?? null),
           });
         } else if (p["outcome"] === "interrupted") {
-          push({ type: "system", key, at: e.created_at, text: "Stopped" });
+          push({ type: "system", key, at: e.created_at, text: "Stopped", kind: "stopped" });
         }
         break;
       default: {
         const text = SYSTEM_TEXT[e.kind]?.(p);
-        if (text) push({ type: "system", key, at: e.created_at, text });
+        if (text) push({ type: "system", key, at: e.created_at, text, kind: e.kind });
       }
     }
   }
@@ -286,7 +374,15 @@ export function buildTimeline(
   const now = new Date().toISOString();
   for (const [turnId, text] of live) {
     if (!finished.has(turnId) && text) {
-      push({ type: "assistant", key: `live-${turnId}`, at: now, text, streaming: true });
+      push({
+        type: "assistant",
+        key: `live-${turnId}`,
+        at: now,
+        text,
+        streaming: true,
+        id: null,
+        reaction: null,
+      });
     }
   }
 
@@ -294,10 +390,10 @@ export function buildTimeline(
     const t = Date.parse(a.item.at) - Date.parse(b.item.at);
     return t !== 0 ? t : a.order - b.order;
   });
-  // A successful ask_user call is shown as its card instead of a tool card.
-  const isCardCall = (i: TimelineItem): boolean =>
-    i.type === "tool" && /(^|__)ask_user$/.test(i.name) && !i.isError;
-  const shown = items.map((x) => x.item).filter((i) => !isCardCall(i));
+  // A successful ask_user call shows as its card and a react call as its emoji, not as steps.
+  const isShownElsewhere = (i: TimelineItem): boolean =>
+    i.type === "tool" && /(^|__)(ask_user|react)$/.test(i.name) && !i.isError;
+  const shown = items.map((x) => x.item).filter((i) => !isShownElsewhere(i));
   // Sleep deepens in steps (paused, then stopped); the chat shows the first one.
   return shown.filter((i, n) => {
     const prev = shown[n - 1];
@@ -308,26 +404,38 @@ export function buildTimeline(
 export type A2aItem = Extract<TimelineItem, { type: "incoming" | "outgoing" }>;
 type ToolItem = Extract<TimelineItem, { type: "tool" }>;
 
-/** A run of agent-to-agent mail with one peer, shown collapsed in the chat. */
+/** A run of agent-to-agent mail, shown collapsed in the chat. */
 export interface Exchange {
   type: "exchange";
   key: string;
   at: string;
+  /** The first peer. */
   peerId: string;
   peerName: string;
+  /** Every peer's id, in order of first mail; more than one makes a multi-agent run. */
+  peers: string[];
   messages: A2aItem[];
   /** The `send_message` calls that produced the outgoing messages. */
   tools: ToolItem[];
 }
 
-export type DisplayItem = TimelineItem | Exchange;
+/** A finished run of tool calls, shown in the chat as one line that opens Activities. */
+export interface Steps {
+  type: "steps";
+  key: string;
+  at: string;
+  tools: ToolItem[];
+  seconds: number;
+}
+
+export type DisplayItem = TimelineItem | Exchange | Steps;
 
 const isSendCall = (i: TimelineItem): i is ToolItem =>
   i.type === "tool" && i.denied === null && /(^|__)send_message$/.test(i.name);
 
 /**
- * Folds consecutive agent-to-agent mail with one peer, and the `send_message` calls right
- * before it, into one `exchange`; anything else in between (user mail, replies, tools) ends it.
+ * Folds consecutive agent-to-agent mail, with one peer or several, and the `send_message` calls
+ * right before it, into one `exchange`; anything else in between (user mail, replies, tools) ends it.
  */
 export function groupExchanges(items: readonly TimelineItem[]): DisplayItem[] {
   const out: DisplayItem[] = [];
@@ -343,21 +451,17 @@ export function groupExchanges(items: readonly TimelineItem[]): DisplayItem[] {
       continue;
     }
     if (item.type === "incoming" || item.type === "outgoing") {
-      let run = cur.run;
-      if (run?.peerId !== item.peerId) {
-        close();
-        const peerName = item.type === "incoming" ? item.from : item.to;
-        run = {
-          type: "exchange",
-          key: `x-${item.key}`,
-          at: item.at,
-          peerId: item.peerId,
-          peerName,
-          messages: [],
-          tools: [],
-        };
-        cur.run = run;
-      }
+      const run = (cur.run ??= {
+        type: "exchange",
+        key: `x-${item.key}`,
+        at: item.at,
+        peerId: item.peerId,
+        peerName: item.type === "incoming" ? item.from : item.to,
+        peers: [],
+        messages: [],
+        tools: [],
+      });
+      if (!run.peers.includes(item.peerId)) run.peers.push(item.peerId);
       run.tools.push(...calls);
       run.messages.push(item);
       calls = [];
@@ -372,6 +476,63 @@ export function groupExchanges(items: readonly TimelineItem[]): DisplayItem[] {
   return out;
 }
 
+/** A row of an expanded multi-agent exchange. */
+export interface ExchangeRow {
+  key: string;
+  at: string;
+  type: A2aItem["type"];
+  text: string;
+  peers: { id: string; name: string }[];
+}
+
+/** One row per message; the same text sent to several agents in a row is one broadcast row. */
+export function exchangeRows(messages: readonly A2aItem[]): ExchangeRow[] {
+  const rows: ExchangeRow[] = [];
+  for (const m of messages) {
+    const peer = { id: m.peerId, name: m.type === "incoming" ? m.from : m.to };
+    const last = rows[rows.length - 1];
+    if (
+      m.type === "outgoing" &&
+      last?.type === "outgoing" &&
+      last.text === m.text &&
+      !last.peers.some((p) => p.id === m.peerId)
+    )
+      last.peers.push(peer);
+    else rows.push({ key: m.key, at: m.at, type: m.type, text: m.text, peers: [peer] });
+  }
+  return rows;
+}
+
+/**
+ * When the unread part of a chat starts: the first event of the oldest of the last `unread`
+ * finished turns, or the mail that started that turn if it is older. `null`: nothing unread.
+ */
+export function unreadSince(
+  messages: readonly MailMessage[],
+  events: readonly StoredEvent[],
+  unread: number,
+): number | null {
+  if (unread <= 0) return null;
+  const done = events.filter((e) => e.kind === "turn_done" && e.turn_id);
+  const turn = (done[done.length - unread] ?? done[0])?.turn_id;
+  if (!turn) return null;
+  let since = Infinity;
+  for (const e of events) {
+    if (e.turn_id !== turn) continue;
+    since = Math.min(since, Date.parse(e.created_at));
+    const id = (e.payload as Payload)["message_id"];
+    const mail = e.kind === "message_in" ? messages.find((m) => m.id === id) : undefined;
+    if (mail) since = Math.min(since, Date.parse(mail.created_at));
+  }
+  return since;
+}
+
+/** The key of the first item since `since` that is not the operator's own message. */
+export function firstNewKey(items: readonly DisplayItem[], since: number | null): string | null {
+  if (since === null) return null;
+  return items.find((i) => i.type !== "user" && Date.parse(i.at) >= since)?.key ?? null;
+}
+
 /** Files shared in a chat by name (latest wins), so mentions can open them. */
 export function sharedFiles(events: readonly StoredEvent[]): Map<string, number> {
   const out = new Map<string, number>();
@@ -380,4 +541,35 @@ export function sharedFiles(events: readonly StoredEvent[]): Map<string, number>
     if (e.kind === "file" && typeof name === "string") out.set(name, e.id);
   }
   return out;
+}
+
+/**
+ * Folds each run of tool calls into one `steps` line. While the agent works, the run at the
+ * end is still going: it comes back as `live` for the chat's step trail instead.
+ */
+export function foldSteps(
+  items: readonly DisplayItem[],
+  working: boolean,
+): { shown: DisplayItem[]; live: ToolItem[] } {
+  const shown: DisplayItem[] = [];
+  let run: ToolItem[] = [];
+  const close = (): void => {
+    const [first, last] = [run[0], run[run.length - 1]];
+    if (first && last) {
+      const seconds = (Date.parse(last.at) - Date.parse(first.at)) / 1000;
+      shown.push({ type: "steps", key: `s-${first.key}`, at: first.at, tools: run, seconds });
+    }
+    run = [];
+  };
+  for (const item of items) {
+    if (item.type === "tool") {
+      run.push(item);
+      continue;
+    }
+    close();
+    shown.push(item);
+  }
+  if (working) return { shown, live: run };
+  close();
+  return { shown, live: [] };
 }

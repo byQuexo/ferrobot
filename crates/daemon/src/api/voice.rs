@@ -518,7 +518,7 @@ pub(crate) struct CallView {
     room_id: Option<i64>,
 }
 
-async fn call_view(state: &AppState) -> CallView {
+pub(crate) async fn call_view(state: &AppState) -> CallView {
     let (agents, room_id) = state.call_view().await;
     CallView { agents, room_id }
 }
@@ -599,6 +599,8 @@ pub(crate) struct RoomTranscript {
     room: Room,
     /// Oldest first; the last 1000.
     lines: Vec<RoomLine>,
+    /// The member whose turn it is (writing or speaking), if any; `room_floor` events follow it.
+    speaking: Option<AgentId>,
 }
 
 /// Call rooms (calls with two or more agents), newest first; the last 200.
@@ -608,7 +610,7 @@ pub(crate) async fn list_rooms(State(state): State<AppState>) -> ApiResult<Vec<R
     Ok(Json(state.store.rooms(200).await?))
 }
 
-/// One call room: who took part and what was said.
+/// One call room or group: who is in it and what was said.
 #[utoipa::path(get, path = "/v1/rooms/{id}", tag = "voice",
     params(("id" = i64, Path, description = "Room id")),
     responses((status = 200, body = RoomTranscript),
@@ -620,5 +622,6 @@ pub(crate) async fn get_room(
     Ok(Json(RoomTranscript {
         room: state.store.room(id).await?,
         lines: state.store.room_lines(id, 1000).await?,
+        speaking: state.floor_of(id).await,
     }))
 }

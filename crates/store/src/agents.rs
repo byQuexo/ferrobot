@@ -32,6 +32,8 @@ pub struct AgentPatch {
     pub model: Option<Option<String>>,
     pub pinned: Option<bool>,
     pub tools: Option<Vec<ToolGroup>>,
+    /// Validated by the caller; empty removes every tag.
+    pub tags: Option<Vec<String>>,
 }
 
 /// An avatar image as stored.
@@ -48,7 +50,7 @@ pub fn hash_token(token: &str) -> String {
 
 const COLUMNS: &str = "id, name, instructions, status, backend, sandbox_id, session_id, created_at, \
                        description, avatar_rev, COALESCE(sandbox_name, name), character, created_by, \
-                       provider_id, model, pinned, tools";
+                       provider_id, model, pinned, tools, tags";
 
 fn from_row(row: &Row<'_>) -> Result<Agent, StoreError> {
     let id: String = row.get(0)?;
@@ -59,7 +61,11 @@ fn from_row(row: &Row<'_>) -> Result<Agent, StoreError> {
     let created_by: String = row.get(12)?;
     let provider_id: Option<String> = row.get(13)?;
     let tools: Option<String> = row.get(16)?;
+    let tags: Option<String> = row.get(17)?;
     Ok(Agent {
+        tags: tags
+            .and_then(|t| serde_json::from_str(&t).ok())
+            .unwrap_or_default(),
         tools: tools.map_or_else(ToolGroup::all, |t| parse_tools(&t)),
         provider_id: provider_id
             .map(|id| uuid::Uuid::parse_str(&id))
@@ -140,6 +146,7 @@ impl Store {
             session_id: None,
             pinned: false,
             tools: ToolGroup::all(),
+            tags: Vec::new(),
             created_at: now(),
         };
         let mut row = agent;
@@ -283,7 +290,7 @@ impl Store {
     pub async fn set_agent_session(
         &self,
         id: AgentId,
-        session_id: String,
+        session_id: Option<String>,
     ) -> Result<(), StoreError> {
         self.update_agent(id, move |c, id| {
             c.execute(
@@ -322,6 +329,13 @@ impl Store {
             .map_err(StoreError::corrupt)?;
         let set_tools = patch.tools.is_some();
         let tools = patch.tools.map(tools_column).transpose()?.flatten();
+        let set_tags = patch.tags.is_some();
+        let tags = patch
+            .tags
+            .filter(|t| !t.is_empty())
+            .map(|t| serde_json::to_string(&t))
+            .transpose()
+            .map_err(StoreError::corrupt)?;
         self.update_agent(id, move |c, id| {
             c.execute(
                 "UPDATE agents SET name = COALESCE(?2, name),
@@ -331,7 +345,8 @@ impl Store {
                                    provider_id = CASE WHEN ?7 THEN ?8 ELSE provider_id END,
                                    model = CASE WHEN ?9 THEN ?10 ELSE model END,
                                    pinned = COALESCE(?11, pinned),
-                                   tools = CASE WHEN ?12 THEN ?13 ELSE tools END
+                                   tools = CASE WHEN ?12 THEN ?13 ELSE tools END,
+                                   tags = CASE WHEN ?14 THEN ?15 ELSE tags END
                  WHERE id = ?1",
                 params![
                     id,
@@ -346,7 +361,9 @@ impl Store {
                     model,
                     patch.pinned,
                     set_tools,
-                    tools
+                    tools,
+                    set_tags,
+                    tags
                 ],
             )
         })
@@ -421,6 +438,49 @@ impl Store {
                 let id: String = row.get(0)?;
                 let n: u32 = row.get(1)?;
                 out.insert(id.parse()?, n);
+            }
+            Ok(out)
+        })
+        .await
+    }
+
+    /// Question cards per agent that are still waiting for the operator's answer.
+    pub async fn waiting_counts(&self) -> Result<HashMap<AgentId, u32>, StoreError> {
+        self.with(|c| {
+            let mut stmt = c.prepare(
+                "SELECT q.agent_id, COUNT(*) FROM events q WHERE q.kind = 'question'
+                   AND NOT EXISTS (SELECT 1 FROM events a WHERE a.agent_id = q.agent_id
+                       AND a.kind = 'question_answered'
+                       AND json_extract(a.payload, '$.question') = q.id)
+                 GROUP BY q.agent_id",
+            )?;
+            let mut rows = stmt.query([])?;
+            let mut out = HashMap::new();
+            while let Some(row) = rows.next()? {
+                let id: String = row.get(0)?;
+                out.insert(id.parse()?, row.get(1)?);
+            }
+            Ok(out)
+        })
+        .await
+    }
+
+    /// Each agent's newest reply text and when it came; a call's lines are not replies.
+    pub async fn last_replies(&self) -> Result<HashMap<AgentId, (String, String)>, StoreError> {
+        self.with(|c| {
+            let mut stmt = c.prepare(
+                "SELECT e.agent_id, json_extract(e.payload, '$.text'), e.created_at FROM events e
+                 WHERE e.id IN (SELECT MAX(x.id) FROM events x WHERE x.kind = 'assistant_text'
+                     AND NOT EXISTS (SELECT 1 FROM events m WHERE m.turn_id = x.turn_id
+                         AND m.kind = 'message_in' AND json_extract(m.payload, '$.room_id') IS NOT NULL)
+                     GROUP BY x.agent_id)",
+            )?;
+            let mut rows = stmt.query([])?;
+            let mut out = HashMap::new();
+            while let Some(row) = rows.next()? {
+                let id: String = row.get(0)?;
+                let text: Option<String> = row.get(1)?;
+                out.insert(id.parse()?, (text.unwrap_or_default(), row.get(2)?));
             }
             Ok(out)
         })
@@ -534,7 +594,10 @@ mod tests {
             .set_agent_status(a.id, AgentStatus::Running)
             .await
             .unwrap();
-        store.set_agent_session(a.id, "s-1".into()).await.unwrap();
+        store
+            .set_agent_session(a.id, Some("s-1".into()))
+            .await
+            .unwrap();
         store
             .set_agent_sandbox(a.id, "docker".into(), "c1".into())
             .await
@@ -589,6 +652,41 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn open_questions_and_the_newest_reply() {
+        let store = Store::open_in_memory().unwrap();
+        let a = store.create_agent(new("alice")).await.unwrap();
+        let ev = |kind: &str, payload: serde_json::Value| {
+            store.append_event(a.id, None, kind.into(), payload)
+        };
+        ev("assistant_text", serde_json::json!({"text": "first"}))
+            .await
+            .unwrap();
+        let q1 = ev("question", serde_json::json!({})).await.unwrap();
+        ev("question", serde_json::json!({})).await.unwrap();
+        ev("assistant_text", serde_json::json!({"text": "second"}))
+            .await
+            .unwrap();
+        // A line in a call is not a reply.
+        let call = Some("call-turn".to_owned());
+        let room = serde_json::json!({"room_id": 1});
+        store
+            .append_event(a.id, call.clone(), "message_in".into(), room)
+            .await
+            .unwrap();
+        let pass = serde_json::json!({"text": "(pass)"});
+        store
+            .append_event(a.id, call, "assistant_text".into(), pass)
+            .await
+            .unwrap();
+        assert_eq!(store.waiting_counts().await.unwrap()[&a.id], 2);
+        ev("question_answered", serde_json::json!({"question": q1.id}))
+            .await
+            .unwrap();
+        assert_eq!(store.waiting_counts().await.unwrap()[&a.id], 1);
+        assert_eq!(store.last_replies().await.unwrap()[&a.id].0, "second");
+    }
+
+    #[tokio::test]
     async fn tools_roundtrip_and_every_group_stays_null() {
         let store = Store::open_in_memory().unwrap();
         let a = store.create_agent(new("alice")).await.unwrap();
@@ -611,5 +709,33 @@ mod tests {
             .unwrap();
         assert_eq!(stored, None);
         assert_eq!(parse_tools(r#"["team","later_group"]"#), [ToolGroup::Team]);
+    }
+
+    #[tokio::test]
+    async fn tags_roundtrip_and_none_stays_null() {
+        let store = Store::open_in_memory().unwrap();
+        let a = store.create_agent(new("alice")).await.unwrap();
+        let set = |tags: &[&str]| AgentPatch {
+            tags: Some(tags.iter().map(|t| (*t).to_owned()).collect()),
+            ..AgentPatch::default()
+        };
+        store
+            .update_agent_profile(a.id, set(&["ops", "Nightly"]))
+            .await
+            .unwrap();
+        assert_eq!(
+            store.get_agent(a.id).await.unwrap().tags,
+            ["ops", "Nightly"]
+        );
+        store.update_agent_profile(a.id, set(&[])).await.unwrap();
+        let stored: Option<String> = store
+            .with(move |c| Ok(c.query_row("SELECT tags FROM agents", [], |r| r.get(0))?))
+            .await
+            .unwrap();
+        assert_eq!(stored, None);
+        assert_eq!(
+            store.get_agent(a.id).await.unwrap().tags,
+            Vec::<String>::new()
+        );
     }
 }

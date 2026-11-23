@@ -6,21 +6,21 @@ import {
   Bot,
   Brain,
   Cpu,
+  Keyboard,
   KeyRound,
-  Monitor,
-  Moon,
   Palette,
   Plug,
   RefreshCw,
   Stethoscope,
-  Sun,
   Terminal,
   X,
 } from "lucide-preact";
 
 import type { GeneralSettings } from "../api.ts";
 import { useApp } from "../context.ts";
-import type { ThemePref } from "../lib/theme.ts";
+import type { Appearance } from "../lib/appearance.ts";
+import { isMac, keyLabel, SHORTCUTS } from "../lib/shortcuts.ts";
+import { AppearanceSettings, PrefRow } from "./AppearanceSettings.tsx";
 import { ClisSettings } from "./ClisSettings.tsx";
 import { ConnectorsSettings } from "./ConnectorsSettings.tsx";
 import { DiagnosticsSettings } from "./DiagnosticsSettings.tsx";
@@ -41,20 +41,29 @@ export type SettingsSection =
   | "memory"
   | "voice"
   | "appearance"
+  | "keyboard"
   | "updates"
   | "diagnostics"
   | "guides";
 
 /** Id, label, about, icon and the guide page behind the header's "Guide" link. */
-const SECTIONS: [SettingsSection, string, string, typeof KeyRound, string?][] = [
-  ["providers", "Model providers", "The models your agents run on. Their keys live in Vault.", Cpu],
+export const SECTIONS: [SettingsSection, string, string, typeof KeyRound, string?][] = [
+  ["appearance", "Appearance", "How ferrobot looks on this computer.", Palette],
+  ["keyboard", "Keyboard", "Shortcuts that work anywhere in the app.", Keyboard],
   [
-    "vault",
-    "Vault",
-    "Every key in one place: model providers, connectors and voice. Kept in the keychain of the daemon’s computer; agents never see them.",
-    KeyRound,
+    "voice",
+    "Voice",
+    "Agents’ replies read aloud and spoken messages. Start a call with the phone button in a chat.",
+    AudioLines,
   ],
+  ["providers", "Model providers", "The models your agents run on. Their keys live in Vault.", Cpu],
   ["agents", "Agents", "What agents may do without asking you.", Bot],
+  [
+    "memory",
+    "Global memory",
+    "Facts every agent can recall. Agents add to it; you can edit and remove entries.",
+    Brain,
+  ],
   [
     "connectors",
     "Connectors",
@@ -69,18 +78,11 @@ const SECTIONS: [SettingsSection, string, string, typeof KeyRound, string?][] = 
     Terminal,
   ],
   [
-    "memory",
-    "Global memory",
-    "Facts every agent can recall. Agents add to it; you can edit and remove entries.",
-    Brain,
+    "vault",
+    "Vault",
+    "Every key in one place: model providers, connectors and voice. Kept in the keychain of the daemon’s computer; agents never see them.",
+    KeyRound,
   ],
-  [
-    "voice",
-    "Voice",
-    "Agents’ replies read aloud and spoken messages. Start a call with the phone button in a chat.",
-    AudioLines,
-  ],
-  ["appearance", "Appearance", "How ferrobot looks on this computer.", Palette],
   ["updates", "Updates", "The version ferrobot runs and how to get the latest.", RefreshCw],
   [
     "diagnostics",
@@ -90,6 +92,14 @@ const SECTIONS: [SettingsSection, string, string, typeof KeyRound, string?][] = 
     "Troubleshooting",
   ],
   ["guides", "Guides", "How ferrobot works, step by step. The same pages as the wiki.", BookOpen],
+];
+
+/** The sidebar's categories, in order; together they hold every section once. */
+const GROUPS: [string, SettingsSection[]][] = [
+  ["General", ["appearance", "keyboard", "voice"]],
+  ["Agents", ["providers", "agents", "memory"]],
+  ["Tools & keys", ["connectors", "clis", "vault"]],
+  ["App", ["updates", "diagnostics", "guides"]],
 ];
 
 /** Auto mode; saved as soon as it is switched. */
@@ -128,8 +138,9 @@ function AgentSettings(): JSX.Element | null {
           />
         </span>
         <span class="hint">
-          Agents create teammates without asking first. The agent limit, blocked commands and keys
-          stay protected.
+          Agents create teammates and take risky steps (deleting folders, pushing code, sending
+          through a connector) without asking first. Without it, you get a card for each risky step.
+          Dangerous commands stay blocked, and the agent limit and keys stay protected.
         </span>
       </span>
       <label>
@@ -157,13 +168,27 @@ function AgentSettings(): JSX.Element | null {
   );
 }
 
+/** Every keyboard shortcut with its keys on this platform. */
+export function ShortcutList(): JSX.Element {
+  const mac = isMac();
+  return (
+    <ul class="pref-list">
+      {SHORTCUTS.map((s) => (
+        <PrefRow key={s.id} title={s.label}>
+          <kbd>{keyLabel(s, mac)}</kbd>
+        </PrefRow>
+      ))}
+    </ul>
+  );
+}
+
 /** All app-wide settings on one page. */
 export function Settings(props: {
   section: SettingsSection;
   onSection: (s: SettingsSection) => void;
   onClose: () => void;
-  theme: ThemePref;
-  onTheme: (t: ThemePref) => void;
+  look: Appearance;
+  onLook: (look: Appearance) => void;
   /** The open guide under Guides; `null`: the list. */
   guide: string | null;
   onGuide: (page: string | null) => void;
@@ -181,19 +206,24 @@ export function Settings(props: {
     <main class="settings" aria-label="Settings">
       <nav class="settings-nav" aria-label="Settings sections">
         <h1>Settings</h1>
-        {SECTIONS.map(([id, label, , Icon]) => (
-          <button
-            key={id}
-            type="button"
-            class={`settings-tab${props.section === id ? " active" : ""}`}
-            aria-current={props.section === id ? "page" : undefined}
-            onClick={() => {
-              props.onSection(id);
-            }}
-          >
-            <Icon size={16} /> {label}
-          </button>
-        ))}
+        {GROUPS.map(([group, ids]) => [
+          <h2 key={group} class="settings-group">
+            {group}
+          </h2>,
+          ...SECTIONS.filter(([id]) => ids.includes(id)).map(([id, label, , Icon]) => (
+            <button
+              key={id}
+              type="button"
+              class={`settings-tab${props.section === id ? " active" : ""}`}
+              aria-current={props.section === id ? "page" : undefined}
+              onClick={() => {
+                props.onSection(id);
+              }}
+            >
+              <Icon size={16} /> {label}
+            </button>
+          )),
+        ])}
       </nav>
       <section class="settings-body">
         <header class="settings-head">
@@ -239,33 +269,9 @@ export function Settings(props: {
         {props.section === "diagnostics" && <DiagnosticsSettings />}
         {props.section === "guides" && <Guides page={props.guide} onPage={props.onGuide} />}
         {props.section === "appearance" && (
-          <div class="form">
-            <span class="field">
-              Theme
-              <div class="segmented" role="radiogroup" aria-label="Theme">
-                {(
-                  [
-                    ["system", Monitor, "System"],
-                    ["light", Sun, "Light"],
-                    ["dark", Moon, "Dark"],
-                  ] as const
-                ).map(([value, Icon, label]) => (
-                  <button
-                    key={value}
-                    type="button"
-                    role="radio"
-                    aria-checked={props.theme === value}
-                    onClick={() => {
-                      props.onTheme(value);
-                    }}
-                  >
-                    <Icon size={16} /> {label}
-                  </button>
-                ))}
-              </div>
-            </span>
-          </div>
+          <AppearanceSettings look={props.look} onChange={props.onLook} />
         )}
+        {props.section === "keyboard" && <ShortcutList />}
       </section>
     </main>
   );

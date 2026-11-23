@@ -5,7 +5,10 @@ import {
   ECHO_MS,
   callChanged,
   callTurn,
+  loadPushToTalk,
+  micOpen,
   operatorSaid,
+  savePushToTalk,
   type CallState,
   type Line,
 } from "./call.ts";
@@ -13,6 +16,8 @@ import { Speaker, speakable, startLive, type LiveSession } from "./voice.ts";
 
 /** How long the window waits for the last words once the daemon ended the call. */
 const GOODBYE_MS = 20_000;
+/** The microphone stays open this long after push-to-talk is let go: audio goes out in chunks. */
+const RELEASE_MS = 300;
 
 const message = (err: unknown): string => (err instanceof Error ? err.message : String(err));
 
@@ -22,6 +27,12 @@ export class CallSession {
   caption = "";
   /** Whose voice is playing. */
   speaking: string | null = null;
+  /** The operator's microphone level (RMS, 0..1); 0 while muted or not listening. */
+  level = 0;
+  /** The microphone counts only while the operator holds the talk button or Space. */
+  pushToTalk = loadPushToTalk();
+  held = false;
+  #release: ReturnType<typeof setTimeout> | undefined;
   readonly #client: DaemonClient;
   readonly #toast: (message: string, kind?: "error" | "info") => void;
   readonly #nameOf: (id: string) => string | undefined;
@@ -64,8 +75,9 @@ export class CallSession {
     };
   }
 
-  /** Starts a call with `agent`; hands-free listening needs ElevenLabs. */
-  async start(agent: string): Promise<void> {
+  /** Starts a call with `agent`, or with every member of `group`; hands-free listening needs
+   * ElevenLabs. */
+  async start(agent: string, group?: number): Promise<void> {
     if (this.state) return;
     const round = ++this.#round;
     try {
@@ -75,11 +87,13 @@ export class CallSession {
         this.#toast("Set up voice first: a key and a voice (Settings → Voice)", "info");
         return;
       }
-      const view = await this.#client.setCall([agent]);
+      const view = await (group === undefined
+        ? this.#client.setCall([agent])
+        : this.#client.callGroup(group));
       if (round !== this.#round) return;
       this.#set({
         agents: view.agents,
-        host: agent,
+        host: view.agents[0] ?? agent,
         since: Date.now(),
         muted: false,
         hearing: false,
@@ -109,8 +123,31 @@ export class CallSession {
   /** Sends silence instead of the operator's microphone, keeping the connection. */
   mute(on: boolean): void {
     if (!this.state) return;
-    this.#live?.mute(on);
     this.#set({ ...this.state, muted: on });
+    this.#gate();
+  }
+
+  /** Switches between push-to-talk and voice activity; remembered on this computer. */
+  setPushToTalk(on: boolean): void {
+    this.pushToTalk = on;
+    savePushToTalk(on);
+    this.held = false;
+    clearTimeout(this.#release);
+    this.#gate();
+    this.#emit();
+  }
+
+  /** Push-to-talk: the operator presses (`true`) or lets go of the talk control. */
+  talk(held: boolean): void {
+    if (!this.pushToTalk || held === this.held || (held && this.state?.muted)) return;
+    this.held = held;
+    clearTimeout(this.#release);
+    if (held) this.#gate();
+    else
+      this.#release = setTimeout(() => {
+        this.#gate();
+      }, RELEASE_MS);
+    this.#emit();
   }
 
   /** The operator's words to everyone in the call; the daemon adds the call's instructions. */
@@ -207,14 +244,22 @@ export class CallSession {
         this.#toast(`Listening stopped: ${msg}`);
         this.#stopListening();
       },
+      level: (rms) => {
+        this.level = rms;
+        this.#emit();
+      },
     });
     if (round !== this.#round || !this.state || this.state.ending) {
       void live.stop(false);
       return;
     }
     this.#live = live;
-    live.mute(this.state.muted);
+    this.#gate();
     this.#set({ ...this.state, hearing: true });
+  }
+
+  #gate(): void {
+    if (this.state) this.#live?.mute(!micOpen(this.state.muted, this.pushToTalk, this.held));
   }
 
   #emit(): void {
@@ -250,7 +295,10 @@ export class CallSession {
     void this.#live?.stop(false);
     this.#live = null;
     this.#talking = false;
+    this.held = false;
+    clearTimeout(this.#release);
     this.caption = "";
+    this.level = 0;
     if (this.state?.hearing) this.state = { ...this.state, hearing: false };
     this.#emit();
   }

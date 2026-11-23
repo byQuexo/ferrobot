@@ -244,6 +244,9 @@ pub struct Agent {
     /// Tool groups the agent may use; its connectors are its assignment.
     #[serde(default = "crate::ToolGroup::all")]
     pub tools: Vec<crate::ToolGroup>,
+    /// The operator's labels for the agent, in order.
+    #[serde(default)]
+    pub tags: Vec<String>,
     #[serde(with = "time::serde::rfc3339")]
     #[cfg_attr(feature = "schema", schema(value_type = String, format = DateTime))]
     pub created_at: OffsetDateTime,

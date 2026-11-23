@@ -2,7 +2,7 @@ Two ways in: download the desktop app, or build from source.
 
 ## A. Desktop download
 
-Desktop builds come from the repository's Releases page: v0.1.3 has a
+Desktop builds come from the repository's Releases page: v0.1.4 has a
 universal `.dmg` for macOS and an `.exe` installer for Windows (x64).
 
 1. **Install Docker Desktop** and start it. Every agent runs in a container,
@@ -19,7 +19,7 @@ universal `.dmg` for macOS and an `.exe` installer for Windows (x64).
    (its key goes in **Settings → Vault**) and create an agent with
    **New agent**. See [[Model providers and keys|Providers]].
 4. **Wait for the first start.** The first time an agent starts, the runner
-   image (`ghcr.io/byquexo/ferrobot-runner:0.1.3`, about 2 GB) is pulled
+   image (`ghcr.io/byquexo/ferrobot-runner:0.1.4`, about 2 GB) is pulled
    from the GitHub Container Registry. Later agents start from the cached
    image.
 
@@ -33,6 +33,19 @@ More fixes: [[Troubleshooting]].
 
 The guides under **Settings → Guides** in the app are the same pages as this
 wiki.
+
+### Keyboard shortcuts
+
+⌘ on macOS, Ctrl on Windows and Linux. **Settings → Keyboard** lists them too.
+
+- **⌘K** go to an agent or a settings page
+- **⌘N** new agent · **⌘,** settings · **⌘⇧U** usage
+- **⌘I** show or hide the details panel · **⌘B** collapse or expand the sidebar
+- **⌘1–9** the 1st to 9th agent in the sidebar
+- **Esc** close the open dialog, menu, page or panel · **⌘/** all shortcuts
+
+How the app looks (theme, accent color, bubbles, chat background, text size)
+is under **Settings → Appearance**.
 
 The desktop window itself has had far less testing than the daemon; most UI
 checks ran in a browser against a real daemon.

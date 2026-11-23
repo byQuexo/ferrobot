@@ -1,4 +1,5 @@
-//! Call rooms: a voice call with two or more agents, who took part and what was said.
+//! Rooms: a voice call with two or more agents, or a named group chat; who is in it and what
+//! was said.
 
 use ferrobot_core::{AgentId, Sender};
 use rusqlite::{Connection, OptionalExtension, Row, params};
@@ -8,17 +9,20 @@ use time::OffsetDateTime;
 use crate::util::{fmt_ts, now, parse_ts};
 use crate::{Store, StoreError};
 
-/// A voice call with two or more agents; kept as history once the call ended.
+/// A voice call with two or more agents, kept as history once the call ended; or, with a name,
+/// a group chat, kept until deleted.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 #[cfg_attr(feature = "schema", derive(utoipa::ToSchema))]
 pub struct Room {
     pub id: i64,
-    /// Every agent that took part, in the order they joined.
+    /// The group's name; `null`: a call room.
+    pub name: Option<String>,
+    /// Every agent that took part (a group: its members), in the order they joined.
     pub members: Vec<AgentId>,
     #[serde(with = "time::serde::rfc3339")]
     #[cfg_attr(feature = "schema", schema(value_type = String, format = DateTime))]
     pub created_at: OffsetDateTime,
-    /// When the call ended; `null` while it runs.
+    /// When the call ended; `null` while it runs, and always for a group.
     #[serde(with = "time::serde::rfc3339::option")]
     #[cfg_attr(feature = "schema", schema(value_type = Option<String>, format = DateTime))]
     pub ended_at: Option<OffsetDateTime>,
@@ -44,12 +48,18 @@ pub struct RoomLine {
 fn room(c: &Connection, id: i64) -> Result<Room, StoreError> {
     let row = c
         .query_row(
-            "SELECT created_at, ended_at FROM rooms WHERE id = ?1",
+            "SELECT created_at, ended_at, name FROM rooms WHERE id = ?1",
             [id],
-            |r| Ok((r.get::<_, String>(0)?, r.get::<_, Option<String>>(1)?)),
+            |r| {
+                Ok((
+                    r.get::<_, String>(0)?,
+                    r.get::<_, Option<String>>(1)?,
+                    r.get::<_, Option<String>>(2)?,
+                ))
+            },
         )
         .optional()?;
-    let Some((created, ended)) = row else {
+    let Some((created, ended, name)) = row else {
         return Err(StoreError::NotFound {
             entity: "room",
             key: id.to_string(),
@@ -65,6 +75,7 @@ fn room(c: &Connection, id: i64) -> Result<Room, StoreError> {
     }
     Ok(Room {
         id,
+        name,
         members,
         created_at: parse_ts(&created)?,
         ended_at: ended.as_deref().map(parse_ts).transpose()?,
@@ -85,24 +96,126 @@ fn line(row: &Row<'_>) -> Result<RoomLine, StoreError> {
     })
 }
 
+fn group(c: &Connection, id: i64) -> Result<Room, StoreError> {
+    match room(c, id) {
+        Ok(r) if r.name.is_some() => Ok(r),
+        Ok(_) | Err(StoreError::NotFound { .. }) => Err(StoreError::NotFound {
+            entity: "group",
+            key: id.to_string(),
+        }),
+        Err(e) => Err(e),
+    }
+}
+
+fn add_members(c: &Connection, id: i64, members: Vec<AgentId>) -> Result<(), StoreError> {
+    let ts = fmt_ts(now());
+    for agent in members {
+        c.execute(
+            "INSERT OR IGNORE INTO room_members (room_id, agent_id, joined_at)
+             VALUES (?1, ?2, ?3)",
+            params![id, agent.to_string(), ts],
+        )?;
+    }
+    Ok(())
+}
+
+fn insert_room(
+    c: &mut Connection,
+    name: Option<&str>,
+    members: Vec<AgentId>,
+) -> Result<Room, StoreError> {
+    let tx = c.transaction()?;
+    tx.execute(
+        "INSERT INTO rooms (created_at, name) VALUES (?1, ?2)",
+        params![fmt_ts(now()), name],
+    )?;
+    let id = tx.last_insert_rowid();
+    add_members(&tx, id, members)?;
+    let created = room(&tx, id)?;
+    tx.commit()?;
+    Ok(created)
+}
+
 impl Store {
-    /// Opens a room with `members`.
+    /// Opens a call room with `members`.
     pub async fn create_room(&self, members: Vec<AgentId>) -> Result<Room, StoreError> {
+        self.with(move |c| insert_room(c, None, members)).await
+    }
+
+    /// Creates group chat `name` with `members`.
+    pub async fn create_group(
+        &self,
+        name: String,
+        members: Vec<AgentId>,
+    ) -> Result<Room, StoreError> {
+        self.with(move |c| insert_room(c, Some(&name), members))
+            .await
+    }
+
+    /// Group chats, oldest first.
+    pub async fn groups(&self) -> Result<Vec<Room>, StoreError> {
+        self.with(|c| {
+            let ids: Vec<i64> = c
+                .prepare("SELECT id FROM rooms WHERE name IS NOT NULL ORDER BY id")?
+                .query_map([], |r| r.get(0))?
+                .collect::<Result<_, _>>()?;
+            ids.into_iter().map(|id| room(c, id)).collect()
+        })
+        .await
+    }
+
+    /// One group chat; a call room is not found.
+    pub async fn group(&self, id: i64) -> Result<Room, StoreError> {
+        self.with(move |c| group(c, id)).await
+    }
+
+    /// Renames group `id`.
+    pub async fn rename_group(&self, id: i64, name: String) -> Result<Room, StoreError> {
+        self.with(move |c| {
+            group(c, id)?;
+            c.execute(
+                "UPDATE rooms SET name = ?2 WHERE id = ?1",
+                params![id, name],
+            )?;
+            room(c, id)
+        })
+        .await
+    }
+
+    /// Replaces group `id`'s members; those who stay keep their place.
+    pub async fn set_group_members(
+        &self,
+        id: i64,
+        members: Vec<AgentId>,
+    ) -> Result<Room, StoreError> {
         self.with(move |c| {
             let tx = c.transaction()?;
-            let ts = fmt_ts(now());
-            tx.execute("INSERT INTO rooms (created_at) VALUES (?1)", [&ts])?;
-            let id = tx.last_insert_rowid();
-            for agent in members {
-                tx.execute(
-                    "INSERT OR IGNORE INTO room_members (room_id, agent_id, joined_at)
-                     VALUES (?1, ?2, ?3)",
-                    params![id, agent.to_string(), ts],
-                )?;
+            for old in group(&tx, id)?.members {
+                if !members.contains(&old) {
+                    tx.execute(
+                        "DELETE FROM room_members WHERE room_id = ?1 AND agent_id = ?2",
+                        params![id, old.to_string()],
+                    )?;
+                }
             }
-            let created = room(&tx, id)?;
+            add_members(&tx, id, members)?;
+            let changed = room(&tx, id)?;
             tx.commit()?;
-            Ok(created)
+            Ok(changed)
+        })
+        .await
+    }
+
+    /// Deletes group `id` with its lines and its members' turns in it.
+    pub async fn delete_group(&self, id: i64) -> Result<(), StoreError> {
+        self.with(move |c| {
+            let tx = c.transaction()?;
+            group(&tx, id)?;
+            // Nulling `room_id` instead would move the turns into the members' chats.
+            tx.execute("DELETE FROM messages WHERE room_id = ?1", [id])?;
+            tx.execute("DELETE FROM rooms WHERE id = ?1", [id])?;
+            tx.commit()?;
+            Ok(())
         })
         .await
     }
@@ -120,11 +233,12 @@ impl Store {
         .await
     }
 
-    /// Ends the room (once).
+    /// Ends the call room (once); a group stays.
     pub async fn end_room(&self, id: i64) -> Result<Room, StoreError> {
         self.with(move |c| {
             c.execute(
-                "UPDATE rooms SET ended_at = ?2 WHERE id = ?1 AND ended_at IS NULL",
+                "UPDATE rooms SET ended_at = ?2
+                 WHERE id = ?1 AND ended_at IS NULL AND name IS NULL",
                 params![id, fmt_ts(now())],
             )?;
             room(c, id)
@@ -148,11 +262,11 @@ impl Store {
         .await
     }
 
-    /// Ends every running room: calls live in the daemon's memory, so a restart ends them.
+    /// Ends every running call room: calls live in the daemon's memory, so a restart ends them.
     pub async fn end_open_rooms(&self) -> Result<usize, StoreError> {
         self.with(|c| {
             Ok(c.execute(
-                "UPDATE rooms SET ended_at = ?1 WHERE ended_at IS NULL",
+                "UPDATE rooms SET ended_at = ?1 WHERE ended_at IS NULL AND name IS NULL",
                 [fmt_ts(now())],
             )?)
         })
@@ -185,11 +299,11 @@ impl Store {
         .await
     }
 
-    /// The newest rooms first.
+    /// The newest call rooms first; groups are left out.
     pub async fn rooms(&self, limit: u32) -> Result<Vec<Room>, StoreError> {
         self.with(move |c| {
             let ids: Vec<i64> = c
-                .prepare("SELECT id FROM rooms ORDER BY id DESC LIMIT ?1")?
+                .prepare("SELECT id FROM rooms WHERE name IS NULL ORDER BY id DESC LIMIT ?1")?
                 .query_map([limit], |r| r.get(0))?
                 .collect::<Result<_, _>>()?;
             ids.into_iter().map(|id| room(c, id)).collect()
@@ -197,7 +311,7 @@ impl Store {
         .await
     }
 
-    /// One room with its members.
+    /// One room (a call room or a group) with its members.
     pub async fn room(&self, id: i64) -> Result<Room, StoreError> {
         self.with(move |c| room(c, id)).await
     }
@@ -315,5 +429,80 @@ mod tests {
             store.room(r.id + 1).await,
             Err(StoreError::NotFound { .. })
         ));
+    }
+
+    #[tokio::test]
+    async fn groups_are_named_rooms_kept_apart_from_calls() {
+        let store = Store::open_in_memory().unwrap();
+        let mut ids = Vec::new();
+        for n in ["ann", "bob", "cy"] {
+            let a = store
+                .create_agent(NewAgent {
+                    created_by: None,
+                    name: AgentName::parse(n).unwrap(),
+                    description: String::new(),
+                    instructions: String::new(),
+                })
+                .await
+                .unwrap();
+            ids.push(a.id);
+        }
+        let [ann, bob, cy] = ids[..] else {
+            unreachable!()
+        };
+        let call = store.create_room(vec![ann, bob]).await.unwrap();
+        let g = store
+            .create_group("Ops".into(), vec![ann, bob])
+            .await
+            .unwrap();
+        assert_eq!(
+            (g.name.as_deref(), g.members.as_slice()),
+            (Some("Ops"), &[ann, bob][..])
+        );
+        assert_eq!(store.groups().await.unwrap(), std::slice::from_ref(&g));
+        assert_eq!(
+            store.rooms(10).await.unwrap(),
+            std::slice::from_ref(&call),
+            "calls only"
+        );
+        assert!(matches!(
+            store.group(call.id).await,
+            Err(StoreError::NotFound {
+                entity: "group",
+                ..
+            })
+        ));
+
+        // Ending calls never ends a group.
+        assert_eq!(store.end_open_rooms().await.unwrap(), 1);
+        assert_eq!(store.end_room(g.id).await.unwrap().ended_at, None);
+
+        let g = store.rename_group(g.id, "Ops team".into()).await.unwrap();
+        assert_eq!(g.name.as_deref(), Some("Ops team"));
+        assert!(store.rename_group(call.id, "x".into()).await.is_err());
+        let g = store.set_group_members(g.id, vec![cy, bob]).await.unwrap();
+        assert_eq!(
+            g.members,
+            [bob, cy],
+            "bob keeps its place, cy joins, ann left"
+        );
+
+        store
+            .add_room_line(g.id, Sender::User, "hi".into(), None)
+            .await
+            .unwrap();
+        let turn = store
+            .enqueue_room_message(Sender::User, bob, "hi".into(), g.id)
+            .await
+            .unwrap();
+        store.delete_group(g.id).await.unwrap();
+        assert_eq!(store.groups().await.unwrap(), []);
+        assert!(
+            store.get_message(turn.id).await.is_err(),
+            "its turns go too"
+        );
+        assert_eq!(store.conversation(bob, 10).await.unwrap(), []);
+        assert!(store.delete_group(call.id).await.is_err(), "not a group");
+        assert!(store.room(call.id).await.is_ok());
     }
 }

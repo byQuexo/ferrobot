@@ -31,7 +31,9 @@ pub use rooms::{Room, RoomLine};
 pub use routines::{NewRoutine, Routine, RoutineRun, RunTrigger};
 pub use snapshots::SnapshotRecord;
 pub use tasks::Task;
-pub use usage::{Tokens, UsageFilter, UsageGroupBy, UsageRecord, UsageSlice, UsageStatus};
+pub use usage::{
+    ContextUsage, Tokens, UsageFilter, UsageGroupBy, UsageRecord, UsageSlice, UsageStatus,
+};
 
 /// Maximum delivery attempts before a message is marked failed.
 pub const MAX_DELIVERY_ATTEMPTS: u32 = 3;

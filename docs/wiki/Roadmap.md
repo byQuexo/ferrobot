@@ -18,9 +18,22 @@ In rough order. Nothing here has a date.
 3. **Windows and updates.** More testing of the Windows app (installer,
    Credential Manager, Codex), and a release with signed update files, so the
    in-app updater runs against a real release for the first time.
-4. **Later.** Moving warm agents to cold sleep under memory pressure (F4d),
-   computer use inside sandboxes, a native macOS app on the same `/v1` API, and
-   optional self-hosted S3-compatible storage. Smaller ideas are on [[Ideas]].
+4. **Computer use.** Each agent's computer gets a screen: a virtual desktop
+   with a browser inside the sandbox, tools to look at it and click and type,
+   screenshots in the chat's step trail, and a live view in the Computer tab.
+   Like every other tool it stays inside the sandbox, goes through the tool
+   groups (a new `computer` group, off by default) and the risky-step
+   classifier, and works with any model that accepts images.
+5. **Traces.** A trace view behind each reply's steps line: one timeline of
+   the turn's model calls, tool calls, approval waits and the work it handed
+   to other agents, with duration, counts and errors. The same traces go out
+   over OpenTelemetry (OTLP, GenAI conventions) to an endpoint you choose,
+   such as Langfuse, Phoenix, Grafana Tempo or Jaeger. Export is off by
+   default; its keys stay in the keychain, and prompts and replies are left
+   out unless you turn them on.
+6. **Later.** Moving warm agents to cold sleep under memory pressure (F4d), a
+   native macOS app on the same `/v1` API, and optional self-hosted
+   S3-compatible storage. Smaller ideas are on [[Ideas]].
 
 Status words: **done** (built and tested, gaps noted), **partial** (code
 written, key parts never run), **open** (not built), **deliberately
@@ -81,6 +94,7 @@ tested against fakes on a machine without KVM.
 | v0.1.1 | done | Codex setup help, key links per provider, and the reason under a message that was not delivered. |
 | v0.1.2 | done | The first-run setup shows the ChatGPT sign-in for Codex once. |
 | v0.1.3 | done | Opt-in Claude Code (your own login): your own claude CLI and subscription, on the host. |
+| v0.1.4 | done | Group chats, reactions, uploads, richer chat, plan limits, tags and model switch, Appearance, shortcuts, the call bar. |
 
 Ideas beyond this list are on [[Ideas]].
 
