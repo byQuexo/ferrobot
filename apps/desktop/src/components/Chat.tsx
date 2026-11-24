@@ -26,9 +26,18 @@ import {
   UserPlus,
   Wrench,
   X,
+  Pin as PinIcon,
 } from "lucide-preact";
 
-import type { Agent, MailMessage, Routine, StoredEvent, Upload, VoiceView } from "../api.ts";
+import type {
+  Agent,
+  MailMessage,
+  PinKind,
+  Routine,
+  StoredEvent,
+  Upload,
+  VoiceView,
+} from "../api.ts";
 import { useApp } from "../context.ts";
 import { isPass } from "../lib/call.ts";
 import { clockTime, statusOf, stepLabel, stepsLabel, toolLabel } from "../lib/format.ts";
@@ -45,6 +54,7 @@ import {
   type TimelineItem,
 } from "../lib/timeline.ts";
 import { mentionQuery } from "../lib/mentions.ts";
+import { isPinned, pinLabel, togglePin } from "../lib/pins.ts";
 import { isMac, keyLabel, SHORTCUTS, useShortcuts } from "../lib/shortcuts.ts";
 import { hasVoiceKey, record, startLive, type LiveSession, type Recording } from "../lib/voice.ts";
 import { AttachmentChips, previews } from "./Attachments.tsx";
@@ -71,8 +81,11 @@ export function Chat(props: {
   onSignIn?: () => void;
   /** Opens the details panel on Activities. */
   onActivities: () => void;
+  /** A pinned reply or file to scroll to once the chat has loaded (its event id). */
+  focus?: number | null;
+  onFocused?: () => void;
 }): JSX.Element {
-  const { client, agents, listen, run, call, callState } = useApp();
+  const { client, agents, listen, run, call, callState, toast } = useApp();
   const agent = props.agent;
   const id = agent.id;
   const [messages, setMessages] = useState<MailMessage[]>([]);
@@ -198,6 +211,22 @@ export function Chat(props: {
   };
   useLayoutEffect(pin, [items.shown, items.trail]);
   const newKey = firstNewKey(items.shown, newSince);
+  // A pin opens the chat at its reply or file: scroll there once loaded, and flash it.
+  useEffect(() => {
+    if (props.focus == null || !loaded) return;
+    const target = scroller.current?.querySelector<HTMLElement>(
+      `[data-event="${String(props.focus)}"]`,
+    );
+    if (target) {
+      pinned.current = false;
+      target.scrollIntoView({ block: "center" });
+      target.classList.add("flash");
+      setTimeout(() => {
+        target.classList.remove("flash");
+      }, 1600);
+    } else toast("That message is no longer in this chat", "info");
+    props.onFocused?.();
+  }, [props.focus, loaded]);
 
   const working = agent.presence === "working";
   const [trace, setTrace] = useState<string | null>(null);
@@ -408,6 +437,39 @@ function TraceLink(props: {
   );
 }
 
+/** Pins a reply or a shared file to the list behind the sidebar's pin button. */
+function PinButton(props: {
+  kind: PinKind;
+  agent: string;
+  event: number;
+  label: () => string;
+}): JSX.Element {
+  const { pins, savePins } = useApp();
+  const on = isPinned(pins, props.kind, props.agent, props.event);
+  const label = on ? "Unpin" : "Pin";
+  return (
+    <button
+      type="button"
+      class={`pin-btn${on ? " on" : ""}`}
+      aria-label={label}
+      title={label}
+      aria-pressed={on}
+      onClick={() =>
+        void savePins(
+          togglePin(pins, {
+            kind: props.kind,
+            agent_id: props.agent,
+            event: props.event,
+            label: props.label(),
+          }),
+        )
+      }
+    >
+      <PinIcon size={14} />
+    </button>
+  );
+}
+
 const REACTIONS = ["👍", "❤️", "😂", "🎉", "🤔", "👎"];
 
 /** Your emoji on an agent's message; the agent hears of it and may act on it. */
@@ -602,7 +664,7 @@ function Item(props: {
       );
     case "assistant":
       return (
-        <div class="row row-agent">
+        <div class="row row-agent" data-event={item.id ?? undefined}>
           <div
             class={`bubble-agent${item.streaming ? " streaming" : ""}${isPass(item.text) ? " pass" : ""}`}
           >
@@ -618,6 +680,14 @@ function Item(props: {
                 {item.id !== null && (
                   <ReactButton agent={agent.id} event={item.id} current={item.reaction} />
                 )}
+                {item.id !== null && (
+                  <PinButton
+                    kind="message"
+                    agent={agent.id}
+                    event={item.id}
+                    label={() => pinLabel(item.text, (a) => agents.get(a)?.name)}
+                  />
+                )}
                 {props.footSteps && item.turn && (
                   <TraceLink turn={item.turn} steps={props.footSteps} onTrace={props.onTrace} />
                 )}
@@ -628,20 +698,23 @@ function Item(props: {
       );
     case "file":
       return (
-        <div class="row row-agent file-share">
-          <button
-            type="button"
-            class="file-card"
-            onClick={() => {
-              openFile(agent.id, item.id);
-            }}
-          >
-            <FileText size={16} />
-            <span class="file-name">{item.name}</span>
-            <span class="meta">
-              {fileSize(item.size)} · {clockTime(item.at)}
-            </span>
-          </button>
+        <div class="row row-agent file-share" data-event={item.id}>
+          <div class="file-head">
+            <button
+              type="button"
+              class="file-card"
+              onClick={() => {
+                openFile(agent.id, item.id);
+              }}
+            >
+              <FileText size={16} />
+              <span class="file-name">{item.name}</span>
+              <span class="meta">
+                {fileSize(item.size)} · {clockTime(item.at)}
+              </span>
+            </button>
+            <PinButton kind="file" agent={agent.id} event={item.id} label={() => item.name} />
+          </div>
           <FilePreview agent={agent.id} file={item.id} name={item.name} />
         </div>
       );

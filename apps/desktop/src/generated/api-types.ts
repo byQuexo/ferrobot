@@ -1056,6 +1056,24 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/pins": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** The pinned replies and files, in order. */
+        get: operations["get_pins"];
+        /** Replaces the pin list: pinning, renaming, reordering and unpinning all send the whole list. */
+        put: operations["put_pins"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/previews": {
         parameters: {
             query?: never;
@@ -2278,6 +2296,21 @@ export interface components {
             has_secret: boolean;
             last_export?: components["schemas"]["ExportStatus"] | null;
         };
+        /** @description A pinned reply or shared file, in the pin list's order. */
+        Pin: {
+            kind: components["schemas"]["PinKind"];
+            /** @description The agent whose chat holds it. */
+            agent_id: string;
+            /**
+             * Format: int64
+             * @description The reply's `assistant_text` event, or the file's `file` event.
+             */
+            event: number;
+            /** @description Shown in the pin list; 1-120 characters. */
+            label: string;
+        };
+        /** @enum {string} */
+        PinKind: "message" | "file";
         PlanLimits: {
             five_hour?: components["schemas"]["LimitWindow"] | null;
             weekly?: components["schemas"]["LimitWindow"] | null;
@@ -6513,6 +6546,75 @@ export interface operations {
                     "application/json": components["schemas"]["OtelView"];
                 };
             };
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Missing or wrong API token */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+        };
+    };
+    get_pins: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Pin"][];
+                };
+            };
+            /** @description Missing or wrong API token */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+        };
+    };
+    put_pins: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["Pin"][];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Pin"][];
+                };
+            };
+            /** @description Too many pins, a bad label or an unknown agent */
             400: {
                 headers: {
                     [name: string]: unknown;

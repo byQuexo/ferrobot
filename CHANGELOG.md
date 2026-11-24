@@ -6,6 +6,27 @@ All notable changes are listed here. The format follows
 
 ## [Unreleased]
 
+## [0.1.7] - 2026-11-24
+
+### Added
+
+- Pins: a pin button on every reply and shared file, and a pin button next to
+  Settings that lists pinned agents, replies and files. Click a reply to jump
+  to it in its chat (it flashes), or a file to open it; rename pins, drag to
+  reorder, unpin. Pins live in the daemon (`/v1/pins`); agents keep their own
+  pin (top of the sidebar). The sidebar header's buttons got a little
+  narrower so the name still fits.
+
+### Fixed
+
+- Agents learn of a rename: the next turn of every agent that knew the old
+  name starts with a note ("@scout is now @scout-x"), the renamed agent hears
+  its new name, and its chat shows "Renamed from @scout to @scout-x".
+- Old names from renames before 0.1.6, which were not recorded, are found at
+  start in the history (the names agents sent messages under and were created
+  with), so `@old-name` reaches the renamed agent again and agents are told
+  its new name. Text already sent keeps the old name as plain text.
+
 ## [0.1.6] - 2026-11-24
 
 ### Added
@@ -305,7 +326,8 @@ First public release.
   allowlist per API family, no redirects, header allowlists both ways, agent
   tokens blanked in committed images.
 
-[Unreleased]: https://github.com/byQuexo/ferrobot/compare/v0.1.6...HEAD
+[Unreleased]: https://github.com/byQuexo/ferrobot/compare/v0.1.7...HEAD
+[0.1.7]: https://github.com/byQuexo/ferrobot/compare/v0.1.6...v0.1.7
 [0.1.6]: https://github.com/byQuexo/ferrobot/compare/v0.1.5...v0.1.6
 [0.1.5]: https://github.com/byQuexo/ferrobot/compare/v0.1.4...v0.1.5
 [0.1.4]: https://github.com/byQuexo/ferrobot/compare/v0.1.3...v0.1.4

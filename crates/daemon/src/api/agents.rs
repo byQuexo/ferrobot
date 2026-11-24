@@ -185,6 +185,11 @@ pub(crate) async fn update_agent(
     check_character(req.character.flatten().as_ref())?;
     let tags = req.tags.map(check_tags).transpose()?;
     let reconfigure = name.is_some() || req.instructions.is_some() || req.tools.is_some();
+    let old_name = match &name {
+        Some(_) => Some(state.store.get_agent(id).await?.name),
+        None => None,
+    };
+    let renamed = old_name.zip(name.clone()).filter(|(old, new)| old != new);
     let model_change = req.provider_id.is_some() || req.model.is_some();
     let (provider_id, model) = if model_change {
         let current = state.store.get_agent(id).await?;
@@ -212,6 +217,11 @@ pub(crate) async fn update_agent(
             },
         )
         .await?;
+    if let Some((from, to)) = renamed {
+        // Teammates still know the old name; their next turns are told (`runner_ws`).
+        let payload = serde_json::json!({ "from": from.as_str(), "to": to.as_str() });
+        state.record(id, None, "renamed", payload).await;
+    }
     if model_change {
         lifecycle::recreate(&state, id).await?;
         crate::credentials::clear(&state, id).await;

@@ -7795,3 +7795,95 @@ async fn memories_move_into_an_obsidian_vault_folder() {
     .await;
     assert_eq!(view["path"], Value::Null);
 }
+
+#[tokio::test]
+async fn teammates_hear_of_a_rename_on_their_next_turn() {
+    let backend = Arc::new(StatefulBackend::default());
+    let d = start(backend.clone(), None, "127.0.0.1:0").await;
+    let ada = create(&d, json!({"name": "ada"})).await["id"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    let bob = create(&d, json!({"name": "bob"})).await["id"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    let mut ws = connect_runner(&d.agents, &backend.token("bob")).await;
+    let to_bob = format!("/v1/agents/{bob}/messages");
+    let send = |body: &'static str| {
+        let (ui, path) = (d.ui.clone(), to_bob.clone());
+        async move {
+            http(&ui, "POST", &path, Some(json!({ "body": body })))
+                .await
+                .0
+        }
+    };
+    assert_eq!(send("hi").await, 202);
+    let first = say_turn(&mut ws, "Hi.").await;
+    assert!(!first.contains("Renamed"), "{first}");
+
+    let path = format!("/v1/agents/{ada}");
+    let (status, _) = http(&d.ui, "PATCH", &path, Some(json!({"name": "ada-two"}))).await;
+    assert_eq!(status, 200);
+    let late = create(&d, json!({"name": "cy"})).await["id"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+
+    assert_eq!(send("next").await, 202);
+    let told = say_turn(&mut ws, "Noted.").await;
+    assert!(
+        told.starts_with(
+            "[ferrobot] Renamed since your last turn: @ada is now @ada-two. Use the new names."
+        ),
+        "{told}"
+    );
+    assert_eq!(send("again").await, 202);
+    let once = say_turn(&mut ws, "Ok.").await;
+    assert!(!once.contains("Renamed"), "told once: {once}");
+    assert!(
+        d.state
+            .store
+            .renames_since_last_turn(late.parse().unwrap())
+            .await
+            .unwrap()
+            .is_empty(),
+        "an agent made after the rename never knew the old name"
+    );
+}
+
+#[tokio::test]
+async fn pins_keep_their_order_and_go_with_their_agent() {
+    let d = start(Arc::new(StatefulBackend::default()), None, "127.0.0.1:0").await;
+    let ada = create(&d, json!({"name": "ada"})).await["id"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    let bob = create(&d, json!({"name": "bob"})).await["id"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    let (status, pins) = http(&d.ui, "GET", "/v1/pins", None).await;
+    assert_eq!((status, pins), (200, json!([])));
+    let list = json!([
+        {"kind": "file", "agent_id": bob, "event": 9, "label": "plan.md"},
+        {"kind": "message", "agent_id": ada, "event": 4, "label": "  Weekly summary "},
+        {"kind": "message", "agent_id": ada, "event": 4, "label": "twice"},
+    ]);
+    let (status, saved) = http(&d.ui, "PUT", "/v1/pins", Some(list)).await;
+    assert_eq!(status, 200, "{saved}");
+    assert_eq!(saved.as_array().unwrap().len(), 2, "one pin per item");
+    assert_eq!(saved[1]["label"], "Weekly summary");
+    let bad = json!([{"kind": "message", "agent_id": ada, "event": 4, "label": " "}]);
+    assert_eq!(http(&d.ui, "PUT", "/v1/pins", Some(bad)).await.0, 400);
+
+    let (status, _, _) = http_raw(&d.ui, "DELETE", &format!("/v1/agents/{bob}"), &[], b"").await;
+    assert_eq!(status, 204);
+    let (_, pins) = http(&d.ui, "GET", "/v1/pins", None).await;
+    assert_eq!(
+        pins.as_array().unwrap().len(),
+        1,
+        "bob's file pin went with bob"
+    );
+    assert_eq!(pins[0]["event"], 4);
+}

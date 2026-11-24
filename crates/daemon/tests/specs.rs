@@ -123,12 +123,13 @@ fn every_routed_path_is_documented() {
         "/v1/otel",
         "/v1/otel/secret",
         "/v1/memory-vault",
+        "/v1/pins",
     ] {
         assert!(documented.contains(&path), "{path} missing from OpenAPI");
     }
     assert_eq!(
         documented.len(),
-        77,
+        78,
         "undocumented extra paths: {documented:?}"
     );
 }

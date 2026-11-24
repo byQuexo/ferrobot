@@ -9,6 +9,7 @@ import {
   DaemonClient,
   type Agent,
   type Health,
+  type Pin,
   type Provider,
   type UiEvent,
 } from "./api.ts";
@@ -99,6 +100,8 @@ export function App(): JSX.Element {
   const [switcher, setSwitcher] = useState(false);
   const [shortcuts, setShortcuts] = useState(false);
   const [toasts, setToasts] = useState<Toast[]>([]);
+  const [pins, setPins] = useState<Pin[]>([]);
+  const [focus, setFocus] = useState<{ agent: string; event: number } | null>(null);
   const listeners = useRef(new Set<(e: UiEvent) => void>());
   const lookRef = useRef(look);
 
@@ -154,6 +157,7 @@ export function App(): JSX.Element {
       setLoaded(true);
       setProviders(ps);
       setNeedsToken(false);
+      client.pins().then(setPins, () => undefined);
     } catch (err) {
       if (err instanceof ApiError && err.status === 401) setNeedsToken(true);
       throw err;
@@ -243,6 +247,20 @@ export function App(): JSX.Element {
   const openFile = useCallback((agent: string, id: number) => {
     setFile({ agent, file: id });
   }, []);
+  const savePins = useCallback(
+    async (next: Pin[]) => {
+      const saved = await run(() => client.setPins(next));
+      if (saved) setPins(saved);
+    },
+    [client, run],
+  );
+  const jumpTo = useCallback(
+    (agent: string, event: number) => {
+      openAgent(agent);
+      setFocus({ agent, event });
+    },
+    [openAgent],
+  );
   const ctx: AppContextValue = {
     client,
     health,
@@ -254,6 +272,9 @@ export function App(): JSX.Element {
     openConversation,
     openRoom,
     openFile,
+    pins,
+    savePins,
+    jumpTo,
     call,
     callState,
   };
@@ -396,6 +417,10 @@ export function App(): JSX.Element {
             onActivities={() => {
               setInfoOpen(true);
               setTab("activities");
+            }}
+            focus={focus?.agent === agent.id ? focus.event : null}
+            onFocused={() => {
+              setFocus(null);
             }}
           />
         ) : welcome ? (

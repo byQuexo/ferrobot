@@ -271,6 +271,11 @@ async fn main() -> Result<()> {
     tracing::info!(ui = %cli.listen, agents = %cli.agent_listen, backend = ?cli.backend, driver = ?cli.driver, "ferrobotd listening");
 
     lifecycle::reconcile(&state).await;
+    match state.store.backfill_aliases().await {
+        Ok(0) => {}
+        Ok(n) => tracing::info!(names = n, "found old names of renamed agents"),
+        Err(e) => tracing::warn!(error = %e, "cannot read old names of renamed agents"),
+    }
     ferrobot_daemon::connectors::check_local(&state).await;
     tokio::spawn(scheduler::run(state.clone()));
     tokio::spawn(supervisor::run(state.clone()));

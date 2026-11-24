@@ -17,6 +17,7 @@ import {
 
 import type { Agent } from "../api.ts";
 import { useApp } from "../context.ts";
+import { PinsMenu } from "./Pins.tsx";
 import { rowLine, statusOf } from "../lib/format.ts";
 import { loadOrder, moveId, orderAgents, saveOrder } from "../lib/order.ts";
 import { Avatar } from "./Avatar.tsx";
@@ -174,6 +175,7 @@ export function Sidebar(props: {
             <IconButton label="Usage" onClick={props.onUsage} pressed={props.usageOpen}>
               <ChartColumn size={18} />
             </IconButton>
+            <PinsMenu />
             <IconButton label="Settings" onClick={props.onSettings} pressed={props.settingsOpen}>
               <Settings size={18} />
             </IconButton>
@@ -194,6 +196,7 @@ export function Sidebar(props: {
             <IconButton label="Usage" onClick={props.onUsage} pressed={props.usageOpen}>
               <ChartColumn size={18} />
             </IconButton>
+            <PinsMenu />
             <IconButton label="Settings" onClick={props.onSettings} pressed={props.settingsOpen}>
               <Settings size={18} />
             </IconButton>

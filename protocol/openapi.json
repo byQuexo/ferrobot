@@ -10,7 +10,7 @@
       "name": "MIT OR Apache-2.0",
       "identifier": "MIT OR Apache-2.0"
     },
-    "version": "0.1.6"
+    "version": "0.1.7"
   },
   "servers": [
     {
@@ -4442,6 +4442,93 @@
         }
       }
     },
+    "/v1/pins": {
+      "get": {
+        "tags": [
+          "chat"
+        ],
+        "summary": "The pinned replies and files, in order.",
+        "operationId": "get_pins",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/Pin"
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or wrong API token",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        }
+      },
+      "put": {
+        "tags": [
+          "chat"
+        ],
+        "summary": "Replaces the pin list: pinning, renaming, reordering and unpinning all send the whole list.",
+        "operationId": "put_pins",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/components/schemas/Pin"
+                }
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/Pin"
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Too many pins, a bad label or an unknown agent",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or wrong API token",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/v1/previews": {
       "post": {
         "tags": [
@@ -8170,6 +8257,41 @@
           }
         ],
         "description": "The export settings, whether the header's value is stored, and how the last export went."
+      },
+      "Pin": {
+        "type": "object",
+        "description": "A pinned reply or shared file, in the pin list's order.",
+        "required": [
+          "kind",
+          "agent_id",
+          "event",
+          "label"
+        ],
+        "properties": {
+          "kind": {
+            "$ref": "#/components/schemas/PinKind"
+          },
+          "agent_id": {
+            "type": "string",
+            "description": "The agent whose chat holds it."
+          },
+          "event": {
+            "type": "integer",
+            "format": "int64",
+            "description": "The reply's `assistant_text` event, or the file's `file` event."
+          },
+          "label": {
+            "type": "string",
+            "description": "Shown in the pin list; 1-120 characters."
+          }
+        }
+      },
+      "PinKind": {
+        "type": "string",
+        "enum": [
+          "message",
+          "file"
+        ]
       },
       "PlanLimits": {
         "type": "object",

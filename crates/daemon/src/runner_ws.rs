@@ -442,6 +442,40 @@ async fn settle_steered(state: &AppState, steered: Vec<i64>, done: Option<&Done>
     }
 }
 
+/// Who was renamed since the agent's last turn, so it stops using old names; `None` if no one.
+async fn rename_note(state: &AppState, agent: AgentId) -> Option<String> {
+    let renames = state.store.renames_since_last_turn(agent).await.ok()?;
+    if renames.is_empty() {
+        return None;
+    }
+    let agents = state.store.list_agents().await.ok()?;
+    let mut done = Vec::new();
+    let mut lines = Vec::new();
+    for (id, from) in renames {
+        if done.contains(&id) {
+            continue;
+        }
+        done.push(id);
+        let Some(now) = agents.iter().find(|a| a.id == id).map(|a| a.name.as_str()) else {
+            continue;
+        };
+        if now == from {
+            continue;
+        }
+        lines.push(if id == agent {
+            format!("you are now @{now} (was @{from})")
+        } else {
+            format!("@{from} is now @{now}")
+        });
+    }
+    (!lines.is_empty()).then(|| {
+        format!(
+            "[ferrobot] Renamed since your last turn: {}. Use the new names.",
+            lines.join("; ")
+        )
+    })
+}
+
 /// Runs one turn; `None` is a new agent's greeting turn, which has no
 /// message. Returns false when the connection is gone.
 async fn run_turn(
@@ -476,8 +510,9 @@ async fn run_turn(
     if let Some(room) = room {
         payload["room_id"] = room.into();
     }
-    // Read before this turn's `message_in`, which settles it.
+    // Read before this turn's `message_in`, which settles them.
     let new_session = matches!(state.store.new_session_pending(agent).await, Ok(true));
+    let renames = rename_note(state, agent).await;
     if new_session {
         // So a runner that restarts before its first fresh turn is not offered the old session.
         let _ = state.store.set_agent_session(agent, None).await;
@@ -495,6 +530,9 @@ async fn run_turn(
     state.hub.touch(agent);
     state.publish_agent(agent).await;
     let mut body = state.render_mentions(&prompt).await;
+    if let Some(note) = renames {
+        body = format!("{note}\n\n{body}");
+    }
     if first {
         body = if body.is_empty() {
             GREETING.to_owned()
