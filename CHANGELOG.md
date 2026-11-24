@@ -10,6 +10,8 @@ All notable changes are listed here. The format follows
 
 - Pins per chat: a chat with pins shows a pin with their number in its header;
   it lists that chat's pinned replies and files (the global pin list stays).
+- An agent's details panel lists its webhooks: the incoming ones that message
+  it and the outgoing ones that report on it.
 
 ### Changed
 

@@ -42,6 +42,7 @@ import { TagChips } from "./AgentMeta.tsx";
 import { Avatar } from "./Avatar.tsx";
 import { CredentialFix } from "./CredentialFix.tsx";
 import { ToolCard } from "./Chat.tsx";
+import { AgentWebhooks } from "./WebhooksSettings.tsx";
 import { KIND_LABELS } from "./ProvidersSettings.tsx";
 import { Button, Empty, IconButton, Skeleton, Switch } from "./ui.tsx";
 
@@ -179,6 +180,7 @@ function Profile(props: {
           <p class="muted">None. The agent uses its defaults.</p>
         )}
       </section>
+      <AgentWebhooks agent={a.id} />
       <div class="row-actions">
         <Button variant="primary" onClick={props.onEdit}>
           Edit profile

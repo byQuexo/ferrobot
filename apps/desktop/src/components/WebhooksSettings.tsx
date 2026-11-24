@@ -551,3 +551,52 @@ function OutgoingDialog(props: { onClose: () => void; onAdded: () => void }): JS
     </Dialog>
   );
 }
+
+/** An agent's webhooks for its details panel: what can message it and what reports on it. */
+export function AgentWebhooks(props: { agent: string }): JSX.Element | null {
+  const { client } = useApp();
+  const [view, setView] = useState<WebhooksView | null>(null);
+  useEffect(() => {
+    client.webhooks().then(setView, () => {
+      setView(null);
+    });
+  }, [props.agent]);
+  if (!view) return null;
+  const incoming = view.incoming.filter((h) => h.agent_id === props.agent);
+  const outgoing = view.outgoing.filter(
+    (h) => h.agents.length === 0 || h.agents.includes(props.agent),
+  );
+  if (incoming.length === 0 && outgoing.length === 0) return null;
+  return (
+    <section class="card agent-hooks">
+      <h3>Webhooks</h3>
+      <ul class="agent-hooks-list">
+        {incoming.map((h) => (
+          <li key={`in-${String(h.id)}`}>
+            <Webhook size={16} aria-hidden="true" />
+            <span>
+              <b>{h.name}</b>
+              <span class="muted small"> · messages this agent</span>
+            </span>
+          </li>
+        ))}
+        {outgoing.map((h) => {
+          const Icon = ICONS[h.format];
+          return (
+            <li key={`out-${String(h.id)}`}>
+              <Icon size={16} aria-hidden="true" />
+              <span>
+                <b>{h.name}</b>
+                <span class="muted small">
+                  {" "}
+                  · {formatOf(h.format)[1]}: {h.events.map(eventLabel).join(", ")}
+                  {h.agents.length === 0 ? " (every agent)" : ""}
+                </span>
+              </span>
+            </li>
+          );
+        })}
+      </ul>
+    </section>
+  );
+}
