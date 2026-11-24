@@ -7887,3 +7887,35 @@ async fn pins_keep_their_order_and_go_with_their_agent() {
     );
     assert_eq!(pins[0]["event"], 4);
 }
+
+#[tokio::test]
+async fn a_deleted_agent_is_still_named_in_mentions() {
+    let backend = Arc::new(StatefulBackend::default());
+    let d = start(backend.clone(), None, "127.0.0.1:0").await;
+    let calc = create(&d, json!({"name": "calc-a"})).await["id"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    let ferro = create(&d, json!({"name": "ferro"})).await["id"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    let mut ws = connect_runner(&d.agents, &backend.token("ferro")).await;
+    let (status, _, _) = http_raw(&d.ui, "DELETE", &format!("/v1/agents/{calc}"), &[], b"").await;
+    assert_eq!(status, 204);
+    let (_, former) = http(&d.ui, "GET", "/v1/agents/former", None).await;
+    assert_eq!(former, json!([{"id": calc, "name": "calc-a"}]));
+
+    let body = format!("<@{calc}> answered 2");
+    d.state
+        .store
+        .enqueue_message(Sender::User, ferro.parse().unwrap(), body, None)
+        .await
+        .unwrap();
+    d.state.message_arrived(ferro.parse().unwrap());
+    let (_, _, model_input) = next_turn(&mut ws).await;
+    assert!(
+        model_input.ends_with("@calc-a (deleted) answered 2"),
+        "{model_input}"
+    );
+}

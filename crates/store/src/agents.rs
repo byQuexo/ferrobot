@@ -311,14 +311,60 @@ impl Store {
         .await
     }
 
+    /// Deletes the agent; its name is kept (`former_agent_names`) so mentions of it still read.
     pub async fn delete_agent(&self, id: AgentId) -> Result<(), StoreError> {
-        self.update_agent(id, |c, id| {
+        let at = fmt_ts(now());
+        self.update_agent(id, move |c, id| {
+            c.execute(
+                "INSERT INTO settings (key, value, updated_at)
+                 SELECT 'former_agents', json_object(id, name), ?2 FROM agents WHERE id = ?1
+                 ON CONFLICT (key) DO UPDATE SET
+                     value = json_set(settings.value, '$.\"' || ?1 || '\"',
+                                      (SELECT name FROM agents WHERE id = ?1)),
+                     updated_at = excluded.updated_at",
+                params![id, at],
+            )?;
             c.execute("DELETE FROM agents WHERE id = ?1", [id])
         })
         .await
     }
 
-    /// Old names of renamed agents: (name, agent).
+    /// The last names of deleted agents: recorded when they were deleted, else the names
+    /// history knew them by (messages they sent, `create_agent` results).
+    pub async fn former_agent_names(&self) -> Result<Vec<(AgentId, String)>, StoreError> {
+        self.with(|c| {
+            let mut stmt = c.prepare(
+                "WITH seen(agent_id, name, at) AS (
+                     SELECT json_extract(payload, '$.sender.id'), json_extract(payload, '$.from'), id
+                     FROM events WHERE kind = 'message_in'
+                       AND json_extract(payload, '$.sender.kind') = 'agent'
+                     UNION ALL
+                     SELECT json_extract(json_extract(payload, '$.output'), '$.agent_id'),
+                            json_extract(json_extract(payload, '$.output'), '$.name'), id
+                     FROM events WHERE kind = 'tool_result'
+                       AND json_valid(json_extract(payload, '$.output'))
+                     UNION ALL
+                     SELECT j.key, j.value, 9223372036854775807
+                     FROM settings s, json_each(s.value) j WHERE s.key = 'former_agents'
+                 )
+                 SELECT agent_id, name, MAX(at) FROM seen
+                 WHERE agent_id IS NOT NULL AND name IS NOT NULL
+                   AND agent_id NOT IN (SELECT id FROM agents)
+                 GROUP BY agent_id",
+            )?;
+            let rows = stmt.query_map([], |r| Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?)))?;
+            let mut out = Vec::new();
+            for row in rows {
+                let (id, name) = row?;
+                if let Ok(id) = id.parse() {
+                    out.push((id, name));
+                }
+            }
+            Ok(out)
+        })
+        .await
+    }
+
     /// Old names of agents renamed before renames were recorded, read from history: the
     /// sender name of each message an agent sent and the name each `create_agent` result
     /// gave. Each becomes an alias plus a `renamed` event, so agents hear of it on their next
@@ -371,6 +417,7 @@ impl Store {
         .await
     }
 
+    /// Old names of renamed agents: (name, agent).
     pub async fn agent_aliases(&self) -> Result<Vec<(String, AgentId)>, StoreError> {
         self.with(|c| {
             let mut stmt = c.prepare("SELECT name, agent_id FROM agent_aliases")?;
@@ -924,5 +971,37 @@ mod tests {
             "agents that knew it hear of it"
         );
         assert_eq!(store.backfill_aliases().await.unwrap(), 0, "only once");
+    }
+
+    #[tokio::test]
+    async fn deleted_agents_keep_their_names_for_mentions() {
+        let store = Store::open_in_memory().unwrap();
+        let new = |name: &str| NewAgent {
+            created_by: None,
+            name: AgentName::parse(name).unwrap(),
+            description: String::new(),
+            instructions: String::new(),
+        };
+        let ada = store.create_agent(new("ada")).await.unwrap().id;
+        let bob = store.create_agent(new("bob")).await.unwrap().id;
+        let cy = store.create_agent(new("cy")).await.unwrap().id;
+        let gone_long_ago = AgentId::new();
+        let sent = serde_json::json!({ "sender": { "kind": "agent", "id": gone_long_ago }, "from": "calc-a" });
+        store
+            .append_event(cy, None, "message_in".into(), sent)
+            .await
+            .unwrap();
+        store.delete_agent(ada).await.unwrap();
+        store.delete_agent(bob).await.unwrap();
+        let mut names = store.former_agent_names().await.unwrap();
+        names.sort_by(|a, b| a.1.cmp(&b.1));
+        assert_eq!(
+            names,
+            [
+                (ada, "ada".to_owned()),
+                (bob, "bob".to_owned()),
+                (gone_long_ago, "calc-a".to_owned()),
+            ]
+        );
     }
 }

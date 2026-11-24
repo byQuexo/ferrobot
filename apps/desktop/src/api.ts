@@ -51,6 +51,7 @@ export type OtelView = Schemas["OtelView"];
 export type MemoryVaultView = Schemas["MemoryVaultView"];
 export type Pin = Schemas["Pin"];
 export type PinKind = Schemas["PinKind"];
+export type FormerAgent = Schemas["FormerAgent"];
 export type ModelList = Schemas["ModelList"];
 export type ModelInfo = Schemas["ModelInfo"];
 export type VoiceView = Schemas["VoiceView"];
@@ -353,6 +354,7 @@ export class DaemonClient {
   settings = (): Promise<GeneralSettings> => this.#request("GET", "/v1/settings");
   updateSettings = (s: GeneralSettings): Promise<GeneralSettings> =>
     this.#request("PUT", "/v1/settings", s);
+  formerAgents = (): Promise<FormerAgent[]> => this.#request("GET", "/v1/agents/former");
   pins = (): Promise<Pin[]> => this.#request("GET", "/v1/pins");
   setPins = (pins: Pin[]): Promise<Pin[]> => this.#request("PUT", "/v1/pins", pins);
   memoryVault = (): Promise<MemoryVaultView> => this.#request("GET", "/v1/memory-vault");

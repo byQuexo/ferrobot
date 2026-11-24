@@ -59,6 +59,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/agents/former": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Deleted agents' last names, for mentions of them in old messages. */
+        get: operations["former_agents"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/agents/{id}": {
         parameters: {
             query?: never;
@@ -2048,6 +2065,11 @@ export interface components {
             /** @description Why it failed; `null` when it went through. */
             error?: string | null;
         };
+        /** @description A deleted agent's last name, so mentions of it can still be read. */
+        FormerAgent: {
+            id: string;
+            name: string;
+        };
         /** @description Daemon-wide settings. Omitted fields take their defaults. */
         GeneralSettings: {
             /**
@@ -3261,6 +3283,34 @@ export interface operations {
             };
             /** @description Sandbox backend error */
             502: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+        };
+    };
+    former_agents: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["FormerAgent"][];
+                };
+            };
+            /** @description Missing or wrong API token */
+            401: {
                 headers: {
                     [name: string]: unknown;
                 };

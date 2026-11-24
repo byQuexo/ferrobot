@@ -101,6 +101,7 @@ export function App(): JSX.Element {
   const [shortcuts, setShortcuts] = useState(false);
   const [toasts, setToasts] = useState<Toast[]>([]);
   const [pins, setPins] = useState<Pin[]>([]);
+  const [formerNames, setFormerNames] = useState<Map<string, string>>(new Map());
   const [focus, setFocus] = useState<{ agent: string; event: number } | null>(null);
   const listeners = useRef(new Set<(e: UiEvent) => void>());
   const lookRef = useRef(look);
@@ -158,6 +159,12 @@ export function App(): JSX.Element {
       setProviders(ps);
       setNeedsToken(false);
       client.pins().then(setPins, () => undefined);
+      client.formerAgents().then(
+        (list) => {
+          setFormerNames(new Map(list.map((f) => [f.id, f.name])));
+        },
+        () => undefined,
+      );
     } catch (err) {
       if (err instanceof ApiError && err.status === 401) setNeedsToken(true);
       throw err;
@@ -177,6 +184,8 @@ export function App(): JSX.Element {
         if (e.type === "agent") setAgents((m) => new Map(m).set(e.agent.id, e.agent));
         if (e.type === "agent_deleted") {
           setAgents((m) => {
+            const gone = m.get(e.agent_id);
+            if (gone) setFormerNames((f) => new Map(f).set(gone.id, gone.name));
             const next = new Map(m);
             next.delete(e.agent_id);
             return next;
@@ -261,10 +270,16 @@ export function App(): JSX.Element {
     },
     [openAgent],
   );
+  const nameOf = (id: string): string | undefined => {
+    const former = formerNames.get(id);
+    return agents.get(id)?.name ?? (former === undefined ? undefined : `${former} (deleted)`);
+  };
   const ctx: AppContextValue = {
     client,
     health,
     agents,
+    formerNames,
+    nameOf,
     listen,
     toast,
     run,

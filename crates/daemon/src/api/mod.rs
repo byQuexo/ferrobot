@@ -45,6 +45,7 @@ pub fn router() -> Router<AppState> {
             "/v1/agents",
             get(agents::list_agents).post(agents::create_agent),
         )
+        .route("/v1/agents/former", get(agents::former_agents))
         .route(
             "/v1/agents/{id}",
             get(agents::get_agent)

@@ -9,6 +9,10 @@ export interface AppContextValue {
   client: DaemonClient;
   health: Health | null;
   agents: Map<string, Agent>;
+  /** Deleted agents' last names, by id, so old mentions of them still read. */
+  formerNames: Map<string, string>;
+  /** An agent's name for text: its current name, `name (deleted)`, or `undefined`. */
+  nameOf: (id: string) => string | undefined;
   /** Registers a live-event listener; returns the unsubscribe function. */
   listen: (fn: (e: UiEvent) => void) => () => void;
   toast: (message: string, kind?: "error" | "info") => void;

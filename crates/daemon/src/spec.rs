@@ -41,6 +41,7 @@ pub const QUESTION_CARD_FILE: &str = "question-card.v1.schema.json";
     paths(
         api::health,
         api::agents::list_agents,
+        api::agents::former_agents,
         api::agents::create_agent,
         api::agents::get_agent,
         api::agents::update_agent,

@@ -6,6 +6,13 @@ All notable changes are listed here. The format follows
 
 ## [Unreleased]
 
+### Fixed
+
+- A mention of a deleted agent showed `@unknown-agent`; it now shows its last
+  name, `@calc-a (deleted)`, in the chat, in exchange lines and in what other
+  agents read. The daemon keeps the name when an agent is deleted, and finds
+  it in the history for agents deleted before (`/v1/agents/former`).
+
 ## [0.1.7] - 2026-11-24
 
 ### Added

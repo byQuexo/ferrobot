@@ -18,7 +18,7 @@ export function RoomList(props: {
   active: number | null;
   onOpen: (id: number) => void;
 }): JSX.Element | null {
-  const { client, agents, listen } = useApp();
+  const { client, agents, listen, nameOf } = useApp();
   const [rooms, setRooms] = useState<Room[]>([]);
   useEffect(() => {
     const load = (): void => {
@@ -32,7 +32,6 @@ export function RoomList(props: {
   // A room outlives deleted agents; one with none left has nothing to show.
   const shown = rooms.filter((r) => r.members.some((id) => agents.has(id)));
   if (shown.length === 0) return null;
-  const nameOf = (id: string): string | undefined => agents.get(id)?.name;
   return (
     <section class="convo-section" aria-label="Calls">
       <h2 class="section-label">Calls</h2>
@@ -69,7 +68,7 @@ export function RoomList(props: {
  * A group (a named room) always has a composer, a call button and its settings.
  */
 export function RoomView(props: { id: number; onClose: () => void }): JSX.Element {
-  const { client, agents, listen, run, call, callState } = useApp();
+  const { client, agents, listen, run, call, callState, nameOf } = useApp();
   const [room, setRoom] = useState<RoomTranscript | null>(null);
   const [voice, setVoice] = useState<VoiceView | null>(null);
   const [editing, setEditing] = useState(false);
@@ -103,7 +102,6 @@ export function RoomView(props: { id: number; onClose: () => void }): JSX.Elemen
   }, [room?.lines.length, speaking]);
 
   if (!room) return <section class="chat chat-none" aria-busy="true" />;
-  const nameOf = (id: string): string | undefined => agents.get(id)?.name;
   const group = room.name ?? null;
   const present = room.members.filter((id) => agents.has(id));
   const title = group ?? roomTitle(room.members, nameOf);

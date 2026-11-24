@@ -17,7 +17,7 @@ export function TraceDialog(props: {
   turn: string;
   onClose: () => void;
 }): JSX.Element {
-  const { client, agents } = useApp();
+  const { client, nameOf } = useApp();
   const [trace, setTrace] = useState<Trace | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [query, setQuery] = useState("");
@@ -45,8 +45,7 @@ export function TraceDialog(props: {
     };
   }, [props.agent.id, props.turn]);
 
-  const label = (r: TraceRow): string =>
-    traceLabel(r.kind, r.name, r.input, (id) => agents.get(id)?.name);
+  const label = (r: TraceRow): string => traceLabel(r.kind, r.name, r.input, nameOf);
   const layout = trace ? layoutTrace(trace, now) : null;
   const q = query.trim().toLowerCase();
   const rows = layout?.rows.filter((r) => !q || label(r).toLowerCase().includes(q)) ?? [];

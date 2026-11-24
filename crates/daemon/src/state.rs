@@ -380,14 +380,21 @@ impl AppState {
         })
     }
 
-    /// Turns `<@id>` tokens back into `@current-name` (for model input).
+    /// Turns `<@id>` tokens back into `@current-name`, or `@name (deleted)` (for model input).
     pub async fn render_mentions(&self, text: &str) -> String {
         let agents = self.store.list_agents().await.unwrap_or_default();
+        let former = self.store.former_agent_names().await.unwrap_or_default();
         ferrobot_core::mention::render(text, |id| {
             agents
                 .iter()
                 .find(|a| a.id == id)
                 .map(|a| a.name.to_string())
+                .or_else(|| {
+                    former
+                        .iter()
+                        .find(|(f, _)| *f == id)
+                        .map(|(_, name)| format!("{name} (deleted)"))
+                })
         })
     }
 

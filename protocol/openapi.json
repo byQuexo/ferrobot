@@ -288,6 +288,39 @@
         }
       }
     },
+    "/v1/agents/former": {
+      "get": {
+        "tags": [
+          "agents"
+        ],
+        "summary": "Deleted agents' last names, for mentions of them in old messages.",
+        "operationId": "former_agents",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/FormerAgent"
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or wrong API token",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/v1/agents/{id}": {
       "get": {
         "tags": [
@@ -7651,6 +7684,22 @@
               "null"
             ],
             "description": "Why it failed; `null` when it went through."
+          }
+        }
+      },
+      "FormerAgent": {
+        "type": "object",
+        "description": "A deleted agent's last name, so mentions of it can still be read.",
+        "required": [
+          "id",
+          "name"
+        ],
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
           }
         }
       },
