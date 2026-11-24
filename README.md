@@ -31,34 +31,95 @@ which adds the real key.
 
 ## Features
 
-- **Agents and chat.** Agents with profiles and animated avatars; they ask you
-  through question cards and share files you open in the chat.
-- **Mail and tasks between agents.** Agents message each other, delegate tasks
-  and get the answers back automatically, even while they sleep.
-- **A computer per agent.** Docker sandboxes with a persistent home, warm and
+### Agents and chat
+
+- **Agents.** Profiles with animated avatars and up to five tags; pin and
+  reorder them. On first run Ferro walks you through Docker and a model
+  provider, then becomes your main agent and builds a team when a job needs one.
+- **Chat.** Streamed replies with tables, Mermaid diagrams and live HTML
+  previews; attach files with the paperclip, drag and drop or paste; agents
+  react to your messages with an emoji and you to theirs; a New line where
+  unread turns start; drafts kept per chat; ⌘↵ sends ahead of a running turn.
+- **Question cards.** Agents ask you single choice, multiple choice or free
+  text questions right in the chat.
+- **Model and context.** A model switch in the chat header and a ring showing
+  how full the context is, with New chat (and Compact now for Claude Code).
+- **Group chats.** Write once and every member answers in turn, or
+  `@`-mention one agent and only it answers; a line shows who is writing, and
+  names take each agent's colour. Call the group to talk it over by voice.
+- **Traces.** A reply's steps open its turn on a timeline of model and tool
+  calls, with timings and failures; export them over OTLP to Phoenix, Langfuse
+  or any OpenTelemetry backend ([Traces](docs/wiki/Traces.md)).
+
+### Teamwork
+
+- **Mail and tasks between agents.** Agents message each other with
+  `@name` mentions, delegate tasks and get the answers back automatically,
+  even while they sleep; mail wakes a sleeping agent.
+- **Agents create agents.** A new teammate waits for your Approve/Decline
+  card unless Auto mode is on; it never gets more tools than its creator, and
+  an agent limit applies.
+- **Subagents.** Agents split work into parallel subtasks with the same model
+  and tools.
+
+### A computer per agent
+
+- **Sandboxes.** A Docker container per agent with a persistent home, warm and
   cold sleep, snapshots, and encrypted archives for idle agents.
+- **CLIs.** Keyless Debian packages such as `jq`, `pandoc` or `ffmpeg`, built
+  into one shared sandbox image.
+- **Files and share links.** Files from an agent's computer open in the chat;
+  shared HTML and PDF files preview under their card, behind signed links.
+
+### Keys and permissions
+
 - **Keys stay in the daemon.** A model proxy swaps in the real key; keys live
-  in the OS keychain and are managed in one Vault in Settings.
+  in the OS keychain and are managed in one Vault in Settings. No card ever
+  asks for a key.
+- **Tool profiles.** Per-agent tool groups and connectors, enforced by the
+  daemon. Risky steps (deleting a folder, `git push`, connector calls that
+  send things) wait for your card unless Auto mode is on; dangerous ones are
+  always refused ([Tools and permissions](docs/wiki/Tools-and-Permissions.md)).
+
+### Models
+
 - **Providers and drivers.** Claude (Agent SDK), any OpenAI-compatible API
-  including local Ollama, OpenAI Codex, Gemini CLI, OpenRouter, Amazon
-  Bedrock and Google Vertex AI. Opt-in: **Claude Code (your own login)** runs
-  your own, unmodified `claude` CLI with your own subscription; it uses your
-  seat's limits, is not tracked in Usage, and ferrobot never touches the login
+  including local Ollama, OpenAI Codex, Gemini, Gemini CLI, OpenRouter, Amazon
+  Bedrock and Google Vertex AI, each with a model picker; OpenRouter with
+  prompt caching for Claude models and sticky routing per agent.
+- **Claude Code (your own login).** Opt-in: runs your own, unmodified `claude`
+  CLI with your own subscription; it uses your seat's limits and ferrobot
+  never touches the login. Its calls show in Usage with an estimate at API
+  prices. Hooks, plugins and Claude Code's own subagents are set in
+  Settings → Claude Code
   ([Providers](docs/wiki/Providers.md#claude-code-your-own-login)).
-- **MCP connectors.** Remote MCP servers with token or OAuth sign-in, a catalog
-  of vendor servers and keyless ones, and a first connection check. Agents ask
-  for a connector on a card; its token goes in Vault, never on a card.
+
+### Tools, routines and memory
+
+- **MCP connectors.** Remote MCP servers with token or OAuth sign-in, a
+  grouped catalog and a connection check, plus local servers (an `npx`
+  server, say) that ferrobot starts on this computer with a cleared
+  environment. Agents propose a connector on a card that shows its URL or
+  exact command.
 - **Routines.** Prompts on a cron schedule; agents can set up their own after
   you approve a card ([clip](docs/assets/clips/routine.mp4)).
 - **Memory.** Per-agent memory with full-text search, plus a global memory
-  every agent can read ([clip](docs/assets/clips/memory.mp4)).
+  every agent can read; or keep it all as Markdown notes in your Obsidian
+  vault (Settings → Global memory) ([clip](docs/assets/clips/memory.mp4)).
+
+### Voice, usage and the app
+
+- **Voice.** Dictation, and calls with an agent read aloud as it streams;
+  up to four agents share a call room and talk to each other; speed,
+  push-to-talk and volume in the call bar ([video](docs/assets/voice-room.mp4)).
 - **Usage and costs.** Tokens and estimated costs per agent, model and
   provider, a daily chart and CSV export ([clip](docs/assets/clips/usage-csv.mp4));
-  OpenRouter calls at the cost it reports.
-- **Voice.** Calls with an agent, read aloud as it streams; several agents
-  share a call room and talk to each other ([video](docs/assets/voice-room.mp4)).
-- **Files and share links.** Files from an agent's computer, shared with
-  signed links.
+  OpenRouter calls at the cost it reports; Claude Code and Codex plan limits.
+- **Desktop app.** macOS and Windows, starts its own daemon; ⌘K and keyboard
+  shortcuts, Appearance (theme, accent colour, text size), Diagnostics, and
+  the guides in Settings, which agents can read to walk you through a setting;
+  a note when a new release is out. Any other client can use the daemon's
+  versioned `/v1` API.
 
 ## Architecture
 
