@@ -275,7 +275,10 @@ export async function studio(framesDir) {
     glide,
     zoom: async (locator, scale) => {
       if (DRY && locator && (await locator.count()) === 0) return unlessDry(`nothing to zoom on`);
-      const rect = locator ? await locator.evaluate((el) => window.__demo.layoutRect(el)) : null;
+      // A target that is gone (a step trail its reply replaced) fails fast, not after 30 s.
+      const rect = locator
+        ? await locator.evaluate((el) => window.__demo.layoutRect(el), undefined, { timeout: 3000 })
+        : null;
       await page.evaluate(([r, sc]) => window.__demo.zoom(r, sc), [rect, scale]);
       await pause(850);
     },
@@ -342,7 +345,7 @@ export function encode(take, framesDir, cut) {
     const { width, fps } = cut.gif;
     ffmpeg(
       ...["-i", cut.mp4, "-vf"],
-      `fps=${String(fps)},scale=${String(width)}:-1:flags=lanczos,split[a][b];[a]palettegen=max_colors=96:stats_mode=diff[p];[b][p]paletteuse=dither=bayer:bayer_scale=5:diff_mode=rectangle`,
+      `fps=${String(fps)},scale=${String(width)}:-1:flags=lanczos,split[a][b];[a]palettegen=max_colors=64:stats_mode=diff[p];[b][p]paletteuse=dither=bayer:bayer_scale=5:diff_mode=rectangle`,
       cut.gif.file,
     );
   }
