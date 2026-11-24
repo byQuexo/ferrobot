@@ -222,31 +222,31 @@ async function hero(k) {
   await k.zoom(null);
 
   await k.caption(`${TEAMMATE} gets its own computer, an animated avatar and a profile`);
-  await m.row(TEAMMATE).waitFor();
-  await k.zoom(page().locator(".sidebar"), 1.5);
-  await k.hold(1200);
-  await k.zoom(null);
+  // Straight to its chat: on Claude Code its whole turn takes about ten seconds.
+  await k.wait(m.row(TEAMMATE));
   await m.open(TEAMMATE);
   await k.click(m.chat().getByRole("button", { name: "Show details" }));
   await k.zoom(info().locator(".profile"), 1.4);
-  await k.hold(1500);
-  await k.zoom(null);
+  await k.hold(1200);
 
   await k.caption("It works on its own computer…");
-  const step = m.chat().locator(".step-trail").filter({ hasNotText: "Getting started" });
+  const step = m.chat().locator(".step-trail");
   const shared = m.chat().locator(".file-share").last();
-  // A quick turn may be done before its chat opens; then the file is already there.
+  // A quick turn may be done already; then the file is there.
   await k.wait(step.or(shared).first());
   if (await step.isVisible()) {
-    await k.zoom(step, 1.8);
-    await k.hold(1300);
-    await k.zoom(null);
+    await k.zoom(step, 1.8).catch(() => undefined);
+    await k.wait(step.filter({ hasNotText: "Getting started" }).or(shared).first());
+    // Its steps take a second or two before the file lands, so they run in real time.
+    await shared.waitFor({ timeout: WAIT_MS });
   }
+  await k.zoom(null);
   await k.caption("…and shares what it made");
   await k.wait(shared.locator("iframe"));
   await shared.scrollIntoViewIfNeeded();
   await k.zoom(shared, 1.3);
-  await k.hold(2600);
+  // Uncut in every cut, so the countdown visibly ticks.
+  await k.pause(2400);
   await k.zoom(null);
 
   await k.caption("Its computer is a Docker container that pauses when idle");
@@ -264,8 +264,16 @@ async function hero(k) {
     await finished(TEAMMATE);
     await nextTurn(MAIN);
   });
-  await k.click(m.chat().locator(".exchange-hint").last());
-  await k.zoom(m.chat().locator(".row-a2a.incoming").last(), 1.4);
+  // From the newest exchange back: the main agent may have mailed after the report.
+  const hints = m.chat().locator(".exchange-hint");
+  const report = m.chat().locator(".row-a2a.incoming").last();
+  for (let i = (await hints.count()) - 1; i >= 0 && !(await report.isVisible()); i--) {
+    await k.click(hints.nth(i));
+  }
+  // Centred on the main agent's reply, with the report above it.
+  const reply = m.chat().locator(".bubble-agent").last();
+  await reply.scrollIntoViewIfNeeded();
+  await k.zoom(reply, 1.3);
   await k.hold(2200);
   await k.zoom(null);
 
@@ -282,9 +290,14 @@ async function hero(k) {
     await k.offscreen(() => api("GET", "/v1/limits").catch(() => undefined));
     await k.caption("Usage, with your Claude plan's limits");
     await k.click(page().getByRole("button", { name: "Usage", exact: true }));
-    const limits = page().locator("section.limits");
-    await k.wait(limits.locator(".limit-card").first());
-    await k.zoom(limits, 1.8);
+    // The card that says "Reading your plan limits…" has no title.
+    await k.wait(page().locator("section.limits .limit-title").first());
+    await k.zoom(page().locator("section.limits .limit-card").first(), 1.8);
+    await k.hold(1800);
+    await k.caption("…and what its calls would cost at API prices");
+    const costs = page().locator(".usage-providers");
+    await k.wait(costs.locator("li").first());
+    await k.zoom(costs, 1.3);
     await k.hold(1800);
     await k.zoom(null);
   });
