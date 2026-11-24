@@ -13,6 +13,12 @@ All notable changes are listed here. The format follows
   per dashboard, full screen or in your browser, and always shows the newest
   version the agent shared of that file (`/v1/dashboards`).
 
+### Changed
+
+- Roadmap: the ideas list moved onto the roadmap (the Computer tab's file
+  browser and terminal, logins for CLIs and finer connector scopes, faster
+  calls, a stable signature for development builds).
+
 ### Fixed
 
 - A mention of a deleted agent showed `@unknown-agent`; it now shows its last

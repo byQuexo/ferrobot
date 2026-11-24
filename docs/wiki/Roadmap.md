@@ -42,9 +42,22 @@ In rough order. Nothing here has a date.
    on top lets you write to your agents from a channel and get their answers
    there. Off by default; secrets in the keychain, payloads signed, and no
    key or operator token in anything sent.
-7. **Later.** Moving warm agents to cold sleep under memory pressure (F4d), a
-   native macOS app on the same `/v1` API, and optional self-hosted
-   S3-compatible storage. Smaller ideas are on [[Ideas]].
+7. **The agent's computer in the app.** A file browser and a terminal in the
+   agent's details panel (Computer tab), so you can look around and fix
+   things in its sandbox without asking the agent.
+8. **Logins for CLIs, finer connector scopes.** CLIs that need a login
+   (`gh`, `vercel`, `stripe`) through a daemon-side proxy that swaps in the
+   token the way the model proxy does, for services without an MCP server.
+   Per-tool scopes inside a connector (for example read-only GitHub tools),
+   finer than today's switches per tool group.
+9. **Faster, more natural calls.** Reasoning switched off or a fast model used
+   only in calls, a setting for the pause that ends your turn, and calls
+   among agents without you, with a pop-up to join.
+10. **Development builds.** A stable signature for development builds, so
+    macOS stops asking for keychain access after every rebuild.
+11. **Later.** Moving warm agents to cold sleep under memory pressure (F4d), a
+    native macOS app on the same `/v1` API, and optional self-hosted
+    S3-compatible storage. New ideas go on [[Ideas]] first.
 
 Status words: **done** (built and tested, gaps noted), **partial** (code
 written, key parts never run), **open** (not built), **deliberately
