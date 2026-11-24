@@ -896,9 +896,9 @@ textarea { resize: vertical; min-height: 40px; line-height: 1.5; }
 .pref-title { font-weight: 500; }
 .pref-row .segmented { align-self: center; }
 .swatches { display: flex; flex-wrap: wrap; gap: 8px; }
-.swatch { width: 24px; height: 24px; padding: 0; border: none; border-radius: 50%; background: var(--swatch-l); }
-:root[data-theme="dark"] .swatch { background: var(--swatch-d); }
-.swatch[aria-checked="true"] { box-shadow: 0 0 0 2px var(--surface), 0 0 0 4px var(--text-2); }
+.swatches .swatch { width: 24px; height: 24px; padding: 0; border: none; border-radius: 50%; background: var(--swatch-l); }
+:root[data-theme="dark"] .swatches .swatch { background: var(--swatch-d); }
+.swatches .swatch[aria-checked="true"] { box-shadow: 0 0 0 2px var(--surface), 0 0 0 4px var(--text-2); }
 kbd { padding: 2px 8px; border: 1px solid var(--border-strong); border-radius: 6px; background: var(--surface-2); color: var(--text-2); font: 12px/20px var(--font); white-space: nowrap; }
 .switcher { list-style: none; margin: 8px 0 0; padding: 0; max-height: 50vh; overflow-y: auto; }
 .switcher li { display: flex; align-items: center; gap: 12px; padding: 8px; border-radius: 8px; cursor: pointer; }
