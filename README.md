@@ -12,7 +12,7 @@
 [![macOS](https://img.shields.io/badge/macOS-universal-lightgrey?logo=apple)](#download)
 [![Windows](https://img.shields.io/badge/Windows-x64-lightgrey?logo=windows)](#download)
 
-![ferrobot demo: a group chat where researcher and builder both answer, and an @-mention gets a Mermaid diagram from builder alone; tags, model and context ring in a chat; a file attached with the paperclip; builder reacts with an emoji and answers with a live HTML countdown, and you react back; a New line and a shared page previewed in the chat; Claude plan limits on Usage; an accent colour from Settings, Appearance](docs/assets/demo.gif)
+![ferrobot demo: you ask your main agent nova for a launch countdown page; it asks which style you want on a question card, then asks to create a teammate and you approve; the new agent builder appears in the sidebar with its avatar and profile, works through its steps on its own computer and shares countdown.html, previewed live in the chat; builder's Docker computer; builder's report to nova and nova's reply; the note nova saved in its memory; Usage with the Claude plan limits and the estimated cost of the Claude Code calls](docs/assets/demo.gif)
 
 </div>
 
