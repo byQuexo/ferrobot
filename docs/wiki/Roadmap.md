@@ -128,6 +128,7 @@ tested against fakes on a machine without KVM.
 | v0.1.5 | done | Fix: a message no longer shows as queued while its turn runs. |
 | v0.1.6 | done | Claude Code hooks, plugins and subagents, trace export to Phoenix and Langfuse, memory in an Obsidian vault, local MCP servers, trace view, compact. |
 | v0.1.7 | done | Pins for replies, files and agents; agents hear about renames, and old names of renamed agents work again. |
+| v0.1.8 | done | Dashboards, webhooks and a Discord bridge, trace waits and handoffs, deleted agents named in mentions, Auto mode keeps a card for the riskiest steps. |
 
 Ideas beyond this list are on [[Ideas]].
 

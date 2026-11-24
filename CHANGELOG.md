@@ -6,6 +6,8 @@ All notable changes are listed here. The format follows
 
 ## [Unreleased]
 
+## [0.1.8] - 2026-11-24
+
 ### Added
 
 - Dashboards: **Use as dashboard** next to any shared `.html` file keeps it
@@ -373,7 +375,8 @@ First public release.
   allowlist per API family, no redirects, header allowlists both ways, agent
   tokens blanked in committed images.
 
-[Unreleased]: https://github.com/byQuexo/ferrobot/compare/v0.1.7...HEAD
+[Unreleased]: https://github.com/byQuexo/ferrobot/compare/v0.1.8...HEAD
+[0.1.8]: https://github.com/byQuexo/ferrobot/compare/v0.1.7...v0.1.8
 [0.1.7]: https://github.com/byQuexo/ferrobot/compare/v0.1.6...v0.1.7
 [0.1.6]: https://github.com/byQuexo/ferrobot/compare/v0.1.5...v0.1.6
 [0.1.5]: https://github.com/byQuexo/ferrobot/compare/v0.1.4...v0.1.5
