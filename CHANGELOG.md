@@ -23,6 +23,8 @@ All notable changes are listed here. The format follows
 
 ### Fixed
 
+- RUSTSEC-2026-0592: `url` 2.5.9. With 2.5.8, a remote MCP server could
+  crash the daemon by redirecting to a deeply nested `blob:` URL.
 - The colour choices in the New agent and Edit profile dialogs showed as empty
   circles.
 
