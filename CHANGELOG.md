@@ -6,6 +6,13 @@ All notable changes are listed here. The format follows
 
 ## [Unreleased]
 
+### Fixed
+
+- Agents learn of a rename: the next turn of every agent that knew the old
+  name starts with a note ("@scout is now @scout-x"), the renamed agent hears
+  its new name, and its chat shows "Renamed from @scout to @scout-x". Renames
+  made before 0.1.6 were not recorded, so their old names stay plain text.
+
 ## [0.1.6] - 2026-11-24
 
 ### Added

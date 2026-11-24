@@ -163,6 +163,34 @@ impl Store {
         .await
     }
 
+    /// Renames since `agent`'s last turn began, oldest first: the renamed agent and its old
+    /// name. Empty for an agent that has had no turn, so never knew the old names.
+    pub async fn renames_since_last_turn(
+        &self,
+        agent: AgentId,
+    ) -> Result<Vec<(AgentId, String)>, StoreError> {
+        self.with(move |c| {
+            let mut stmt = c.prepare(
+                "SELECT agent_id, json_extract(payload, '$.from') FROM events
+                 WHERE kind = 'renamed' AND id > (
+                     SELECT MAX(id) FROM events WHERE agent_id = ?1 AND kind = 'message_in')
+                 ORDER BY id",
+            )?;
+            let rows = stmt.query_map([agent.to_string()], |r| {
+                Ok((r.get::<_, String>(0)?, r.get::<_, Option<String>>(1)?))
+            })?;
+            let mut out = Vec::new();
+            for row in rows {
+                let (id, from) = row?;
+                if let (Ok(id), Some(from)) = (id.parse(), from) {
+                    out.push((id, from));
+                }
+            }
+            Ok(out)
+        })
+        .await
+    }
+
     /// The events of one of `agent`'s turns, oldest first.
     pub async fn turn_events(
         &self,

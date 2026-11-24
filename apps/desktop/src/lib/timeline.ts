@@ -108,6 +108,7 @@ const SYSTEM_TEXT: Record<string, (p: Payload) => string> = {
   runner_refused: (p) => str(p["reason"]),
   new_session: () => "New chat: the agent starts fresh from here",
   compacted: () => "Compacted the conversation: the agent keeps a summary of what came before",
+  renamed: (p) => `Renamed from @${str(p["from"])} to @${str(p["to"])}`,
 };
 
 /**
