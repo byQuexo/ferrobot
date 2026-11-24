@@ -108,6 +108,7 @@ tested against fakes on a machine without KVM.
 | v0.1.4 | done | Group chats, reactions, uploads, richer chat, plan limits, tags and model switch, Appearance, shortcuts, the call bar. |
 | v0.1.5 | done | Fix: a message no longer shows as queued while its turn runs. |
 | v0.1.6 | done | Claude Code hooks, plugins and subagents, trace export to Phoenix and Langfuse, memory in an Obsidian vault, local MCP servers, trace view, compact. |
+| v0.1.7 | done | Pins for replies, files and agents; agents hear about renames, and old names of renamed agents work again. |
 
 Ideas beyond this list are on [[Ideas]].
 
