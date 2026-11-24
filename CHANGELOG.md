@@ -6,6 +6,8 @@ All notable changes are listed here. The format follows
 
 ## [Unreleased]
 
+## [0.1.6] - 2026-11-24
+
 ### Added
 
 - Traces: a reply's steps (in its footer, by the reaction button) open its
@@ -299,7 +301,8 @@ First public release.
   allowlist per API family, no redirects, header allowlists both ways, agent
   tokens blanked in committed images.
 
-[Unreleased]: https://github.com/byQuexo/ferrobot/compare/v0.1.5...HEAD
+[Unreleased]: https://github.com/byQuexo/ferrobot/compare/v0.1.6...HEAD
+[0.1.6]: https://github.com/byQuexo/ferrobot/compare/v0.1.5...v0.1.6
 [0.1.5]: https://github.com/byQuexo/ferrobot/compare/v0.1.4...v0.1.5
 [0.1.4]: https://github.com/byQuexo/ferrobot/compare/v0.1.3...v0.1.4
 [0.1.3]: https://github.com/byQuexo/ferrobot/compare/v0.1.2...v0.1.3

@@ -98,6 +98,7 @@ tested against fakes on a machine without KVM.
 | v0.1.3 | done | Opt-in Claude Code (your own login): your own claude CLI and subscription, on the host. |
 | v0.1.4 | done | Group chats, reactions, uploads, richer chat, plan limits, tags and model switch, Appearance, shortcuts, the call bar. |
 | v0.1.5 | done | Fix: a message no longer shows as queued while its turn runs. |
+| v0.1.6 | done | Claude Code hooks, plugins and subagents, trace export to Phoenix and Langfuse, memory in an Obsidian vault, local MCP servers, trace view, compact. |
 
 Ideas beyond this list are on [[Ideas]].
 
