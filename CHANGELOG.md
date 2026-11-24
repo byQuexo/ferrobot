@@ -14,6 +14,10 @@ All notable changes are listed here. The format follows
   it and the outgoing ones that report on it.
 - Long instructions in an agent's details fold to their first six lines, with
   **Show all**, so the cards below stay in view.
+- The Discord bridge reacts to a message with 👀 once it reached the agent and
+  swaps it for ✅ when the reply is posted (the bot needs **Add Reactions**).
+  In the chat, a message from Discord shows a chip with who wrote it instead
+  of the "via Discord" line.
 
 ### Changed
 

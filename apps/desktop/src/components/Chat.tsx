@@ -10,6 +10,7 @@ import {
   ChevronRight,
   CircleStop,
   Footprints,
+  Hash,
   MessagesSquare,
   Info,
   Mic,
@@ -652,6 +653,14 @@ function Item(props: {
         <>
           <div class="row row-user">
             <div class="bubble bubble-user">
+              {item.discord && (
+                <span class="via-discord" title={`Written in Discord by ${item.discord}`}>
+                  <span class="via-discord-icon">
+                    <Hash size={10} strokeWidth={3} />
+                  </span>
+                  Discord <span class="via-who">· {item.discord}</span>
+                </span>
+              )}
               {item.files.length > 0 && <AttachmentChips agent={agent.id} files={item.files} />}
               {item.text && <RichText text={item.text} />}
               <span class="meta">

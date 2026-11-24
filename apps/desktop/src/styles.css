@@ -884,6 +884,7 @@ textarea { resize: vertical; min-height: 40px; line-height: 1.5; }
   --text: var(--accent-text); --text-2: var(--accent-text);
   --muted: color-mix(in srgb, var(--accent-text) 75%, transparent);
 }
+:root[data-bubbles="solid"] .bubble-user > .via-discord { background: var(--accent-soft); }
 :root[data-bubbles="plain"] .bubble-user { background: var(--surface); color: var(--text); box-shadow: inset 0 0 0 1px var(--border-strong); }
 /* Zoom the rows, not the scroller: Chat's scroll pinning reads the scroller's own metrics. */
 .timeline > :not(.enter, .settled), .timeline > :is(.enter, .settled) > * { zoom: var(--chat-zoom); }
@@ -1023,6 +1024,12 @@ kbd { padding: 2px 8px; border: 1px solid var(--border-strong); border-radius: 6
   position: absolute; left: -10px; bottom: -10px; padding: 0 6px; font-size: 14px; line-height: 22px;
   border: 1px solid var(--border); border-radius: 999px; background: var(--surface); box-shadow: var(--shadow);
 }
+.via-discord {
+  display: flex; align-items: center; gap: 5px; width: fit-content; margin-bottom: 6px; padding: 2px 8px 2px 3px;
+  border-radius: 999px; font-size: 11.5px; font-weight: 500; background: color-mix(in srgb, #5865f2 24%, transparent);
+}
+.via-discord .via-who { font-weight: 400; opacity: 0.8; }
+.via-discord-icon { display: grid; place-items: center; width: 16px; height: 16px; border-radius: 50%; background: #5865f2; color: #fff; }
 .attachments { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 6px; }
 .attachment {
   display: inline-flex; align-items: center; gap: 6px; max-width: 240px; padding: 4px 8px;
