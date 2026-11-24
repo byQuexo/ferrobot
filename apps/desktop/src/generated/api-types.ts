@@ -1919,6 +1919,8 @@ export interface components {
             checked_at?: string | null;
             /** @description Why the last read or reply failed; `null` when it worked. */
             error?: string | null;
+            /** @description Why the latest new messages were left out (a user not in the list, an empty message). */
+            note?: string | null;
         };
         /**
          * @description Body shape of the generated character avatar.

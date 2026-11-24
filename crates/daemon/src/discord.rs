@@ -56,6 +56,8 @@ pub struct ChannelStatus {
     pub checked_at: Option<OffsetDateTime>,
     /// Why the last read or reply failed; `null` when it worked.
     pub error: Option<String>,
+    /// Why the latest new messages were left out (a user not in the list, an empty message).
+    pub note: Option<String>,
     #[serde(skip)]
     last_id: Option<u64>,
 }
@@ -209,6 +211,9 @@ async fn read_channel(
         .unwrap_or_default();
     messages.sort_by_key(|m| m["id"].as_str().and_then(|id| id.parse::<u64>().ok()));
     let mut last = after;
+    // Why messages were left out, for the channel's status: a silent skip makes setup guesswork.
+    let mut note: Option<String> = None;
+    let (seen, mut delivered) = (messages.len(), 0);
     for m in messages {
         let Some(id) = m["id"].as_str().and_then(|id| id.parse::<u64>().ok()) else {
             continue;
@@ -218,7 +223,14 @@ async fn read_channel(
         let allowed = author["id"]
             .as_str()
             .is_some_and(|a| settings.users.iter().any(|u| u == a));
-        if author["bot"].as_bool() == Some(true) || !allowed {
+        if author["bot"].as_bool() == Some(true) {
+            continue;
+        }
+        if !allowed {
+            let who = author["id"].as_str().unwrap_or("unknown");
+            note = Some(format!(
+                "Ignored a message from Discord user {who}: add that ID under Your Discord user IDs if it is you."
+            ));
             continue;
         }
         let mut text = m["content"].as_str().unwrap_or_default().trim().to_owned();
@@ -230,6 +242,9 @@ async fn read_channel(
             }
         }
         if text.is_empty() {
+            note = Some(
+                "A message arrived empty: turn on Message Content Intent on the bot's page in Discord's developer portal.".into(),
+            );
             continue;
         }
         let who = author["username"].as_str().unwrap_or("someone");
@@ -240,11 +255,19 @@ async fn read_channel(
             &format!("{text}\n\n(via Discord, from {who})"),
         )
         .await?;
+        delivered += 1;
+    }
+    if seen > 0 {
+        tracing::info!(%channel, seen, delivered, skipped = ?note, "discord bridge read new messages");
     }
     state.discord.update(channel, |c| {
         c.last_id = Some(last);
         c.checked_at = Some(OffsetDateTime::now_utc());
         c.error = None;
+        // A skip note stays until the next round brings something new.
+        if seen > 0 {
+            c.note = note;
+        }
     });
     Ok(())
 }

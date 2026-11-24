@@ -7503,6 +7503,13 @@
               "null"
             ],
             "description": "Why the last read or reply failed; `null` when it worked."
+          },
+          "note": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Why the latest new messages were left out (a user not in the list, an empty message)."
           }
         }
       },

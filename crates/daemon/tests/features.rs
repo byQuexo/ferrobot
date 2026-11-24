@@ -8403,6 +8403,15 @@ async fn the_discord_bridge_brings_allowed_messages_in_and_replies_out() {
             .iter()
             .all(|t| t == "Bot test-bot-token")
     );
+    let (_, view) = http(&d.ui, "GET", "/v1/discord", None).await;
+    let note = view["channels"][0]["note"]
+        .as_str()
+        .unwrap_or_default()
+        .to_owned();
+    assert!(
+        note.contains("999999999999999999"),
+        "says whom it ignored: {view}"
+    );
     tokio::time::sleep(Duration::from_millis(200)).await;
     quiet(&mut ws).await;
 }
