@@ -110,11 +110,16 @@ driver) and every connector tool it calls, before it happens:
   workspace, most commands.
 - **Risky** steps get a card unless Auto mode is on: deleting a folder
   (`rm -r`), `git push`, `git reset --hard`, `git clean -f`, sending data with
-  `curl`/`wget` (POST, `-d`, uploads), publishing a package, `ssh`/`scp`/remote
-  `rsync`, `sudo`, killing processes, sending mail, and connector tools whose
-  names act on the outside world (send, post, create, update, delete, pay and
-  similar; reading, listing and searching stay safe). The card says what the
-  step does and why it asks.
+  `curl`/`wget` (POST, `-d`, uploads), `ssh`/`scp`/remote `rsync`, `sudo`,
+  killing processes, sending mail, and connector tools whose names act on the
+  outside world (send, post, create, update and similar; reading, listing and
+  searching stay safe). The card says what the step does and why it asks.
+- **Critical** steps always get a card, even in Auto mode: connector tools
+  that move money (pay, payment, payout, transfer, refund, charge) or delete
+  or cancel something (delete, remove, trash, cancel, destroy, purge),
+  force-pushing (`git push --force`, `-f`, `+branch`) and publishing a package
+  (`npm`/`cargo`/`pnpm`/`yarn`/`twine`/`gem publish`). The card says "a very
+  risky step".
 - **Dangerous** steps are always refused, Auto mode or not: deleting `/` or
   the home folder, formatting a disk, writing to a raw device, piping a
   download into a shell, a fork bomb.
@@ -126,7 +131,8 @@ misses clever variations. The sandbox stays the real boundary.
 
 Turn it on in **Settings → Agents → Auto mode**. Agents then create agents,
 their own routines and give their agents more tools without asking, and risky
-steps run without a card; dangerous ones stay blocked. A new agent or a tool
+steps run without a card. Only critical steps (money, deleting in a connected
+service, force-pushing, publishing) still ask; dangerous ones stay blocked. A new agent or a tool
 change leaves a notice in the chat instead of a card; a new routine shows up
 under the agent's **Routines**. The agent limit, the tool limits above and
 your keys stay protected.

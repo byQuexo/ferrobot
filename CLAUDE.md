@@ -288,7 +288,8 @@ daemon, `docker ps -a` must be empty of ferrobot containers.
   its creator's, checked in the daemon in every mode, Auto mode included.
   `set_agent_tools` changes only agents the caller created (never itself), to at most
   the caller's own; narrowing applies at once, anything new needs a card unless Auto mode is on.
-- **Risky steps need a card unless Auto mode is on; dangerous ones are always
+- **Risky steps need a card unless Auto mode is on; critical ones (money or deleting
+  through a connector, force-pushing, publishing) always do; dangerous ones are always
   refused** (`tool_check.rs`). The runner asks before every shell command and
   fails closed when the check can't answer.
 - **`FERROBOT_MAX_AGENTS`** (default 10) applies to `POST /v1/agents` and to

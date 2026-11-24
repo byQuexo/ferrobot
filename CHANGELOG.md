@@ -35,6 +35,10 @@ All notable changes are listed here. The format follows
 
 ### Changed
 
+- Auto mode keeps a card for the riskiest steps: connector tools that move
+  money or delete or cancel something, force-pushing and publishing a package
+  now ask even in Auto mode ("a very risky step"). Everything else risky still
+  runs without a card, and dangerous steps stay refused.
 - Roadmap: the ideas list moved onto the roadmap (the Computer tab's file
   browser and terminal, logins for CLIs and finer connector scopes, faster
   calls, a stable signature for development builds).

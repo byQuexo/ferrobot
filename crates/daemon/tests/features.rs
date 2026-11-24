@@ -7455,6 +7455,22 @@ async fn risky_tool_calls_wait_for_a_card_unless_auto_mode_is_on() {
         tool_check(&d.agents, &token, "mkfs.ext4 /dev/sda").await["allow"],
         false
     );
+
+    // Critical steps still ask in Auto mode.
+    let (agents, tok) = (d.agents.clone(), token.clone());
+    let waiting =
+        tokio::spawn(
+            async move { tool_check(&agents, &tok, "git push --force origin main").await },
+        );
+    let qid = approval_card(&d, &id, last).await;
+    let card = events(&d, &id)
+        .await
+        .into_iter()
+        .find(|e| e["id"] == qid)
+        .unwrap();
+    assert!(card.to_string().contains("a very risky step"), "{card}");
+    assert_eq!(decide(&d, &id, qid, "decline").await.0, 202);
+    assert_eq!(waiting.await.unwrap()["allow"], false);
 }
 
 #[tokio::test]

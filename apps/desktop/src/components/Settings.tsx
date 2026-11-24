@@ -180,8 +180,10 @@ function AgentSettings(): JSX.Element | null {
         </span>
         <span class="hint">
           Agents create teammates and take risky steps (deleting folders, pushing code, sending
-          through a connector) without asking first. Without it, you get a card for each risky step.
-          Dangerous commands stay blocked, and the agent limit and keys stay protected.
+          through a connector) without asking first. Only the riskiest steps still ask: paying or
+          deleting through a connector, force-pushing, publishing a package. Without it, you get a
+          card for each risky step. Dangerous commands stay blocked, and the agent limit and keys
+          stay protected.
         </span>
       </span>
       <label>
