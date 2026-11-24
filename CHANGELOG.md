@@ -6,6 +6,36 @@ All notable changes are listed here. The format follows
 
 ## [Unreleased]
 
+## [0.1.9] - 2026-11-24
+
+### Added
+
+- Pins per chat: a chat with pins shows a pin with their number in its header;
+  it lists that chat's pinned replies and files (the global pin list stays).
+- An agent's details panel lists its webhooks: the incoming ones that message
+  it and the outgoing ones that report on it.
+- Long instructions in an agent's details fold to their first six lines, with
+  **Show all**, so the cards below stay in view.
+- The Discord bridge reacts to a message with 👀 once it reached the agent and
+  swaps it for ✅ when the reply is posted (the bot needs **Add Reactions**).
+  In the chat, a message from Discord shows a chip with who wrote it instead
+  of the "via Discord" line.
+
+### Changed
+
+- Settings → Webhooks is redesigned: each webhook is a card with its status,
+  destination, agents and events, and a new one is added in a dialog with a
+  hint per destination, events and agents as chips, and its own Add button.
+- Settings → Discord says why the bridge left a message out: a user not in the
+  list, or an empty message because Message Content Intent is off.
+- The roadmap has Flows: set-up series of steps that a trigger or an agent
+  starts. Voice over Discord is on the ideas list.
+
+### Fixed
+
+- Settings' section list ran past the bottom of the window at the default
+  size; it is more compact now and scrolls when it still does not fit.
+
 ## [0.1.8] - 2026-11-24
 
 ### Added
@@ -375,7 +405,8 @@ First public release.
   allowlist per API family, no redirects, header allowlists both ways, agent
   tokens blanked in committed images.
 
-[Unreleased]: https://github.com/byQuexo/ferrobot/compare/v0.1.8...HEAD
+[Unreleased]: https://github.com/byQuexo/ferrobot/compare/v0.1.9...HEAD
+[0.1.9]: https://github.com/byQuexo/ferrobot/compare/v0.1.8...v0.1.9
 [0.1.8]: https://github.com/byQuexo/ferrobot/compare/v0.1.7...v0.1.8
 [0.1.7]: https://github.com/byQuexo/ferrobot/compare/v0.1.6...v0.1.7
 [0.1.6]: https://github.com/byQuexo/ferrobot/compare/v0.1.5...v0.1.6

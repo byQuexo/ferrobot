@@ -10,7 +10,7 @@
       "name": "MIT OR Apache-2.0",
       "identifier": "MIT OR Apache-2.0"
     },
-    "version": "0.1.8"
+    "version": "0.1.9"
   },
   "servers": [
     {
@@ -7503,6 +7503,13 @@
               "null"
             ],
             "description": "Why the last read or reply failed; `null` when it worked."
+          },
+          "note": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Why the latest new messages were left out (a user not in the list, an empty message)."
           }
         }
       },

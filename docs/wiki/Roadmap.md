@@ -61,7 +61,15 @@ In rough order. Nothing here has a date.
    among agents without you, with a pop-up to join.
 10. **Development builds.** A stable signature for development builds, so
     macOS stops asking for keychain access after every rebuild.
-11. **Later.** Moving warm agents to cold sleep under memory pressure (F4d), a
+11. **Flows.** Configurable flows: a series of steps (an agent's turn, a
+    message to another agent, a card that waits for you, a condition, a post to
+    an outgoing webhook) that you set up once in the app. A flow starts from a
+    trigger (an incoming webhook, a schedule, a Discord message, an event such
+    as a finished task) or from an agent through a tool, and every run shows as
+    a trace. Steps run with the tools and limits of the agents they use, risky
+    steps keep their cards, and a flow an agent creates needs your approval
+    unless Auto mode is on. This also covers starting work from a webhook (6).
+12. **Later.** Moving warm agents to cold sleep under memory pressure (F4d), a
     native macOS app on the same `/v1` API, and optional self-hosted
     S3-compatible storage. New ideas go on [[Ideas]] first.
 
@@ -129,6 +137,7 @@ tested against fakes on a machine without KVM.
 | v0.1.6 | done | Claude Code hooks, plugins and subagents, trace export to Phoenix and Langfuse, memory in an Obsidian vault, local MCP servers, trace view, compact. |
 | v0.1.7 | done | Pins for replies, files and agents; agents hear about renames, and old names of renamed agents work again. |
 | v0.1.8 | done | Dashboards, webhooks and a Discord bridge, trace waits and handoffs, deleted agents named in mentions, Auto mode keeps a card for the riskiest steps. |
+| v0.1.9 | done | Pins per chat, a redesigned Webhooks page, an agent's webhooks in its details, Discord reactions and a Discord chip in the chat. |
 
 Ideas beyond this list are on [[Ideas]].
 

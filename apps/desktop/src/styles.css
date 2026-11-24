@@ -738,7 +738,7 @@ textarea { resize: vertical; min-height: 40px; line-height: 1.5; }
 
 /* Settings page */
 .settings { display: grid; grid-template-columns: 220px minmax(0, 1fr); height: 100%; min-height: 0; overflow: hidden; }
-.settings-nav { display: flex; flex-direction: column; gap: 2px; padding: 24px 12px; border-right: 1px solid var(--border); }
+.settings-nav { display: flex; flex-direction: column; gap: 2px; padding: 24px 12px; border-right: 1px solid var(--border); min-height: 0; overflow-y: auto; }
 .settings-nav h1 { margin: 0 8px 16px; font-size: 16px; line-height: 32px; font-weight: 500; }
 .settings-tab { display: flex; align-items: center; gap: 8px; height: 36px; padding: 0 8px; border: none; border-radius: 8px; background: none; color: var(--text-2); font: inherit; text-align: left; cursor: pointer; }
 .settings-tab:hover { background: var(--surface-2); color: var(--text); }
@@ -884,6 +884,7 @@ textarea { resize: vertical; min-height: 40px; line-height: 1.5; }
   --text: var(--accent-text); --text-2: var(--accent-text);
   --muted: color-mix(in srgb, var(--accent-text) 75%, transparent);
 }
+:root[data-bubbles="solid"] .bubble-user > .via-discord { background: var(--accent-soft); }
 :root[data-bubbles="plain"] .bubble-user { background: var(--surface); color: var(--text); box-shadow: inset 0 0 0 1px var(--border-strong); }
 /* Zoom the rows, not the scroller: Chat's scroll pinning reads the scroller's own metrics. */
 .timeline > :not(.enter, .settled), .timeline > :is(.enter, .settled) > * { zoom: var(--chat-zoom); }
@@ -1023,6 +1024,12 @@ kbd { padding: 2px 8px; border: 1px solid var(--border-strong); border-radius: 6
   position: absolute; left: -10px; bottom: -10px; padding: 0 6px; font-size: 14px; line-height: 22px;
   border: 1px solid var(--border); border-radius: 999px; background: var(--surface); box-shadow: var(--shadow);
 }
+.via-discord {
+  display: flex; align-items: center; gap: 5px; width: fit-content; margin-bottom: 6px; padding: 2px 8px 2px 3px;
+  border-radius: 999px; font-size: 11.5px; font-weight: 500; background: color-mix(in srgb, #5865f2 24%, transparent);
+}
+.via-discord .via-who { font-weight: 400; opacity: 0.8; }
+.via-discord-icon { display: grid; place-items: center; width: 16px; height: 16px; border-radius: 50%; background: #5865f2; color: #fff; }
 .attachments { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 6px; }
 .attachment {
   display: inline-flex; align-items: center; gap: 6px; max-width: 240px; padding: 4px 8px;
@@ -1322,3 +1329,44 @@ input.slider:is(:focus-visible, :active)::-moz-range-thumb { box-shadow: 0 0 0 1
 .dashboard-frame > iframe { flex: 1; width: 100%; height: 100%; border: 0; }
 .dashboard-frame > p { margin: auto; background: var(--bg); }
 .dashboard-frame:fullscreen { margin: 0; border: 0; border-radius: 0; }
+
+/* Settings: the section list fits the default window (it scrolls when it cannot) */
+.settings-nav { padding-top: 16px; }
+.settings-nav h1 { margin-bottom: 8px; }
+.settings-tab { flex: none; height: 32px; }
+.settings-nav .settings-group { margin-top: 12px; margin-bottom: 2px; }
+
+/* Settings → Webhooks: cards per webhook, adding in a dialog */
+.hook-section + .hook-section { margin-top: 28px; }
+.hook-head { display: flex; align-items: flex-start; gap: 12px; margin-bottom: 10px; }
+.hook-head > div { flex: 1; min-width: 0; }
+.hook-head .pref-head { margin-top: 0; }
+.hook-head .pref-sub { margin: 2px 0 0; }
+.hook-empty { margin: 0 0 8px; padding: 14px 16px; border: 1px dashed var(--border); border-radius: 12px; }
+.hook-section > .hint { display: block; margin-top: 8px; }
+.hook-tile { color: var(--accent); background: var(--accent-soft); }
+.hook-chips { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 4px; }
+.hook-chip { padding: 1px 8px; border-radius: 999px; background: var(--surface-2); color: var(--text-2); font-size: 12px; }
+.hook-error { color: var(--err); overflow-wrap: anywhere; }
+
+/* The chat header's pins */
+.chat-pins .icon-btn { width: auto; min-width: 32px; padding: 0 6px; gap: 2px; display: inline-flex; align-items: center; }
+.chat-pins-count { font-size: 12px; font-variant-numeric: tabular-nums; }
+.chat-pins-pop { position: absolute; top: calc(100% + 8px); right: 0; left: auto; bottom: auto; }
+
+/* An agent's webhooks in its details panel */
+.agent-hooks h3 { margin-bottom: 10px; }
+.agent-hooks-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 10px; }
+.agent-hook { display: flex; align-items: center; gap: 10px; min-width: 0; }
+.agent-hook-tile { flex: none; display: inline-grid; place-items: center; width: 30px; height: 30px; border-radius: 8px; background: var(--accent-soft); color: var(--accent); }
+.agent-hook-text { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 1px; }
+.agent-hook-name { display: flex; align-items: center; gap: 8px; min-width: 0; font-size: 14px; font-weight: 500; }
+.agent-hook-name > .ellipsis { min-width: 0; }
+.agent-hook-name .conn-status { flex: none; font-weight: 400; }
+.agent-hook-detail { font-size: 12px; color: var(--muted); }
+
+/* Long instructions in an agent's details fold to six lines */
+.prewrap.folded {
+  display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 6; line-clamp: 6; overflow: hidden;
+  mask-image: linear-gradient(to bottom, #000 70%, transparent);
+}

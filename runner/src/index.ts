@@ -18,7 +18,7 @@ import { PROTOCOL_VERSION } from "./protocol.ts";
 import { Runner } from "./runner.ts";
 import { SessionStore } from "./session.ts";
 
-export const RUNNER_VERSION = "0.1.8";
+export const RUNNER_VERSION = "0.1.9";
 
 async function main(): Promise<void> {
   const config = loadConfig();

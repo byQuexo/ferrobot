@@ -42,6 +42,7 @@ import { TagChips } from "./AgentMeta.tsx";
 import { Avatar } from "./Avatar.tsx";
 import { CredentialFix } from "./CredentialFix.tsx";
 import { ToolCard } from "./Chat.tsx";
+import { AgentWebhooks } from "./WebhooksSettings.tsx";
 import { KIND_LABELS } from "./ProvidersSettings.tsx";
 import { Button, Empty, IconButton, Skeleton, Switch } from "./ui.tsx";
 
@@ -100,6 +101,37 @@ export function InfoPanel(props: {
   );
 }
 export type { Tab as InfoTab };
+
+/** Long instructions fold to their first lines, so the cards below stay in view. */
+function Instructions(props: { text: string }): JSX.Element {
+  const [open, setOpen] = useState(false);
+  const text = props.text.trim();
+  const long = text.length > 320 || text.split("\n").length > 6;
+  return (
+    <section class="card">
+      <h3>Instructions</h3>
+      {text ? (
+        <>
+          <p class={`prewrap${long && !open ? " folded" : ""}`}>{text}</p>
+          {long && (
+            <button
+              type="button"
+              class="text-link small"
+              aria-expanded={open}
+              onClick={() => {
+                setOpen(!open);
+              }}
+            >
+              {open ? "Show less" : "Show all"}
+            </button>
+          )}
+        </>
+      ) : (
+        <p class="muted">None. The agent uses its defaults.</p>
+      )}
+    </section>
+  );
+}
 
 function Profile(props: {
   agent: Agent;
@@ -171,14 +203,8 @@ function Profile(props: {
           </>
         )}
       </div>
-      <section class="card">
-        <h3>Instructions</h3>
-        {a.instructions.trim() ? (
-          <p class="prewrap">{a.instructions}</p>
-        ) : (
-          <p class="muted">None. The agent uses its defaults.</p>
-        )}
-      </section>
+      <Instructions text={a.instructions} />
+      <AgentWebhooks agent={a.id} />
       <div class="row-actions">
         <Button variant="primary" onClick={props.onEdit}>
           Edit profile

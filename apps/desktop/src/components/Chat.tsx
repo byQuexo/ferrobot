@@ -10,6 +10,7 @@ import {
   ChevronRight,
   CircleStop,
   Footprints,
+  Hash,
   MessagesSquare,
   Info,
   Mic,
@@ -61,6 +62,7 @@ import { isMac, keyLabel, SHORTCUTS, useShortcuts } from "../lib/shortcuts.ts";
 import { hasVoiceKey, record, startLive, type LiveSession, type Recording } from "../lib/voice.ts";
 import { AttachmentChips, previews } from "./Attachments.tsx";
 import { DashboardButton } from "./Dashboards.tsx";
+import { ChatPins } from "./Pins.tsx";
 import { FilePreview } from "./FilePreview.tsx";
 import { fileSize } from "./FileViewer.tsx";
 import { ContextMeter, ModelChip, TagChips } from "./AgentMeta.tsx";
@@ -291,6 +293,7 @@ export function Chat(props: {
           </span>
         </div>
         <span class="spacer" />
+        <ChatPins agent={id} />
         {working && (
           <Button variant="secondary" small onClick={() => void run(() => client.interrupt(id))}>
             <CircleStop size={16} /> Stop turn
@@ -650,6 +653,14 @@ function Item(props: {
         <>
           <div class="row row-user">
             <div class="bubble bubble-user">
+              {item.discord && (
+                <span class="via-discord" title={`Written in Discord by ${item.discord}`}>
+                  <span class="via-discord-icon">
+                    <Hash size={10} strokeWidth={3} />
+                  </span>
+                  Discord <span class="via-who">· {item.discord}</span>
+                </span>
+              )}
               {item.files.length > 0 && <AttachmentChips agent={agent.id} files={item.files} />}
               {item.text && <RichText text={item.text} />}
               <span class="meta">

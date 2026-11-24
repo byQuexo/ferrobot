@@ -2,7 +2,7 @@ Two ways in: download the desktop app, or build from source.
 
 ## A. Desktop download
 
-Desktop builds come from the repository's Releases page: v0.1.8 has a
+Desktop builds come from the repository's Releases page: v0.1.9 has a
 universal `.dmg` for macOS and an `.exe` installer for Windows (x64).
 
 1. **Install Docker Desktop** and start it. Every agent runs in a container,
@@ -19,7 +19,7 @@ universal `.dmg` for macOS and an `.exe` installer for Windows (x64).
    (its key goes in **Settings → Vault**) and create an agent with
    **New agent**. See [[Model providers and keys|Providers]].
 4. **Wait for the first start.** The first time an agent starts, the runner
-   image (`ghcr.io/byquexo/ferrobot-runner:0.1.8`, about 2 GB) is pulled
+   image (`ghcr.io/byquexo/ferrobot-runner:0.1.9`, about 2 GB) is pulled
    from the GitHub Container Registry. Later agents start from the cached
    image.
 
@@ -53,8 +53,10 @@ Keep important things one click away. Hover a reply or a shared file and
 click its pin; pin an agent with the pin on its row in the sidebar (it also
 moves to the top). The pin button next to Settings lists everything pinned:
 click a reply to jump to it in its chat, or a file to open it. Rename a pin
-with the pencil, drag to reorder, and unpin with the cross. Pins live in the
-daemon, so every app that connects to it sees them.
+with the pencil, drag to reorder, and unpin with the cross. A chat with pins
+also shows a pin with their number in its header: it lists that chat's pinned
+replies and files. Pins live in the daemon, so every app that connects to it
+sees them.
 
 ### Dashboards
 

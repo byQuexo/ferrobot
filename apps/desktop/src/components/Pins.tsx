@@ -186,3 +186,62 @@ export function PinsMenu(): JSX.Element {
     </span>
   );
 }
+
+/** The chat header's pins: this chat's pinned replies and files, one click away. */
+export function ChatPins(props: { agent: string }): JSX.Element | null {
+  const { pins, savePins, openFile, jumpTo } = useApp();
+  const [open, setOpen] = useState(false);
+  const wrap = useRef<HTMLSpanElement>(null);
+  useDismiss(wrap, open, (escape) => {
+    setOpen(false);
+    if (escape) wrap.current?.querySelector("button")?.focus();
+  });
+  const mine = pins.filter((p) => p.agent_id === props.agent);
+  if (mine.length === 0) return null;
+  return (
+    <span class="pins-wrap chat-pins" ref={wrap}>
+      <IconButton
+        label={`Pinned in this chat (${String(mine.length)})`}
+        expanded={open}
+        onClick={() => {
+          setOpen(!open);
+        }}
+      >
+        <PinIcon size={18} />
+        <span class="chat-pins-count">{mine.length}</span>
+      </IconButton>
+      {open && (
+        <div class="pins-pop chat-pins-pop" role="dialog" aria-label="Pinned in this chat">
+          <h3 class="pins-head">Pinned in this chat</h3>
+          <ul class="pins-list">
+            {mine.map((p) => (
+              <li key={pinKey(p)} class="pin-row">
+                <button
+                  type="button"
+                  class="pin-go"
+                  title={p.kind === "file" ? "Open the file" : "Show in the chat"}
+                  onClick={() => {
+                    setOpen(false);
+                    if (p.kind === "file") openFile(p.agent_id, p.event);
+                    else jumpTo(p.agent_id, p.event);
+                  }}
+                >
+                  {p.kind === "file" ? <FileText size={16} /> : <MessageSquare size={16} />}
+                  <span class="pin-text">
+                    <span class="ellipsis">{p.label}</span>
+                  </span>
+                </button>
+                <IconButton
+                  label={`Unpin ${p.label}`}
+                  onClick={() => void savePins(pins.filter((x) => pinKey(x) !== pinKey(p)))}
+                >
+                  <X size={14} />
+                </IconButton>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+    </span>
+  );
+}

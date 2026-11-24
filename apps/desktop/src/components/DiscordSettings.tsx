@@ -64,6 +64,7 @@ export function DiscordSettings(): JSX.Element | null {
   const statusOf = (id: string): string => {
     const s = view.channels.find((c) => c.channel_id === id);
     if (s?.error) return s.error;
+    if (s?.note) return s.note;
     if (s?.checked_at) return `Listening, read ${clockTime(s.checked_at)}`;
     return view.enabled ? "Starting…" : "Off";
   };

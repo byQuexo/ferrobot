@@ -12,6 +12,8 @@ export type TimelineItem =
       files: Attachment[];
       /** The agent's emoji on this message. */
       reaction: string | null;
+      /** Who wrote it in Discord, when the Discord bridge brought it in. */
+      discord: string | null;
       status: MailMessage["status"];
       /** Why the last attempt failed, on a message that was not delivered. */
       error?: string;
@@ -105,6 +107,16 @@ export function splitAttachments(body: string): { text: string; files: Attachmen
     return !m;
   });
   return { text: rest.join("\n").trim(), files };
+}
+
+const VIA_DISCORD = /\s*\(via Discord, from ([^\n()]+)\)\s*$/;
+
+/** The Discord bridge ends a message with who wrote it; the chat shows that as a chip. */
+export function splitDiscord(body: string): { text: string; discord: string | null } {
+  const m = VIA_DISCORD.exec(body);
+  return m
+    ? { text: body.slice(0, m.index), discord: m[1] ?? null }
+    : { text: body, discord: null };
 }
 
 const SYSTEM_TEXT: Record<string, (p: Payload) => string> = {
@@ -220,7 +232,8 @@ export function buildTimeline(
     if (m.recipient === agentId) {
       if (m.sender.kind === "user") {
         const error = m.status === "failed" ? failures.get(m.id) : undefined;
-        const { text, files } = splitAttachments(m.body);
+        const { text: body, discord } = splitDiscord(m.body);
+        const { text, files } = splitAttachments(body);
         const reaction = reactions.get(m.id) ?? null;
         push({
           type: "user",
@@ -229,6 +242,7 @@ export function buildTimeline(
           text,
           files,
           reaction,
+          discord,
           status: m.status,
           error,
         });

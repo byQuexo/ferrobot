@@ -29,6 +29,7 @@ import {
   foldSteps,
   sharedFiles,
   splitAttachments,
+  splitDiscord,
   withoutRoomTurns,
 } from "../src/lib/timeline.ts";
 import {
@@ -2510,5 +2511,18 @@ describe("dashboards", () => {
     assert.ok(!isBoard(list, "b", "/home/agent/f.html"));
     list = toggleBoard(list, { ...board, label: "other" });
     assert.equal(list.length, 0);
+  });
+});
+
+describe("splitDiscord", () => {
+  it("takes the bridge's sender line off a message from Discord", () => {
+    assert.deepEqual(splitDiscord("jojojo\n\n(via Discord, from quexoo)"), {
+      text: "jojojo",
+      discord: "quexoo",
+    });
+    assert.deepEqual(splitDiscord("see (via Discord, from x) above"), {
+      text: "see (via Discord, from x) above",
+      discord: null,
+    });
   });
 });
