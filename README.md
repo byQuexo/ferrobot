@@ -44,8 +44,8 @@ which adds the real key.
   text questions right in the chat.
 - **Model and context.** A model switch in the chat header and a ring showing
   how full the context is, with New chat (and Compact now for Claude Code).
-- **Group chats.** Write once and every member answers in turn; @-mention one
-  agent to ask only it.
+- **Group chats.** Write once and every member answers in turn; call the group
+  to talk it over by voice.
 - **Traces.** A reply's steps open its turn on a timeline of model and tool
   calls, with timings and failures; export them over OTLP to Phoenix, Langfuse
   or any OpenTelemetry backend ([Traces](docs/wiki/Traces.md)).
@@ -84,7 +84,8 @@ which adds the real key.
 
 - **Providers and drivers.** Claude (Agent SDK), any OpenAI-compatible API
   including local Ollama, OpenAI Codex, Gemini, Gemini CLI, OpenRouter, Amazon
-  Bedrock and Google Vertex AI, each with a model picker.
+  Bedrock and Google Vertex AI, each with a model picker; OpenRouter with
+  prompt caching for Claude models and sticky routing per agent.
 - **Claude Code (your own login).** Opt-in: runs your own, unmodified `claude`
   CLI with your own subscription; it uses your seat's limits and ferrobot
   never touches the login. Its calls show in Usage with an estimate at API
@@ -114,8 +115,8 @@ which adds the real key.
   provider, a daily chart and CSV export ([clip](docs/assets/clips/usage-csv.mp4));
   OpenRouter calls at the cost it reports; Claude Code and Codex plan limits.
 - **Desktop app.** macOS and Windows, starts its own daemon; ⌘K and keyboard
-  shortcuts, Appearance (theme, accent colour, text size), the guides and
-  Diagnostics in Settings. Any other client can use the daemon's versioned
+  shortcuts, Appearance (theme, accent colour, text size), Diagnostics, and
+  the guides in Settings, which agents can read to walk you through a setting. Any other client can use the daemon's versioned
   `/v1` API.
 
 ## Architecture
