@@ -6,6 +6,52 @@ All notable changes are listed here. The format follows
 
 ## [Unreleased]
 
+## [0.1.8] - 2026-11-24
+
+### Added
+
+- Dashboards: **Use as dashboard** next to any shared `.html` file keeps it
+  under **Dashboards** in the sidebar. It opens in the main area with a tab
+  per dashboard, full screen or in your browser, and always shows the newest
+  version the agent shared of that file (`/v1/dashboards`).
+- Traces show the cards a turn waited on (from the card to your answer, with
+  approved, declined, answered or timed out) and the messages it handed to
+  other agents. Click a handoff to open the turn that took it, and Back to
+  return; a turn started by another agent links to the turn that sent it, so
+  a task's answer leads back to the task. The OpenTelemetry export sends
+  waits as spans and handoffs as span links, without message text.
+- Webhooks (Settings → Webhooks, guide: Webhooks). Incoming: a URL per
+  webhook, shown once, whose POSTs (JSON or text, up to 64 KiB) become
+  messages to an agent, marked as external data and not instructions. The
+  secret lives only in the URL; New URL replaces it. Outgoing: replies, cards
+  waiting for you, finished tasks and failed turns go to a Discord or Slack
+  channel or any URL as JSON, optionally for some agents only, with the last
+  delivery's result in the list. Their URLs are kept in the keychain.
+
+- Discord bridge (Settings → Discord, guide: Discord bridge): in a bridged
+  channel, messages from the Discord users you allow reach that channel's
+  agent as yours ("via Discord"), and its reply comes back as a reply. The
+  daemon reads the channel through Discord's API with your bot's token (kept
+  in the keychain), so nothing needs to be reachable from the internet
+  (`/v1/discord`, `/v1/discord/token`).
+
+### Changed
+
+- Auto mode keeps a card for the riskiest steps: connector tools that move
+  money or delete or cancel something, force-pushing and publishing a package
+  now ask even in Auto mode ("a very risky step"). Everything else risky still
+  runs without a card, and dangerous steps stay refused.
+- Roadmap: the ideas list moved onto the roadmap (the Computer tab's file
+  browser and terminal, logins for CLIs and finer connector scopes, faster
+  calls, a stable signature for development builds).
+
+### Fixed
+
+- A mention of a deleted agent showed `@unknown-agent`; it now shows its last
+  name, `@calc-a (deleted)`, in the chat, in exchange lines and in what other
+  agents read. The daemon keeps the name when an agent is deleted, and finds
+  it in the history for agents deleted before (`/v1/agents/former`).
+
 ## [0.1.7] - 2026-11-24
 
 ### Added
@@ -329,7 +375,8 @@ First public release.
   allowlist per API family, no redirects, header allowlists both ways, agent
   tokens blanked in committed images.
 
-[Unreleased]: https://github.com/byQuexo/ferrobot/compare/v0.1.7...HEAD
+[Unreleased]: https://github.com/byQuexo/ferrobot/compare/v0.1.8...HEAD
+[0.1.8]: https://github.com/byQuexo/ferrobot/compare/v0.1.7...v0.1.8
 [0.1.7]: https://github.com/byQuexo/ferrobot/compare/v0.1.6...v0.1.7
 [0.1.6]: https://github.com/byQuexo/ferrobot/compare/v0.1.5...v0.1.6
 [0.1.5]: https://github.com/byQuexo/ferrobot/compare/v0.1.4...v0.1.5

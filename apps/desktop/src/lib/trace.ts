@@ -1,14 +1,20 @@
 // A turn's trace laid out as a timeline: where each step's bar starts and how wide it is.
 // Pure, so the layout rules are unit-tested without a browser.
-import type { Trace } from "../api.ts";
+import type { Trace, TurnLink } from "../api.ts";
 import { stepLabel } from "./format.ts";
+
+export type SpanKind = Trace["spans"][number]["kind"];
 
 export interface TraceRow {
   index: number;
-  kind: "model" | "tool";
+  kind: SpanKind;
   name: string;
   input: unknown;
   error: string | null;
+  /** A wait's outcome; `null` while open. */
+  outcome: string | null;
+  /** A handoff's recipient and the turn that took it. */
+  link: TurnLink | null;
   /** Percent of the turn's length. */
   left: number;
   width: number;
@@ -45,8 +51,10 @@ export function layoutTrace(trace: Trace, now: number = Date.now()): TraceLayout
   const total = Math.max(end - start, 1);
   const rows = trace.spans.map((s, index): TraceRow => {
     const from = Date.parse(s.started_at);
+    // An open wait runs on with the turn; an answer after the turn's end still counts in full.
     const to = s.ended_at == null ? end : Date.parse(s.ended_at);
-    const left = Math.min(Math.max(((from - start) / total) * 100, 0), 100);
+    // A task's answer goes out just after the turn's end; it still gets a visible mark.
+    const left = Math.min(Math.max(((from - start) / total) * 100, 0), 100 - MIN_WIDTH);
     const width = Math.min(Math.max(((to - from) / total) * 100, MIN_WIDTH), 100 - left);
     return {
       index,
@@ -54,6 +62,8 @@ export function layoutTrace(trace: Trace, now: number = Date.now()): TraceLayout
       name: s.name,
       input: s.input ?? null,
       error: s.error ?? null,
+      outcome: s.outcome ?? null,
+      link: s.link ?? null,
       left,
       width,
       ms: Math.max(to - from, 0),
@@ -63,8 +73,10 @@ export function layoutTrace(trace: Trace, now: number = Date.now()): TraceLayout
         left + width <= LABEL_ROOM ? "after" : left >= 100 - LABEL_ROOM ? "before" : "inside",
     };
   });
-  const longest = rows.reduce<TraceRow | null>((a, r) => (!a || r.ms > a.ms ? r : a), null);
-  if (longest && rows.length > 1 && longest.ms >= SLOW_MS) longest.slowest = true;
+  // Waiting on the operator is not work, so it never counts as the slowest step.
+  const steps = rows.filter((r) => r.kind === "model" || r.kind === "tool");
+  const longest = steps.reduce<TraceRow | null>((a, r) => (!a || r.ms > a.ms ? r : a), null);
+  if (longest && steps.length > 1 && longest.ms >= SLOW_MS) longest.slowest = true;
   return {
     ms: end - start,
     running,
@@ -82,23 +94,38 @@ export function traceDuration(ms: number): string {
   return s < 60 ? `${String(s)}s` : `${String(Math.floor(s / 60))}m ${String(s % 60)}s`;
 }
 
-/** What a step did: the model, the command or file of a computer tool, else the chat's label. */
+/** What a step did: the model, the command or file of a computer tool, what a wait asked,
+ * who a handoff went to, else the chat's label. */
 export function traceLabel(
-  kind: "model" | "tool",
+  kind: SpanKind,
   name: string,
   input: unknown,
   nameOf: (id: string) => string | undefined,
+  link: TurnLink | null = null,
 ): string {
   if (kind === "model") return name;
-  const tool = name.split("__").pop() ?? name;
   const arg = (key: string): string | null => {
     const v = (input as Record<string, unknown> | null)?.[key];
     return typeof v === "string" && v ? v : null;
   };
+  if (kind === "wait") return arg("title") ?? (name === "ask_user" ? "Question" : "Approval");
+  if (kind === "handoff") {
+    const other = link && (nameOf(link.agent_id) ?? link.agent_name);
+    const who = other ? `@${other}` : "a teammate";
+    if (name === "task") return `Task for ${who}`;
+    return name === "answer" ? `Answer to ${who}` : `Message to ${who}`;
+  }
+  const tool = name.split("__").pop() ?? name;
   const cmd = arg("command");
   if (tool === "bash" && cmd) return `$ ${cmd.split("\n")[0] ?? cmd}`;
   const path = arg("path");
   if (tool === "read_file" && path) return `Reading ${path}`;
   if (tool === "write_file" && path) return `Writing ${path}`;
   return stepLabel(name, input, nameOf);
+}
+
+/** How a wait ended: its outcome, else still waiting or left without an answer. */
+export function waitStatus(outcome: string | null, running: boolean): string {
+  if (outcome) return outcome.replace("_", " ");
+  return running ? "waiting" : "no answer";
 }

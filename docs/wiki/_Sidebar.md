@@ -15,6 +15,8 @@
 - [[Voice and calls|Voice-and-Calls]]
 - [[Usage and Costs|Usage-and-Costs]]
 - [[Traces]]
+- [[Webhooks]]
+- [[Discord bridge|Discord]]
 
 **How it works**
 

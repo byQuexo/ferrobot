@@ -30,9 +30,9 @@ In rough order. Nothing here has a date.
    over OpenTelemetry (OTLP, GenAI conventions) to an endpoint you choose,
    such as Langfuse, Phoenix, Grafana Tempo or Jaeger. Export is off by
    default; its keys stay in the keychain, and prompts and replies are left
-   out unless you turn them on. **Done:** the trace view (model and tool
-   calls) and the export ([[Traces]]); **open:** approval waits and handoffs
-   to other agents.
+   out unless you turn them on. **Done** in 0.1.8: the trace view with model
+   and tool calls, approval waits and handoffs to other agents' turns, and
+   the export ([[Traces]]).
 6. **Webhooks.** Connect ferrobot to other services both ways. Incoming:
    each agent (or routine) can get its own webhook URL with a secret, so a
    POST from GitHub, a form, n8n or Zapier becomes a message to the agent or
@@ -41,10 +41,29 @@ In rough order. Nothing here has a date.
    to a URL you choose, such as a Discord or Slack channel. A Discord bridge
    on top lets you write to your agents from a channel and get their answers
    there. Off by default; secrets in the keychain, payloads signed, and no
-   key or operator token in anything sent.
-7. **Later.** Moving warm agents to cold sleep under memory pressure (F4d), a
-   native macOS app on the same `/v1` API, and optional self-hosted
-   S3-compatible storage. Smaller ideas are on [[Ideas]].
+   key or operator token in anything sent. **Done in 0.1.8:** incoming
+   webhooks to an agent (secret in the URL, only its hash stored) and
+   outgoing webhooks for those four events in Discord, Slack or JSON format,
+   URLs in the keychain ([[Webhooks]]), and the Discord bridge: allowed users
+   write to an agent from a channel and get its reply there ([[Discord]]);
+   **open:** starting a routine from a webhook, answering cards from Discord,
+   and signed outgoing payloads.
+7. **The agent's computer in the app.** A file browser and a terminal in the
+   agent's details panel (Computer tab), so you can look around and fix
+   things in its sandbox without asking the agent.
+8. **Logins for CLIs, finer connector scopes.** CLIs that need a login
+   (`gh`, `vercel`, `stripe`) through a daemon-side proxy that swaps in the
+   token the way the model proxy does, for services without an MCP server.
+   Per-tool scopes inside a connector (for example read-only GitHub tools),
+   finer than today's switches per tool group.
+9. **Faster, more natural calls.** Reasoning switched off or a fast model used
+   only in calls, a setting for the pause that ends your turn, and calls
+   among agents without you, with a pop-up to join.
+10. **Development builds.** A stable signature for development builds, so
+    macOS stops asking for keychain access after every rebuild.
+11. **Later.** Moving warm agents to cold sleep under memory pressure (F4d), a
+    native macOS app on the same `/v1` API, and optional self-hosted
+    S3-compatible storage. New ideas go on [[Ideas]] first.
 
 Status words: **done** (built and tested, gaps noted), **partial** (code
 written, key parts never run), **open** (not built), **deliberately
@@ -109,6 +128,7 @@ tested against fakes on a machine without KVM.
 | v0.1.5 | done | Fix: a message no longer shows as queued while its turn runs. |
 | v0.1.6 | done | Claude Code hooks, plugins and subagents, trace export to Phoenix and Langfuse, memory in an Obsidian vault, local MCP servers, trace view, compact. |
 | v0.1.7 | done | Pins for replies, files and agents; agents hear about renames, and old names of renamed agents work again. |
+| v0.1.8 | done | Dashboards, webhooks and a Discord bridge, trace waits and handoffs, deleted agents named in mentions, Auto mode keeps a card for the riskiest steps. |
 
 Ideas beyond this list are on [[Ideas]].
 

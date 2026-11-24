@@ -26,9 +26,9 @@ export function RichText(props: {
   files?: ChatFiles;
   onPage?: (page: string) => void;
 }): JSX.Element {
-  const { agents } = useApp();
+  const { nameOf } = useApp();
   // Code shows mention tokens as plain `@name`, not as chips.
-  const plain: Plain = (t) => mentionsAsText(t, (id) => agents.get(id)?.name);
+  const plain: Plain = (t) => mentionsAsText(t, nameOf);
   return (
     <div class="rich">
       {parseBlocks(props.text).map((b, i) => (
@@ -202,9 +202,16 @@ function Inlines(props: {
 
 /** An agent mention: current name and avatar; opens that agent's chat. */
 function Mention(props: { id: string }): JSX.Element {
-  const { agents, openAgent } = useApp();
+  const { agents, formerNames, openAgent } = useApp();
   const agent = agents.get(props.id);
-  if (!agent) return <span class="mention-gone">@unknown-agent</span>;
+  if (!agent) {
+    const former = formerNames.get(props.id);
+    return (
+      <span class="mention-gone" title="This agent was deleted">
+        @{former ?? "unknown-agent"} (deleted)
+      </span>
+    );
+  }
   return (
     <button
       type="button"

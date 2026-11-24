@@ -124,12 +124,23 @@ fn every_routed_path_is_documented() {
         "/v1/otel/secret",
         "/v1/memory-vault",
         "/v1/pins",
+        "/v1/agents/former",
+        "/v1/dashboards",
+        "/v1/discord",
+        "/v1/discord/token",
+        "/v1/webhooks",
+        "/v1/webhooks/incoming",
+        "/v1/webhooks/incoming/{id}",
+        "/v1/webhooks/incoming/{id}/secret",
+        "/v1/webhooks/outgoing",
+        "/v1/webhooks/outgoing/{id}",
+        "/hooks/{id}/{secret}",
     ] {
         assert!(documented.contains(&path), "{path} missing from OpenAPI");
     }
     assert_eq!(
         documented.len(),
-        78,
+        89,
         "undocumented extra paths: {documented:?}"
     );
 }

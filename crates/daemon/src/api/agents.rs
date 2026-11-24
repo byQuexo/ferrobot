@@ -7,7 +7,7 @@ use axum::http::{HeaderMap, StatusCode, header};
 use axum::response::{IntoResponse, Response};
 use ferrobot_core::{AgentName, AvatarCharacter, ToolGroup};
 use ferrobot_store::{AgentPatch, Avatar};
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use utoipa::{IntoParams, ToSchema};
 
 use super::{ApiResult, check_len, parse_id};
@@ -259,6 +259,29 @@ pub(crate) async fn delete_agent(
         crate::files::forget_agent(&state, id).await;
     }
     Ok(StatusCode::NO_CONTENT)
+}
+
+/// A deleted agent's last name, so mentions of it can still be read.
+#[derive(Debug, Serialize, ToSchema)]
+pub(crate) struct FormerAgent {
+    pub id: String,
+    pub name: String,
+}
+
+/// Deleted agents' last names, for mentions of them in old messages.
+#[utoipa::path(get, path = "/v1/agents/former", tag = "agents",
+    responses((status = 200, body = [FormerAgent])))]
+pub(crate) async fn former_agents(State(state): State<AppState>) -> ApiResult<Vec<FormerAgent>> {
+    let names = state.store.former_agent_names().await?;
+    Ok(Json(
+        names
+            .into_iter()
+            .map(|(id, name)| FormerAgent {
+                id: id.to_string(),
+                name,
+            })
+            .collect(),
+    ))
 }
 
 /// The agent's avatar image.

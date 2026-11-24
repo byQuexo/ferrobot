@@ -57,6 +57,15 @@ Model providers: `GET/POST /v1/providers`, `PATCH/DELETE /v1/providers/{id}`
 `POST /v1/providers/{id}/chatgpt-login` returns a device code,
 `GET` on the same path reports `none`, `pending`, `signed_in` or `failed`.
 
+Webhooks (tag `webhooks`): `GET /v1/webhooks`, `POST /v1/webhooks/incoming`
+(the `201` carries the hook's URL, the only time its secret is shown),
+`POST …/incoming/{id}/secret` (a new URL; the old one stops working),
+`POST /v1/webhooks/outgoing` (`url` is write-only, kept in the secret store) and
+`DELETE` on either. Incoming requests go to `POST /hooks/{id}/{secret}` on the same
+listener, outside `/v1`: JSON or text up to 64 KiB, 30 a minute per hook, `202`;
+an unknown hook or a wrong secret gets `404`, and the operator token is not accepted
+there. The message is from `{"kind": "webhook", "id": …}`.
+
 Agent-to-agent threads: `GET /v1/conversations` (one entry per pair, most
 recent first) and `GET /v1/conversations/{a}/{b}` (both directions, oldest
 first, read-only).
@@ -72,7 +81,7 @@ wake the recipient) or `null`.
 | --- | --- |
 | `agent` | Full `AgentView` after any change: profile, `presence` (`working`, `awake`, `starting`, `sleeping`, `error`), `connected`, `unread`. |
 | `agent_deleted` | The agent is gone. |
-| `message` | A mailbox message to or from the agent (`sender`: user, agent or routine). |
+| `message` | A mailbox message to or from the agent (`sender`: user, agent, routine or webhook). |
 | `event` | A stored turn event (incoming message, text, tool use, tool result, lifecycle). |
 | `delta` | Streaming assistant text for the running turn; not stored. The final `text` event replaces it. |
 | `memory_changed` | The agent's memory changed; refetch. |
@@ -86,7 +95,8 @@ rename or instructions edit; they apply from the next turn). Turn events (field 
 (streamed text, not stored), `assistant_text`, `tool_use` with an `id`, and
 `tool_result` referencing that id. A turn's `sender` is `user`,
 `agent:<id>` or `routine:<id>` (the `sender_name` of a routine turn is
-`routine:<name>`). A `turn` with `new_session: true` starts a fresh model session
+`routine:<name>`). A message from an incoming webhook reaches the runner as `user` with
+`sender_name` `webhook:<name>`, so runners of 0.1.7 and older keep working. A `turn` with `new_session: true` starts a fresh model session
 (the operator asked for a new chat); the field is omitted otherwise.
 
 ## Question cards (agent → UI)

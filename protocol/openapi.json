@@ -2,7 +2,7 @@
   "openapi": "3.1.0",
   "info": {
     "title": "ferrobot daemon API",
-    "description": "Operator API of `ferrobotd` (version 1, all paths under `/v1`). Served on the loopback UI listener (default `127.0.0.1:7878`). Every endpoint except `GET /v1/health` needs the operator token as `Authorization: Bearer <token>`; `GET` requests (the WebSocket, avatar images) may pass `?access_token=<token>` instead. The daemon generates the token on first start in `<data dir>/api-token` (mode 0600) unless `--api-token` / `FERROBOT_API_TOKEN` sets one. Live updates: `GET /v1/ws` streams `UiEvent` frames, see `ui-events.schema.json`. The separate agent listener (runner WebSocket and MCP, bearer-token auth) is not part of this document; its frames are described in `runner-protocol.schema.json`.",
+    "description": "Operator API of `ferrobotd` (version 1, all paths under `/v1`). Served on the loopback UI listener (default `127.0.0.1:7878`). Every endpoint except `GET /v1/health` needs the operator token as `Authorization: Bearer <token>`; `GET` requests (the WebSocket, avatar images) may pass `?access_token=<token>` instead. The daemon generates the token on first start in `<data dir>/api-token` (mode 0600) unless `--api-token` / `FERROBOT_API_TOKEN` sets one. Live updates: `GET /v1/ws` streams `UiEvent` frames, see `ui-events.schema.json`. Incoming webhooks (`POST /hooks/{id}/{secret}`) share the listener outside `/v1`: the secret in their path is their only key, the operator token is not accepted there. The separate agent listener (runner WebSocket and MCP, bearer-token auth) is not part of this document; its frames are described in `runner-protocol.schema.json`.",
     "contact": {
       "name": "Tim Gühnemann"
     },
@@ -10,7 +10,7 @@
       "name": "MIT OR Apache-2.0",
       "identifier": "MIT OR Apache-2.0"
     },
-    "version": "0.1.7"
+    "version": "0.1.8"
   },
   "servers": [
     {
@@ -187,6 +187,88 @@
         }
       }
     },
+    "/hooks/{id}/{secret}": {
+      "post": {
+        "tags": [
+          "webhooks"
+        ],
+        "summary": "Takes a POST from another service (JSON or text) and queues it for the webhook's agent.\nAuthorized only by the secret in the path; the operator token is not accepted.",
+        "operationId": "receive",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "Webhook id",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          },
+          {
+            "name": "secret",
+            "in": "path",
+            "description": "The webhook's secret, from its URL",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "description": "JSON or text, at most 64 KiB",
+          "content": {
+            "text/plain": {
+              "schema": {
+                "type": "string"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "202": {
+            "description": "Queued for the agent"
+          },
+          "400": {
+            "description": "Empty or not UTF-8",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Unknown webhook or wrong secret",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "Body over 64 KiB"
+          },
+          "429": {
+            "description": "Over 30 requests a minute",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {}
+        ]
+      }
+    },
     "/v1/agents": {
       "get": {
         "tags": [
@@ -277,6 +359,39 @@
           },
           "502": {
             "description": "Sandbox backend error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/agents/former": {
+      "get": {
+        "tags": [
+          "agents"
+        ],
+        "summary": "Deleted agents' last names, for mentions of them in old messages.",
+        "operationId": "former_agents",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/FormerAgent"
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or wrong API token",
             "content": {
               "application/json": {
                 "schema": {
@@ -2433,7 +2548,7 @@
         "tags": [
           "chat"
         ],
-        "summary": "One of the agent's turns as a timeline: its model calls and tool calls with their times.",
+        "summary": "One of the agent's turns as a timeline: its model calls and tool calls with their times, the\ncards it waited on and the messages it handed to other agents.",
         "operationId": "turn_trace",
         "parameters": [
           {
@@ -3526,6 +3641,93 @@
         }
       }
     },
+    "/v1/dashboards": {
+      "get": {
+        "tags": [
+          "chat"
+        ],
+        "summary": "The dashboards, in order, each with its newest shared version.",
+        "operationId": "get_dashboards",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/Dashboard"
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or wrong API token",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        }
+      },
+      "put": {
+        "tags": [
+          "chat"
+        ],
+        "summary": "Replaces the dashboards: adding, renaming, reordering and removing all send the whole list.",
+        "operationId": "put_dashboards",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/components/schemas/Dashboard"
+                }
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/Dashboard"
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Too many, a bad label or path, or an unknown agent",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or wrong API token",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/v1/diagnostics": {
       "get": {
         "tags": [
@@ -3581,6 +3783,133 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/DiagnosticsLog"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or wrong API token",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/discord": {
+      "get": {
+        "tags": [
+          "settings"
+        ],
+        "summary": "The Discord bridge.",
+        "operationId": "get_discord",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DiscordView"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or wrong API token",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        }
+      },
+      "put": {
+        "tags": [
+          "settings"
+        ],
+        "summary": "Replaces the bridge's settings: on or off, the allowed Discord users, and which channel\ntalks to which agent. Changes apply within seconds.",
+        "operationId": "put_discord",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DiscordSettings"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DiscordView"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "A bad id, too many entries or an unknown agent",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or wrong API token",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/discord/token": {
+      "put": {
+        "tags": [
+          "settings"
+        ],
+        "summary": "Stores or removes the bot token, kept in the daemon's secret store.",
+        "operationId": "put_discord_token",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DiscordToken"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DiscordView"
+                }
+              }
+            }
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
                 }
               }
             }
@@ -6246,6 +6575,300 @@
         }
       }
     },
+    "/v1/webhooks": {
+      "get": {
+        "tags": [
+          "webhooks"
+        ],
+        "summary": "Incoming and outgoing webhooks, oldest first.",
+        "operationId": "list_webhooks",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WebhooksView"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or wrong API token",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/webhooks/incoming": {
+      "post": {
+        "tags": [
+          "webhooks"
+        ],
+        "summary": "Creates an incoming webhook for an agent. Its URL is in this response only.",
+        "operationId": "create_incoming",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/NewIncomingWebhook"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/IncomingWebhookCreated"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad name",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or wrong API token",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Unknown agent",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/webhooks/incoming/{id}": {
+      "delete": {
+        "tags": [
+          "webhooks"
+        ],
+        "summary": "Deletes an incoming webhook; its URL stops working.",
+        "operationId": "delete_incoming",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "Webhook id",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Deleted"
+          },
+          "401": {
+            "description": "Missing or wrong API token",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Unknown webhook",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/webhooks/incoming/{id}/secret": {
+      "post": {
+        "tags": [
+          "webhooks"
+        ],
+        "summary": "Gives an incoming webhook a new secret; the old URL stops working at once.",
+        "operationId": "regenerate_incoming",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "Webhook id",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/IncomingWebhookCreated"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or wrong API token",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Unknown webhook",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/webhooks/outgoing": {
+      "post": {
+        "tags": [
+          "webhooks"
+        ],
+        "summary": "Adds an outgoing webhook; the events it gets are posted to its URL in the background.",
+        "operationId": "create_outgoing",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/NewOutgoingWebhook"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OutgoingWebhookView"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad name, URL or events",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or wrong API token",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Unknown agent",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/webhooks/outgoing/{id}": {
+      "delete": {
+        "tags": [
+          "webhooks"
+        ],
+        "summary": "Deletes an outgoing webhook and its stored URL.",
+        "operationId": "delete_outgoing",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "Webhook id",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Deleted"
+          },
+          "401": {
+            "description": "Missing or wrong API token",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Unknown webhook",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/v1/ws": {
       "get": {
         "tags": [
@@ -6794,6 +7417,22 @@
           }
         }
       },
+      "Bridge": {
+        "type": "object",
+        "required": [
+          "channel_id",
+          "agent_id"
+        ],
+        "properties": {
+          "channel_id": {
+            "type": "string",
+            "description": "The Discord channel id (a number, as text)."
+          },
+          "agent_id": {
+            "type": "string"
+          }
+        }
+      },
       "BuildStatus": {
         "type": "string",
         "description": "Where the image build stands.",
@@ -6837,6 +7476,33 @@
             "format": "int64",
             "description": "The call's room, once a second agent joined; ignored when sent.",
             "readOnly": true
+          }
+        }
+      },
+      "ChannelStatus": {
+        "type": "object",
+        "description": "How a bridged channel is doing.",
+        "required": [
+          "channel_id"
+        ],
+        "properties": {
+          "channel_id": {
+            "type": "string"
+          },
+          "checked_at": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time",
+            "description": "When the daemon last read the channel."
+          },
+          "error": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Why the last read or reply failed; `null` when it worked."
           }
         }
       },
@@ -7434,6 +8100,44 @@
           "rejected"
         ]
       },
+      "Dashboard": {
+        "type": "object",
+        "description": "A dashboard: a shared HTML file, by its agent and path.",
+        "required": [
+          "agent_id",
+          "path",
+          "label"
+        ],
+        "properties": {
+          "agent_id": {
+            "type": "string"
+          },
+          "path": {
+            "type": "string",
+            "description": "The file's path in the agent's computer, e.g. `/home/agent/finance.html`."
+          },
+          "label": {
+            "type": "string",
+            "description": "Shown on its tab; 1-60 characters."
+          },
+          "file": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64",
+            "description": "Read only (ignored when saving): the newest shared version's `file` event; `null`\nuntil one is shared."
+          },
+          "updated_at": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time",
+            "description": "Read only (ignored when saving): when that version was shared."
+          }
+        }
+      },
       "DeviceCode": {
         "type": "object",
         "description": "A device code the operator enters at `verification_url`.",
@@ -7564,6 +8268,71 @@
           }
         }
       },
+      "DiscordSettings": {
+        "type": "object",
+        "description": "The bridge's settings; the bot token is in the secret store.",
+        "properties": {
+          "enabled": {
+            "type": "boolean",
+            "default": false
+          },
+          "users": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Discord user ids whose messages reach agents; everyone else is ignored.",
+            "default": []
+          },
+          "bridges": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Bridge"
+            },
+            "description": "Each channel talks to one agent.",
+            "default": []
+          }
+        }
+      },
+      "DiscordToken": {
+        "type": "object",
+        "properties": {
+          "token": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "The bot token from Discord's developer portal; `null` removes it."
+          }
+        }
+      },
+      "DiscordView": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/DiscordSettings"
+          },
+          {
+            "type": "object",
+            "required": [
+              "has_token",
+              "channels"
+            ],
+            "properties": {
+              "has_token": {
+                "type": "boolean",
+                "description": "A bot token is in the secret store; it is never returned."
+              },
+              "channels": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/components/schemas/ChannelStatus"
+                }
+              }
+            }
+          }
+        ],
+        "description": "The bridge's settings, whether a bot token is stored, and how each channel is doing."
+      },
       "ErrorBody": {
         "type": "object",
         "description": "JSON body of every non-2xx UI API response.",
@@ -7651,6 +8420,22 @@
               "null"
             ],
             "description": "Why it failed; `null` when it went through."
+          }
+        }
+      },
+      "FormerAgent": {
+        "type": "object",
+        "description": "A deleted agent's last name, so mentions of it can still be read.",
+        "required": [
+          "id",
+          "name"
+        ],
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
           }
         }
       },
@@ -7778,6 +8563,53 @@
           "Stop",
           "SessionEnd"
         ]
+      },
+      "IncomingWebhook": {
+        "type": "object",
+        "description": "An incoming webhook. Its secret is shown once; only its hash is stored.",
+        "required": [
+          "id",
+          "name",
+          "agent_id",
+          "created_at"
+        ],
+        "properties": {
+          "id": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "name": {
+            "type": "string"
+          },
+          "agent_id": {
+            "$ref": "#/components/schemas/AgentId",
+            "description": "The agent its requests go to as messages."
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      },
+      "IncomingWebhookCreated": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/IncomingWebhook"
+          },
+          {
+            "type": "object",
+            "required": [
+              "url"
+            ],
+            "properties": {
+              "url": {
+                "type": "string",
+                "description": "`<daemon>/hooks/{id}/{secret}`; from the internet, through a tunnel to `/hooks/` only."
+              }
+            }
+          }
+        ],
+        "description": "An incoming webhook with its URL. The URL holds the secret and is shown only this once."
       },
       "InstalledPlugin": {
         "type": "object",
@@ -8168,6 +9000,58 @@
           "suggested"
         ]
       },
+      "NewIncomingWebhook": {
+        "type": "object",
+        "required": [
+          "name",
+          "agent_id"
+        ],
+        "properties": {
+          "name": {
+            "type": "string",
+            "description": "1-64 characters; agents see it as the sender, `webhook:<name>`."
+          },
+          "agent_id": {
+            "$ref": "#/components/schemas/AgentId"
+          }
+        }
+      },
+      "NewOutgoingWebhook": {
+        "type": "object",
+        "required": [
+          "name",
+          "url",
+          "events",
+          "format"
+        ],
+        "properties": {
+          "name": {
+            "type": "string",
+            "description": "1-64 characters."
+          },
+          "url": {
+            "type": "string",
+            "description": "An http or https URL, e.g. a Discord or Slack webhook; kept in the secret store."
+          },
+          "events": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/WebhookEvent"
+            },
+            "description": "At least one."
+          },
+          "agents": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AgentId"
+            },
+            "description": "Only these agents' events; empty or omitted: every agent's."
+          },
+          "format": {
+            "$ref": "#/components/schemas/WebhookFormat"
+          }
+        }
+      },
       "OAuthStart": {
         "type": "object",
         "required": [
@@ -8257,6 +9141,71 @@
           }
         ],
         "description": "The export settings, whether the header's value is stored, and how the last export went."
+      },
+      "OutgoingWebhook": {
+        "type": "object",
+        "description": "An outgoing webhook. Its URL is in the secret store and never returned.",
+        "required": [
+          "id",
+          "name",
+          "events",
+          "agents",
+          "format",
+          "created_at"
+        ],
+        "properties": {
+          "id": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "name": {
+            "type": "string"
+          },
+          "events": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/WebhookEvent"
+            }
+          },
+          "agents": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AgentId"
+            },
+            "description": "Only these agents' events; empty: every agent's."
+          },
+          "format": {
+            "$ref": "#/components/schemas/WebhookFormat"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      },
+      "OutgoingWebhookView": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/OutgoingWebhook"
+          },
+          {
+            "type": "object",
+            "properties": {
+              "last_delivery": {
+                "oneOf": [
+                  {
+                    "$ref": "#/components/schemas/ExportStatus",
+                    "description": "`null`: nothing sent since the daemon started."
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              }
+            }
+          }
+        ],
+        "description": "An outgoing webhook and how its last delivery went."
       },
       "Pin": {
         "type": "object",
@@ -8666,6 +9615,10 @@
             ],
             "format": "int64",
             "description": "The user message that carried the answer to the agent; `null` for\napproval cards (the decision goes to the waiting tool call)."
+          },
+          "timed_out": {
+            "type": "boolean",
+            "description": "No answer came in time: the daemon declined the approval card."
           }
         }
       },
@@ -8719,6 +9672,13 @@
                 "type": "null"
               }
             ]
+          },
+          "turn_id": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "The turn that raised the card (its trace shows the wait); `null` outside a turn."
           }
         }
       },
@@ -9136,6 +10096,27 @@
                 ]
               }
             }
+          },
+          {
+            "type": "object",
+            "description": "An incoming webhook (by webhook id); its body is external data, framed as such. Runners\nget its turns as `user` with `sender_name` `webhook:<name>`.",
+            "required": [
+              "id",
+              "kind"
+            ],
+            "properties": {
+              "id": {
+                "type": "integer",
+                "format": "int64",
+                "description": "An incoming webhook (by webhook id); its body is external data, framed as such. Runners\nget its turns as `user` with `sender_name` `webhook:<name>`."
+              },
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "webhook"
+                ]
+              }
+            }
           }
         ],
         "description": "Who sent a mailbox message."
@@ -9293,7 +10274,7 @@
           },
           "name": {
             "type": "string",
-            "description": "The model id, or the tool's name."
+            "description": "The model id, the tool's name, a wait's approval kind (`create_agent`, `tool_call`, ...;\n`ask_user` for a question card) or a handoff's `message`, `task` or `answer`."
           },
           "started_at": {
             "type": "string",
@@ -9319,7 +10300,7 @@
               "object",
               "null"
             ],
-            "description": "A tool's input when small (up to 4 KiB), for its label."
+            "description": "A tool's input when small (up to 4 KiB), for its label; a wait's card title as `title`."
           },
           "input_tokens": {
             "type": [
@@ -9356,6 +10337,24 @@
             ],
             "format": "double",
             "description": "What the provider said the call cost (`OpenRouter`); `null` otherwise."
+          },
+          "outcome": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "A wait's outcome: `approved`, `declined`, `answered` or `timed_out`; `null` while open."
+          },
+          "link": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/TurnLink",
+                "description": "A handoff's recipient and its turn that took the message."
+              },
+              {
+                "type": "null"
+              }
+            ]
           }
         }
       },
@@ -9363,7 +10362,9 @@
         "type": "string",
         "enum": [
           "model",
-          "tool"
+          "tool",
+          "wait",
+          "handoff"
         ]
       },
       "SpeechRequest": {
@@ -9507,6 +10508,17 @@
             "type": "boolean",
             "description": "Whether model calls are in `spans`: from the model proxy, or on Claude Code from its own\nstream (`model_call` events); `false` for Claude Code turns from before those."
           },
+          "from": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/TurnLink",
+                "description": "The other agent's turn that sent the message this turn started on (a message, a task\nor a task's answer); `null` when the operator or a routine started it."
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "spans": {
             "type": "array",
             "items": {
@@ -9524,6 +10536,37 @@
         "properties": {
           "text": {
             "type": "string"
+          }
+        }
+      },
+      "TurnLink": {
+        "type": "object",
+        "description": "Another agent's turn, reached through a message.",
+        "required": [
+          "agent_id",
+          "message_id"
+        ],
+        "properties": {
+          "agent_id": {
+            "$ref": "#/components/schemas/AgentId"
+          },
+          "agent_name": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Its current name; `null` once it is deleted."
+          },
+          "turn_id": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "`null` while no turn has taken the message (or it predates linked turns)."
+          },
+          "message_id": {
+            "type": "integer",
+            "format": "int64"
           }
         }
       },
@@ -10510,6 +11553,47 @@
             }
           }
         ]
+      },
+      "WebhookEvent": {
+        "type": "string",
+        "description": "What an outgoing webhook is sent.",
+        "enum": [
+          "reply",
+          "question",
+          "task_done",
+          "turn_failed"
+        ]
+      },
+      "WebhookFormat": {
+        "type": "string",
+        "description": "How an outgoing webhook's body looks.",
+        "enum": [
+          "json",
+          "discord",
+          "slack"
+        ]
+      },
+      "WebhooksView": {
+        "type": "object",
+        "description": "The webhooks. Neither secrets nor outgoing URLs are ever returned.",
+        "required": [
+          "incoming",
+          "outgoing"
+        ],
+        "properties": {
+          "incoming": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/IncomingWebhook"
+            }
+          },
+          "outgoing": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/OutgoingWebhookView"
+            }
+          }
+        }
       }
     },
     "securitySchemes": {
@@ -10586,6 +11670,10 @@
     {
       "name": "settings",
       "description": "Daemon-wide operator settings"
+    },
+    {
+      "name": "webhooks",
+      "description": "Messages from other services in, chosen events out"
     }
   ]
 }

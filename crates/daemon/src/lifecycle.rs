@@ -12,7 +12,7 @@ use crate::error::ApiError;
 use crate::{AppState, UiEvent};
 
 /// Random bearer token: two v4 UUIDs, 244 random bits in 64 hex chars.
-fn new_token() -> String {
+pub(crate) fn new_token() -> String {
     format!(
         "{}{}",
         uuid::Uuid::new_v4().simple(),

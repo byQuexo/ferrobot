@@ -66,6 +66,8 @@ pub struct Settings {
     pub storage: Arc<dyn object_store::ObjectStore>,
     /// Base URL for every voice provider instead of its public API (tests).
     pub voice_upstream: Option<String>,
+    /// Discord's REST API, for the Discord bridge (another one in tests).
+    pub discord_api: String,
     /// Directory with the database and the API token file.
     pub data_dir: std::path::PathBuf,
     /// What `--storage-url` names, for diagnostics: `local` or its scheme (`s3`, ...).
@@ -106,6 +108,7 @@ impl std::fmt::Debug for Settings {
             ui_url,
             storage,
             voice_upstream,
+            discord_api,
             data_dir,
             storage_kind,
             log,
@@ -139,6 +142,7 @@ impl std::fmt::Debug for Settings {
             .field("ui_url", ui_url)
             .field("storage", storage)
             .field("voice_upstream", voice_upstream)
+            .field("discord_api", discord_api)
             .field("data_dir", data_dir)
             .field("storage_kind", storage_kind)
             .field("log", log);
@@ -179,6 +183,7 @@ impl Settings {
             ui_url: "http://127.0.0.1:7878".into(),
             storage: Arc::new(object_store::memory::InMemory::new()),
             voice_upstream: None,
+            discord_api: "https://discord.com/api/v10".into(),
             data_dir: std::path::PathBuf::new(),
             storage_kind: "memory".into(),
             log: crate::logs::LogRing::default(),
@@ -277,6 +282,10 @@ pub struct AppState {
     pub update: Arc<Mutex<crate::update::UpdateInfo>>,
     /// Where the CLI image build stands.
     pub clis: Arc<crate::clis::Builds>,
+    /// Webhooks' edit lock, rate limits and last deliveries.
+    pub webhooks: Arc<crate::webhooks::Webhooks>,
+    /// The Discord bridge's channels and the replies it owes.
+    pub discord: Arc<crate::discord::Discord>,
     /// When this daemon started.
     pub started: std::time::Instant,
 }
@@ -315,6 +324,8 @@ impl AppState {
             rooms: Arc::default(),
             update: Arc::default(),
             clis: Arc::default(),
+            webhooks: Arc::default(),
+            discord: Arc::default(),
             started: std::time::Instant::now(),
         }
     }
@@ -327,6 +338,12 @@ impl AppState {
 
     /// Broadcasts to UI clients; having no subscribers is fine.
     pub fn publish(&self, event: UiEvent) {
+        // Every question card is published here, so outgoing webhooks see them all.
+        if let UiEvent::Event { event } = &event
+            && event.kind == "question"
+        {
+            crate::webhooks::question(self, event);
+        }
         let _ = self.ui.send(event);
     }
 
@@ -380,14 +397,21 @@ impl AppState {
         })
     }
 
-    /// Turns `<@id>` tokens back into `@current-name` (for model input).
+    /// Turns `<@id>` tokens back into `@current-name`, or `@name (deleted)` (for model input).
     pub async fn render_mentions(&self, text: &str) -> String {
         let agents = self.store.list_agents().await.unwrap_or_default();
+        let former = self.store.former_agent_names().await.unwrap_or_default();
         ferrobot_core::mention::render(text, |id| {
             agents
                 .iter()
                 .find(|a| a.id == id)
                 .map(|a| a.name.to_string())
+                .or_else(|| {
+                    former
+                        .iter()
+                        .find(|(f, _)| *f == id)
+                        .map(|(_, name)| format!("{name} (deleted)"))
+                })
         })
     }
 
@@ -445,6 +469,10 @@ impl ferrobot_mcp::MailboxNotifier for AppState {
             let (state, agent) = (self.clone(), event.agent_id);
             tokio::spawn(async move { state.publish_agent(agent).await });
         }
+    }
+
+    fn current_turn(&self, agent: AgentId) -> Option<String> {
+        self.hub.current_turn(agent)
     }
 
     fn request_connector(

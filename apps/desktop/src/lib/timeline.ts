@@ -18,6 +18,8 @@ export type TimelineItem =
     }
   | { type: "incoming"; key: string; at: string; text: string; from: string; peerId: string }
   | { type: "routine"; key: string; at: string; text: string; routine: string | null }
+  /** From an incoming webhook; the text opens with the webhook's name. */
+  | { type: "webhook"; key: string; at: string; text: string }
   | { type: "outgoing"; key: string; at: string; text: string; to: string; peerId: string }
   | {
       type: "assistant";
@@ -52,7 +54,16 @@ export type TimelineItem =
       card: QuestionCard;
       answered: QuestionAnswered | null;
     }
-  | { type: "file"; key: string; at: string; id: number; name: string; size: number }
+  | {
+      type: "file";
+      key: string;
+      at: string;
+      id: number;
+      name: string;
+      size: number;
+      /** Where it was in the agent's computer, e.g. `/home/agent/plan.html`. */
+      path: string;
+    }
   | {
       type: "error";
       key: string;
@@ -230,6 +241,8 @@ export function buildTimeline(
           from: names.agents.get(m.sender.id) ?? "agent",
           peerId: m.sender.id,
         });
+      } else if (m.sender.kind === "webhook") {
+        push({ type: "webhook", key, at: m.created_at, text: m.body });
       } else {
         const routine = names.routines.get(m.sender.id) ?? null;
         push({ type: "routine", key, at: m.created_at, text: m.body, routine });
@@ -324,6 +337,7 @@ export function buildTimeline(
           id: e.id,
           name: str(p["name"]),
           size: Number(p["size"] ?? 0),
+          path: str(p["path"]),
         });
         break;
       case "tool_denied":

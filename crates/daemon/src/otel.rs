@@ -13,7 +13,7 @@ use utoipa::ToSchema;
 
 use crate::AppState;
 use crate::error::ApiError;
-use crate::trace::{Span, SpanKind, Trace};
+use crate::trace::{Span, SpanKind, Trace, TurnLink};
 
 const SETTING: &str = "otel";
 /// The secret store entry holding the auth header's value.
@@ -154,7 +154,10 @@ async fn export(
     };
     let models_tracked =
         !claude_code || !calls.is_empty() || events.iter().any(|e| e.kind == "model_call");
-    let Some(trace) = crate::trace::build(turn, &events, &calls, models_tracked) else {
+    let links = crate::trace::links(&state.store, turn, &events)
+        .await
+        .map_err(|e| e.to_string())?;
+    let Some(trace) = crate::trace::build(turn, &events, &calls, models_tracked, &links) else {
         return Ok(());
     };
     let output = events
@@ -269,13 +272,38 @@ fn nanos(t: OffsetDateTime) -> u64 {
 struct SpanOut<'a> {
     id: Vec<u8>,
     parent: Option<&'a [u8]>,
-    name: &'a str,
+    name: String,
     /// 1 internal, 3 client.
     kind: u64,
     start: OffsetDateTime,
     end: OffsetDateTime,
     attrs: Vec<(&'static str, Value)>,
     error: Option<&'a str>,
+    /// Root spans of other turns, as (trace id, span id).
+    links: Vec<(Vec<u8>, Vec<u8>)>,
+}
+
+/// The ids of another turn's root span, as [`encode`] gives them.
+fn root_of(turn: &str) -> (Vec<u8>, Vec<u8>) {
+    (id(turn, 16), id(&format!("{turn}/turn"), 8))
+}
+
+/// Attributes naming the other agent's turn under `keys` (agent, message, turn, trace id), and
+/// a span link to that turn once one took the message.
+fn link_to(
+    l: &TurnLink,
+    keys: [&'static str; 4],
+    attrs: &mut Vec<(&'static str, Value)>,
+    links: &mut Vec<(Vec<u8>, Vec<u8>)>,
+) {
+    attrs.push((keys[0], text(&l.agent_id.to_string())));
+    attrs.push((keys[1], Value::Int(l.message_id)));
+    if let Some(turn) = &l.turn_id {
+        let (trace_id, span_id) = root_of(turn);
+        attrs.push((keys[2], text(turn)));
+        attrs.push((keys[3], Value::Str(hex::encode(&trace_id))));
+        links.push((trace_id, span_id));
+    }
 }
 
 fn span_bytes(trace_id: &[u8], s: &SpanOut<'_>) -> Vec<u8> {
@@ -291,6 +319,12 @@ fn span_bytes(trace_id: &[u8], s: &SpanOut<'_>) -> Vec<u8> {
     pb::fixed64(&mut buf, 8, nanos(s.end.max(s.start)));
     for (k, v) in &s.attrs {
         attr(&mut buf, 9, k, v);
+    }
+    for (trace_id, span_id) in &s.links {
+        let mut link = Vec::new();
+        pb::bytes(&mut link, 1, trace_id);
+        pb::bytes(&mut link, 2, span_id);
+        pb::bytes(&mut buf, 13, &link);
     }
     let mut status = Vec::new();
     match s.error {
@@ -315,6 +349,8 @@ fn step<'a>(
     content: bool,
 ) -> SpanOut<'a> {
     let mut attrs = Vec::new();
+    let mut links = Vec::new();
+    let mut name = s.name.clone();
     let kind = match s.kind {
         SpanKind::Model => {
             let prompt = [s.input_tokens, s.cache_read_tokens, s.cache_write_tokens]
@@ -359,6 +395,38 @@ fn step<'a>(
             ]);
             1
         }
+        SpanKind::Wait => {
+            attrs.extend([
+                ("openinference.span.kind", text("CHAIN")),
+                ("ferrobot.wait.kind", text(&s.name)),
+            ]);
+            if let Some(outcome) = &s.outcome {
+                attrs.push(("ferrobot.wait.outcome", text(outcome)));
+            }
+            name = format!("wait: {}", s.name);
+            1
+        }
+        SpanKind::Handoff => {
+            attrs.extend([
+                ("openinference.span.kind", text("CHAIN")),
+                ("ferrobot.handoff.kind", text(&s.name)),
+            ]);
+            if let Some(l) = &s.link {
+                let keys = [
+                    "ferrobot.handoff.agent.id",
+                    "ferrobot.handoff.message.id",
+                    "ferrobot.handoff.turn.id",
+                    "ferrobot.handoff.trace.id",
+                ];
+                link_to(l, keys, &mut attrs, &mut links);
+                name = format!(
+                    "{} to {}",
+                    s.name,
+                    l.agent_name.as_deref().unwrap_or("an agent")
+                );
+            }
+            1
+        }
     };
     if let Some(input) = s.input.as_ref().filter(|_| content) {
         attrs.push(("input.value", Value::Str(input.to_string())));
@@ -367,7 +435,7 @@ fn step<'a>(
     SpanOut {
         id: id(&format!("{turn}/{n}"), 8),
         parent: Some(root),
-        name: &s.name,
+        name,
         kind,
         start: s.started_at,
         end: s.ended_at.unwrap_or(end),
@@ -375,9 +443,10 @@ fn step<'a>(
         // A failed tool's error is its own output: content, so it only goes out with content on.
         error: s.error.as_deref().map(|e| match (content, s.kind) {
             (true, _) | (false, SpanKind::Model) => e,
-            (false, SpanKind::Tool) if e.starts_with("denied") => "denied",
-            (false, SpanKind::Tool) => "failed",
+            (false, _) if e.starts_with("denied") => "denied",
+            (false, _) => "failed",
         }),
+        links,
     }
 }
 
@@ -385,8 +454,7 @@ fn step<'a>(
 fn encode(t: &TurnInfo<'_>) -> Vec<u8> {
     let trace = t.trace;
     let end = trace.ended_at.unwrap_or(trace.started_at);
-    let trace_id = id(&trace.turn_id, 16);
-    let root_id = id(&format!("{}/turn", trace.turn_id), 8);
+    let (trace_id, root_id) = root_of(&trace.turn_id);
     let failed = trace.outcome.as_deref() == Some("failed");
     let mut root_attrs = vec![
         ("openinference.span.kind", text("AGENT")),
@@ -403,15 +471,26 @@ fn encode(t: &TurnInfo<'_>) -> Vec<u8> {
     if let Some(output) = t.output.filter(|_| t.content) {
         root_attrs.push(("output.value", text(output)));
     }
+    let mut links = Vec::new();
+    if let Some(from) = &trace.from {
+        let keys = [
+            "ferrobot.from.agent.id",
+            "ferrobot.from.message.id",
+            "ferrobot.from.turn.id",
+            "ferrobot.from.trace.id",
+        ];
+        link_to(from, keys, &mut root_attrs, &mut links);
+    }
     let root = SpanOut {
         id: root_id.clone(),
         parent: None,
-        name: t.agent_name,
+        name: t.agent_name.to_owned(),
         kind: 1,
         start: trace.started_at,
         end,
         attrs: root_attrs,
         error: failed.then(|| trace.error.as_deref().unwrap_or("the turn failed")),
+        links,
     };
     let mut scope = Vec::new();
     let mut info = Vec::new();
@@ -498,6 +577,14 @@ mod tests {
             .collect()
     }
 
+    /// A span's string attribute.
+    fn str_attr(span: &[u8], key: &str) -> Option<Vec<u8>> {
+        get(span, 9)
+            .iter()
+            .find(|kv| get(kv, 1)[0] == key.as_bytes())
+            .map(|kv| get(&get(kv, 2)[0], 1)[0].clone())
+    }
+
     #[test]
     fn an_attribute_is_a_key_value_message() {
         let mut buf = Vec::new();
@@ -508,14 +595,16 @@ mod tests {
         assert_eq!(big, [0xac, 0x02]);
     }
 
-    #[test]
-    fn a_turn_is_a_root_span_with_its_steps_below() {
-        let at = OffsetDateTime::from_unix_timestamp(1_800_000_000).unwrap();
-        let step = |kind, name: &str, secs| Span {
+    fn at(secs: i64) -> OffsetDateTime {
+        OffsetDateTime::from_unix_timestamp(1_800_000_000 + secs).unwrap()
+    }
+
+    fn step(kind: SpanKind, name: &str, secs: i64) -> Span {
+        Span {
             kind,
             name: name.into(),
-            started_at: at + time::Duration::seconds(secs),
-            ended_at: Some(at + time::Duration::seconds(secs + 1)),
+            started_at: at(secs),
+            ended_at: Some(at(secs + 1)),
             error: None,
             input: Some(serde_json::json!({"command": "ls"})),
             input_tokens: Some(10),
@@ -523,19 +612,22 @@ mod tests {
             cache_read_tokens: Some(100),
             cache_write_tokens: None,
             cost_usd: None,
-        };
+            outcome: None,
+            link: None,
+        }
+    }
+
+    /// The exported spans of a finished turn with `spans`, root first; content off.
+    fn export(spans: Vec<Span>, from: Option<TurnLink>) -> (Vec<u8>, Vec<Vec<u8>>) {
         let trace = Trace {
             turn_id: "turn-1".into(),
-            started_at: at,
-            ended_at: Some(at + time::Duration::seconds(5)),
+            started_at: at(0),
+            ended_at: Some(at(5)),
             outcome: Some("completed".into()),
             error: None,
             models_tracked: true,
-            spans: vec![step(SpanKind::Model, "claude-x", 0), {
-                let mut bash = step(SpanKind::Tool, "bash", 2);
-                bash.error = Some("cat: /secret/notes.txt: No such file".into());
-                bash
-            }],
+            from,
+            spans,
         };
         let body = encode(&TurnInfo {
             trace: &trace,
@@ -547,14 +639,21 @@ mod tests {
         });
         let resource_spans = get(&body, 1);
         assert_eq!(resource_spans.len(), 1);
-        let resource = &get(&resource_spans[0], 1)[0];
-        let keys: Vec<Vec<u8>> = get(resource, 1)
+        let resource = get(&resource_spans[0], 1).remove(0);
+        let scope = &get(&resource_spans[0], 2)[0];
+        (resource, get(scope, 2))
+    }
+
+    #[test]
+    fn a_turn_is_a_root_span_with_its_steps_below() {
+        let mut bash = step(SpanKind::Tool, "bash", 2);
+        bash.error = Some("cat: /secret/notes.txt: No such file".into());
+        let (resource, spans) = export(vec![step(SpanKind::Model, "claude-x", 0), bash], None);
+        let keys: Vec<Vec<u8>> = get(&resource, 1)
             .iter()
             .map(|kv| get(kv, 1)[0].clone())
             .collect();
         assert!(keys.contains(&b"openinference.project.name".to_vec()));
-        let scope = &get(&resource_spans[0], 2)[0];
-        let spans = get(scope, 2);
         assert_eq!(spans.len(), 3);
         let root_id = &get(&spans[0], 2)[0];
         assert!(get(&spans[0], 4).is_empty(), "the root has no parent");
@@ -562,18 +661,14 @@ mod tests {
             assert_eq!(get(child, 1)[0].len(), 16);
             assert_eq!(&get(child, 4)[0], root_id);
         }
-        let attrs: Vec<(Vec<u8>, Vec<u8>)> = get(&spans[1], 9)
-            .iter()
-            .map(|kv| (get(kv, 1)[0].clone(), get(kv, 2)[0].clone()))
-            .collect();
-        let kind = attrs
-            .iter()
-            .find(|(k, _)| k == b"openinference.span.kind")
-            .unwrap();
-        assert_eq!(get(&kind.1, 1)[0], b"LLM");
+        assert_eq!(
+            str_attr(&spans[1], "openinference.span.kind").as_deref(),
+            Some(&b"LLM"[..])
+        );
         assert_eq!(get(&spans[2], 5)[0], b"bash");
-        assert!(
-            !attrs.iter().any(|(k, _)| k == b"input.value"),
+        assert_eq!(
+            str_attr(&spans[2], "input.value"),
+            None,
             "inputs stay out unless content is on"
         );
         let status = &get(&spans[2], 15)[0];
@@ -582,6 +677,51 @@ mod tests {
             b"failed",
             "no tool output without content"
         );
+    }
+
+    #[test]
+    fn waits_are_spans_and_handoffs_link_the_other_turn() {
+        let link = |turn: &str| TurnLink {
+            agent_id: AgentId::new(),
+            agent_name: Some("scout".into()),
+            turn_id: Some(turn.into()),
+            message_id: 7,
+        };
+        let mut wait = step(SpanKind::Wait, "tool_call", 3);
+        wait.input = Some(serde_json::json!({"title": "rm -rf /secret"}));
+        wait.outcome = Some("approved".into());
+        let mut handoff = step(SpanKind::Handoff, "task", 4);
+        handoff.link = Some(link("turn-2"));
+        let (_, spans) = export(vec![wait, handoff], Some(link("turn-0")));
+        let wait = &spans[1];
+        assert_eq!(get(wait, 5)[0], b"wait: tool_call");
+        assert_eq!(
+            str_attr(wait, "openinference.span.kind").as_deref(),
+            Some(&b"CHAIN"[..])
+        );
+        assert_eq!(
+            str_attr(wait, "ferrobot.wait.outcome").as_deref(),
+            Some(&b"approved"[..])
+        );
+        assert_eq!(str_attr(wait, "input.value"), None, "no card text");
+        // Each link points at the other turn's root span, so a backend can jump to it.
+        for (span, turn, key) in [
+            (&spans[2], "turn-2", "ferrobot.handoff.trace.id"),
+            (&spans[0], "turn-0", "ferrobot.from.trace.id"),
+        ] {
+            let links = get(span, 13);
+            assert_eq!(links.len(), 1);
+            let (trace_id, span_id) = root_of(turn);
+            assert_eq!(
+                (&get(&links[0], 1)[0], &get(&links[0], 2)[0]),
+                (&trace_id, &span_id)
+            );
+            assert_eq!(
+                str_attr(span, key),
+                Some(hex::encode(&trace_id).into_bytes())
+            );
+        }
+        assert_eq!(get(&spans[2], 5)[0], b"task to scout");
     }
 
     #[test]

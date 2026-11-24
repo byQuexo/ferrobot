@@ -371,7 +371,8 @@ pub(crate) async fn request_card(
             auth: request.auth,
             requester,
         },
-    );
+    )
+    .in_turn(state.hub.current_turn(requester));
     let payload = serde_json::to_value(&card).map_err(|e| ApiError::Internal(e.to_string()))?;
     let chat = crate::agents::chat_of(state, requester).await?;
     let event = state
@@ -464,6 +465,7 @@ pub(crate) async fn answer_card(
         question: qid,
         answers,
         message_id,
+        timed_out: false,
     };
     let payload = serde_json::to_value(&answered).map_err(|e| ApiError::Internal(e.to_string()))?;
     state.record(chat, None, "question_answered", payload).await;

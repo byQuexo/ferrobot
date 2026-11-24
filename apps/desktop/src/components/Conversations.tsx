@@ -18,7 +18,7 @@ export function ConversationList(props: {
   active: Pair | null;
   onOpen: (p: Pair) => void;
 }): JSX.Element | null {
-  const { client, agents, listen } = useApp();
+  const { client, agents, listen, nameOf } = useApp();
   const [list, setList] = useState<Conversation[]>([]);
   useEffect(() => {
     const load = (): void => {
@@ -31,7 +31,6 @@ export function ConversationList(props: {
   }, [client, listen]);
   const known = list.filter((c) => agents.has(c.a) && agents.has(c.b));
   if (known.length === 0) return null;
-  const nameOf = (id: string): string | undefined => agents.get(id)?.name;
   return (
     <section class="convo-section" aria-label="Conversations between agents">
       <h2 class="section-label">Conversations</h2>
@@ -71,7 +70,7 @@ export function ConversationList(props: {
 
 /** One pair's thread. Read-only: the operator watches, agents talk. */
 export function ConversationView(props: { pair: Pair }): JSX.Element {
-  const { client, agents, listen, run } = useApp();
+  const { client, agents, listen, run, nameOf } = useApp();
   const [a, b] = props.pair;
   const [messages, setMessages] = useState<MailMessage[]>([]);
   const scroller = useRef<HTMLDivElement>(null);
@@ -131,8 +130,7 @@ export function ConversationView(props: { pair: Pair }): JSX.Element {
               <div class="bubble bubble-agent">
                 {parent && (
                   <span class="reply-ref">
-                    <CornerDownRight size={12} />{" "}
-                    {mentionsAsText(parent.body, (id) => agents.get(id)?.name).slice(0, 80)}
+                    <CornerDownRight size={12} /> {mentionsAsText(parent.body, nameOf).slice(0, 80)}
                   </span>
                 )}
                 <RichText text={m.body} />

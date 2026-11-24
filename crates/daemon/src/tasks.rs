@@ -6,24 +6,33 @@ use ferrobot_core::{AgentId, MailMessage, Sender};
 use ferrobot_mcp::{MAX_MESSAGE_BYTES, MailboxNotifier};
 
 use crate::AppState;
+use crate::webhooks::WebhookEvent;
 
-/// Reports the end of `agent`'s turn on `msg` to whoever gave it the task.
+/// Reports the end of `agent`'s `turn` on `msg` to whoever gave it the task.
 /// `text`: the turn's final answer, or the error of a failed turn.
 pub(crate) async fn report(
     state: &AppState,
-    agent: AgentId,
+    (agent, turn): (AgentId, &str),
     msg: &MailMessage,
     outcome: TurnOutcome,
     text: Option<&str>,
 ) {
     let task = match state.store.task_of(agent, msg).await {
-        Ok(Some(task)) if !task.reported => task,
-        Ok(_) => return,
+        Ok(Some(task)) => task,
+        Ok(None) => return,
         Err(e) => {
             tracing::error!(error = %e, message = msg.id, "cannot look up the task");
             return;
         }
     };
+    if task.message.id == msg.id && outcome == TurnOutcome::Completed {
+        let summary = format!("finished task #{}", msg.id);
+        let detail = text.map(str::to_owned);
+        crate::webhooks::notify(state, agent, WebhookEvent::TaskDone, summary, detail);
+    }
+    if task.reported {
+        return;
+    }
     let Some(assigner) = task.assigner() else {
         return;
     };
@@ -54,7 +63,17 @@ pub(crate) async fn report(
         .enqueue_message(Sender::Agent(agent), assigner, body, Some(id))
         .await
     {
-        Ok(m) => state.message_enqueued(&m),
+        Ok(m) => {
+            state.message_enqueued(&m);
+            let payload = serde_json::json!({ "message_id": m.id, "to": assigner, "answer": true });
+            if let Err(e) = state
+                .store
+                .append_event(agent, Some(turn.to_owned()), "handoff".into(), payload)
+                .await
+            {
+                tracing::warn!(error = %e, task = id, "cannot record the task's answer");
+            }
+        }
         // The assigner may have been deleted since.
         Err(e) => tracing::warn!(error = %e, task = id, "cannot report the task"),
     }

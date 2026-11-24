@@ -319,6 +319,10 @@
           "description": "Id of the `question` event.",
           "format": "int64",
           "type": "integer"
+        },
+        "timed_out": {
+          "description": "No answer came in time: the daemon declined the approval card.",
+          "type": "boolean"
         }
       },
       "required": [
@@ -366,6 +370,13 @@
         },
         "card": {
           "$ref": "#/$defs/QuestionCard"
+        },
+        "turn_id": {
+          "description": "The turn that raised the card (its trace shows the wait); `null` outside a turn.",
+          "type": [
+            "string",
+            "null"
+          ]
         },
         "version": {
           "description": "Card format version (currently 1).",

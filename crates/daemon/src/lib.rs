@@ -1,5 +1,6 @@
 //! The daemon as a library: the UI API (`/v1`, loopback, operator token) and the agent API
 //! (`/runner/ws`, `/mcp`, `/model`, agent tokens; `/model` swaps in a key no sandbox sees).
+//! Incoming webhooks (`/hooks/...`) share the UI listener, authorized by their own secret only.
 
 pub mod agents;
 pub mod api;
@@ -10,6 +11,7 @@ pub mod clis;
 pub mod codex;
 pub mod connectors;
 pub mod credentials;
+pub mod discord;
 pub mod error;
 pub mod files;
 pub mod hub;
@@ -36,6 +38,7 @@ pub mod update;
 pub mod usage;
 pub mod views;
 pub mod voice;
+pub mod webhooks;
 
 use axum::Router;
 use axum::http::{HeaderValue, Method, header};
@@ -68,6 +71,7 @@ pub fn ui_router(state: AppState) -> Router {
             auth::require_token,
         ))
         .layer(cors)
+        .merge(webhooks::router())
         .with_state(state)
 }
 

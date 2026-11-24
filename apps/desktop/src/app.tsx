@@ -8,6 +8,7 @@ import {
   DEFAULT_DAEMON,
   DaemonClient,
   type Agent,
+  type Dashboard,
   type Health,
   type Pin,
   type Provider,
@@ -15,6 +16,7 @@ import {
 } from "./api.ts";
 import { AgentDialog } from "./components/AgentDialog.tsx";
 import { CallBar } from "./components/CallBar.tsx";
+import { DashboardView } from "./components/Dashboards.tsx";
 import { FileViewer } from "./components/FileViewer.tsx";
 import { QuickSwitcher } from "./components/QuickSwitcher.tsx";
 import { Settings, ShortcutList, type SettingsSection } from "./components/Settings.tsx";
@@ -101,6 +103,9 @@ export function App(): JSX.Element {
   const [shortcuts, setShortcuts] = useState(false);
   const [toasts, setToasts] = useState<Toast[]>([]);
   const [pins, setPins] = useState<Pin[]>([]);
+  const [formerNames, setFormerNames] = useState<Map<string, string>>(new Map());
+  const [dashboards, setDashboards] = useState<Dashboard[]>([]);
+  const [board, setBoard] = useState<number | null>(null);
   const [focus, setFocus] = useState<{ agent: string; event: number } | null>(null);
   const listeners = useRef(new Set<(e: UiEvent) => void>());
   const lookRef = useRef(look);
@@ -158,6 +163,13 @@ export function App(): JSX.Element {
       setProviders(ps);
       setNeedsToken(false);
       client.pins().then(setPins, () => undefined);
+      client.dashboards().then(setDashboards, () => undefined);
+      client.formerAgents().then(
+        (list) => {
+          setFormerNames(new Map(list.map((f) => [f.id, f.name])));
+        },
+        () => undefined,
+      );
     } catch (err) {
       if (err instanceof ApiError && err.status === 401) setNeedsToken(true);
       throw err;
@@ -175,8 +187,13 @@ export function App(): JSX.Element {
       },
       onEvent: (e) => {
         if (e.type === "agent") setAgents((m) => new Map(m).set(e.agent.id, e.agent));
+        // A new share may be a dashboard's newest version.
+        if (e.type === "event" && e.event.kind === "file")
+          client.dashboards().then(setDashboards, () => undefined);
         if (e.type === "agent_deleted") {
           setAgents((m) => {
+            const gone = m.get(e.agent_id);
+            if (gone) setFormerNames((f) => new Map(f).set(gone.id, gone.name));
             const next = new Map(m);
             next.delete(e.agent_id);
             return next;
@@ -226,19 +243,29 @@ export function App(): JSX.Element {
     setRoom(null);
     setSettings(null);
     setUsage(false);
+    setBoard(null);
     setSelected(id);
   }, []);
   const openConversation = useCallback((a: string, b: string) => {
     setSettings(null);
     setUsage(false);
     setRoom(null);
+    setBoard(null);
     setPair(a < b ? [a, b] : [b, a]);
   }, []);
   const openRoom = useCallback((id: number) => {
     setSettings(null);
     setUsage(false);
     setPair(null);
+    setBoard(null);
     setRoom(id);
+  }, []);
+  const openDashboard = useCallback((index: number) => {
+    setSettings(null);
+    setUsage(false);
+    setPair(null);
+    setRoom(null);
+    setBoard(index);
   }, []);
   const closeRoom = useCallback(() => {
     setRoom(null);
@@ -254,6 +281,18 @@ export function App(): JSX.Element {
     },
     [client, run],
   );
+  const saveDashboards = useCallback(
+    async (list: Dashboard[]) => {
+      const saved = await run(() => client.setDashboards(list));
+      if (!saved) return;
+      setDashboards(saved);
+      setBoard((b) => (b === null || saved.length === 0 ? null : Math.min(b, saved.length - 1)));
+    },
+    [client, run],
+  );
+  const reloadDashboards = useCallback(() => {
+    client.dashboards().then(setDashboards, () => undefined);
+  }, [client]);
   const jumpTo = useCallback(
     (agent: string, event: number) => {
       openAgent(agent);
@@ -261,10 +300,16 @@ export function App(): JSX.Element {
     },
     [openAgent],
   );
+  const nameOf = (id: string): string | undefined => {
+    const former = formerNames.get(id);
+    return agents.get(id)?.name ?? (former === undefined ? undefined : `${former} (deleted)`);
+  };
   const ctx: AppContextValue = {
     client,
     health,
     agents,
+    formerNames,
+    nameOf,
     listen,
     toast,
     run,
@@ -275,6 +320,10 @@ export function App(): JSX.Element {
     pins,
     savePins,
     jumpTo,
+    dashboards,
+    saveDashboards,
+    openDashboard,
+    reloadDashboards,
     call,
     callState,
   };
@@ -299,13 +348,16 @@ export function App(): JSX.Element {
     daemonKey: health?.anthropic_key ?? false,
     skipped,
   });
-  const withInfo = agent && infoOpen && !pair && room === null && !settings && !usage;
+  const withInfo =
+    agent && infoOpen && !pair && room === null && !settings && !usage && board === null;
   const toggleSettings = (): void => {
     setUsage(false);
+    setBoard(null);
     setSettings(settings ? null : "appearance");
   };
   const toggleUsage = (): void => {
     setSettings(null);
+    setBoard(null);
     setUsage(!usage);
   };
   useShortcuts((id, n) => {
@@ -339,6 +391,7 @@ export function App(): JSX.Element {
       case "close":
         if (settings) setSettings(null);
         else if (usage) setUsage(false);
+        else if (board !== null) setBoard(null);
         else if (withInfo) setInfoOpen(false);
         break;
     }
@@ -372,6 +425,7 @@ export function App(): JSX.Element {
           settingsOpen={settings !== null}
           onUsage={toggleUsage}
           usageOpen={usage}
+          board={board}
           online={online}
           onDeleted={(id) => {
             if (id === selected) setSelected(null);
@@ -393,6 +447,14 @@ export function App(): JSX.Element {
           <Usage
             onClose={() => {
               setUsage(false);
+            }}
+          />
+        ) : board !== null && dashboards[board] ? (
+          <DashboardView
+            index={board}
+            onIndex={setBoard}
+            onClose={() => {
+              setBoard(null);
             }}
           />
         ) : room !== null ? (

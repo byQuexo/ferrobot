@@ -5,6 +5,22 @@ Every reply has a steps line in its footer. Click it to open the turn's
 took, tokens, the slowest step, failures and a search. Model calls come from
 the model proxy, or for Claude Code agents from `claude`'s own output.
 
+The trace also shows:
+
+- **Waits for you.** Each card the turn raised (a new agent, a routine, a
+  connector, more tools, a risky step, a question) is a bar from the card's
+  creation to your answer, labelled with the card's title and how it ended:
+  approved, declined, answered or timed out. A card nobody answered runs to
+  the turn's end. Cards that do not hold the turn up (a question, a routine)
+  can be answered after the turn ended; their bar then stops at the edge, and
+  the time shows the whole wait.
+- **Handoffs.** Each message the turn sent another agent (a message, a task,
+  a new agent's first task, or a task's answer going back) is a mark on the
+  timeline. Click it to open the turn of the agent that took the message;
+  **Back** returns. A turn started by another agent's message says so at the
+  top, with a link to the turn that sent it, so a task's answer leads back to
+  the turn that gave the task.
+
 ## Export to Phoenix, Langfuse or another backend
 
 **Settings → Traces** sends each turn's trace to an OpenTelemetry backend
@@ -16,9 +32,19 @@ one span per model call and tool call below it. Spans carry both
 `gen_ai.usage.*`), so Phoenix and Langfuse both show them as LLM and tool
 steps. Each agent's turns share a session (`session.id` is the agent's id).
 
+Waits are spans too (`openinference.span.kind` `CHAIN`, named
+`wait: <kind>`, with `ferrobot.wait.outcome`). Handoffs are spans with a span
+link to the root span of the turn that took the message, plus
+`ferrobot.handoff.turn.id` and `ferrobot.handoff.trace.id` for backends that
+do not show links. A turn started by another agent's message links back the
+same way from its root span (`ferrobot.from.*`). A turn is sent shortly after
+it ends, usually before the other agent took the message, so the link back
+from the receiving turn is the one you can count on.
+
 Export is off by default. By default only names, times, tokens, outcomes and
 errors leave this computer; **Include content** also sends tool inputs
-(commands, file paths and contents) and the reply. Keys go to the keychain of
+(commands, file paths and contents), card titles and the reply. Message text
+is never sent. Keys go to the keychain of
 the daemon's computer and are never shown again.
 
 The status line under **Save** says how the last export went, e.g. a wrong
@@ -62,6 +88,6 @@ protobuf (`application/x-protobuf`), which every OTLP/HTTP receiver accepts.
 
 ## What is not in a trace yet
 
-- Approval waits and work handed to other agents (planned).
 - Turns from before an agent ran on this version have no Claude Code model
   calls.
+- Turns from before 0.1.8 have no waits or handoffs.

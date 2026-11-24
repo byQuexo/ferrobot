@@ -123,9 +123,20 @@ Principles:
   debug build pulls `main`, rebuilds and re-execs itself (debug builds only).
 - `crates/daemon/src/lifecycle.rs`, `supervisor.rs`, `scheduler.rs`, `runner_ws.rs`.
 - `crates/daemon/src/trace.rs` — a turn as a timeline (model calls from usage rows tagged
-  with the turn, tool calls from its events); `GET /v1/agents/{id}/turns/{turn_id}/trace`.
+  with the turn, tool calls from its events, waits from the cards stamped with its
+  `turn_id`, handoffs from its `handoff` events, which `enqueue` in `crates/mcp/src/tools.rs`
+  and `tasks::report` record); `GET /v1/agents/{id}/turns/{turn_id}/trace`.
   `otel.rs` — sends each finished turn's trace to the operator's OTLP/HTTP endpoint
   (hand-encoded protobuf; `/v1/otel`, header value in the keychain as `otel:header`).
+- `crates/daemon/src/webhooks.rs` — incoming webhooks (`POST /hooks/{id}/{secret}` on the
+  UI listener, outside `/v1` and its auth; a message from `Sender::Webhook`, framed as
+  external data) and outgoing ones (events posted as Discord, Slack or JSON; URLs in the
+  keychain as `webhook:<id>`); `api/webhooks.rs` — `/v1/webhooks`. All in the `webhooks`
+  setting, no table of their own.
+- `crates/daemon/src/discord.rs` — the Discord bridge: polls bridged channels through
+  Discord's REST API with the operator's bot token (keychain `discord:bot`); messages
+  from allowed Discord users go to the channel's agent as the operator's, replies go back;
+  `api/discord.rs` — `/v1/discord`. Settings in the `discord` setting.
 - `crates/daemon/src/tasks.rs` — tracked tasks: automatic report and reminder;
   `crates/store/src/tasks.rs` — task state from `task` events and the mailbox.
 - `crates/mcp/src/tools.rs` — MCP tools; `crates/mcp/src/lib.rs` — `MailboxNotifier`.
@@ -255,6 +266,15 @@ daemon, `docker ps -a` must be empty of ferrobot containers.
   `<data dir>/api-token`); only `/v1/health` and `/v1/oauth/callback` (single-use
   `state`) are open, and `/artifacts/` takes signed links. Keep the UI listener on
   loopback by default.
+- **Incoming webhooks open nothing else.** `/hooks/{id}/{secret}` sits outside the
+  `/v1` auth layer and takes only its own secret (hash stored, URL shown once at
+  create or regenerate); the operator token is not accepted there and a webhook
+  secret opens no other route. Its body reaches the agent framed as external data,
+  never as the operator's words; agents never see the secret.
+- **The Discord bridge listens only to allowed users.** Only messages from the Discord
+  user ids the operator listed reach an agent (as the operator's); everyone else and all
+  bots are ignored. The bot token stays in the secret store and the daemon: never in a
+  sandbox, event, log or API response.
 - **Per-agent tokens** on `/runner/ws`, `/mcp`, `/model`, `/host/claude-code/turn`. An agent can only act
   as itself (MCP tools read the caller from the token). Only hashes are stored.
 - **`create_agent` needs operator approval unless Auto mode is on**: an
@@ -268,7 +288,8 @@ daemon, `docker ps -a` must be empty of ferrobot containers.
   its creator's, checked in the daemon in every mode, Auto mode included.
   `set_agent_tools` changes only agents the caller created (never itself), to at most
   the caller's own; narrowing applies at once, anything new needs a card unless Auto mode is on.
-- **Risky steps need a card unless Auto mode is on; dangerous ones are always
+- **Risky steps need a card unless Auto mode is on; critical ones (money or deleting
+  through a connector, force-pushing, publishing) always do; dangerous ones are always
   refused** (`tool_check.rs`). The runner asks before every shell command and
   fails closed when the check can't answer.
 - **`FERROBOT_MAX_AGENTS`** (default 10) applies to `POST /v1/agents` and to

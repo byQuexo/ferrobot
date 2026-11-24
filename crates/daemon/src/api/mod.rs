@@ -4,7 +4,9 @@ pub(crate) mod agents;
 pub(crate) mod chat;
 pub(crate) mod clis;
 pub(crate) mod connectors;
+pub(crate) mod dashboards;
 pub(crate) mod diagnostics;
+pub(crate) mod discord;
 pub(crate) mod files;
 pub(crate) mod groups;
 pub(crate) mod memory;
@@ -17,6 +19,7 @@ pub(crate) mod settings;
 pub(crate) mod update;
 pub(crate) mod usage;
 pub(crate) mod voice;
+pub(crate) mod webhooks;
 pub(crate) mod ws;
 
 use axum::Json;
@@ -38,6 +41,7 @@ pub(crate) const MAX_TEXT_BYTES: usize = 32 * 1024;
 pub fn router() -> Router<AppState> {
     Router::new()
         .merge(integrations())
+        .merge(outside())
         .route("/v1/health", get(health))
         .merge(files::router())
         .route("/v1/ws", get(ws::ui_ws))
@@ -45,6 +49,7 @@ pub fn router() -> Router<AppState> {
             "/v1/agents",
             get(agents::list_agents).post(agents::create_agent),
         )
+        .route("/v1/agents/former", get(agents::former_agents))
         .route(
             "/v1/agents/{id}",
             get(agents::get_agent)
@@ -126,7 +131,39 @@ pub fn router() -> Router<AppState> {
         )
 }
 
-/// Model providers, connectors, CLIs and voice.
+/// Model providers, connectors, CLIs, voice and webhooks.
+/// Pins, dashboards, trace export, webhooks and the Discord bridge.
+fn outside() -> Router<AppState> {
+    Router::new()
+        .route("/v1/otel", get(otel::get_otel).put(otel::put_otel))
+        .route("/v1/pins", get(pins::get_pins).put(pins::put_pins))
+        .route(
+            "/v1/discord",
+            get(discord::get_discord).put(discord::put_discord),
+        )
+        .route("/v1/discord/token", put(discord::put_discord_token))
+        .route(
+            "/v1/dashboards",
+            get(dashboards::get_dashboards).put(dashboards::put_dashboards),
+        )
+        .route("/v1/webhooks", get(webhooks::list_webhooks))
+        .route("/v1/webhooks/incoming", post(webhooks::create_incoming))
+        .route(
+            "/v1/webhooks/incoming/{id}",
+            axum::routing::delete(webhooks::delete_incoming),
+        )
+        .route(
+            "/v1/webhooks/incoming/{id}/secret",
+            post(webhooks::regenerate_incoming),
+        )
+        .route("/v1/webhooks/outgoing", post(webhooks::create_outgoing))
+        .route(
+            "/v1/webhooks/outgoing/{id}",
+            axum::routing::delete(webhooks::delete_outgoing),
+        )
+        .route("/v1/otel/secret", put(otel::put_otel_secret))
+}
+
 fn integrations() -> Router<AppState> {
     Router::new()
         .route(
@@ -147,9 +184,6 @@ fn integrations() -> Router<AppState> {
             "/v1/claude-code/plugins",
             get(providers::claude_code_plugins),
         )
-        .route("/v1/otel", get(otel::get_otel).put(otel::put_otel))
-        .route("/v1/pins", get(pins::get_pins).put(pins::put_pins))
-        .route("/v1/otel/secret", put(otel::put_otel_secret))
         .route(
             "/v1/provider-kinds/{kind}/models",
             get(providers::kind_models),

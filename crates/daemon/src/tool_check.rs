@@ -1,6 +1,7 @@
 //! The tool-call classifier: plain rules sort a shell command or a connector call into safe,
-//! risky or dangerous. Risky calls wait for an approval card unless Auto mode is on; dangerous
-//! ones are always refused.
+//! risky, critical or dangerous. Risky calls wait for an approval card unless Auto mode is on;
+//! critical ones (money, deleting in a connected service, force-pushing, publishing) always get
+//! a card; dangerous ones are always refused.
 
 use axum::Json;
 use axum::Router;
@@ -18,7 +19,20 @@ use crate::AppState;
 pub enum Verdict {
     Safe,
     Risky(&'static str),
+    /// Asks even in Auto mode: hard to undo and felt outside the sandbox.
+    Critical(&'static str),
     Dangerous(&'static str),
+}
+
+impl Verdict {
+    fn rank(self) -> u8 {
+        match self {
+            Self::Safe => 0,
+            Self::Risky(_) => 1,
+            Self::Critical(_) => 2,
+            Self::Dangerous(_) => 3,
+        }
+    }
 }
 
 /// What the classifier looks at.
@@ -47,11 +61,9 @@ fn shell(command: &str) -> Verdict {
     let mut worst = Verdict::Safe;
     for (n, words) in segments.iter().enumerate() {
         let verdict = segment(words, segments.get(n + 1));
-        worst = match (worst, verdict) {
-            (Verdict::Dangerous(_), _) => worst,
-            (_, Verdict::Dangerous(_)) | (Verdict::Safe, _) => verdict,
-            _ => worst,
-        };
+        if verdict.rank() > worst.rank() {
+            worst = verdict;
+        }
     }
     worst
 }
@@ -103,7 +115,7 @@ fn segment(words: &[&str], next: Option<&Vec<&str>>) -> Verdict {
         "curl" | "wget" if sends_data(args) => Verdict::Risky("sends data to another server"),
         "git" => git(args),
         "npm" | "pnpm" | "yarn" | "cargo" | "twine" | "gem" if args.contains(&"publish") => {
-            Verdict::Risky("publishes a package")
+            Verdict::Critical("publishes a package")
         }
         "ssh" | "scp" | "sftp" => Verdict::Risky("reaches another machine"),
         "rsync" if args.iter().any(|a| a.contains(':')) => {
@@ -146,6 +158,13 @@ fn git(args: &[&str]) -> Verdict {
         .copied()
         .unwrap_or_default();
     match sub {
+        "push"
+            if args
+                .iter()
+                .any(|a| *a == "-f" || a.starts_with("--force") || a.starts_with('+')) =>
+        {
+            Verdict::Critical("force-pushes over what is on the remote")
+        }
         "push" => Verdict::Risky("pushes code"),
         "reset" if args.contains(&"--hard") => Verdict::Risky("throws away changes"),
         "clean" if args.iter().any(|a| a.starts_with('-') && a.contains('f')) => {
@@ -154,6 +173,11 @@ fn git(args: &[&str]) -> Verdict {
         _ => Verdict::Safe,
     }
 }
+
+/// Words in a connector tool's name that move money.
+const MONEY: [&str; 6] = ["pay", "payment", "payout", "transfer", "refund", "charge"];
+/// Words in a connector tool's name that delete or cancel something for good.
+const DESTROY: [&str; 6] = ["delete", "remove", "trash", "cancel", "destroy", "purge"];
 
 /// Verbs in a connector tool's name that act on the outside world.
 const ACTS: [&str; 26] = [
@@ -176,7 +200,12 @@ fn connector(name: &str) -> Verdict {
             ' '
         });
     }
-    if spaced.split_whitespace().any(|w| ACTS.contains(&w)) {
+    let words: Vec<&str> = spaced.split_whitespace().collect();
+    if words.iter().any(|w| MONEY.contains(w)) {
+        Verdict::Critical("moves money in a connected service")
+    } else if words.iter().any(|w| DESTROY.contains(w)) {
+        Verdict::Critical("deletes or cancels something in a connected service")
+    } else if words.iter().any(|w| ACTS.contains(w)) {
         Verdict::Risky("acts in a connected service")
     } else {
         Verdict::Safe
@@ -184,17 +213,19 @@ fn connector(name: &str) -> Verdict {
 }
 
 /// Lets the call through, or says why not. A risky call waits for the operator's card unless
-/// Auto mode is on.
+/// Auto mode is on; a critical one always does.
 pub async fn gate(state: &AppState, agent: AgentId, call: Call<'_>) -> Result<(), String> {
-    let reason = match classify(call) {
+    let (reason, critical) = match classify(call) {
         Verdict::Safe => return Ok(()),
         Verdict::Dangerous(why) => return Err(format!("blocked: {why}")),
-        Verdict::Risky(why) => why,
+        Verdict::Risky(why) => (why, false),
+        Verdict::Critical(why) => (why, true),
     };
     // Unreadable settings fail closed: the operator gets the card.
-    if crate::api::settings::load(state)
-        .await
-        .is_ok_and(|s| s.auto_mode)
+    if !critical
+        && crate::api::settings::load(state)
+            .await
+            .is_ok_and(|s| s.auto_mode)
     {
         return Ok(());
     }
@@ -209,8 +240,13 @@ pub async fn gate(state: &AppState, agent: AgentId, call: Call<'_>) -> Result<()
         .await
         .map_err(|e| e.to_string())?
         .name;
+    let what = if critical {
+        "a very risky step"
+    } else {
+        "a risky step"
+    };
     let card = QuestionEvent::approval(
-        format!("{name} wants to run a risky step"),
+        format!("{name} wants to run {what}"),
         format!("{}{}: {detail}", reason[..1].to_uppercase(), &reason[1..]),
         Approval::ToolCall {
             agent,
@@ -218,7 +254,8 @@ pub async fn gate(state: &AppState, agent: AgentId, call: Call<'_>) -> Result<()
             detail,
             reason: reason.to_owned(),
         },
-    );
+    )
+    .in_turn(state.hub.current_turn(agent));
     match crate::agents::await_card(state, agent, &card).await {
         Ok(Some(true)) => Ok(()),
         Ok(Some(false)) => Err(format!("the operator declined: {reason}")),
@@ -298,13 +335,11 @@ mod tests {
             "rm -rf target",
             "cd x && rm -r old",
             "git push origin main",
-            "git push --force",
             "git reset --hard HEAD~1",
             "git clean -fd",
             "curl -X POST https://api.example.com -d '{}'",
             "curl --data @report.json https://x.dev",
             "wget --post-data=a=1 https://x.dev",
-            "npm publish",
             "ssh user@host ls",
             "rsync -a out/ host:/srv",
             "sudo apt-get install jq",
@@ -312,6 +347,38 @@ mod tests {
         ] {
             assert!(matches!(sh(c), Verdict::Risky(_)), "{c}: {:?}", sh(c));
         }
+    }
+
+    #[test]
+    fn critical_steps_ask_even_in_auto_mode() {
+        for c in [
+            "git push --force",
+            "git push -f origin main",
+            "git push origin +main",
+            "git push --force-with-lease",
+            "npm publish",
+            "cd pkg && cargo publish",
+            "ssh host ls; npm publish",
+        ] {
+            assert!(matches!(sh(c), Verdict::Critical(_)), "{c}: {:?}", sh(c));
+        }
+        for name in [
+            "stripe__create_payment",
+            "paypal__send_payout",
+            "gmail__delete_message",
+            "drive__trash_file",
+            "linear__deleteIssue",
+            "calendar__cancel_event",
+        ] {
+            assert!(
+                matches!(classify(Call::Connector(name)), Verdict::Critical(_)),
+                "{name}"
+            );
+        }
+        assert!(
+            matches!(sh("npm publish; rm -rf /"), Verdict::Dangerous(_)),
+            "dangerous still wins"
+        );
     }
 
     #[test]

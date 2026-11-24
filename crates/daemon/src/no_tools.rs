@@ -120,7 +120,8 @@ async fn card(state: &AppState, agent: &Agent, model: &str, reason: &str) -> Res
             model: model.to_owned(),
         },
     )
-    .with_labels("Use without tools", "Keep tools");
+    .with_labels("Use without tools", "Keep tools")
+    .in_turn(state.hub.current_turn(agent.id));
     let payload = serde_json::to_value(&card).map_err(|e| ApiError::Internal(e.to_string()))?;
     let event = state
         .store
@@ -151,6 +152,7 @@ pub(crate) async fn answer_card(
         question: qid,
         answers,
         message_id: None,
+        timed_out: false,
     };
     let payload = serde_json::to_value(&answered).map_err(|e| ApiError::Internal(e.to_string()))?;
     state.record(chat, None, "question_answered", payload).await;

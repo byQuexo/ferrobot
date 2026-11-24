@@ -24,6 +24,7 @@ import {
   Square,
   Sun,
   UserPlus,
+  Webhook,
   Wrench,
   X,
   Pin as PinIcon,
@@ -59,6 +60,7 @@ import { isPinned, pinLabel, togglePin } from "../lib/pins.ts";
 import { isMac, keyLabel, SHORTCUTS, useShortcuts } from "../lib/shortcuts.ts";
 import { hasVoiceKey, record, startLive, type LiveSession, type Recording } from "../lib/voice.ts";
 import { AttachmentChips, previews } from "./Attachments.tsx";
+import { DashboardButton } from "./Dashboards.tsx";
 import { FilePreview } from "./FilePreview.tsx";
 import { fileSize } from "./FileViewer.tsx";
 import { ContextMeter, ModelChip, TagChips } from "./AgentMeta.tsx";
@@ -86,7 +88,7 @@ export function Chat(props: {
   focus?: number | null;
   onFocused?: () => void;
 }): JSX.Element {
-  const { client, agents, listen, run, call, callState, toast } = useApp();
+  const { client, agents, formerNames, listen, run, call, callState, toast, nameOf } = useApp();
   const agent = props.agent;
   const id = agent.id;
   const [messages, setMessages] = useState<MailMessage[]>([]);
@@ -177,7 +179,10 @@ export function Chat(props: {
 
   const items = useMemo(() => {
     const names = {
-      agents: new Map([...agents.values()].map((a) => [a.id, a.name])),
+      agents: new Map([
+        ...[...formerNames].map(([a, name]): [string, string] => [a, `${name} (deleted)`]),
+        ...[...agents.values()].map((a): [string, string] => [a.id, a.name]),
+      ]),
       routines: new Map(routines.map((r) => [r.id, r.name])),
     };
     const chat = withoutRoomTurns(messages, events, live);
@@ -186,7 +191,6 @@ export function Chat(props: {
     // Activities. The running run shows as a short trail instead.
     const grouped = groupExchanges(all.filter((i) => i.type !== "error" || i.quiet === true));
     const { shown, live: running } = foldSteps(grouped, agent.presence === "working");
-    const nameOf = (agentId: string): string | undefined => agents.get(agentId)?.name;
     const files: ChatFiles = { agent: id, byName: sharedFiles(events) };
     return {
       shown,
@@ -194,7 +198,7 @@ export function Chat(props: {
       roomTurn: chat.roomTurn,
       trail: running.slice(-3).map((t) => stepLabel(t.name, t.input, nameOf)),
     };
-  }, [id, messages, events, live, agents, routines, agent.presence]);
+  }, [id, messages, events, live, agents, formerNames, routines, agent.presence]);
 
   // New items rise in; the history that was there when the chat opened does not.
   const firstSeen = useRef(new Map<string, number>());
@@ -615,7 +619,7 @@ function Item(props: {
   folded?: boolean;
 }): JSX.Element | null {
   const { item, agent } = props;
-  const { agents, openFile } = useApp();
+  const { agents, openFile, nameOf } = useApp();
   switch (item.type) {
     case "steps":
       if (props.folded) return null;
@@ -624,9 +628,7 @@ function Item(props: {
           <button
             type="button"
             class="steps-line"
-            title={item.tools
-              .map((t) => stepLabel(t.name, t.input, (a) => agents.get(a)?.name))
-              .join("\n")}
+            title={item.tools.map((t) => stepLabel(t.name, t.input, nameOf)).join("\n")}
             onClick={() => {
               const turn = item.tools.find((t) => t.turn)?.turn;
               if (turn && props.onTrace) props.onTrace(turn);
@@ -707,7 +709,7 @@ function Item(props: {
                     kind="message"
                     agent={agent.id}
                     event={item.id}
-                    label={() => pinLabel(item.text, (a) => agents.get(a)?.name)}
+                    label={() => pinLabel(item.text, nameOf)}
                   />
                 )}
                 {props.footSteps && item.turn && (
@@ -736,6 +738,9 @@ function Item(props: {
               </span>
             </button>
             <DownloadButton agent={agent.id} event={item.id} name={item.name} />
+            {/\.html?$/i.test(item.name) && item.path && (
+              <DashboardButton agent={agent.id} path={item.path} name={item.name} />
+            )}
             <PinButton kind="file" agent={agent.id} event={item.id} label={() => item.name} />
           </div>
           <FilePreview agent={agent.id} file={item.id} name={item.name} />
@@ -792,6 +797,20 @@ function Item(props: {
           </div>
         </div>
       );
+    case "webhook":
+      return (
+        <div class="row row-routine">
+          <div class="routine-msg">
+            <div class="a2a-head">
+              <Webhook size={16} />
+              <span>Webhook</span>
+              <span class="spacer" />
+              <span class="meta">{clockTime(item.at)}</span>
+            </div>
+            <RichText text={item.text} />
+          </div>
+        </div>
+      );
     case "tool":
       return <ToolCard item={item} />;
     case "question":
@@ -841,10 +860,10 @@ function prettyOutput(text: string): string {
 
 export function ToolCard(props: { item: Extract<TimelineItem, { type: "tool" }> }): JSX.Element {
   const { item } = props;
-  const { agents } = useApp();
+  const { nameOf } = useApp();
   const [open, setOpen] = useState(false);
   const label = toolLabel(item.name);
-  const headline = stepLabel(item.name, item.input, (id) => agents.get(id)?.name);
+  const headline = stepLabel(item.name, item.input, nameOf);
   const state =
     item.denied !== null
       ? "denied"

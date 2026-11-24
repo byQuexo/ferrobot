@@ -17,6 +17,9 @@ pub enum Sender {
     Agent(AgentId),
     /// A scheduled routine (by routine id).
     Routine(i64),
+    /// An incoming webhook (by webhook id); its body is external data, framed as such. Runners
+    /// get its turns as `user` with `sender_name` `webhook:<name>`.
+    Webhook(i64),
 }
 
 impl fmt::Display for Sender {
@@ -25,6 +28,7 @@ impl fmt::Display for Sender {
             Self::User => f.write_str("user"),
             Self::Agent(id) => write!(f, "agent:{id}"),
             Self::Routine(id) => write!(f, "routine:{id}"),
+            Self::Webhook(id) => write!(f, "webhook:{id}"),
         }
     }
 }
@@ -40,6 +44,12 @@ impl FromStr for Sender {
             return id
                 .parse()
                 .map(Self::Routine)
+                .map_err(|_| CoreError::InvalidSender(s.to_owned()));
+        }
+        if let Some(id) = s.strip_prefix("webhook:") {
+            return id
+                .parse()
+                .map(Self::Webhook)
                 .map_err(|_| CoreError::InvalidSender(s.to_owned()));
         }
         s.strip_prefix("agent:")
@@ -132,7 +142,12 @@ mod tests {
     #[test]
     fn sender_roundtrip() {
         let id = AgentId::new();
-        for s in [Sender::User, Sender::Agent(id), Sender::Routine(7)] {
+        for s in [
+            Sender::User,
+            Sender::Agent(id),
+            Sender::Routine(7),
+            Sender::Webhook(3),
+        ] {
             assert_eq!(s.to_string().parse::<Sender>().unwrap(), s);
         }
         assert!("agent:nope".parse::<Sender>().is_err());

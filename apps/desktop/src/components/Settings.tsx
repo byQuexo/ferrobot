@@ -9,12 +9,14 @@ import {
   Cpu,
   Keyboard,
   KeyRound,
+  MessagesSquare,
   Palette,
   Plug,
   RefreshCw,
   Stethoscope,
   Terminal,
   Waypoints,
+  Webhook,
   X,
 } from "lucide-preact";
 
@@ -27,6 +29,7 @@ import { ClaudeCodeSettings } from "./ClaudeCodeSettings.tsx";
 import { ClisSettings } from "./ClisSettings.tsx";
 import { ConnectorsSettings } from "./ConnectorsSettings.tsx";
 import { DiagnosticsSettings } from "./DiagnosticsSettings.tsx";
+import { DiscordSettings } from "./DiscordSettings.tsx";
 import { Guides } from "./Guides.tsx";
 import { Memory } from "./InfoPanel.tsx";
 import { MemoryVault } from "./MemoryVault.tsx";
@@ -35,6 +38,7 @@ import { TracesSettings } from "./TracesSettings.tsx";
 import { UpdatesSettings } from "./UpdatesSettings.tsx";
 import { VaultSettings } from "./VaultSettings.tsx";
 import { VoiceSettings } from "./VoiceSettings.tsx";
+import { WebhooksSettings } from "./WebhooksSettings.tsx";
 import { IconButton, Switch } from "./ui.tsx";
 
 export type SettingsSection =
@@ -43,6 +47,8 @@ export type SettingsSection =
   | "agents"
   | "claude-code"
   | "connectors"
+  | "webhooks"
+  | "discord"
   | "clis"
   | "memory"
   | "traces"
@@ -93,6 +99,20 @@ export const SECTIONS: [SettingsSection, string, string, typeof KeyRound, string
     "Connectors-and-OAuth",
   ],
   [
+    "discord",
+    "Discord",
+    "Write to your agents from a Discord channel and get their replies there.",
+    MessagesSquare,
+    "Discord",
+  ],
+  [
+    "webhooks",
+    "Webhooks",
+    "Messages from other services to your agents, and your agents’ events to Discord, Slack or any URL.",
+    Webhook,
+    "Webhooks",
+  ],
+  [
     "clis",
     "CLIs",
     "Command-line tools in every agent’s computer, built into one shared image.",
@@ -119,7 +139,7 @@ export const SECTIONS: [SettingsSection, string, string, typeof KeyRound, string
 const GROUPS: [string, SettingsSection[]][] = [
   ["General", ["appearance", "keyboard", "voice"]],
   ["Agents", ["providers", "agents", "claude-code", "memory", "traces"]],
-  ["Tools & keys", ["connectors", "clis", "vault"]],
+  ["Tools & keys", ["connectors", "webhooks", "discord", "clis", "vault"]],
   ["App", ["updates", "diagnostics", "guides"]],
 ];
 
@@ -160,8 +180,10 @@ function AgentSettings(): JSX.Element | null {
         </span>
         <span class="hint">
           Agents create teammates and take risky steps (deleting folders, pushing code, sending
-          through a connector) without asking first. Without it, you get a card for each risky step.
-          Dangerous commands stay blocked, and the agent limit and keys stay protected.
+          through a connector) without asking first. Only the riskiest steps still ask: paying or
+          deleting through a connector, force-pushing, publishing a package. Without it, you get a
+          card for each risky step. Dangerous commands stay blocked, and the agent limit and keys
+          stay protected.
         </span>
       </span>
       <label>
@@ -290,6 +312,14 @@ export function Settings(props: {
             }}
           />
         )}
+        {props.section === "webhooks" && (
+          <WebhooksSettings
+            onGuide={() => {
+              props.onGuide("Webhooks");
+            }}
+          />
+        )}
+        {props.section === "discord" && <DiscordSettings />}
         {props.section === "clis" && <ClisSettings />}
         {props.section === "memory" && (
           <>

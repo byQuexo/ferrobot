@@ -2,7 +2,7 @@ Two ways in: download the desktop app, or build from source.
 
 ## A. Desktop download
 
-Desktop builds come from the repository's Releases page: v0.1.7 has a
+Desktop builds come from the repository's Releases page: v0.1.8 has a
 universal `.dmg` for macOS and an `.exe` installer for Windows (x64).
 
 1. **Install Docker Desktop** and start it. Every agent runs in a container,
@@ -19,7 +19,7 @@ universal `.dmg` for macOS and an `.exe` installer for Windows (x64).
    (its key goes in **Settings → Vault**) and create an agent with
    **New agent**. See [[Model providers and keys|Providers]].
 4. **Wait for the first start.** The first time an agent starts, the runner
-   image (`ghcr.io/byquexo/ferrobot-runner:0.1.7`, about 2 GB) is pulled
+   image (`ghcr.io/byquexo/ferrobot-runner:0.1.8`, about 2 GB) is pulled
    from the GitHub Container Registry. Later agents start from the cached
    image.
 
@@ -55,6 +55,17 @@ moves to the top). The pin button next to Settings lists everything pinned:
 click a reply to jump to it in its chat, or a file to open it. Rename a pin
 with the pencil, drag to reorder, and unpin with the cross. Pins live in the
 daemon, so every app that connects to it sees them.
+
+### Dashboards
+
+Keep HTML pages your agents make (a finance overview, a project board) one
+click away. Next to a shared `.html` file, click **Use as dashboard**. It
+appears under **Dashboards** in the sidebar; click it to open it in the main
+area, with a tab for each dashboard. A dashboard follows the file, not one
+copy of it: when the agent shares the same file again (for example from a
+morning routine), the dashboard shows the new version. Rename it with the
+pencil (or double-click its tab), open it full screen or in your browser,
+remove it with the trash can. Dashboards live in the daemon too.
 
 The desktop window itself has had far less testing than the daemon; most UI
 checks ran in a browser against a real daemon.

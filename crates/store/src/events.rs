@@ -191,6 +191,27 @@ impl Store {
         .await
     }
 
+    /// The newest `file` event `agent` shared from `path`, with when it was shared.
+    pub async fn latest_file(
+        &self,
+        agent: AgentId,
+        path: String,
+    ) -> Result<Option<(i64, OffsetDateTime)>, StoreError> {
+        self.with(move |c| {
+            let row: Option<(i64, String)> = c
+                .query_row(
+                    "SELECT id, created_at FROM events
+                     WHERE agent_id = ?1 AND kind = 'file' AND json_extract(payload, '$.path') = ?2
+                     ORDER BY id DESC LIMIT 1",
+                    params![agent.to_string(), path],
+                    |r| Ok((r.get(0)?, r.get(1)?)),
+                )
+                .optional()?;
+            row.map(|(id, at)| Ok((id, parse_ts(&at)?))).transpose()
+        })
+        .await
+    }
+
     /// The events of one of `agent`'s turns, oldest first.
     pub async fn turn_events(
         &self,
@@ -217,6 +238,74 @@ impl Store {
                 });
             }
             Ok(out)
+        })
+        .await
+    }
+
+    /// Question cards raised by `turn` (in any chat), each with its answer; `since`, the turn's
+    /// first event id, bounds the scan.
+    pub async fn turn_cards(
+        &self,
+        turn: String,
+        since: i64,
+    ) -> Result<Vec<(StoredEvent, Option<StoredEvent>)>, StoreError> {
+        self.with(move |c| {
+            let mut stmt = c.prepare(
+                "SELECT q.id, q.agent_id, q.payload, q.created_at, a.id, a.payload, a.created_at
+                 FROM events q LEFT JOIN events a ON a.agent_id = q.agent_id AND a.id > q.id
+                     AND a.kind = 'question_answered' AND json_extract(a.payload, '$.question') = q.id
+                 WHERE q.id >= ?1 AND q.kind = 'question'
+                   AND json_extract(q.payload, '$.turn_id') = ?2
+                 ORDER BY q.id, a.id",
+            )?;
+            let mut rows = stmt.query(params![since, turn])?;
+            let mut out: Vec<(StoredEvent, Option<StoredEvent>)> = Vec::new();
+            while let Some(row) = rows.next()? {
+                let id: i64 = row.get(0)?;
+                if out.last().is_some_and(|(q, _)| q.id == id) {
+                    continue;
+                }
+                let agent_id: String = row.get(1)?;
+                let agent_id = agent_id.parse().map_err(StoreError::corrupt)?;
+                let event = |kind: &str, id: i64, payload: String, created: String| {
+                    Ok::<_, StoreError>(StoredEvent {
+                        id,
+                        agent_id,
+                        turn_id: None,
+                        kind: kind.into(),
+                        payload: serde_json::from_str(&payload).map_err(StoreError::corrupt)?,
+                        created_at: parse_ts(&created)?,
+                    })
+                };
+                let question = event("question", id, row.get(2)?, row.get(3)?)?;
+                let answer = match row.get::<_, Option<i64>>(4)? {
+                    Some(a) => Some(event("question_answered", a, row.get(5)?, row.get(6)?)?),
+                    None => None,
+                };
+                out.push((question, answer));
+            }
+            Ok(out)
+        })
+        .await
+    }
+
+    /// The turn of `agent`'s newest `kind` event about message `message_id` (`message_in`: the
+    /// turn that took it; `handoff`: the turn that sent it).
+    pub async fn turn_with(
+        &self,
+        agent: AgentId,
+        kind: &'static str,
+        message_id: i64,
+    ) -> Result<Option<String>, StoreError> {
+        self.with(move |c| {
+            Ok(c.query_row(
+                "SELECT turn_id FROM events WHERE agent_id = ?1 AND kind = ?2
+                   AND turn_id IS NOT NULL AND json_extract(payload, '$.message_id') = ?3
+                 ORDER BY id DESC LIMIT 1",
+                params![agent.to_string(), kind, message_id],
+                |r| r.get(0),
+            )
+            .optional()?)
         })
         .await
     }

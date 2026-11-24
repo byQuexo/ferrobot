@@ -8,6 +8,7 @@ type Schemas = components["schemas"];
 export type Agent = Schemas["AgentView"];
 export type AgentContext = Schemas["AgentContext"];
 export type Trace = Schemas["Trace"];
+export type TurnLink = Schemas["TurnLink"];
 export type Presence = Schemas["Presence"];
 export type AvatarCharacter = Schemas["AvatarCharacter"];
 export type StoredEvent = Schemas["StoredEvent"];
@@ -48,9 +49,21 @@ export type HookEvent = Schemas["HookEvent"];
 export type InstalledPlugin = Schemas["InstalledPlugin"];
 export type OtelSettings = Schemas["OtelSettings"];
 export type OtelView = Schemas["OtelView"];
+export type WebhooksView = Schemas["WebhooksView"];
+export type IncomingWebhook = Schemas["IncomingWebhook"];
+export type IncomingWebhookCreated = Schemas["IncomingWebhookCreated"];
+export type NewIncomingWebhook = Schemas["NewIncomingWebhook"];
+export type OutgoingWebhookView = Schemas["OutgoingWebhookView"];
+export type NewOutgoingWebhook = Schemas["NewOutgoingWebhook"];
+export type WebhookEvent = Schemas["WebhookEvent"];
+export type WebhookFormat = Schemas["WebhookFormat"];
 export type MemoryVaultView = Schemas["MemoryVaultView"];
 export type Pin = Schemas["Pin"];
 export type PinKind = Schemas["PinKind"];
+export type FormerAgent = Schemas["FormerAgent"];
+export type Dashboard = Schemas["Dashboard"];
+export type DiscordSettings = Schemas["DiscordSettings"];
+export type DiscordView = Schemas["DiscordView"];
 export type ModelList = Schemas["ModelList"];
 export type ModelInfo = Schemas["ModelInfo"];
 export type VoiceView = Schemas["VoiceView"];
@@ -353,6 +366,15 @@ export class DaemonClient {
   settings = (): Promise<GeneralSettings> => this.#request("GET", "/v1/settings");
   updateSettings = (s: GeneralSettings): Promise<GeneralSettings> =>
     this.#request("PUT", "/v1/settings", s);
+  formerAgents = (): Promise<FormerAgent[]> => this.#request("GET", "/v1/agents/former");
+  discord = (): Promise<DiscordView> => this.#request("GET", "/v1/discord");
+  updateDiscord = (s: DiscordSettings): Promise<DiscordView> =>
+    this.#request("PUT", "/v1/discord", s);
+  setDiscordToken = (token: string | null): Promise<DiscordView> =>
+    this.#request("PUT", "/v1/discord/token", { token });
+  dashboards = (): Promise<Dashboard[]> => this.#request("GET", "/v1/dashboards");
+  setDashboards = (list: Dashboard[]): Promise<Dashboard[]> =>
+    this.#request("PUT", "/v1/dashboards", list);
   pins = (): Promise<Pin[]> => this.#request("GET", "/v1/pins");
   setPins = (pins: Pin[]): Promise<Pin[]> => this.#request("PUT", "/v1/pins", pins);
   memoryVault = (): Promise<MemoryVaultView> => this.#request("GET", "/v1/memory-vault");
@@ -362,6 +384,17 @@ export class DaemonClient {
   updateOtel = (s: OtelSettings): Promise<OtelView> => this.#request("PUT", "/v1/otel", s);
   setOtelSecret = (value: string | null): Promise<OtelView> =>
     this.#request("PUT", "/v1/otel/secret", { value });
+  webhooks = (): Promise<WebhooksView> => this.#request("GET", "/v1/webhooks");
+  createIncomingWebhook = (req: NewIncomingWebhook): Promise<IncomingWebhookCreated> =>
+    this.#request("POST", "/v1/webhooks/incoming", req);
+  regenerateIncomingWebhook = (id: number): Promise<IncomingWebhookCreated> =>
+    this.#request("POST", `/v1/webhooks/incoming/${String(id)}/secret`);
+  deleteIncomingWebhook = (id: number): Promise<void> =>
+    this.#request("DELETE", `/v1/webhooks/incoming/${String(id)}`);
+  createOutgoingWebhook = (req: NewOutgoingWebhook): Promise<OutgoingWebhookView> =>
+    this.#request("POST", "/v1/webhooks/outgoing", req);
+  deleteOutgoingWebhook = (id: number): Promise<void> =>
+    this.#request("DELETE", `/v1/webhooks/outgoing/${String(id)}`);
   updateInfo = (): Promise<UpdateInfo> => this.#request("GET", "/v1/update");
   diagnostics = (): Promise<Diagnostics> => this.#request("GET", "/v1/diagnostics");
   diagnosticsLog = (lines: number): Promise<DiagnosticsLog> =>

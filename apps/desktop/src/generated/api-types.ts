@@ -41,6 +41,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/hooks/{id}/{secret}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Takes a POST from another service (JSON or text) and queues it for the webhook's agent.
+         *     Authorized only by the secret in the path; the operator token is not accepted.
+         */
+        post: operations["receive"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/agents": {
         parameters: {
             query?: never;
@@ -53,6 +73,23 @@ export interface paths {
         put?: never;
         /** Registers an agent and provisions its sandbox. */
         post: operations["create_agent"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/agents/former": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Deleted agents' last names, for mentions of them in old messages. */
+        get: operations["former_agents"];
+        put?: never;
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -501,7 +538,10 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** One of the agent's turns as a timeline: its model calls and tool calls with their times. */
+        /**
+         * One of the agent's turns as a timeline: its model calls and tool calls with their times, the
+         *     cards it waited on and the messages it handed to other agents.
+         */
         get: operations["turn_trace"];
         put?: never;
         post?: never;
@@ -796,6 +836,24 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/dashboards": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** The dashboards, in order, each with its newest shared version. */
+        get: operations["get_dashboards"];
+        /** Replaces the dashboards: adding, renaming, reordering and removing all send the whole list. */
+        put: operations["put_dashboards"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/diagnostics": {
         parameters: {
             query?: never;
@@ -823,6 +881,44 @@ export interface paths {
         /** The latest daemon log lines, kept in memory since the daemon started. */
         get: operations["get_log"];
         put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/discord": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** The Discord bridge. */
+        get: operations["get_discord"];
+        /**
+         * Replaces the bridge's settings: on or off, the allowed Discord users, and which channel
+         *     talks to which agent. Changes apply within seconds.
+         */
+        put: operations["put_discord"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/discord/token": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /** Stores or removes the bot token, kept in the daemon's secret store. */
+        put: operations["put_discord_token"];
         post?: never;
         delete?: never;
         options?: never;
@@ -1480,6 +1576,108 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/webhooks": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Incoming and outgoing webhooks, oldest first. */
+        get: operations["list_webhooks"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/webhooks/incoming": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Creates an incoming webhook for an agent. Its URL is in this response only. */
+        post: operations["create_incoming"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/webhooks/incoming/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /** Deletes an incoming webhook; its URL stops working. */
+        delete: operations["delete_incoming"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/webhooks/incoming/{id}/secret": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Gives an incoming webhook a new secret; the old URL stops working at once. */
+        post: operations["regenerate_incoming"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/webhooks/outgoing": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Adds an outgoing webhook; the events it gets are posted to its URL in the background. */
+        post: operations["create_outgoing"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/webhooks/outgoing/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /** Deletes an outgoing webhook and its stored URL. */
+        delete: operations["delete_outgoing"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/ws": {
         parameters: {
             query?: never;
@@ -1684,6 +1882,11 @@ export interface components {
              */
             hue: number;
         };
+        Bridge: {
+            /** @description The Discord channel id (a number, as text). */
+            channel_id: string;
+            agent_id: string;
+        };
         /**
          * @description Where the image build stands.
          * @enum {string}
@@ -1705,6 +1908,17 @@ export interface components {
              * @description The call's room, once a second agent joined; ignored when sent.
              */
             readonly room_id?: number | null;
+        };
+        /** @description How a bridged channel is doing. */
+        ChannelStatus: {
+            channel_id: string;
+            /**
+             * Format: date-time
+             * @description When the daemon last read the channel.
+             */
+            checked_at?: string | null;
+            /** @description Why the last read or reply failed; `null` when it worked. */
+            error?: string | null;
         };
         /**
          * @description Body shape of the generated character avatar.
@@ -1966,6 +2180,25 @@ export interface components {
          * @enum {string}
          */
         CredentialProblem: "missing" | "rejected";
+        /** @description A dashboard: a shared HTML file, by its agent and path. */
+        Dashboard: {
+            agent_id: string;
+            /** @description The file's path in the agent's computer, e.g. `/home/agent/finance.html`. */
+            path: string;
+            /** @description Shown on its tab; 1-60 characters. */
+            label: string;
+            /**
+             * Format: int64
+             * @description Read only (ignored when saving): the newest shared version's `file` event; `null`
+             *     until one is shared.
+             */
+            file?: number | null;
+            /**
+             * Format: date-time
+             * @description Read only (ignored when saving): when that version was shared.
+             */
+            updated_at?: string | null;
+        };
         /** @description A device code the operator enters at `verification_url`. */
         DeviceCode: {
             verification_url: string;
@@ -2010,6 +2243,31 @@ export interface components {
             /** @description Oldest first, without colour codes; what looks like a credential reads `[REDACTED]`. */
             lines: string[];
         };
+        /** @description The bridge's settings; the bot token is in the secret store. */
+        DiscordSettings: {
+            /** @default false */
+            enabled: boolean;
+            /**
+             * @description Discord user ids whose messages reach agents; everyone else is ignored.
+             * @default []
+             */
+            users: string[];
+            /**
+             * @description Each channel talks to one agent.
+             * @default []
+             */
+            bridges: components["schemas"]["Bridge"][];
+        };
+        DiscordToken: {
+            /** @description The bot token from Discord's developer portal; `null` removes it. */
+            token?: string | null;
+        };
+        /** @description The bridge's settings, whether a bot token is stored, and how each channel is doing. */
+        DiscordView: components["schemas"]["DiscordSettings"] & {
+            /** @description A bot token is in the secret store; it is never returned. */
+            has_token: boolean;
+            channels: components["schemas"]["ChannelStatus"][];
+        };
         /** @description JSON body of every non-2xx UI API response. */
         ErrorBody: {
             /**
@@ -2047,6 +2305,11 @@ export interface components {
             at: string;
             /** @description Why it failed; `null` when it went through. */
             error?: string | null;
+        };
+        /** @description A deleted agent's last name, so mentions of it can still be read. */
+        FormerAgent: {
+            id: string;
+            name: string;
         };
         /** @description Daemon-wide settings. Omitted fields take their defaults. */
         GeneralSettings: {
@@ -2108,6 +2371,21 @@ export interface components {
          * @enum {string}
          */
         HookEvent: "SessionStart" | "UserPromptSubmit" | "PreToolUse" | "PostToolUse" | "Stop" | "SessionEnd";
+        /** @description An incoming webhook. Its secret is shown once; only its hash is stored. */
+        IncomingWebhook: {
+            /** Format: int64 */
+            id: number;
+            name: string;
+            /** @description The agent its requests go to as messages. */
+            agent_id: components["schemas"]["AgentId"];
+            /** Format: date-time */
+            created_at: string;
+        };
+        /** @description An incoming webhook with its URL. The URL holds the secret and is shown only this once. */
+        IncomingWebhookCreated: components["schemas"]["IncomingWebhook"] & {
+            /** @description `<daemon>/hooks/{id}/{secret}`; from the internet, through a tunnel to `/hooks/` only. */
+            url: string;
+        };
         /** @description A plugin installed in the host's Claude Code. */
         InstalledPlugin: {
             /** @description `name@marketplace`. */
@@ -2257,6 +2535,22 @@ export interface components {
          * @enum {string}
          */
         ModelSource: "provider" | "suggested";
+        NewIncomingWebhook: {
+            /** @description 1-64 characters; agents see it as the sender, `webhook:<name>`. */
+            name: string;
+            agent_id: components["schemas"]["AgentId"];
+        };
+        NewOutgoingWebhook: {
+            /** @description 1-64 characters. */
+            name: string;
+            /** @description An http or https URL, e.g. a Discord or Slack webhook; kept in the secret store. */
+            url: string;
+            /** @description At least one. */
+            events: components["schemas"]["WebhookEvent"][];
+            /** @description Only these agents' events; empty or omitted: every agent's. */
+            agents?: components["schemas"]["AgentId"][];
+            format: components["schemas"]["WebhookFormat"];
+        };
         OAuthStart: {
             /** @description Open this in a browser on the daemon's computer to sign in. */
             authorization_url: string;
@@ -2295,6 +2589,22 @@ export interface components {
             /** @description The auth header's value is in the secret store; it is never returned. */
             has_secret: boolean;
             last_export?: components["schemas"]["ExportStatus"] | null;
+        };
+        /** @description An outgoing webhook. Its URL is in the secret store and never returned. */
+        OutgoingWebhook: {
+            /** Format: int64 */
+            id: number;
+            name: string;
+            events: components["schemas"]["WebhookEvent"][];
+            /** @description Only these agents' events; empty: every agent's. */
+            agents: components["schemas"]["AgentId"][];
+            format: components["schemas"]["WebhookFormat"];
+            /** Format: date-time */
+            created_at: string;
+        };
+        /** @description An outgoing webhook and how its last delivery went. */
+        OutgoingWebhookView: components["schemas"]["OutgoingWebhook"] & {
+            last_delivery?: components["schemas"]["ExportStatus"] | null;
         };
         /** @description A pinned reply or shared file, in the pin list's order. */
         Pin: {
@@ -2448,6 +2758,8 @@ export interface components {
              *     approval cards (the decision goes to the waiting tool call).
              */
             message_id?: number | null;
+            /** @description No answer came in time: the daemon declined the approval card. */
+            timed_out?: boolean;
         };
         /** @description A card with one or more questions, answered together. */
         QuestionCard: {
@@ -2465,6 +2777,8 @@ export interface components {
             version: number;
             card: components["schemas"]["QuestionCard"];
             approval?: components["schemas"]["Approval"] | null;
+            /** @description The turn that raised the card (its trace shows the wait); `null` outside a turn. */
+            turn_id?: string | null;
         };
         /**
          * @description How a question is answered.
@@ -2614,6 +2928,15 @@ export interface components {
             id: number;
             /** @enum {string} */
             kind: "routine";
+        } | {
+            /**
+             * Format: int64
+             * @description An incoming webhook (by webhook id); its body is external data, framed as such. Runners
+             *     get its turns as `user` with `sender_name` `webhook:<name>`.
+             */
+            id: number;
+            /** @enum {string} */
+            kind: "webhook";
         };
         SetMemoryVault: {
             /**
@@ -2677,7 +3000,10 @@ export interface components {
         /** @description One step of a turn. */
         Span: {
             kind: components["schemas"]["SpanKind"];
-            /** @description The model id, or the tool's name. */
+            /**
+             * @description The model id, the tool's name, a wait's approval kind (`create_agent`, `tool_call`, ...;
+             *     `ask_user` for a question card) or a handoff's `message`, `task` or `answer`.
+             */
             name: string;
             /** Format: date-time */
             started_at: string;
@@ -2688,7 +3014,7 @@ export interface components {
             ended_at?: string | null;
             /** @description Why it failed; `null` when it did not. */
             error?: string | null;
-            /** @description A tool's input when small (up to 4 KiB), for its label. */
+            /** @description A tool's input when small (up to 4 KiB), for its label; a wait's card title as `title`. */
             input?: Record<string, never> | null;
             /** Format: int64 */
             input_tokens?: number | null;
@@ -2703,9 +3029,12 @@ export interface components {
              * @description What the provider said the call cost (`OpenRouter`); `null` otherwise.
              */
             cost_usd?: number | null;
+            /** @description A wait's outcome: `approved`, `declined`, `answered` or `timed_out`; `null` while open. */
+            outcome?: string | null;
+            link?: components["schemas"]["TurnLink"] | null;
         };
         /** @enum {string} */
-        SpanKind: "model" | "tool";
+        SpanKind: "model" | "tool" | "wait" | "handoff";
         SpeechRequest: {
             /** @description What to say: 1-4096 characters. */
             text: string;
@@ -2761,11 +3090,22 @@ export interface components {
              *     stream (`model_call` events); `false` for Claude Code turns from before those.
              */
             models_tracked: boolean;
+            from?: components["schemas"]["TurnLink"] | null;
             spans: components["schemas"]["Span"][];
         };
         /** @description What was said. Both providers answer `{"text": ...}` (plus fields we ignore). */
         Transcript: {
             text: string;
+        };
+        /** @description Another agent's turn, reached through a message. */
+        TurnLink: {
+            agent_id: components["schemas"]["AgentId"];
+            /** @description Its current name; `null` once it is deleted. */
+            agent_name?: string | null;
+            /** @description `null` while no turn has taken the message (or it predates linked turns). */
+            turn_id?: string | null;
+            /** Format: int64 */
+            message_id: number;
         };
         /** @description Pushed to every UI WebSocket client. */
         UiEvent: {
@@ -3078,6 +3418,21 @@ export interface components {
             /** @description Every provider with its defaults and whether its key is stored. */
             providers: components["schemas"]["VoiceProviderView"][];
         };
+        /**
+         * @description What an outgoing webhook is sent.
+         * @enum {string}
+         */
+        WebhookEvent: "reply" | "question" | "task_done" | "turn_failed";
+        /**
+         * @description How an outgoing webhook's body looks.
+         * @enum {string}
+         */
+        WebhookFormat: "json" | "discord" | "slack";
+        /** @description The webhooks. Neither secrets nor outgoing URLs are ever returned. */
+        WebhooksView: {
+            incoming: components["schemas"]["IncomingWebhook"][];
+            outgoing: components["schemas"]["OutgoingWebhookView"][];
+        };
     };
     responses: never;
     parameters: never;
@@ -3183,6 +3538,68 @@ export interface operations {
             };
         };
     };
+    receive: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Webhook id */
+                id: number;
+                /** @description The webhook's secret, from its URL */
+                secret: string;
+            };
+            cookie?: never;
+        };
+        /** @description JSON or text, at most 64 KiB */
+        requestBody: {
+            content: {
+                "text/plain": string;
+            };
+        };
+        responses: {
+            /** @description Queued for the agent */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Empty or not UTF-8 */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Unknown webhook or wrong secret */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Body over 64 KiB */
+            413: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Over 30 requests a minute */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+        };
+    };
     list_agents: {
         parameters: {
             query?: never;
@@ -3261,6 +3678,34 @@ export interface operations {
             };
             /** @description Sandbox backend error */
             502: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+        };
+    };
+    former_agents: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["FormerAgent"][];
+                };
+            };
+            /** @description Missing or wrong API token */
+            401: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -5828,6 +6273,75 @@ export interface operations {
             };
         };
     };
+    get_dashboards: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Dashboard"][];
+                };
+            };
+            /** @description Missing or wrong API token */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+        };
+    };
+    put_dashboards: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["Dashboard"][];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Dashboard"][];
+                };
+            };
+            /** @description Too many, a bad label or path, or an unknown agent */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Missing or wrong API token */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+        };
+    };
     get_diagnostics: {
         parameters: {
             query?: never;
@@ -5874,6 +6388,115 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["DiagnosticsLog"];
+                };
+            };
+            /** @description Missing or wrong API token */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+        };
+    };
+    get_discord: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DiscordView"];
+                };
+            };
+            /** @description Missing or wrong API token */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+        };
+    };
+    put_discord: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["DiscordSettings"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DiscordView"];
+                };
+            };
+            /** @description A bad id, too many entries or an unknown agent */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Missing or wrong API token */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+        };
+    };
+    put_discord_token: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["DiscordToken"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DiscordView"];
+                };
+            };
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
                 };
             };
             /** @description Missing or wrong API token */
@@ -8001,6 +8624,252 @@ export interface operations {
             };
             /** @description The provider failed */
             502: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+        };
+    };
+    list_webhooks: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WebhooksView"];
+                };
+            };
+            /** @description Missing or wrong API token */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+        };
+    };
+    create_incoming: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["NewIncomingWebhook"];
+            };
+        };
+        responses: {
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["IncomingWebhookCreated"];
+                };
+            };
+            /** @description Bad name */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Missing or wrong API token */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Unknown agent */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+        };
+    };
+    delete_incoming: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Webhook id */
+                id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Deleted */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Missing or wrong API token */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Unknown webhook */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+        };
+    };
+    regenerate_incoming: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Webhook id */
+                id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["IncomingWebhookCreated"];
+                };
+            };
+            /** @description Missing or wrong API token */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Unknown webhook */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+        };
+    };
+    create_outgoing: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["NewOutgoingWebhook"];
+            };
+        };
+        responses: {
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OutgoingWebhookView"];
+                };
+            };
+            /** @description Bad name, URL or events */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Missing or wrong API token */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Unknown agent */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+        };
+    };
+    delete_outgoing: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Webhook id */
+                id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Deleted */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Missing or wrong API token */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Unknown webhook */
+            404: {
                 headers: {
                     [name: string]: unknown;
                 };
