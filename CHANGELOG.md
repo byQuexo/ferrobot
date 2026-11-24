@@ -14,6 +14,11 @@ All notable changes are listed here. The format follows
   release to the next, so an update usually fetches only the runner's code
   instead of about 700 MB.
 
+### Fixed
+
+- The colour choices in the New agent and Edit profile dialogs showed as empty
+  circles.
+
 ## [0.1.9] - 2026-11-24
 
 ### Added
