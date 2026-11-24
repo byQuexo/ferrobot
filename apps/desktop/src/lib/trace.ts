@@ -53,7 +53,8 @@ export function layoutTrace(trace: Trace, now: number = Date.now()): TraceLayout
     const from = Date.parse(s.started_at);
     // An open wait runs on with the turn; an answer after the turn's end still counts in full.
     const to = s.ended_at == null ? end : Date.parse(s.ended_at);
-    const left = Math.min(Math.max(((from - start) / total) * 100, 0), 100);
+    // A task's answer goes out just after the turn's end; it still gets a visible mark.
+    const left = Math.min(Math.max(((from - start) / total) * 100, 0), 100 - MIN_WIDTH);
     const width = Math.min(Math.max(((to - from) / total) * 100, MIN_WIDTH), 100 - left);
     return {
       index,

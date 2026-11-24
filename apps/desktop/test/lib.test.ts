@@ -2377,6 +2377,7 @@ describe("trace layout", () => {
         span("tool", "x", 2000, 3000),
         { ...span("wait", "create_agent", 3000, 60_000), outcome: "approved" },
         { ...span("handoff", "task", 9000, 9000), link: bob },
+        { ...span("handoff", "answer", 10_050, 10_050), link: bob },
       ],
     });
     assert.deepEqual(
@@ -2386,9 +2387,11 @@ describe("trace layout", () => {
         ["tool", false, 10],
         ["wait", false, 70],
         ["handoff", false, 1],
+        ["handoff", false, 1],
       ],
       "an answer after the turn's end stops at its edge",
     );
+    assert.equal(t.rows[4]?.left, 99.4, "a handoff after the end stays in view");
     assert.deepEqual([t.models, t.tools, t.errors], [1, 1, 0]);
     assert.equal(t.rows[2]?.ms, 57_000);
     assert.deepEqual(t.rows[3]?.link, bob);
