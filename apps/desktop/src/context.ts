@@ -1,7 +1,7 @@
 import { createContext } from "preact";
 import { useContext } from "preact/hooks";
 
-import type { Agent, DaemonClient, Health, UiEvent } from "./api.ts";
+import type { Agent, DaemonClient, Health, Pin, UiEvent } from "./api.ts";
 import type { CallState } from "./lib/call.ts";
 import type { CallSession } from "./lib/call-session.ts";
 
@@ -20,6 +20,12 @@ export interface AppContextValue {
   openRoom: (id: number) => void;
   /** Opens a file an agent shared (its `file` event id). */
   openFile: (agent: string, file: number) => void;
+  /** Pinned replies and files, in the pin list's order. */
+  pins: Pin[];
+  /** Saves the whole pin list (pin, rename, reorder, unpin). */
+  savePins: (pins: Pin[]) => Promise<void>;
+  /** Opens an agent's chat scrolled to one of its replies (its event id). */
+  jumpTo: (agent: string, event: number) => void;
   /** The operator's voice call; it outlives the chat it started in. */
   call: CallSession;
   /** The call's agents, host and mute state; `null` when there is none. */

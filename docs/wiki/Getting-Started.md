@@ -47,6 +47,15 @@ wiki.
 How the app looks (theme, accent color, bubbles, chat background, text size)
 is under **Settings → Appearance**.
 
+### Pins
+
+Keep important things one click away. Hover a reply or a shared file and
+click its pin; pin an agent with the pin on its row in the sidebar (it also
+moves to the top). The pin button next to Settings lists everything pinned:
+click a reply to jump to it in its chat, or a file to open it. Rename a pin
+with the pencil, drag to reorder, and unpin with the cross. Pins live in the
+daemon, so every app that connects to it sees them.
+
 The desktop window itself has had far less testing than the daemon; most UI
 checks ran in a browser against a real daemon.
 

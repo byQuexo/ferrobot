@@ -6,6 +6,15 @@ All notable changes are listed here. The format follows
 
 ## [Unreleased]
 
+### Added
+
+- Pins: a pin button on every reply and shared file, and a pin button next to
+  Settings that lists pinned agents, replies and files. Click a reply to jump
+  to it in its chat (it flashes), or a file to open it; rename pins, drag to
+  reorder, unpin. Pins live in the daemon (`/v1/pins`); agents keep their own
+  pin (top of the sidebar). The sidebar header's buttons got a little
+  narrower so the name still fits.
+
 ### Fixed
 
 - Agents learn of a rename: the next turn of every agent that knew the old

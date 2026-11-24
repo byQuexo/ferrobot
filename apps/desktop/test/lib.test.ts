@@ -73,6 +73,7 @@ import { modelLabel, modelOptions, withSaved } from "../src/lib/models.ts";
 import { addTag, contextMeter } from "../src/lib/agent-meta.ts";
 import { moveId, orderAgents, pickSelection } from "../src/lib/order.ts";
 import { authValue, backendOf, OTEL_ENDPOINTS } from "../src/lib/otel.ts";
+import { isPinned, movePin, pinKey, pinLabel, togglePin } from "../src/lib/pins.ts";
 import { keyLabel, matchShortcut, SHORTCUTS, type KeyPress } from "../src/lib/shortcuts.ts";
 import { pollOutcome } from "../src/lib/update.ts";
 import {
@@ -2386,5 +2387,44 @@ describe("trace export settings", () => {
     assert.equal(authValue("langfuse", "pk-lf-1", "sk-lf-2"), `Basic ${btoa("pk-lf-1:sk-lf-2")}`);
     assert.equal(authValue("langfuse", "pk-lf-1", ""), null);
     assert.equal(authValue("other", " Api-Key x "), "Api-Key x");
+  });
+});
+
+describe("pins", () => {
+  const pin = (event: number, kind: "message" | "file" = "message") => ({
+    kind,
+    agent_id: "a",
+    event,
+    label: `p${String(event)}`,
+  });
+
+  it("labels a reply with its first words as plain text", () => {
+    const id = "11111111-2222-3333-4444-555555555555";
+    assert.equal(
+      pinLabel(`## Summary\n**Done**: ask <@${id}> and [docs](https://x.dev)`, () => "bob"),
+      "Summary Done: ask @bob and docs",
+    );
+    assert.equal(
+      pinLabel("```\ncode\n```", () => undefined),
+      "Reply",
+    );
+    assert.equal(pinLabel("x".repeat(100), () => undefined).length, 80);
+  });
+
+  it("toggles, finds and reorders pins", () => {
+    let pins = togglePin([], pin(1));
+    pins = togglePin(pins, pin(2, "file"));
+    assert.ok(isPinned(pins, "file", "a", 2));
+    assert.ok(!isPinned(pins, "message", "a", 2));
+    pins = movePin(pins, pinKey(pin(2, "file")), pinKey(pin(1)), false);
+    assert.deepEqual(
+      pins.map((p) => p.event),
+      [2, 1],
+    );
+    pins = togglePin(pins, pin(1));
+    assert.deepEqual(
+      pins.map((p) => p.event),
+      [2],
+    );
   });
 });

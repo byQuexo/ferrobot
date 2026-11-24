@@ -33,7 +33,16 @@ In rough order. Nothing here has a date.
    out unless you turn them on. **Done:** the trace view (model and tool
    calls) and the export ([[Traces]]); **open:** approval waits and handoffs
    to other agents.
-6. **Later.** Moving warm agents to cold sleep under memory pressure (F4d), a
+6. **Webhooks.** Connect ferrobot to other services both ways. Incoming:
+   each agent (or routine) can get its own webhook URL with a secret, so a
+   POST from GitHub, a form, n8n or Zapier becomes a message to the agent or
+   starts a routine, with the payload attached. Outgoing: events you pick (a
+   reply, a question card waiting for you, a finished task, a failed turn) go
+   to a URL you choose, such as a Discord or Slack channel. A Discord bridge
+   on top lets you write to your agents from a channel and get their answers
+   there. Off by default; secrets in the keychain, payloads signed, and no
+   key or operator token in anything sent.
+7. **Later.** Moving warm agents to cold sleep under memory pressure (F4d), a
    native macOS app on the same `/v1` API, and optional self-hosted
    S3-compatible storage. Smaller ideas are on [[Ideas]].
 

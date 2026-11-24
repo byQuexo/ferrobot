@@ -1252,3 +1252,42 @@ input.slider:is(:focus-visible, :active)::-moz-range-thumb { box-shadow: 0 0 0 1
 
 /* Settings → Global memory: the Obsidian vault */
 .memory-vault { margin-bottom: 20px; }
+
+/* Pins: the sidebar's pin button and list, pin buttons on replies and files */
+.pins-wrap { position: relative; display: inline-flex; }
+.pins-wrap > .icon-btn[aria-expanded="true"] { background: var(--surface-2); color: var(--accent); }
+.pins-pop {
+  position: fixed; z-index: 30; width: 300px; max-height: min(70vh, 520px); overflow-y: auto;
+  display: flex; flex-direction: column; gap: 12px; padding: 10px 8px;
+  border: 1px solid var(--border); border-radius: var(--radius); background: var(--surface); box-shadow: var(--shadow-lg);
+  animation: rise 0.15s var(--ease);
+}
+.brand { padding-right: 6px; }
+.brand .icon-btn { width: 28px; }
+.brand-name { margin: 0 4px 0 8px; }
+.pins-head { margin: 0 8px 4px; font-size: 12px; font-weight: 500; color: var(--muted); }
+.pins-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 2px; }
+.pin-row { display: flex; align-items: center; gap: 2px; border-radius: 8px; }
+.pin-row:hover { background: var(--surface-2); }
+.pin-row[draggable="true"] { cursor: grab; }
+.pin-go {
+  flex: 1; min-width: 0; display: flex; align-items: center; gap: 10px; padding: 6px 8px;
+  border: 0; background: none; color: var(--text); font: inherit; font-size: 13px; text-align: left; cursor: pointer; border-radius: 8px;
+}
+.pin-go > svg { flex: none; color: var(--muted); }
+.pin-text { min-width: 0; display: flex; flex-direction: column; }
+.pin-row .icon-btn { width: 26px; height: 26px; opacity: 0; }
+.pin-row:hover .icon-btn, .pin-row:focus-within .icon-btn { opacity: 1; }
+.pin-rename { flex: 1; min-width: 0; height: 30px; margin: 2px 4px; font-size: 13px; }
+.pins-empty, .pins-hint { margin: 0 8px; }
+.pin-btn {
+  display: inline-flex; align-items: center; justify-content: center; width: 22px; height: 22px; padding: 0;
+  border: 0; border-radius: 6px; background: none; color: var(--muted); cursor: pointer; opacity: 0;
+}
+.bubble-agent:hover .pin-btn, .file-share:hover .pin-btn, .pin-btn:focus-visible, .pin-btn.on { opacity: 1; }
+.pin-btn:hover { background: var(--surface-2); color: var(--text); }
+.pin-btn.on { color: var(--accent); }
+.file-head { display: flex; align-items: center; gap: 4px; }
+.flash { animation: pin-flash 1.6s var(--ease); border-radius: 12px; }
+@keyframes pin-flash { 0%, 60% { background: var(--accent-soft, rgba(99, 102, 241, 0.16)); } 100% { background: transparent; } }
+@media (prefers-reduced-motion: reduce) { .flash { animation: none; outline: 2px solid var(--accent); } }
