@@ -305,6 +305,7 @@ describe("buildTimeline", () => {
         msg(3, { kind: "agent", id: BOB }, ME, "re: hi bob", "2026-01-01T10:00:05Z"),
         msg(4, { kind: "routine", id: 4 }, ME, "daily digest", "2026-01-01T10:00:09Z"),
         msg(5, { kind: "routine", id: 9 }, ME, "from a deleted routine", "2026-01-01T10:00:10Z"),
+        msg(6, { kind: "webhook", id: 4 }, ME, '[webhook "ci"] …', "2026-01-01T10:00:11Z"),
       ],
       [
         ev(10, "message_in", { message_id: 1 }, "2026-01-01T10:00:01Z"),
@@ -329,7 +330,17 @@ describe("buildTimeline", () => {
     );
     assert.deepEqual(
       items.map((i) => i.type),
-      ["user", "tool", "outgoing", "assistant", "incoming", "system", "routine", "routine"],
+      [
+        "user",
+        "tool",
+        "outgoing",
+        "assistant",
+        "incoming",
+        "system",
+        "routine",
+        "routine",
+        "webhook",
+      ],
     );
     const tool = items[1];
     assert.ok(tool?.type === "tool");

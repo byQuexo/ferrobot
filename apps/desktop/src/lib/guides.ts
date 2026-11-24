@@ -49,6 +49,11 @@ export const GUIDES: readonly GuideInfo[] = [
     about: "A turn’s steps on a timeline, and export to Phoenix or Langfuse.",
   },
   {
+    page: "Webhooks",
+    title: "Webhooks",
+    about: "Messages from GitHub, n8n or Zapier in; events out to Discord or Slack.",
+  },
+  {
     page: "Troubleshooting",
     title: "Troubleshooting",
     about: "Docker, keys, the runner image and macOS warnings.",

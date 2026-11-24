@@ -24,6 +24,7 @@ import {
   Square,
   Sun,
   UserPlus,
+  Webhook,
   Wrench,
   X,
   Pin as PinIcon,
@@ -789,6 +790,20 @@ function Item(props: {
                   </>
                 )}
               </span>
+              <span class="spacer" />
+              <span class="meta">{clockTime(item.at)}</span>
+            </div>
+            <RichText text={item.text} />
+          </div>
+        </div>
+      );
+    case "webhook":
+      return (
+        <div class="row row-routine">
+          <div class="routine-msg">
+            <div class="a2a-head">
+              <Webhook size={16} />
+              <span>Webhook</span>
               <span class="spacer" />
               <span class="meta">{clockTime(item.at)}</span>
             </div>

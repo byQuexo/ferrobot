@@ -18,6 +18,13 @@ All notable changes are listed here. The format follows
   return; a turn started by another agent links to the turn that sent it, so
   a task's answer leads back to the task. The OpenTelemetry export sends
   waits as spans and handoffs as span links, without message text.
+- Webhooks (Settings → Webhooks, guide: Webhooks). Incoming: a URL per
+  webhook, shown once, whose POSTs (JSON or text, up to 64 KiB) become
+  messages to an agent, marked as external data and not instructions. The
+  secret lives only in the URL; New URL replaces it. Outgoing: replies, cards
+  waiting for you, finished tasks and failed turns go to a Discord or Slack
+  channel or any URL as JSON, optionally for some agents only, with the last
+  delivery's result in the list. Their URLs are kept in the keychain.
 
 ### Changed
 

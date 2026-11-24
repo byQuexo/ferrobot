@@ -128,6 +128,11 @@ Principles:
   and `tasks::report` record); `GET /v1/agents/{id}/turns/{turn_id}/trace`.
   `otel.rs` — sends each finished turn's trace to the operator's OTLP/HTTP endpoint
   (hand-encoded protobuf; `/v1/otel`, header value in the keychain as `otel:header`).
+- `crates/daemon/src/webhooks.rs` — incoming webhooks (`POST /hooks/{id}/{secret}` on the
+  UI listener, outside `/v1` and its auth; a message from `Sender::Webhook`, framed as
+  external data) and outgoing ones (events posted as Discord, Slack or JSON; URLs in the
+  keychain as `webhook:<id>`); `api/webhooks.rs` — `/v1/webhooks`. All in the `webhooks`
+  setting, no table of their own.
 - `crates/daemon/src/tasks.rs` — tracked tasks: automatic report and reminder;
   `crates/store/src/tasks.rs` — task state from `task` events and the mailbox.
 - `crates/mcp/src/tools.rs` — MCP tools; `crates/mcp/src/lib.rs` — `MailboxNotifier`.
@@ -257,6 +262,11 @@ daemon, `docker ps -a` must be empty of ferrobot containers.
   `<data dir>/api-token`); only `/v1/health` and `/v1/oauth/callback` (single-use
   `state`) are open, and `/artifacts/` takes signed links. Keep the UI listener on
   loopback by default.
+- **Incoming webhooks open nothing else.** `/hooks/{id}/{secret}` sits outside the
+  `/v1` auth layer and takes only its own secret (hash stored, URL shown once at
+  create or regenerate); the operator token is not accepted there and a webhook
+  secret opens no other route. Its body reaches the agent framed as external data,
+  never as the operator's words; agents never see the secret.
 - **Per-agent tokens** on `/runner/ws`, `/mcp`, `/model`, `/host/claude-code/turn`. An agent can only act
   as itself (MCP tools read the caller from the token). Only hashes are stored.
 - **`create_agent` needs operator approval unless Auto mode is on**: an

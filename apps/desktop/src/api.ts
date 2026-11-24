@@ -49,6 +49,14 @@ export type HookEvent = Schemas["HookEvent"];
 export type InstalledPlugin = Schemas["InstalledPlugin"];
 export type OtelSettings = Schemas["OtelSettings"];
 export type OtelView = Schemas["OtelView"];
+export type WebhooksView = Schemas["WebhooksView"];
+export type IncomingWebhook = Schemas["IncomingWebhook"];
+export type IncomingWebhookCreated = Schemas["IncomingWebhookCreated"];
+export type NewIncomingWebhook = Schemas["NewIncomingWebhook"];
+export type OutgoingWebhookView = Schemas["OutgoingWebhookView"];
+export type NewOutgoingWebhook = Schemas["NewOutgoingWebhook"];
+export type WebhookEvent = Schemas["WebhookEvent"];
+export type WebhookFormat = Schemas["WebhookFormat"];
 export type MemoryVaultView = Schemas["MemoryVaultView"];
 export type Pin = Schemas["Pin"];
 export type PinKind = Schemas["PinKind"];
@@ -369,6 +377,17 @@ export class DaemonClient {
   updateOtel = (s: OtelSettings): Promise<OtelView> => this.#request("PUT", "/v1/otel", s);
   setOtelSecret = (value: string | null): Promise<OtelView> =>
     this.#request("PUT", "/v1/otel/secret", { value });
+  webhooks = (): Promise<WebhooksView> => this.#request("GET", "/v1/webhooks");
+  createIncomingWebhook = (req: NewIncomingWebhook): Promise<IncomingWebhookCreated> =>
+    this.#request("POST", "/v1/webhooks/incoming", req);
+  regenerateIncomingWebhook = (id: number): Promise<IncomingWebhookCreated> =>
+    this.#request("POST", `/v1/webhooks/incoming/${String(id)}/secret`);
+  deleteIncomingWebhook = (id: number): Promise<void> =>
+    this.#request("DELETE", `/v1/webhooks/incoming/${String(id)}`);
+  createOutgoingWebhook = (req: NewOutgoingWebhook): Promise<OutgoingWebhookView> =>
+    this.#request("POST", "/v1/webhooks/outgoing", req);
+  deleteOutgoingWebhook = (id: number): Promise<void> =>
+    this.#request("DELETE", `/v1/webhooks/outgoing/${String(id)}`);
   updateInfo = (): Promise<UpdateInfo> => this.#request("GET", "/v1/update");
   diagnostics = (): Promise<Diagnostics> => this.#request("GET", "/v1/diagnostics");
   diagnosticsLog = (lines: number): Promise<DiagnosticsLog> =>

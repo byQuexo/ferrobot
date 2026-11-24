@@ -1442,3 +1442,50 @@ slop, so polish mode: palette, accent, logo, layout and features stay.
   for fixes made elsewhere (`gcloud auth login`, a key re-enabled upstream).
   Clearing wakes the agent when messages wait. A daemon key only arrives with a
   restart, which clears the state anyway.
+
+## Webhooks (0.1.8)
+
+- **Incoming hooks share the UI listener, outside `/v1`.** `POST
+  /hooks/{id}/{secret}` is merged into the UI router after its auth and CORS
+  layers, so the operator token neither guards nor opens it, and `/v1` is not
+  widened (no entry in the middleware's open list). A separate opt-in listener
+  was the alternative: a tunnel to its port could expose nothing else. It lost
+  because the desktop app starts the bundled `ferrobotd` with fixed arguments,
+  so a `--hooks-listen` flag would be out of reach for most users. Receiving
+  from the internet therefore needs a tunnel or proxy that forwards only
+  `/hooks/` (the guide shows a Cloudflare ingress rule with `path: ^/hooks/`).
+- **The secret is in the path,** because GitHub, Zapier and most forms can
+  only be given a URL, not a header. It is two v4 UUIDs (244 random bits, like
+  agent tokens); only its SHA-256 is stored, compared in constant time. An
+  unknown id and a wrong secret get the same `404`. Nothing logs request
+  paths, and the URL is returned only by create and regenerate.
+- **One JSON value in the `settings` table (`webhooks`), no migration.**
+  Incoming hooks (with the secret's hash), outgoing hooks (without their URL)
+  and a `next_id` counter that never reuses an id, so an old message never takes
+  a new hook's name. Edits are serialized by a lock in `AppState`. Outgoing
+  URLs are secrets (Discord and Slack put the token in them): secret store,
+  `webhook:<id>`, deleted with the hook. Last deliveries and rate-limit counters
+  are in memory, per daemon (not a static as in `otel.rs`, since tests run many
+  daemons in one process).
+- **A new `Sender::Webhook(id)` in the mailbox and `/v1`, but not on the
+  runner wire.** Reusing `user` would show the payload as the operator's own
+  words in the chat and treat it as such in calls; a routine sender would
+  borrow a routine's name. Runners of 0.1.7 parse senders with a closed zod
+  union and would reject the turn, and bumping the runner protocol would make
+  `admit()` refuse every current runner with a restricted tool profile. So
+  `turn` and `steer` frames carry `user`, as the daemon's greeting already
+  does, with `sender_name` `webhook:<name>`, which is all the model sees. Old
+  desktop clients show such a message like an unnamed routine's.
+- **Framed once, when queued.** The stored body starts with `[webhook
+  "<name>"]` and a sentence saying it is external data, not instructions; the
+  payload comes last so it cannot close the frame. The turn, a steer and
+  `read_mailbox` all see the same text. Bodies up to 64 KiB are accepted and
+  the message is cut at the mailbox's 32 KiB.
+- **Outgoing triggers sit where the facts are.** Question cards are caught in
+  `AppState::publish`, which every card creation goes through. Replies (a
+  completed turn on a message from the operator, a routine or a webhook,
+  outside rooms) and final failures are sent from `settle()`; a task is done
+  when the delegate's turn on the task message completes (`tasks::report`).
+  Delivery is one background POST per hook with a 10 s timeout and no retry.
+  Discord gets `allowed_mentions: {parse: []}` so agent text cannot ping
+  `@everyone`.

@@ -41,7 +41,11 @@ In rough order. Nothing here has a date.
    to a URL you choose, such as a Discord or Slack channel. A Discord bridge
    on top lets you write to your agents from a channel and get their answers
    there. Off by default; secrets in the keychain, payloads signed, and no
-   key or operator token in anything sent.
+   key or operator token in anything sent. **Done in 0.1.8:** incoming
+   webhooks to an agent (secret in the URL, only its hash stored) and
+   outgoing webhooks for those four events in Discord, Slack or JSON format,
+   URLs in the keychain ([[Webhooks]]); **open:** the Discord bridge, starting
+   a routine from a webhook, and signed outgoing payloads.
 7. **The agent's computer in the app.** A file browser and a terminal in the
    agent's details panel (Computer tab), so you can look around and fix
    things in its sandbox without asking the agent.

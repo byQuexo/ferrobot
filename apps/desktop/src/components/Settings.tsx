@@ -15,6 +15,7 @@ import {
   Stethoscope,
   Terminal,
   Waypoints,
+  Webhook,
   X,
 } from "lucide-preact";
 
@@ -35,6 +36,7 @@ import { TracesSettings } from "./TracesSettings.tsx";
 import { UpdatesSettings } from "./UpdatesSettings.tsx";
 import { VaultSettings } from "./VaultSettings.tsx";
 import { VoiceSettings } from "./VoiceSettings.tsx";
+import { WebhooksSettings } from "./WebhooksSettings.tsx";
 import { IconButton, Switch } from "./ui.tsx";
 
 export type SettingsSection =
@@ -43,6 +45,7 @@ export type SettingsSection =
   | "agents"
   | "claude-code"
   | "connectors"
+  | "webhooks"
   | "clis"
   | "memory"
   | "traces"
@@ -93,6 +96,13 @@ export const SECTIONS: [SettingsSection, string, string, typeof KeyRound, string
     "Connectors-and-OAuth",
   ],
   [
+    "webhooks",
+    "Webhooks",
+    "Messages from other services to your agents, and your agents’ events to Discord, Slack or any URL.",
+    Webhook,
+    "Webhooks",
+  ],
+  [
     "clis",
     "CLIs",
     "Command-line tools in every agent’s computer, built into one shared image.",
@@ -119,7 +129,7 @@ export const SECTIONS: [SettingsSection, string, string, typeof KeyRound, string
 const GROUPS: [string, SettingsSection[]][] = [
   ["General", ["appearance", "keyboard", "voice"]],
   ["Agents", ["providers", "agents", "claude-code", "memory", "traces"]],
-  ["Tools & keys", ["connectors", "clis", "vault"]],
+  ["Tools & keys", ["connectors", "webhooks", "clis", "vault"]],
   ["App", ["updates", "diagnostics", "guides"]],
 ];
 
@@ -287,6 +297,13 @@ export function Settings(props: {
             onVault={vaultAt}
             onGuide={() => {
               props.onGuide("Connectors-and-OAuth");
+            }}
+          />
+        )}
+        {props.section === "webhooks" && (
+          <WebhooksSettings
+            onGuide={() => {
+              props.onGuide("Webhooks");
             }}
           />
         )}

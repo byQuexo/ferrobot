@@ -18,6 +18,8 @@ export type TimelineItem =
     }
   | { type: "incoming"; key: string; at: string; text: string; from: string; peerId: string }
   | { type: "routine"; key: string; at: string; text: string; routine: string | null }
+  /** From an incoming webhook; the text opens with the webhook's name. */
+  | { type: "webhook"; key: string; at: string; text: string }
   | { type: "outgoing"; key: string; at: string; text: string; to: string; peerId: string }
   | {
       type: "assistant";
@@ -239,6 +241,8 @@ export function buildTimeline(
           from: names.agents.get(m.sender.id) ?? "agent",
           peerId: m.sender.id,
         });
+      } else if (m.sender.kind === "webhook") {
+        push({ type: "webhook", key, at: m.created_at, text: m.body });
       } else {
         const routine = names.routines.get(m.sender.id) ?? null;
         push({ type: "routine", key, at: m.created_at, text: m.body, routine });
