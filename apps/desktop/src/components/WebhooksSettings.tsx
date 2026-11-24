@@ -567,34 +567,49 @@ export function AgentWebhooks(props: { agent: string }): JSX.Element | null {
     (h) => h.agents.length === 0 || h.agents.includes(props.agent),
   );
   if (incoming.length === 0 && outgoing.length === 0) return null;
+  const row = (
+    key: string,
+    Icon: typeof Hash,
+    name: string,
+    detail: string,
+    status?: { cls: string; text: string },
+  ): JSX.Element => (
+    <li key={key} class="agent-hook">
+      <span class="agent-hook-tile" aria-hidden="true">
+        <Icon size={15} />
+      </span>
+      <span class="agent-hook-text">
+        <span class="agent-hook-name">
+          <span class="ellipsis">{name}</span>
+          {status && (
+            <span class={`conn-status ${status.cls}`}>
+              <span class="dot" aria-hidden="true" />
+              {status.text}
+            </span>
+          )}
+        </span>
+        <span class="agent-hook-detail ellipsis" title={detail}>
+          {detail}
+        </span>
+      </span>
+    </li>
+  );
   return (
     <section class="card agent-hooks">
       <h3>Webhooks</h3>
       <ul class="agent-hooks-list">
-        {incoming.map((h) => (
-          <li key={`in-${String(h.id)}`}>
-            <Webhook size={16} aria-hidden="true" />
-            <span>
-              <b>{h.name}</b>
-              <span class="muted small"> · messages this agent</span>
-            </span>
-          </li>
-        ))}
+        {incoming.map((h) =>
+          row(`in-${String(h.id)}`, Webhook, h.name, "Incoming: messages this agent"),
+        )}
         {outgoing.map((h) => {
-          const Icon = ICONS[h.format];
-          return (
-            <li key={`out-${String(h.id)}`}>
-              <Icon size={16} aria-hidden="true" />
-              <span>
-                <b>{h.name}</b>
-                <span class="muted small">
-                  {" "}
-                  · {formatOf(h.format)[1]}: {h.events.map(eventLabel).join(", ")}
-                  {h.agents.length === 0 ? " (every agent)" : ""}
-                </span>
-              </span>
-            </li>
-          );
+          const last = h.last_delivery;
+          const status = !last
+            ? { cls: "", text: "Not used yet" }
+            : last.error
+              ? { cls: "p-error", text: "Failed" }
+              : { cls: "p-awake", text: `Sent ${time(last.at)}` };
+          const detail = `${formatOf(h.format)[1]} · ${h.events.map(eventLabel).join(", ")}`;
+          return row(`out-${String(h.id)}`, ICONS[h.format], h.name, detail, status);
         })}
       </ul>
     </section>
