@@ -38,14 +38,15 @@ which adds the real key.
   provider, then becomes your main agent and builds a team when a job needs one.
 - **Chat.** Streamed replies with tables, Mermaid diagrams and live HTML
   previews; attach files with the paperclip, drag and drop or paste; agents
-  react to your messages with an emoji; a New line where unread turns start;
-  ⌘↵ sends ahead of a running turn.
+  react to your messages with an emoji and you to theirs; a New line where
+  unread turns start; drafts kept per chat; ⌘↵ sends ahead of a running turn.
 - **Question cards.** Agents ask you single choice, multiple choice or free
   text questions right in the chat.
 - **Model and context.** A model switch in the chat header and a ring showing
   how full the context is, with New chat (and Compact now for Claude Code).
-- **Group chats.** Write once and every member answers in turn; call the group
-  to talk it over by voice.
+- **Group chats.** Write once and every member answers in turn, or
+  `@`-mention one agent and only it answers; a line shows who is writing, and
+  names take each agent's colour. Call the group to talk it over by voice.
 - **Traces.** A reply's steps open its turn on a timeline of model and tool
   calls, with timings and failures; export them over OTLP to Phoenix, Langfuse
   or any OpenTelemetry backend ([Traces](docs/wiki/Traces.md)).
@@ -116,8 +117,9 @@ which adds the real key.
   OpenRouter calls at the cost it reports; Claude Code and Codex plan limits.
 - **Desktop app.** macOS and Windows, starts its own daemon; ⌘K and keyboard
   shortcuts, Appearance (theme, accent colour, text size), Diagnostics, and
-  the guides in Settings, which agents can read to walk you through a setting. Any other client can use the daemon's versioned
-  `/v1` API.
+  the guides in Settings, which agents can read to walk you through a setting;
+  a note when a new release is out. Any other client can use the daemon's
+  versioned `/v1` API.
 
 ## Architecture
 
