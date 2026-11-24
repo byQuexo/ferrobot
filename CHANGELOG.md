@@ -10,6 +10,9 @@ All notable changes are listed here. The format follows
 
 ### Added
 
+- A download button next to every file an agent shares in the chat, HTML
+  pages included (they open in the browser when clicked, so there was no way
+  to save them). It saves through your browser, as the file viewer does.
 - Pins: a pin button on every reply and shared file, and a pin button next to
   Settings that lists pinned agents, replies and files. Click a reply to jump
   to it in its chat (it flashes), or a file to open it; rename pins, drag to
