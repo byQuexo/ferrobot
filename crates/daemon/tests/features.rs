@@ -1871,6 +1871,12 @@ async fn agents_create_agents_only_with_approval() {
     };
     assert!(reason.contains("in time"), "{reason}");
     let q3 = approval_card(&d, &ada, q2).await;
+    let timed_out = events(&d, &ada).await.into_iter().any(|e| {
+        e["kind"] == "question_answered"
+            && e["payload"]["question"] == q3
+            && e["payload"]["timed_out"] == true
+    });
+    assert!(timed_out, "a timeout is told apart from a decline");
     let (status, _) = decide(&d, &ada, q3, "approve").await;
     assert_eq!(status, 409, "already answered (declined on timeout)");
 
@@ -4959,6 +4965,92 @@ async fn tasks_report_back_once_and_never_loop() {
         .filter(|m| m["recipient"] == bob.as_str())
         .count();
     assert_eq!(to_bob, 4, "three tasks and one reminder");
+}
+
+#[tokio::test]
+async fn traces_link_handoffs_answers_and_waits_across_agents() {
+    let backend = Arc::new(StatefulBackend::default());
+    let d = start(backend.clone(), None, "127.0.0.1:0").await;
+    let id_of = |v: Value| v["id"].as_str().unwrap().to_owned();
+    let ada = id_of(create(&d, json!({"name": "ada"})).await);
+    let bob = id_of(create(&d, json!({"name": "bob"})).await);
+    let as_ada = mcp_as(&d, backend.token("ada")).await;
+    let mut ada_ws = connect_runner(&d.agents, &backend.token("ada")).await;
+    let mut bob_ws = connect_runner(&d.agents, &backend.token("bob")).await;
+    let path = format!("/v1/agents/{ada}/messages");
+    http(&d.ui, "POST", &path, Some(json!({"body": "get flights"}))).await;
+    let (ada_turn, _, _) = next_turn(&mut ada_ws).await;
+    let args = json!({"to": "bob", "task": "find flights"});
+    let task = call(&as_ada, "assign_task", args).await["message_id"]
+        .as_i64()
+        .unwrap();
+    let card = json!({"questions": [{"prompt": "Window seat?", "kind": "text"}]});
+    let asked = call(&as_ada, "ask_user", card).await["question_id"]
+        .as_i64()
+        .unwrap();
+    finish(&mut ada_ws, ada_turn.clone(), Some("Asked bob.")).await;
+    let (bob_turn, _, _) = next_turn(&mut bob_ws).await;
+    finish(&mut bob_ws, bob_turn.clone(), Some("3 flights")).await;
+    let (answer_turn, _, _) = next_turn(&mut ada_ws).await;
+    finish(&mut ada_ws, answer_turn.clone(), None).await;
+    let answer = format!("/v1/agents/{ada}/questions/{asked}/answer");
+    let body = json!({"answers": [{"question_id": "q1", "custom": "yes"}]});
+    assert_eq!(http(&d.ui, "POST", &answer, Some(body)).await.0, 202);
+
+    let trace = |agent: &str, turn: &str| {
+        let (ui, path) = (
+            d.ui.clone(),
+            format!("/v1/agents/{agent}/turns/{turn}/trace"),
+        );
+        async move { http(&ui, "GET", &path, None).await.1 }
+    };
+    let span = |t: &Value, kind: &str| {
+        t["spans"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|s| s["kind"] == kind)
+            .cloned()
+            .unwrap_or_else(|| panic!("no {kind} span in {t}"))
+    };
+    let t = trace(&ada, &ada_turn).await;
+    let handoff = span(&t, "handoff");
+    assert_eq!(handoff["name"], "task");
+    assert_eq!(
+        handoff["link"],
+        json!({"agent_id": bob, "agent_name": "bob", "turn_id": bob_turn, "message_id": task})
+    );
+    let wait = span(&t, "wait");
+    assert_eq!(
+        (&wait["name"], &wait["outcome"], &wait["input"]["title"]),
+        (
+            &json!("ask_user"),
+            &json!("answered"),
+            &json!("Window seat?")
+        )
+    );
+    assert_eq!(t["from"], Value::Null, "the operator started it");
+
+    let t = eventually(
+        "bob's answer in his trace",
+        Duration::from_secs(5),
+        || async {
+            let t = trace(&bob, &bob_turn).await;
+            (t["spans"].as_array().is_some_and(|s| !s.is_empty())).then_some(t)
+        },
+    )
+    .await;
+    assert_eq!(
+        (&t["from"]["agent_id"], &t["from"]["turn_id"]),
+        (&json!(ada), &json!(ada_turn))
+    );
+    let back = span(&t, "handoff");
+    assert_eq!(
+        (&back["name"], &back["link"]["turn_id"]),
+        (&json!("answer"), &json!(answer_turn))
+    );
+    let t = trace(&ada, &answer_turn).await;
+    assert_eq!(t["from"]["turn_id"], json!(bob_turn));
 }
 
 #[tokio::test]

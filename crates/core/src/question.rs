@@ -164,6 +164,9 @@ pub struct QuestionEvent {
     /// Set on approval cards raised by the daemon (e.g. for `create_agent`).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub approval: Option<Approval>,
+    /// The turn that raised the card (its trace shows the wait); `null` outside a turn.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub turn_id: Option<String>,
 }
 
 impl QuestionEvent {
@@ -191,6 +194,7 @@ impl QuestionEvent {
                 }],
             },
             approval: Some(approval),
+            turn_id: None,
         }
     }
 }
@@ -202,6 +206,13 @@ impl QuestionEvent {
         for c in self.card.questions.iter_mut().flat_map(|q| &mut q.choices) {
             c.label = if c.value == APPROVE { approve } else { decline }.into();
         }
+        self
+    }
+
+    /// Marks the card as raised by `turn`.
+    #[must_use]
+    pub fn in_turn(mut self, turn: Option<String>) -> Self {
+        self.turn_id = turn;
         self
     }
 }
@@ -223,6 +234,9 @@ pub struct QuestionAnswered {
     /// The user message that carried the answer to the agent; `null` for
     /// approval cards (the decision goes to the waiting tool call).
     pub message_id: Option<i64>,
+    /// No answer came in time: the daemon declined the approval card.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub timed_out: bool,
 }
 
 fn check_text(what: &str, s: &str, max: usize) -> Result<(), String> {

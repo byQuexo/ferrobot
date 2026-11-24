@@ -580,10 +580,14 @@ async fn run_turn(
     settle_steered(state, steered, result.as_ref()).await;
     if result.is_none() {
         tracing::warn!(%agent, turn = %turn_id, "turn timed out, interrupting");
-        let _ = out.send(DaemonFrame::Interrupt { turn_id }).await;
+        let _ = out
+            .send(DaemonFrame::Interrupt {
+                turn_id: turn_id.clone(),
+            })
+            .await;
     }
     if let Some(msg) = msg {
-        settle(state, agent, &msg, result).await;
+        settle(state, (agent, &turn_id), &msg, result).await;
     }
     state.publish_agent(agent).await;
     true
@@ -591,7 +595,12 @@ async fn run_turn(
 
 /// Settles the turn's message. A task's end is reported first, so the
 /// supervisor never sees it finished without an answer.
-async fn settle(state: &AppState, agent: AgentId, msg: &MailMessage, result: Option<Done>) {
+async fn settle(
+    state: &AppState,
+    (agent, turn): (AgentId, &str),
+    msg: &MailMessage,
+    result: Option<Done>,
+) {
     let store_result = match result {
         // An interrupt is the operator's decision: do not redeliver.
         Some(Done {
@@ -599,7 +608,7 @@ async fn settle(state: &AppState, agent: AgentId, msg: &MailMessage, result: Opt
             result,
             ..
         }) => {
-            tasks::report(state, agent, msg, outcome, result.as_deref()).await;
+            tasks::report(state, (agent, turn), msg, outcome, result.as_deref()).await;
             state.store.complete_message(msg.id).await
         }
         // It waits for the operator's fix instead of using up its attempts.
@@ -611,7 +620,8 @@ async fn settle(state: &AppState, agent: AgentId, msg: &MailMessage, result: Opt
             };
             match state.store.fail_message(msg.id, error.clone()).await {
                 Ok(MailStatus::Failed) => {
-                    tasks::report(state, agent, msg, TurnOutcome::Failed, Some(&error)).await;
+                    tasks::report(state, (agent, turn), msg, TurnOutcome::Failed, Some(&error))
+                        .await;
                     Ok(())
                 }
                 other => other.map(|_| ()),

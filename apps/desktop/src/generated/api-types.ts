@@ -518,7 +518,10 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** One of the agent's turns as a timeline: its model calls and tool calls with their times. */
+        /**
+         * One of the agent's turns as a timeline: its model calls and tool calls with their times, the
+         *     cards it waited on and the messages it handed to other agents.
+         */
         get: operations["turn_trace"];
         put?: never;
         post?: never;
@@ -2507,6 +2510,8 @@ export interface components {
              *     approval cards (the decision goes to the waiting tool call).
              */
             message_id?: number | null;
+            /** @description No answer came in time: the daemon declined the approval card. */
+            timed_out?: boolean;
         };
         /** @description A card with one or more questions, answered together. */
         QuestionCard: {
@@ -2524,6 +2529,8 @@ export interface components {
             version: number;
             card: components["schemas"]["QuestionCard"];
             approval?: components["schemas"]["Approval"] | null;
+            /** @description The turn that raised the card (its trace shows the wait); `null` outside a turn. */
+            turn_id?: string | null;
         };
         /**
          * @description How a question is answered.
@@ -2736,7 +2743,10 @@ export interface components {
         /** @description One step of a turn. */
         Span: {
             kind: components["schemas"]["SpanKind"];
-            /** @description The model id, or the tool's name. */
+            /**
+             * @description The model id, the tool's name, a wait's approval kind (`create_agent`, `tool_call`, ...;
+             *     `ask_user` for a question card) or a handoff's `message`, `task` or `answer`.
+             */
             name: string;
             /** Format: date-time */
             started_at: string;
@@ -2747,7 +2757,7 @@ export interface components {
             ended_at?: string | null;
             /** @description Why it failed; `null` when it did not. */
             error?: string | null;
-            /** @description A tool's input when small (up to 4 KiB), for its label. */
+            /** @description A tool's input when small (up to 4 KiB), for its label; a wait's card title as `title`. */
             input?: Record<string, never> | null;
             /** Format: int64 */
             input_tokens?: number | null;
@@ -2762,9 +2772,12 @@ export interface components {
              * @description What the provider said the call cost (`OpenRouter`); `null` otherwise.
              */
             cost_usd?: number | null;
+            /** @description A wait's outcome: `approved`, `declined`, `answered` or `timed_out`; `null` while open. */
+            outcome?: string | null;
+            link?: components["schemas"]["TurnLink"] | null;
         };
         /** @enum {string} */
-        SpanKind: "model" | "tool";
+        SpanKind: "model" | "tool" | "wait" | "handoff";
         SpeechRequest: {
             /** @description What to say: 1-4096 characters. */
             text: string;
@@ -2820,11 +2833,22 @@ export interface components {
              *     stream (`model_call` events); `false` for Claude Code turns from before those.
              */
             models_tracked: boolean;
+            from?: components["schemas"]["TurnLink"] | null;
             spans: components["schemas"]["Span"][];
         };
         /** @description What was said. Both providers answer `{"text": ...}` (plus fields we ignore). */
         Transcript: {
             text: string;
+        };
+        /** @description Another agent's turn, reached through a message. */
+        TurnLink: {
+            agent_id: components["schemas"]["AgentId"];
+            /** @description Its current name; `null` once it is deleted. */
+            agent_name?: string | null;
+            /** @description `null` while no turn has taken the message (or it predates linked turns). */
+            turn_id?: string | null;
+            /** Format: int64 */
+            message_id: number;
         };
         /** @description Pushed to every UI WebSocket client. */
         UiEvent: {

@@ -123,7 +123,9 @@ Principles:
   debug build pulls `main`, rebuilds and re-execs itself (debug builds only).
 - `crates/daemon/src/lifecycle.rs`, `supervisor.rs`, `scheduler.rs`, `runner_ws.rs`.
 - `crates/daemon/src/trace.rs` — a turn as a timeline (model calls from usage rows tagged
-  with the turn, tool calls from its events); `GET /v1/agents/{id}/turns/{turn_id}/trace`.
+  with the turn, tool calls from its events, waits from the cards stamped with its
+  `turn_id`, handoffs from its `handoff` events, which `enqueue` in `crates/mcp/src/tools.rs`
+  and `tasks::report` record); `GET /v1/agents/{id}/turns/{turn_id}/trace`.
   `otel.rs` — sends each finished turn's trace to the operator's OTLP/HTTP endpoint
   (hand-encoded protobuf; `/v1/otel`, header value in the keychain as `otel:header`).
 - `crates/daemon/src/tasks.rs` — tracked tasks: automatic report and reminder;

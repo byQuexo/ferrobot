@@ -2254,7 +2254,12 @@ describe("agent meta", () => {
 });
 
 describe("trace layout", () => {
-  const span = (kind: "model" | "tool", name: string, from: number, to: number | null) => ({
+  const span = (
+    kind: "model" | "tool" | "wait" | "handoff",
+    name: string,
+    from: number,
+    to: number | null,
+  ) => ({
     kind,
     name,
     started_at: new Date(1_000_000 + from).toISOString(),
@@ -2354,6 +2359,57 @@ describe("trace layout", () => {
     assert.deepEqual(
       [t.ms, t.running, t.rows[0]?.running, t.rows[0]?.width],
       [4000, true, true, 75],
+    );
+  });
+
+  it("keeps waits out of the slowest and the counts, and names handoffs", async () => {
+    const { layoutTrace, traceLabel, waitStatus } = await import("../src/lib/trace.ts");
+    const bob = { agent_id: "b", agent_name: "bob", turn_id: "t2", message_id: 7 };
+    const t = layoutTrace({
+      turn_id: "t",
+      started_at: new Date(1_000_000).toISOString(),
+      ended_at: new Date(1_010_000).toISOString(),
+      outcome: "completed",
+      error: null,
+      models_tracked: true,
+      spans: [
+        span("model", "m", 0, 2000),
+        span("tool", "x", 2000, 3000),
+        { ...span("wait", "create_agent", 3000, 60_000), outcome: "approved" },
+        { ...span("handoff", "task", 9000, 9000), link: bob },
+      ],
+    });
+    assert.deepEqual(
+      t.rows.map((r) => [r.kind, r.slowest, Math.round(r.width)]),
+      [
+        ["model", true, 20],
+        ["tool", false, 10],
+        ["wait", false, 70],
+        ["handoff", false, 1],
+      ],
+      "an answer after the turn's end stops at its edge",
+    );
+    assert.deepEqual([t.models, t.tools, t.errors], [1, 1, 0]);
+    assert.equal(t.rows[2]?.ms, 57_000);
+    assert.deepEqual(t.rows[3]?.link, bob);
+    const names = (id: string): string | undefined => (id === "b" ? "bob (deleted)" : undefined);
+    assert.equal(traceLabel("handoff", "task", null, names, bob), "Task for @bob (deleted)");
+    assert.equal(
+      traceLabel("handoff", "answer", null, () => undefined, bob),
+      "Answer to @bob",
+    );
+    assert.equal(
+      traceLabel("handoff", "message", null, () => undefined),
+      "Message to a teammate",
+    );
+    assert.equal(
+      traceLabel("wait", "tool_call", { title: "ada wants to run a risky step" }, names),
+      "ada wants to run a risky step",
+    );
+    assert.equal(traceLabel("wait", "ask_user", null, names), "Question");
+    assert.deepEqual(
+      [waitStatus("timed_out", false), waitStatus(null, true), waitStatus(null, false)],
+      ["timed out", "waiting", "no answer"],
     );
   });
 });

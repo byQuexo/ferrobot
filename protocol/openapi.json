@@ -2466,7 +2466,7 @@
         "tags": [
           "chat"
         ],
-        "summary": "One of the agent's turns as a timeline: its model calls and tool calls with their times.",
+        "summary": "One of the agent's turns as a timeline: its model calls and tool calls with their times, the\ncards it waited on and the messages it handed to other agents.",
         "operationId": "turn_trace",
         "parameters": [
           {
@@ -8840,6 +8840,10 @@
             ],
             "format": "int64",
             "description": "The user message that carried the answer to the agent; `null` for\napproval cards (the decision goes to the waiting tool call)."
+          },
+          "timed_out": {
+            "type": "boolean",
+            "description": "No answer came in time: the daemon declined the approval card."
           }
         }
       },
@@ -8893,6 +8897,13 @@
                 "type": "null"
               }
             ]
+          },
+          "turn_id": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "The turn that raised the card (its trace shows the wait); `null` outside a turn."
           }
         }
       },
@@ -9467,7 +9478,7 @@
           },
           "name": {
             "type": "string",
-            "description": "The model id, or the tool's name."
+            "description": "The model id, the tool's name, a wait's approval kind (`create_agent`, `tool_call`, ...;\n`ask_user` for a question card) or a handoff's `message`, `task` or `answer`."
           },
           "started_at": {
             "type": "string",
@@ -9493,7 +9504,7 @@
               "object",
               "null"
             ],
-            "description": "A tool's input when small (up to 4 KiB), for its label."
+            "description": "A tool's input when small (up to 4 KiB), for its label; a wait's card title as `title`."
           },
           "input_tokens": {
             "type": [
@@ -9530,6 +9541,24 @@
             ],
             "format": "double",
             "description": "What the provider said the call cost (`OpenRouter`); `null` otherwise."
+          },
+          "outcome": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "A wait's outcome: `approved`, `declined`, `answered` or `timed_out`; `null` while open."
+          },
+          "link": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/TurnLink",
+                "description": "A handoff's recipient and its turn that took the message."
+              },
+              {
+                "type": "null"
+              }
+            ]
           }
         }
       },
@@ -9537,7 +9566,9 @@
         "type": "string",
         "enum": [
           "model",
-          "tool"
+          "tool",
+          "wait",
+          "handoff"
         ]
       },
       "SpeechRequest": {
@@ -9681,6 +9712,17 @@
             "type": "boolean",
             "description": "Whether model calls are in `spans`: from the model proxy, or on Claude Code from its own\nstream (`model_call` events); `false` for Claude Code turns from before those."
           },
+          "from": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/TurnLink",
+                "description": "The other agent's turn that sent the message this turn started on (a message, a task\nor a task's answer); `null` when the operator or a routine started it."
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "spans": {
             "type": "array",
             "items": {
@@ -9698,6 +9740,37 @@
         "properties": {
           "text": {
             "type": "string"
+          }
+        }
+      },
+      "TurnLink": {
+        "type": "object",
+        "description": "Another agent's turn, reached through a message.",
+        "required": [
+          "agent_id",
+          "message_id"
+        ],
+        "properties": {
+          "agent_id": {
+            "$ref": "#/components/schemas/AgentId"
+          },
+          "agent_name": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Its current name; `null` once it is deleted."
+          },
+          "turn_id": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "`null` while no turn has taken the message (or it predates linked turns)."
+          },
+          "message_id": {
+            "type": "integer",
+            "format": "int64"
           }
         }
       },

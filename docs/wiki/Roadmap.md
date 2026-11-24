@@ -30,9 +30,9 @@ In rough order. Nothing here has a date.
    over OpenTelemetry (OTLP, GenAI conventions) to an endpoint you choose,
    such as Langfuse, Phoenix, Grafana Tempo or Jaeger. Export is off by
    default; its keys stay in the keychain, and prompts and replies are left
-   out unless you turn them on. **Done:** the trace view (model and tool
-   calls) and the export ([[Traces]]); **open:** approval waits and handoffs
-   to other agents.
+   out unless you turn them on. **Done** in 0.1.8: the trace view with model
+   and tool calls, approval waits and handoffs to other agents' turns, and
+   the export ([[Traces]]).
 6. **Webhooks.** Connect ferrobot to other services both ways. Incoming:
    each agent (or routine) can get its own webhook URL with a secret, so a
    POST from GitHub, a form, n8n or Zapier becomes a message to the agent or

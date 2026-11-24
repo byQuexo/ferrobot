@@ -143,6 +143,11 @@ pub trait MailboxNotifier: Send + Sync + 'static {
     fn event_recorded(&self, event: &StoredEvent) {
         let _ = event;
     }
+    /// The turn `agent` is running, if any.
+    fn current_turn(&self, agent: AgentId) -> Option<String> {
+        let _ = agent;
+        None
+    }
     /// Asks the operator to approve a new agent and creates it if they do; resolves on the
     /// answer or the timeout. `Err` carries a message for the agent.
     fn request_agent(

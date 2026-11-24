@@ -8,6 +8,7 @@ type Schemas = components["schemas"];
 export type Agent = Schemas["AgentView"];
 export type AgentContext = Schemas["AgentContext"];
 export type Trace = Schemas["Trace"];
+export type TurnLink = Schemas["TurnLink"];
 export type Presence = Schemas["Presence"];
 export type AvatarCharacter = Schemas["AvatarCharacter"];
 export type StoredEvent = Schemas["StoredEvent"];

@@ -1137,6 +1137,10 @@ kbd { padding: 2px 8px; border: 1px solid var(--border-strong); border-radius: 6
 .trace-key.model { background: var(--accent); }
 .trace-key.tool { background: var(--text-2); }
 .trace-key.failed { background: var(--err); }
+.trace-bar.wait, .trace-key.wait { background: var(--warn); }
+.trace-bar.handoff, .trace-key.handoff { background: var(--ok); }
+.trace-back { display: inline-flex; align-items: center; gap: 4px; margin-bottom: 12px; font-size: 13px; }
+.trace-from { margin: 0; }
 @media (prefers-reduced-motion: reduce) { .trace-bar.running { animation: none; } }
 .trace-time.inside { color: var(--bg); font-weight: 600; }
 

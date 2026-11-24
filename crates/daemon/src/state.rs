@@ -454,6 +454,10 @@ impl ferrobot_mcp::MailboxNotifier for AppState {
         }
     }
 
+    fn current_turn(&self, agent: AgentId) -> Option<String> {
+        self.hub.current_turn(agent)
+    }
+
     fn request_connector(
         &self,
         requester: AgentId,

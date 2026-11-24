@@ -245,7 +245,8 @@ pub async fn set_tools(
             connectors: ids,
             requester,
         },
-    );
+    )
+    .in_turn(state.hub.current_turn(requester));
     let payload = serde_json::to_value(&card).map_err(|e| ApiError::Internal(e.to_string()))?;
     let event = state
         .store
@@ -298,6 +299,7 @@ pub(crate) async fn answer_tools_card(
         question: qid,
         answers,
         message_id,
+        timed_out: false,
     };
     let payload = serde_json::to_value(&answered).map_err(|e| ApiError::Internal(e.to_string()))?;
     state.record(chat, None, "question_answered", payload).await;
@@ -616,6 +618,7 @@ pub(crate) async fn await_card(
             custom: None,
         }],
         message_id: None,
+        timed_out: true,
     };
     let payload = serde_json::to_value(&answered).map_err(|e| ApiError::Internal(e.to_string()))?;
     state.record(chat, None, "question_answered", payload).await;
@@ -667,7 +670,8 @@ pub async fn request(
             name: name.to_string(),
             description,
         },
-    );
+    )
+    .in_turn(state.hub.current_turn(requester));
     let Some(approved) = await_card(state, chat, &card).await? else {
         return Ok(AgentRequestOutcome::Declined {
             reason: "the operator did not answer in time".into(),

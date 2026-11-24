@@ -499,6 +499,17 @@ impl FerrobotTools {
         }
         .map_err(store_err)?;
         self.state.notifier.message_enqueued(&msg);
+        if let Some(turn) = self.state.notifier.current_turn(from) {
+            let answer = reply_to.is_some();
+            let payload = serde_json::json!({ "message_id": msg.id, "to": to, "task": task, "answer": answer });
+            // The message is sent either way; failing here would make the agent send it again.
+            if let Err(e) = store
+                .append_event(from, Some(turn), "handoff".into(), payload)
+                .await
+            {
+                tracing::warn!(error = %e, message = msg.id, "cannot record the handoff");
+            }
+        }
         Ok(msg)
     }
 
@@ -755,6 +766,7 @@ impl FerrobotTools {
             version: QUESTION_CARD_VERSION,
             card,
             approval: None,
+            turn_id: self.state.notifier.current_turn(me),
         })
         .map_err(|e| ErrorData::internal_error(e.to_string(), None))?;
         let event = self

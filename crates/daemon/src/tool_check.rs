@@ -218,7 +218,8 @@ pub async fn gate(state: &AppState, agent: AgentId, call: Call<'_>) -> Result<()
             detail,
             reason: reason.to_owned(),
         },
-    );
+    )
+    .in_turn(state.hub.current_turn(agent));
     match crate::agents::await_card(state, agent, &card).await {
         Ok(Some(true)) => Ok(()),
         Ok(Some(false)) => Err(format!("the operator declined: {reason}")),

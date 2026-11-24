@@ -310,6 +310,7 @@ pub(crate) async fn answer_question(
             question: qid,
             answers: req.answers,
             message_id: None,
+            timed_out: false,
         };
         let waiting = crate::agents::decide(&state, qid, &answered.answers);
         let payload =
@@ -331,6 +332,7 @@ pub(crate) async fn answer_question(
         question: qid,
         answers: req.answers,
         message_id: Some(msg.id),
+        timed_out: false,
     };
     let payload = serde_json::to_value(&answered).map_err(|e| ApiError::Internal(e.to_string()))?;
     state.record(id, None, "question_answered", payload).await;
@@ -400,7 +402,8 @@ pub(crate) async fn compact(
     }
 }
 
-/// One of the agent's turns as a timeline: its model calls and tool calls with their times.
+/// One of the agent's turns as a timeline: its model calls and tool calls with their times, the
+/// cards it waited on and the messages it handed to other agents.
 #[utoipa::path(get, path = "/v1/agents/{id}/turns/{turn_id}/trace", tag = "chat",
     params(("id" = String, Path, description = "Agent id (UUID)"),
         ("turn_id" = String, Path, description = "Turn id, as on the turn's events")),
@@ -424,7 +427,8 @@ pub(crate) async fn turn_trace(
     // Claude Code turns before its calls were recorded have none.
     let models_tracked =
         !claude_code || !calls.is_empty() || events.iter().any(|e| e.kind == "model_call");
-    crate::trace::build(&turn, &events, &calls, models_tracked)
+    let links = crate::trace::links(&state.store, &turn, &events).await?;
+    crate::trace::build(&turn, &events, &calls, models_tracked, &links)
         .map(Json)
         .ok_or_else(|| ApiError::NotFound("turn not found".into()))
 }

@@ -12,6 +12,12 @@ All notable changes are listed here. The format follows
   under **Dashboards** in the sidebar. It opens in the main area with a tab
   per dashboard, full screen or in your browser, and always shows the newest
   version the agent shared of that file (`/v1/dashboards`).
+- Traces show the cards a turn waited on (from the card to your answer, with
+  approved, declined, answered or timed out) and the messages it handed to
+  other agents. Click a handoff to open the turn that took it, and Back to
+  return; a turn started by another agent links to the turn that sent it, so
+  a task's answer leads back to the task. The OpenTelemetry export sends
+  waits as spans and handoffs as span links, without message text.
 
 ### Changed
 
