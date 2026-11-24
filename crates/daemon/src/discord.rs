@@ -26,6 +26,9 @@ const TIMEOUT: Duration = Duration::from_secs(10);
 const MAX_CHARS: usize = 2000;
 /// A long reply goes out as at most this many Discord messages.
 const MAX_PARTS: usize = 4;
+/// The bot's reactions on a bridged message: seen once it reached the agent, done once answered.
+const SEEN: &str = "👀";
+const DONE: &str = "✅";
 
 /// The bridge's settings; the bot token is in the secret store.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
@@ -248,10 +251,15 @@ async fn read_channel(
             continue;
         }
         let who = author["username"].as_str().unwrap_or("someone");
+        let id = id.to_string();
+        // Before delivery, so a fast answer's ✅ cannot land before the 👀.
+        if let Err(e) = react(state, token, (channel, &id), SEEN, true).await {
+            note = Some(e);
+        }
         deliver(
             state,
             bridge,
-            &id.to_string(),
+            &id,
             &format!("{text}\n\n(via Discord, from {who})"),
         )
         .await?;
@@ -311,12 +319,15 @@ pub fn turn_done(state: &AppState, message: i64, turn: (AgentId, &str), result: 
     let (agent, turn) = (turn.0, turn.1.to_owned());
     let state = state.clone();
     tokio::spawn(async move {
+        let Ok(Some(token)) = state.settings.secrets.get(SECRET).await else {
+            return;
+        };
         let text = match result.filter(|r| !r.trim().is_empty()) {
             Some(r) => r,
             None => last_reply(&state, agent, turn).await.unwrap_or_default(),
         };
-        if !text.trim().is_empty() {
-            post(&state, target, &text).await;
+        if text.trim().is_empty() || post(&state, &token, &target, &text).await {
+            settle(&state, &token, &target, true).await;
         }
     });
 }
@@ -328,12 +339,17 @@ pub fn turn_failed(state: &AppState, message: i64) {
     };
     let state = state.clone();
     tokio::spawn(async move {
+        let Ok(Some(token)) = state.settings.secrets.get(SECRET).await else {
+            return;
+        };
         post(
             &state,
-            target,
+            &token,
+            &target,
             "(The agent could not answer; see ferrobot.)",
         )
         .await;
+        settle(&state, &token, &target, false).await;
     });
 }
 
@@ -358,40 +374,94 @@ async fn last_reply(state: &AppState, agent: AgentId, turn: String) -> Option<St
     Some(state.render_mentions(&text).await)
 }
 
-async fn post(state: &AppState, (channel, discord_id): (String, String), text: &str) {
-    {
-        let Ok(Some(token)) = state.settings.secrets.get(SECRET).await else {
-            return;
+/// Posts the reply, the first part as a reply to the operator's message; false if Discord refused.
+async fn post(
+    state: &AppState,
+    token: &str,
+    (channel, discord_id): &(String, String),
+    text: &str,
+) -> bool {
+    for (n, part) in split(text).iter().enumerate() {
+        let mut body = json!({ "content": part, "allowed_mentions": { "parse": [] } });
+        if n == 0 {
+            body["message_reference"] =
+                json!({ "message_id": discord_id, "fail_if_not_exists": false });
+        }
+        let sent = state
+            .http
+            .post(api(state, &format!("/channels/{channel}/messages")))
+            .header("authorization", format!("Bot {token}"))
+            .timeout(TIMEOUT)
+            .json(&body)
+            .send()
+            .await;
+        let error = match sent {
+            Ok(r) if r.status().is_success() => None,
+            Ok(r) => Some(format!(
+                "posting the reply: Discord answered {}",
+                r.status()
+            )),
+            Err(e) => Some(format!("posting the reply: {}", e.without_url())),
         };
-        let parts = split(text);
-        for (n, part) in parts.iter().enumerate() {
-            let mut body = json!({ "content": part, "allowed_mentions": { "parse": [] } });
-            if n == 0 {
-                body["message_reference"] =
-                    json!({ "message_id": discord_id, "fail_if_not_exists": false });
-            }
-            let sent = state
-                .http
-                .post(api(state, &format!("/channels/{channel}/messages")))
-                .header("authorization", format!("Bot {token}"))
-                .timeout(TIMEOUT)
-                .json(&body)
-                .send()
-                .await;
-            let error = match sent {
-                Ok(r) if r.status().is_success() => None,
-                Ok(r) => Some(format!(
-                    "posting the reply: Discord answered {}",
-                    r.status()
-                )),
-                Err(e) => Some(format!("posting the reply: {}", e.without_url())),
-            };
-            if let Some(e) = error {
-                state.discord.update(&channel, |c| c.error = Some(e));
-                return;
-            }
+        if let Some(e) = error {
+            state.discord.update(channel, |c| c.error = Some(e));
+            return false;
         }
     }
+    true
+}
+
+/// Swaps the 👀 on the operator's message for ✅ once answered, or just takes it off.
+async fn settle(
+    state: &AppState,
+    token: &str,
+    (channel, message): &(String, String),
+    answered: bool,
+) {
+    let steps: &[(&str, bool)] = if answered {
+        &[(DONE, true), (SEEN, false)]
+    } else {
+        &[(SEEN, false)]
+    };
+    for &(emoji, add) in steps {
+        if let Err(e) = react(state, token, (channel, message), emoji, add).await {
+            state.discord.update(channel, |c| c.note = Some(e));
+            return;
+        }
+    }
+}
+
+/// Adds or removes the bot's own reaction; the error is the channel note to show.
+async fn react(
+    state: &AppState,
+    token: &str,
+    (channel, message): (&str, &str),
+    emoji: &str,
+    add: bool,
+) -> Result<(), String> {
+    let url = api(
+        state,
+        &format!("/channels/{channel}/messages/{message}/reactions/{emoji}/@me"),
+    );
+    let request = if add {
+        state.http.put(url)
+    } else {
+        state.http.delete(url)
+    };
+    let status = match request
+        .header("authorization", format!("Bot {token}"))
+        .header("content-length", "0")
+        .timeout(TIMEOUT)
+        .send()
+        .await
+    {
+        Ok(r) if r.status().is_success() => return Ok(()),
+        Ok(r) => r.status().to_string(),
+        Err(e) => e.without_url().to_string(),
+    };
+    Err(format!(
+        "Could not react to a message ({status}): give the bot the Add Reactions permission."
+    ))
 }
 
 /// A reply in Discord-sized parts: at most 2000 characters each, cut at a line break where

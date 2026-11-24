@@ -19,8 +19,9 @@ kept in the keychain of the daemon's computer; agents never see it.
    Intents*, turn on **Message Content Intent**. Without it Discord sends the
    bot empty messages.
 3. **Invite it to your server.** Under **OAuth2 → URL Generator**, tick the
-   `bot` scope and the permissions **View Channels**, **Send Messages** and
-   **Read Message History**, open the generated link and pick your server.
+   `bot` scope and the permissions **View Channels**, **Send Messages**,
+   **Read Message History** and **Add Reactions**, open the generated link
+   and pick your server.
    A private channel needs the bot (or its role) added to it.
 4. **Copy the IDs.** In Discord's settings, under *Advanced*, turn on
    **Developer Mode**. Right-click the channel → **Copy Channel ID**, and your
@@ -29,8 +30,9 @@ kept in the keychain of the daemon's computer; agents never see it.
    **Save**, enter your user ID and **Save**, add the channel with the agent
    it should talk to, and turn on **Bridge on**.
 
-Write in the channel; within a few seconds the agent gets your message, and
-its answer shows up as a reply. Each channel shows when it was last read, or
+Write in the channel; within a few seconds the agent gets your message (the
+bot reacts with 👀), and its answer shows up as a reply (the 👀 turns into ✅).
+In ferrobot the message carries a Discord chip with who wrote it. Each channel shows when it was last read, or
 what went wrong (a wrong token, a channel the bot cannot see).
 
 ## Good to know

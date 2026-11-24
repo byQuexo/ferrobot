@@ -8292,14 +8292,16 @@ async fn the_discord_bridge_brings_allowed_messages_in_and_replies_out() {
         messages: Vec<Value>,
         posted: Vec<(String, Value)>,
         tokens: Vec<String>,
+        reactions: Vec<(String, String, String)>,
     }
+    type ReactionPath = axum::extract::Path<(String, String, String)>;
     let fake: Arc<Mutex<FakeDiscord>> = Arc::default();
     let msg = |id: &str, author: &str, bot: bool, content: &str| json!({"id": id, "author": {"id": author, "username": "tim", "bot": bot}, "content": content});
     fake.lock()
         .unwrap()
         .messages
         .push(msg("1000", "111111111111111111", false, "old"));
-    let (reads, writes) = (fake.clone(), fake.clone());
+    let (reads, writes, reacts) = (fake.clone(), fake.clone(), fake.clone());
     let app = axum::Router::new().route(
         "/channels/{id}/messages",
         axum::routing::get(
@@ -8331,6 +8333,19 @@ async fn the_discord_bridge_brings_allowed_messages_in_and_replies_out() {
                 axum::Json(json!({"id": "2000"}))
             }
         }),
+    );
+    let react = move |method: axum::http::Method,
+                      axum::extract::Path((_, message, emoji)): ReactionPath| {
+        let fake = reacts.clone();
+        async move {
+            let entry = (method.to_string(), message, emoji);
+            fake.lock().unwrap().reactions.push(entry);
+            axum::http::StatusCode::NO_CONTENT
+        }
+    };
+    let app = app.route(
+        "/channels/{id}/messages/{message}/reactions/{emoji}/@me",
+        axum::routing::put(react.clone()).delete(react),
     );
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
     let base = format!("http://{}", listener.local_addr().unwrap());
@@ -8396,6 +8411,17 @@ async fn the_discord_bridge_brings_allowed_messages_in_and_replies_out() {
     assert_eq!(posted.1["content"], "Hi from ada");
     assert_eq!(posted.1["message_reference"]["message_id"], "1001");
     assert_eq!(posted.1["allowed_mentions"]["parse"], json!([]));
+    let reactions = eventually("👀 swapped for ✅", Duration::from_secs(5), || async {
+        let f = fake.lock().unwrap();
+        (f.reactions.len() == 3).then(|| f.reactions.clone())
+    })
+    .await;
+    let r = |m: &str, e: &str| (m.to_owned(), "1001".to_owned(), e.to_owned());
+    assert_eq!(
+        reactions,
+        [r("PUT", "👀"), r("PUT", "✅"), r("DELETE", "👀")],
+        "only the delivered message gets reactions"
+    );
     assert!(
         fake.lock()
             .unwrap()
