@@ -580,11 +580,8 @@ async fn run_turn(
     settle_steered(state, steered, result.as_ref()).await;
     if result.is_none() {
         tracing::warn!(%agent, turn = %turn_id, "turn timed out, interrupting");
-        let _ = out
-            .send(DaemonFrame::Interrupt {
-                turn_id: turn_id.clone(),
-            })
-            .await;
+        let turn_id = turn_id.clone();
+        let _ = out.send(DaemonFrame::Interrupt { turn_id }).await;
     }
     if let Some(msg) = msg {
         settle(state, (agent, &turn_id), &msg, result).await;

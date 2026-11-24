@@ -204,6 +204,47 @@ fn wait(question: &StoredEvent, answer: Option<&StoredEvent>, end: Option<Offset
     s
 }
 
+/// A message the turn handed to another agent: a mark when it was sent.
+fn handoff(e: &StoredEvent, links: &Links) -> Span {
+    let p = &e.payload;
+    let name = if p["answer"] == true {
+        "answer"
+    } else if p["task"] == true {
+        "task"
+    } else {
+        "message"
+    };
+    let mut s = span(SpanKind::Handoff, name.into(), e.created_at);
+    s.ended_at = Some(e.created_at);
+    s.link = p["message_id"]
+        .as_i64()
+        .and_then(|id| links.handoffs.get(&id).cloned());
+    s
+}
+
+/// Claude Code's own model call, read from its stream (it skips the proxy).
+fn streamed(e: &StoredEvent) -> Span {
+    let p = &e.payload;
+    let at = |k: &str| {
+        p[k].as_str()
+            .and_then(|t| {
+                OffsetDateTime::parse(t, &time::format_description::well_known::Rfc3339).ok()
+            })
+            .unwrap_or(e.created_at)
+    };
+    let mut s = span(
+        SpanKind::Model,
+        text(&p["model"]).unwrap_or_else(|| "model".into()),
+        at("started_at"),
+    );
+    s.ended_at = Some(at("ended_at"));
+    s.input_tokens = p["input_tokens"].as_i64();
+    s.output_tokens = p["output_tokens"].as_i64();
+    s.cache_read_tokens = p["cache_read_tokens"].as_i64();
+    s.cache_write_tokens = p["cache_write_tokens"].as_i64();
+    s
+}
+
 /// The trace of `turn` from its events and proxied calls; `None` when it has no events.
 pub fn build(
     turn: &str,
@@ -264,41 +305,9 @@ pub fn build(
                 ));
                 trace.spans.push(s);
             }
-            "handoff" => {
-                let name = if p["answer"] == true {
-                    "answer"
-                } else if p["task"] == true {
-                    "task"
-                } else {
-                    "message"
-                };
-                let mut s = span(SpanKind::Handoff, name.into(), e.created_at);
-                s.ended_at = Some(e.created_at);
-                s.link = p["message_id"]
-                    .as_i64()
-                    .and_then(|id| links.handoffs.get(&id).cloned());
-                trace.spans.push(s);
-            }
-            // Claude Code's own model calls, read from its stream (they skip the proxy).
+            "handoff" => trace.spans.push(handoff(e, links)),
             "model_call" => {
-                let at = |k: &str| {
-                    p[k].as_str()
-                        .and_then(|t| {
-                            OffsetDateTime::parse(t, &time::format_description::well_known::Rfc3339)
-                                .ok()
-                        })
-                        .unwrap_or(e.created_at)
-                };
-                let mut s = span(
-                    SpanKind::Model,
-                    text(&p["model"]).unwrap_or_else(|| "model".into()),
-                    at("started_at"),
-                );
-                s.ended_at = Some(at("ended_at"));
-                s.input_tokens = p["input_tokens"].as_i64();
-                s.output_tokens = p["output_tokens"].as_i64();
-                s.cache_read_tokens = p["cache_read_tokens"].as_i64();
-                s.cache_write_tokens = p["cache_write_tokens"].as_i64();
+                let s = streamed(e);
                 trace.started_at = trace.started_at.min(s.started_at);
                 trace.spans.push(s);
             }

@@ -4988,6 +4988,11 @@ async fn traces_link_handoffs_answers_and_waits_across_agents() {
     let asked = call(&as_ada, "ask_user", card).await["question_id"]
         .as_i64()
         .unwrap();
+    let routine = json!({"name": "digest", "schedule": "@daily", "prompt": "Check fares"});
+    assert_eq!(
+        call(&as_ada, "create_routine", routine).await["status"],
+        "pending"
+    );
     finish(&mut ada_ws, ada_turn.clone(), Some("Asked bob.")).await;
     let (bob_turn, _, _) = next_turn(&mut bob_ws).await;
     finish(&mut bob_ws, bob_turn.clone(), Some("3 flights")).await;
@@ -5028,6 +5033,18 @@ async fn traces_link_handoffs_answers_and_waits_across_agents() {
             &json!("answered"),
             &json!("Window seat?")
         )
+    );
+    let open = t["spans"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|s| s["name"] == "create_routine")
+        .cloned()
+        .unwrap();
+    assert_eq!(
+        (&open["kind"], &open["outcome"], &open["ended_at"]),
+        (&json!("wait"), &Value::Null, &t["ended_at"]),
+        "an unanswered card waits until the turn's end"
     );
     assert_eq!(t["from"], Value::Null, "the operator started it");
 
