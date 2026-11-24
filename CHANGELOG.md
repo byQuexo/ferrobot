@@ -6,6 +6,13 @@ All notable changes are listed here. The format follows
 
 ## [Unreleased]
 
+### Added
+
+- Agents can post to their bridged Discord channel on their own with the new
+  `send_to_discord` tool (Operator group): progress on long work, a routine's
+  result. It reaches only the channels bridged to that agent, pings nobody,
+  and is listed only for agents with a bridged channel.
+
 ### Changed
 
 - The first wake is faster: the daemon downloads the runner image in the

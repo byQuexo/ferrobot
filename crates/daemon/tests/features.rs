@@ -8422,6 +8422,43 @@ async fn the_discord_bridge_brings_allowed_messages_in_and_replies_out() {
         [r("PUT", "👀"), r("PUT", "✅"), r("DELETE", "👀")],
         "only the delivered message gets reactions"
     );
+
+    let lists = |tools: Vec<rmcp::model::Tool>| tools.iter().any(|t| t.name == "send_to_discord");
+    let client = mcp_as(&d, backend.token("ada")).await;
+    assert!(lists(client.list_all_tools().await.unwrap()));
+    let sent = call(
+        &client,
+        "send_to_discord",
+        json!({"text": "Build finished"}),
+    )
+    .await;
+    assert_eq!(sent["channel_id"], "222222222222222222");
+    let own = eventually("the agent's own post", Duration::from_secs(5), || async {
+        fake.lock().unwrap().posted.get(1).cloned()
+    })
+    .await;
+    assert_eq!(own.1["content"], "Build finished");
+    assert!(
+        own.1.get("message_reference").is_none(),
+        "a post, not a reply"
+    );
+    assert_eq!(own.1["allowed_mentions"]["parse"], json!([]));
+    let elsewhere = rmcp::model::CallToolRequestParams::new("send_to_discord").with_arguments(
+        json!({"text": "hi", "channel_id": "333333333333333333"})
+            .as_object()
+            .cloned()
+            .unwrap(),
+    );
+    assert!(
+        client.call_tool(elsewhere).await.is_err(),
+        "only its own channel"
+    );
+    create(&d, json!({"name": "bob"})).await;
+    let bob = mcp_as(&d, backend.token("bob")).await;
+    assert!(
+        !lists(bob.list_all_tools().await.unwrap()),
+        "no bridge, no tool"
+    );
     assert!(
         fake.lock()
             .unwrap()

@@ -200,6 +200,23 @@ pub trait MailboxNotifier: Send + Sync + 'static {
         let _ = agent;
         Box::pin(async { false })
     }
+    /// Whether a Discord channel is bridged to `agent` with the bridge on; only then is
+    /// `send_to_discord` listed for it.
+    fn has_discord(&self, agent: AgentId) -> BoxFuture<bool> {
+        let _ = agent;
+        Box::pin(async { false })
+    }
+    /// Posts `text` from `agent` to its bridged Discord channel (`channel`: which one, when it
+    /// has several). `Ok` carries the channel id; `Err` a message for the agent.
+    fn send_to_discord(
+        &self,
+        agent: AgentId,
+        text: String,
+        channel: Option<String>,
+    ) -> BoxFuture<Result<String, String>> {
+        let _ = (agent, text, channel);
+        Box::pin(async { Err("Discord is not supported here".to_owned()) })
+    }
     /// Brings `guest` into the operator's voice call that `host` is in
     /// and sends it `topic`. `Err` carries a message for the agent.
     fn invite_to_call(

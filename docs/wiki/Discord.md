@@ -44,6 +44,9 @@ what went wrong (a wrong token, a channel the bot cannot see).
   replayed.
 - Attachments arrive as links. A long reply is split into a few Discord
   messages; anything beyond that stays in ferrobot.
+- The agent can also post to its channel on its own (`send_to_discord`), for
+  example progress on long work or a routine's result; it reaches only the
+  channels bridged to it.
 - Replies never ping anyone (`@everyone` and mentions are turned off).
 - Question and approval cards are still answered in the app. To hear about
   them in Discord, add an outgoing [[Webhooks]] entry for "Cards waiting for

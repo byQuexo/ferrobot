@@ -12,7 +12,7 @@ off.
 | --- | --- |
 | Team | Message teammates and give them tasks |
 | Memory | Remember and recall notes |
-| Operator | Ask you questions, share files, react to your messages, bring teammates into calls, read the guides |
+| Operator | Ask you questions, share files, react to your messages, bring teammates into calls, post to its Discord channel, read the guides |
 | Create agents | Ask to create new agents |
 | Add connectors | Ask you to add connectors |
 | Routines | Set up its own routines |
@@ -56,6 +56,9 @@ Activities.
   with its file tools.
 - **Reactions**: an agent with **Operator** can acknowledge your message with
   one emoji (`react`) instead of a reply. It shows on your message.
+- **Discord**: an agent with **Operator** and a [[Discord]] channel bridged to
+  it can post there on its own (`send_to_discord`), for example progress on
+  long work or a routine's result.
 
 ## Agents that create agents
 

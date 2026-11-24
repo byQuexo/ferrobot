@@ -323,6 +323,20 @@ pub struct ReactArgs {
 }
 
 #[derive(Debug, Deserialize, JsonSchema)]
+pub struct SendToDiscordArgs {
+    /// The message; a long one goes out as a few Discord messages.
+    pub text: String,
+    /// The channel id, only needed when more than one Discord channel is bridged to you.
+    #[serde(default)]
+    pub channel_id: Option<String>,
+}
+
+#[derive(Debug, Serialize, JsonSchema)]
+pub struct SentToDiscord {
+    pub channel_id: String,
+}
+
+#[derive(Debug, Deserialize, JsonSchema)]
 pub struct InviteToCallArgs {
     /// The teammate to bring in: its id or `@name`.
     pub agent: String,
@@ -994,6 +1008,30 @@ impl FerrobotTools {
     }
 
     #[tool(
+        description = "Post a message to the Discord channel your operator bridged to you, \
+        whenever it helps: progress on long work, a routine's result, a heads-up. Your reply to \
+        a message from Discord already goes there by itself. Nobody gets pinged."
+    )]
+    async fn send_to_discord(
+        &self,
+        Extension(parts): Extension<http::request::Parts>,
+        Parameters(args): Parameters<SendToDiscordArgs>,
+    ) -> ToolResult<SentToDiscord> {
+        let me = caller(&parts)?.0.id;
+        let text = args.text.trim();
+        if text.is_empty() {
+            return Err(ErrorData::invalid_params("text is empty", None));
+        }
+        let channel_id = self
+            .state
+            .notifier
+            .send_to_discord(me, text.to_owned(), args.channel_id)
+            .await
+            .map_err(|e| ErrorData::invalid_params(e, None))?;
+        Ok(Json(SentToDiscord { channel_id }))
+    }
+
+    #[tool(
         description = "React to a message your operator sent you with one emoji; it shows on \
         their message in your chat. Use it to acknowledge without words instead of replying \
         \"ok\". A new reaction replaces your earlier one on that message."
@@ -1248,7 +1286,7 @@ pub(crate) fn group_of(tool: &str) -> Option<ToolGroup> {
         }
         "remember" | "recall" | "forget" => ToolGroup::Memory,
         "ask_user" | "share_file" | "invite_to_call" | "hang_up" | "list_guides" | "read_guide"
-        | "react" => ToolGroup::Operator,
+        | "react" | "send_to_discord" => ToolGroup::Operator,
         "create_agent" | "set_agent_tools" => ToolGroup::CreateAgents,
         "add_connector" => ToolGroup::AddConnectors,
         "create_routine" => ToolGroup::Routines,
@@ -1279,6 +1317,9 @@ impl ServerHandler for FerrobotTools {
         };
         let mut tools = Self::tool_router().list_all();
         tools.retain(|t| allowed(me, &t.name));
+        if !self.state.notifier.has_discord(me.id).await {
+            tools.retain(|t| t.name != "send_to_discord");
+        }
         tools.extend(self.state.notifier.connector_tools(me.id).await);
         Ok(ListToolsResult::with_all_items(tools))
     }

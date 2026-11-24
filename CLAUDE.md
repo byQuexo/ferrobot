@@ -135,7 +135,8 @@ Principles:
   setting, no table of their own.
 - `crates/daemon/src/discord.rs` — the Discord bridge: polls bridged channels through
   Discord's REST API with the operator's bot token (keychain `discord:bot`); messages
-  from allowed Discord users go to the channel's agent as the operator's, replies go back;
+  from allowed Discord users go to the channel's agent as the operator's, replies go back
+  (👀, then ✅); an agent posts to its own bridged channels with `send_to_discord`;
   `api/discord.rs` — `/v1/discord`. Settings in the `discord` setting.
 - `crates/daemon/src/tasks.rs` — tracked tasks: automatic report and reminder;
   `crates/store/src/tasks.rs` — task state from `task` events and the mailbox.
