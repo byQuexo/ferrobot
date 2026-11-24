@@ -63,6 +63,9 @@ jobs:
           platforms: ${{ matrix.platform }}
           labels: org.opencontainers.image.source=https://github.com/${{ github.repository }}
           outputs: type=image,name=${{ steps.image.outputs.name }},push-by-digest=true,name-canonical=true,push=true
+          # Unchanged steps keep their layers, so an update downloads only what changed.
+          cache-from: type=registry,ref=${{ steps.image.outputs.name }}:buildcache-${{ matrix.os }}
+          cache-to: type=registry,ref=${{ steps.image.outputs.name }}:buildcache-${{ matrix.os }},mode=max,image-manifest=true,oci-mediatypes=true
       - run: |
           mkdir -p /tmp/digests
           digest="${{ steps.build.outputs.digest }}"

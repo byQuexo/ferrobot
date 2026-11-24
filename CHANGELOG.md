@@ -6,6 +6,14 @@ All notable changes are listed here. The format follows
 
 ## [Unreleased]
 
+### Changed
+
+- The first wake is faster: the daemon downloads the runner image in the
+  background as soon as Docker runs, instead of when the first agent starts.
+- Updates download less: the runner image keeps its unchanged layers from one
+  release to the next, so an update usually fetches only the runner's code
+  instead of about 700 MB.
+
 ## [0.1.9] - 2026-11-24
 
 ### Added
