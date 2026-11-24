@@ -12,6 +12,8 @@ All notable changes are listed here. The format follows
   it lists that chat's pinned replies and files (the global pin list stays).
 - An agent's details panel lists its webhooks: the incoming ones that message
   it and the outgoing ones that report on it.
+- Long instructions in an agent's details fold to their first six lines, with
+  **Show all**, so the cards below stay in view.
 
 ### Changed
 

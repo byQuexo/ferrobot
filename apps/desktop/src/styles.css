@@ -1357,3 +1357,9 @@ input.slider:is(:focus-visible, :active)::-moz-range-thumb { box-shadow: 0 0 0 1
 .agent-hook-name > .ellipsis { min-width: 0; }
 .agent-hook-name .conn-status { flex: none; font-weight: 400; }
 .agent-hook-detail { font-size: 12px; color: var(--muted); }
+
+/* Long instructions in an agent's details fold to six lines */
+.prewrap.folded {
+  display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 6; line-clamp: 6; overflow: hidden;
+  mask-image: linear-gradient(to bottom, #000 70%, transparent);
+}
