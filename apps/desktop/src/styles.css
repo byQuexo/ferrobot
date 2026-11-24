@@ -1288,6 +1288,7 @@ input.slider:is(:focus-visible, :active)::-moz-range-thumb { box-shadow: 0 0 0 1
 .pin-btn:hover { background: var(--surface-2); color: var(--text); }
 .pin-btn.on { color: var(--accent); }
 .file-head { display: flex; align-items: center; gap: 4px; }
+.file-head .pin-btn { opacity: 1; }
 .flash { animation: pin-flash 1.6s var(--ease); border-radius: 12px; }
 @keyframes pin-flash { 0%, 60% { background: var(--accent-soft, rgba(99, 102, 241, 0.16)); } 100% { background: transparent; } }
 @media (prefers-reduced-motion: reduce) { .flash { animation: none; outline: 2px solid var(--accent); } }

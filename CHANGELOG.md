@@ -6,6 +6,12 @@ All notable changes are listed here. The format follows
 
 ## [Unreleased]
 
+### Added
+
+- A download button next to every file an agent shares in the chat, HTML
+  pages included (they open in the browser when clicked, so there was no way
+  to save them). It saves through your browser, as the file viewer does.
+
 ## [0.1.7] - 2026-11-24
 
 ### Added

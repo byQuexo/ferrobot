@@ -27,6 +27,7 @@ import {
   Wrench,
   X,
   Pin as PinIcon,
+  Download,
 } from "lucide-preact";
 
 import type {
@@ -437,6 +438,27 @@ function TraceLink(props: {
   );
 }
 
+/** Saves a shared file through the browser, as the file viewer does; the app window cannot. */
+function DownloadButton(props: { agent: string; event: number; name: string }): JSX.Element {
+  const { client, run } = useApp();
+  return (
+    <button
+      type="button"
+      class="pin-btn"
+      aria-label={`Download ${props.name}`}
+      title="Download"
+      onClick={() =>
+        void run(async () => {
+          const file = await client.sharedFile(props.agent, props.event);
+          window.open(`${client.base}${file.url}&download=1`, "_blank", "noopener");
+        })
+      }
+    >
+      <Download size={14} />
+    </button>
+  );
+}
+
 /** Pins a reply or a shared file to the list behind the sidebar's pin button. */
 function PinButton(props: {
   kind: PinKind;
@@ -713,6 +735,7 @@ function Item(props: {
                 {fileSize(item.size)} · {clockTime(item.at)}
               </span>
             </button>
+            <DownloadButton agent={agent.id} event={item.id} name={item.name} />
             <PinButton kind="file" agent={agent.id} event={item.id} label={() => item.name} />
           </div>
           <FilePreview agent={agent.id} file={item.id} name={item.name} />
