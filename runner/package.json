@@ -1,6 +1,6 @@
 {
   "name": "@ferrobot/runner",
-  "version": "0.1.8",
+  "version": "0.1.9",
   "description": "In-sandbox agent runner: drives Claude via the Claude Agent SDK and talks to ferrobotd over WebSocket.",
   "license": "(MIT OR Apache-2.0)",
   "private": true,
