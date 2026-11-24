@@ -56,6 +56,17 @@ click a reply to jump to it in its chat, or a file to open it. Rename a pin
 with the pencil, drag to reorder, and unpin with the cross. Pins live in the
 daemon, so every app that connects to it sees them.
 
+### Dashboards
+
+Keep HTML pages your agents make (a finance overview, a project board) one
+click away. Next to a shared `.html` file, click **Use as dashboard**. It
+appears under **Dashboards** in the sidebar; click it to open it in the main
+area, with a tab for each dashboard. A dashboard follows the file, not one
+copy of it: when the agent shares the same file again (for example from a
+morning routine), the dashboard shows the new version. Rename it with the
+pencil (or double-click its tab), open it full screen or in your browser,
+remove it with the trash can. Dashboards live in the daemon too.
+
 The desktop window itself has had far less testing than the daemon; most UI
 checks ran in a browser against a real daemon.
 

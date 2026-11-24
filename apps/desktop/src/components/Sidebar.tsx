@@ -18,6 +18,7 @@ import {
 import type { Agent } from "../api.ts";
 import { useApp } from "../context.ts";
 import { PinsMenu } from "./Pins.tsx";
+import { DashboardList } from "./Dashboards.tsx";
 import { rowLine, statusOf } from "../lib/format.ts";
 import { loadOrder, moveId, orderAgents, saveOrder } from "../lib/order.ts";
 import { Avatar } from "./Avatar.tsx";
@@ -56,6 +57,8 @@ export function Sidebar(props: {
   settingsOpen: boolean;
   onUsage: () => void;
   usageOpen: boolean;
+  /** The open dashboard's index, if one is open. */
+  board?: number | null;
   online: boolean;
   onDeleted: (id: string) => void;
 }): JSX.Element {
@@ -86,7 +89,7 @@ export function Sidebar(props: {
     toggled.current = false;
     aside.current?.querySelector<HTMLElement>("[aria-expanded]")?.focus();
   }, [props.rail]);
-  const chatOpen = !props.pair && props.room === null;
+  const chatOpen = !props.pair && props.room === null && (props.board ?? null) === null;
   const list = useMemo(() => {
     const f = filter.trim().toLowerCase();
     const shown = [...agents.values()].filter(
@@ -248,6 +251,7 @@ export function Sidebar(props: {
             {list.length === 0 && agents.size > 0 && (
               <p class="muted pad">No agent matches “{filter}”.</p>
             )}
+            <DashboardList active={props.board ?? null} />
             <GroupList active={props.room} onOpen={props.onOpenRoom} />
             <ConversationList active={props.pair} onOpen={props.onOpenPair} />
             <RoomList active={props.room} onOpen={props.onOpenRoom} />

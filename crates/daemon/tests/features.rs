@@ -7919,3 +7919,43 @@ async fn a_deleted_agent_is_still_named_in_mentions() {
         "{model_input}"
     );
 }
+
+#[tokio::test]
+async fn a_dashboard_shows_the_newest_share_of_its_file() {
+    let d = start(Arc::new(StatefulBackend::default()), None, "127.0.0.1:0").await;
+    let ada = create(&d, json!({"name": "ada"})).await["id"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    let agent: AgentId = ada.parse().unwrap();
+    let share = |path: &'static str| {
+        let state = d.state.clone();
+        async move {
+            let payload = json!({"name": "x.html", "size": 1, "path": path, "key": "k"});
+            state
+                .store
+                .append_event(agent, None, "file".into(), payload)
+                .await
+                .unwrap()
+                .id
+        }
+    };
+    let first = share("/home/agent/finance.html").await;
+    let list =
+        json!([{"agent_id": ada, "path": "/home/agent/finance.html", "label": " Finances "}]);
+    let (status, boards) = http(&d.ui, "PUT", "/v1/dashboards", Some(list)).await;
+    assert_eq!(status, 200, "{boards}");
+    assert_eq!(
+        (boards[0]["label"].clone(), boards[0]["file"].clone()),
+        (json!("Finances"), json!(first))
+    );
+    share("/home/agent/other.html").await;
+    let newer = share("/home/agent/finance.html").await;
+    let (_, boards) = http(&d.ui, "GET", "/v1/dashboards", None).await;
+    assert_eq!(boards[0]["file"], newer, "the newest version of that path");
+    let not_html = json!([{"agent_id": ada, "path": "/home/agent/notes.md", "label": "Notes"}]);
+    assert_eq!(
+        http(&d.ui, "PUT", "/v1/dashboards", Some(not_html)).await.0,
+        400
+    );
+}

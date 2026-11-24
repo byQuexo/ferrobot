@@ -813,6 +813,24 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/dashboards": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** The dashboards, in order, each with its newest shared version. */
+        get: operations["get_dashboards"];
+        /** Replaces the dashboards: adding, renaming, reordering and removing all send the whole list. */
+        put: operations["put_dashboards"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/diagnostics": {
         parameters: {
             query?: never;
@@ -1983,6 +2001,25 @@ export interface components {
          * @enum {string}
          */
         CredentialProblem: "missing" | "rejected";
+        /** @description A dashboard: a shared HTML file, by its agent and path. */
+        Dashboard: {
+            agent_id: string;
+            /** @description The file's path in the agent's computer, e.g. `/home/agent/finance.html`. */
+            path: string;
+            /** @description Shown on its tab; 1-60 characters. */
+            label: string;
+            /**
+             * Format: int64
+             * @description Read only (ignored when saving): the newest shared version's `file` event; `null`
+             *     until one is shared.
+             */
+            file?: number | null;
+            /**
+             * Format: date-time
+             * @description Read only (ignored when saving): when that version was shared.
+             */
+            updated_at?: string | null;
+        };
         /** @description A device code the operator enters at `verification_url`. */
         DeviceCode: {
             verification_url: string;
@@ -5869,6 +5906,75 @@ export interface operations {
             };
             /** @description Malformed agent id */
             404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+        };
+    };
+    get_dashboards: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Dashboard"][];
+                };
+            };
+            /** @description Missing or wrong API token */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+        };
+    };
+    put_dashboards: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["Dashboard"][];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Dashboard"][];
+                };
+            };
+            /** @description Too many, a bad label or path, or an unknown agent */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Missing or wrong API token */
+            401: {
                 headers: {
                     [name: string]: unknown;
                 };

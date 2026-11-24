@@ -59,6 +59,7 @@ import { isPinned, pinLabel, togglePin } from "../lib/pins.ts";
 import { isMac, keyLabel, SHORTCUTS, useShortcuts } from "../lib/shortcuts.ts";
 import { hasVoiceKey, record, startLive, type LiveSession, type Recording } from "../lib/voice.ts";
 import { AttachmentChips, previews } from "./Attachments.tsx";
+import { DashboardButton } from "./Dashboards.tsx";
 import { FilePreview } from "./FilePreview.tsx";
 import { fileSize } from "./FileViewer.tsx";
 import { ContextMeter, ModelChip, TagChips } from "./AgentMeta.tsx";
@@ -736,6 +737,9 @@ function Item(props: {
               </span>
             </button>
             <DownloadButton agent={agent.id} event={item.id} name={item.name} />
+            {/\.html?$/i.test(item.name) && item.path && (
+              <DashboardButton agent={agent.id} path={item.path} name={item.name} />
+            )}
             <PinButton kind="file" agent={agent.id} event={item.id} label={() => item.name} />
           </div>
           <FilePreview agent={agent.id} file={item.id} name={item.name} />

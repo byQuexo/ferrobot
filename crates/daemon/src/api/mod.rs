@@ -4,6 +4,7 @@ pub(crate) mod agents;
 pub(crate) mod chat;
 pub(crate) mod clis;
 pub(crate) mod connectors;
+pub(crate) mod dashboards;
 pub(crate) mod diagnostics;
 pub(crate) mod files;
 pub(crate) mod groups;
@@ -150,6 +151,10 @@ fn integrations() -> Router<AppState> {
         )
         .route("/v1/otel", get(otel::get_otel).put(otel::put_otel))
         .route("/v1/pins", get(pins::get_pins).put(pins::put_pins))
+        .route(
+            "/v1/dashboards",
+            get(dashboards::get_dashboards).put(dashboards::put_dashboards),
+        )
         .route("/v1/otel/secret", put(otel::put_otel_secret))
         .route(
             "/v1/provider-kinds/{kind}/models",

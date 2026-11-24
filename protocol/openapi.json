@@ -3559,6 +3559,93 @@
         }
       }
     },
+    "/v1/dashboards": {
+      "get": {
+        "tags": [
+          "chat"
+        ],
+        "summary": "The dashboards, in order, each with its newest shared version.",
+        "operationId": "get_dashboards",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/Dashboard"
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or wrong API token",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        }
+      },
+      "put": {
+        "tags": [
+          "chat"
+        ],
+        "summary": "Replaces the dashboards: adding, renaming, reordering and removing all send the whole list.",
+        "operationId": "put_dashboards",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/components/schemas/Dashboard"
+                }
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/Dashboard"
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Too many, a bad label or path, or an unknown agent",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or wrong API token",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/v1/diagnostics": {
       "get": {
         "tags": [
@@ -7466,6 +7553,44 @@
           "missing",
           "rejected"
         ]
+      },
+      "Dashboard": {
+        "type": "object",
+        "description": "A dashboard: a shared HTML file, by its agent and path.",
+        "required": [
+          "agent_id",
+          "path",
+          "label"
+        ],
+        "properties": {
+          "agent_id": {
+            "type": "string"
+          },
+          "path": {
+            "type": "string",
+            "description": "The file's path in the agent's computer, e.g. `/home/agent/finance.html`."
+          },
+          "label": {
+            "type": "string",
+            "description": "Shown on its tab; 1-60 characters."
+          },
+          "file": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64",
+            "description": "Read only (ignored when saving): the newest shared version's `file` event; `null`\nuntil one is shared."
+          },
+          "updated_at": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time",
+            "description": "Read only (ignored when saving): when that version was shared."
+          }
+        }
       },
       "DeviceCode": {
         "type": "object",

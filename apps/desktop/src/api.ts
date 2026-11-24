@@ -52,6 +52,7 @@ export type MemoryVaultView = Schemas["MemoryVaultView"];
 export type Pin = Schemas["Pin"];
 export type PinKind = Schemas["PinKind"];
 export type FormerAgent = Schemas["FormerAgent"];
+export type Dashboard = Schemas["Dashboard"];
 export type ModelList = Schemas["ModelList"];
 export type ModelInfo = Schemas["ModelInfo"];
 export type VoiceView = Schemas["VoiceView"];
@@ -355,6 +356,9 @@ export class DaemonClient {
   updateSettings = (s: GeneralSettings): Promise<GeneralSettings> =>
     this.#request("PUT", "/v1/settings", s);
   formerAgents = (): Promise<FormerAgent[]> => this.#request("GET", "/v1/agents/former");
+  dashboards = (): Promise<Dashboard[]> => this.#request("GET", "/v1/dashboards");
+  setDashboards = (list: Dashboard[]): Promise<Dashboard[]> =>
+    this.#request("PUT", "/v1/dashboards", list);
   pins = (): Promise<Pin[]> => this.#request("GET", "/v1/pins");
   setPins = (pins: Pin[]): Promise<Pin[]> => this.#request("PUT", "/v1/pins", pins);
   memoryVault = (): Promise<MemoryVaultView> => this.#request("GET", "/v1/memory-vault");

@@ -74,6 +74,7 @@ import { addTag, contextMeter } from "../src/lib/agent-meta.ts";
 import { moveId, orderAgents, pickSelection } from "../src/lib/order.ts";
 import { authValue, backendOf, OTEL_ENDPOINTS } from "../src/lib/otel.ts";
 import { isPinned, movePin, pinKey, pinLabel, togglePin } from "../src/lib/pins.ts";
+import { boardLabel, isBoard, toggleBoard } from "../src/lib/dashboards.ts";
 import { keyLabel, matchShortcut, SHORTCUTS, type KeyPress } from "../src/lib/shortcuts.ts";
 import { pollOutcome } from "../src/lib/update.ts";
 import {
@@ -2426,5 +2427,18 @@ describe("pins", () => {
       pins.map((p) => p.event),
       [2],
     );
+  });
+});
+
+describe("dashboards", () => {
+  it("names a dashboard after its file and toggles it by agent and path", () => {
+    assert.equal(boardLabel("finance.HTML"), "finance");
+    assert.equal(boardLabel(".html"), "Dashboard");
+    const board = { agent_id: "a", path: "/home/agent/f.html", label: "f" };
+    let list = toggleBoard([], board);
+    assert.ok(isBoard(list, "a", "/home/agent/f.html"));
+    assert.ok(!isBoard(list, "b", "/home/agent/f.html"));
+    list = toggleBoard(list, { ...board, label: "other" });
+    assert.equal(list.length, 0);
   });
 });

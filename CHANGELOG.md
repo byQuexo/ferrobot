@@ -6,6 +6,13 @@ All notable changes are listed here. The format follows
 
 ## [Unreleased]
 
+### Added
+
+- Dashboards: **Use as dashboard** next to any shared `.html` file keeps it
+  under **Dashboards** in the sidebar. It opens in the main area with a tab
+  per dashboard, full screen or in your browser, and always shows the newest
+  version the agent shared of that file (`/v1/dashboards`).
+
 ### Fixed
 
 - A mention of a deleted agent showed `@unknown-agent`; it now shows its last

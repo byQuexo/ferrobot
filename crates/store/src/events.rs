@@ -191,6 +191,27 @@ impl Store {
         .await
     }
 
+    /// The newest `file` event `agent` shared from `path`, with when it was shared.
+    pub async fn latest_file(
+        &self,
+        agent: AgentId,
+        path: String,
+    ) -> Result<Option<(i64, OffsetDateTime)>, StoreError> {
+        self.with(move |c| {
+            let row: Option<(i64, String)> = c
+                .query_row(
+                    "SELECT id, created_at FROM events
+                     WHERE agent_id = ?1 AND kind = 'file' AND json_extract(payload, '$.path') = ?2
+                     ORDER BY id DESC LIMIT 1",
+                    params![agent.to_string(), path],
+                    |r| Ok((r.get(0)?, r.get(1)?)),
+                )
+                .optional()?;
+            row.map(|(id, at)| Ok((id, parse_ts(&at)?))).transpose()
+        })
+        .await
+    }
+
     /// The events of one of `agent`'s turns, oldest first.
     pub async fn turn_events(
         &self,

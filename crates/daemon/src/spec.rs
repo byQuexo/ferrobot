@@ -135,6 +135,8 @@ pub const QUESTION_CARD_FILE: &str = "question-card.v1.schema.json";
         api::otel::put_otel_secret,
         api::pins::get_pins,
         api::pins::put_pins,
+        api::dashboards::get_dashboards,
+        api::dashboards::put_dashboards,
         api::usage::get_usage,
         api::usage::get_prices,
         api::usage::put_prices,

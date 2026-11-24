@@ -1,7 +1,7 @@
 import { createContext } from "preact";
 import { useContext } from "preact/hooks";
 
-import type { Agent, DaemonClient, Health, Pin, UiEvent } from "./api.ts";
+import type { Agent, DaemonClient, Dashboard, Health, Pin, UiEvent } from "./api.ts";
 import type { CallState } from "./lib/call.ts";
 import type { CallSession } from "./lib/call-session.ts";
 
@@ -30,6 +30,14 @@ export interface AppContextValue {
   savePins: (pins: Pin[]) => Promise<void>;
   /** Opens an agent's chat scrolled to one of its replies (its event id). */
   jumpTo: (agent: string, event: number) => void;
+  /** HTML files kept as dashboards, each with its newest shared version. */
+  dashboards: Dashboard[];
+  /** Saves the whole dashboard list (add, rename, reorder, remove). */
+  saveDashboards: (list: Dashboard[]) => Promise<void>;
+  /** Opens the dashboard at `index` in the main area. */
+  openDashboard: (index: number) => void;
+  /** Looks for newer shared versions of the dashboards. */
+  reloadDashboards: () => void;
   /** The operator's voice call; it outlives the chat it started in. */
   call: CallSession;
   /** The call's agents, host and mute state; `null` when there is none. */

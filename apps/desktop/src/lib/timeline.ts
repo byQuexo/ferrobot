@@ -52,7 +52,16 @@ export type TimelineItem =
       card: QuestionCard;
       answered: QuestionAnswered | null;
     }
-  | { type: "file"; key: string; at: string; id: number; name: string; size: number }
+  | {
+      type: "file";
+      key: string;
+      at: string;
+      id: number;
+      name: string;
+      size: number;
+      /** Where it was in the agent's computer, e.g. `/home/agent/plan.html`. */
+      path: string;
+    }
   | {
       type: "error";
       key: string;
@@ -324,6 +333,7 @@ export function buildTimeline(
           id: e.id,
           name: str(p["name"]),
           size: Number(p["size"] ?? 0),
+          path: str(p["path"]),
         });
         break;
       case "tool_denied":
