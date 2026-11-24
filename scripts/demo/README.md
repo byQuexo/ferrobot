@@ -17,7 +17,8 @@ DEMO_API=http://127.0.0.1:17990 DEMO_TOKEN_FILE=<data dir>/api-token scripts/dem
 - **Keyless dry runs**: without `DEMO_API`, it starts its own daemon with the mock driver on 17992.
   The story then stops at the first model reply; with `DEMO_DRY=1` (and a short `DEMO_WAIT_S`) it
   goes on past the replies the mock never gives, to check the clicks and the encode. The hero's
-  dry run ends at its first question card, which the mock never shows.
+  dry run stops with an error at its first question card, which the mock never shows, and skips
+  the encode.
 - **Scenes:** `hero` (dark mode) writes `docs/assets/demo.{mp4,gif}` and the X and LinkedIn cuts in
   `docs/launch/media/`; `keycard`, `routine`, `memory` and `usage` write the clips in
   `docs/assets/clips/`; `shots` writes light and dark screenshots to `docs/screenshots/`. Record
