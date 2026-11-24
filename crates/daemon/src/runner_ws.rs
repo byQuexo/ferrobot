@@ -14,6 +14,7 @@ use futures_util::{SinkExt, StreamExt};
 use serde_json::json;
 use tokio::sync::mpsc;
 
+use crate::webhooks::{self, WebhookEvent};
 use crate::{AppState, UiEvent, tasks};
 
 const HELLO_TIMEOUT: Duration = Duration::from_secs(10);
@@ -305,6 +306,15 @@ async fn sender_name(state: &AppState, sender: Sender) -> String {
             |_| format!("routine:{id}"),
             |r| format!("routine:{}", r.name),
         ),
+        Sender::Webhook(id) => crate::webhooks::sender_name(state, id).await,
+    }
+}
+
+/// Runners of 0.1.7 and older reject senders they do not know; `sender_name` names the webhook.
+fn wire_sender(sender: Sender) -> Sender {
+    match sender {
+        Sender::Webhook(_) => Sender::User,
+        other => other,
     }
 }
 
@@ -402,7 +412,7 @@ async fn steer(
         let frame = DaemonFrame::Steer {
             turn_id: turn_id.to_owned(),
             message_id: msg.id,
-            sender: msg.sender,
+            sender: wire_sender(msg.sender),
             sender_name: from,
             body: state.render_mentions(&body).await,
         };
@@ -543,7 +553,7 @@ async fn run_turn(
     let frame = DaemonFrame::Turn {
         turn_id: turn_id.clone(),
         message_id: msg.as_ref().map_or(0, |m| m.id),
-        sender,
+        sender: wire_sender(sender),
         sender_name: from,
         body,
         new_session,
@@ -606,6 +616,19 @@ async fn settle(
             ..
         }) => {
             tasks::report(state, (agent, turn), msg, outcome, result.as_deref()).await;
+            let in_chat = msg.room_id.is_none() && !matches!(msg.sender, Sender::Agent(_));
+            if outcome == TurnOutcome::Completed
+                && in_chat
+                && let Some(text) = result.filter(|r| !r.trim().is_empty())
+            {
+                webhooks::notify(
+                    state,
+                    agent,
+                    WebhookEvent::Reply,
+                    "replied".into(),
+                    Some(text),
+                );
+            }
             state.store.complete_message(msg.id).await
         }
         // It waits for the operator's fix instead of using up its attempts.
@@ -619,6 +642,8 @@ async fn settle(
                 Ok(MailStatus::Failed) => {
                     tasks::report(state, (agent, turn), msg, TurnOutcome::Failed, Some(&error))
                         .await;
+                    let summary = "failed a turn".into();
+                    webhooks::notify(state, agent, WebhookEvent::TurnFailed, summary, Some(error));
                     Ok(())
                 }
                 other => other.map(|_| ()),

@@ -1107,6 +1107,7 @@ impl FerrobotTools {
                 .find(|a| a.id == *id)
                 .map_or_else(|| format!("agent:{id}"), |a| a.name.to_string()),
             Sender::Routine(id) => format!("routine:{id}"),
+            Sender::Webhook(id) => format!("webhook:{id}"),
         };
         Ok(Json(Mailbox {
             messages: messages

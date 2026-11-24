@@ -18,6 +18,7 @@ pub(crate) mod settings;
 pub(crate) mod update;
 pub(crate) mod usage;
 pub(crate) mod voice;
+pub(crate) mod webhooks;
 pub(crate) mod ws;
 
 use axum::Json;
@@ -128,7 +129,7 @@ pub fn router() -> Router<AppState> {
         )
 }
 
-/// Model providers, connectors, CLIs and voice.
+/// Model providers, connectors, CLIs, voice and webhooks.
 fn integrations() -> Router<AppState> {
     Router::new()
         .route(
@@ -154,6 +155,21 @@ fn integrations() -> Router<AppState> {
         .route(
             "/v1/dashboards",
             get(dashboards::get_dashboards).put(dashboards::put_dashboards),
+        )
+        .route("/v1/webhooks", get(webhooks::list_webhooks))
+        .route("/v1/webhooks/incoming", post(webhooks::create_incoming))
+        .route(
+            "/v1/webhooks/incoming/{id}",
+            axum::routing::delete(webhooks::delete_incoming),
+        )
+        .route(
+            "/v1/webhooks/incoming/{id}/secret",
+            post(webhooks::regenerate_incoming),
+        )
+        .route("/v1/webhooks/outgoing", post(webhooks::create_outgoing))
+        .route(
+            "/v1/webhooks/outgoing/{id}",
+            axum::routing::delete(webhooks::delete_outgoing),
         )
         .route("/v1/otel/secret", put(otel::put_otel_secret))
         .route(

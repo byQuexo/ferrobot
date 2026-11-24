@@ -30,7 +30,9 @@ pub const QUESTION_CARD_FILE: &str = "question-card.v1.schema.json";
             images) may pass `?access_token=<token>` instead. The daemon generates \
             the token on first start in `<data dir>/api-token` (mode 0600) unless \
             `--api-token` / `FERROBOT_API_TOKEN` sets one. Live updates: `GET /v1/ws` streams `UiEvent` frames, \
-            see `ui-events.schema.json`. The separate agent listener (runner \
+            see `ui-events.schema.json`. Incoming webhooks (`POST /hooks/{id}/{secret}`) \
+            share the listener outside `/v1`: the secret in their path is their only key, \
+            the operator token is not accepted there. The separate agent listener (runner \
             WebSocket and MCP, bearer-token auth) is not part of this document; \
             its frames are described in `runner-protocol.schema.json`.",
         license(name = "MIT OR Apache-2.0", identifier = "MIT OR Apache-2.0"),
@@ -137,6 +139,13 @@ pub const QUESTION_CARD_FILE: &str = "question-card.v1.schema.json";
         api::pins::put_pins,
         api::dashboards::get_dashboards,
         api::dashboards::put_dashboards,
+        api::webhooks::list_webhooks,
+        api::webhooks::create_incoming,
+        api::webhooks::regenerate_incoming,
+        api::webhooks::delete_incoming,
+        api::webhooks::create_outgoing,
+        api::webhooks::delete_outgoing,
+        crate::webhooks::receive,
         api::usage::get_usage,
         api::usage::get_prices,
         api::usage::put_prices,
@@ -174,6 +183,7 @@ pub const QUESTION_CARD_FILE: &str = "question-card.v1.schema.json";
         (name = "groups", description = "Group chats: write once to several agents, or call them"),
         (name = "usage", description = "Model calls, tokens, estimated cost and plan limits"),
         (name = "settings", description = "Daemon-wide operator settings"),
+        (name = "webhooks", description = "Messages from other services in, chosen events out"),
     )
 )]
 struct ApiDoc;
@@ -217,7 +227,7 @@ impl utoipa::Modify for SecurityAddon {
             )
             .build();
         for (path, item) in &mut openapi.paths.paths {
-            if path == "/v1/health" {
+            if path == "/v1/health" || path.starts_with("/hooks/") {
                 continue;
             }
             for op in [

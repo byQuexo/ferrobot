@@ -2,7 +2,7 @@
   "openapi": "3.1.0",
   "info": {
     "title": "ferrobot daemon API",
-    "description": "Operator API of `ferrobotd` (version 1, all paths under `/v1`). Served on the loopback UI listener (default `127.0.0.1:7878`). Every endpoint except `GET /v1/health` needs the operator token as `Authorization: Bearer <token>`; `GET` requests (the WebSocket, avatar images) may pass `?access_token=<token>` instead. The daemon generates the token on first start in `<data dir>/api-token` (mode 0600) unless `--api-token` / `FERROBOT_API_TOKEN` sets one. Live updates: `GET /v1/ws` streams `UiEvent` frames, see `ui-events.schema.json`. The separate agent listener (runner WebSocket and MCP, bearer-token auth) is not part of this document; its frames are described in `runner-protocol.schema.json`.",
+    "description": "Operator API of `ferrobotd` (version 1, all paths under `/v1`). Served on the loopback UI listener (default `127.0.0.1:7878`). Every endpoint except `GET /v1/health` needs the operator token as `Authorization: Bearer <token>`; `GET` requests (the WebSocket, avatar images) may pass `?access_token=<token>` instead. The daemon generates the token on first start in `<data dir>/api-token` (mode 0600) unless `--api-token` / `FERROBOT_API_TOKEN` sets one. Live updates: `GET /v1/ws` streams `UiEvent` frames, see `ui-events.schema.json`. Incoming webhooks (`POST /hooks/{id}/{secret}`) share the listener outside `/v1`: the secret in their path is their only key, the operator token is not accepted there. The separate agent listener (runner WebSocket and MCP, bearer-token auth) is not part of this document; its frames are described in `runner-protocol.schema.json`.",
     "contact": {
       "name": "Tim Gühnemann"
     },
@@ -185,6 +185,88 @@
             }
           }
         }
+      }
+    },
+    "/hooks/{id}/{secret}": {
+      "post": {
+        "tags": [
+          "webhooks"
+        ],
+        "summary": "Takes a POST from another service (JSON or text) and queues it for the webhook's agent.\nAuthorized only by the secret in the path; the operator token is not accepted.",
+        "operationId": "receive",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "Webhook id",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          },
+          {
+            "name": "secret",
+            "in": "path",
+            "description": "The webhook's secret, from its URL",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "description": "JSON or text, at most 64 KiB",
+          "content": {
+            "text/plain": {
+              "schema": {
+                "type": "string"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "202": {
+            "description": "Queued for the agent"
+          },
+          "400": {
+            "description": "Empty or not UTF-8",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Unknown webhook or wrong secret",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "Body over 64 KiB"
+          },
+          "429": {
+            "description": "Over 30 requests a minute",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {}
+        ]
       }
     },
     "/v1/agents": {
@@ -6366,6 +6448,300 @@
         }
       }
     },
+    "/v1/webhooks": {
+      "get": {
+        "tags": [
+          "webhooks"
+        ],
+        "summary": "Incoming and outgoing webhooks, oldest first.",
+        "operationId": "list_webhooks",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WebhooksView"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or wrong API token",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/webhooks/incoming": {
+      "post": {
+        "tags": [
+          "webhooks"
+        ],
+        "summary": "Creates an incoming webhook for an agent. Its URL is in this response only.",
+        "operationId": "create_incoming",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/NewIncomingWebhook"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/IncomingWebhookCreated"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad name",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or wrong API token",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Unknown agent",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/webhooks/incoming/{id}": {
+      "delete": {
+        "tags": [
+          "webhooks"
+        ],
+        "summary": "Deletes an incoming webhook; its URL stops working.",
+        "operationId": "delete_incoming",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "Webhook id",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Deleted"
+          },
+          "401": {
+            "description": "Missing or wrong API token",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Unknown webhook",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/webhooks/incoming/{id}/secret": {
+      "post": {
+        "tags": [
+          "webhooks"
+        ],
+        "summary": "Gives an incoming webhook a new secret; the old URL stops working at once.",
+        "operationId": "regenerate_incoming",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "Webhook id",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/IncomingWebhookCreated"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or wrong API token",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Unknown webhook",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/webhooks/outgoing": {
+      "post": {
+        "tags": [
+          "webhooks"
+        ],
+        "summary": "Adds an outgoing webhook; the events it gets are posted to its URL in the background.",
+        "operationId": "create_outgoing",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/NewOutgoingWebhook"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OutgoingWebhookView"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad name, URL or events",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or wrong API token",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Unknown agent",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/webhooks/outgoing/{id}": {
+      "delete": {
+        "tags": [
+          "webhooks"
+        ],
+        "summary": "Deletes an outgoing webhook and its stored URL.",
+        "operationId": "delete_outgoing",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "Webhook id",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Deleted"
+          },
+          "401": {
+            "description": "Missing or wrong API token",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Unknown webhook",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/v1/ws": {
       "get": {
         "tags": [
@@ -7953,6 +8329,53 @@
           "SessionEnd"
         ]
       },
+      "IncomingWebhook": {
+        "type": "object",
+        "description": "An incoming webhook. Its secret is shown once; only its hash is stored.",
+        "required": [
+          "id",
+          "name",
+          "agent_id",
+          "created_at"
+        ],
+        "properties": {
+          "id": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "name": {
+            "type": "string"
+          },
+          "agent_id": {
+            "$ref": "#/components/schemas/AgentId",
+            "description": "The agent its requests go to as messages."
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      },
+      "IncomingWebhookCreated": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/IncomingWebhook"
+          },
+          {
+            "type": "object",
+            "required": [
+              "url"
+            ],
+            "properties": {
+              "url": {
+                "type": "string",
+                "description": "`<daemon>/hooks/{id}/{secret}`; from the internet, through a tunnel to `/hooks/` only."
+              }
+            }
+          }
+        ],
+        "description": "An incoming webhook with its URL. The URL holds the secret and is shown only this once."
+      },
       "InstalledPlugin": {
         "type": "object",
         "description": "A plugin installed in the host's Claude Code.",
@@ -8342,6 +8765,58 @@
           "suggested"
         ]
       },
+      "NewIncomingWebhook": {
+        "type": "object",
+        "required": [
+          "name",
+          "agent_id"
+        ],
+        "properties": {
+          "name": {
+            "type": "string",
+            "description": "1-64 characters; agents see it as the sender, `webhook:<name>`."
+          },
+          "agent_id": {
+            "$ref": "#/components/schemas/AgentId"
+          }
+        }
+      },
+      "NewOutgoingWebhook": {
+        "type": "object",
+        "required": [
+          "name",
+          "url",
+          "events",
+          "format"
+        ],
+        "properties": {
+          "name": {
+            "type": "string",
+            "description": "1-64 characters."
+          },
+          "url": {
+            "type": "string",
+            "description": "An http or https URL, e.g. a Discord or Slack webhook; kept in the secret store."
+          },
+          "events": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/WebhookEvent"
+            },
+            "description": "At least one."
+          },
+          "agents": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AgentId"
+            },
+            "description": "Only these agents' events; empty or omitted: every agent's."
+          },
+          "format": {
+            "$ref": "#/components/schemas/WebhookFormat"
+          }
+        }
+      },
       "OAuthStart": {
         "type": "object",
         "required": [
@@ -8431,6 +8906,71 @@
           }
         ],
         "description": "The export settings, whether the header's value is stored, and how the last export went."
+      },
+      "OutgoingWebhook": {
+        "type": "object",
+        "description": "An outgoing webhook. Its URL is in the secret store and never returned.",
+        "required": [
+          "id",
+          "name",
+          "events",
+          "agents",
+          "format",
+          "created_at"
+        ],
+        "properties": {
+          "id": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "name": {
+            "type": "string"
+          },
+          "events": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/WebhookEvent"
+            }
+          },
+          "agents": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AgentId"
+            },
+            "description": "Only these agents' events; empty: every agent's."
+          },
+          "format": {
+            "$ref": "#/components/schemas/WebhookFormat"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      },
+      "OutgoingWebhookView": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/OutgoingWebhook"
+          },
+          {
+            "type": "object",
+            "properties": {
+              "last_delivery": {
+                "oneOf": [
+                  {
+                    "$ref": "#/components/schemas/ExportStatus",
+                    "description": "`null`: nothing sent since the daemon started."
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              }
+            }
+          }
+        ],
+        "description": "An outgoing webhook and how its last delivery went."
       },
       "Pin": {
         "type": "object",
@@ -9318,6 +9858,27 @@
                 "type": "string",
                 "enum": [
                   "routine"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "description": "An incoming webhook (by webhook id); its body is external data, framed as such. Runners\nget its turns as `user` with `sender_name` `webhook:<name>`.",
+            "required": [
+              "id",
+              "kind"
+            ],
+            "properties": {
+              "id": {
+                "type": "integer",
+                "format": "int64",
+                "description": "An incoming webhook (by webhook id); its body is external data, framed as such. Runners\nget its turns as `user` with `sender_name` `webhook:<name>`."
+              },
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "webhook"
                 ]
               }
             }
@@ -10757,6 +11318,47 @@
             }
           }
         ]
+      },
+      "WebhookEvent": {
+        "type": "string",
+        "description": "What an outgoing webhook is sent.",
+        "enum": [
+          "reply",
+          "question",
+          "task_done",
+          "turn_failed"
+        ]
+      },
+      "WebhookFormat": {
+        "type": "string",
+        "description": "How an outgoing webhook's body looks.",
+        "enum": [
+          "json",
+          "discord",
+          "slack"
+        ]
+      },
+      "WebhooksView": {
+        "type": "object",
+        "description": "The webhooks. Neither secrets nor outgoing URLs are ever returned.",
+        "required": [
+          "incoming",
+          "outgoing"
+        ],
+        "properties": {
+          "incoming": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/IncomingWebhook"
+            }
+          },
+          "outgoing": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/OutgoingWebhookView"
+            }
+          }
+        }
       }
     },
     "securitySchemes": {
@@ -10833,6 +11435,10 @@
     {
       "name": "settings",
       "description": "Daemon-wide operator settings"
+    },
+    {
+      "name": "webhooks",
+      "description": "Messages from other services in, chosen events out"
     }
   ]
 }

@@ -277,6 +277,8 @@ pub struct AppState {
     pub update: Arc<Mutex<crate::update::UpdateInfo>>,
     /// Where the CLI image build stands.
     pub clis: Arc<crate::clis::Builds>,
+    /// Webhooks' edit lock, rate limits and last deliveries.
+    pub webhooks: Arc<crate::webhooks::Webhooks>,
     /// When this daemon started.
     pub started: std::time::Instant,
 }
@@ -315,6 +317,7 @@ impl AppState {
             rooms: Arc::default(),
             update: Arc::default(),
             clis: Arc::default(),
+            webhooks: Arc::default(),
             started: std::time::Instant::now(),
         }
     }
@@ -327,6 +330,12 @@ impl AppState {
 
     /// Broadcasts to UI clients; having no subscribers is fine.
     pub fn publish(&self, event: UiEvent) {
+        // Every question card is published here, so outgoing webhooks see them all.
+        if let UiEvent::Event { event } = &event
+            && event.kind == "question"
+        {
+            crate::webhooks::question(self, event);
+        }
         let _ = self.ui.send(event);
     }
 

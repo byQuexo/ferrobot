@@ -369,6 +369,27 @@
             "kind"
           ],
           "type": "object"
+        },
+        {
+          "description": "An incoming webhook (by webhook id); its body is external data, framed as such. Runners\nget its turns as `user` with `sender_name` `webhook:<name>`.",
+          "properties": {
+            "id": {
+              "description": "An incoming webhook (by webhook id); its body is external data, framed as such. Runners\nget its turns as `user` with `sender_name` `webhook:<name>`.",
+              "format": "int64",
+              "type": "integer"
+            },
+            "kind": {
+              "enum": [
+                "webhook"
+              ],
+              "type": "string"
+            }
+          },
+          "required": [
+            "id",
+            "kind"
+          ],
+          "type": "object"
         }
       ]
     },
