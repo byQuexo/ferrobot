@@ -53,8 +53,10 @@ Keep important things one click away. Hover a reply or a shared file and
 click its pin; pin an agent with the pin on its row in the sidebar (it also
 moves to the top). The pin button next to Settings lists everything pinned:
 click a reply to jump to it in its chat, or a file to open it. Rename a pin
-with the pencil, drag to reorder, and unpin with the cross. Pins live in the
-daemon, so every app that connects to it sees them.
+with the pencil, drag to reorder, and unpin with the cross. A chat with pins
+also shows a pin with their number in its header: it lists that chat's pinned
+replies and files. Pins live in the daemon, so every app that connects to it
+sees them.
 
 ### Dashboards
 

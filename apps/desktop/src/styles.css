@@ -738,7 +738,7 @@ textarea { resize: vertical; min-height: 40px; line-height: 1.5; }
 
 /* Settings page */
 .settings { display: grid; grid-template-columns: 220px minmax(0, 1fr); height: 100%; min-height: 0; overflow: hidden; }
-.settings-nav { display: flex; flex-direction: column; gap: 2px; padding: 24px 12px; border-right: 1px solid var(--border); }
+.settings-nav { display: flex; flex-direction: column; gap: 2px; padding: 24px 12px; border-right: 1px solid var(--border); min-height: 0; overflow-y: auto; }
 .settings-nav h1 { margin: 0 8px 16px; font-size: 16px; line-height: 32px; font-weight: 500; }
 .settings-tab { display: flex; align-items: center; gap: 8px; height: 36px; padding: 0 8px; border: none; border-radius: 8px; background: none; color: var(--text-2); font: inherit; text-align: left; cursor: pointer; }
 .settings-tab:hover { background: var(--surface-2); color: var(--text); }
@@ -1322,3 +1322,27 @@ input.slider:is(:focus-visible, :active)::-moz-range-thumb { box-shadow: 0 0 0 1
 .dashboard-frame > iframe { flex: 1; width: 100%; height: 100%; border: 0; }
 .dashboard-frame > p { margin: auto; background: var(--bg); }
 .dashboard-frame:fullscreen { margin: 0; border: 0; border-radius: 0; }
+
+/* Settings: the section list fits the default window (it scrolls when it cannot) */
+.settings-nav { padding-top: 16px; }
+.settings-nav h1 { margin-bottom: 8px; }
+.settings-tab { flex: none; height: 32px; }
+.settings-nav .settings-group { margin-top: 12px; margin-bottom: 2px; }
+
+/* Settings → Webhooks: cards per webhook, adding in a dialog */
+.hook-section + .hook-section { margin-top: 28px; }
+.hook-head { display: flex; align-items: flex-start; gap: 12px; margin-bottom: 10px; }
+.hook-head > div { flex: 1; min-width: 0; }
+.hook-head .pref-head { margin-top: 0; }
+.hook-head .pref-sub { margin: 2px 0 0; }
+.hook-empty { margin: 0 0 8px; padding: 14px 16px; border: 1px dashed var(--border); border-radius: 12px; }
+.hook-section > .hint { display: block; margin-top: 8px; }
+.hook-tile { color: var(--accent); background: var(--accent-soft); }
+.hook-chips { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 4px; }
+.hook-chip { padding: 1px 8px; border-radius: 999px; background: var(--surface-2); color: var(--text-2); font-size: 12px; }
+.hook-error { color: var(--err); overflow-wrap: anywhere; }
+
+/* The chat header's pins */
+.chat-pins .icon-btn { width: auto; min-width: 32px; padding: 0 6px; gap: 2px; display: inline-flex; align-items: center; }
+.chat-pins-count { font-size: 12px; font-variant-numeric: tabular-nums; }
+.chat-pins-pop { position: absolute; top: calc(100% + 8px); right: 0; left: auto; bottom: auto; }

@@ -61,6 +61,7 @@ import { isMac, keyLabel, SHORTCUTS, useShortcuts } from "../lib/shortcuts.ts";
 import { hasVoiceKey, record, startLive, type LiveSession, type Recording } from "../lib/voice.ts";
 import { AttachmentChips, previews } from "./Attachments.tsx";
 import { DashboardButton } from "./Dashboards.tsx";
+import { ChatPins } from "./Pins.tsx";
 import { FilePreview } from "./FilePreview.tsx";
 import { fileSize } from "./FileViewer.tsx";
 import { ContextMeter, ModelChip, TagChips } from "./AgentMeta.tsx";
@@ -291,6 +292,7 @@ export function Chat(props: {
           </span>
         </div>
         <span class="spacer" />
+        <ChatPins agent={id} />
         {working && (
           <Button variant="secondary" small onClick={() => void run(() => client.interrupt(id))}>
             <CircleStop size={16} /> Stop turn

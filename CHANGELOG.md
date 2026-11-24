@@ -6,6 +6,22 @@ All notable changes are listed here. The format follows
 
 ## [Unreleased]
 
+### Added
+
+- Pins per chat: a chat with pins shows a pin with their number in its header;
+  it lists that chat's pinned replies and files (the global pin list stays).
+
+### Changed
+
+- Settings → Webhooks is redesigned: each webhook is a card with its status,
+  destination, agents and events, and a new one is added in a dialog with a
+  hint per destination, events and agents as chips, and its own Add button.
+
+### Fixed
+
+- Settings' section list ran past the bottom of the window at the default
+  size; it is more compact now and scrolls when it still does not fit.
+
 ## [0.1.8] - 2026-11-24
 
 ### Added
