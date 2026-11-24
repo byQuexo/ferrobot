@@ -319,6 +319,58 @@ impl Store {
     }
 
     /// Old names of renamed agents: (name, agent).
+    /// Old names of agents renamed before renames were recorded, read from history: the
+    /// sender name of each message an agent sent and the name each `create_agent` result
+    /// gave. Each becomes an alias plus a `renamed` event, so agents hear of it on their next
+    /// turn. Names another agent holds now are skipped. Returns how many were found.
+    pub async fn backfill_aliases(&self) -> Result<usize, StoreError> {
+        self.with(|c| {
+            let mut stmt = c.prepare(
+                "WITH seen(name, agent_id) AS (
+                     SELECT json_extract(payload, '$.from'), json_extract(payload, '$.sender.id')
+                     FROM events WHERE kind = 'message_in'
+                       AND json_extract(payload, '$.sender.kind') = 'agent'
+                     UNION
+                     SELECT json_extract(json_extract(payload, '$.output'), '$.name'),
+                            json_extract(json_extract(payload, '$.output'), '$.agent_id')
+                     FROM events WHERE kind = 'tool_result'
+                       AND json_valid(json_extract(payload, '$.output'))
+                 )
+                 SELECT DISTINCT s.name, a.id, a.name FROM seen s JOIN agents a ON a.id = s.agent_id
+                 WHERE s.name IS NOT NULL AND s.name <> a.name
+                   AND s.name NOT IN (SELECT name FROM agents)
+                   AND s.name NOT IN (SELECT name FROM agent_aliases)",
+            )?;
+            let found: Vec<(String, String, String)> = stmt
+                .query_map([], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)))?
+                .collect::<Result<_, _>>()?;
+            let tx = c.unchecked_transaction()?;
+            let mut added = 0;
+            for (old, id, now_name) in found {
+                if AgentName::parse(old.clone()).is_err() {
+                    continue;
+                }
+                let inserted = tx.execute(
+                    "INSERT OR IGNORE INTO agent_aliases (name, agent_id) VALUES (?1, ?2)",
+                    params![old, id],
+                )?;
+                if inserted == 0 {
+                    continue;
+                }
+                let payload = serde_json::json!({ "from": old, "to": now_name }).to_string();
+                tx.execute(
+                    "INSERT INTO events (agent_id, turn_id, kind, payload, created_at)
+                     VALUES (?1, NULL, 'renamed', ?2, ?3)",
+                    params![id, payload, fmt_ts(now())],
+                )?;
+                added += 1;
+            }
+            tx.commit()?;
+            Ok(added)
+        })
+        .await
+    }
+
     pub async fn agent_aliases(&self) -> Result<Vec<(String, AgentId)>, StoreError> {
         self.with(|c| {
             let mut stmt = c.prepare("SELECT name, agent_id FROM agent_aliases")?;
@@ -825,5 +877,52 @@ mod tests {
             [],
             "gone with the agent"
         );
+    }
+
+    #[tokio::test]
+    async fn old_names_from_before_aliases_are_found_in_history() {
+        let store = Store::open_in_memory().unwrap();
+        let new = |name: &str| NewAgent {
+            created_by: None,
+            name: AgentName::parse(name).unwrap(),
+            description: String::new(),
+            instructions: String::new(),
+        };
+        let mailer = store.create_agent(new("mailer-mails")).await.unwrap().id;
+        let claude = store.create_agent(new("claude")).await.unwrap().id;
+        let sent = |from: &str, id: AgentId| serde_json::json!({ "sender": { "kind": "agent", "id": id }, "from": from });
+        for (kind, payload) in [
+            ("message_in", sent("courier", mailer)),
+            ("message_in", sent("mailer-mails", mailer)),
+            ("message_in", sent("claude", mailer)),
+            (
+                "tool_result",
+                serde_json::json!({
+                    "output": format!(r#"{{"agent_id":"{mailer}","name":"courier"}}"#)
+                }),
+            ),
+        ] {
+            store
+                .append_event(claude, None, kind.into(), payload)
+                .await
+                .unwrap();
+        }
+        assert_eq!(store.backfill_aliases().await.unwrap(), 1);
+        assert_eq!(
+            store.agent_aliases().await.unwrap(),
+            [("courier".to_owned(), mailer)],
+            "a name another agent holds now is not an alias"
+        );
+        let found = store
+            .get_agent_by_name(AgentName::parse("courier").unwrap())
+            .await
+            .unwrap();
+        assert_eq!(found.id, mailer);
+        assert_eq!(
+            store.renames_since_last_turn(claude).await.unwrap(),
+            [(mailer, "courier".to_owned())],
+            "agents that knew it hear of it"
+        );
+        assert_eq!(store.backfill_aliases().await.unwrap(), 0, "only once");
     }
 }
