@@ -54,6 +54,21 @@ pub struct UsageRecord {
     pub cost_usd: Option<f64>,
     pub latency_ms: i64,
     pub status: UsageStatus,
+    /// The turn the call was made in, if one was running.
+    pub turn_id: Option<String>,
+}
+
+/// One proxied model call of a turn, for its trace.
+#[derive(Debug, Clone, PartialEq)]
+pub struct TurnCall {
+    pub id: i64,
+    /// When the call ended (milliseconds when known).
+    pub ended: OffsetDateTime,
+    pub latency_ms: i64,
+    pub model: String,
+    pub tokens: Tokens,
+    pub cost_usd: Option<f64>,
+    pub ok: bool,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -121,13 +136,58 @@ fn ts(at: OffsetDateTime) -> String {
 }
 
 impl Store {
+    /// The proxied model calls `agent` made in `turn`, oldest first.
+    pub async fn turn_calls(
+        &self,
+        agent: AgentId,
+        turn: String,
+    ) -> Result<Vec<TurnCall>, StoreError> {
+        self.with(move |c| {
+            let mut stmt = c.prepare(
+                "SELECT id, at, at_ms, latency_ms, model, input_tokens, output_tokens,
+                        cache_read_tokens, cache_write_tokens, cost_usd, status
+                 FROM usage WHERE turn_id = ?1 AND agent_id = ?2 ORDER BY id",
+            )?;
+            let mut rows = stmt.query(params![turn, agent.to_string()])?;
+            let mut out = Vec::new();
+            while let Some(row) = rows.next()? {
+                let at: String = row.get(1)?;
+                let at_ms: Option<i64> = row.get(2)?;
+                let ended = match at_ms {
+                    Some(ms) => {
+                        OffsetDateTime::from_unix_timestamp_nanos(i128::from(ms) * 1_000_000)
+                            .map_err(StoreError::corrupt)?
+                    }
+                    None => parse_ts(&at)?,
+                };
+                out.push(TurnCall {
+                    id: row.get(0)?,
+                    ended,
+                    latency_ms: row.get(3)?,
+                    model: row.get(4)?,
+                    tokens: Tokens {
+                        input: row.get(5)?,
+                        output: row.get(6)?,
+                        cache_read: row.get(7)?,
+                        cache_write: row.get(8)?,
+                    },
+                    cost_usd: row.get(9)?,
+                    ok: row.get::<_, String>(10)? == "ok",
+                });
+            }
+            Ok(out)
+        })
+        .await
+    }
+
     pub async fn insert_usage(&self, r: UsageRecord) -> Result<(), StoreError> {
         self.with(move |c| {
             c.execute(
                 "INSERT INTO usage (at, agent_id, agent_name, provider_id, provider_kind, model,
                                     input_tokens, output_tokens, cache_read_tokens,
-                                    cache_write_tokens, latency_ms, status, cost_usd)
-                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13)",
+                                    cache_write_tokens, latency_ms, status, cost_usd, turn_id,
+                                    at_ms)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15)",
                 params![
                     ts(r.at),
                     r.agent_id.to_string(),
@@ -141,7 +201,9 @@ impl Store {
                     r.tokens.cache_write,
                     r.latency_ms,
                     r.status.as_str(),
-                    r.cost_usd
+                    r.cost_usd,
+                    r.turn_id,
+                    i64::try_from(r.at.unix_timestamp_nanos() / 1_000_000).ok()
                 ],
             )?;
             Ok(())
@@ -282,7 +344,32 @@ mod tests {
             cost_usd: None,
             latency_ms: 12,
             status: UsageStatus::Ok,
+            turn_id: None,
         }
+    }
+
+    #[tokio::test]
+    async fn a_turns_calls_keep_their_millisecond_end() {
+        let store = Store::open_in_memory().unwrap();
+        let a = AgentId::new();
+        let at = OffsetDateTime::from_unix_timestamp_nanos(1_795_000_000_250_000_000).unwrap();
+        for turn in [Some("t1"), Some("t2"), None] {
+            let row = UsageRecord {
+                turn_id: turn.map(Into::into),
+                ..record(at, a, "m1", Some(10))
+            };
+            store.insert_usage(row).await.unwrap();
+        }
+        let calls = store.turn_calls(a, "t1".into()).await.unwrap();
+        assert_eq!(calls.len(), 1);
+        assert_eq!(
+            (calls[0].ended, calls[0].latency_ms, calls[0].ok),
+            (at, 12, true)
+        );
+        assert_eq!(
+            store.turn_calls(AgentId::new(), "t1".into()).await.unwrap(),
+            []
+        );
     }
 
     #[tokio::test]

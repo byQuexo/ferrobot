@@ -86,12 +86,15 @@ Principles:
 - `crates/daemon/src/claude_code.rs` — opt-in Claude Code (your own login): the
   host's own, unmodified `claude -p` per turn (`/host/claude-code/turn`), built-in
   tools off, none of the user's settings, the sandbox reached through MCP tools
-  (`bash`, `read_file`, `write_file`); `GET /v1/claude-code` reports its login state.
+  (`bash`, `read_file`, `write_file`); `GET /v1/claude-code` reports its login state;
+  the operator's hooks and plugins (`/v1/claude-code/settings`) go in as `--settings`
+  and `--plugin-dir`.
 - `crates/daemon/src/tool_check.rs` — the rule-based tool-call classifier: safe, risky
   (an approval card unless Auto mode is on) or dangerous (refused); gates connector calls,
   Claude Code's `bash` and, via `/runner/tool-check` (`runner/src/gate.ts`), every driver's shell.
 - `crates/daemon/src/connectors.rs`, `api/connectors.rs` — connectors: the daemon
-  is the MCP client of remote MCP servers and lends their tools to assigned
+  is the MCP client of remote MCP servers, and of local ones it starts on this
+  computer over stdio (`command`, a cleared environment), and lends their tools to assigned
   agents through `/mcp` (tokens in the keychain, never in a sandbox), and the
   `add_connector` approval card (Approve/Decline; tokens go in Settings → Vault);
   `oauth.rs` — their OAuth sign-in (rmcp's client, loopback callback).
@@ -119,10 +122,16 @@ Principles:
 - `crates/daemon/src/update.rs` — `/v1/update` status; `update/source.rs` — a
   debug build pulls `main`, rebuilds and re-execs itself (debug builds only).
 - `crates/daemon/src/lifecycle.rs`, `supervisor.rs`, `scheduler.rs`, `runner_ws.rs`.
+- `crates/daemon/src/trace.rs` — a turn as a timeline (model calls from usage rows tagged
+  with the turn, tool calls from its events); `GET /v1/agents/{id}/turns/{turn_id}/trace`.
+  `otel.rs` — sends each finished turn's trace to the operator's OTLP/HTTP endpoint
+  (hand-encoded protobuf; `/v1/otel`, header value in the keychain as `otel:header`).
 - `crates/daemon/src/tasks.rs` — tracked tasks: automatic report and reminder;
   `crates/store/src/tasks.rs` — task state from `task` events and the mailbox.
 - `crates/mcp/src/tools.rs` — MCP tools; `crates/mcp/src/lib.rs` — `MailboxNotifier`.
-- `crates/store/src/migrations.rs` — schema migrations.
+- `crates/store/src/migrations.rs` — schema migrations; `vault.rs` — memories as
+  Markdown notes in an Obsidian vault when the `memory_vault` setting is set
+  (`/v1/memory-vault`); `memory.rs` routes there.
 - `crates/core/src/question.rs` — question/approval cards; `tools.rs` — tool groups.
 - `runner/src/index.ts`, `runner/src/runner.ts`, `runner/src/drivers/`.
 - `apps/desktop/src/app.tsx`, `src/api.ts`, `src/components/`, `src/lib/timeline.ts`.
@@ -209,7 +218,7 @@ daemon, `docker ps -a` must be empty of ferrobot containers.
 ## Migrations
 
 - `crates/store/src/migrations.rs`, tracked with `PRAGMA user_version`.
-- Forward-only, numbered v1..v19 (v7: `providers`, `agents.provider_id`/`model`; v8:
+- Forward-only, numbered v1..v22 (v7: `providers`, `agents.provider_id`/`model`; v8:
   `global_memories`; v9: `connectors`, `agent_connectors`; v10:
   `global_memories.author`; v11: `agents.pinned`; v12: `settings`, JSON by
   key, e.g. `voice`; v13: `usage`, one row per proxied model call; v14:
@@ -217,7 +226,10 @@ daemon, `docker ps -a` must be empty of ferrobot containers.
   every tool group; v16: `rooms`, `room_members`, `room_lines`,
   `messages.room_id`, index `events_turn`; v17: `room_lines.invited`, NULL =
   words said; v18: `agents.tags`, NULL = none, index `usage_agent`; v19:
-  `rooms.name`, NULL = a call room, else a group chat). Append a new entry
+  `rooms.name`, NULL = a call room, else a group chat; v20: `usage.turn_id`,
+  `usage.at_ms`, index `usage_turn`; v21: `agent_aliases`, old names of
+  renamed agents; v22: `connectors.command`, `connectors.token_env`, NULL = a
+  remote server). Append a new entry
   with a `// vN: ...` comment; **never edit or reorder existing ones**.
 - Every migration gets a test (upgrade an old DB, check defaults of existing
   rows). New columns on existing tables need a default.
@@ -234,7 +246,9 @@ daemon, `docker ps -a` must be empty of ferrobot containers.
   Connector tokens follow the same rule: only the daemon talks to connectors.
   Claude credentials are never read, stored or relayed: no Claude sign-in in
   ferrobot; the opt-in Claude Code provider runs the host's own, unmodified
-  `claude` (built-in tools off, none of the user's settings) and reaches the
+  `claude` (built-in tools off, none of the user's settings: only the hooks and
+  plugins the operator sets in Settings → Claude Code, which agents cannot
+  change; the operator's Subagents switch adds only `Task`) and reaches the
   sandbox only through MCP. Connector OAuth is fine.
 - **Operator token on `/v1`.** Every UI route requires
   `Authorization: Bearer <token>` (`FERROBOT_API_TOKEN` or
@@ -260,6 +274,11 @@ daemon, `docker ps -a` must be empty of ferrobot containers.
 - **`FERROBOT_MAX_AGENTS`** (default 10) applies to `POST /v1/agents` and to
   `create_agent` (both through `daemon::agents::create`).
 - Question cards are answered at most once (`409` after).
+- **Local MCP servers run on the host only on the operator's word**: added in
+  Settings, or through an agent's `add_connector` card that shows the exact
+  command; Auto mode never skips that card. They start without a shell, with a
+  cleared environment (`PATH`, `HOME`, user, locale, temp, and the connector's
+  Vault token under `token_env`), so no model key or operator token reaches them.
 - **No card asks for a key.** An agent's `add_connector` card is
   Approve/Decline only; connector tokens are typed in Settings → Vault. Agent
   cards cannot carry `secret` fields (`ask_user` refuses them), the answer
@@ -290,6 +309,14 @@ daemon, `docker ps -a` must be empty of ferrobot containers.
   claude.ai login, Docker sandbox); Windows never.
 - The app updater never ran against a real release (v0.1.0 shipped without
   update files), and its Windows install path is untested.
+- Claude Code hooks, plugins and Subagents (2026-11-24) ran only as direct
+  `claude -p` turns (Haiku) with the daemon's flags, never through a daemon
+  turn; that a `Task` subagent has no built-in tools was not observed, and its
+  model calls likely miss Usage and traces.
+- OTLP export ran against Grafana's collector and Tempo (root span only;
+  child spans only in a unit test), never against Phoenix or Langfuse.
+- The Obsidian vault memory ran only against a temp folder, never with
+  Obsidian open; frontmatter with CRLF line endings is not parsed.
 
 ## Next up: Firecracker
 

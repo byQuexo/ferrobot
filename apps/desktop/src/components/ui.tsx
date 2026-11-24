@@ -1,4 +1,4 @@
-import type { ComponentChildren, JSX } from "preact";
+import type { ComponentChildren, JSX, RefObject } from "preact";
 import { useEffect, useRef, useState } from "preact/hooks";
 import { X } from "lucide-preact";
 
@@ -55,8 +55,12 @@ export function Choice(props: {
   options: [string, string][];
   placeholder: string;
   onChange: (v: string) => void;
+  label?: string;
+  /** The text field reports its value on blur or Enter only, e.g. where each change is saved. */
+  lazy?: boolean;
 }): JSX.Element {
   const [custom, setCustom] = useState(false);
+  const [draft, setDraft] = useState<string | null>(null);
   const input = useRef<HTMLInputElement>(null);
   useEffect(() => {
     if (custom) input.current?.focus();
@@ -66,13 +70,22 @@ export function Choice(props: {
       <span class="choice-custom">
         <input
           ref={input}
-          value={props.value}
+          value={draft ?? props.value}
           maxLength={200}
           spellcheck={false}
           autoComplete="off"
+          aria-label={props.label}
           placeholder={props.placeholder}
           onInput={(e) => {
-            props.onChange(e.currentTarget.value);
+            if (props.lazy) setDraft(e.currentTarget.value);
+            else props.onChange(e.currentTarget.value);
+          }}
+          onBlur={() => {
+            if (draft !== null && draft !== props.value) props.onChange(draft);
+            setDraft(null);
+          }}
+          onKeyDown={(e) => {
+            if (props.lazy && e.key === "Enter") e.currentTarget.blur();
           }}
         />
         {props.options.length > 0 && (
@@ -92,6 +105,7 @@ export function Choice(props: {
   return (
     <select
       value={props.value}
+      aria-label={props.label}
       onChange={(e) => {
         const v = e.currentTarget.value;
         if (v === CUSTOM) setCustom(true);
@@ -129,6 +143,71 @@ export function Switch(props: {
       <span class="switch-knob" />
     </button>
   );
+}
+
+/** A range slider in the accent color. `text` is what screen readers say instead of the number. */
+export function Slider(props: {
+  label: string;
+  value: number;
+  min: number;
+  max: number;
+  step: number;
+  text?: string;
+  onInput: (v: number) => void;
+  /** Once the slider is let go (or per arrow key). */
+  onChange?: (v: number) => void;
+}): JSX.Element {
+  const { onChange } = props;
+  return (
+    <input
+      type="range"
+      class="slider"
+      aria-label={props.label}
+      aria-valuetext={props.text}
+      min={props.min}
+      max={props.max}
+      step={props.step}
+      value={props.value}
+      style={{
+        "--fill": `${String(((props.value - props.min) / (props.max - props.min)) * 100)}%`,
+      }}
+      onInput={(e) => {
+        props.onInput(Number(e.currentTarget.value));
+      }}
+      onChange={
+        onChange &&
+        ((e) => {
+          onChange(Number(e.currentTarget.value));
+        })
+      }
+    />
+  );
+}
+
+/** Closes a popover on Escape (`escape` true), or when a click or focus lands outside `ref`. */
+export function useDismiss(
+  ref: RefObject<HTMLElement>,
+  open: boolean,
+  onClose: (escape: boolean) => void,
+): void {
+  useEffect(() => {
+    if (!open) return;
+    // Focus moving out catches what a click does not, such as a dialog opening from the keyboard.
+    const outside = (e: Event): void => {
+      if (!ref.current?.contains(e.target as Node)) onClose(false);
+    };
+    const key = (e: KeyboardEvent): void => {
+      if (e.key === "Escape") onClose(true);
+    };
+    document.addEventListener("pointerdown", outside);
+    document.addEventListener("focusin", outside);
+    document.addEventListener("keydown", key);
+    return () => {
+      document.removeEventListener("pointerdown", outside);
+      document.removeEventListener("focusin", outside);
+      document.removeEventListener("keydown", key);
+    };
+  }, [open]);
 }
 
 export function Dialog(props: {

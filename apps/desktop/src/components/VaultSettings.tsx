@@ -1,5 +1,5 @@
 import type { JSX } from "preact";
-import { useEffect, useState } from "preact/hooks";
+import { useEffect, useRef, useState } from "preact/hooks";
 import { KeyRound, Trash2 } from "lucide-preact";
 
 import type { Connector, Provider, VoiceView } from "../api.ts";
@@ -24,12 +24,15 @@ export function VaultSettings(props: {
   providersOnly?: boolean;
   /** Called with the providers after every load or change. */
   onProviders?: (providers: Provider[]) => void;
+  /** The entry to open for typing, e.g. `connector:<id>`. */
+  focus?: string | undefined;
 }): JSX.Element {
   const { client, toast } = useApp();
   const [providers, setProviders] = useState<Provider[]>([]);
   const [connectors, setConnectors] = useState<Connector[]>([]);
   const [voice, setVoice] = useState<VoiceView | null>(null);
-  const [editing, setEditing] = useState<string | null>(null);
+  const [editing, setEditing] = useState<string | null>(props.focus ?? null);
+  const focusPending = useRef(props.focus !== undefined);
   const [value, setValue] = useState("");
   const [busy, setBusy] = useState(false);
 
@@ -162,6 +165,12 @@ export function VaultSettings(props: {
                     }}
                   >
                     <input
+                      ref={(el) => {
+                        if (!el || !focusPending.current) return;
+                        focusPending.current = false;
+                        el.focus();
+                        el.scrollIntoView({ block: "center" });
+                      }}
                       type="password"
                       autoComplete="off"
                       spellcheck={false}

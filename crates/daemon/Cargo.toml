@@ -35,7 +35,7 @@ iana-time-zone.workspace = true
 keyring.workspace = true
 object_store = { workspace = true, features = ["fs", "aws"] }
 reqwest = { workspace = true, features = ["stream"] }
-rmcp = { workspace = true, features = ["client", "transport-streamable-http-client-reqwest", "auth"] }
+rmcp = { workspace = true, features = ["client", "transport-streamable-http-client-reqwest", "auth", "transport-async-rw"] }
 # Already in the tree via rustls: HMAC for share links, AES-GCM for archives.
 ring = "0.17"
 # Same version rmcp uses; for RFC 7009 token revocation on sign-out.

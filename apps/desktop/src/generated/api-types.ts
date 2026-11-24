@@ -97,6 +97,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/agents/{id}/compact": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Compacts the agent's conversation: its model keeps a summary instead of the whole history,
+         *     so its context shrinks. Claude Code agents only (their own `/compact`, run by the daemon).
+         */
+        post: operations["compact"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/agents/{id}/connectors": {
         parameters: {
             query?: never;
@@ -474,6 +494,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/agents/{id}/turns/{turn_id}/trace": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** One of the agent's turns as a timeline: its model calls and tool calls with their times. */
+        get: operations["turn_trace"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/agents/{id}/uploads": {
         parameters: {
             query?: never;
@@ -566,6 +603,44 @@ export interface paths {
          */
         get: operations["claude_code_status"];
         put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/claude-code/plugins": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Plugins installed in the host's Claude Code (`claude plugin list`). */
+        get: operations["claude_code_plugins"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/claude-code/settings": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Hooks and plugins for agents on Claude Code. Only the operator sets them; agents cannot. */
+        get: operations["claude_code_settings"];
+        /**
+         * Replaces the hooks and plugins for agents on Claude Code, from their next turn on. Hooks
+         *     run on this computer, outside the sandboxes; the user's own Claude Code settings stay out.
+         */
+        put: operations["put_claude_code_settings"];
         post?: never;
         delete?: never;
         options?: never;
@@ -888,6 +963,27 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/memory-vault": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Where memories live. */
+        get: operations["get_memory_vault"];
+        /**
+         * Keeps memories in an Obsidian vault folder, or back in the built-in memory. Memories stored
+         *     so far are copied into the vault (notes with the same key are kept).
+         */
+        put: operations["put_memory_vault"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/memory/{key}": {
         parameters: {
             query?: never;
@@ -918,6 +1014,41 @@ export interface paths {
          */
         get: operations["oauth_callback"];
         put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/otel": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Where finished turns' traces go. */
+        get: operations["get_otel"];
+        /** Replaces the export settings. Each turn's trace then goes to the endpoint when the turn ends. */
+        put: operations["put_otel"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/otel/secret": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /** Stores or removes the auth header's value, kept in the daemon's secret store. */
+        put: operations["put_otel_secret"];
         post?: never;
         delete?: never;
         options?: never;
@@ -1425,6 +1556,8 @@ export interface components {
              * @description When that call was made.
              */
             at?: string | null;
+            /** @description Whether `POST /v1/agents/{id}/compact` works for this agent (Claude Code agents). */
+            compact: boolean;
         };
         /**
          * Format: uuid
@@ -1481,6 +1614,9 @@ export interface components {
         } | {
             name: string;
             url: string;
+            /** @description A local server's program and arguments (it runs on the daemon's computer). */
+            command?: string[] | null;
+            token_env?: string | null;
             auth: components["schemas"]["ConnectorAuth"];
             /** @description The agent that asked: it gets the connector and a message with the outcome. */
             requester: components["schemas"]["AgentId"];
@@ -1574,6 +1710,25 @@ export interface components {
             /** @description Stable value reported in the answer; defaults to the label. */
             value?: string;
         };
+        /**
+         * @description Hooks and plugins for agents on Claude Code. Only the operator sets them; the user's own
+         *     Claude Code settings stay out.
+         */
+        ClaudeCodeSettings: {
+            /** @default [] */
+            hooks: components["schemas"]["Hook"][];
+            /**
+             * @description Installed plugins (`name@marketplace`) turned on for agents.
+             * @default []
+             */
+            plugins: string[];
+            /**
+             * @description Claude Code's own subagents (its `Task` tool). They get the same ferrobot tools and
+             *     still reach the sandbox only through MCP; they use more of the seat.
+             * @default false
+             */
+            subagents: boolean;
+        };
         /** @description Whether the host's `claude` is installed and signed in; never its account details. */
         ClaudeCodeStatus: {
             installed: boolean;
@@ -1602,8 +1757,18 @@ export interface components {
              *     (`<name>__<tool>`).
              */
             name: string;
-            /** @description Streamable HTTP endpoint of the MCP server. */
+            /** @description Streamable HTTP endpoint of a remote MCP server; empty for a local one. */
             url: string;
+            /**
+             * @description A local MCP server: its program and arguments, started on the daemon's computer without
+             *     a shell (e.g. `["npx", "-y", "@scope/server"]`). `None`: a remote server at `url`.
+             */
+            command?: string[] | null;
+            /**
+             * @description The environment variable a local server gets the connector's Vault token in, e.g.
+             *     `GITHUB_TOKEN`.
+             */
+            token_env?: string | null;
             /** Format: date-time */
             created_at: string;
         };
@@ -1694,10 +1859,17 @@ export interface components {
              */
             name: string;
             /**
-             * @description Streamable HTTP endpoint of the MCP server.
+             * @description Streamable HTTP endpoint of a remote MCP server; leave it out for a local one.
              * @example https://api.githubcopilot.com/mcp/
              */
-            url: string;
+            url?: string;
+            /**
+             * @description A local MCP server: its program and arguments, started on this computer without a shell
+             *     (e.g. `["npx", "-y", "@scope/server"]`).
+             */
+            command?: string[] | null;
+            /** @description The environment variable a local server gets `token` in, e.g. `GITHUB_TOKEN`. */
+            token_env?: string | null;
             /**
              * @description Sent as `Authorization: Bearer <token>`. Kept in the daemon's secret store;
              *     never returned.
@@ -1851,6 +2023,13 @@ export interface components {
             cmd: string[];
             workdir?: string | null;
         };
+        /** @description How the last export went. */
+        ExportStatus: {
+            /** Format: date-time */
+            at: string;
+            /** @description Why it failed; `null` when it went through. */
+            error?: string | null;
+        };
         /** @description Daemon-wide settings. Omitted fields take their defaults. */
         GeneralSettings: {
             /**
@@ -1895,6 +2074,27 @@ export interface components {
             sandbox_error?: string | null;
             /** @description Whether the daemon has its own `ANTHROPIC_API_KEY` for agents without a provider. */
             anthropic_key: boolean;
+        };
+        /** @description A shell command Claude Code runs on this computer, outside the sandboxes, when `event` fires. */
+        Hook: {
+            event: components["schemas"]["HookEvent"];
+            /**
+             * @description The tools it runs for, as Claude Code matches them (e.g. `mcp__ferrobot__bash`);
+             *     tool events only. `null`: every tool.
+             */
+            matcher?: string | null;
+            command: string;
+        };
+        /**
+         * @description When a hook runs. Only events that fire in a `claude -p` turn.
+         * @enum {string}
+         */
+        HookEvent: "SessionStart" | "UserPromptSubmit" | "PreToolUse" | "PostToolUse" | "Stop" | "SessionEnd";
+        /** @description A plugin installed in the host's Claude Code. */
+        InstalledPlugin: {
+            /** @description `name@marketplace`. */
+            id: string;
+            version?: string | null;
         };
         Interrupted: {
             /** @description The interrupted turn, or null if the agent was idle. */
@@ -2004,6 +2204,18 @@ export interface components {
             /** @description Global memory only: the agent that wrote it; absent = the operator. */
             author?: string | null;
         };
+        /** @description Where memories live: an Obsidian vault folder, or the built-in memory. */
+        MemoryVaultView: {
+            /**
+             * @description The vault folder; memories are Markdown notes under its `ferrobot/` folder. `null`: the
+             *     built-in memory.
+             */
+            path?: string | null;
+            /** @description The folder is an Obsidian vault (it has `.obsidian`). */
+            obsidian: boolean;
+            /** @description After a change: how many stored memories were copied into the vault. */
+            copied?: number | null;
+        };
         /** @description One model a picker offers. */
         ModelInfo: {
             /** @description The id an agent or provider uses as its `model`. */
@@ -2030,6 +2242,41 @@ export interface components {
         OAuthStart: {
             /** @description Open this in a browser on the daemon's computer to sign in. */
             authorization_url: string;
+        };
+        OtelSecret: {
+            /** @description The auth header's value, e.g. `Bearer …` or `Basic …`; `null` removes it. */
+            value?: string | null;
+        };
+        /** @description Where finished turns' traces go. The auth header's value is in the secret store. */
+        OtelSettings: {
+            /** @default false */
+            enabled: boolean;
+            /**
+             * @description The OTLP/HTTP traces URL, e.g. `http://localhost:6006/v1/traces`.
+             * @default
+             */
+            endpoint: string;
+            /**
+             * @description The auth header's name, e.g. `Authorization`; `null`: none.
+             * @default null
+             */
+            header: string | null;
+            /**
+             * @description Sent as the `openinference.project.name` resource attribute (Phoenix's project).
+             * @default null
+             */
+            project: string | null;
+            /**
+             * @description Also send tool inputs and the turn's reply; off: only names, times, tokens and errors.
+             * @default false
+             */
+            content: boolean;
+        };
+        /** @description The export settings, whether the header's value is stored, and how the last export went. */
+        OtelView: components["schemas"]["OtelSettings"] & {
+            /** @description The auth header's value is in the secret store; it is never returned. */
+            has_secret: boolean;
+            last_export?: components["schemas"]["ExportStatus"] | null;
         };
         PlanLimits: {
             five_hour?: components["schemas"]["LimitWindow"] | null;
@@ -2335,6 +2582,13 @@ export interface components {
             /** @enum {string} */
             kind: "routine";
         };
+        SetMemoryVault: {
+            /**
+             * @description An existing folder (absolute, or starting with `~/`); `null` goes back to the built-in
+             *     memory, which still holds what it had before.
+             */
+            path?: string | null;
+        };
         SetPrice: components["schemas"]["Price"] & {
             provider_kind: components["schemas"]["ProviderKind"];
             /** @description API model id, as agents send it. */
@@ -2387,6 +2641,38 @@ export interface components {
             /** @description Free-form label (default `manual`, max 64 bytes). */
             label?: string;
         };
+        /** @description One step of a turn. */
+        Span: {
+            kind: components["schemas"]["SpanKind"];
+            /** @description The model id, or the tool's name. */
+            name: string;
+            /** Format: date-time */
+            started_at: string;
+            /**
+             * Format: date-time
+             * @description `null` while it runs.
+             */
+            ended_at?: string | null;
+            /** @description Why it failed; `null` when it did not. */
+            error?: string | null;
+            /** @description A tool's input when small (up to 4 KiB), for its label. */
+            input?: Record<string, never> | null;
+            /** Format: int64 */
+            input_tokens?: number | null;
+            /** Format: int64 */
+            output_tokens?: number | null;
+            /** Format: int64 */
+            cache_read_tokens?: number | null;
+            /** Format: int64 */
+            cache_write_tokens?: number | null;
+            /**
+             * Format: double
+             * @description What the provider said the call cost (`OpenRouter`); `null` otherwise.
+             */
+            cost_usd?: number | null;
+        };
+        /** @enum {string} */
+        SpanKind: "model" | "tool";
         SpeechRequest: {
             /** @description What to say: 1-4096 characters. */
             text: string;
@@ -2422,6 +2708,27 @@ export interface components {
             reason: string;
             /** Format: date-time */
             since: string;
+        };
+        /** @description A turn and its steps, oldest first. */
+        Trace: {
+            turn_id: string;
+            /** Format: date-time */
+            started_at: string;
+            /**
+             * Format: date-time
+             * @description `null` while the turn runs.
+             */
+            ended_at?: string | null;
+            /** @description `completed`, `interrupted` or `failed`; `null` while it runs. */
+            outcome?: string | null;
+            /** @description Why the turn failed. */
+            error?: string | null;
+            /**
+             * @description Whether model calls are in `spans`: from the model proxy, or on Claude Code from its own
+             *     stream (`model_call` events); `false` for Claude Code turns from before those.
+             */
+            models_tracked: boolean;
+            spans: components["schemas"]["Span"][];
         };
         /** @description What was said. Both providers answer `{"text": ...}` (plus fields we ignore). */
         Transcript: {
@@ -3211,6 +3518,72 @@ export interface operations {
             };
             /** @description Unknown agent */
             404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+        };
+    };
+    compact: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Agent id (UUID) */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Compacted */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Not a Claude Code agent */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Missing or wrong API token */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Unknown agent */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Nothing to compact yet, or the agent is in a turn */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Claude Code failed to compact */
+            502: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -4514,6 +4887,48 @@ export interface operations {
             };
         };
     };
+    turn_trace: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Agent id (UUID) */
+                id: string;
+                /** @description Turn id, as on the turn's events */
+                turn_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Trace"];
+                };
+            };
+            /** @description Missing or wrong API token */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Unknown agent or turn */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+        };
+    };
     upload: {
         parameters: {
             query: {
@@ -4799,6 +5214,112 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ClaudeCodeStatus"];
+                };
+            };
+            /** @description Missing or wrong API token */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+        };
+    };
+    claude_code_plugins: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["InstalledPlugin"][];
+                };
+            };
+            /** @description Missing or wrong API token */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Claude Code did not answer */
+            502: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+        };
+    };
+    claude_code_settings: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ClaudeCodeSettings"];
+                };
+            };
+            /** @description Missing or wrong API token */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+        };
+    };
+    put_claude_code_settings: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ClaudeCodeSettings"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ClaudeCodeSettings"];
+                };
+            };
+            /** @description Invalid hook or plugin id */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
                 };
             };
             /** @description Missing or wrong API token */
@@ -5751,6 +6272,75 @@ export interface operations {
             };
         };
     };
+    get_memory_vault: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MemoryVaultView"];
+                };
+            };
+            /** @description Missing or wrong API token */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+        };
+    };
+    put_memory_vault: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SetMemoryVault"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MemoryVaultView"];
+                };
+            };
+            /** @description Not an existing folder */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Missing or wrong API token */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+        };
+    };
     delete_global_memory: {
         parameters: {
             query?: never;
@@ -5820,6 +6410,115 @@ export interface operations {
                 };
                 content: {
                     "text/html": string;
+                };
+            };
+            /** @description Missing or wrong API token */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+        };
+    };
+    get_otel: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OtelView"];
+                };
+            };
+            /** @description Missing or wrong API token */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+        };
+    };
+    put_otel: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["OtelSettings"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OtelView"];
+                };
+            };
+            /** @description Invalid endpoint or header name */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Missing or wrong API token */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+        };
+    };
+    put_otel_secret: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["OtelSecret"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OtelView"];
+                };
+            };
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
                 };
             };
             /** @description Missing or wrong API token */

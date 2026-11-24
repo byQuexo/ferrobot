@@ -1,20 +1,47 @@
 import type { JSX } from "preact";
 import { useEffect, useRef, useState } from "preact/hooks";
-import { MessageSquare, Mic, MicOff, MicVocal, PhoneOff, Radio } from "lucide-preact";
+import {
+  MessageSquare,
+  Mic,
+  MicOff,
+  MicVocal,
+  PhoneOff,
+  Radio,
+  Volume1,
+  Volume2,
+  VolumeX,
+} from "lucide-preact";
 
 import type { VoiceView } from "../api.ts";
 import { useApp } from "../context.ts";
-import { METER_DOTS, callClock, meterDots, nextSpeed, speedLabel, talkKey } from "../lib/call.ts";
+import {
+  METER_DOTS,
+  callClock,
+  meterDots,
+  nextSpeed,
+  speedLabel,
+  talkKey,
+  volumeLabel,
+} from "../lib/call.ts";
 import { Avatar } from "./Avatar.tsx";
-import { IconButton } from "./ui.tsx";
-import { voiceUpdate } from "./VoiceSettings.tsx";
+import { IconButton, Slider, useDismiss } from "./ui.tsx";
+import { patchVoice } from "./VoiceSettings.tsx";
 
 /** The running call as a bar above every view: who is in it, the level, its length and controls. */
 export function CallBar(): JSX.Element | null {
   const { call, callState: state, agents, openAgent, openRoom, client, toast } = useApp();
   const [, redraw] = useState(0);
   const [voice, setVoice] = useState<VoiceView | null>(null);
+  const [volumeOpen, setVolumeOpen] = useState(false);
+  const volumeBox = useRef<HTMLSpanElement>(null);
   const saving = useRef(Promise.resolve());
+  useDismiss(volumeBox, volumeOpen, (escape) => {
+    setVolumeOpen(false);
+    if (escape) volumeBox.current?.querySelector("button")?.focus();
+  });
+  useEffect(() => {
+    if (volumeOpen) volumeBox.current?.querySelector("input")?.focus();
+  }, [volumeOpen]);
   // Captions, the level and the speaking agent change often; only this bar follows them.
   useEffect(
     () =>
@@ -73,8 +100,7 @@ export function CallBar(): JSX.Element | null {
     // One after another, each on fresh settings: the update replaces all of them.
     saving.current = saving.current.then(async () => {
       try {
-        const fresh = await client.voice();
-        await client.updateVoice(voiceUpdate(fresh, { speed: speed === 1 ? null : speed }));
+        await patchVoice(client, { speed: speed === 1 ? null : speed });
       } catch (err) {
         toast(err instanceof Error ? err.message : String(err));
         client.voice().then(setVoice, () => undefined);
@@ -102,6 +128,7 @@ export function CallBar(): JSX.Element | null {
           : "Replies are read aloud";
   const lit = meterDots(call.level);
   const speed = speedLabel(voice?.speed ?? null);
+  const volume = call.volume;
 
   return (
     <section
@@ -163,6 +190,41 @@ export function CallBar(): JSX.Element | null {
             {speed}
           </button>
         )}
+        <span class="call-volume" ref={volumeBox}>
+          <IconButton
+            label={`Call volume, ${volumeLabel(volume)}`}
+            expanded={volumeOpen}
+            onClick={() => {
+              setVolumeOpen(!volumeOpen);
+            }}
+          >
+            {volume === 0 ? (
+              <VolumeX size={16} />
+            ) : volume < 0.5 ? (
+              <Volume1 size={16} />
+            ) : (
+              <Volume2 size={16} />
+            )}
+          </IconButton>
+          {volumeOpen && (
+            <span class="call-volume-pop">
+              <span class="call-volume-track">
+                <Slider
+                  label="Call volume"
+                  text={volumeLabel(volume)}
+                  min={0}
+                  max={1}
+                  step={0.05}
+                  value={volume}
+                  onInput={(v) => {
+                    call.setVolume(v);
+                  }}
+                />
+              </span>
+              <output aria-hidden="true">{Math.round(volume * 100)}</output>
+            </span>
+          )}
+        </span>
         {state.hearing && (
           <button
             type="button"

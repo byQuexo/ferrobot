@@ -1,6 +1,6 @@
 import type { JSX } from "preact";
 import { useEffect, useRef, useState } from "preact/hooks";
-import { ChevronDown, MessageSquarePlus } from "lucide-preact";
+import { ChevronDown, MessageSquarePlus, Minimize2 } from "lucide-preact";
 
 import type { Agent, AgentContext, Provider } from "../api.ts";
 import { useApp } from "../context.ts";
@@ -131,6 +131,7 @@ export function ContextMeter(props: { agent: Agent }): JSX.Element {
   const id = props.agent.id;
   const pop = usePopover();
   const [ctx, setCtx] = useState<AgentContext | null>(null);
+  const [compacting, setCompacting] = useState(false);
   useEffect(() => {
     let live = true;
     const load = (): void => {
@@ -147,7 +148,9 @@ export function ContextMeter(props: { agent: Agent }): JSX.Element {
       if (
         e.type === "event" &&
         e.event.agent_id === id &&
-        (e.event.kind === "turn_done" || e.event.kind === "new_session")
+        (e.event.kind === "turn_done" ||
+          e.event.kind === "new_session" ||
+          e.event.kind === "compacted")
       ) {
         load();
       }
@@ -183,6 +186,26 @@ export function ContextMeter(props: { agent: Agent }): JSX.Element {
             </span>
           )}
           <span class="muted small">{meter.detail}</span>
+          {ctx?.compact && (
+            <>
+              <Button
+                small
+                disabled={compacting}
+                onClick={() =>
+                  void (async () => {
+                    setCompacting(true);
+                    await run(() => client.compact(id));
+                    setCompacting(false);
+                  })()
+                }
+              >
+                <Minimize2 size={16} /> {compacting ? "Compacting…" : "Compact now"}
+              </Button>
+              <span class="hint">
+                {props.agent.name} keeps a summary of the conversation instead of all of it.
+              </span>
+            </>
+          )}
           <Button
             small
             onClick={() =>

@@ -369,11 +369,14 @@ impl AppState {
         let Ok(agents) = self.store.list_agents().await else {
             return text.to_owned();
         };
+        // Agents remember teammates by the names they knew; a renamed one keeps its old name.
+        let aliases = self.store.agent_aliases().await.unwrap_or_default();
         ferrobot_core::mention::normalize(text, |name| {
             agents
                 .iter()
                 .find(|a| a.name.as_str() == name)
                 .map(|a| a.id)
+                .or_else(|| aliases.iter().find(|(n, _)| n == name).map(|(_, id)| *id))
         })
     }
 

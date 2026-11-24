@@ -8,11 +8,11 @@
 
 [![CI](https://github.com/byQuexo/ferrobot/actions/workflows/ci.yml/badge.svg)](https://github.com/byQuexo/ferrobot/actions/workflows/ci.yml)
 [![License: MIT OR Apache-2.0](https://img.shields.io/badge/license-MIT%20OR%20Apache--2.0-blue)](#contributing-security-license)
-[![Release v0.1.5](https://img.shields.io/badge/release-v0.1.5-orange)](https://github.com/byQuexo/ferrobot/releases/tag/v0.1.5)
+[![Release v0.1.6](https://img.shields.io/badge/release-v0.1.6-orange)](https://github.com/byQuexo/ferrobot/releases/tag/v0.1.6)
 [![macOS](https://img.shields.io/badge/macOS-universal-lightgrey?logo=apple)](#download)
 [![Windows](https://img.shields.io/badge/Windows-x64-lightgrey?logo=windows)](#download)
 
-![ferrobot demo: researcher reads the backon docs through the DeepWiki connector, asks you a question and hands the build to builder, which runs cargo on its own computer; then a shared report and the cost in Usage](docs/assets/demo.gif)
+![ferrobot demo: a group chat where researcher and builder both answer, and an @-mention gets a Mermaid diagram from builder alone; tags, model and context ring in a chat; a file attached with the paperclip; builder reacts with an emoji and answers with a live HTML countdown, and you react back; a New line and a shared page previewed in the chat; Claude plan limits on Usage; an accent colour from Settings, Appearance](docs/assets/demo.gif)
 
 </div>
 
@@ -81,9 +81,9 @@ versioned API. More in the [wiki](docs/wiki/Architecture.md).
 
 ## Download
 
-Version 0.1.5 on the [release page](https://github.com/byQuexo/ferrobot/releases/tag/v0.1.5):
-`ferrobot_0.1.5_universal.dmg` (macOS, Apple silicon and Intel) and
-`ferrobot_0.1.5_x64-setup.exe` (Windows); `SHA256SUMS` lists the checksums.
+Version 0.1.6 on the [release page](https://github.com/byQuexo/ferrobot/releases/tag/v0.1.6):
+`ferrobot_0.1.6_universal.dmg` (macOS, Apple silicon and Intel) and
+`ferrobot_0.1.6_x64-setup.exe` (Windows); `SHA256SUMS` lists the checksums.
 The app needs [Docker Desktop](https://www.docker.com/products/docker-desktop/)
 and starts its own daemon.
 

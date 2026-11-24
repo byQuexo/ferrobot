@@ -7,7 +7,14 @@ use serde::Serialize;
 use time::OffsetDateTime;
 
 use crate::util::{fmt_ts, now, parse_ts};
+use crate::vault;
 use crate::{Store, StoreError};
+
+fn remove(note: &vault::Note) -> Result<bool, StoreError> {
+    std::fs::remove_file(&note.path)
+        .map(|()| true)
+        .map_err(|e| StoreError::Vault(e.to_string()))
+}
 
 /// One long-term memory, an agent's own or global.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
@@ -65,6 +72,9 @@ impl Store {
         content: String,
     ) -> Result<(), StoreError> {
         self.with(move |c| {
+            if let Some(v) = vault::vault(c)? {
+                return vault::write(&vault::folder(c, &v, Some(agent))?, &key, &content, None);
+            }
             let ts = fmt_ts(now());
             c.execute(
                 "INSERT INTO memories (agent_id, key, content, created_at, updated_at)
@@ -81,6 +91,10 @@ impl Store {
     /// Deletes the memory under `key`. Returns whether it existed.
     pub async fn forget(&self, agent: AgentId, key: String) -> Result<bool, StoreError> {
         self.with(move |c| {
+            if let Some(v) = vault::vault(c)? {
+                let dir = vault::folder(c, &v, Some(agent))?;
+                return vault::find(&dir, &key).map_or(Ok(false), |n| remove(&n));
+            }
             Ok(c.execute(
                 "DELETE FROM memories WHERE agent_id = ?1 AND key = ?2",
                 params![agent.to_string(), key],
@@ -98,6 +112,13 @@ impl Store {
         limit: u32,
     ) -> Result<Vec<MemoryEntry>, StoreError> {
         self.with(move |c| {
+            if let Some(v) = vault::vault(c)? {
+                return Ok(vault::search(
+                    &vault::folder(c, &v, Some(agent))?,
+                    &query,
+                    limit,
+                ));
+            }
             let id = agent.to_string();
             match fts_query(&query) {
                 Some(q) => collect(
@@ -128,6 +149,26 @@ impl Store {
         by: Option<AgentId>,
     ) -> Result<(), StoreError> {
         self.with(move |c| {
+            if let Some(v) = vault::vault(c)? {
+                let dir = vault::folder(c, &v, None)?;
+                let mine = |n: &vault::Note| by.is_none() || n.entry.author == by;
+                if vault::find(&dir, &key).is_some_and(|n| !mine(&n)) {
+                    return Err(not_yours(&key));
+                }
+                let name: Option<String> = match by {
+                    Some(id) => c
+                        .query_row(
+                            "SELECT name FROM agents WHERE id = ?1",
+                            [id.to_string()],
+                            |r| r.get(0),
+                        )
+                        .optional()?,
+                    None => None,
+                };
+                let author = by.zip(name);
+                let author = author.as_ref().map(|(id, n)| (*id, n.as_str()));
+                return vault::write(&dir, &key, &content, author);
+            }
             let ts = fmt_ts(now());
             let by = by.map(|a| a.to_string());
             let changed = c.execute(
@@ -155,6 +196,13 @@ impl Store {
         by: Option<AgentId>,
     ) -> Result<bool, StoreError> {
         self.with(move |c| {
+            if let Some(v) = vault::vault(c)? {
+                return match vault::find(&vault::folder(c, &v, None)?, &key) {
+                    None => Ok(false),
+                    Some(n) if by.is_some() && n.entry.author != by => Err(not_yours(&key)),
+                    Some(n) => remove(&n),
+                };
+            }
             let by = by.map(|a| a.to_string());
             let deleted = c.execute(
                 "DELETE FROM global_memories WHERE key = ?1 AND (?2 IS NULL OR author = ?2)",
@@ -183,23 +231,36 @@ impl Store {
         query: String,
         limit: u32,
     ) -> Result<Vec<MemoryEntry>, StoreError> {
-        self.with(move |c| match fts_query(&query) {
-            Some(q) => collect(
-                c,
-                "SELECT m.key, m.content, m.updated_at, m.author FROM global_memories_fts f
+        self.with(move |c| {
+            if let Some(v) = vault::vault(c)? {
+                return Ok(vault::search(&vault::folder(c, &v, None)?, &query, limit));
+            }
+            recall_global_sql(c, &query, limit)
+        })
+        .await
+    }
+}
+
+fn recall_global_sql(
+    c: &rusqlite::Connection,
+    query: &str,
+    limit: u32,
+) -> Result<Vec<MemoryEntry>, StoreError> {
+    match fts_query(query) {
+        Some(q) => collect(
+            c,
+            "SELECT m.key, m.content, m.updated_at, m.author FROM global_memories_fts f
                  JOIN global_memories m ON m.id = f.rowid
                  WHERE global_memories_fts MATCH ?1
                  ORDER BY bm25(global_memories_fts) LIMIT ?2",
-                params![q, limit],
-            ),
-            None => collect(
-                c,
-                "SELECT key, content, updated_at, author FROM global_memories
+            params![q, limit],
+        ),
+        None => collect(
+            c,
+            "SELECT key, content, updated_at, author FROM global_memories
                  ORDER BY updated_at DESC LIMIT ?1",
-                params![limit],
-            ),
-        })
-        .await
+            params![limit],
+        ),
     }
 }
 

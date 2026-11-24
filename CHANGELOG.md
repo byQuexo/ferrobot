@@ -6,6 +6,86 @@ All notable changes are listed here. The format follows
 
 ## [Unreleased]
 
+## [0.1.6] - 2026-11-24
+
+### Added
+
+- Traces: a reply's steps (in its footer, by the reaction button) open its
+  turn on a timeline: model calls (from the proxy, now tagged with their turn,
+  or for Claude Code from its own stream) and tool calls with how long each
+  took, the slowest one, failures, counts and a search
+  (`GET /v1/agents/{id}/turns/{turn_id}/trace`). Computer steps name their
+  command or file. New migration: v20 (`usage.turn_id`, `usage.at_ms`).
+- Call volume: a speaker button in the call bar opens a small slider for how
+  loud the agents speak (0 mutes them); this computer remembers it.
+- Settings → Claude Code: hooks and plugins for agents on Claude Code (your
+  own login). Hooks are commands that run on this computer before or after a
+  tool call, when a turn or session starts or ends; installed plugins can be
+  switched on (their hooks run; their MCP servers go through Connectors), and
+  a Subagents switch turns on Claude Code's own subagents (`Task`), which get
+  only ferrobot's tools.
+  ferrobot passes only these (`--settings`, `--plugin-dir`); your own Claude
+  Code settings stay out, and agents cannot change them
+  (`/v1/claude-code/settings`, `/v1/claude-code/plugins`).
+- Settings → Traces: each finished turn's trace goes to Phoenix, Langfuse or
+  any OpenTelemetry backend over OTLP/HTTP (protobuf, OpenInference and GenAI
+  attributes), with presets, keys in the keychain and the last export's
+  status. Off by default; tool inputs and replies only with **Include
+  content** (`/v1/otel`, `/v1/otel/secret`). Guide: Traces.
+- Memory in an Obsidian vault: in Settings → Global memory, pick your vault's
+  folder and every memory (agents' own and global) becomes a Markdown note
+  under `ferrobot/` that you can read and edit in Obsidian; stored memories
+  are copied in (`/v1/memory-vault`).
+
+### Changed
+
+- `claude` (Claude Code agents) no longer gets the daemon's `FERROBOT_*` and
+  `AWS_*` variables, so hooks and plugins never see the operator token or
+  storage keys.
+
+- Settings → Voice is one flow in the new card look: pick the provider, paste
+  its key right there, and your voices load at once. Every change saves by
+  itself (no Save button); switching providers asks first when it would clear
+  your voice picks. The chat's voice popover got the same look.
+
+- Claude Code calls show on the Usage page: each model call `claude` reports is
+  a usage row (provider kind `claude_code`) with its tokens and a cost
+  estimated at Anthropic API prices; your subscription covers them.
+- Calls with several agents: an agent without a voice of its own speaks with an
+  `ElevenLabs` voice from your account that no one else in the call uses (by
+  its place in the call); the host keeps the default.
+- Local MCP servers: a connector can be a command (for example an `npx` server)
+  that ferrobot starts on this computer when it starts, without a shell and
+  with a cleared environment; its token goes in as the environment variable you
+  name. Agents can propose one with `add_connector` (`command`); the card shows
+  the exact command and Auto mode never skips it. New migration: v22
+  (`connectors.command`, `connectors.token_env`).
+- Compact now: in the context popover, Claude Code agents can compact their
+  conversation (`POST /v1/agents/{id}/compact`). The daemon runs `claude`'s
+  own `/compact` on the agent's session, with no tools and none of your
+  settings; message text can still never run a slash command.
+
+### Changed
+
+- Settings → Connectors: your connectors are cards with a tile, their status
+  (connected, needs sign-in, needs a token, failed), the agents that use them
+  and the next step (**Sign in**, **Add its token in Vault**, which opens
+  Vault at that token, **Check again**). The catalog is grouped (Work & notes,
+  Code & cloud, Data & payments, Docs & search, Mail & automation) with a
+  search, and **Add a custom connector** opens a dialog.
+- Usage: plan limits are labelled bars ("5-hour window", "Weekly") with the
+  percentage used and the reset time, plus loading and error states with
+  **Try again**. Claude Code costs are noted as estimates at API prices,
+  covered by your subscription.
+
+### Fixed
+
+- A renamed agent can still be reached by its old name: agents that write
+  `@old-name` (or send to it) reach it, until another agent takes that name.
+  New migration: v21 (`agent_aliases`).
+- The chat's voice popover stayed open on top of dialogs such as Edit agent;
+  it now closes when a dialog opens, and dialogs always sit above popovers.
+
 ## [0.1.5] - 2026-11-23
 
 ### Fixed
@@ -14,7 +94,7 @@ All notable changes are listed here. The format follows
   **Send now**, which would have stopped that very turn: the daemon now tells
   the app when a turn takes a message.
 
-## [0.1.4] - 2026-11-23 (tagged, not published)
+## [0.1.4] - 2026-11-23
 
 ### Added
 
@@ -221,7 +301,8 @@ First public release.
   allowlist per API family, no redirects, header allowlists both ways, agent
   tokens blanked in committed images.
 
-[Unreleased]: https://github.com/byQuexo/ferrobot/compare/v0.1.5...HEAD
+[Unreleased]: https://github.com/byQuexo/ferrobot/compare/v0.1.6...HEAD
+[0.1.6]: https://github.com/byQuexo/ferrobot/compare/v0.1.5...v0.1.6
 [0.1.5]: https://github.com/byQuexo/ferrobot/compare/v0.1.4...v0.1.5
 [0.1.4]: https://github.com/byQuexo/ferrobot/compare/v0.1.3...v0.1.4
 [0.1.3]: https://github.com/byQuexo/ferrobot/compare/v0.1.2...v0.1.3

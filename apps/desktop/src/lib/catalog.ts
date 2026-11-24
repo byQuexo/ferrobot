@@ -1,3 +1,17 @@
+export type CatalogKind =
+  | "work"
+  | "notes"
+  | "code"
+  | "errors"
+  | "cloud"
+  | "data"
+  | "money"
+  | "docs"
+  | "search"
+  | "ai"
+  | "mail"
+  | "automation";
+
 /** Vendor-run remote MCP servers that ferrobot can add in one step. Checked 2026-11-22. */
 export interface CatalogEntry {
   /** The connector name (prefixes its tools). */
@@ -7,8 +21,7 @@ export interface CatalogEntry {
   about: string;
   /** `oauth`: sign in after adding; `token`: add its token in Vault; `none`: no sign-in. */
   auth: "oauth" | "token" | "none";
-  kind:
-    "work" | "notes" | "code" | "errors" | "data" | "cloud" | "money" | "docs" | "search" | "ai";
+  kind: CatalogKind;
   /** A step needed before it works. */
   setup?: string;
   /** The server has no automatic client registration: Add opens the form for the operator's own
@@ -47,7 +60,7 @@ export const CATALOG: CatalogEntry[] = [
     url: "https://gmailmcp.googleapis.com/mcp/v1",
     about: "Search and read mail, manage labels and write drafts. It cannot send.",
     auth: "oauth",
-    kind: "work",
+    kind: "mail",
     setup:
       "First create your own Google OAuth app (Developer Preview): the guide shows how. Adding Gmail asks for its client ID.",
     app: {
@@ -131,7 +144,7 @@ export const CATALOG: CatalogEntry[] = [
     url: "https://mcp.zapier.com/api/v1/connect",
     about: "Actions in thousands of apps. Each call uses Zapier tasks.",
     auth: "oauth",
-    kind: "work",
+    kind: "automation",
   },
   {
     name: "context7",
@@ -180,3 +193,27 @@ export const isAdded = (
   entry: CatalogEntry,
   connectors: { name: string; url: string }[],
 ): boolean => connectors.some((c) => c.url === entry.url || c.name === entry.name);
+
+/** Catalog headings, in order, with the kinds under each. */
+export const CATALOG_GROUPS: { label: string; kinds: CatalogKind[] }[] = [
+  { label: "Work & notes", kinds: ["work", "notes"] },
+  { label: "Code & cloud", kinds: ["code", "errors", "cloud"] },
+  { label: "Data & payments", kinds: ["data", "money"] },
+  { label: "Docs & search", kinds: ["docs", "search", "ai"] },
+  { label: "Mail & automation", kinds: ["mail", "automation"] },
+];
+
+/** The catalog under its headings, keeping entries that match every word of `query`. */
+export function groupCatalog(
+  query: string,
+  entries: CatalogEntry[] = CATALOG,
+): { label: string; entries: CatalogEntry[] }[] {
+  const words = query.toLowerCase().split(/\s+/).filter(Boolean);
+  return CATALOG_GROUPS.map(({ label, kinds }) => ({
+    label,
+    entries: entries.filter((e) => {
+      const text = `${e.title} ${e.name} ${e.about} ${label}`.toLowerCase();
+      return kinds.includes(e.kind) && words.every((w) => text.includes(w));
+    }),
+  })).filter((g) => g.entries.length > 0);
+}

@@ -16,6 +16,7 @@ mod snapshots;
 mod tasks;
 mod usage;
 mod util;
+mod vault;
 
 use std::path::Path;
 use std::sync::{Arc, Mutex};
@@ -32,7 +33,7 @@ pub use routines::{NewRoutine, Routine, RoutineRun, RunTrigger};
 pub use snapshots::SnapshotRecord;
 pub use tasks::Task;
 pub use usage::{
-    ContextUsage, Tokens, UsageFilter, UsageGroupBy, UsageRecord, UsageSlice, UsageStatus,
+    ContextUsage, Tokens, TurnCall, UsageFilter, UsageGroupBy, UsageRecord, UsageSlice, UsageStatus,
 };
 
 /// Maximum delivery attempts before a message is marked failed.

@@ -143,16 +143,21 @@ impl Prices {
 
     pub fn get(&self, kind: &str, model: &str) -> Option<Price> {
         let kind = kind.parse::<ProviderKind>().ok()?;
-        // Codex and Gemini CLI call the same models, at the same prices, as OpenAI and Gemini.
+        // Codex, Gemini CLI and Claude Code call the same models as OpenAI, Gemini and Anthropic;
+        // a subscription covers Claude Code, so its cost is what the API would charge.
         let fallback = match kind {
             ProviderKind::Codex => ProviderKind::Openai,
             ProviderKind::GeminiCli => ProviderKind::Gemini,
+            ProviderKind::ClaudeCode => ProviderKind::Anthropic,
             other => other,
         };
         // Anthropic prices a snapshot like its alias; OpenAI snapshots can differ from theirs.
         let dated = matches!(
             kind,
-            ProviderKind::Anthropic | ProviderKind::Bedrock | ProviderKind::Vertex
+            ProviderKind::Anthropic
+                | ProviderKind::Bedrock
+                | ProviderKind::Vertex
+                | ProviderKind::ClaudeCode
         );
         [kind, fallback]
             .into_iter()
@@ -278,6 +283,12 @@ mod tests {
             Some(Price::FREE),
             "override, via openai"
         );
+        assert_eq!(
+            prices.get("claude_code", "claude-sonnet-4-5-20250929"),
+            prices.get("anthropic", "claude-sonnet-4-5"),
+            "Claude Code is priced like the Anthropic API"
+        );
+        assert!(prices.get("claude_code", "claude-sonnet-4-5").is_some());
         assert!(prices.get("gemini_cli", "gemini-2.5-flash").is_some());
         assert_eq!(prices.get("ollama", "llama9:70b"), Some(Price::FREE));
         assert_eq!(prices.get("anthropic", "claude-unknown-9"), None);

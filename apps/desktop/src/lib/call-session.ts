@@ -5,10 +5,13 @@ import {
   ECHO_MS,
   callChanged,
   callTurn,
+  clampVolume,
   loadPushToTalk,
+  loadVolume,
   micOpen,
   operatorSaid,
   savePushToTalk,
+  saveVolume,
   type CallState,
   type Line,
 } from "./call.ts";
@@ -32,6 +35,8 @@ export class CallSession {
   /** The microphone counts only while the operator holds the talk button or Space. */
   pushToTalk = loadPushToTalk();
   held = false;
+  /** How loud the agents speak (0..1); remembered on this computer. */
+  volume = loadVolume();
   #release: ReturnType<typeof setTimeout> | undefined;
   readonly #client: DaemonClient;
   readonly #toast: (message: string, kind?: "error" | "info") => void;
@@ -60,6 +65,7 @@ export class CallSession {
     this.#speaker = new Speaker(client.speechUrl, (err) => {
       toast(message(err));
     });
+    this.#speaker.setVolume(this.volume);
     this.#speaker.onSpeaking = (agent) => {
       this.speaking = agent;
       this.#emit();
@@ -134,6 +140,14 @@ export class CallSession {
     this.held = false;
     clearTimeout(this.#release);
     this.#gate();
+    this.#emit();
+  }
+
+  /** How loud the agents speak, 0 (silent) to 1; remembered on this computer. */
+  setVolume(v: number): void {
+    this.volume = clampVolume(v);
+    saveVolume(this.volume);
+    this.#speaker.setVolume(this.volume);
     this.#emit();
   }
 

@@ -163,6 +163,36 @@ impl Store {
         .await
     }
 
+    /// The events of one of `agent`'s turns, oldest first.
+    pub async fn turn_events(
+        &self,
+        agent: AgentId,
+        turn: String,
+    ) -> Result<Vec<StoredEvent>, StoreError> {
+        self.with(move |c| {
+            let mut stmt = c.prepare(
+                "SELECT id, kind, payload, created_at FROM events
+                 WHERE agent_id = ?1 AND turn_id = ?2 ORDER BY id",
+            )?;
+            let mut rows = stmt.query(params![agent.to_string(), turn])?;
+            let mut out = Vec::new();
+            while let Some(row) = rows.next()? {
+                let payload: String = row.get(2)?;
+                let created: String = row.get(3)?;
+                out.push(StoredEvent {
+                    id: row.get(0)?,
+                    agent_id: agent,
+                    turn_id: Some(turn.clone()),
+                    kind: row.get(1)?,
+                    payload: serde_json::from_str(&payload).map_err(StoreError::corrupt)?,
+                    created_at: parse_ts(&created)?,
+                });
+            }
+            Ok(out)
+        })
+        .await
+    }
+
     /// Events of `agent` with id greater than `after` (oldest first).
     pub async fn events_after(
         &self,

@@ -7,6 +7,7 @@ export const DEFAULT_DAEMON = "http://127.0.0.1:7878";
 type Schemas = components["schemas"];
 export type Agent = Schemas["AgentView"];
 export type AgentContext = Schemas["AgentContext"];
+export type Trace = Schemas["Trace"];
 export type Presence = Schemas["Presence"];
 export type AvatarCharacter = Schemas["AvatarCharacter"];
 export type StoredEvent = Schemas["StoredEvent"];
@@ -41,6 +42,13 @@ export type UpdateConnector = Schemas["UpdateConnector"];
 export type DeviceCode = Schemas["DeviceCode"];
 export type LoginStatus = Schemas["LoginStatus"];
 export type ClaudeCodeStatus = Schemas["ClaudeCodeStatus"];
+export type ClaudeCodeSettings = Schemas["ClaudeCodeSettings"];
+export type Hook = Schemas["Hook"];
+export type HookEvent = Schemas["HookEvent"];
+export type InstalledPlugin = Schemas["InstalledPlugin"];
+export type OtelSettings = Schemas["OtelSettings"];
+export type OtelView = Schemas["OtelView"];
+export type MemoryVaultView = Schemas["MemoryVaultView"];
 export type ModelList = Schemas["ModelList"];
 export type ModelInfo = Schemas["ModelInfo"];
 export type VoiceView = Schemas["VoiceView"];
@@ -158,6 +166,12 @@ export class DaemonClient {
   chatgptLoginStatus = (id: string): Promise<LoginStatus> =>
     this.#request("GET", `/v1/providers/${id}/chatgpt-login`);
   claudeCode = (): Promise<ClaudeCodeStatus> => this.#request("GET", "/v1/claude-code");
+  claudeCodeSettings = (): Promise<ClaudeCodeSettings> =>
+    this.#request("GET", "/v1/claude-code/settings");
+  updateClaudeCodeSettings = (s: ClaudeCodeSettings): Promise<ClaudeCodeSettings> =>
+    this.#request("PUT", "/v1/claude-code/settings", s);
+  claudeCodePlugins = (): Promise<InstalledPlugin[]> =>
+    this.#request("GET", "/v1/claude-code/plugins");
   providerModels = (id: string): Promise<ModelList> =>
     this.#request("GET", `/v1/providers/${id}/models`);
   kindModels = (kind: ProviderKind): Promise<ModelList> =>
@@ -222,6 +236,11 @@ export class DaemonClient {
   newSession = (id: string): Promise<void> => this.#request("POST", `/v1/agents/${id}/new-session`);
   agentContext = (id: string): Promise<AgentContext> =>
     this.#request("GET", `/v1/agents/${id}/context`);
+  /** Shrinks the agent's context to a summary (Claude Code agents). */
+  compact = (id: string): Promise<void> => this.#request("POST", `/v1/agents/${id}/compact`);
+  /** One of the agent's turns as a timeline. */
+  trace = (id: string, turn: string): Promise<Trace> =>
+    this.#request("GET", `/v1/agents/${id}/turns/${encodeURIComponent(turn)}/trace`);
   answerQuestion = (
     id: string,
     question: number,
@@ -332,6 +351,13 @@ export class DaemonClient {
   settings = (): Promise<GeneralSettings> => this.#request("GET", "/v1/settings");
   updateSettings = (s: GeneralSettings): Promise<GeneralSettings> =>
     this.#request("PUT", "/v1/settings", s);
+  memoryVault = (): Promise<MemoryVaultView> => this.#request("GET", "/v1/memory-vault");
+  setMemoryVault = (path: string | null): Promise<MemoryVaultView> =>
+    this.#request("PUT", "/v1/memory-vault", { path });
+  otel = (): Promise<OtelView> => this.#request("GET", "/v1/otel");
+  updateOtel = (s: OtelSettings): Promise<OtelView> => this.#request("PUT", "/v1/otel", s);
+  setOtelSecret = (value: string | null): Promise<OtelView> =>
+    this.#request("PUT", "/v1/otel/secret", { value });
   updateInfo = (): Promise<UpdateInfo> => this.#request("GET", "/v1/update");
   diagnostics = (): Promise<Diagnostics> => this.#request("GET", "/v1/diagnostics");
   diagnosticsLog = (lines: number): Promise<DiagnosticsLog> =>

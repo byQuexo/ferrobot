@@ -377,3 +377,31 @@ export function savePushToTalk(on: boolean): void {
     // Storage can be unavailable; the mode then lasts until the app closes.
   }
 }
+
+const VOLUME_KEY = "ferrobot.call-volume";
+
+/** A volume (0..1) in whole percents; anything that is no number is full volume. */
+export const clampVolume = (v: number): number =>
+  Number.isFinite(v) ? Math.round(Math.min(1, Math.max(0, v)) * 100) / 100 : 1;
+
+/** A volume as the call bar names it: `muted` at 0, else a percentage. */
+export const volumeLabel = (v: number): string =>
+  v === 0 ? "muted" : `${String(Math.round(v * 100))}%`;
+
+/** How loud the agents speak in a call, as this computer remembers it; full by default. */
+export function loadVolume(get = (key: string) => localStorage.getItem(key)): number {
+  try {
+    const raw = get(VOLUME_KEY);
+    return raw === null ? 1 : clampVolume(parseFloat(raw));
+  } catch {
+    return 1;
+  }
+}
+
+export function saveVolume(v: number): void {
+  try {
+    localStorage.setItem(VOLUME_KEY, String(v));
+  } catch {
+    // Storage can be unavailable; the volume then lasts until the app closes.
+  }
+}

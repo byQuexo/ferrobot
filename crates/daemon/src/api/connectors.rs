@@ -180,9 +180,17 @@ pub(crate) struct CreateConnector {
     /// 1-16 chars, `a-z0-9-`, starts with a letter; prefixes the tools.
     #[schema(example = "github")]
     name: String,
-    /// Streamable HTTP endpoint of the MCP server.
+    /// Streamable HTTP endpoint of a remote MCP server; leave it out for a local one.
     #[schema(example = "https://api.githubcopilot.com/mcp/")]
+    #[serde(default)]
     url: String,
+    /// A local MCP server: its program and arguments, started on this computer without a shell
+    /// (e.g. `["npx", "-y", "@scope/server"]`).
+    #[serde(default)]
+    command: Option<Vec<String>>,
+    /// The environment variable a local server gets `token` in, e.g. `GITHUB_TOKEN`.
+    #[serde(default)]
+    token_env: Option<String>,
     /// Sent as `Authorization: Bearer <token>`. Kept in the daemon's secret store;
     /// never returned.
     #[serde(default)]
@@ -218,6 +226,8 @@ pub(crate) async fn create_connector(
         id: Uuid::new_v4(),
         name: req.name.trim().to_owned(),
         url: req.url.trim().to_owned(),
+        command: req.command,
+        token_env: req.token_env.map(|e| e.trim().to_owned()),
         created_at: time::OffsetDateTime::now_utc(),
     };
     connector.validate().map_err(ApiError::BadRequest)?;
@@ -253,6 +263,23 @@ async fn add(
     Ok(connector)
 }
 
+/// A command as a shell would show it: arguments with spaces or quotes in single quotes.
+fn shown_command(argv: &[String]) -> String {
+    argv.iter()
+        .map(|a| {
+            if !a.is_empty()
+                && a.chars()
+                    .all(|c| c.is_ascii_alphanumeric() || "@/._-=:+,".contains(c))
+            {
+                a.clone()
+            } else {
+                format!("'{}'", a.replace('\'', "'\\''"))
+            }
+        })
+        .collect::<Vec<_>>()
+        .join(" ")
+}
+
 /// Shows the operator a card to add the connector an agent asked for, in the chat they use for
 /// it. Nothing exists until they approve; Auto mode does not skip it. No card asks for a key: a
 /// token goes in under Settings → Vault.
@@ -265,6 +292,8 @@ pub(crate) async fn request_card(
         id: Uuid::nil(),
         name: request.name,
         url: request.url,
+        command: request.command,
+        token_env: request.token_env,
         created_at: time::OffsetDateTime::now_utc(),
     };
     connector.validate().map_err(ApiError::BadRequest)?;
@@ -284,12 +313,37 @@ pub(crate) async fn request_card(
         printable(&request.reason, "reason", 300)?;
     }
     let who = state.store.get_agent(requester).await?.name;
-    let host = reqwest::Url::parse(&connector.url)
-        .ok()
-        .and_then(|u| u.host_str().map(str::to_owned))
-        .ok_or_else(|| ApiError::BadRequest("url needs a host".into()))?;
-    let Connector { name, url, .. } = connector;
-    let mut prompt = format!("Add the connector \"{name}\" and give it to {who}?\nURL: {url}");
+    let Connector {
+        name,
+        url,
+        command,
+        token_env,
+        ..
+    } = connector;
+    // A local server runs code on this computer: the card shows exactly what will run.
+    let (mut prompt, host) = match &command {
+        Some(argv) => (
+            format!(
+                "Add the local MCP server \"{name}\" and give it to {who}?\nIt runs on this \
+                 computer, outside the agents' sandboxes, as: {}",
+                shown_command(argv)
+            ),
+            "the local server".to_owned(),
+        ),
+        None => (
+            format!("Add the connector \"{name}\" and give it to {who}?\nURL: {url}"),
+            reqwest::Url::parse(&url)
+                .ok()
+                .and_then(|u| u.host_str().map(str::to_owned))
+                .ok_or_else(|| ApiError::BadRequest("url needs a host".into()))?,
+        ),
+    };
+    if let Some(env) = &token_env {
+        let _ = write!(
+            prompt,
+            "\nIts token goes in as the environment variable {env}."
+        );
+    }
     match request.auth {
         ConnectorAuth::Token => {
             let _ = write!(
@@ -312,6 +366,8 @@ pub(crate) async fn request_card(
         Approval::AddConnector {
             name,
             url,
+            command,
+            token_env,
             auth: request.auth,
             requester,
         },
@@ -340,6 +396,8 @@ pub(crate) async fn answer_card(
     let Approval::AddConnector {
         name,
         url,
+        command,
+        token_env,
         auth,
         requester,
     } = approval
@@ -353,6 +411,8 @@ pub(crate) async fn answer_card(
             id: Uuid::new_v4(),
             name: name.clone(),
             url: url.clone(),
+            command: command.clone(),
+            token_env: token_env.clone(),
             created_at: time::OffsetDateTime::now_utc(),
         };
         connector.validate().map_err(ApiError::BadRequest)?;

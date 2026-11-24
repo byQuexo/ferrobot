@@ -39,6 +39,16 @@
             "auth": {
               "$ref": "#/$defs/ConnectorAuth"
             },
+            "command": {
+              "description": "A local server's program and arguments (it runs on the daemon's computer).",
+              "items": {
+                "type": "string"
+              },
+              "type": [
+                "array",
+                "null"
+              ]
+            },
             "kind": {
               "enum": [
                 "add_connector"
@@ -51,6 +61,12 @@
             "requester": {
               "$ref": "#/$defs/AgentId",
               "description": "The agent that asked: it gets the connector and a message with the outcome."
+            },
+            "token_env": {
+              "type": [
+                "string",
+                "null"
+              ]
             },
             "url": {
               "type": "string"

@@ -14,6 +14,7 @@
 - [[Routines and memory|Routines-and-Memory]]
 - [[Voice and calls|Voice-and-Calls]]
 - [[Usage and Costs|Usage-and-Costs]]
+- [[Traces]]
 
 **How it works**
 

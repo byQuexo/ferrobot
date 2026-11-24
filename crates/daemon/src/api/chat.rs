@@ -5,7 +5,7 @@ use axum::http::StatusCode;
 use axum::routing::{get, post};
 use axum::{Json, Router};
 use ferrobot_core::question::{Approval, QuestionAnswer, QuestionAnswered, QuestionEvent};
-use ferrobot_core::{MailMessage, Sender};
+use ferrobot_core::{MailMessage, ProviderKind, Sender};
 use ferrobot_store::StoredEvent;
 use serde::{Deserialize, Serialize};
 use utoipa::{IntoParams, ToSchema};
@@ -29,6 +29,8 @@ pub(super) fn router() -> Router<AppState> {
         .route("/v1/agents/{id}/interrupt", post(interrupt))
         .route("/v1/agents/{id}/retry", post(retry))
         .route("/v1/agents/{id}/new-session", post(new_session))
+        .route("/v1/agents/{id}/turns/{turn_id}/trace", get(turn_trace))
+        .route("/v1/agents/{id}/compact", post(compact))
         .route(
             "/v1/agents/{id}/questions/{qid}/answer",
             post(answer_question),
@@ -357,6 +359,74 @@ pub(crate) async fn interrupt(
     Ok(Json(Interrupted {
         turn_id: state.hub.interrupt(id),
     }))
+}
+
+/// Compacts the agent's conversation: its model keeps a summary instead of the whole history,
+/// so its context shrinks. Claude Code agents only (their own `/compact`, run by the daemon).
+#[utoipa::path(post, path = "/v1/agents/{id}/compact", tag = "chat",
+    params(("id" = String, Path, description = "Agent id (UUID)")),
+    responses((status = 204, description = "Compacted"),
+        (status = 400, description = "Not a Claude Code agent", body = ErrorBody),
+        (status = 404, description = "Unknown agent", body = ErrorBody),
+        (status = 409, description = "Nothing to compact yet, or the agent is in a turn", body = ErrorBody),
+        (status = 502, description = "Claude Code failed to compact", body = ErrorBody)))]
+pub(crate) async fn compact(
+    State(state): State<AppState>,
+    Path(id): Path<String>,
+) -> Result<StatusCode, ApiError> {
+    let agent = state.store.get_agent(parse_id(&id)?).await?;
+    let claude_code = match agent.provider_id {
+        Some(p) => state
+            .store
+            .get_provider(p)
+            .await
+            .is_ok_and(|p| p.kind == ProviderKind::ClaudeCode),
+        None => false,
+    };
+    if !claude_code {
+        return Err(ApiError::BadRequest(
+            "compacting works for Claude Code agents for now".into(),
+        ));
+    }
+    match crate::claude_code::compact(&state, agent.id).await {
+        Ok(_) => {
+            state
+                .record(agent.id, None, "compacted", serde_json::json!({}))
+                .await;
+            Ok(StatusCode::NO_CONTENT)
+        }
+        Err(crate::claude_code::CompactError::NotNow(why)) => Err(ApiError::Conflict(why.into())),
+        Err(crate::claude_code::CompactError::Failed(why)) => Err(ApiError::Upstream(why)),
+    }
+}
+
+/// One of the agent's turns as a timeline: its model calls and tool calls with their times.
+#[utoipa::path(get, path = "/v1/agents/{id}/turns/{turn_id}/trace", tag = "chat",
+    params(("id" = String, Path, description = "Agent id (UUID)"),
+        ("turn_id" = String, Path, description = "Turn id, as on the turn's events")),
+    responses((status = 200, body = crate::trace::Trace),
+        (status = 404, description = "Unknown agent or turn", body = ErrorBody)))]
+pub(crate) async fn turn_trace(
+    State(state): State<AppState>,
+    Path((id, turn)): Path<(String, String)>,
+) -> ApiResult<crate::trace::Trace> {
+    let agent = state.store.get_agent(parse_id(&id)?).await?;
+    let events = state.store.turn_events(agent.id, turn.clone()).await?;
+    let calls = state.store.turn_calls(agent.id, turn.clone()).await?;
+    let claude_code = match agent.provider_id {
+        Some(p) => state
+            .store
+            .get_provider(p)
+            .await
+            .is_ok_and(|p| p.kind == ProviderKind::ClaudeCode),
+        None => false,
+    };
+    // Claude Code turns before its calls were recorded have none.
+    let models_tracked =
+        !claude_code || !calls.is_empty() || events.iter().any(|e| e.kind == "model_call");
+    crate::trace::build(&turn, &events, &calls, models_tracked)
+        .map(Json)
+        .ok_or_else(|| ApiError::NotFound("turn not found".into()))
 }
 
 /// Starts a new chat: the agent's next turn begins a fresh model session without the earlier

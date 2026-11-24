@@ -1149,6 +1149,94 @@ async fn fake_upstream() -> String {
 }
 
 #[tokio::test]
+async fn a_turns_trace_lines_up_its_model_and_tool_calls() {
+    use ferrobot_core::protocol::TurnEvent;
+    let upstream = fake_upstream().await;
+    let backend = Arc::new(StatefulBackend::default());
+    let d = start_with(backend.clone(), None, "127.0.0.1:0", |s| {
+        s.driver = "claude".into();
+        s.anthropic_api_key = Some("sk-real-secret".into());
+        s.anthropic_upstream = upstream;
+    })
+    .await;
+    let id = create(&d, json!({"name": "tia"})).await["id"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    let token = backend.envs.lock().unwrap()["tia"]["FERROBOT_AGENT_TOKEN"].clone();
+    let mut ws = connect_runner(&d.agents, &token).await;
+    let path = format!("/v1/agents/{id}/messages");
+    http(&d.ui, "POST", &path, Some(json!({"body": "plan it"}))).await;
+    let (turn_id, _, _) = next_turn(&mut ws).await;
+
+    let model = |body: &'static [u8]| {
+        let (agents, token) = (d.agents.clone(), token.clone());
+        async move {
+            let headers = [
+                ("x-api-key", token.as_str()),
+                ("content-type", "application/json"),
+            ];
+            http_raw(&agents, "POST", "/model/v1/messages", &headers, body)
+                .await
+                .0
+        }
+    };
+    assert_eq!(
+        model(br#"{"model":"claude-test","stream":true}"#).await,
+        200
+    );
+    for event in [
+        TurnEvent::ToolUse {
+            id: Some("a".into()),
+            name: "read_file".into(),
+            input: json!({"path": "brief.md"}),
+        },
+        TurnEvent::ToolResult {
+            id: Some("a".into()),
+            output: "no such file".into(),
+            is_error: true,
+        },
+    ] {
+        let frame = RunnerFrame::Event {
+            turn_id: turn_id.clone(),
+            event,
+        };
+        ws.send(Message::text(serde_json::to_string(&frame).unwrap()))
+            .await
+            .unwrap();
+    }
+    answer(&mut ws, turn_id.clone(), "done").await;
+    let agent: AgentId = id.parse().unwrap();
+    eventually("the turn to end", Duration::from_secs(5), || async {
+        (!d.state.hub.is_working(agent)).then_some(())
+    })
+    .await;
+    // A call outside any turn stays out of every trace.
+    assert_eq!(model(br#"{"model":"elsewhere","stream":true}"#).await, 200);
+
+    let trace = format!("/v1/agents/{id}/turns/{turn_id}/trace");
+    let t = eventually("the finished trace", Duration::from_secs(5), || async {
+        let (_, t) = http(&d.ui, "GET", &trace, None).await;
+        (t["outcome"] == "completed" && t["spans"].as_array().is_some_and(|s| s.len() == 2))
+            .then_some(t)
+    })
+    .await;
+    assert_eq!(t["models_tracked"], true);
+    let spans = t["spans"].as_array().unwrap();
+    assert_eq!(
+        (&spans[0]["kind"], &spans[0]["name"]),
+        (&json!("model"), &json!("claude-test"))
+    );
+    assert_eq!(
+        (&spans[1]["kind"], &spans[1]["name"], &spans[1]["error"]),
+        (&json!("tool"), &json!("read_file"), &json!("no such file"))
+    );
+    assert_eq!(spans[1]["input"], json!({"path": "brief.md"}));
+    let missing = format!("/v1/agents/{id}/turns/nope/trace");
+    assert_eq!(http(&d.ui, "GET", &missing, None).await.0, 404);
+}
+
+#[tokio::test]
 async fn model_proxy_swaps_key_and_streams() {
     let upstream = fake_upstream().await;
     let backend = Arc::new(StatefulBackend::default());
@@ -3703,6 +3791,167 @@ async fn connectors_are_checked_when_added_changed_or_asked() {
     assert!(statuses.iter().all(|s| !s.is_null()), "{all}");
 }
 
+/// A stdio MCP server in a few lines of Python: one tool that says what it can see.
+const FAKE_LOCAL_SERVER: &str = r#"import json, os, sys
+for line in sys.stdin:
+    msg = json.loads(line)
+    if "id" not in msg:
+        continue
+    method = msg.get("method")
+    if method == "initialize":
+        res = {"protocolVersion": msg["params"]["protocolVersion"], "capabilities": {"tools": {}},
+               "serverInfo": {"name": "fake", "version": "1"}}
+    elif method == "tools/list":
+        res = {"tools": [{"name": "whoami", "description": "What it sees",
+                          "inputSchema": {"type": "object", "properties": {}}}]}
+    elif method == "tools/call":
+        seen = "token=%s manifest=%s cwd=%s" % (os.environ.get("FAKE_TOKEN", "-"),
+            os.environ.get("CARGO_MANIFEST_DIR", "-"), os.path.basename(os.getcwd()))
+        res = {"content": [{"type": "text", "text": seen}]}
+    else:
+        res = {}
+    print(json.dumps({"jsonrpc": "2.0", "id": msg["id"], "result": res}), flush=True)
+"#;
+
+#[tokio::test]
+async fn a_local_server_runs_here_with_only_its_own_token() {
+    use rmcp::model::CallToolRequestParams;
+    if std::process::Command::new("python3")
+        .arg("-V")
+        .output()
+        .is_err()
+    {
+        eprintln!("skipped: no python3 for the fake local MCP server");
+        return;
+    }
+    let dir = tempfile::tempdir().unwrap();
+    let script = dir.path().join("server.py");
+    std::fs::write(&script, FAKE_LOCAL_SERVER).unwrap();
+    let backend = Arc::new(StatefulBackend::default());
+    let d = start(backend.clone(), None, "127.0.0.1:0").await;
+    let ann = create(&d, json!({"name": "ann"})).await["id"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    let body = json!({"name": "fake", "command": ["python3", script.to_str().unwrap()],
+        "token_env": "FAKE_TOKEN", "token": "tok-local-1"});
+    let (status, conn) = http(&d.ui, "POST", "/v1/connectors", Some(body)).await;
+    assert_eq!(status, 201, "{conn}");
+    let both = json!({"name": "both", "url": "https://x.dev/mcp", "command": ["npx"]});
+    assert_eq!(
+        http(&d.ui, "POST", "/v1/connectors", Some(both)).await.0,
+        400
+    );
+
+    let assign = format!("/v1/agents/{ann}/connectors");
+    let (status, _) = http(&d.ui, "PUT", &assign, Some(json!([conn["id"]]))).await;
+    assert_eq!(status, 200);
+    let as_ann = mcp_as(&d, backend.token("ann")).await;
+    let tools = as_ann.list_all_tools().await.unwrap();
+    assert!(tools.iter().any(|t| t.name == "fake__whoami"), "{tools:?}");
+    let r = as_ann
+        .call_tool(CallToolRequestParams::new("fake__whoami"))
+        .await
+        .unwrap();
+    let text = serde_json::to_string(&r.content).unwrap();
+    assert!(
+        text.contains("token=tok-local-1"),
+        "its token, as FAKE_TOKEN: {text}"
+    );
+    assert!(
+        text.contains("manifest=-"),
+        "nothing else from the daemon's environment: {text}"
+    );
+    assert!(text.contains("cwd=fake"), "its own folder: {text}");
+}
+
+#[tokio::test]
+async fn an_agent_proposes_a_local_server_on_a_card_that_shows_its_command() {
+    let backend = Arc::new(StatefulBackend::default());
+    let d = start(backend.clone(), None, "127.0.0.1:0").await;
+    let ann = create(&d, json!({"name": "ann"})).await["id"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    // Auto mode never skips it: a local server runs code on this computer.
+    let auto = Some(json!({"auto_mode": true}));
+    assert_eq!(http(&d.ui, "PUT", "/v1/settings", auto).await.0, 200);
+    let as_ann = mcp_as(&d, backend.token("ann")).await;
+    let args = json!({"name": "notes", "command": ["npx", "-y", "@scope/notes server"],
+        "token_env": "NOTES_TOKEN", "auth": "token", "reason": "Read my notes"});
+    let qid = call(&as_ann, "add_connector", args).await["question_id"]
+        .as_i64()
+        .unwrap();
+    assert_eq!(
+        http(&d.ui, "GET", "/v1/connectors", None).await.1,
+        json!([])
+    );
+    let card = events(&d, &ann)
+        .await
+        .into_iter()
+        .find(|e| e["id"] == qid)
+        .unwrap();
+    let prompt = card["payload"]["card"]["questions"][0]["prompt"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    assert!(
+        prompt.contains("runs on this computer")
+            && prompt.contains("npx -y '@scope/notes server'")
+            && prompt.contains("NOTES_TOKEN"),
+        "{prompt}"
+    );
+    let path = format!("/v1/agents/{ann}/questions/{qid}/answer");
+    let approve = json!({"answers": [{"question_id": "q1", "values": ["approve"]}]});
+    assert_eq!(http(&d.ui, "POST", &path, Some(approve)).await.0, 202);
+    let (_, all) = http(&d.ui, "GET", "/v1/connectors", None).await;
+    assert_eq!(
+        all[0]["command"],
+        json!(["npx", "-y", "@scope/notes server"])
+    );
+    assert_eq!(all[0]["token_env"], "NOTES_TOKEN");
+}
+
+#[tokio::test]
+async fn a_renamed_agent_still_answers_to_its_old_name() {
+    let d = start(Arc::new(StatefulBackend::default()), None, "127.0.0.1:0").await;
+    let scout = create(&d, json!({"name": "scout"})).await["id"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    let ferro = create(&d, json!({"name": "ferro"})).await["id"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    let path = format!("/v1/agents/{scout}");
+    let (status, _) = http(&d.ui, "PATCH", &path, Some(json!({"name": "scout-x"}))).await;
+    assert_eq!(status, 200);
+    let to_ferro = format!("/v1/agents/{ferro}/messages");
+    let (_, sent) = http(
+        &d.ui,
+        "POST",
+        &to_ferro,
+        Some(json!({"body": "ask @scout"})),
+    )
+    .await;
+    assert_eq!(
+        sent["body"],
+        format!("ask <@{scout}>"),
+        "the old name finds the agent"
+    );
+    let found = d
+        .state
+        .store
+        .get_agent_by_name(ferrobot_core::AgentName::parse("scout").unwrap())
+        .await
+        .unwrap();
+    assert_eq!(
+        found.name.as_str(),
+        "scout-x",
+        "and send_message finds it by that name"
+    );
+}
+
 #[tokio::test]
 async fn the_ui_hears_when_a_turn_takes_a_message() {
     let backend = Arc::new(StatefulBackend::default());
@@ -5032,6 +5281,28 @@ async fn voice_speaks_and_listens_with_keys_kept_in_the_daemon() {
     assert_eq!(status, 200);
     assert_eq!(last()["path"], "/v1/text-to-speech/bobvoice/stream");
 
+    // In a call, an agent without a voice of its own speaks with one nobody else there uses.
+    let host = create(&d, json!({"name": "hal"})).await["id"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    let guest = create(&d, json!({"name": "gus"})).await["id"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    let both = Some(json!({"agents": [host, guest]}));
+    assert_eq!(http(&d.ui, "PUT", "/v1/call", both).await.0, 200);
+    for (who, voice) in [(&host, "voice123"), (&guest, "id-Ada")] {
+        let body = json!({ "text": "Hi", "agent_id": who }).to_string();
+        let headers = [("content-type", "application/json")];
+        let (status, _, _) =
+            http_raw(&d.ui, "POST", "/v1/voice/speech", &headers, body.as_bytes()).await;
+        assert_eq!(status, 200);
+        assert_eq!(last()["path"], format!("/v1/text-to-speech/{voice}/stream"));
+    }
+    let hang_up = Some(json!({"agents": []}));
+    assert_eq!(http(&d.ui, "PUT", "/v1/call", hang_up).await.0, 200);
+
     // The account's voices (all pages) and speech models, fetched with the key.
     let (status, catalog) = http(&d.ui, "GET", "/v1/voice/catalog", None).await;
     assert_eq!(status, 200, "{catalog}");
@@ -5865,6 +6136,7 @@ async fn usage_filters_groups_and_price_overrides() {
         cost_usd: None,
         latency_ms: 5,
         status: UsageStatus::Ok,
+        turn_id: None,
     };
     for r in [
         row(
@@ -6011,6 +6283,7 @@ async fn usage_days_follow_the_daemon_time_zone() {
         cost_usd: None,
         latency_ms: 5,
         status: UsageStatus::Ok,
+        turn_id: None,
     };
     // 23:30 and 00:30 in Berlin: one UTC day, two local days.
     for r in [
@@ -6095,6 +6368,7 @@ async fn usage_totals_add_up_in_every_grouping() {
             cost_usd: None,
             latency_ms: 5,
             status: UsageStatus::Ok,
+            turn_id: None,
         };
     for r in [
         row("2026-11-19T10:00:00Z", amy, "house-model", 1_000_000, None),
@@ -6764,6 +7038,12 @@ case "$1" in
   --version) echo "9.9.9 (Claude Code)"; exit 0 ;;
   auth) echo '{"loggedIn": true, "authMethod": "claude.ai", "email": "someone@example.com"}'; exit 0 ;;
 esac
+case "$*" in *" /compact")
+  echo "$*" >> "$here/compact-args.log"
+  session="$(printf '%s\n' "$@" | sed -n 's/^--resume=//p')"
+  printf '%s\n' "{\"type\":\"result\",\"subtype\":\"success\",\"is_error\":false,\"result\":\"Compacted\",\"session_id\":\"$session\"}"
+  exit 0 ;;
+esac
 case "$*" in *" /usage")
   echo "$*" >> "$here/usage-args.log"
   env > "$here/usage-env.log"
@@ -6775,7 +7055,7 @@ env > "$here/env.log"
 for a in "$@"; do case "$a" in --mcp-config=*) cat "${a#--mcp-config=}" > "$here/mcp.log" ;; esac; done
 cat > "$here/prompt.log"
 echo '{"type":"system","subtype":"init","session_id":"s1","tools":[]}'
-echo '{"type":"assistant","message":{"model":"claude-sonnet-4-5","content":[{"type":"text","text":"hello"}],"usage":{"input_tokens":1200,"cache_read_input_tokens":3000,"cache_creation_input_tokens":800,"output_tokens":50}},"parent_tool_use_id":null,"session_id":"s1"}'
+echo '{"type":"assistant","message":{"id":"msg_1","model":"claude-sonnet-4-5","content":[{"type":"text","text":"hello"}],"usage":{"input_tokens":1200,"cache_read_input_tokens":3000,"cache_creation_input_tokens":800,"output_tokens":50}},"parent_tool_use_id":null,"session_id":"s1"}'
 echo '{"type":"result","subtype":"success","is_error":false,"result":"hello","session_id":"s1","modelUsage":{"claude-sonnet-4-5":{"contextWindow":200000}}}'
 "#;
 
@@ -6841,6 +7121,12 @@ async fn claude_code_agents_use_the_hosts_own_cli_and_nothing_enters_the_sandbox
         (&json!(true), &Value::Null, &json!("sonnet")),
         "no turn yet: {ctx}"
     );
+    let compact = format!("/v1/agents/{}/compact", clio["id"].as_str().unwrap());
+    assert_eq!(
+        http(&d.ui, "POST", &compact, None).await.0,
+        409,
+        "nothing to compact"
+    );
     let env = backend.envs.lock().unwrap()["clio"].clone();
     assert_eq!(env["FERROBOT_DRIVER"], "claude_code");
     // No key, no Claude login and no claude config: only ferrobot's own settings.
@@ -6854,6 +7140,13 @@ async fn claude_code_agents_use_the_hosts_own_cli_and_nothing_enters_the_sandbox
         (&ctx["tokens"], &ctx["window"], &ctx["model"]),
         (&json!(5000), &json!(200_000), &json!("claude-sonnet-4-5")),
         "from claude's own stream: {ctx}"
+    );
+    // Its model call is a usage row, priced like the API would charge.
+    let (_, usage) = http(&d.ui, "GET", "/v1/usage?group_by=model", None).await;
+    let text = usage.to_string();
+    assert!(
+        text.contains("claude-sonnet-4-5"),
+        "a claude_code row: {text}"
     );
     assert!(
         out.lines().any(|l| l.contains(r#""type":"result""#)),
@@ -6883,6 +7176,27 @@ async fn claude_code_agents_use_the_hosts_own_cli_and_nothing_enters_the_sandbox
         log("mcp.log").contains(&format!("Bearer {token}")),
         "the agent's own token for /mcp"
     );
+    // Compacting runs claude's own /compact on that session, with no tools, on the daemon's word.
+    assert_eq!(http(&d.ui, "POST", &compact, None).await.0, 204);
+    let compacted = log("compact-args.log");
+    assert!(
+        compacted.contains(&format!("--resume={session}"))
+            && compacted.contains("--tools= ")
+            && compacted.trim_end().ends_with("/compact"),
+        "{compacted}"
+    );
+    let (_, ctx) = http(&d.ui, "GET", &context, None).await;
+    assert_eq!(
+        ctx["tokens"],
+        Value::Null,
+        "the old size is gone until the next turn"
+    );
+    let kinds: Vec<_> = events(&d, clio["id"].as_str().unwrap())
+        .await
+        .into_iter()
+        .map(|e| e["kind"].as_str().unwrap_or_default().to_owned())
+        .collect();
+    assert!(kinds.iter().any(|k| k == "compacted"), "{kinds:?}");
     assert!(
         !log("env.log").contains(&token),
         "the token stays out of claude's environment"
@@ -7105,6 +7419,7 @@ async fn context_is_the_newest_call_since_the_last_new_chat() {
         cost_usd: None,
         latency_ms: 5,
         status,
+        turn_id: None,
     };
     for r in [
         row(60, Some(2000), UsageStatus::Ok),
@@ -7338,4 +7653,145 @@ async fn operator_uploads_land_in_the_agents_workspace() {
         1,
         "nothing else written"
     );
+}
+
+#[tokio::test]
+async fn only_the_operator_sets_claude_code_hooks_and_plugins() {
+    let d = start(Arc::new(StatefulBackend::default()), None, "127.0.0.1:0").await;
+    let (status, body) = http(&d.ui, "GET", "/v1/claude-code/settings", None).await;
+    assert_eq!(
+        (status, body),
+        (200, json!({"hooks": [], "plugins": [], "subagents": false}))
+    );
+    let hooks = json!({
+        "hooks": [{"event": "PreToolUse", "matcher": "mcp__ferrobot__bash", "command": " ./guard.sh "}],
+        "plugins": ["fmt@market"],
+    });
+    let (status, body) = http(&d.ui, "PUT", "/v1/claude-code/settings", Some(hooks)).await;
+    assert_eq!(status, 200, "{body}");
+    assert_eq!(body["hooks"][0]["command"], "./guard.sh");
+    let (_, body) = http(&d.ui, "GET", "/v1/claude-code/settings", None).await;
+    assert_eq!(body["plugins"], json!(["fmt@market"]));
+    let matcher_on_stop = json!({"hooks": [{"event": "Stop", "matcher": "Bash", "command": "x"}]});
+    let (status, _) = http(
+        &d.ui,
+        "PUT",
+        "/v1/claude-code/settings",
+        Some(matcher_on_stop),
+    )
+    .await;
+    assert_eq!(status, 400);
+    let (status, _, _) = http_raw(
+        &d.ui,
+        "PUT",
+        "/v1/claude-code/settings",
+        &[("Authorization", ""), ("Content-Type", "application/json")],
+        br#"{"hooks":[]}"#,
+    )
+    .await;
+    assert_eq!(status, 401);
+}
+
+#[tokio::test]
+async fn a_finished_turn_goes_to_the_trace_endpoint_as_protobuf() {
+    let got: Arc<Mutex<Vec<(String, String, usize)>>> = Arc::default();
+    let sink = got.clone();
+    let receiver = axum::Router::new().route(
+        "/v1/traces",
+        axum::routing::post(move |headers: HeaderMap, body: axum::body::Bytes| {
+            let sink = sink.clone();
+            async move {
+                let header = |k: &str| {
+                    headers
+                        .get(k)
+                        .and_then(|v| v.to_str().ok())
+                        .unwrap_or_default()
+                        .to_owned()
+                };
+                sink.lock().unwrap().push((
+                    header("content-type"),
+                    header("authorization"),
+                    body.len(),
+                ));
+            }
+        }),
+    );
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let addr = listener.local_addr().unwrap();
+    tokio::spawn(async move { axum::serve(listener, receiver).await });
+
+    let backend = Arc::new(StatefulBackend::default());
+    let d = start(backend.clone(), None, "127.0.0.1:0").await;
+    let settings = json!({
+        "enabled": true,
+        "endpoint": format!("http://{addr}/v1/traces"),
+        "header": "Authorization",
+    });
+    let (status, body) = http(&d.ui, "PUT", "/v1/otel", Some(settings)).await;
+    assert_eq!(status, 200, "{body}");
+    let secret = json!({"value": "Bearer phoenix-key"});
+    let (_, view) = http(&d.ui, "PUT", "/v1/otel/secret", Some(secret)).await;
+    assert_eq!(view["has_secret"], true);
+    assert!(!view.to_string().contains("phoenix-key"), "{view}");
+
+    let id = create(&d, json!({"name": "ada"})).await["id"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    let mut ws = connect_runner(&d.agents, &backend.token("ada")).await;
+    let path = format!("/v1/agents/{id}/messages");
+    let (status, _) = http(&d.ui, "POST", &path, Some(json!({"body": "hello"}))).await;
+    assert_eq!(status, 202);
+    say_turn(&mut ws, "Hi.").await;
+    let sent = eventually("an exported trace", Duration::from_secs(8), || async {
+        got.lock().unwrap().first().cloned()
+    })
+    .await;
+    assert_eq!(
+        (sent.0.as_str(), sent.1.as_str()),
+        ("application/x-protobuf", "Bearer phoenix-key")
+    );
+    assert!(sent.2 > 0);
+    let (_, view) = http(&d.ui, "GET", "/v1/otel", None).await;
+    assert_eq!(view["last_export"]["error"], Value::Null, "{view}");
+}
+
+#[tokio::test]
+async fn memories_move_into_an_obsidian_vault_folder() {
+    let d = start(Arc::new(StatefulBackend::default()), None, "127.0.0.1:0").await;
+    let note = json!({"key": "team", "content": "Ship daily"});
+    assert_eq!(http(&d.ui, "POST", "/v1/memory", Some(note)).await.0, 204);
+    let vault = tempfile::tempdir().unwrap();
+    std::fs::create_dir(vault.path().join(".obsidian")).unwrap();
+    let missing = json!({"path": "/no/such/folder"});
+    assert_eq!(
+        http(&d.ui, "PUT", "/v1/memory-vault", Some(missing))
+            .await
+            .0,
+        400
+    );
+    let set = json!({"path": vault.path().display().to_string()});
+    let (status, view) = http(&d.ui, "PUT", "/v1/memory-vault", Some(set)).await;
+    assert_eq!(status, 200, "{view}");
+    assert_eq!(
+        (view["obsidian"].clone(), view["copied"].clone()),
+        (json!(true), json!(1))
+    );
+    let file = vault.path().join("ferrobot/Global memory/team.md");
+    assert!(
+        std::fs::read_to_string(&file)
+            .unwrap()
+            .ends_with("Ship daily\n")
+    );
+    std::fs::write(&file, "Ship daily, edited in Obsidian\n").unwrap();
+    let (_, list) = http(&d.ui, "GET", "/v1/memory", None).await;
+    assert_eq!(list[0]["content"], "Ship daily, edited in Obsidian");
+    let (_, view) = http(
+        &d.ui,
+        "PUT",
+        "/v1/memory-vault",
+        Some(json!({"path": null})),
+    )
+    .await;
+    assert_eq!(view["path"], Value::Null);
 }

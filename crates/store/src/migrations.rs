@@ -275,6 +275,26 @@ const MIGRATIONS: &[&str] = &[
     ",
     // v19: a room with a name is a group chat, kept until deleted; NULL = a call room
     "ALTER TABLE rooms ADD COLUMN name TEXT;",
+    // v20: the turn a proxied call belongs to and its end in unix milliseconds, for traces;
+    // NULL on older rows (`at` keeps whole seconds so it sorts)
+    r"
+    ALTER TABLE usage ADD COLUMN turn_id TEXT;
+    ALTER TABLE usage ADD COLUMN at_ms INTEGER;
+    CREATE INDEX usage_turn ON usage(turn_id) WHERE turn_id IS NOT NULL;
+    ",
+    // v21: old names of renamed agents, so `@old-name` still finds them; a current name wins
+    r"
+    CREATE TABLE agent_aliases (
+        name     TEXT PRIMARY KEY,
+        agent_id TEXT NOT NULL REFERENCES agents(id) ON DELETE CASCADE
+    );
+    ",
+    // v22: local MCP servers: the command (JSON argv) and the token's environment variable;
+    // NULL = a remote server
+    r"
+    ALTER TABLE connectors ADD COLUMN command TEXT;
+    ALTER TABLE connectors ADD COLUMN token_env TEXT;
+    ",
 ];
 
 pub(crate) fn run(conn: &mut Connection) -> Result<(), StoreError> {
@@ -540,5 +560,61 @@ mod tests {
             .query_row("SELECT name FROM rooms", [], |r| r.get(0))
             .unwrap();
         assert_eq!(name, None, "an existing room is a call room");
+    }
+
+    #[test]
+    fn v20_older_calls_have_no_turn() {
+        let mut conn = Connection::open_in_memory().unwrap();
+        for sql in &MIGRATIONS[..19] {
+            conn.execute_batch(sql).unwrap();
+        }
+        conn.pragma_update(None, "user_version", 19).unwrap();
+        conn.execute_batch(
+            "INSERT INTO usage (at, agent_id, agent_name, provider_kind, model, latency_ms, status)
+             VALUES ('2026-01-01T00:00:00Z', 'a', 'ada', 'anthropic', 'm', 5, 'ok');",
+        )
+        .unwrap();
+        run(&mut conn).unwrap();
+        let (turn, at_ms): (Option<String>, Option<i64>) = conn
+            .query_row("SELECT turn_id, at_ms FROM usage", [], |r| {
+                Ok((r.get(0)?, r.get(1)?))
+            })
+            .unwrap();
+        assert_eq!((turn, at_ms), (None, None));
+    }
+
+    #[test]
+    fn v22_connectors_stay_remote() {
+        let mut conn = Connection::open_in_memory().unwrap();
+        for sql in &MIGRATIONS[..21] {
+            conn.execute_batch(sql).unwrap();
+        }
+        conn.pragma_update(None, "user_version", 21).unwrap();
+        conn.execute_batch(
+            "INSERT INTO connectors (id, name, url, created_at)
+             VALUES ('c', 'gh', 'https://x', '2026-01-01T00:00:00Z');",
+        )
+        .unwrap();
+        run(&mut conn).unwrap();
+        let (command, env): (Option<String>, Option<String>) = conn
+            .query_row("SELECT command, token_env FROM connectors", [], |r| {
+                Ok((r.get(0)?, r.get(1)?))
+            })
+            .unwrap();
+        assert_eq!((command, env), (None, None));
+    }
+
+    #[test]
+    fn v21_starts_without_aliases() {
+        let mut conn = Connection::open_in_memory().unwrap();
+        for sql in &MIGRATIONS[..20] {
+            conn.execute_batch(sql).unwrap();
+        }
+        conn.pragma_update(None, "user_version", 20).unwrap();
+        run(&mut conn).unwrap();
+        let n: i64 = conn
+            .query_row("SELECT count(*) FROM agent_aliases", [], |r| r.get(0))
+            .unwrap();
+        assert_eq!(n, 0);
     }
 }

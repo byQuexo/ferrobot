@@ -30,7 +30,9 @@ In rough order. Nothing here has a date.
    over OpenTelemetry (OTLP, GenAI conventions) to an endpoint you choose,
    such as Langfuse, Phoenix, Grafana Tempo or Jaeger. Export is off by
    default; its keys stay in the keychain, and prompts and replies are left
-   out unless you turn them on.
+   out unless you turn them on. **Done:** the trace view (model and tool
+   calls) and the export ([[Traces]]); **open:** approval waits and handoffs
+   to other agents.
 6. **Later.** Moving warm agents to cold sleep under memory pressure (F4d), a
    native macOS app on the same `/v1` API, and optional self-hosted
    S3-compatible storage. Smaller ideas are on [[Ideas]].
@@ -94,8 +96,9 @@ tested against fakes on a machine without KVM.
 | v0.1.1 | done | Codex setup help, key links per provider, and the reason under a message that was not delivered. |
 | v0.1.2 | done | The first-run setup shows the ChatGPT sign-in for Codex once. |
 | v0.1.3 | done | Opt-in Claude Code (your own login): your own claude CLI and subscription, on the host. |
-| v0.1.4 | done | Group chats, reactions, uploads, richer chat, plan limits, tags and model switch, Appearance, shortcuts, the call bar. Tagged, not published. |
-| v0.1.5 | done | v0.1.4 plus the fix for messages shown as queued while their turn runs. |
+| v0.1.4 | done | Group chats, reactions, uploads, richer chat, plan limits, tags and model switch, Appearance, shortcuts, the call bar. |
+| v0.1.5 | done | Fix: a message no longer shows as queued while its turn runs. |
+| v0.1.6 | done | Claude Code hooks, plugins and subagents, trace export to Phoenix and Langfuse, memory in an Obsidian vault, local MCP servers, trace view, compact. |
 
 Ideas beyond this list are on [[Ideas]].
 

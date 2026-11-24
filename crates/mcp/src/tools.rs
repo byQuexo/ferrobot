@@ -279,10 +279,20 @@ pub struct CreateRoutineResult {
 pub struct AddConnectorArgs {
     /// 1-16 chars, lowercase `a-z0-9-`, starts with a letter; prefixes its tools (`github__...`).
     pub name: String,
-    /// The MCP server's Streamable HTTP endpoint, e.g. `https://api.githubcopilot.com/mcp/`.
+    /// A remote server's Streamable HTTP endpoint, e.g. `https://api.githubcopilot.com/mcp/`.
+    /// Leave it out for a local server.
+    #[serde(default)]
     pub url: String,
-    /// `token`: the operator types a token into the card. `oauth`: they sign in under Settings
-    /// after adding it. `none`: no sign-in.
+    /// A local server instead of `url`: the program and its arguments, run without a shell on
+    /// the operator's computer, e.g. `["npx", "-y", "@modelcontextprotocol/server-memory"]`.
+    #[serde(default)]
+    pub command: Option<Vec<String>>,
+    /// For a local server that reads its token from the environment: that variable's name,
+    /// e.g. `GITHUB_TOKEN`. The operator puts the token in Settings → Vault.
+    #[serde(default)]
+    pub token_env: Option<String>,
+    /// `token`: the operator puts a token in Settings → Vault after adding it. `oauth`: they sign
+    /// in under Settings. `none`: no sign-in.
     pub auth: ConnectorAuth,
     /// One line on what you need it for, shown on the card.
     #[serde(default)]
@@ -905,12 +915,14 @@ impl FerrobotTools {
     }
 
     #[tool(
-        description = "Ask your operator to add a connector (a remote MCP server) and give it to \
-        you. They see a card with its name and URL. For `token` they put the token in Settings \
-        themselves: you never see it, so never ask for keys, passwords or tokens in chat or with \
-        ask_user. Does not wait: a message tells you when it was added or declined; its tools \
-        (`<name>__<tool>`) work from your next turn after that, or once the token is in. Finish \
-        your turn after asking."
+        description = "Ask your operator to add a connector and give it to you: a remote MCP \
+        server (`url`) or a local one started on their computer (`command`, e.g. an `npx` \
+        server). They see a card with its name and URL or exact command; a local server always \
+        needs their approval. For `token` they put the token in Settings themselves: you never \
+        see it, so never ask for keys, passwords or tokens in chat or with ask_user. Does not \
+        wait: a message tells you when it was added or declined; its tools (`<name>__<tool>`) \
+        work from your next turn after that, or once the token is in. Finish your turn after \
+        asking."
     )]
     async fn add_connector(
         &self,
@@ -921,6 +933,8 @@ impl FerrobotTools {
         let request = ConnectorRequest {
             name: args.name.trim().to_owned(),
             url: args.url.trim().to_owned(),
+            command: args.command,
+            token_env: args.token_env.map(|e| e.trim().to_owned()),
             auth: args.auth,
             reason: args.reason.trim().to_owned(),
         };

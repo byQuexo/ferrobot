@@ -13,8 +13,16 @@ pub struct Connector {
     /// 1-16 chars, `a-z0-9-`, starts with a letter. Prefixes its tools
     /// (`<name>__<tool>`).
     pub name: String,
-    /// Streamable HTTP endpoint of the MCP server.
+    /// Streamable HTTP endpoint of a remote MCP server; empty for a local one.
     pub url: String,
+    /// A local MCP server: its program and arguments, started on the daemon's computer without
+    /// a shell (e.g. `["npx", "-y", "@scope/server"]`). `None`: a remote server at `url`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub command: Option<Vec<String>>,
+    /// The environment variable a local server gets the connector's Vault token in, e.g.
+    /// `GITHUB_TOKEN`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub token_env: Option<String>,
     #[serde(with = "time::serde::rfc3339")]
     #[cfg_attr(feature = "schema", schema(value_type = String, format = DateTime))]
     pub created_at: OffsetDateTime,
@@ -36,6 +44,9 @@ pub enum ConnectorAuth {
 
 /// Longest connector name; keeps `mcp__ferrobot__<name>__<tool>` short.
 pub const MAX_CONNECTOR_NAME: usize = 16;
+/// Most arguments a local server's command takes, and the longest one.
+const MAX_ARGS: usize = 32;
+const MAX_ARG_BYTES: usize = 1024;
 
 impl Connector {
     /// Returns a human-readable reason when a field is invalid.
@@ -51,8 +62,43 @@ impl Connector {
                 "name must be 1-{MAX_CONNECTOR_NAME} chars of a-z, 0-9 and -, starting with a letter"
             ));
         }
-        if !(self.url.starts_with("https://") || self.url.starts_with("http://")) {
-            return Err("url must be an http(s) URL".into());
+        if let Some(env) = &self.token_env {
+            let e = env.as_bytes();
+            let env_ok = !e.is_empty()
+                && e.len() <= 64
+                && (e[0].is_ascii_uppercase() || e[0] == b'_')
+                && e.iter()
+                    .all(|b| b.is_ascii_uppercase() || b.is_ascii_digit() || *b == b'_');
+            if !env_ok {
+                return Err(
+                    "token_env must be an environment variable name like GITHUB_TOKEN".into(),
+                );
+            }
+        }
+        if let Some(argv) = &self.command {
+            let program_ok = argv.first().is_some_and(|p| {
+                !p.is_empty() && !p.chars().any(|c| c.is_whitespace() || c.is_control())
+            });
+            if !program_ok
+                || argv.len() > MAX_ARGS
+                || argv
+                    .iter()
+                    .any(|a| a.len() > MAX_ARG_BYTES || a.contains('\0'))
+            {
+                return Err(format!(
+                    "command must be a program and at most {MAX_ARGS} arguments of up to {MAX_ARG_BYTES} bytes"
+                ));
+            }
+            if !self.url.is_empty() {
+                return Err("a local server has a command, not a url".into());
+            }
+        } else {
+            if self.token_env.is_some() {
+                return Err("token_env is only for local servers".into());
+            }
+            if !(self.url.starts_with("https://") || self.url.starts_with("http://")) {
+                return Err("url must be an http(s) URL".into());
+            }
         }
         Ok(())
     }
@@ -68,6 +114,8 @@ mod tests {
             id: Uuid::nil(),
             name: name.into(),
             url: url.into(),
+            command: None,
+            token_env: None,
             created_at: OffsetDateTime::UNIX_EPOCH,
         };
         assert!(
@@ -80,5 +128,33 @@ mod tests {
             assert!(c(bad, "https://x").validate().is_err(), "{bad}");
         }
         assert!(c("ok", "ftp://x").validate().is_err());
+
+        let local = |argv: &[&str], env: Option<&str>| Connector {
+            command: Some(argv.iter().map(|a| (*a).to_owned()).collect()),
+            token_env: env.map(Into::into),
+            ..c("files", "")
+        };
+        assert!(
+            local(&["npx", "-y", "@scope/server"], Some("GITHUB_TOKEN"))
+                .validate()
+                .is_ok()
+        );
+        for (argv, env) in [
+            (&[][..], None),
+            (&["npx -y x"][..], None),
+            (&["npx"][..], Some("lower")),
+            (&["npx", "a\0b"][..], None),
+        ] {
+            assert!(local(argv, env).validate().is_err(), "{argv:?} {env:?}");
+        }
+        assert!(
+            Connector {
+                url: "https://x".into(),
+                ..local(&["npx"], None)
+            }
+            .validate()
+            .is_err(),
+            "not both"
+        );
     }
 }

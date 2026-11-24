@@ -1,14 +1,27 @@
 import type { JSX } from "preact";
-import { useEffect, useState } from "preact/hooks";
+import { useEffect, useRef, useState } from "preact/hooks";
+import { Trash2 } from "lucide-preact";
 
-import type { UpdateVoice, VoiceCatalog, VoiceProvider, VoiceView } from "../api.ts";
+import type { DaemonClient, UpdateVoice, VoiceCatalog, VoiceProvider, VoiceView } from "../api.ts";
 import { useApp } from "../context.ts";
+import { speedLabel, volumeLabel } from "../lib/call.ts";
 import { withSaved } from "../lib/models.ts";
-import { Button, Choice, Switch } from "./ui.tsx";
+import { hasVoiceKey, pickProvider, switchProvider } from "../lib/voice.ts";
+import { PrefRow } from "./AppearanceSettings.tsx";
+import { LinkOut } from "./ProvidersSettings.tsx";
+import { Button, Choice, IconButton, Skeleton, Slider, Switch } from "./ui.tsx";
 
 export const VOICE_LABELS: Record<VoiceProvider, string> = {
   elevenlabs: "ElevenLabs",
   openrouter: "OpenRouter",
+};
+const PROVIDER_HINTS: Record<VoiceProvider, string> = {
+  elevenlabs: "Speech, hands-free calls, your account’s voices and a speed setting.",
+  openrouter: "Speech and transcription. In calls you dictate with the microphone.",
+};
+const KEY_LINKS: Record<VoiceProvider, string> = {
+  elevenlabs: "https://elevenlabs.io/app/settings/api-keys",
+  openrouter: "https://openrouter.ai/settings/keys",
 };
 const STT_MODELS = ["scribe_v3", "scribe_v2"];
 /** Shown when the provider lists no languages (OpenRouter). */
@@ -40,6 +53,14 @@ export function voiceUpdate(view: VoiceView, changes: Partial<UpdateVoice>): Upd
   };
 }
 
+/** Applies `changes` to the daemon's current voice settings; the update replaces all of them. */
+export async function patchVoice(
+  client: DaemonClient,
+  changes: Partial<UpdateVoice>,
+): Promise<VoiceView> {
+  return client.updateVoice(voiceUpdate(await client.voice(), changes));
+}
+
 /** Languages the chosen speech model speaks, else a common list. */
 export function languagesOf(
   catalog: VoiceCatalog | null,
@@ -51,87 +72,215 @@ export function languagesOf(
   return listed?.length ? listed.map((l) => [l.code, l.name || l.code]) : COMMON_LANGUAGES;
 }
 
-/** Speech provider, voice, models, language and speed; the provider's key lives in Vault. */
-export function VoiceSettings(props: { onVault: () => void }): JSX.Element {
-  const { client, toast, agents } = useApp();
-  const [view, setView] = useState<VoiceView | null>(null);
-  const [catalog, setCatalog] = useState<VoiceCatalog | null>(null);
-  const [provider, setProvider] = useState<VoiceProvider>("elevenlabs");
-  const [enabled, setEnabled] = useState(true);
-  const [voice, setVoice] = useState("");
-  const [agentVoices, setAgentVoices] = useState<Record<string, string>>({});
-  const [ttsModel, setTtsModel] = useState("");
-  const [sttModel, setSttModel] = useState("");
-  const [language, setLanguage] = useState("");
-  const [speed, setSpeed] = useState(1);
-  const [busy, setBusy] = useState(false);
-  const info = view?.providers.find((p) => p.kind === provider);
+const message = (err: unknown): string => (err instanceof Error ? err.message : String(err));
 
-  // Voices and models belong to one provider, so another provider starts empty.
-  const show = (v: VoiceView, kind: VoiceProvider): void => {
-    const saved = v.provider === kind;
+/** The speech provider's key: pasted here, kept in the daemon's keychain, never shown again. */
+function KeyRow(props: {
+  kind: VoiceProvider;
+  stored: boolean;
+  /** Why the voices did not load, which mostly means a wrong key. */
+  error: string;
+  onSave: (key: string | null) => Promise<boolean>;
+}): JSX.Element {
+  const [editing, setEditing] = useState(false);
+  const [value, setValue] = useState("");
+  const [busy, setBusy] = useState(false);
+  const input = useRef<HTMLInputElement>(null);
+  const label = VOICE_LABELS[props.kind];
+  useEffect(() => {
+    if (editing) input.current?.focus();
+  }, [editing]);
+  const submit = async (key: string | null): Promise<void> => {
+    setBusy(true);
+    const saved = await props.onSave(key);
+    setBusy(false);
+    if (saved) {
+      setValue("");
+      setEditing(false);
+    }
+  };
+  return (
+    <PrefRow
+      title="API key"
+      hint={
+        <>
+          {props.stored ? (
+            "In the keychain of the daemon’s computer. Agents never see it."
+          ) : (
+            <>
+              Paste your {label} key. It goes to the daemon’s keychain and is never shown again.{" "}
+              <LinkOut label="Get a key" url={KEY_LINKS[props.kind]} />
+            </>
+          )}
+          {props.error && (
+            <span class="hint bad" role="alert">
+              {" "}
+              Could not load your voices: {props.error}
+            </span>
+          )}
+        </>
+      }
+    >
+      {editing || !props.stored ? (
+        <form
+          class="voice-key"
+          onSubmit={(e) => {
+            e.preventDefault();
+            void submit(value.trim());
+          }}
+        >
+          <input
+            ref={input}
+            type="password"
+            autoComplete="off"
+            spellcheck={false}
+            aria-label={`${label} API key`}
+            placeholder="Paste your key"
+            value={value}
+            onInput={(e) => {
+              setValue(e.currentTarget.value);
+            }}
+          />
+          <Button small variant="primary" type="submit" disabled={busy || !value.trim()}>
+            Save
+          </Button>
+          {props.stored && (
+            <Button
+              small
+              variant="ghost"
+              onClick={() => {
+                setEditing(false);
+                setValue("");
+              }}
+            >
+              Cancel
+            </Button>
+          )}
+        </form>
+      ) : (
+        <span class="voice-key">
+          <span class="voice-key-state">
+            <span class="dot p-awake" aria-hidden="true" />
+            Stored
+          </span>
+          <Button
+            small
+            variant="ghost"
+            onClick={() => {
+              setEditing(true);
+            }}
+          >
+            Replace
+          </Button>
+          <IconButton
+            label={`Remove the ${label} key`}
+            tone="danger"
+            disabled={busy}
+            onClick={() => void submit(null)}
+          >
+            <Trash2 size={16} />
+          </IconButton>
+        </span>
+      )}
+    </PrefRow>
+  );
+}
+
+/** Speech provider and its key, voices, language, speed and calls; every change is saved at once. */
+export function VoiceSettings(): JSX.Element {
+  const { client, toast, agents, call } = useApp();
+  /** What the page shows: the daemon's settings with the changes still being saved. */
+  const [view, setView] = useState<VoiceView | null>(null);
+  /** The daemon's last answer; the voice list needs the provider and key saved there. */
+  const [saved, setSaved] = useState<VoiceView | null>(null);
+  const [catalog, setCatalog] = useState<VoiceCatalog | null>(null);
+  const [catalogError, setCatalogError] = useState("");
+  /** A provider chosen but not saved yet: it waits for its key. */
+  const [picked, setPicked] = useState<VoiceProvider | null>(null);
+  const [confirming, setConfirming] = useState<VoiceProvider | null>(null);
+  const [keySaves, setKeySaves] = useState(0);
+  const [volume, setVolume] = useState(call.volume);
+  const [pushToTalk, setPushToTalk] = useState(call.pushToTalk);
+  const saving = useRef(Promise.resolve());
+
+  const show = (v: VoiceView): void => {
     setView(v);
-    setProvider(kind);
-    setEnabled(v.enabled !== false);
-    setVoice(saved ? (v.voice ?? "") : "");
-    setAgentVoices(saved ? (v.agent_voices ?? {}) : {});
-    setTtsModel(saved ? (v.tts_model ?? "") : "");
-    setSttModel(saved ? (v.stt_model ?? "") : "");
-    setLanguage(v.language ?? "");
-    setSpeed(v.speed ?? 1);
+    setSaved(v);
+  };
+  useEffect(() => {
+    client.voice().then(show, (err: unknown) => {
+      toast(message(err));
+    });
+  }, []);
+  // The call bar changes these too.
+  useEffect(
+    () =>
+      call.subscribe(() => {
+        setVolume(call.volume);
+        setPushToTalk(call.pushToTalk);
+      }),
+    [call],
+  );
+
+  const ready = saved?.provider === "elevenlabs" && saved.enabled !== false && hasVoiceKey(saved);
+  useEffect(() => {
+    setCatalogError("");
+    if (!ready) {
+      setCatalog(null);
+      return;
+    }
+    client.voiceCatalog().then(setCatalog, (err: unknown) => {
+      setCatalog(null);
+      setCatalogError(message(err));
+    });
+  }, [ready, keySaves]);
+
+  if (!view) return <Skeleton lines={4} />;
+
+  // One after another, each on fresh settings, so the call bar's speed is not undone.
+  const save = (changes: Partial<UpdateVoice>): Promise<void> => {
+    setView((v) => v && { ...v, ...changes });
+    saving.current = saving.current.then(async () => {
+      try {
+        setSaved(await patchVoice(client, changes));
+      } catch (err) {
+        toast(message(err));
+        await client.voice().then(show, () => undefined);
+      }
+    });
+    return saving.current;
   };
 
-  useEffect(() => {
-    client.voice().then(
-      (v) => {
-        show(v, v.provider ?? "elevenlabs");
-      },
-      (err: unknown) => {
-        toast(err instanceof Error ? err.message : String(err));
-      },
-    );
-  }, []);
-
-  // The account's voices and models, once the provider with a key is saved and voice is on.
-  const ready =
-    view?.provider === "elevenlabs" &&
-    provider === "elevenlabs" &&
-    info?.has_key &&
-    view.enabled !== false;
-  useEffect(() => {
-    if (!ready) return;
-    client.voiceCatalog().then(setCatalog, (err: unknown) => {
-      toast(`Could not load your voices: ${err instanceof Error ? err.message : String(err)}`);
-    });
-  }, [ready]);
-
-  const save = async (): Promise<void> => {
-    if (!view) return;
-    setBusy(true);
+  const shown = picked ?? view.provider ?? null;
+  const info = view.providers.find((p) => p.kind === shown);
+  const choose = (kind: VoiceProvider, confirmed = false): void => {
+    const step = pickProvider(view, shown, kind, confirmed);
+    setConfirming(step === "confirm" ? kind : null);
+    if (step === "back") setPicked(null);
+    else if (step === "key") setPicked(kind);
+    else if (step === "use") {
+      setPicked(null);
+      void save(switchProvider(kind));
+    }
+  };
+  const saveKey = async (kind: VoiceProvider, key: string | null): Promise<boolean> => {
     try {
-      const v = await client.updateVoice(
-        voiceUpdate(view, {
-          enabled,
-          provider,
-          voice: voice.trim() || null,
-          agent_voices: Object.fromEntries(
-            Object.entries(agentVoices).filter(([, id]) => id.trim()),
-          ),
-          tts_model: ttsModel.trim() || null,
-          stt_model: sttModel.trim() || null,
-          language: language || null,
-          speed: speed === 1 ? null : speed,
-        }),
-      );
-      show(v, provider);
-      toast("Voice saved", "info");
+      const v = await client.updateVoiceKey(kind, key);
+      setView((cur) => cur && { ...cur, providers: v.providers });
+      setSaved(v);
+      if (key && kind !== view.provider) {
+        setPicked(null);
+        await save(switchProvider(kind));
+      } else setKeySaves((n) => n + 1);
+      toast(key ? "Key saved" : "Key removed", "info");
+      return true;
     } catch (err) {
-      toast(err instanceof Error ? err.message : String(err));
-    } finally {
-      setBusy(false);
+      toast(message(err));
+      return false;
     }
   };
 
+  const elevenlabs = view.provider === "elevenlabs";
   const voices: [string, string][] =
     catalog?.voices.map((v) => [
       v.voice_id,
@@ -139,138 +288,229 @@ export function VoiceSettings(props: { onVault: () => void }): JSX.Element {
     ]) ?? [];
   const models: [string, string][] =
     catalog?.tts_models.map((m) => [m.model_id, m.name || m.model_id]) ?? [];
+  const voiceHint = !elevenlabs
+    ? undefined
+    : view.enabled === false
+      ? "Switch voice on to load your voices."
+      : catalogError
+        ? "Your voices could not be loaded; check the key."
+        : !ready
+          ? "Save your key to load your voices."
+          : catalog
+            ? "From your ElevenLabs account."
+            : "Loading your voices…";
+  const voiceOf = (agent: string): string => view.agent_voices?.[agent] ?? "";
 
   return (
-    <div>
-      <section class="settings-section form">
-        <span class="field">
-          <span class="field-row">
-            Voice in chats
-            <Switch checked={enabled} label="Voice in chats" onChange={setEnabled} />
-          </span>
-          <span class="hint">
-            Off hides the call and microphone buttons; settings and keys are kept.
-          </span>
-        </span>
-      </section>
-      <section class="settings-section form">
-        <label>
-          Provider
-          <select
-            value={provider}
-            onChange={(e) => {
-              if (view) show(view, e.currentTarget.value as VoiceProvider);
-            }}
-          >
+    <div class="voice-settings">
+      <h3 class="pref-head">Provider and key</h3>
+      <ul class="pref-list">
+        <PrefRow
+          title="Voice in chats"
+          hint="Off hides the call and microphone buttons; settings and keys are kept."
+        >
+          <Switch
+            checked={view.enabled !== false}
+            label="Voice in chats"
+            onChange={(enabled) => void save({ enabled })}
+          />
+        </PrefRow>
+        <PrefRow
+          title="Provider"
+          hint={shown ? PROVIDER_HINTS[shown] : "Pick who speaks and listens."}
+        >
+          <div class="segmented" role="radiogroup" aria-label="Provider">
             {(Object.keys(VOICE_LABELS) as VoiceProvider[]).map((k) => (
-              <option key={k} value={k}>
-                {VOICE_LABELS[k]}
-              </option>
-            ))}
-          </select>
-        </label>
-        <span class="hint">
-          {info?.has_key ? "Its key is in " : "Add its key in "}
-          <button type="button" class="text-link" onClick={props.onVault}>
-            Vault
-          </button>
-          .
-        </span>
-      </section>
-      <section class="settings-section form">
-        <label>
-          Voice
-          <Choice
-            value={voice}
-            options={withSaved(voices, voice)}
-            placeholder={info?.default_voice ?? (ready ? "Pick a voice" : "Default")}
-            onChange={setVoice}
-          />
-          {provider === "elevenlabs" && !ready && (
-            <span class="hint">Save your key to pick from your ElevenLabs voices.</span>
-          )}
-        </label>
-        <label>
-          Speech model
-          <Choice
-            value={ttsModel}
-            options={withSaved(models, ttsModel)}
-            placeholder={info?.default_tts_model ?? "Default"}
-            onChange={setTtsModel}
-          />
-        </label>
-        <label>
-          Transcription model
-          <Choice
-            value={sttModel}
-            options={
-              provider === "elevenlabs"
-                ? withSaved(
-                    STT_MODELS.map((m) => [m, m]),
-                    sttModel,
-                  )
-                : []
-            }
-            placeholder={info?.default_stt_model ?? "Default"}
-            onChange={setSttModel}
-          />
-        </label>
-        <label>
-          Language
-          <select
-            value={language}
-            onChange={(e) => {
-              setLanguage(e.currentTarget.value);
-            }}
-          >
-            <option value="">Detect automatically</option>
-            {languagesOf(catalog, ttsModel || info?.default_tts_model).map(([code, name]) => (
-              <option key={code} value={code}>
-                {name}
-              </option>
-            ))}
-          </select>
-        </label>
-        {provider === "elevenlabs" && (
-          <label>
-            Speed · {speed.toFixed(2)}×
-            <input
-              type="range"
-              min={0.7}
-              max={1.2}
-              step={0.05}
-              value={speed}
-              onInput={(e) => {
-                setSpeed(Number(e.currentTarget.value));
-              }}
-            />
-          </label>
-        )}
-      </section>
-      {agents.size > 0 && (
-        <section class="settings-section form">
-          <h3 class="form-head">Voice per agent</h3>
-          <p class="muted small">So agents in a call sound different. Empty: the voice above.</p>
-          {[...agents.values()].map((a) => (
-            <label key={a.id}>
-              {a.name}
-              <Choice
-                value={agentVoices[a.id] ?? ""}
-                options={withSaved(voices, agentVoices[a.id] ?? "")}
-                placeholder="Same as above"
-                onChange={(v) => {
-                  setAgentVoices({ ...agentVoices, [a.id]: v });
+              <button
+                key={k}
+                type="button"
+                role="radio"
+                aria-checked={shown === k}
+                onClick={() => {
+                  choose(k);
                 }}
+              >
+                {VOICE_LABELS[k]}
+              </button>
+            ))}
+          </div>
+          {confirming && (
+            <span class="pref-confirm" role="alert">
+              Switching clears the voices and models you picked.
+              <Button
+                small
+                variant="primary"
+                onClick={() => {
+                  choose(confirming, true);
+                }}
+              >
+                Switch to {VOICE_LABELS[confirming]}
+              </Button>
+              <Button
+                small
+                variant="ghost"
+                onClick={() => {
+                  setConfirming(null);
+                }}
+              >
+                Cancel
+              </Button>
+            </span>
+          )}
+        </PrefRow>
+        {shown && (
+          <KeyRow
+            key={shown}
+            kind={shown}
+            stored={info?.has_key === true}
+            error={shown === "elevenlabs" && shown === saved?.provider ? catalogError : ""}
+            onSave={(key) => saveKey(shown, key)}
+          />
+        )}
+        {view.provider && !picked && (
+          <>
+            <PrefRow title="Speech model" hint="Turns replies into speech.">
+              <Choice
+                label="Speech model"
+                lazy
+                value={view.tts_model ?? ""}
+                options={withSaved(models, view.tts_model ?? "")}
+                placeholder={info?.default_tts_model ?? "Default"}
+                onChange={(v) => void save({ tts_model: v.trim() || null })}
               />
-            </label>
-          ))}
-        </section>
+            </PrefRow>
+            <PrefRow title="Transcription model" hint="Turns your speech into text.">
+              <Choice
+                label="Transcription model"
+                lazy
+                value={view.stt_model ?? ""}
+                options={
+                  elevenlabs
+                    ? withSaved(
+                        STT_MODELS.map((m) => [m, m]),
+                        view.stt_model ?? "",
+                      )
+                    : []
+                }
+                placeholder={info?.default_stt_model ?? "Default"}
+                onChange={(v) => void save({ stt_model: v.trim() || null })}
+              />
+            </PrefRow>
+          </>
+        )}
+      </ul>
+      {view.provider && !picked && (
+        <>
+          <h3 class="pref-head">Voices</h3>
+          <p class="pref-sub">Give agents their own voice, so they sound different in a call.</p>
+          <ul class="pref-list">
+            <PrefRow title="Default voice" hint={voiceHint}>
+              <Choice
+                label="Default voice"
+                lazy
+                value={view.voice ?? ""}
+                options={withSaved(voices, view.voice ?? "")}
+                placeholder={info?.default_voice ?? (ready ? "Pick a voice" : "Default")}
+                onChange={(v) => void save({ voice: v.trim() || null })}
+              />
+            </PrefRow>
+            {[...agents.values()].map((a) => (
+              <PrefRow key={a.id} title={a.name}>
+                <Choice
+                  label={`Voice of ${a.name}`}
+                  lazy
+                  value={voiceOf(a.id)}
+                  options={withSaved(voices, voiceOf(a.id))}
+                  placeholder="Default"
+                  onChange={(v) => {
+                    const rest = Object.fromEntries(
+                      Object.entries(view.agent_voices ?? {}).filter(([id]) => id !== a.id),
+                    );
+                    void save({ agent_voices: v.trim() ? { ...rest, [a.id]: v.trim() } : rest });
+                  }}
+                />
+              </PrefRow>
+            ))}
+          </ul>
+
+          <h3 class="pref-head">Language and speed</h3>
+          <ul class="pref-list">
+            <PrefRow title="Language" hint="For speech and dictation.">
+              <select
+                aria-label="Language"
+                value={view.language ?? ""}
+                onChange={(e) => void save({ language: e.currentTarget.value || null })}
+              >
+                <option value="">Detect automatically</option>
+                {withSaved(
+                  languagesOf(catalog, view.tts_model || info?.default_tts_model),
+                  view.language ?? "",
+                ).map(([code, name]) => (
+                  <option key={code} value={code}>
+                    {name}
+                  </option>
+                ))}
+              </select>
+            </PrefRow>
+            {elevenlabs && (
+              <PrefRow title="Speed" hint="How fast agents speak.">
+                <span class="pref-slider">
+                  <Slider
+                    label="Speed"
+                    text={speedLabel(view.speed ?? null)}
+                    min={0.7}
+                    max={1.2}
+                    step={0.05}
+                    value={view.speed ?? 1}
+                    onInput={(speed) => {
+                      setView((v) => v && { ...v, speed });
+                    }}
+                    onChange={(speed) => void save({ speed: speed === 1 ? null : speed })}
+                  />
+                  <output aria-hidden="true">{speedLabel(view.speed ?? null)}</output>
+                </span>
+              </PrefRow>
+            )}
+          </ul>
+
+          <h3 class="pref-head">Calls</h3>
+          <ul class="pref-list">
+            {elevenlabs && (
+              <PrefRow
+                title="Push to talk"
+                hint="Talk only while you hold Space or the talk button. Saved on this computer."
+              >
+                <Switch
+                  checked={pushToTalk}
+                  label="Push to talk"
+                  onChange={(on) => {
+                    call.setPushToTalk(on);
+                  }}
+                />
+              </PrefRow>
+            )}
+            <PrefRow
+              title="Call volume"
+              hint="How loud agents speak in a call. Saved on this computer."
+            >
+              <span class="pref-slider">
+                <Slider
+                  label="Call volume"
+                  text={volumeLabel(volume)}
+                  min={0}
+                  max={1}
+                  step={0.05}
+                  value={volume}
+                  onInput={(v) => {
+                    call.setVolume(v);
+                  }}
+                />
+                <output aria-hidden="true">{volumeLabel(volume)}</output>
+              </span>
+            </PrefRow>
+          </ul>
+        </>
       )}
-      <div class="settings-actions">
-        <Button variant="primary" disabled={busy || !view} onClick={() => void save()}>
-          Save
-        </Button>
-      </div>
     </div>
   );
 }

@@ -45,10 +45,214 @@ pub struct ClaudeCodeStatus {
 }
 
 /// Variables the daemon may hold that would move `claude` off the user's own login (keys,
-/// tokens, another provider) or make it think it runs inside another Claude Code.
+/// tokens, another provider), make it think it runs inside another Claude Code, or hand the
+/// daemon's own secrets (operator token, storage keys) to hooks and plugins.
 fn foreign(key: &OsStr) -> bool {
     let key = key.to_string_lossy();
-    key.starts_with("ANTHROPIC_") || key.starts_with("CLAUDE_CODE_") || key == "CLAUDECODE"
+    ["ANTHROPIC_", "CLAUDE_CODE_", "FERROBOT_", "AWS_"]
+        .iter()
+        .any(|prefix| key.starts_with(prefix))
+        || key == "CLAUDECODE"
+}
+
+const SETTING: &str = "claude_code";
+const MAX_HOOKS: usize = 32;
+const MAX_PLUGINS: usize = 32;
+const MAX_COMMAND: usize = 4096;
+const MAX_MATCHER: usize = 200;
+
+/// When a hook runs. Only events that fire in a `claude -p` turn.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, utoipa::ToSchema)]
+pub enum HookEvent {
+    SessionStart,
+    UserPromptSubmit,
+    PreToolUse,
+    PostToolUse,
+    Stop,
+    SessionEnd,
+}
+
+impl HookEvent {
+    fn name(self) -> &'static str {
+        match self {
+            Self::SessionStart => "SessionStart",
+            Self::UserPromptSubmit => "UserPromptSubmit",
+            Self::PreToolUse => "PreToolUse",
+            Self::PostToolUse => "PostToolUse",
+            Self::Stop => "Stop",
+            Self::SessionEnd => "SessionEnd",
+        }
+    }
+
+    fn per_tool(self) -> bool {
+        matches!(self, Self::PreToolUse | Self::PostToolUse)
+    }
+}
+
+/// A shell command Claude Code runs on this computer, outside the sandboxes, when `event` fires.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, utoipa::ToSchema)]
+pub struct Hook {
+    pub event: HookEvent,
+    /// The tools it runs for, as Claude Code matches them (e.g. `mcp__ferrobot__bash`);
+    /// tool events only. `null`: every tool.
+    #[serde(default)]
+    pub matcher: Option<String>,
+    pub command: String,
+}
+
+/// Hooks and plugins for agents on Claude Code. Only the operator sets them; the user's own
+/// Claude Code settings stay out.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize, utoipa::ToSchema)]
+#[serde(default)]
+pub struct ClaudeCodeSettings {
+    pub hooks: Vec<Hook>,
+    /// Installed plugins (`name@marketplace`) turned on for agents.
+    pub plugins: Vec<String>,
+    /// Claude Code's own subagents (its `Task` tool). They get the same ferrobot tools and
+    /// still reach the sandbox only through MCP; they use more of the seat.
+    pub subagents: bool,
+}
+
+/// A plugin installed in the host's Claude Code.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, utoipa::ToSchema)]
+pub struct InstalledPlugin {
+    /// `name@marketplace`.
+    pub id: String,
+    pub version: Option<String>,
+    #[serde(skip)]
+    path: PathBuf,
+}
+
+/// Trims and checks the operator's hooks and plugins.
+pub fn validate(settings: &mut ClaudeCodeSettings) -> Result<(), String> {
+    if settings.hooks.len() > MAX_HOOKS || settings.plugins.len() > MAX_PLUGINS {
+        return Err(format!(
+            "at most {MAX_HOOKS} hooks and {MAX_PLUGINS} plugins"
+        ));
+    }
+    for hook in &mut settings.hooks {
+        hook.command = hook.command.trim().to_owned();
+        if hook.command.is_empty()
+            || hook.command.len() > MAX_COMMAND
+            || hook.command.contains('\0')
+        {
+            return Err(format!("a hook needs a command of 1-{MAX_COMMAND} bytes"));
+        }
+        hook.matcher = hook
+            .matcher
+            .as_deref()
+            .map(str::trim)
+            .filter(|m| !m.is_empty())
+            .map(str::to_owned);
+        if let Some(matcher) = &hook.matcher {
+            if !hook.event.per_tool() {
+                return Err(format!("{} hooks have no tool matcher", hook.event.name()));
+            }
+            if matcher.len() > MAX_MATCHER || matcher.chars().any(char::is_control) {
+                return Err(format!("a matcher has at most {MAX_MATCHER} characters"));
+            }
+        }
+    }
+    let mut seen = HashSet::new();
+    settings.plugins.retain(|id| seen.insert(id.clone()));
+    let part = |s: &str| {
+        !s.is_empty()
+            && s.chars()
+                .all(|c| c.is_ascii_alphanumeric() || "._-".contains(c))
+    };
+    if let Some(bad) = settings
+        .plugins
+        .iter()
+        .find(|id| id.len() > 200 || !id.split_once('@').is_some_and(|(n, m)| part(n) && part(m)))
+    {
+        return Err(format!("{bad} is not a plugin id (name@marketplace)"));
+    }
+    Ok(())
+}
+
+pub async fn load_settings(state: &AppState) -> Result<ClaudeCodeSettings, String> {
+    match state.store.get_setting(SETTING).await {
+        Ok(Some(raw)) => {
+            serde_json::from_str(&raw).map_err(|e| format!("Claude Code settings: {e}"))
+        }
+        Ok(None) => Ok(ClaudeCodeSettings::default()),
+        Err(e) => Err(e.to_string()),
+    }
+}
+
+pub async fn save_settings(
+    state: &AppState,
+    settings: &ClaudeCodeSettings,
+) -> Result<(), crate::error::ApiError> {
+    let raw = serde_json::to_string(settings)
+        .map_err(|e| crate::error::ApiError::Internal(e.to_string()))?;
+    Ok(state.store.put_setting(SETTING, raw).await?)
+}
+
+/// The plugins installed in the host's Claude Code, from `claude plugin list`.
+pub async fn installed_plugins(state: &AppState) -> Result<Vec<InstalledPlugin>, String> {
+    let mut cmd = claude(state);
+    cmd.args(["plugin", "list", "--json"]);
+    let out = stdout_of(cmd)
+        .await
+        .ok_or("Claude Code is not installed or did not answer")?;
+    let list: Vec<Value> =
+        serde_json::from_str(&out).map_err(|_| "Claude Code gave no plugin list")?;
+    Ok(list
+        .iter()
+        .filter_map(|p| {
+            Some(InstalledPlugin {
+                id: p["id"].as_str()?.to_owned(),
+                version: p["version"].as_str().map(str::to_owned),
+                path: PathBuf::from(p["installPath"].as_str()?),
+            })
+        })
+        .collect())
+}
+
+/// The `--settings` file: the operator's hooks and nothing else, so no setting can bring back
+/// built-in tools, another login or the user's own configuration.
+fn settings_file(hooks: &[Hook]) -> Value {
+    let mut events = serde_json::Map::new();
+    for hook in hooks {
+        let mut group = json!({ "hooks": [{ "type": "command", "command": hook.command }] });
+        if let Some(matcher) = &hook.matcher {
+            group["matcher"] = json!(matcher);
+        }
+        if let Value::Array(groups) = events.entry(hook.event.name()).or_insert_with(|| json!([])) {
+            groups.push(group);
+        }
+    }
+    json!({ "hooks": events })
+}
+
+/// What the operator added to every turn beyond the bare CLI.
+#[derive(Debug, Default)]
+struct Extensions {
+    /// Folders of the operator's plugins that are still installed.
+    plugins: Vec<PathBuf>,
+    subagents: bool,
+}
+
+/// Turn-time hooks and extensions. Fails rather than run a turn without a hook the operator
+/// may rely on as a guard.
+async fn extensions(state: &AppState) -> Result<(Value, Extensions), String> {
+    let settings = load_settings(state).await?;
+    let plugins = if settings.plugins.is_empty() {
+        Vec::new()
+    } else {
+        installed_plugins(state)
+            .await?
+            .into_iter()
+            .filter(|p| settings.plugins.contains(&p.id))
+            .map(|p| p.path)
+            .collect()
+    };
+    let extensions = Extensions {
+        plugins,
+        subagents: settings.subagents,
+    };
+    Ok((settings_file(&settings.hooks), extensions))
 }
 
 fn claude(state: &AppState) -> Command {
@@ -104,6 +308,73 @@ fn login_of(auth_status: &str) -> (bool, Option<String>) {
     let auth: Value = serde_json::from_str(auth_status).unwrap_or_default();
     let method = auth["authMethod"].as_str().map(str::to_owned);
     (auth["loggedIn"] == true, method)
+}
+
+/// How long `claude` may take to compact a session (it is a model call).
+const COMPACT_TIMEOUT: Duration = Duration::from_secs(180);
+
+/// Why a session could not be compacted.
+#[derive(Debug)]
+pub enum CompactError {
+    /// No session yet, or the agent is in a turn.
+    NotNow(&'static str),
+    /// `claude` failed or did not answer.
+    Failed(String),
+}
+
+/// Compacts the agent's session with `claude`'s own `/compact`. The daemon runs it on the
+/// operator's word, never from message text, with no tools and none of the user's settings.
+pub async fn compact(state: &AppState, agent: AgentId) -> Result<String, CompactError> {
+    let dir = agent_dir(state, agent);
+    let session: Uuid = tokio::fs::read_to_string(dir.join("session"))
+        .await
+        .ok()
+        .and_then(|s| s.trim().parse().ok())
+        .ok_or(CompactError::NotNow(
+            "there is no conversation to compact yet",
+        ))?;
+    if state.hub.is_working(agent) {
+        return Err(CompactError::NotNow(
+            "the agent is in a turn; try again when it is done",
+        ));
+    }
+    let _busy = Busy::take(agent).ok_or(CompactError::NotNow(
+        "the agent is in a turn; try again when it is done",
+    ))?;
+    let mut cmd = claude(state);
+    cmd.args([
+        "-p",
+        "--setting-sources=",
+        "--tools=",
+        "--strict-mcp-config",
+        "--output-format=json",
+        &format!("--resume={session}"),
+        "/compact",
+    ])
+    .current_dir(&dir)
+    .kill_on_drop(true);
+    let failed = |why: &str| CompactError::Failed(why.to_owned());
+    let out = tokio::time::timeout(COMPACT_TIMEOUT, cmd.output())
+        .await
+        .map_err(|_| failed("Claude Code took too long to compact"))?
+        .map_err(|e| CompactError::Failed(format!("cannot start claude: {e}")))?;
+    let report: Value =
+        serde_json::from_slice(&out.stdout).map_err(|_| failed("Claude Code gave no answer"))?;
+    if report["is_error"] == true {
+        return Err(failed(
+            report["result"].as_str().unwrap_or("compacting failed"),
+        ));
+    }
+    if let Some(id) = report["session_id"]
+        .as_str()
+        .and_then(|s| s.parse::<Uuid>().ok())
+        && id != session
+    {
+        let _ = tokio::fs::write(dir.join("session"), id.to_string()).await;
+    }
+    // The ring would show the old size until the next turn reports the new one.
+    let _ = tokio::fs::remove_file(dir.join("context.json")).await;
+    Ok(report["result"].as_str().unwrap_or_default().to_owned())
 }
 
 /// The seat's 5-hour and weekly use from `claude`'s own `/usage` report, which makes no model
@@ -163,16 +434,27 @@ enum Session {
 }
 
 /// The turn's `claude` arguments. Every value goes as `--flag=value`, so none can pose as a flag.
-fn turn_args(files: &Path, session: &Session, model: Option<&str>) -> Vec<String> {
+fn turn_args(
+    files: &Path,
+    session: &Session,
+    model: Option<&str>,
+    extensions: &Extensions,
+) -> Vec<String> {
+    // No built-in tool may run on the host; the sandbox is reached through MCP only. Subagents
+    // (`Task`) get the same tools, so they stay in the sandbox too.
+    let (tools, allowed) = if extensions.subagents {
+        ("--tools=Task", "--allowedTools=mcp__ferrobot,Task")
+    } else {
+        ("--tools=", "--allowedTools=mcp__ferrobot")
+    };
     let mut args: Vec<String> = [
         "-p",
         "--output-format=stream-json",
         "--verbose",
         "--include-partial-messages",
-        // No built-in tool may run on the host; the sandbox is reached through MCP only.
-        "--tools=",
+        tools,
         "--strict-mcp-config",
-        "--allowedTools=mcp__ferrobot",
+        allowed,
         "--permission-mode=dontAsk",
         // Not the user's own hooks, plugins, CLAUDE.md or settings.
         "--setting-sources=",
@@ -184,6 +466,17 @@ fn turn_args(files: &Path, session: &Session, model: Option<&str>) -> Vec<String
         "--append-system-prompt-file={}",
         files.join("system.md").display()
     ));
+    // The operator's hooks from Settings; plugins only as the operator turned them on.
+    args.push(format!(
+        "--settings={}",
+        files.join("settings.json").display()
+    ));
+    args.extend(
+        extensions
+            .plugins
+            .iter()
+            .map(|dir| format!("--plugin-dir={}", dir.display())),
+    );
     args.push(match session {
         Session::New(id) => format!("--session-id={id}"),
         Session::Resume(id) => format!("--resume={id}"),
@@ -289,6 +582,16 @@ pub async fn context(state: &AppState, agent: AgentId) -> Option<Context> {
     serde_json::from_slice(&raw).ok()
 }
 
+/// The model call whose reply is streaming: `claude`'s assistant lines carry its message id.
+struct ModelCall {
+    id: String,
+    model: Option<String>,
+    /// When the line before its first one arrived: the call began then.
+    started: time::OffsetDateTime,
+    ended: time::OffsetDateTime,
+    usage: Value,
+}
+
 /// A running turn; dropping it (the runner hung up) kills `claude` and removes its MCP config.
 struct Run {
     lines: Lines<BufReader<ChildStdout>>,
@@ -302,6 +605,69 @@ struct Run {
     done: bool,
     context: Option<Context>,
     context_file: PathBuf,
+    /// For usage and the trace: the agent's turn, when the last line came and the call
+    /// streaming now.
+    state: AppState,
+    agent: AgentId,
+    agent_name: String,
+    provider_id: Option<Uuid>,
+    turn: Option<String>,
+    last_line: time::OffsetDateTime,
+    call: Option<ModelCall>,
+}
+
+impl Run {
+    /// Follows the model calls in `claude`'s stream; each becomes a usage row of its turn.
+    async fn track_call(&mut self, line: &Value, now: time::OffsetDateTime) {
+        let id = (line["type"] == "assistant")
+            .then(|| line["message"]["id"].as_str())
+            .flatten();
+        if let (Some(c), Some(id)) = (self.call.as_mut(), id)
+            && c.id == id
+        {
+            c.ended = now;
+            c.usage = line["message"]["usage"].clone();
+            return;
+        }
+        self.flush_call().await;
+        if let Some(id) = id {
+            self.call = Some(ModelCall {
+                id: id.to_owned(),
+                model: line["message"]["model"].as_str().map(str::to_owned),
+                started: self.last_line,
+                ended: now,
+                usage: line["message"]["usage"].clone(),
+            });
+        }
+    }
+
+    async fn flush_call(&mut self) {
+        let Some(c) = self.call.take() else {
+            return;
+        };
+        let u = &c.usage;
+        let row = ferrobot_store::UsageRecord {
+            at: c.ended,
+            agent_id: self.agent,
+            agent_name: self.agent_name.clone(),
+            provider_id: self.provider_id,
+            provider_kind: ProviderKind::ClaudeCode.as_str().into(),
+            model: c.model.unwrap_or_else(|| "unknown".into()),
+            tokens: ferrobot_store::Tokens {
+                input: u["input_tokens"].as_i64(),
+                output: u["output_tokens"].as_i64(),
+                cache_read: u["cache_read_input_tokens"].as_i64(),
+                cache_write: u["cache_creation_input_tokens"].as_i64(),
+            },
+            cost_usd: None,
+            latency_ms: i64::try_from((c.ended - c.started).whole_milliseconds()).unwrap_or(0),
+            status: ferrobot_store::UsageStatus::Ok,
+            turn_id: self.turn.clone(),
+        };
+        if let Err(e) = self.state.store.insert_usage(row).await {
+            tracing::warn!(error = %e, "cannot record a Claude Code call");
+        }
+    }
 }
 
 /// Runs one turn on the host's `claude` and streams its stream-json lines back to the runner.
@@ -385,10 +751,11 @@ async fn start(
         Session::New(id) => Some((session_file, id)),
         Session::Resume(_) => None,
     };
-    let config = write_turn_files(&state.settings.agent_url, token, &req.system)
+    let (settings, extensions) = extensions(state).await?;
+    let config = write_turn_files(&state.settings.agent_url, token, &req.system, &settings)
         .map_err(|e| e.to_string())?;
     let mut cmd = claude(state);
-    cmd.args(turn_args(config.path(), &session, model))
+    cmd.args(turn_args(config.path(), &session, model, &extensions))
         .current_dir(&dir)
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
@@ -425,6 +792,13 @@ async fn start(
         done: false,
         context: None,
         context_file,
+        state: state.clone(),
+        agent: agent.id,
+        agent_name: agent.name.to_string(),
+        provider_id: agent.provider_id,
+        turn: state.hub.current_turn(agent.id),
+        last_line: time::OffsetDateTime::now_utc(),
+        call: None,
     })
 }
 
@@ -441,12 +815,13 @@ pub async fn forget(state: &AppState, agent: AgentId) {
     let _ = tokio::fs::remove_dir_all(agent_dir(state, agent)).await;
 }
 
-/// The agent's own token for the daemon's MCP server and its system prompt, in private files
-/// rather than argv.
+/// The agent's own token for the daemon's MCP server, its system prompt and the operator's
+/// hooks, in private files rather than argv.
 fn write_turn_files(
     agent_url: &str,
     token: &str,
     system: &str,
+    settings: &Value,
 ) -> std::io::Result<tempfile::TempDir> {
     let dir = tempfile::Builder::new()
         .prefix("ferrobot-claude-")
@@ -459,6 +834,7 @@ fn write_turn_files(
     for (name, text) in [
         ("mcp.json", config.to_string()),
         ("system.md", system.to_owned()),
+        ("settings.json", settings.to_string()),
     ] {
         let path = dir.path().join(name);
         std::fs::write(&path, text)?;
@@ -500,13 +876,17 @@ async fn next(mut run: Run) -> Option<(Result<Bytes, std::io::Error>, Run)> {
         return None;
     }
     if let Ok(Some(line)) = run.lines.next_line().await {
+        let now = time::OffsetDateTime::now_utc();
         if let Ok(v) = serde_json::from_str::<Value>(&line) {
             run.saw_result |= v["type"] == "result";
             Context::read(&mut run.context, &v);
+            run.track_call(&v, now).await;
         }
+        run.last_line = now;
         return Some((Ok(Bytes::from(line + "\n")), run));
     }
     run.done = true;
+    run.flush_call().await;
     if let Some(context) = run.context.take()
         && let Ok(raw) = serde_json::to_vec(&context)
     {
@@ -754,7 +1134,16 @@ mod tests {
     #[test]
     fn the_cli_runs_without_built_in_tools_or_the_users_settings() {
         let id = Uuid::nil();
-        let args = turn_args(Path::new("/tmp/x"), &Session::Resume(id), Some("sonnet"));
+        let extensions = Extensions {
+            plugins: vec![PathBuf::from("/plugins/fmt")],
+            subagents: false,
+        };
+        let args = turn_args(
+            Path::new("/tmp/x"),
+            &Session::Resume(id),
+            Some("sonnet"),
+            &extensions,
+        );
         for want in [
             "-p",
             "--tools=",
@@ -765,10 +1154,22 @@ mod tests {
             "--model=sonnet",
             "--mcp-config=/tmp/x/mcp.json",
             "--append-system-prompt-file=/tmp/x/system.md",
+            "--settings=/tmp/x/settings.json",
+            "--plugin-dir=/plugins/fmt",
         ] {
             assert!(args.iter().any(|a| a == want), "{want} missing in {args:?}");
         }
         assert!(args.contains(&format!("--resume={id}")));
+        let subagents = Extensions {
+            subagents: true,
+            ..Extensions::default()
+        };
+        let with = turn_args(Path::new("/tmp/x"), &Session::Resume(id), None, &subagents);
+        let tools: Vec<&String> = with
+            .iter()
+            .filter(|a| a.starts_with("--tools") || a.starts_with("--allowedTools"))
+            .collect();
+        assert_eq!(tools, ["--tools=Task", "--allowedTools=mcp__ferrobot,Task"]);
         // `--bare` would stop claude from reading the user's own login.
         assert!(
             !args
@@ -790,6 +1191,8 @@ mod tests {
             "CLAUDE_CODE_OAUTH_TOKEN",
             "CLAUDE_CODE_USE_BEDROCK",
             "CLAUDECODE",
+            "FERROBOT_API_TOKEN",
+            "AWS_SECRET_ACCESS_KEY",
         ] {
             assert!(foreign(OsStr::new(key)), "{key}");
         }
@@ -878,7 +1281,17 @@ Last 24h · 1485 requests · 11 sessions
 
     #[test]
     fn the_turn_files_are_private_and_name_only_the_daemon() {
-        let dir = write_turn_files("http://127.0.0.1:7879/", "agent-token", "be brief").unwrap();
+        let dir = write_turn_files(
+            "http://127.0.0.1:7879/",
+            "agent-token",
+            "be brief",
+            &settings_file(&[]),
+        )
+        .unwrap();
+        assert_eq!(
+            std::fs::read_to_string(dir.path().join("settings.json")).unwrap(),
+            r#"{"hooks":{}}"#
+        );
         assert_eq!(
             std::fs::read_to_string(dir.path().join("system.md")).unwrap(),
             "be brief"
@@ -895,6 +1308,69 @@ Last 24h · 1485 requests · 11 sessions
                 std::fs::metadata(&path).unwrap().permissions().mode() & 0o777,
                 0o600
             );
+        }
+    }
+
+    fn hook(event: HookEvent, matcher: Option<&str>, command: &str) -> Hook {
+        Hook {
+            event,
+            matcher: matcher.map(str::to_owned),
+            command: command.into(),
+        }
+    }
+
+    #[test]
+    fn the_settings_file_holds_only_the_operators_hooks() {
+        let file = settings_file(&[
+            hook(
+                HookEvent::PreToolUse,
+                Some("mcp__ferrobot__bash"),
+                "guard.sh",
+            ),
+            hook(HookEvent::PreToolUse, None, "log.sh"),
+            hook(HookEvent::Stop, None, "notify.sh"),
+        ]);
+        assert_eq!(
+            file,
+            json!({ "hooks": {
+                "PreToolUse": [
+                    { "matcher": "mcp__ferrobot__bash", "hooks": [{ "type": "command", "command": "guard.sh" }] },
+                    { "hooks": [{ "type": "command", "command": "log.sh" }] },
+                ],
+                "Stop": [{ "hooks": [{ "type": "command", "command": "notify.sh" }] }],
+            }})
+        );
+    }
+
+    #[test]
+    fn hooks_and_plugins_are_checked() {
+        let mut ok = ClaudeCodeSettings {
+            hooks: vec![hook(HookEvent::PostToolUse, Some("  "), "  fmt.sh ")],
+            plugins: vec!["fmt@market".into(), "fmt@market".into()],
+            subagents: false,
+        };
+        validate(&mut ok).unwrap();
+        assert_eq!(ok.hooks[0], hook(HookEvent::PostToolUse, None, "fmt.sh"));
+        assert_eq!(ok.plugins, ["fmt@market"]);
+        for bad in [
+            ClaudeCodeSettings {
+                hooks: vec![hook(HookEvent::Stop, Some("Bash"), "x")],
+                ..ClaudeCodeSettings::default()
+            },
+            ClaudeCodeSettings {
+                hooks: vec![hook(HookEvent::Stop, None, " ")],
+                ..ClaudeCodeSettings::default()
+            },
+            ClaudeCodeSettings {
+                plugins: vec!["--plugin-dir=/x".into()],
+                ..ClaudeCodeSettings::default()
+            },
+            ClaudeCodeSettings {
+                plugins: vec!["fmt@../x".into()],
+                ..ClaudeCodeSettings::default()
+            },
+        ] {
+            assert!(validate(&mut bad.clone()).is_err(), "{bad:?}");
         }
     }
 }

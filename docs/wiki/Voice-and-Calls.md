@@ -7,20 +7,23 @@ hear its replies read aloud. Two or more agents in a call share a room.
    - **ElevenLabs**: speech, live transcription, your account's voices and a
      speed setting.
    - **OpenRouter**: speech and transcription models; no live transcription.
-2. Add the provider's API key in **Vault**. Like model keys, it stays in the
-   daemon's keychain.
-3. Optional: pick a **Voice**, a **Speech model**, a **Transcription model**
-   and a **Language** (or **Detect automatically**). Click **Save**.
+2. Paste the provider's API key in the **API key** row and click **Save**.
+   Like model keys, it stays in the daemon's keychain (Vault lists it too)
+   and is never shown again. With ElevenLabs your voices load right away.
+3. Optional: pick a **Default voice**, a **Speech model**, a **Transcription
+   model** and a **Language** (or **Detect automatically**).
 
-**Voice in chats** switches it all off and on. Off hides the call and
-microphone buttons; settings and keys are kept.
+Every change saves by itself. Switching providers clears the voices and models
+you picked for the old one, so the page asks first. **Voice in chats**
+switches it all off and on. Off hides the call and microphone buttons;
+settings and keys are kept.
 
 ## Voices per agent
 
-Under **Voice per agent** you give each agent its own voice, so agents in a
-call sound different. Empty means the voice above. In a chat, the sliders
-button (**Voice, language and speed**) changes the voice, language and speed
-for that agent on the fly, with a short sample.
+Under **Voices** you give each agent its own voice, so agents in a call sound
+different. In a chat, the sliders button (**Voice, language and speed**)
+changes the voice, language and speed for that agent on the fly; the play
+button (**Test voice**) plays a short sample.
 
 ## Dictate
 
@@ -42,6 +45,9 @@ Click the phone button in an agent's chat (**Start a voice call**).
 - With ElevenLabs the bar also has the speaking speed (**1×**; click for the
   next step, 0.7× to 1.2×). It is the same speed as in Settings and the chat's
   sliders, so every agent speaks at it, within a sentence or two.
+- The speaker button (**Call volume**) opens a small slider for how loud the
+  agents speak; at 0 they are muted. This computer remembers it, and
+  **Settings → Voice → Calls** has the same slider and **Push to talk**.
 - **Push to talk** in the bar switches from always listening to talking only
   while you hold **Hold to talk** or Space (outside text fields). Words count
   once you let go and pause briefly; **Mute** still wins. This computer

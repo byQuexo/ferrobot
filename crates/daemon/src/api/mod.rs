@@ -8,6 +8,7 @@ pub(crate) mod diagnostics;
 pub(crate) mod files;
 pub(crate) mod groups;
 pub(crate) mod memory;
+pub(crate) mod otel;
 pub(crate) mod providers;
 pub(crate) mod routines;
 pub(crate) mod sandbox;
@@ -68,6 +69,10 @@ pub fn router() -> Router<AppState> {
         .route(
             "/v1/memory",
             get(memory::list_global_memory).post(memory::put_global_memory),
+        )
+        .route(
+            "/v1/memory-vault",
+            get(memory::get_memory_vault).put(memory::put_memory_vault),
         )
         .route(
             "/v1/memory/{key}",
@@ -133,6 +138,16 @@ fn integrations() -> Router<AppState> {
         )
         .route("/v1/providers/{id}/models", get(providers::provider_models))
         .route("/v1/claude-code", get(providers::claude_code_status))
+        .route(
+            "/v1/claude-code/settings",
+            get(providers::claude_code_settings).put(providers::put_claude_code_settings),
+        )
+        .route(
+            "/v1/claude-code/plugins",
+            get(providers::claude_code_plugins),
+        )
+        .route("/v1/otel", get(otel::get_otel).put(otel::put_otel))
+        .route("/v1/otel/secret", put(otel::put_otel_secret))
         .route(
             "/v1/provider-kinds/{kind}/models",
             get(providers::kind_models),

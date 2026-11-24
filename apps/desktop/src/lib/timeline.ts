@@ -27,6 +27,8 @@ export type TimelineItem =
       streaming: boolean;
       /** Its `assistant_text` event; `null` while it streams. */
       id: number | null;
+      /** The turn that wrote it. */
+      turn: string | null;
       /** The operator's emoji on this message. */
       reaction: string | null;
     }
@@ -105,6 +107,7 @@ const SYSTEM_TEXT: Record<string, (p: Payload) => string> = {
   agent_tools_changed: (p) => `${str(p["by"])} changed the tools of ${str(p["name"])} (auto mode)`,
   runner_refused: (p) => str(p["reason"]),
   new_session: () => "New chat: the agent starts fresh from here",
+  compacted: () => "Compacted the conversation: the agent keeps a summary of what came before",
 };
 
 /**
@@ -270,6 +273,7 @@ export function buildTimeline(
           text: str(p["text"]),
           streaming: false,
           id: e.id,
+          turn: e.turn_id ?? null,
           reaction: mine.get(e.id) ?? null,
         });
         break;
@@ -381,6 +385,7 @@ export function buildTimeline(
         text,
         streaming: true,
         id: null,
+        turn: turnId,
         reaction: null,
       });
     }

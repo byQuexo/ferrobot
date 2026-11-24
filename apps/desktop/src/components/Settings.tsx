@@ -5,6 +5,7 @@ import {
   BookOpen,
   Bot,
   Brain,
+  Code,
   Cpu,
   Keyboard,
   KeyRound,
@@ -13,6 +14,7 @@ import {
   RefreshCw,
   Stethoscope,
   Terminal,
+  Waypoints,
   X,
 } from "lucide-preact";
 
@@ -21,12 +23,15 @@ import { useApp } from "../context.ts";
 import type { Appearance } from "../lib/appearance.ts";
 import { isMac, keyLabel, SHORTCUTS } from "../lib/shortcuts.ts";
 import { AppearanceSettings, PrefRow } from "./AppearanceSettings.tsx";
+import { ClaudeCodeSettings } from "./ClaudeCodeSettings.tsx";
 import { ClisSettings } from "./ClisSettings.tsx";
 import { ConnectorsSettings } from "./ConnectorsSettings.tsx";
 import { DiagnosticsSettings } from "./DiagnosticsSettings.tsx";
 import { Guides } from "./Guides.tsx";
 import { Memory } from "./InfoPanel.tsx";
+import { MemoryVault } from "./MemoryVault.tsx";
 import { ProvidersSettings } from "./ProvidersSettings.tsx";
+import { TracesSettings } from "./TracesSettings.tsx";
 import { UpdatesSettings } from "./UpdatesSettings.tsx";
 import { VaultSettings } from "./VaultSettings.tsx";
 import { VoiceSettings } from "./VoiceSettings.tsx";
@@ -36,9 +41,11 @@ export type SettingsSection =
   | "providers"
   | "vault"
   | "agents"
+  | "claude-code"
   | "connectors"
   | "clis"
   | "memory"
+  | "traces"
   | "voice"
   | "appearance"
   | "keyboard"
@@ -59,10 +66,24 @@ export const SECTIONS: [SettingsSection, string, string, typeof KeyRound, string
   ["providers", "Model providers", "The models your agents run on. Their keys live in Vault.", Cpu],
   ["agents", "Agents", "What agents may do without asking you.", Bot],
   [
+    "claude-code",
+    "Claude Code",
+    "Hooks and plugins for agents that run on Claude Code.",
+    Code,
+    "Providers",
+  ],
+  [
     "memory",
     "Global memory",
     "Facts every agent can recall. Agents add to it; you can edit and remove entries.",
     Brain,
+  ],
+  [
+    "traces",
+    "Traces",
+    "Send each turn’s trace to Phoenix, Langfuse or any OpenTelemetry backend.",
+    Waypoints,
+    "Traces",
   ],
   [
     "connectors",
@@ -97,7 +118,7 @@ export const SECTIONS: [SettingsSection, string, string, typeof KeyRound, string
 /** The sidebar's categories, in order; together they hold every section once. */
 const GROUPS: [string, SettingsSection[]][] = [
   ["General", ["appearance", "keyboard", "voice"]],
-  ["Agents", ["providers", "agents", "memory"]],
+  ["Agents", ["providers", "agents", "claude-code", "memory", "traces"]],
   ["Tools & keys", ["connectors", "clis", "vault"]],
   ["App", ["updates", "diagnostics", "guides"]],
 ];
@@ -199,8 +220,13 @@ export function Settings(props: {
     "",
     KeyRound,
   ];
+  const [vaultFocus, setVaultFocus] = useState<string>();
   const vault = (): void => {
     props.onSection("vault");
+  };
+  const vaultAt = (focus?: string): void => {
+    setVaultFocus(focus);
+    vault();
   };
   return (
     <main class="settings" aria-label="Settings">
@@ -217,6 +243,7 @@ export function Settings(props: {
               class={`settings-tab${props.section === id ? " active" : ""}`}
               aria-current={props.section === id ? "page" : undefined}
               onClick={() => {
+                setVaultFocus(undefined);
                 props.onSection(id);
               }}
             >
@@ -252,19 +279,26 @@ export function Settings(props: {
           </IconButton>
         </header>
         {props.section === "providers" && <ProvidersSettings onVault={vault} />}
-        {props.section === "vault" && <VaultSettings />}
+        {props.section === "vault" && <VaultSettings focus={vaultFocus} />}
         {props.section === "agents" && <AgentSettings />}
+        {props.section === "claude-code" && <ClaudeCodeSettings />}
         {props.section === "connectors" && (
           <ConnectorsSettings
-            onVault={vault}
+            onVault={vaultAt}
             onGuide={() => {
               props.onGuide("Connectors-and-OAuth");
             }}
           />
         )}
         {props.section === "clis" && <ClisSettings />}
-        {props.section === "memory" && <Memory agent={null} />}
-        {props.section === "voice" && <VoiceSettings onVault={vault} />}
+        {props.section === "memory" && (
+          <>
+            <MemoryVault />
+            <Memory agent={null} />
+          </>
+        )}
+        {props.section === "traces" && <TracesSettings />}
+        {props.section === "voice" && <VoiceSettings />}
         {props.section === "updates" && <UpdatesSettings />}
         {props.section === "diagnostics" && <DiagnosticsSettings />}
         {props.section === "guides" && <Guides page={props.guide} onPage={props.onGuide} />}

@@ -44,6 +44,9 @@ pub struct AgentRequest {
 pub struct ConnectorRequest {
     pub name: String,
     pub url: String,
+    /// A local server instead of `url`: its program and arguments.
+    pub command: Option<Vec<String>>,
+    pub token_env: Option<String>,
     pub auth: ferrobot_core::ConnectorAuth,
     /// Why the agent wants it, shown on the card.
     pub reason: String,

@@ -33,6 +33,7 @@ import {
 } from "../src/lib/timeline.ts";
 import {
   CallScript,
+  clampVolume,
   firstClause,
   callChanged,
   callClock,
@@ -40,6 +41,7 @@ import {
   groupChange,
   isPass,
   loadPushToTalk,
+  loadVolume,
   meterDots,
   micOpen,
   nextSpeed,
@@ -48,24 +50,45 @@ import {
   speedLabel,
   splitSentences,
   talkKey,
+  volumeLabel,
   type CallState,
   type Line,
 } from "../src/lib/call.ts";
-import { CATALOG, isAdded } from "../src/lib/catalog.ts";
-import { checkDot, checkLabel, ownAppEntry } from "../src/lib/connectors.ts";
+import { CATALOG, CATALOG_GROUPS, groupCatalog, isAdded } from "../src/lib/catalog.ts";
+import {
+  checkDot,
+  checkLabel,
+  entryOf,
+  monogram,
+  needOf,
+  ownAppEntry,
+  tileHue,
+  usedByLabel,
+  usersOf,
+} from "../src/lib/connectors.ts";
 import { claudeCodeState } from "../src/lib/claude-code.ts";
 import { diagnosticsReport } from "../src/lib/diagnostics.ts";
 import { parseBlocks, parseInline } from "../src/lib/markdown.ts";
 import { modelLabel, modelOptions, withSaved } from "../src/lib/models.ts";
 import { addTag, contextMeter } from "../src/lib/agent-meta.ts";
 import { moveId, orderAgents, pickSelection } from "../src/lib/order.ts";
+import { authValue, backendOf, OTEL_ENDPOINTS } from "../src/lib/otel.ts";
 import { keyLabel, matchShortcut, SHORTCUTS, type KeyPress } from "../src/lib/shortcuts.ts";
 import { pollOutcome } from "../src/lib/update.ts";
-import { Speaker, hasVoiceKey, liveEvent, pcm16Base64, speakable } from "../src/lib/voice.ts";
+import {
+  Speaker,
+  hasVoiceKey,
+  liveEvent,
+  pcm16Base64,
+  pickProvider,
+  speakable,
+  switchProvider,
+} from "../src/lib/voice.ts";
 import {
   chartMetric,
   costLabel,
   freshTokens,
+  limitCards,
   niceTicks,
   rangeOf,
   resetLabel,
@@ -80,6 +103,7 @@ import {
 import type {
   Connector,
   Diagnostics,
+  ProviderLimits,
   UpdateInfo,
   UsageGroup,
   VoiceProvider,
@@ -941,6 +965,7 @@ describe("ui polish", () => {
       text: "ok",
       streaming: false,
       id: 1,
+      turn: "t",
       reaction: null,
     } as const;
     const items = [
@@ -1037,6 +1062,56 @@ describe("voice", () => {
     assert.equal(hasVoiceKey(view("elevenlabs", ["elevenlabs"])), true);
     assert.equal(hasVoiceKey(view("openrouter", ["elevenlabs"])), false);
     assert.equal(hasVoiceKey(view(null, ["elevenlabs"])), false);
+  });
+
+  it("sets up a provider in one go: its key, then its voices", () => {
+    const view = (
+      provider: VoiceView["provider"],
+      keyed: VoiceProvider[],
+      picks: Partial<VoiceView> = {},
+    ): VoiceView =>
+      ({
+        provider,
+        agent_voices: {},
+        ...picks,
+        providers: (["elevenlabs", "openrouter"] as const).map((kind) => ({
+          kind,
+          has_key: keyed.includes(kind),
+        })),
+      }) as VoiceView;
+    const fresh = view(null, []);
+    assert.equal(
+      pickProvider(fresh, null, "elevenlabs"),
+      "key",
+      "a first provider asks for its key",
+    );
+    assert.equal(pickProvider(view(null, ["elevenlabs"]), null, "elevenlabs"), "use");
+    const set = view("elevenlabs", ["elevenlabs"]);
+    assert.equal(pickProvider(set, "elevenlabs", "elevenlabs"), "same");
+    assert.equal(pickProvider(set, "elevenlabs", "openrouter"), "key");
+    assert.equal(pickProvider(set, "openrouter", "elevenlabs"), "back", "nothing saved yet");
+    assert.equal(
+      pickProvider(view("elevenlabs", ["elevenlabs", "openrouter"]), null, "openrouter"),
+      "use",
+    );
+    const voiced = view("elevenlabs", ["elevenlabs", "openrouter"], { agent_voices: { a: "v1" } });
+    assert.equal(
+      pickProvider(voiced, "elevenlabs", "openrouter"),
+      "confirm",
+      "picks would be lost",
+    );
+    assert.equal(pickProvider(voiced, "elevenlabs", "openrouter", true), "use");
+    assert.equal(
+      pickProvider(view("elevenlabs", [], { tts_model: "m" }), "elevenlabs", "openrouter"),
+      "confirm",
+    );
+    assert.deepEqual(switchProvider("openrouter"), {
+      provider: "openrouter",
+      voice: null,
+      tts_model: null,
+      stt_model: null,
+      agent_voices: {},
+    });
   });
 
   it("reads the words of a message, not its Markdown or code", () => {
@@ -1420,6 +1495,94 @@ describe("voice call", () => {
       false,
     );
   });
+
+  it("remembers the call volume, full when nothing sensible is stored", () => {
+    assert.equal(
+      loadVolume((k) => (k === "ferrobot.call-volume" ? "0.35" : null)),
+      0.35,
+    );
+    assert.equal(
+      loadVolume(() => "0"),
+      0,
+      "0 is muted, not missing",
+    );
+    assert.equal(
+      loadVolume(() => null),
+      1,
+    );
+    assert.equal(
+      loadVolume(() => ""),
+      1,
+    );
+    assert.equal(
+      loadVolume(() => "loud"),
+      1,
+    );
+    assert.equal(
+      loadVolume(() => "7"),
+      1,
+    );
+    assert.equal(
+      loadVolume(() => "-2"),
+      0,
+    );
+    assert.equal(
+      loadVolume(() => {
+        throw new Error("no storage");
+      }),
+      1,
+    );
+    assert.equal(clampVolume(0.7 + 0.1), 0.8, "whole percents");
+    assert.equal(clampVolume(Number.NaN), 1);
+    assert.equal(volumeLabel(0), "muted");
+    assert.equal(volumeLabel(0.35), "35%");
+  });
+
+  it("plays speech at the call volume, the clip playing included, and keeps playing at 0", async () => {
+    const global = globalThis as unknown as { Audio?: unknown };
+    const playing: FakeAudio[] = [];
+    class FakeAudio {
+      onended: (() => void) | null = null;
+      onerror: (() => void) | null = null;
+      onpause: (() => void) | null = null;
+      preload = "";
+      src = "";
+      volume = 1;
+      play(): Promise<void> {
+        playing.push(this);
+        return Promise.resolve();
+      }
+      pause(): void {
+        this.onpause?.();
+      }
+    }
+    const before = global.Audio;
+    global.Audio = FakeAudio;
+    try {
+      const speaker = new Speaker(
+        (text) => text,
+        (err) => {
+          throw err;
+        },
+      );
+      const tick = (): Promise<void> => new Promise((r) => setTimeout(r, 5));
+      speaker.setVolume(0.5);
+      speaker.say("one", "a");
+      speaker.say("two", "a");
+      await tick();
+      const first = playing[0];
+      assert.ok(first);
+      assert.equal(first.volume, 0.5);
+      speaker.setVolume(0);
+      assert.equal(first.volume, 0, "the clip playing gets quieter at once");
+      assert.ok(speaker.busy, "muted speech still plays, so the call's timing stays");
+      first.onended?.();
+      await tick();
+      assert.equal(playing[1]?.volume, 0, "a clip loaded earlier plays at the new volume");
+    } finally {
+      global.Audio = before;
+    }
+  });
 });
 
 describe("agent order", () => {
@@ -1631,11 +1794,48 @@ describe("usage", () => {
 
   it("shows Claude Code's reset words as they are and Codex times locally", () => {
     assert.equal(
-      resetLabel("Nov 26 at 6:59am (Europe/Berlin)"),
+      resetLabel("Nov 26 at 6:59am (Europe/Berlin)", "UTC"),
       "Nov 26 at 6:59am (Europe/Berlin)",
+    );
+    assert.equal(
+      resetLabel("Nov 26 at 6:59am (Europe/Berlin)", "Europe/Berlin"),
+      "Nov 26 at 6:59am",
     );
     const local = resetLabel("2026-11-26T05:59:00Z");
     assert.match(local, /^Nov \d{1,2}, \d{1,2}:\d{2}\s?[AP]M$/);
+  });
+
+  it("makes one limit card per plan with labelled, clamped windows", () => {
+    const plan = (
+      id: string,
+      kind: ProviderKind,
+      extra: Partial<ProviderLimits> = {},
+    ): ProviderLimits => ({ provider_id: id, name: "claude code", kind, ...extra });
+    const cards = limitCards(
+      [
+        plan("a", "claude_code", {
+          five_hour: { used_percent: 19.4, resets: "6:59am (Europe/Berlin)" },
+          weekly: { used_percent: 120 },
+        }),
+        plan("b", "claude_code", { error: "not signed in" }),
+        plan("c", "codex", { name: "work", weekly: { used_percent: 80 } }),
+        plan("d", "openai_compatible", { name: "Other plan", error: "cannot read" }),
+      ],
+      "Europe/Berlin",
+    );
+    assert.deepEqual(cards, [
+      {
+        key: "claude_code",
+        title: "Claude Code",
+        rows: [
+          { label: "5-hour window", percent: 19, level: "ok", resets: "6:59am" },
+          { label: "Weekly", percent: 100, level: "full" },
+        ],
+      },
+      { key: "c", title: "Codex", rows: [{ label: "Weekly", percent: 80, level: "high" }] },
+      { key: "d", title: "Other plan", rows: [], error: "cannot read" },
+    ]);
+    assert.deepEqual(limitCards([]), []);
   });
 });
 
@@ -1668,6 +1868,30 @@ describe("catalog", () => {
     assert.equal(isAdded(linear, [{ name: "work", url: linear.url }]), true);
     assert.equal(isAdded(linear, [{ name: "linear", url: "https://x" }]), true);
     assert.equal(isAdded(linear, [{ name: "other", url: "https://x" }]), false);
+  });
+
+  it("puts every entry under exactly one heading", () => {
+    const grouped = groupCatalog("").flatMap((g) => g.entries.map((e) => e.name));
+    assert.deepEqual([...grouped].sort(), CATALOG.map((e) => e.name).sort());
+    assert.deepEqual(
+      groupCatalog("").map((g) => g.label),
+      CATALOG_GROUPS.map((g) => g.label),
+    );
+    assert.equal(
+      groupCatalog("")
+        .find((g) => g.label === "Mail & automation")
+        ?.entries.some((e) => e.name === "gmail"),
+      true,
+    );
+  });
+
+  it("filters by every word of the search, its heading included", () => {
+    const names = (q: string): string[] =>
+      groupCatalog(q).flatMap((g) => g.entries.map((e) => e.name));
+    assert.deepEqual(names("POSTGRES"), ["neon"]);
+    assert.deepEqual(names("cloudflare docs"), ["cloudflare-docs"]);
+    assert.ok(names("payments").includes("stripe"));
+    assert.deepEqual(groupCatalog("no such server"), []);
   });
 });
 
@@ -1803,6 +2027,47 @@ describe("connector status", () => {
     assert.equal(checkLabel(withApp, false), "connected · 23 tools");
     assert.equal(ownAppEntry(" https://gmailmcp.googleapis.com/mcp/v1 ")?.name, "gmail");
     assert.equal(ownAppEntry("https://mcp.deepwiki.com/mcp"), undefined);
+  });
+
+  it("leads each card with the step it needs", () => {
+    const needs = { status: "needs_sign_in" as const, at };
+    const github = { ...base, name: "gh", url: "https://api.githubcopilot.com/mcp/" };
+    assert.equal(needOf(base), undefined);
+    assert.equal(needOf({ ...base, check: needs }), "sign_in");
+    assert.equal(needOf({ ...github, check: needs }), "token");
+    assert.equal(checkLabel({ ...github, check: needs }, false), "needs a token");
+    assert.equal(needOf({ ...base, check: { status: "failed", at } }), undefined);
+    const gmail = { ...base, url: "https://gmailmcp.googleapis.com/mcp/v1", check: needs };
+    assert.equal(needOf(gmail), "app");
+    assert.equal(needOf({ ...gmail, client_id: "app.example" }), "sign_in");
+    assert.equal(entryOf(github)?.title, "GitHub");
+    assert.equal(entryOf({ ...base, name: "mine", url: "https://x/mcp" }), undefined);
+  });
+
+  it("gives every tile stable initials and a hue", () => {
+    assert.deepEqual(["cloudflare-docs", "linear", "my_own server", "---"].map(monogram), [
+      "CD",
+      "L",
+      "MO",
+      "?",
+    ]);
+    assert.equal(tileHue("linear"), tileHue("linear"));
+    assert.ok(tileHue("linear") >= 0 && tileHue("linear") < 360);
+    assert.notEqual(tileHue("linear"), tileHue("notion"));
+  });
+
+  it("names the agents that use a connector", () => {
+    const users = usersOf([
+      ["ada", ["c1", "c2"]],
+      ["bob", ["c1"]],
+    ]);
+    assert.deepEqual(users.get("c1"), ["ada", "bob"]);
+    assert.deepEqual(users.get("c2"), ["ada"]);
+    assert.equal(users.get("c3"), undefined);
+    assert.equal(usedByLabel([]), "Not given to an agent yet");
+    assert.equal(usedByLabel(["ada"]), "Used by ada");
+    assert.equal(usedByLabel(["ada", "bob", "cy"]), "Used by ada, bob and cy");
+    assert.equal(usedByLabel(["a", "b", "c", "d", "e", "f"]), "Used by a, b, c and 3 more");
   });
 });
 
@@ -1962,7 +2227,7 @@ describe("agent meta", () => {
   });
 
   it("fills the context meter and clamps it", () => {
-    const ctx = { tracked: true, tokens: 50_000, window: 200_000, model: "m" };
+    const ctx = { tracked: true, tokens: 50_000, window: 200_000, model: "m", compact: false };
     assert.deepEqual(contextMeter(ctx), {
       percent: 25,
       title: "Context 25% full",
@@ -1971,7 +2236,7 @@ describe("agent meta", () => {
     assert.equal(contextMeter({ ...ctx, tokens: 250_000 }).percent, 100);
     assert.equal(contextMeter({ ...ctx, tokens: null }).percent, 0);
     assert.equal(contextMeter({ ...ctx, window: null }).percent, null);
-    assert.equal(contextMeter({ tracked: false }).title, "Context not tracked");
+    assert.equal(contextMeter({ tracked: false, compact: false }).title, "Context not tracked");
   });
 
   it("shows a new chat in the timeline", () => {
@@ -1983,5 +2248,143 @@ describe("agent meta", () => {
       names,
     );
     assert.equal(items[0]?.type === "system" && items[0].text.startsWith("New chat"), true);
+  });
+});
+
+describe("trace layout", () => {
+  const span = (kind: "model" | "tool", name: string, from: number, to: number | null) => ({
+    kind,
+    name,
+    started_at: new Date(1_000_000 + from).toISOString(),
+    ended_at: to === null ? null : new Date(1_000_000 + to).toISOString(),
+    error: name === "bash" ? "no such dir" : null,
+    input: null,
+    input_tokens: null,
+    output_tokens: null,
+    cache_read_tokens: null,
+    cache_write_tokens: null,
+    cost_usd: null,
+  });
+
+  it("places bars by time, marks the slowest and counts", async () => {
+    const { layoutTrace, traceDuration } = await import("../src/lib/trace.ts");
+    const t = layoutTrace({
+      turn_id: "t",
+      started_at: new Date(1_000_000).toISOString(),
+      ended_at: new Date(1_010_000).toISOString(),
+      outcome: "completed",
+      error: null,
+      models_tracked: true,
+      spans: [
+        span("model", "m", 0, 6000),
+        span("tool", "bash", 6000, 6010),
+        span("tool", "x", 9000, 10_000),
+      ],
+    });
+    assert.deepEqual(
+      t.rows.map((r) => [r.left, Math.round(r.width * 10) / 10, r.slowest]),
+      [
+        [0, 60, true],
+        [60, 0.6, false],
+        [90, 10, false],
+      ],
+    );
+    assert.deepEqual([t.ms, t.models, t.tools, t.errors, t.running], [10_000, 1, 2, 1, false]);
+    assert.deepEqual(
+      t.rows.map((r) => r.labelAt),
+      ["after", "after", "before"],
+      "a bar at the end gets its label before it",
+    );
+    assert.deepEqual([400, 9900, 12_400, 65_000].map(traceDuration), [
+      "0.4s",
+      "9.9s",
+      "12s",
+      "1m 5s",
+    ]);
+  });
+
+  it("marks no step slowest when every step was quick", async () => {
+    const { layoutTrace } = await import("../src/lib/trace.ts");
+    const t = layoutTrace({
+      turn_id: "t",
+      started_at: new Date(1_000_000).toISOString(),
+      ended_at: new Date(1_005_300).toISOString(),
+      outcome: "completed",
+      error: null,
+      models_tracked: false,
+      spans: [span("tool", "a", 2600, 2640), span("tool", "b", 3500, 3510)],
+    });
+    assert.deepEqual(
+      t.rows.map((r) => r.slowest),
+      [false, false],
+    );
+  });
+
+  it("labels computer steps by their command or file", async () => {
+    const { traceLabel } = await import("../src/lib/trace.ts");
+    const none = (): undefined => undefined;
+    assert.equal(
+      traceLabel("tool", "mcp__ferrobot__bash", { command: "ls -la\npwd" }, none),
+      "$ ls -la",
+    );
+    assert.equal(
+      traceLabel("tool", "mcp__ferrobot__read_file", { path: "brief.md" }, none),
+      "Reading brief.md",
+    );
+    assert.equal(traceLabel("tool", "write_file", { path: "out.txt" }, none), "Writing out.txt");
+    assert.equal(traceLabel("model", "claude-opus", null, none), "claude-opus");
+  });
+
+  it("runs a still running turn up to now", async () => {
+    const { layoutTrace } = await import("../src/lib/trace.ts");
+    const t = layoutTrace(
+      {
+        turn_id: "t",
+        started_at: new Date(1_000_000).toISOString(),
+        ended_at: null,
+        outcome: null,
+        error: null,
+        models_tracked: false,
+        spans: [span("tool", "y", 1000, null)],
+      },
+      1_004_000,
+    );
+    assert.deepEqual(
+      [t.ms, t.running, t.rows[0]?.running, t.rows[0]?.width],
+      [4000, true, true, 75],
+    );
+  });
+});
+
+describe("local server commands", () => {
+  it("splits like a shell and shows quoted arguments", async () => {
+    const { commandLine, splitCommand } = await import("../src/lib/connectors.ts");
+    assert.deepEqual(splitCommand(" npx -y  @scope/server '/Users/me/My Vault' "), [
+      "npx",
+      "-y",
+      "@scope/server",
+      "/Users/me/My Vault",
+    ]);
+    assert.deepEqual(splitCommand('node "a \\"b\\"" c\\ d'), ["node", 'a "b"', "c d"]);
+    assert.deepEqual(splitCommand("   "), []);
+    assert.equal(
+      commandLine(["npx", "-y", "@scope/server", "/Users/me/My Vault"]),
+      "npx -y @scope/server '/Users/me/My Vault'",
+    );
+  });
+});
+
+describe("trace export settings", () => {
+  it("knows the presets and builds their auth values", () => {
+    assert.equal(backendOf(OTEL_ENDPOINTS.langfuse), "langfuse");
+    assert.equal(backendOf("https://us.cloud.langfuse.com/api/public/otel/v1/traces"), "langfuse");
+    assert.equal(backendOf(OTEL_ENDPOINTS.phoenix), "phoenix");
+    assert.equal(backendOf("https://app.phoenix.arize.com/s/me/v1/traces"), "phoenix");
+    assert.equal(backendOf("http://localhost:4318/v1/traces"), "other");
+    assert.equal(authValue("phoenix", " k1 "), "Bearer k1");
+    assert.equal(authValue("phoenix", ""), null);
+    assert.equal(authValue("langfuse", "pk-lf-1", "sk-lf-2"), `Basic ${btoa("pk-lf-1:sk-lf-2")}`);
+    assert.equal(authValue("langfuse", "pk-lf-1", ""), null);
+    assert.equal(authValue("other", " Api-Key x "), "Api-Key x");
   });
 });

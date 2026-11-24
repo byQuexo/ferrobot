@@ -214,12 +214,81 @@ async fn stored_token(state: &AppState, c: &Connector) -> Result<Option<String>,
         .map_err(|_| failed("the secret store is unavailable"))
 }
 
+/// Variables a local server keeps from the daemon's environment; nothing else (no model key)
+/// reaches it.
+const LOCAL_ENV: [&str; 7] = ["PATH", "HOME", "USER", "LANG", "LC_ALL", "TMPDIR", "SHELL"];
+
+/// Where `npx` and friends usually live: an app started from the Dock gets a bare `PATH`.
+const LOCAL_PATHS: [&str; 3] = ["/opt/homebrew/bin", "/usr/local/bin", "/usr/bin"];
+
+/// Starts a local server on this computer and talks MCP over its stdin and stdout. It gets a
+/// cleared environment plus its token under `token_env`; it stops with its session (its stdin
+/// closes) or with the daemon.
+async fn connect_local(
+    state: &AppState,
+    c: &Connector,
+    command: &[String],
+    token: Option<String>,
+) -> Result<Client, Failure> {
+    let (program, args) = command
+        .split_first()
+        .ok_or_else(|| failed("the local server has no command"))?;
+    let dir = state.settings.data_dir.join("local-mcp").join(&c.name);
+    tokio::fs::create_dir_all(&dir)
+        .await
+        .map_err(|_| failed("cannot make the local server's folder"))?;
+    let mut cmd = tokio::process::Command::new(program);
+    cmd.args(args).env_clear().current_dir(&dir);
+    for key in LOCAL_ENV {
+        if let Ok(value) = std::env::var(key) {
+            cmd.env(key, value);
+        }
+    }
+    let path = std::env::var("PATH").unwrap_or_default();
+    let extra = LOCAL_PATHS
+        .iter()
+        .filter(|p| !path.split(':').any(|have| have == **p));
+    let path: Vec<&str> = path
+        .split(':')
+        .chain(extra.copied())
+        .filter(|p| !p.is_empty())
+        .collect();
+    cmd.env("PATH", path.join(":"));
+    if let (Some(env), Some(token)) = (&c.token_env, token) {
+        cmd.env(env, token);
+    }
+    cmd.stdin(std::process::Stdio::piped())
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::null())
+        .kill_on_drop(true);
+    let mut child = cmd.spawn().map_err(|e| {
+        tracing::warn!(connector = %c.name, error = %e, "cannot start local server");
+        failed("the local server's program could not be started")
+    })?;
+    let (Some(stdout), Some(stdin)) = (child.stdout.take(), child.stdin.take()) else {
+        return Err(failed("the local server has no stdio"));
+    };
+    tokio::spawn(async move {
+        let _ = child.wait().await;
+    });
+    ClientConfig::default()
+        .serve((stdout, stdin))
+        .await
+        .map_err(|e| {
+            tracing::warn!(connector = %c.name, error = %e, "local server did not start MCP");
+            failure(init_reason(&e), false)
+        })
+}
+
 /// A new session with `c` that sends `token`, else its OAuth sign-in if it has one.
 async fn connect(
     state: &AppState,
     c: &Connector,
     token: Option<String>,
 ) -> Result<Client, Failure> {
+    if let Some(command) = &c.command {
+        return connect_local(state, c, command, token).await;
+    }
     let mut config = StreamableHttpClientTransportConfig::with_uri(c.url.as_str());
     let unreachable = |e: &dyn std::fmt::Display| {
         tracing::warn!(connector = %c.name, error = %e, "cannot connect to connector");
@@ -331,6 +400,16 @@ pub async fn check(state: &AppState, c: &Connector) -> ConnectorCheck {
 pub fn check_soon(state: &AppState, c: Connector) {
     let state = state.clone();
     tokio::spawn(async move { check(&state, &c).await });
+}
+
+/// At start-up: starts each local server once, so `npx` has fetched it before an agent needs it,
+/// and its status is known.
+pub async fn check_local(state: &AppState) {
+    for c in state.store.list_connectors().await.unwrap_or_default() {
+        if c.command.is_some() {
+            check_soon(state, c);
+        }
+    }
 }
 
 /// `<connector>__<tool>`, or `None` if a driver could not use the name.
