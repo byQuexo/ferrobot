@@ -133,6 +133,10 @@ Principles:
   external data) and outgoing ones (events posted as Discord, Slack or JSON; URLs in the
   keychain as `webhook:<id>`); `api/webhooks.rs` — `/v1/webhooks`. All in the `webhooks`
   setting, no table of their own.
+- `crates/daemon/src/discord.rs` — the Discord bridge: polls bridged channels through
+  Discord's REST API with the operator's bot token (keychain `discord:bot`); messages
+  from allowed Discord users go to the channel's agent as the operator's, replies go back;
+  `api/discord.rs` — `/v1/discord`. Settings in the `discord` setting.
 - `crates/daemon/src/tasks.rs` — tracked tasks: automatic report and reminder;
   `crates/store/src/tasks.rs` — task state from `task` events and the mailbox.
 - `crates/mcp/src/tools.rs` — MCP tools; `crates/mcp/src/lib.rs` — `MailboxNotifier`.
@@ -267,6 +271,10 @@ daemon, `docker ps -a` must be empty of ferrobot containers.
   create or regenerate); the operator token is not accepted there and a webhook
   secret opens no other route. Its body reaches the agent framed as external data,
   never as the operator's words; agents never see the secret.
+- **The Discord bridge listens only to allowed users.** Only messages from the Discord
+  user ids the operator listed reach an agent (as the operator's); everyone else and all
+  bots are ignored. The bot token stays in the secret store and the daemon: never in a
+  sandbox, event, log or API response.
 - **Per-agent tokens** on `/runner/ws`, `/mcp`, `/model`, `/host/claude-code/turn`. An agent can only act
   as itself (MCP tools read the caller from the token). Only hashes are stored.
 - **`create_agent` needs operator approval unless Auto mode is on**: an

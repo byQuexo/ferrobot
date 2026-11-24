@@ -9,6 +9,7 @@ import {
   Cpu,
   Keyboard,
   KeyRound,
+  MessagesSquare,
   Palette,
   Plug,
   RefreshCw,
@@ -28,6 +29,7 @@ import { ClaudeCodeSettings } from "./ClaudeCodeSettings.tsx";
 import { ClisSettings } from "./ClisSettings.tsx";
 import { ConnectorsSettings } from "./ConnectorsSettings.tsx";
 import { DiagnosticsSettings } from "./DiagnosticsSettings.tsx";
+import { DiscordSettings } from "./DiscordSettings.tsx";
 import { Guides } from "./Guides.tsx";
 import { Memory } from "./InfoPanel.tsx";
 import { MemoryVault } from "./MemoryVault.tsx";
@@ -46,6 +48,7 @@ export type SettingsSection =
   | "claude-code"
   | "connectors"
   | "webhooks"
+  | "discord"
   | "clis"
   | "memory"
   | "traces"
@@ -96,6 +99,13 @@ export const SECTIONS: [SettingsSection, string, string, typeof KeyRound, string
     "Connectors-and-OAuth",
   ],
   [
+    "discord",
+    "Discord",
+    "Write to your agents from a Discord channel and get their replies there.",
+    MessagesSquare,
+    "Discord",
+  ],
+  [
     "webhooks",
     "Webhooks",
     "Messages from other services to your agents, and your agents’ events to Discord, Slack or any URL.",
@@ -129,7 +139,7 @@ export const SECTIONS: [SettingsSection, string, string, typeof KeyRound, string
 const GROUPS: [string, SettingsSection[]][] = [
   ["General", ["appearance", "keyboard", "voice"]],
   ["Agents", ["providers", "agents", "claude-code", "memory", "traces"]],
-  ["Tools & keys", ["connectors", "webhooks", "clis", "vault"]],
+  ["Tools & keys", ["connectors", "webhooks", "discord", "clis", "vault"]],
   ["App", ["updates", "diagnostics", "guides"]],
 ];
 
@@ -307,6 +317,7 @@ export function Settings(props: {
             }}
           />
         )}
+        {props.section === "discord" && <DiscordSettings />}
         {props.section === "clis" && <ClisSettings />}
         {props.section === "memory" && (
           <>

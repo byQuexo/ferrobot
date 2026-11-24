@@ -126,6 +126,8 @@ fn every_routed_path_is_documented() {
         "/v1/pins",
         "/v1/agents/former",
         "/v1/dashboards",
+        "/v1/discord",
+        "/v1/discord/token",
         "/v1/webhooks",
         "/v1/webhooks/incoming",
         "/v1/webhooks/incoming/{id}",
@@ -138,7 +140,7 @@ fn every_routed_path_is_documented() {
     }
     assert_eq!(
         documented.len(),
-        87,
+        89,
         "undocumented extra paths: {documented:?}"
     );
 }

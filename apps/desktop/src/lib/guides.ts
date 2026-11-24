@@ -54,6 +54,11 @@ export const GUIDES: readonly GuideInfo[] = [
     about: "Messages from GitHub, n8n or Zapier in; events out to Discord or Slack.",
   },
   {
+    page: "Discord",
+    title: "Discord bridge",
+    about: "Write to your agents from a Discord channel.",
+  },
+  {
     page: "Troubleshooting",
     title: "Troubleshooting",
     about: "Docker, keys, the runner image and macOS warnings.",

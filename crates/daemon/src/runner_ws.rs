@@ -616,6 +616,9 @@ async fn settle(
             ..
         }) => {
             tasks::report(state, (agent, turn), msg, outcome, result.as_deref()).await;
+            if outcome == TurnOutcome::Completed {
+                crate::discord::turn_done(state, msg.id, (agent, turn), result.clone());
+            }
             let in_chat = msg.room_id.is_none() && !matches!(msg.sender, Sender::Agent(_));
             if outcome == TurnOutcome::Completed
                 && in_chat
@@ -642,6 +645,7 @@ async fn settle(
                 Ok(MailStatus::Failed) => {
                     tasks::report(state, (agent, turn), msg, TurnOutcome::Failed, Some(&error))
                         .await;
+                    crate::discord::turn_failed(state, msg.id);
                     let summary = "failed a turn".into();
                     webhooks::notify(state, agent, WebhookEvent::TurnFailed, summary, Some(error));
                     Ok(())

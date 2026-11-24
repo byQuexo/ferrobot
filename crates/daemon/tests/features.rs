@@ -8268,3 +8268,125 @@ async fn outgoing_webhooks_get_their_events_in_their_format() {
     let key = ferrobot_daemon::webhooks::url_secret(first);
     assert_eq!(d.state.settings.secrets.get(&key).await.unwrap(), None);
 }
+
+#[tokio::test]
+async fn the_discord_bridge_brings_allowed_messages_in_and_replies_out() {
+    #[derive(Default)]
+    struct FakeDiscord {
+        messages: Vec<Value>,
+        posted: Vec<(String, Value)>,
+        tokens: Vec<String>,
+    }
+    let fake: Arc<Mutex<FakeDiscord>> = Arc::default();
+    let msg = |id: &str, author: &str, bot: bool, content: &str| json!({"id": id, "author": {"id": author, "username": "tim", "bot": bot}, "content": content});
+    fake.lock()
+        .unwrap()
+        .messages
+        .push(msg("1000", "111111111111111111", false, "old"));
+    let (reads, writes) = (fake.clone(), fake.clone());
+    let app = axum::Router::new().route(
+        "/channels/{id}/messages",
+        axum::routing::get(
+            move |headers: HeaderMap, axum::extract::Query(q): axum::extract::Query<HashMap<String, String>>| {
+                let fake = reads.clone();
+                async move {
+                    let mut f = fake.lock().unwrap();
+                    let token = headers.get("authorization").and_then(|v| v.to_str().ok());
+                    f.tokens.push(token.unwrap_or_default().to_owned());
+                    let after: u64 = q.get("after").and_then(|a| a.parse().ok()).unwrap_or(0);
+                    let mut page: Vec<Value> = f
+                        .messages
+                        .iter()
+                        .filter(|m| m["id"].as_str().unwrap().parse::<u64>().unwrap() > after)
+                        .cloned()
+                        .collect();
+                    page.reverse();
+                    if q.get("limit").map(String::as_str) == Some("1") {
+                        page.truncate(1);
+                    }
+                    axum::Json(Value::Array(page))
+                }
+            },
+        )
+        .post(move |axum::extract::Path(id): axum::extract::Path<String>, axum::Json(body): axum::Json<Value>| {
+            let fake = writes.clone();
+            async move {
+                fake.lock().unwrap().posted.push((id, body));
+                axum::Json(json!({"id": "2000"}))
+            }
+        }),
+    );
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let base = format!("http://{}", listener.local_addr().unwrap());
+    tokio::spawn(async move { axum::serve(listener, app).await });
+
+    let backend = Arc::new(StatefulBackend::default());
+    let d = start_with(backend.clone(), None, "127.0.0.1:0", |s| {
+        s.discord_api = base.clone();
+    })
+    .await;
+    let ada = create(&d, json!({"name": "ada"})).await["id"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    let mut ws = connect_runner(&d.agents, &backend.token("ada")).await;
+    let token = json!({"token": "test-bot-token"});
+    let (_, view) = http(&d.ui, "PUT", "/v1/discord/token", Some(token)).await;
+    assert_eq!(view["has_token"], true);
+    assert!(!view.to_string().contains("test-bot-token"), "{view}");
+    let settings = json!({
+        "enabled": true,
+        "users": ["111111111111111111"],
+        "bridges": [{"channel_id": "222222222222222222", "agent_id": ada}],
+    });
+    let (status, body) = http(&d.ui, "PUT", "/v1/discord", Some(settings)).await;
+    assert_eq!(status, 200, "{body}");
+    let bad = json!({"users": ["tim"], "bridges": []});
+    assert_eq!(http(&d.ui, "PUT", "/v1/discord", Some(bad)).await.0, 400);
+
+    tokio::spawn(ferrobot_daemon::discord::run(
+        d.state.clone(),
+        Duration::from_millis(50),
+    ));
+    eventually("the first read", Duration::from_secs(5), || async {
+        (!fake.lock().unwrap().tokens.is_empty()).then_some(())
+    })
+    .await;
+    tokio::time::sleep(Duration::from_millis(150)).await;
+    {
+        let mut f = fake.lock().unwrap();
+        f.messages
+            .push(msg("1001", "111111111111111111", false, "hello ada"));
+        f.messages
+            .push(msg("1002", "999999999999999999", false, "not allowed"));
+        f.messages
+            .push(msg("1003", "111111111111111111", true, "a bot"));
+    }
+    let (turn, _, body) = next_turn(&mut ws).await;
+    assert!(
+        body.contains("hello ada") && body.contains("(via Discord, from tim)"),
+        "{body}"
+    );
+    assert!(
+        !body.contains("old") && !body.contains("not allowed"),
+        "{body}"
+    );
+    answer(&mut ws, turn, "Hi from ada").await;
+    let posted = eventually("the reply in Discord", Duration::from_secs(5), || async {
+        fake.lock().unwrap().posted.first().cloned()
+    })
+    .await;
+    assert_eq!(posted.0, "222222222222222222");
+    assert_eq!(posted.1["content"], "Hi from ada");
+    assert_eq!(posted.1["message_reference"]["message_id"], "1001");
+    assert_eq!(posted.1["allowed_mentions"]["parse"], json!([]));
+    assert!(
+        fake.lock()
+            .unwrap()
+            .tokens
+            .iter()
+            .all(|t| t == "Bot test-bot-token")
+    );
+    tokio::time::sleep(Duration::from_millis(200)).await;
+    quiet(&mut ws).await;
+}

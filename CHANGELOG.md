@@ -26,6 +26,13 @@ All notable changes are listed here. The format follows
   channel or any URL as JSON, optionally for some agents only, with the last
   delivery's result in the list. Their URLs are kept in the keychain.
 
+- Discord bridge (Settings → Discord, guide: Discord bridge): in a bridged
+  channel, messages from the Discord users you allow reach that channel's
+  agent as yours ("via Discord"), and its reply comes back as a reply. The
+  daemon reads the channel through Discord's API with your bot's token (kept
+  in the keychain), so nothing needs to be reachable from the internet
+  (`/v1/discord`, `/v1/discord/token`).
+
 ### Changed
 
 - Roadmap: the ideas list moved onto the roadmap (the Computer tab's file

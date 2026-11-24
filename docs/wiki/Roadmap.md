@@ -44,8 +44,10 @@ In rough order. Nothing here has a date.
    key or operator token in anything sent. **Done in 0.1.8:** incoming
    webhooks to an agent (secret in the URL, only its hash stored) and
    outgoing webhooks for those four events in Discord, Slack or JSON format,
-   URLs in the keychain ([[Webhooks]]); **open:** the Discord bridge, starting
-   a routine from a webhook, and signed outgoing payloads.
+   URLs in the keychain ([[Webhooks]]), and the Discord bridge: allowed users
+   write to an agent from a channel and get its reply there ([[Discord]]);
+   **open:** starting a routine from a webhook, answering cards from Discord,
+   and signed outgoing payloads.
 7. **The agent's computer in the app.** A file browser and a terminal in the
    agent's details panel (Computer tab), so you can look around and fix
    things in its sandbox without asking the agent.

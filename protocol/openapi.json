@@ -3800,6 +3800,133 @@
         }
       }
     },
+    "/v1/discord": {
+      "get": {
+        "tags": [
+          "settings"
+        ],
+        "summary": "The Discord bridge.",
+        "operationId": "get_discord",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DiscordView"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or wrong API token",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        }
+      },
+      "put": {
+        "tags": [
+          "settings"
+        ],
+        "summary": "Replaces the bridge's settings: on or off, the allowed Discord users, and which channel\ntalks to which agent. Changes apply within seconds.",
+        "operationId": "put_discord",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DiscordSettings"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DiscordView"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "A bad id, too many entries or an unknown agent",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or wrong API token",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/discord/token": {
+      "put": {
+        "tags": [
+          "settings"
+        ],
+        "summary": "Stores or removes the bot token, kept in the daemon's secret store.",
+        "operationId": "put_discord_token",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DiscordToken"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DiscordView"
+                }
+              }
+            }
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or wrong API token",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/v1/groups": {
       "get": {
         "tags": [
@@ -7290,6 +7417,22 @@
           }
         }
       },
+      "Bridge": {
+        "type": "object",
+        "required": [
+          "channel_id",
+          "agent_id"
+        ],
+        "properties": {
+          "channel_id": {
+            "type": "string",
+            "description": "The Discord channel id (a number, as text)."
+          },
+          "agent_id": {
+            "type": "string"
+          }
+        }
+      },
       "BuildStatus": {
         "type": "string",
         "description": "Where the image build stands.",
@@ -7333,6 +7476,33 @@
             "format": "int64",
             "description": "The call's room, once a second agent joined; ignored when sent.",
             "readOnly": true
+          }
+        }
+      },
+      "ChannelStatus": {
+        "type": "object",
+        "description": "How a bridged channel is doing.",
+        "required": [
+          "channel_id"
+        ],
+        "properties": {
+          "channel_id": {
+            "type": "string"
+          },
+          "checked_at": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time",
+            "description": "When the daemon last read the channel."
+          },
+          "error": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Why the last read or reply failed; `null` when it worked."
           }
         }
       },
@@ -8097,6 +8267,71 @@
             "description": "Oldest first, without colour codes; what looks like a credential reads `[REDACTED]`."
           }
         }
+      },
+      "DiscordSettings": {
+        "type": "object",
+        "description": "The bridge's settings; the bot token is in the secret store.",
+        "properties": {
+          "enabled": {
+            "type": "boolean",
+            "default": false
+          },
+          "users": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Discord user ids whose messages reach agents; everyone else is ignored.",
+            "default": []
+          },
+          "bridges": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Bridge"
+            },
+            "description": "Each channel talks to one agent.",
+            "default": []
+          }
+        }
+      },
+      "DiscordToken": {
+        "type": "object",
+        "properties": {
+          "token": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "The bot token from Discord's developer portal; `null` removes it."
+          }
+        }
+      },
+      "DiscordView": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/DiscordSettings"
+          },
+          {
+            "type": "object",
+            "required": [
+              "has_token",
+              "channels"
+            ],
+            "properties": {
+              "has_token": {
+                "type": "boolean",
+                "description": "A bot token is in the secret store; it is never returned."
+              },
+              "channels": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/components/schemas/ChannelStatus"
+                }
+              }
+            }
+          }
+        ],
+        "description": "The bridge's settings, whether a bot token is stored, and how each channel is doing."
       },
       "ErrorBody": {
         "type": "object",

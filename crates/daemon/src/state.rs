@@ -66,6 +66,8 @@ pub struct Settings {
     pub storage: Arc<dyn object_store::ObjectStore>,
     /// Base URL for every voice provider instead of its public API (tests).
     pub voice_upstream: Option<String>,
+    /// Discord's REST API, for the Discord bridge (another one in tests).
+    pub discord_api: String,
     /// Directory with the database and the API token file.
     pub data_dir: std::path::PathBuf,
     /// What `--storage-url` names, for diagnostics: `local` or its scheme (`s3`, ...).
@@ -106,6 +108,7 @@ impl std::fmt::Debug for Settings {
             ui_url,
             storage,
             voice_upstream,
+            discord_api,
             data_dir,
             storage_kind,
             log,
@@ -139,6 +142,7 @@ impl std::fmt::Debug for Settings {
             .field("ui_url", ui_url)
             .field("storage", storage)
             .field("voice_upstream", voice_upstream)
+            .field("discord_api", discord_api)
             .field("data_dir", data_dir)
             .field("storage_kind", storage_kind)
             .field("log", log);
@@ -179,6 +183,7 @@ impl Settings {
             ui_url: "http://127.0.0.1:7878".into(),
             storage: Arc::new(object_store::memory::InMemory::new()),
             voice_upstream: None,
+            discord_api: "https://discord.com/api/v10".into(),
             data_dir: std::path::PathBuf::new(),
             storage_kind: "memory".into(),
             log: crate::logs::LogRing::default(),
@@ -279,6 +284,8 @@ pub struct AppState {
     pub clis: Arc<crate::clis::Builds>,
     /// Webhooks' edit lock, rate limits and last deliveries.
     pub webhooks: Arc<crate::webhooks::Webhooks>,
+    /// The Discord bridge's channels and the replies it owes.
+    pub discord: Arc<crate::discord::Discord>,
     /// When this daemon started.
     pub started: std::time::Instant,
 }
@@ -318,6 +325,7 @@ impl AppState {
             update: Arc::default(),
             clis: Arc::default(),
             webhooks: Arc::default(),
+            discord: Arc::default(),
             started: std::time::Instant::now(),
         }
     }

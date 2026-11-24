@@ -278,6 +278,10 @@ async fn main() -> Result<()> {
     }
     ferrobot_daemon::connectors::check_local(&state).await;
     tokio::spawn(scheduler::run(state.clone()));
+    tokio::spawn(ferrobot_daemon::discord::run(
+        state.clone(),
+        std::time::Duration::from_secs(3),
+    ));
     tokio::spawn(supervisor::run(state.clone()));
 
     let (stop_tx, stop_rx) = tokio::sync::watch::channel(false);

@@ -62,6 +62,8 @@ export type Pin = Schemas["Pin"];
 export type PinKind = Schemas["PinKind"];
 export type FormerAgent = Schemas["FormerAgent"];
 export type Dashboard = Schemas["Dashboard"];
+export type DiscordSettings = Schemas["DiscordSettings"];
+export type DiscordView = Schemas["DiscordView"];
 export type ModelList = Schemas["ModelList"];
 export type ModelInfo = Schemas["ModelInfo"];
 export type VoiceView = Schemas["VoiceView"];
@@ -365,6 +367,11 @@ export class DaemonClient {
   updateSettings = (s: GeneralSettings): Promise<GeneralSettings> =>
     this.#request("PUT", "/v1/settings", s);
   formerAgents = (): Promise<FormerAgent[]> => this.#request("GET", "/v1/agents/former");
+  discord = (): Promise<DiscordView> => this.#request("GET", "/v1/discord");
+  updateDiscord = (s: DiscordSettings): Promise<DiscordView> =>
+    this.#request("PUT", "/v1/discord", s);
+  setDiscordToken = (token: string | null): Promise<DiscordView> =>
+    this.#request("PUT", "/v1/discord/token", { token });
   dashboards = (): Promise<Dashboard[]> => this.#request("GET", "/v1/dashboards");
   setDashboards = (list: Dashboard[]): Promise<Dashboard[]> =>
     this.#request("PUT", "/v1/dashboards", list);

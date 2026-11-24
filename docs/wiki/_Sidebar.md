@@ -16,6 +16,7 @@
 - [[Usage and Costs|Usage-and-Costs]]
 - [[Traces]]
 - [[Webhooks]]
+- [[Discord bridge|Discord]]
 
 **How it works**
 

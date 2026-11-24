@@ -888,6 +888,44 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/discord": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** The Discord bridge. */
+        get: operations["get_discord"];
+        /**
+         * Replaces the bridge's settings: on or off, the allowed Discord users, and which channel
+         *     talks to which agent. Changes apply within seconds.
+         */
+        put: operations["put_discord"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/discord/token": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /** Stores or removes the bot token, kept in the daemon's secret store. */
+        put: operations["put_discord_token"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/groups": {
         parameters: {
             query?: never;
@@ -1844,6 +1882,11 @@ export interface components {
              */
             hue: number;
         };
+        Bridge: {
+            /** @description The Discord channel id (a number, as text). */
+            channel_id: string;
+            agent_id: string;
+        };
         /**
          * @description Where the image build stands.
          * @enum {string}
@@ -1865,6 +1908,17 @@ export interface components {
              * @description The call's room, once a second agent joined; ignored when sent.
              */
             readonly room_id?: number | null;
+        };
+        /** @description How a bridged channel is doing. */
+        ChannelStatus: {
+            channel_id: string;
+            /**
+             * Format: date-time
+             * @description When the daemon last read the channel.
+             */
+            checked_at?: string | null;
+            /** @description Why the last read or reply failed; `null` when it worked. */
+            error?: string | null;
         };
         /**
          * @description Body shape of the generated character avatar.
@@ -2188,6 +2242,31 @@ export interface components {
         DiagnosticsLog: {
             /** @description Oldest first, without colour codes; what looks like a credential reads `[REDACTED]`. */
             lines: string[];
+        };
+        /** @description The bridge's settings; the bot token is in the secret store. */
+        DiscordSettings: {
+            /** @default false */
+            enabled: boolean;
+            /**
+             * @description Discord user ids whose messages reach agents; everyone else is ignored.
+             * @default []
+             */
+            users: string[];
+            /**
+             * @description Each channel talks to one agent.
+             * @default []
+             */
+            bridges: components["schemas"]["Bridge"][];
+        };
+        DiscordToken: {
+            /** @description The bot token from Discord's developer portal; `null` removes it. */
+            token?: string | null;
+        };
+        /** @description The bridge's settings, whether a bot token is stored, and how each channel is doing. */
+        DiscordView: components["schemas"]["DiscordSettings"] & {
+            /** @description A bot token is in the secret store; it is never returned. */
+            has_token: boolean;
+            channels: components["schemas"]["ChannelStatus"][];
         };
         /** @description JSON body of every non-2xx UI API response. */
         ErrorBody: {
@@ -6309,6 +6388,115 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["DiagnosticsLog"];
+                };
+            };
+            /** @description Missing or wrong API token */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+        };
+    };
+    get_discord: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DiscordView"];
+                };
+            };
+            /** @description Missing or wrong API token */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+        };
+    };
+    put_discord: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["DiscordSettings"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DiscordView"];
+                };
+            };
+            /** @description A bad id, too many entries or an unknown agent */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Missing or wrong API token */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+        };
+    };
+    put_discord_token: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["DiscordToken"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DiscordView"];
+                };
+            };
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
                 };
             };
             /** @description Missing or wrong API token */
