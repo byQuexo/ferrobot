@@ -126,6 +126,13 @@ How `SandboxBackend` maps onto it:
 | `state` | `list-microvms` plus the runner connection |
 | `destroy` | `terminate-microvm`, delete the archive |
 
+- **No AWS idle policy:** Lambda's `maxIdleDurationSeconds` counts only
+  inbound traffic, and with `NO_INGRESS` there is none, so it would suspend a
+  MicroVM in the middle of a turn. Leave the idle policy out (or at its
+  28,800 s maximum) and let the supervisor suspend: it knows when a turn,
+  its tool calls and queued messages are done (OpenAI's lifecycle guide: an
+  idle event alone is not a safe shutdown signal). Keep the current warm
+  window (`--warm-after`, 300 s), the common default for agent workloads.
 - **The 8-hour cap:** the backend tracks each MicroVM's start time and does a
   cold sleep (pack, terminate) before 8 hours, at the next idle moment. The
   next message launches a new MicroVM and restores the home, so the agent's
