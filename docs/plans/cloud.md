@@ -148,10 +148,16 @@ How `SandboxBackend` maps onto it:
   suspends comes to roughly $8 compute plus $6 snapshots a month. A single
   4 vCPU VM running Docker for all agents is cheaper for one operator; the
   MicroVM backend buys a VM boundary per agent and nothing running while idle.
-- **Unknowns to check first** (a half-day spike): account access (the
-  cookbook mentions an allow list), per-MicroVM vCPU, memory and disk limits,
-  regions, whether a WebSocket held from inside survives `suspend`/`resume`
-  (the runner must reconnect if not), image size limits.
+- **Availability:** announced 2026-06-22 as "available", with no access form
+  in the announcements; 10 regions since 2026-08-19, among them Europe
+  (Frankfurt), Europe (Ireland) and Europe (Stockholm). The memory of running
+  plus suspended MicroVMs has a per-region quota (Service Quotas, "Lambda
+  MicroVMs").
+- **Unknowns to check first** (a half-day spike): whether a fresh account
+  can launch right away (the OpenAI cookbook says it needs "Lambda MicroVMs
+  access"), per-MicroVM vCPU, memory and disk limits, the default quota,
+  whether a WebSocket held from inside survives `suspend`/`resume` (the
+  runner must reconnect if not), image size limits.
 
 ## Phase 4: Firecracker on EC2 (finishes roadmap item 1)
 
