@@ -43,7 +43,15 @@ import type {
 } from "../api.ts";
 import { useApp } from "../context.ts";
 import { isPass } from "../lib/call.ts";
-import { clockTime, errorText, statusOf, stepLabel, stepsLabel, toolLabel } from "../lib/format.ts";
+import {
+  clockTime,
+  errorText,
+  plural,
+  statusOf,
+  stepLabel,
+  stepsLabel,
+  toolLabel,
+} from "../lib/format.ts";
 import {
   buildTimeline,
   firstNewKey,
@@ -555,7 +563,6 @@ function ExchangeHint(props: { item: Exchange; agent: Agent }): JSX.Element {
   const { agents, openConversation } = useApp();
   const [open, setOpen] = useState(false);
   const peer = agents.get(item.peerId);
-  const n = item.messages.length;
   return (
     <>
       <div class={`row row-center exchange${open ? " open" : ""}`}>
@@ -567,9 +574,7 @@ function ExchangeHint(props: { item: Exchange; agent: Agent }): JSX.Element {
             setOpen(!open);
           }}
         >
-          <span>
-            {n} {n === 1 ? "message" : "messages"} with
-          </span>
+          <span>{plural(item.messages.length, "message")} with</span>
           {peer && <Avatar agent={peer} size={18} />}
           <strong>{peer?.name ?? item.peerName}</strong>
           <ChevronRight size={16} class="chev" />

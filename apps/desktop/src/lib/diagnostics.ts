@@ -1,7 +1,5 @@
 import type { Diagnostics } from "../api.ts";
-import { duration } from "./format.ts";
-
-const plural = (n: number, word: string): string => `${String(n)} ${word}${n === 1 ? "" : "s"}`;
+import { duration, plural } from "./format.ts";
 
 /** Label and value of each daemon fact, for the Diagnostics list and the report. */
 export function diagnosticsRows(app: string, d: Diagnostics): [string, string][] {
