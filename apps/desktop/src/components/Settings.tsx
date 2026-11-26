@@ -17,6 +17,7 @@ import {
   Terminal,
   Waypoints,
   Webhook,
+  Workflow,
   X,
 } from "lucide-preact";
 
@@ -39,12 +40,14 @@ import { UpdatesSettings } from "./UpdatesSettings.tsx";
 import { VaultSettings } from "./VaultSettings.tsx";
 import { VoiceSettings } from "./VoiceSettings.tsx";
 import { WebhooksSettings } from "./WebhooksSettings.tsx";
+import { FlowsSettings } from "./FlowsSettings.tsx";
 import { IconButton, Switch } from "./ui.tsx";
 
 export type SettingsSection =
   | "providers"
   | "vault"
   | "agents"
+  | "flows"
   | "claude-code"
   | "connectors"
   | "webhooks"
@@ -71,6 +74,7 @@ export const SECTIONS: [SettingsSection, string, string, typeof KeyRound, string
   ],
   ["providers", "Model providers", "The models your agents run on. Their keys live in Vault.", Cpu],
   ["agents", "Agents", "What agents may do without asking you.", Bot],
+  ["flows", "Flows", "Steps you set up once and run in order (proof of concept).", Workflow],
   [
     "claude-code",
     "Claude Code",
@@ -138,7 +142,7 @@ export const SECTIONS: [SettingsSection, string, string, typeof KeyRound, string
 /** The sidebar's categories, in order; together they hold every section once. */
 const GROUPS: [string, SettingsSection[]][] = [
   ["General", ["appearance", "keyboard", "voice"]],
-  ["Agents", ["providers", "agents", "claude-code", "memory", "traces"]],
+  ["Agents", ["providers", "agents", "flows", "claude-code", "memory", "traces"]],
   ["Tools & keys", ["connectors", "webhooks", "discord", "clis", "vault"]],
   ["App", ["updates", "diagnostics", "guides"]],
 ];
@@ -303,6 +307,7 @@ export function Settings(props: {
         {props.section === "providers" && <ProvidersSettings onVault={vault} />}
         {props.section === "vault" && <VaultSettings focus={vaultFocus} />}
         {props.section === "agents" && <AgentSettings />}
+        {props.section === "flows" && <FlowsSettings />}
         {props.section === "claude-code" && <ClaudeCodeSettings />}
         {props.section === "connectors" && (
           <ConnectorsSettings

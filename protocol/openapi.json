@@ -3936,6 +3936,177 @@
         }
       }
     },
+    "/v1/flows": {
+      "get": {
+        "tags": [
+          "flows"
+        ],
+        "summary": "The flows, in order.",
+        "operationId": "get_flows",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/Flow"
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or wrong API token",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        }
+      },
+      "put": {
+        "tags": [
+          "flows"
+        ],
+        "summary": "Replaces the flows: adding, editing, reordering and removing all send the whole list.",
+        "operationId": "put_flows",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/components/schemas/Flow"
+                }
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/Flow"
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Too many, a bad id, name, step or an unknown agent",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or wrong API token",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/flows/runs": {
+      "get": {
+        "tags": [
+          "flows"
+        ],
+        "summary": "Runs since the daemon started, newest first (at most 50).",
+        "operationId": "list_flow_runs",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/FlowRun"
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or wrong API token",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/flows/{id}/run": {
+      "post": {
+        "tags": [
+          "flows"
+        ],
+        "summary": "Starts a run of the flow; `flow_run` events follow it.",
+        "operationId": "run_flow",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "Flow id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FlowRun"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or wrong API token",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Unknown flow",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/v1/groups": {
       "get": {
         "tags": [
@@ -8505,6 +8676,84 @@
           }
         }
       },
+      "Flow": {
+        "type": "object",
+        "description": "A flow: its steps run in order.",
+        "required": [
+          "id",
+          "name",
+          "steps"
+        ],
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "Chosen by the app: 1-64 letters, digits or `-`, unique."
+          },
+          "name": {
+            "type": "string",
+            "description": "1-60 characters."
+          },
+          "steps": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Step"
+            }
+          }
+        }
+      },
+      "FlowRun": {
+        "type": "object",
+        "description": "One run of a flow.",
+        "required": [
+          "id",
+          "flow_id",
+          "flow_name",
+          "status",
+          "plan",
+          "steps",
+          "started_at"
+        ],
+        "properties": {
+          "id": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0
+          },
+          "flow_id": {
+            "type": "string"
+          },
+          "flow_name": {
+            "type": "string"
+          },
+          "status": {
+            "$ref": "#/components/schemas/RunStatus"
+          },
+          "reason": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Why the run stopped or failed."
+          },
+          "plan": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Step"
+            },
+            "description": "The flow's steps as they were when the run started."
+          },
+          "steps": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/StepRun"
+            }
+          },
+          "started_at": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      },
       "FormerAgent": {
         "type": "object",
         "description": "A deleted agent's last name, so mentions of it can still be read.",
@@ -10054,6 +10303,16 @@
         ],
         "description": "A routine plus a readable form of its schedule."
       },
+      "RunStatus": {
+        "type": "string",
+        "enum": [
+          "waiting",
+          "running",
+          "done",
+          "stopped",
+          "failed"
+        ]
+      },
       "RunTrigger": {
         "type": "string",
         "description": "What started a run.",
@@ -10490,6 +10749,98 @@
                 "type": "null"
               }
             ]
+          }
+        }
+      },
+      "Step": {
+        "oneOf": [
+          {
+            "type": "object",
+            "description": "The agent takes a turn on `prompt`, with the previous output; its reply is the output.",
+            "required": [
+              "agent",
+              "prompt",
+              "kind"
+            ],
+            "properties": {
+              "agent": {
+                "type": "string"
+              },
+              "prompt": {
+                "type": "string"
+              },
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "agent"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "description": "The run goes on only if the previous output contains `contains` (ignoring case).",
+            "required": [
+              "contains",
+              "kind"
+            ],
+            "properties": {
+              "contains": {
+                "type": "string"
+              },
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "condition"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "description": "The previous output goes to `agent` as a message, without waiting for an answer.",
+            "required": [
+              "agent",
+              "kind"
+            ],
+            "properties": {
+              "agent": {
+                "type": "string"
+              },
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "message"
+                ]
+              }
+            }
+          }
+        ],
+        "description": "One step of a flow."
+      },
+      "StepRun": {
+        "type": "object",
+        "description": "What one step did in a run.",
+        "required": [
+          "status"
+        ],
+        "properties": {
+          "status": {
+            "$ref": "#/components/schemas/RunStatus"
+          },
+          "turn_id": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "An agent step's turn, for its trace (`GET /v1/agents/{id}/turns/{turn_id}/trace`)."
+          },
+          "output": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "The step's output: an agent's reply."
           }
         }
       },
@@ -10982,6 +11333,25 @@
                 "type": "string",
                 "enum": [
                   "agent_call"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "description": "A flow run started or one of its steps moved on.",
+            "required": [
+              "run",
+              "type"
+            ],
+            "properties": {
+              "run": {
+                "$ref": "#/components/schemas/FlowRun"
+              },
+              "type": {
+                "type": "string",
+                "enum": [
+                  "flow_run"
                 ]
               }
             }
@@ -11823,6 +12193,10 @@
     {
       "name": "webhooks",
       "description": "Messages from other services in, chosen events out"
+    },
+    {
+      "name": "flows",
+      "description": "Steps set up once and run in order (proof of concept)"
     }
   ]
 }

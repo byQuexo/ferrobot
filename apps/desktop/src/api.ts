@@ -21,6 +21,10 @@ export type RoutineRun = Schemas["RoutineRun"];
 export type SandboxInfo = Schemas["SandboxInfo"];
 export type ExecOutput = Schemas["ExecOutput"];
 export type Interrupted = Schemas["Interrupted"];
+export type Flow = Schemas["Flow"];
+export type FlowRun = Schemas["FlowRun"];
+export type Step = Schemas["Step"];
+export type RunStatus = Schemas["RunStatus"];
 export type Snapshot = Schemas["SnapshotRecord"];
 export type CreateAgent = Schemas["CreateAgent"];
 export type UpdateAgent = Schemas["UpdateAgent"];
@@ -382,6 +386,11 @@ export class DaemonClient {
     this.#request("PUT", "/v1/discord", s);
   setDiscordToken = (token: string | null): Promise<DiscordView> =>
     this.#request("PUT", "/v1/discord/token", { token });
+  flows = (): Promise<Flow[]> => this.#request("GET", "/v1/flows");
+  setFlows = (list: Flow[]): Promise<Flow[]> => this.#request("PUT", "/v1/flows", list);
+  runFlow = (id: string): Promise<FlowRun> =>
+    this.#request("POST", `/v1/flows/${encodeURIComponent(id)}/run`);
+  flowRuns = (): Promise<FlowRun[]> => this.#request("GET", "/v1/flows/runs");
   dashboards = (): Promise<Dashboard[]> => this.#request("GET", "/v1/dashboards");
   setDashboards = (list: Dashboard[]): Promise<Dashboard[]> =>
     this.#request("PUT", "/v1/dashboards", list);

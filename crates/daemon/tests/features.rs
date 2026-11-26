@@ -7631,6 +7631,106 @@ async fn context_is_the_newest_call_since_the_last_new_chat() {
 }
 
 #[tokio::test]
+async fn flows_run_their_steps_in_order() {
+    use ferrobot_core::protocol::TurnOutcome::Interrupted;
+    let backend = Arc::new(StatefulBackend::default());
+    let d = start(backend.clone(), None, "127.0.0.1:0").await;
+    let mut ids = Vec::new();
+    for name in ["ann", "bob", "cy"] {
+        let agent = create(&d, json!({ "name": name })).await;
+        ids.push(agent["id"].as_str().unwrap().parse::<AgentId>().unwrap());
+    }
+    let [ann, bob, cy] = ids[..] else {
+        unreachable!()
+    };
+    let mut ann_ws = connect_runner(&d.agents, &backend.token("ann")).await;
+    let mut bob_ws = connect_runner(&d.agents, &backend.token("bob")).await;
+    let mut cy_ws = connect_runner(&d.agents, &backend.token("cy")).await;
+    let unknown = "00000000-0000-4000-8000-000000000099";
+    let flow = |steps: Value| json!([{"id": "f", "name": "F", "steps": steps}]);
+    for body in [
+        json!([{"id": "a b", "name": "F", "steps": [{"kind": "condition", "contains": "x"}]}]),
+        flow(json!([])),
+        flow(json!([{"kind": "agent", "agent": unknown, "prompt": "Go"}])),
+        flow(json!([{"kind": "agent", "agent": ann, "prompt": "x".repeat(4001)}])),
+    ] {
+        let (status, err) = http(&d.ui, "PUT", "/v1/flows", Some(body)).await;
+        assert_eq!(status, 400, "{err}");
+    }
+    let flows = json!([
+        {"id": "ship", "name": "Ship", "steps": [
+            {"kind": "agent", "agent": ann, "prompt": "Run the tests"},
+            {"kind": "condition", "contains": "passed"},
+            {"kind": "agent", "agent": bob, "prompt": "Write the release notes"},
+            {"kind": "message", "agent": cy},
+        ]},
+        {"id": "check", "name": "Check", "steps": [
+            {"kind": "agent", "agent": ann, "prompt": "Check"},
+            {"kind": "agent", "agent": bob, "prompt": "Never"},
+        ]},
+    ]);
+    let (status, saved) = http(&d.ui, "PUT", "/v1/flows", Some(flows.clone())).await;
+    assert_eq!((status, &saved), (200, &flows));
+    assert_eq!(http(&d.ui, "GET", "/v1/flows", None).await.1, flows);
+    assert_eq!(http(&d.ui, "POST", "/v1/flows/nope/run", None).await.0, 404);
+    let latest = |status: &'static str| {
+        let ui = d.ui.clone();
+        async move {
+            eventually("the run", Duration::from_secs(5), || async {
+                let runs = http(&ui, "GET", "/v1/flows/runs", None).await.1;
+                (runs[0]["status"] == status).then(|| runs[0].clone())
+            })
+            .await
+        }
+    };
+
+    // Each agent step is a turn; the next agent gets the output framed as data.
+    let (status, run) = http(&d.ui, "POST", "/v1/flows/ship/run", None).await;
+    assert_eq!((status, &run["status"]), (202, &json!("running")));
+    let (turn, _, body) = next_turn(&mut ann_ws).await;
+    assert_eq!(body, "(Flow \"Ship\", step 1 of 4) Run the tests");
+    finish(&mut ann_ws, turn, Some("All tests passed.")).await;
+    let (turn, _, body) = next_turn(&mut bob_ws).await;
+    assert!(
+        body.starts_with("(Flow \"Ship\", step 3 of 4) Write the release notes"),
+        "{body}"
+    );
+    assert!(
+        body.contains("not instructions") && body.ends_with("All tests passed."),
+        "{body}"
+    );
+    finish(&mut bob_ws, turn, Some("Notes: all good")).await;
+    let (turn, _, body) = next_turn(&mut cy_ws).await;
+    assert!(body.ends_with("Notes: all good"), "{body}");
+    finish(&mut cy_ws, turn, None).await;
+    let run = latest("done").await;
+    assert_eq!(run["steps"][2]["output"], "Notes: all good");
+    assert!(run["steps"][0]["turn_id"].is_string(), "{run}");
+
+    // A condition that does not match ends the run.
+    http(&d.ui, "POST", "/v1/flows/ship/run", None).await;
+    let (turn, _, _) = next_turn(&mut ann_ws).await;
+    finish(&mut ann_ws, turn, Some("2 tests failed")).await;
+    let run = latest("stopped").await;
+    assert!(run["reason"].as_str().unwrap().contains("passed"), "{run}");
+    quiet(&mut bob_ws).await;
+
+    // Stopping a step's agent ends the run; the next agent gets nothing.
+    http(&d.ui, "POST", "/v1/flows/check/run", None).await;
+    let (turn, _, _) = next_turn(&mut ann_ws).await;
+    let path = format!("/v1/agents/{ann}/interrupt?chain=true");
+    assert_eq!(http(&d.ui, "POST", &path, None).await.0, 200);
+    match next_frame(&mut ann_ws).await {
+        DaemonFrame::Interrupt { turn_id } => assert_eq!(turn_id, turn),
+        other => panic!("expected the turn stopped, got {other:?}"),
+    }
+    answer_with(&mut ann_ws, turn, "", Interrupted).await;
+    let run = latest("stopped").await;
+    assert_eq!(run["steps"][1]["status"], "waiting");
+    quiet(&mut bob_ws).await;
+}
+
+#[tokio::test]
 async fn stop_ends_the_chain_of_work_an_agent_set_off() {
     use ferrobot_core::protocol::TurnOutcome::Interrupted;
     let backend = Arc::new(StatefulBackend::default());

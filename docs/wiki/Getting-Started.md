@@ -58,6 +58,17 @@ a loop between agents ends too. Your own queued messages, routines and
 webhooks stay; a stopped agent's task does not report back to an agent you
 stopped.
 
+### Flows (proof of concept)
+
+**Settings → Flows** holds steps you set up once and run in order with **Run**:
+an agent's turn (it gets your prompt and the previous step's output, marked
+as data from another agent), a condition (the run goes on only if the output
+contains some text), and a message (the output goes to an agent). Each agent
+step is that agent's own turn, with its tools, limits and cards; its prompt
+shows in its chat as yours. **Runs** shows each step's output and opens its
+trace. Stopping a step's agent ends the run. Runs are kept until the daemon
+restarts; flows start only from there for now.
+
 ### Pins
 
 Keep important things one click away. Hover a reply or a shared file and

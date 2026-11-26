@@ -10,6 +10,7 @@ import {
 } from "../src/api.ts";
 import { ACCENTS, DEFAULT_APPEARANCE, readAppearance } from "../src/lib/appearance.ts";
 import { hash } from "../src/lib/avatar.ts";
+import { flowStepLabel, newStep, upsertRun } from "../src/lib/flows.ts";
 import {
   consoleCommand,
   joinPath,
@@ -2601,5 +2602,40 @@ describe("stop", () => {
     assert.equal(stopSummary(1, 0), "");
     assert.equal(stopSummary(3, 1), "3 agents stopped, 1 queued message dropped");
     assert.equal(stopSummary(1, 2), "2 queued messages dropped");
+  });
+});
+
+describe("flows", () => {
+  const nameOf = (id: string): string => (id === "a1" ? "ann" : "a deleted agent");
+  it("labels steps and keeps a step's agent when its kind changes", () => {
+    assert.equal(
+      flowStepLabel({ kind: "agent", agent: "a1", prompt: "Test" }, nameOf),
+      "ann: Test",
+    );
+    assert.equal(
+      flowStepLabel({ kind: "condition", contains: "ok" }, nameOf),
+      "if it contains “ok”",
+    );
+    assert.equal(flowStepLabel(newStep("message", "zz"), nameOf), "message to a deleted agent");
+    assert.deepEqual(newStep("agent", "a1"), { kind: "agent", agent: "a1", prompt: "" });
+  });
+  it("updates a run in place or adds it on top", () => {
+    const run = (id: number, status: "running" | "done") => ({
+      id,
+      flow_id: "f",
+      flow_name: "F",
+      status,
+      plan: [],
+      steps: [],
+      started_at: "2026-11-26T00:00:00Z",
+    });
+    const runs = upsertRun([run(1, "running")], run(2, "running"));
+    assert.deepEqual(
+      upsertRun(runs, run(1, "done")).map((r) => [r.id, r.status]),
+      [
+        [2, "running"],
+        [1, "done"],
+      ],
+    );
   });
 });

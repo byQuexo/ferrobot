@@ -298,6 +298,59 @@
       ],
       "type": "string"
     },
+    "FlowRun": {
+      "description": "One run of a flow.",
+      "properties": {
+        "flow_id": {
+          "type": "string"
+        },
+        "flow_name": {
+          "type": "string"
+        },
+        "id": {
+          "format": "int64",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "plan": {
+          "description": "The flow's steps as they were when the run started.",
+          "items": {
+            "$ref": "#/$defs/Step"
+          },
+          "type": "array"
+        },
+        "reason": {
+          "description": "Why the run stopped or failed.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "started_at": {
+          "format": "date-time",
+          "type": "string"
+        },
+        "status": {
+          "$ref": "#/$defs/RunStatus"
+        },
+        "steps": {
+          "items": {
+            "$ref": "#/$defs/StepRun"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "id",
+        "flow_id",
+        "flow_name",
+        "status",
+        "plan",
+        "steps",
+        "started_at"
+      ],
+      "type": "object"
+    },
     "LastReply": {
       "description": "The start of an agent's newest reply.",
       "properties": {
@@ -481,6 +534,16 @@
       ],
       "type": "object"
     },
+    "RunStatus": {
+      "enum": [
+        "waiting",
+        "running",
+        "done",
+        "stopped",
+        "failed"
+      ],
+      "type": "string"
+    },
     "Sender": {
       "description": "Who sent a mailbox message.",
       "oneOf": [
@@ -562,6 +625,98 @@
           "type": "object"
         }
       ]
+    },
+    "Step": {
+      "description": "One step of a flow.",
+      "oneOf": [
+        {
+          "description": "The agent takes a turn on `prompt`, with the previous output; its reply is the output.",
+          "properties": {
+            "agent": {
+              "type": "string"
+            },
+            "kind": {
+              "enum": [
+                "agent"
+              ],
+              "type": "string"
+            },
+            "prompt": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "agent",
+            "prompt",
+            "kind"
+          ],
+          "type": "object"
+        },
+        {
+          "description": "The run goes on only if the previous output contains `contains` (ignoring case).",
+          "properties": {
+            "contains": {
+              "type": "string"
+            },
+            "kind": {
+              "enum": [
+                "condition"
+              ],
+              "type": "string"
+            }
+          },
+          "required": [
+            "contains",
+            "kind"
+          ],
+          "type": "object"
+        },
+        {
+          "description": "The previous output goes to `agent` as a message, without waiting for an answer.",
+          "properties": {
+            "agent": {
+              "type": "string"
+            },
+            "kind": {
+              "enum": [
+                "message"
+              ],
+              "type": "string"
+            }
+          },
+          "required": [
+            "agent",
+            "kind"
+          ],
+          "type": "object"
+        }
+      ]
+    },
+    "StepRun": {
+      "description": "What one step did in a run.",
+      "properties": {
+        "output": {
+          "description": "The step's output: an agent's reply.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "status": {
+          "$ref": "#/$defs/RunStatus"
+        },
+        "turn_id": {
+          "description": "An agent step's turn, for its trace (`GET /v1/agents/{id}/turns/{turn_id}/trace`).",
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "status"
+      ],
+      "type": "object"
     },
     "StoredEvent": {
       "description": "One recorded event in an agent's chat.",
@@ -948,6 +1103,25 @@
             "room_id",
             "host",
             "topic",
+            "type"
+          ],
+          "type": "object"
+        },
+        {
+          "description": "A flow run started or one of its steps moved on.",
+          "properties": {
+            "run": {
+              "$ref": "#/$defs/FlowRun"
+            },
+            "type": {
+              "enum": [
+                "flow_run"
+              ],
+              "type": "string"
+            }
+          },
+          "required": [
+            "run",
             "type"
           ],
           "type": "object"

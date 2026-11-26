@@ -85,6 +85,11 @@ In rough order. Nothing here has a date.
     a trace. Steps run with the tools and limits of the agents they use, risky
     steps keep their cards, and a flow an agent creates needs your approval
     unless Auto mode is on. This also covers starting work from a webhook (6).
+   **Proof of concept** (next release): linear flows of agent turns,
+   conditions and messages in Settings → Flows, run by hand, each step linked
+   to its turn's trace, stopped with the agent. Open: triggers, cards and
+   webhook posts as steps, flows started or made by agents, and runs that
+   survive a restart.
 12. **Run in the cloud.** ferrobot on a server around the clock, reachable
     from anywhere: a sealed secret store for hosts without a keychain, the
     daemon serving the web UI, a server package, then a guest channel through
