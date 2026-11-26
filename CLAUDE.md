@@ -23,6 +23,20 @@ a versioned HTTP/WebSocket API (`/v1`).
   visibility (github.com/byQuexo/ferrobot) unless asked.
 - Never fabricate test results; say what was not run.
 
+## Public repo (hard)
+
+The repo is public. Everything committed (code, tests, fixtures, presets, docs,
+commit messages, PR bodies, release notes, screenshots) follows these rules:
+
+- No employer, customer or other company names except the services ferrobot
+  integrates with by design (GitHub, Discord, model and voice providers), and
+  only where the feature needs them.
+- No people's names other than the author, and no private details: emails,
+  internal hostnames or URLs, ticket links, tokens, real chat or log contents.
+- Examples use neutral names: `example.com`, `api.example.com`,
+  `EXAMPLE_API_KEY`, a program called `example`, agent names like `scout`.
+- Before committing, read the diff for names that do not belong there.
+
 ## Architecture
 
 ```
@@ -100,9 +114,10 @@ Principles:
   agents through `/mcp` (tokens in the keychain, never in a sandbox), and the
   `add_connector` approval card (Approve/Decline; tokens go in Settings → Vault);
   `oauth.rs` — their OAuth sign-in (rmcp's client, loopback callback).
-- `crates/daemon/src/logins.rs`, `api/logins.rs`, `egress.rs` — logins for CLIs (GitHub): the
-  token in the secret store (`login:github`), agents in the `logins` setting; their sandboxes get
-  a stand-in, `HTTPS_PROXY` to the agent listener and a CA bundle; `egress.rs` is the proxy.
+- `crates/daemon/src/logins.rs`, `api/logins.rs`, `egress.rs` — logins for CLIs, set up by the
+  operator (hosts, variables, programs, ask-first, agents; GitHub is a preset in the app) in the
+  `logins` setting, each token in the secret store (`login:<id>`); their sandboxes get a stand-in
+  per login, `HTTPS_PROXY` to the agent listener and a CA bundle; `egress.rs` is the proxy.
 - `crates/daemon/src/clis.rs`, `api/clis.rs` — CLIs: keyless Debian packages
   built into one shared sandbox image (Docker, `build_image` in
   `crates/sandbox`); `lifecycle::wake` recreates outdated sandboxes, home kept.
@@ -289,13 +304,16 @@ daemon, `docker ps -a` must be empty of ferrobot containers.
   sandbox, event, log or API response. Cards answered from Discord take only allowed
   users' reactions or replies and go through the app's answer route; cards with a secret
   field or several questions, `add_connector` and very risky steps stay app-only.
-- **CLI logins keep their token in the daemon.** Agents with a login get a stand-in and send
-  HTTPS through `CONNECT` on the agent listener (`egress.rs`, agent token as proxy password);
-  only for the login's hosts does the daemon end TLS (leaf certificates from the local CA, which
-  is name-constrained to those domains and whose key stays in the secret store), swap the exact
-  stand-in for the real token and forward without following redirects. Other public hosts get a
-  plain tunnel, port 443 only; private, loopback and link-local addresses are refused. Never log
-  `Authorization` or `Proxy-Authorization`.
+- **CLI logins keep their token in the daemon.** Only the operator sets up logins (never an
+  agent). Agents with a login get a stand-in and send HTTPS through `CONNECT` on the agent
+  listener (`egress.rs`, agent token as proxy password); only for the login's hosts (public names,
+  checked when saved and resolved to public addresses when used) does the daemon end TLS (leaf
+  certificates from that login's own CA, name-constrained to its hosts, key in the secret store),
+  swap its exact stand-in for the real token in request headers only (never the URL), put the
+  stand-in back where a response header echoes the token, and forward without following redirects.
+  A login's variables never replace the sandbox's own (proxy, CA, `FERROBOT_*`, `PATH`...). Other
+  public hosts get a plain tunnel, port 443 only; private, loopback and link-local addresses are
+  refused. Never log `Authorization` or `Proxy-Authorization`.
 - **Per-agent tokens** on `/runner/ws`, `/mcp`, `/model`, `/host/claude-code/turn`. An agent can only act
   as itself (MCP tools read the caller from the token). Only hashes are stored.
 - **`create_agent` needs operator approval unless Auto mode is on**: an

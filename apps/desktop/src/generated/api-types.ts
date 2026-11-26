@@ -1061,7 +1061,7 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/v1/logins/{kind}": {
+    "/v1/logins/{id}": {
         parameters: {
             query?: never;
             header?: never;
@@ -1070,18 +1070,19 @@ export interface paths {
         };
         get?: never;
         /**
-         * Lends the login to exactly these agents. Their computers restart (files kept) so the proxy
-         *     and stand-in token reach them, or leave them.
+         * Adds or replaces a login. Agents it reaches or leaves restart their computers (files kept);
+         *     so do all its agents when its hosts or variables change.
          */
-        put: operations["put_login_agents"];
+        put: operations["put_login"];
         post?: never;
-        delete?: never;
+        /** Removes a login, its token and its CA; its agents restart their computers (files kept). */
+        delete: operations["delete_login"];
         options?: never;
         head?: never;
         patch?: never;
         trace?: never;
     };
-    "/v1/logins/{kind}/token": {
+    "/v1/logins/{id}/token": {
         parameters: {
             query?: never;
             header?: never;
@@ -2533,11 +2534,36 @@ export interface components {
              */
             url: string;
         };
-        LoginAgents: {
-            agents: string[];
+        /** @description A login for CLIs: which hosts get the real token and where the CLIs look for it. */
+        Login: {
+            /** @description 1-32 chars of `a-z0-9-`, starting with a letter, e.g. `example`. */
+            id: string;
+            /** @description API hosts whose requests get the real token, exact public names like `api.example.com`. */
+            hosts: string[];
+            /** @description Environment variables the CLIs read their token from; they get a stand-in. */
+            env: string[];
+            /** @description Program names that use this login, e.g. `example`; see `confirm`. */
+            programs?: string[];
+            /**
+             * @description Ask before every command that runs one of `programs` or names one of `env` or `hosts`,
+             *     unless Auto mode is on.
+             */
+            confirm?: boolean;
+            /** @description The agents whose CLIs use this login. */
+            agents?: string[];
         };
-        /** @enum {string} */
-        LoginKind: "github";
+        LoginSpec: {
+            /** @description API hosts whose requests get the real token, e.g. `api.example.com`. */
+            hosts: string[];
+            /** @description Environment variables the CLIs read their token from, e.g. `EXAMPLE_API_KEY`. */
+            env: string[];
+            /** @description Program names that use the login, e.g. `example`. */
+            programs?: string[];
+            /** @description Ask before every command that uses the login, unless Auto mode is on. */
+            confirm?: boolean;
+            /** @description The agents whose CLIs use the login. */
+            agents?: string[];
+        };
         /** @description Sign-in progress per provider (in memory; a restart forgets pending ones). */
         LoginStatus: {
             /** @enum {string} */
@@ -2557,14 +2583,9 @@ export interface components {
             /** @description The service's token, e.g. a fine-grained GitHub token; `null` removes it. */
             token?: string | null;
         };
-        LoginView: {
-            kind: components["schemas"]["LoginKind"];
+        LoginView: components["schemas"]["Login"] & {
             /** @description Whether a token is stored. The token itself is never returned. */
             has_token: boolean;
-            /** @description The agents whose CLIs use this login. */
-            agents: string[];
-            /** @description The hosts whose requests get the token. */
-            hosts: string[];
         };
         /** @description One message in an agent's mailbox. */
         MailMessage: {
@@ -7023,19 +7044,19 @@ export interface operations {
             };
         };
     };
-    put_login_agents: {
+    put_login: {
         parameters: {
             query?: never;
             header?: never;
             path: {
-                /** @description The login */
-                kind: components["schemas"]["LoginKind"];
+                /** @description The login's id, e.g. `github` */
+                id: string;
             };
             cookie?: never;
         };
         requestBody: {
             content: {
-                "application/json": components["schemas"]["LoginAgents"];
+                "application/json": components["schemas"]["LoginSpec"];
             };
         };
         responses: {
@@ -7047,7 +7068,7 @@ export interface operations {
                     "application/json": components["schemas"]["LoginView"];
                 };
             };
-            /** @description An unknown agent */
+            /** @description An invalid field or an unknown agent */
             400: {
                 headers: {
                     [name: string]: unknown;
@@ -7067,13 +7088,52 @@ export interface operations {
             };
         };
     };
+    delete_login: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The login's id */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Removed */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Missing or wrong API token */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description No such login */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+        };
+    };
     put_login_token: {
         parameters: {
             query?: never;
             header?: never;
             path: {
-                /** @description The login */
-                kind: components["schemas"]["LoginKind"];
+                /** @description The login's id */
+                id: string;
             };
             cookie?: never;
         };
@@ -7102,6 +7162,15 @@ export interface operations {
             };
             /** @description Missing or wrong API token */
             401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description No such login */
+            404: {
                 headers: {
                     [name: string]: unknown;
                 };

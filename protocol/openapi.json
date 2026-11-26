@@ -4399,21 +4399,21 @@
         }
       }
     },
-    "/v1/logins/{kind}": {
+    "/v1/logins/{id}": {
       "put": {
         "tags": [
           "clis"
         ],
-        "summary": "Lends the login to exactly these agents. Their computers restart (files kept) so the proxy\nand stand-in token reach them, or leave them.",
-        "operationId": "put_login_agents",
+        "summary": "Adds or replaces a login. Agents it reaches or leaves restart their computers (files kept);\nso do all its agents when its hosts or variables change.",
+        "operationId": "put_login",
         "parameters": [
           {
-            "name": "kind",
+            "name": "id",
             "in": "path",
-            "description": "The login",
+            "description": "The login's id, e.g. `github`",
             "required": true,
             "schema": {
-              "$ref": "#/components/schemas/LoginKind"
+              "type": "string"
             }
           }
         ],
@@ -4421,7 +4421,7 @@
           "content": {
             "application/json": {
               "schema": {
-                "$ref": "#/components/schemas/LoginAgents"
+                "$ref": "#/components/schemas/LoginSpec"
               }
             }
           },
@@ -4438,7 +4438,7 @@
             }
           },
           "400": {
-            "description": "An unknown agent",
+            "description": "An invalid field or an unknown agent",
             "content": {
               "application/json": {
                 "schema": {
@@ -4458,9 +4458,52 @@
             }
           }
         }
+      },
+      "delete": {
+        "tags": [
+          "clis"
+        ],
+        "summary": "Removes a login, its token and its CA; its agents restart their computers (files kept).",
+        "operationId": "delete_login",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "The login's id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Removed"
+          },
+          "401": {
+            "description": "Missing or wrong API token",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No such login",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        }
       }
     },
-    "/v1/logins/{kind}/token": {
+    "/v1/logins/{id}/token": {
       "put": {
         "tags": [
           "clis"
@@ -4469,12 +4512,12 @@
         "operationId": "put_login_token",
         "parameters": [
           {
-            "name": "kind",
+            "name": "id",
             "in": "path",
-            "description": "The login",
+            "description": "The login's id",
             "required": true,
             "schema": {
-              "$ref": "#/components/schemas/LoginKind"
+              "type": "string"
             }
           }
         ],
@@ -4510,6 +4553,16 @@
           },
           "401": {
             "description": "Missing or wrong API token",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No such login",
             "content": {
               "application/json": {
                 "schema": {
@@ -9004,25 +9057,93 @@
           }
         }
       },
-      "LoginAgents": {
+      "Login": {
         "type": "object",
+        "description": "A login for CLIs: which hosts get the real token and where the CLIs look for it.",
         "required": [
-          "agents"
+          "id",
+          "hosts",
+          "env"
         ],
         "properties": {
+          "id": {
+            "type": "string",
+            "description": "1-32 chars of `a-z0-9-`, starting with a letter, e.g. `example`."
+          },
+          "hosts": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "API hosts whose requests get the real token, exact public names like `api.example.com`."
+          },
+          "env": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Environment variables the CLIs read their token from; they get a stand-in."
+          },
+          "programs": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Program names that use this login, e.g. `example`; see `confirm`."
+          },
+          "confirm": {
+            "type": "boolean",
+            "description": "Ask before every command that runs one of `programs` or names one of `env` or `hosts`,\nunless Auto mode is on."
+          },
           "agents": {
             "type": "array",
             "items": {
               "type": "string"
-            }
+            },
+            "description": "The agents whose CLIs use this login."
           }
         }
       },
-      "LoginKind": {
-        "type": "string",
-        "enum": [
-          "github"
-        ]
+      "LoginSpec": {
+        "type": "object",
+        "required": [
+          "hosts",
+          "env"
+        ],
+        "properties": {
+          "hosts": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "API hosts whose requests get the real token, e.g. `api.example.com`."
+          },
+          "env": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Environment variables the CLIs read their token from, e.g. `EXAMPLE_API_KEY`."
+          },
+          "programs": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Program names that use the login, e.g. `example`."
+          },
+          "confirm": {
+            "type": "boolean",
+            "description": "Ask before every command that uses the login, unless Auto mode is on."
+          },
+          "agents": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "The agents whose CLIs use the login."
+          }
+        }
       },
       "LoginStatus": {
         "oneOf": [
@@ -9104,36 +9225,23 @@
         }
       },
       "LoginView": {
-        "type": "object",
-        "required": [
-          "kind",
-          "has_token",
-          "agents",
-          "hosts"
-        ],
-        "properties": {
-          "kind": {
-            "$ref": "#/components/schemas/LoginKind"
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/Login"
           },
-          "has_token": {
-            "type": "boolean",
-            "description": "Whether a token is stored. The token itself is never returned."
-          },
-          "agents": {
-            "type": "array",
-            "items": {
-              "type": "string"
-            },
-            "description": "The agents whose CLIs use this login."
-          },
-          "hosts": {
-            "type": "array",
-            "items": {
-              "type": "string"
-            },
-            "description": "The hosts whose requests get the token."
+          {
+            "type": "object",
+            "required": [
+              "has_token"
+            ],
+            "properties": {
+              "has_token": {
+                "type": "boolean",
+                "description": "Whether a token is stored. The token itself is never returned."
+              }
+            }
           }
-        }
+        ]
       },
       "MailMessage": {
         "type": "object",

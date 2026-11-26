@@ -108,12 +108,10 @@ async fn fresh_spec(state: &AppState, agent: &Agent) -> Result<SandboxSpec, ApiE
     }
     let logins = crate::logins::of_agent(state, agent.id).await;
     let home = state.backend.home();
-    env.extend(crate::logins::env(
-        &logins,
-        &s.sandbox_daemon_url,
-        &token,
-        &home,
-    ));
+    // A login never replaces what the sandbox already set.
+    for (k, v) in crate::logins::env(&logins, &s.sandbox_daemon_url, &token, &home) {
+        env.entry(k).or_insert(v);
+    }
     env.insert("FERROBOT_AGENT_TOKEN".to_owned(), token);
     Ok(SandboxSpec {
         name: agent.sandbox_name.clone(),
@@ -125,7 +123,7 @@ async fn fresh_spec(state: &AppState, agent: &Agent) -> Result<SandboxSpec, ApiE
 
 /// Writes the CA bundle an agent with a login needs into its home: the sandbox's own bundle plus
 /// the login proxy's CA. A failure leaves its logins unusable, not the agent.
-async fn trust_login_ca(state: &AppState, handle: &SandboxHandle) {
+async fn trust_login_ca(state: &AppState, agent: &Agent, handle: &SandboxHandle) {
     use crate::logins::{BUNDLE_FILE, CA_FILE, SYSTEM_BUNDLE};
     let home = state.backend.home();
     let path = |p: &str| ferrobot_sandbox::SandboxPath::parse(p).map_err(|e| e.to_string());
@@ -139,7 +137,8 @@ async fn trust_login_ca(state: &AppState, handle: &SandboxHandle) {
             .map_err(|e| e.to_string())?;
         let system = state.backend.read_file(handle, &path(SYSTEM_BUNDLE)?).await;
         let system = String::from_utf8_lossy(&system.unwrap_or_default()).into_owned();
-        let (ca, bundle) = crate::egress::trust_files(state, &system).await?;
+        let logins = crate::logins::of_agent(state, agent.id).await;
+        let (ca, bundle) = crate::egress::trust_files(state, &system, &logins).await?;
         let ca_path = path(&format!("{home}/{CA_FILE}"))?;
         let bundle_path = path(&format!("{home}/{BUNDLE_FILE}"))?;
         state
@@ -186,7 +185,7 @@ async fn provision_locked(state: &AppState, agent: &Agent) -> Result<SandboxHand
         Ok(handle) => {
             adopt(state, agent.id, &handle).await?;
             if spec.env.contains_key("HTTPS_PROXY") {
-                trust_login_ca(state, &handle).await;
+                trust_login_ca(state, agent, &handle).await;
             }
             Ok(handle)
         }

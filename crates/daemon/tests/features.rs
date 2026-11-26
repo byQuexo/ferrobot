@@ -7528,6 +7528,37 @@ async fn risky_tool_calls_wait_for_a_card_unless_auto_mode_is_on() {
         assert_eq!(got["allow"], allowed, "{answer}: {got}");
     }
 
+    // A login that asks first: a command that uses it waits for a card too.
+    let login = json!({
+        "hosts": ["api.example.com"],
+        "env": ["EXAMPLE_API_KEY"],
+        "programs": ["example"],
+        "confirm": true,
+        "agents": [id],
+    });
+    assert_eq!(
+        http(&d.ui, "PUT", "/v1/logins/example", Some(login))
+            .await
+            .0,
+        200
+    );
+    let fresh = || backend.envs.lock().unwrap()["toolie"]["FERROBOT_AGENT_TOKEN"].clone();
+    for _ in 0..100 {
+        if fresh() != token {
+            break;
+        }
+        tokio::time::sleep(Duration::from_millis(20)).await;
+    }
+    let token = fresh();
+    assert_eq!(tool_check(&d.agents, &token, "ls -la").await["allow"], true);
+    let (agents, tok) = (d.agents.clone(), token.clone());
+    let waiting =
+        tokio::spawn(async move { tool_check(&agents, &tok, "example alerts list").await });
+    let qid = approval_card(&d, &id, last).await;
+    last = qid;
+    assert_eq!(decide(&d, &id, qid, "approve").await.0, 202);
+    assert_eq!(waiting.await.unwrap()["allow"], true);
+
     // Auto mode: risky calls run without a card; dangerous ones stay blocked.
     let auto = json!({"auto_mode": true});
     assert_eq!(http(&d.ui, "PUT", "/v1/settings", Some(auto)).await.0, 200);
@@ -7679,6 +7710,30 @@ async fn login_upstream() -> (String, Arc<Mutex<Vec<String>>>) {
             }),
         )
         .route(
+            "/echo",
+            axum::routing::get({
+                let record = seen.clone();
+                move |headers: axum::http::HeaderMap| {
+                    let record = record.clone();
+                    async move {
+                        let get = |n: &str| {
+                            headers
+                                .get(n)
+                                .and_then(|v| v.to_str().ok())
+                                .unwrap_or_default()
+                                .to_owned()
+                        };
+                        let key = get("x-api-key");
+                        record
+                            .lock()
+                            .unwrap()
+                            .push(format!("{key} | {}", get("authorization")));
+                        ([("x-seen-key", key)], "ok")
+                    }
+                }
+            }),
+        )
+        .route(
             "/moved",
             axum::routing::get(|| async {
                 (
@@ -7721,26 +7776,36 @@ async fn proxy_connect(
     (head.lines().next().unwrap_or_default().to_owned(), s)
 }
 
-/// A request through the login proxy's TLS, trusting only ferrobot's local CA.
-async fn through_login(d: &Daemon, stream: tokio::net::TcpStream, request: &str) -> String {
+/// A request to `host` through the login proxy's TLS, trusting only the logins' local CAs.
+async fn through_login(
+    d: &Daemon,
+    stream: tokio::net::TcpStream,
+    host: &str,
+    request: &str,
+) -> String {
     use base64::Engine;
     use tokio::io::{AsyncReadExt, AsyncWriteExt};
     use tokio_rustls::rustls::pki_types::{CertificateDer, ServerName};
     use tokio_rustls::rustls::{ClientConfig, RootCertStore};
-    let pem = ferrobot_daemon::egress::ca_pem(&d.state).await.unwrap();
-    let body: String = pem.lines().filter(|l| !l.starts_with("-----")).collect();
-    let der = base64::engine::general_purpose::STANDARD
-        .decode(body)
+    let logins = ferrobot_daemon::logins::all(&d.state).await;
+    let (pems, _) = ferrobot_daemon::egress::trust_files(&d.state, "", &logins)
+        .await
         .unwrap();
     let mut roots = RootCertStore::empty();
-    roots.add(CertificateDer::from(der)).unwrap();
+    for pem in pems.split_inclusive("-----END CERTIFICATE-----\n") {
+        let body: String = pem.lines().filter(|l| !l.starts_with("-----")).collect();
+        let der = base64::engine::general_purpose::STANDARD
+            .decode(body)
+            .unwrap();
+        roots.add(CertificateDer::from(der)).unwrap();
+    }
     let provider = Arc::new(tokio_rustls::rustls::crypto::aws_lc_rs::default_provider());
     let config = ClientConfig::builder_with_provider(provider)
         .with_safe_default_protocol_versions()
         .unwrap()
         .with_root_certificates(roots)
         .with_no_client_auth();
-    let name = ServerName::try_from("api.github.com").unwrap();
+    let name = ServerName::try_from(host.to_owned()).unwrap();
     let mut tls = tokio_rustls::TlsConnector::from(Arc::new(config))
         .connect(name, stream)
         .await
@@ -7753,7 +7818,7 @@ async fn through_login(d: &Daemon, stream: tokio::net::TcpStream, request: &str)
 
 #[tokio::test]
 async fn the_login_proxy_swaps_the_token_only_for_its_agents_and_hosts() {
-    use ferrobot_daemon::logins::STAND_IN;
+    const STAND_IN: &str = "ferrobot-stand-in-github";
     let (upstream, seen) = login_upstream().await;
     let backend = Arc::new(StatefulBackend::default());
     let d = start_with(backend.clone(), None, "127.0.0.1:0", |s| {
@@ -7762,6 +7827,22 @@ async fn the_login_proxy_swaps_the_token_only_for_its_agents_and_hosts() {
     .await;
     let ann = create(&d, json!({"name": "ann"})).await["id"].clone();
     create(&d, json!({"name": "bob"})).await;
+    let github = |agents: Value| {
+        json!({
+            "hosts": ["github.com", "api.github.com", "uploads.github.com"],
+            "env": ["GH_TOKEN", "GITHUB_TOKEN"],
+            "programs": ["gh"],
+            "agents": agents,
+        })
+    };
+    let (status, login) = http(
+        &d.ui,
+        "PUT",
+        "/v1/logins/github",
+        Some(github(json!([ann]))),
+    )
+    .await;
+    assert_eq!((status, &login["agents"]), (200, &json!([ann])), "{login}");
     let token = json!({"token": "ghp_real_secret"});
     let (status, login) = http(&d.ui, "PUT", "/v1/logins/github/token", Some(token)).await;
     assert_eq!(
@@ -7769,22 +7850,36 @@ async fn the_login_proxy_swaps_the_token_only_for_its_agents_and_hosts() {
         (200, &json!(true)),
         "{login}"
     );
-    let (status, login) = http(
-        &d.ui,
-        "PUT",
-        "/v1/logins/github",
-        Some(json!({"agents": [ann]})),
-    )
-    .await;
-    assert_eq!((status, &login["agents"]), (200, &json!([ann])), "{login}");
     let (_, all) = http(&d.ui, "GET", "/v1/logins", None).await;
     assert!(!all.to_string().contains("ghp_real_secret"), "{all}");
-    let unknown = json!({"agents": ["00000000-0000-4000-8000-000000000099"]});
+    let unknown = github(json!(["00000000-0000-4000-8000-000000000099"]));
     assert_eq!(
         http(&d.ui, "PUT", "/v1/logins/github", Some(unknown))
             .await
             .0,
         400
+    );
+    // The token goes only to public names, and the sandbox's own variables stay its own.
+    for bad in [
+        json!({"hosts": ["localhost"], "env": ["X_KEY"]}),
+        json!({"hosts": ["10.0.0.7"], "env": ["X_KEY"]}),
+        json!({"hosts": ["api.example.com"], "env": ["HTTPS_PROXY"]}),
+        json!({"hosts": ["api.example.com"], "env": ["FERROBOT_AGENT_TOKEN"]}),
+        json!({"hosts": ["api.github.com"], "env": ["X_KEY"]}),
+    ] {
+        let (status, body) = http(&d.ui, "PUT", "/v1/logins/bad", Some(bad.clone())).await;
+        assert_eq!(status, 400, "{bad}: {body}");
+    }
+    assert_eq!(
+        http(
+            &d.ui,
+            "PUT",
+            "/v1/logins/nope/token",
+            Some(json!({"token": "x"}))
+        )
+        .await
+        .0,
+        404
     );
 
     // No agent token, another port, or a private address: no tunnel.
@@ -7809,7 +7904,7 @@ async fn the_login_proxy_swaps_the_token_only_for_its_agents_and_hosts() {
     let request = format!(
         "GET /user HTTP/1.1\r\nHost: api.github.com\r\nAuthorization: token {STAND_IN}\r\nConnection: close\r\n\r\n"
     );
-    let answer = through_login(&d, stream, &request).await;
+    let answer = through_login(&d, stream, "api.github.com", &request).await;
     assert!(
         answer.starts_with("HTTP/1.1 200") && answer.ends_with("ok"),
         "{answer}"
@@ -7822,13 +7917,78 @@ async fn the_login_proxy_swaps_the_token_only_for_its_agents_and_hosts() {
     let request = format!(
         "GET /moved HTTP/1.1\r\nHost: api.github.com\r\nAuthorization: Bearer {STAND_IN}\r\nConnection: close\r\n\r\n"
     );
-    let answer = through_login(&d, stream, &request).await;
+    let answer = through_login(&d, stream, "api.github.com", &request).await;
     assert!(answer.starts_with("HTTP/1.1 302"), "{answer}");
     assert!(
         answer
             .to_lowercase()
             .contains("location: https://elsewhere.example/"),
         "{answer}"
+    );
+
+    // Any header carries a login's stand-in; another login's stays as it is, and an echoed
+    // token goes back to the sandbox as the stand-in.
+    let example = json!({
+        "hosts": ["api.example.com"],
+        "env": ["EXAMPLE_API_KEY"],
+        "programs": ["example"],
+        "confirm": true,
+        "agents": [ann],
+    });
+    assert_eq!(
+        http(&d.ui, "PUT", "/v1/logins/example", Some(example))
+            .await
+            .0,
+        200
+    );
+    let token = json!({"token": "ex_real_key"});
+    assert_eq!(
+        http(&d.ui, "PUT", "/v1/logins/example/token", Some(token))
+            .await
+            .0,
+        200
+    );
+    // The new login restarted ann's computer, which brings a new agent token.
+    let mut ann_token = ann_token;
+    for _ in 0..100 {
+        if backend.token("ann") != ann_token {
+            ann_token = backend.token("ann");
+            break;
+        }
+        tokio::time::sleep(Duration::from_millis(20)).await;
+    }
+    let (line, stream) = proxy_connect(&d, Some(&ann_token), "api.example.com:443").await;
+    assert!(line.contains("200"), "{line}");
+    let request = format!(
+        "GET /echo HTTP/1.1\r\nHost: api.example.com\r\nX-Api-Key: ferrobot-stand-in-example\r\nAuthorization: Bearer {STAND_IN}\r\nConnection: close\r\n\r\n"
+    );
+    let answer = through_login(&d, stream, "api.example.com", &request).await;
+    assert!(answer.starts_with("HTTP/1.1 200"), "{answer}");
+    assert!(!answer.contains("ex_real_key"), "{answer}");
+    assert!(
+        answer
+            .to_lowercase()
+            .contains("x-seen-key: ferrobot-stand-in-example"),
+        "{answer}"
+    );
+    assert_eq!(
+        seen.lock().unwrap().last().unwrap(),
+        &format!("ex_real_key | Bearer {STAND_IN}")
+    );
+
+    // Removing a login removes its token.
+    let (status, _) = http(&d.ui, "DELETE", "/v1/logins/example", None).await;
+    assert_eq!(status, 204);
+    let (_, all) = http(&d.ui, "GET", "/v1/logins", None).await;
+    assert_eq!(all.as_array().unwrap().len(), 1, "{all}");
+    assert!(
+        ferrobot_daemon::logins::token(&d.state, "example")
+            .await
+            .is_none()
+    );
+    assert_eq!(
+        http(&d.ui, "DELETE", "/v1/logins/example", None).await.0,
+        404
     );
 
     // The agent API's own routes still answer behind the proxy.

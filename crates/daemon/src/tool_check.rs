@@ -234,7 +234,15 @@ fn connector(name: &str) -> Verdict {
 /// Lets the call through, or says why not. A risky call waits for the operator's card unless
 /// Auto mode is on; a critical one always does.
 pub async fn gate(state: &AppState, agent: AgentId, call: Call<'_>) -> Result<(), String> {
-    let (reason, critical) = match classify(call) {
+    let verdict = match (classify(call), call) {
+        (Verdict::Safe, Call::Shell(command))
+            if crate::logins::asks_first(state, agent, command).await =>
+        {
+            Verdict::Risky("uses a CLI login that asks first")
+        }
+        (verdict, _) => verdict,
+    };
+    let (reason, critical) = match verdict {
         Verdict::Safe => return Ok(()),
         Verdict::Dangerous(why) => return Err(format!("blocked: {why}")),
         Verdict::Risky(why) => (why, false),

@@ -1505,25 +1505,47 @@ slop, so polish mode: palette, accent, logo, layout and features stay.
 - **The proxy sits on the agent listener.** `CONNECT` is intercepted before
   routing (`egress::intercept`), so it is reachable exactly like `/model` and
   authenticates with the same agent token (proxy password, Basic). No new port.
-- **Swap only what was decided by the daemon.** The swap happens for the
-  authenticated agent, a login lent to it and one of that login's hosts, and
-  only when the `Authorization` header carries the exact stand-in (`token`,
-  `Bearer` or git's `Basic x-access-token:`). Redirects are passed back, never
-  followed, so the real token goes to no other host.
-- **A name-constrained local CA.** `rcgen` makes it once (key and certificate in
-  the secret store, `logins:ca`); its permitted subtrees are the login domains,
-  so even a leaked or misused CA vouches for no other site. A new login service
-  changes the domain list and makes a new CA. Leaf certificates are made per
-  host in memory.
+- **Logins are generic, set up by the operator.** First built for GitHub only;
+  before 0.1.11 shipped, Tim asked for any CLI that reads a token from a
+  variable. A login is a name, its API hosts, its token variables, its programs,
+  ask-first and its agents, in the `logins` setting; GitHub is a preset in the
+  app. Agents cannot set up logins.
+- **Swap only what was decided by the daemon, in request headers only.** The
+  swap happens for the authenticated agent, a login lent to it and one of that
+  login's hosts, and only where a request header carries that login's exact
+  stand-in (`ferrobot-stand-in-<id>`, also inside `Basic` credentials, so git
+  works). Never in the URL: a redirect or error page could hand it back.
+  Response headers that repeat the token get the stand-in back. Redirects are
+  passed back, never followed. Remaining risk: a service that echoes the token
+  in a response body would show it to the agent.
+- **The token goes only to public addresses.** A login's hosts are checked when
+  saved (lowercase DNS names, no IP literal, no `localhost`, `.local`,
+  `.internal`, `.lan`, `.home`) and resolved once per tunnel, every address
+  public, with the client pinned to the checked address.
+- **One name-constrained CA per login.** `rcgen` makes it (key and certificate
+  in the secret store, `login:<id>:ca`); its permitted subtrees are the login's
+  hosts, so even a leaked or misused CA vouches for no other site. Changed
+  hosts make a new CA, and those agents restart anyway. One shared CA would
+  have restarted every login agent whenever any login changed. Leaf
+  certificates are made per host in memory and remade when their CA changes.
+- **A login's variables never replace the sandbox's own.** Names the sandbox
+  sets (proxy, certificate bundle, `PATH`, `HOME`...), `FERROBOT_…` and
+  `GIT_CONFIG_…` are refused when saved, and provisioning only adds a login's
+  variables where nothing is set. One host or variable belongs to one login.
+- **Ask-first is a command-line heuristic.** It turns a safe shell command that
+  runs one of the login's programs, or names one of its variables or hosts,
+  into a risky one (a card unless Auto mode is on). A script the agent wrote can
+  still reach the login; the boundary is the token never entering the sandbox.
 - **Plain tunnels refuse private targets.** Port 443 only; a host that resolves
   to any loopback, private, link-local, CGNAT or unique-local address is
   refused, and the tunnel connects to the address it checked. Without this a
   sandbox could reach the operator API on loopback through the daemon.
 - **Environment only for agents with a login.** `HTTPS_PROXY`, the stand-ins,
-  git's credential helper (`GIT_CONFIG_COUNT`, git 2.31+) and the CA bundle
-  (`SSL_CERT_FILE`, `GIT_SSL_CAINFO`, `CURL_CA_BUNDLE`, `REQUESTS_CA_BUNDLE`,
-  `NODE_EXTRA_CA_CERTS`) are set at provisioning; changing who has a login
-  recreates those computers (home kept), as a model switch does.
+  git's credential helper for a login with `github.com` (`GIT_CONFIG_COUNT`, git
+  2.31+) and the CA bundle (`SSL_CERT_FILE`, `GIT_SSL_CAINFO`, `CURL_CA_BUNDLE`,
+  `REQUESTS_CA_BUNDLE`, `NODE_EXTRA_CA_CERTS`) are set at provisioning; changing
+  a login's hosts, variables or agents recreates those computers (home kept),
+  as a model switch does.
 - **Dependencies.** `rcgen` 0.14.10 (`ring` backend, already in the tree) brings
   `rcgen` and `yasna`; the lockfile also lists `x509-parser` and its parsers for
   an optional `rcgen` feature that is not built. `tokio-rustls`, `hyper`,

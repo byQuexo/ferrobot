@@ -657,6 +657,7 @@ textarea { resize: vertical; min-height: 40px; line-height: 1.5; }
 .agent-call-note { position: fixed; right: 16px; bottom: 16px; z-index: 30; display: flex; align-items: center; gap: 8px; width: min(380px, calc(100vw - 32px)); padding: 10px 12px; border: 1px solid var(--border); border-radius: var(--radius); background: var(--surface); box-shadow: var(--shadow-lg); animation: rise 0.2s var(--ease); }
 .agent-call-note > svg { flex: none; color: var(--accent); }
 .agent-call-note .grow { display: flex; flex-direction: column; }
+.login-head { display: flex; align-items: center; gap: 8px; min-width: 0; }
 .scope-list { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 4px 12px; max-height: 240px; overflow: auto; }
 
 @media (max-width: 1080px) {

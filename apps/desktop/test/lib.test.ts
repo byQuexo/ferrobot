@@ -20,6 +20,7 @@ import {
   treeRows,
 } from "../src/lib/computer.ts";
 import { characterOf, deriveCharacter, moodOf, rerollCharacter } from "../src/lib/character.ts";
+import { loginLabel, specOf, splitList } from "../src/lib/logins.ts";
 import {
   computerSummary,
   linkLabel,
@@ -2562,6 +2563,31 @@ describe("splitDiscord", () => {
     assert.deepEqual(splitDiscord("see (via Discord, from x) above"), {
       text: "see (via Discord, from x) above",
       discord: null,
+    });
+  });
+});
+
+describe("logins", () => {
+  it("reads lists, names presets and turns a login back into what PUT takes", () => {
+    assert.deepEqual(splitList(" api.example.com,\nb.example.com  api.example.com "), [
+      "api.example.com",
+      "b.example.com",
+    ]);
+    assert.deepEqual(splitList(""), []);
+    assert.equal(loginLabel("github"), "GitHub");
+    assert.equal(loginLabel("example"), "example");
+    const view = {
+      id: "example",
+      hosts: ["api.example.com"],
+      env: ["EXAMPLE_API_KEY"],
+      has_token: true,
+    };
+    assert.deepEqual(specOf(view), {
+      hosts: ["api.example.com"],
+      env: ["EXAMPLE_API_KEY"],
+      programs: [],
+      confirm: false,
+      agents: [],
     });
   });
 });

@@ -4,11 +4,10 @@ import { KeyRound, Trash2 } from "lucide-preact";
 
 import type { Connector, LoginView, Provider, VoiceView } from "../api.ts";
 import { useApp } from "../context.ts";
+import { loginLabel, presetOf } from "../lib/logins.ts";
 import { KIND_LABELS, KIND_LINKS, LinkOut, needsKey } from "./ProvidersSettings.tsx";
 import { Button, IconButton } from "./ui.tsx";
 import { VOICE_LABELS } from "./VoiceSettings.tsx";
-
-export const LOGIN_LABELS: Record<LoginView["kind"], string> = { github: "GitHub" };
 
 interface Entry {
   id: string;
@@ -105,12 +104,12 @@ export function VaultSettings(props: {
     [
       "CLI logins",
       logins.map((l) => ({
-        id: `login:${l.kind}`,
-        name: LOGIN_LABELS[l.kind],
-        what: "Token for gh and git",
+        id: `login:${l.id}`,
+        name: loginLabel(l.id),
+        what: `Token for ${(l.programs ?? []).join(", ") || l.hosts.join(", ")}`,
         stored: l.has_token,
-        keyUrl: "https://github.com/settings/personal-access-tokens/new",
-        save: (v) => client.setLoginToken(l.kind, v),
+        keyUrl: presetOf(l.id)?.keyUrl,
+        save: (v) => client.setLoginToken(l.id, v),
       })),
     ],
     [

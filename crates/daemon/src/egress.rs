@@ -1,18 +1,18 @@
 //! The CLI-login proxy on the agent listener. Sandboxes with a login send HTTPS through it
 //! (`HTTPS_PROXY`, the agent token as the proxy password). For a login's hosts it ends TLS with a
-//! certificate from ferrobot's local CA, swaps the stand-in token for the real one and forwards
-//! to the service without following redirects; any other public host gets a plain tunnel, and
-//! private addresses none. The real token and the CA key never enter a sandbox, nor any log.
+//! certificate from that login's local CA, swaps its stand-in for the real token in the request
+//! headers and forwards to the service (public addresses only) without following redirects; any
+//! other public host gets a plain tunnel, and private addresses none. The real token and the CA key never enter a sandbox, nor any log.
 
 use std::collections::HashMap;
 use std::convert::Infallible;
 use std::net::{IpAddr, SocketAddr};
-use std::sync::{Arc, Mutex, OnceLock};
+use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
 use axum::body::Bytes;
 use axum::extract::{Request, State};
-use axum::http::header::{AUTHORIZATION, PROXY_AUTHENTICATE, PROXY_AUTHORIZATION};
+use axum::http::header::{PROXY_AUTHENTICATE, PROXY_AUTHORIZATION};
 use axum::http::{HeaderMap, HeaderValue, Method, StatusCode};
 use axum::middleware::Next;
 use axum::response::{IntoResponse, Response};
@@ -33,13 +33,11 @@ use tokio_rustls::rustls::ServerConfig;
 use tokio_rustls::rustls::pki_types::{CertificateDer, PrivateKeyDer, PrivatePkcs8KeyDer};
 
 use crate::AppState;
-use crate::logins::LoginKind;
+use crate::logins::Login;
 
 type BoxError = Box<dyn std::error::Error + Send + Sync>;
 type ProxyBody = BoxBody<Bytes, BoxError>;
 
-/// Secret store entry of the local CA: its key and certificate.
-const CA_SECRET: &str = "logins:ca";
 /// Leaf certificates are made again after this, well before they expire.
 const LEAF_FOR: Duration = Duration::from_secs(7 * 24 * 3600);
 /// Request headers that belong to one hop only.
@@ -54,12 +52,18 @@ const HOP: [&str; 8] = [
     "proxy-authorization",
 ];
 
-/// The local CA and the leaf certificates made with it.
+/// Each login's local CA and the leaf certificates made with them.
 #[derive(Default)]
 pub struct Egress {
-    ca: tokio::sync::OnceCell<Ca>,
-    leaves: Mutex<HashMap<String, (Instant, Arc<ServerConfig>)>>,
-    http: OnceLock<reqwest::Client>,
+    cas: tokio::sync::Mutex<HashMap<String, Arc<Ca>>>,
+    leaves: Mutex<HashMap<String, Leaf>>,
+}
+
+struct Leaf {
+    made: Instant,
+    config: Arc<ServerConfig>,
+    /// The CA it was made with; a login's new CA makes new leaves.
+    ca: Arc<Ca>,
 }
 
 impl std::fmt::Debug for Egress {
@@ -71,6 +75,7 @@ impl std::fmt::Debug for Egress {
 struct Ca {
     cert: Vec<u8>,
     issuer: Issuer<'static, KeyPair>,
+    domains: Vec<String>,
 }
 
 #[derive(Serialize, Deserialize)]
@@ -80,11 +85,9 @@ struct StoredCa {
     domains: Vec<String>,
 }
 
-fn domains() -> Vec<String> {
-    LoginKind::ALL
-        .iter()
-        .map(|k| k.domain().to_owned())
-        .collect()
+/// Secret store entry of a login's CA: its key and certificate.
+fn ca_secret(login: &str) -> String {
+    format!("{}:ca", crate::logins::secret_key(login))
 }
 
 /// The CA's fixed fields; an issuer needs the same name and key usages as its certificate.
@@ -124,6 +127,7 @@ fn make_ca(domains: &[String]) -> Result<(StoredCa, Ca), rcgen::Error> {
         Ca {
             cert,
             issuer: Issuer::new(params, key),
+            domains: domains.to_vec(),
         },
     ))
 }
@@ -134,59 +138,71 @@ fn load_ca(stored: &StoredCa) -> Option<Ca> {
     Some(Ca {
         cert,
         issuer: Issuer::new(ca_params(&stored.domains), key),
+        domains: stored.domains.clone(),
     })
 }
 
-/// The local CA, made once and kept in the secret store; a new login service makes a new one.
-async fn ca(state: &AppState) -> Result<&Ca, String> {
-    state
-        .egress
-        .ca
-        .get_or_try_init(|| async {
-            let secrets = &state.settings.secrets;
-            let want = domains();
-            let stored = secrets.get(CA_SECRET).await.map_err(|e| e.to_string())?;
-            if let Some(ca) = stored
-                .and_then(|raw| serde_json::from_str::<StoredCa>(&raw).ok())
-                .filter(|s| s.domains == want)
-                .as_ref()
-                .and_then(load_ca)
-            {
-                return Ok(ca);
-            }
-            let (stored, ca) = make_ca(&want).map_err(|e| e.to_string())?;
-            let raw = serde_json::to_string(&stored).map_err(|e| e.to_string())?;
-            secrets
-                .set(CA_SECRET, &raw)
-                .await
-                .map_err(|e| e.to_string())?;
-            Ok(ca)
-        })
-        .await
+/// The login's CA, kept in the secret store and limited to its hosts; changed hosts make a new
+/// one, so a CA never vouches for more than its login.
+async fn ca(state: &AppState, login: &Login) -> Result<Arc<Ca>, String> {
+    let mut cas = state.egress.cas.lock().await;
+    if let Some(ca) = cas.get(&login.id).filter(|c| c.domains == login.hosts) {
+        return Ok(ca.clone());
+    }
+    let secrets = &state.settings.secrets;
+    let key = ca_secret(&login.id);
+    let stored = secrets.get(&key).await.map_err(|e| e.to_string())?;
+    let loaded = stored
+        .and_then(|raw| serde_json::from_str::<StoredCa>(&raw).ok())
+        .filter(|s| s.domains == login.hosts)
+        .as_ref()
+        .and_then(load_ca);
+    let ca = if let Some(ca) = loaded {
+        ca
+    } else {
+        let (stored, ca) = make_ca(&login.hosts).map_err(|e| e.to_string())?;
+        let raw = serde_json::to_string(&stored).map_err(|e| e.to_string())?;
+        secrets.set(&key, &raw).await.map_err(|e| e.to_string())?;
+        ca
+    };
+    let ca = Arc::new(ca);
+    cas.insert(login.id.clone(), ca.clone());
+    Ok(ca)
 }
 
-/// The CA certificate in PEM, for the sandbox's trust files.
-pub async fn ca_pem(state: &AppState) -> Result<String, String> {
-    let der = B64.encode(&ca(state).await?.cert);
+/// Forgets a deleted login's CA.
+pub async fn forget(state: &AppState, login: &str) -> Result<(), String> {
+    state.egress.cas.lock().await.remove(login);
+    state
+        .settings
+        .secrets
+        .delete(&ca_secret(login))
+        .await
+        .map_err(|e| e.to_string())
+}
+
+fn pem(der: &[u8]) -> String {
+    let der = B64.encode(der);
     let lines: Vec<&str> = der
         .as_bytes()
         .chunks(64)
         .map(|c| std::str::from_utf8(c).unwrap_or_default())
         .collect();
-    Ok(format!(
+    format!(
         "-----BEGIN CERTIFICATE-----\n{}\n-----END CERTIFICATE-----\n",
         lines.join("\n")
-    ))
+    )
 }
 
-/// The TLS setup that presents `host` a certificate from the local CA.
-async fn leaf(state: &AppState, host: &str) -> Result<Arc<ServerConfig>, String> {
-    if let Some((made, config)) = lock(&state.egress.leaves).get(host)
-        && made.elapsed() < LEAF_FOR
+/// The TLS setup that presents `host` a certificate from `login`'s CA.
+async fn leaf(state: &AppState, login: &Login, host: &str) -> Result<Arc<ServerConfig>, String> {
+    let ca = ca(state, login).await?;
+    if let Some(leaf) = lock(&state.egress.leaves).get(host)
+        && leaf.made.elapsed() < LEAF_FOR
+        && Arc::ptr_eq(&leaf.ca, &ca)
     {
-        return Ok(config.clone());
+        return Ok(leaf.config.clone());
     }
-    let ca = ca(state).await?;
     let key = KeyPair::generate().map_err(|e| e.to_string())?;
     let mut params = CertificateParams::new(vec![host.to_owned()]).map_err(|e| e.to_string())?;
     let mut name = DistinguishedName::new();
@@ -210,7 +226,14 @@ async fn leaf(state: &AppState, host: &str) -> Result<Arc<ServerConfig>, String>
         .map_err(|e| e.to_string())?;
     config.alpn_protocols = vec![b"http/1.1".to_vec()];
     let config = Arc::new(config);
-    lock(&state.egress.leaves).insert(host.to_owned(), (Instant::now(), config.clone()));
+    lock(&state.egress.leaves).insert(
+        host.to_owned(),
+        Leaf {
+            made: Instant::now(),
+            config: config.clone(),
+            ca,
+        },
+    );
     Ok(config)
 }
 
@@ -268,8 +291,12 @@ async fn connect(state: AppState, mut req: Request) -> Response {
     let Some(upgrade) = req.extensions_mut().remove::<hyper::upgrade::OnUpgrade>() else {
         return refuse(StatusCode::BAD_REQUEST, "no tunnel");
     };
-    if let Some(real) = crate::logins::for_host(&state, agent.id, &host).await {
-        let tls = match leaf(&state, &host).await {
+    if let Some((login, real)) = crate::logins::for_host(&state, agent.id, &host).await {
+        let http = match login_client(&state, &host).await {
+            Ok(http) => http,
+            Err(reason) => return refuse(StatusCode::FORBIDDEN, reason),
+        };
+        let tls = match leaf(&state, &login, &host).await {
             Ok(tls) => tls,
             Err(e) => {
                 tracing::warn!(%host, error = %e, "no certificate for a login host");
@@ -279,9 +306,19 @@ async fn connect(state: AppState, mut req: Request) -> Response {
                 );
             }
         };
+        let swap = Swap {
+            base: state
+                .settings
+                .login_upstream
+                .clone()
+                .unwrap_or_else(|| format!("https://{host}")),
+            http,
+            stand_in: login.stand_in(),
+            real,
+        };
         tokio::spawn(async move {
             if let Ok(io) = upgrade.await {
-                swap_tunnel(state, io, tls, host, real).await;
+                swap_tunnel(io, tls, Arc::new(swap)).await;
             }
         });
     } else {
@@ -336,20 +373,36 @@ fn is_public(ip: IpAddr) -> bool {
     }
 }
 
-/// Ends TLS for a login host and forwards each request with the real token.
-async fn swap_tunnel(
-    state: AppState,
-    io: hyper::upgrade::Upgraded,
-    tls: Arc<ServerConfig>,
-    host: String,
+/// The client for a login host's requests: its address looked up once and required to be
+/// public, so the real token cannot be sent to this computer or the local network.
+async fn login_client(state: &AppState, host: &str) -> Result<reqwest::Client, &'static str> {
+    let builder = reqwest::Client::builder()
+        .redirect(reqwest::redirect::Policy::none())
+        .connect_timeout(Duration::from_secs(10));
+    let builder = if state.settings.login_upstream.is_some() {
+        builder
+    } else {
+        builder.resolve(host, public_addr(host).await?)
+    };
+    builder
+        .build()
+        .map_err(|_| "the login proxy cannot reach the service")
+}
+
+/// Where a login tunnel forwards to and which token it swaps.
+struct Swap {
+    base: String,
+    http: reqwest::Client,
+    stand_in: String,
     real: String,
-) {
+}
+
+/// Ends TLS for a login host and forwards each request with the real token.
+async fn swap_tunnel(io: hyper::upgrade::Upgraded, tls: Arc<ServerConfig>, swap: Arc<Swap>) {
     let Ok(stream) = TlsAcceptor::from(tls).accept(TokioIo::new(io)).await else {
         return;
     };
-    let service = hyper::service::service_fn(move |req| {
-        forward(state.clone(), host.clone(), real.clone(), req)
-    });
+    let service = hyper::service::service_fn(move |req| forward(swap.clone(), req));
     let _ = hyper::server::conn::http1::Builder::new()
         .serve_connection(TokioIo::new(stream), service)
         .await;
@@ -366,35 +419,21 @@ fn plain(status: StatusCode, text: &'static str) -> hyper::Response<ProxyBody> {
 }
 
 async fn forward(
-    state: AppState,
-    host: String,
-    real: String,
+    swap: Arc<Swap>,
     req: hyper::Request<Incoming>,
 ) -> Result<hyper::Response<ProxyBody>, Infallible> {
-    let base = state
-        .settings
-        .login_upstream
-        .clone()
-        .unwrap_or_else(|| format!("https://{host}"));
+    // Only headers carry the token: a swapped URL could come back in a redirect or error page.
     let path = req.uri().path_and_query().map_or("/", |p| p.as_str());
-    let url = format!("{}{path}", base.trim_end_matches('/'));
+    let url = format!("{}{path}", swap.base.trim_end_matches('/'));
     let (parts, body) = req.into_parts();
     let mut headers = parts.headers;
     for name in HOP {
         headers.remove(name);
     }
     headers.remove(axum::http::header::HOST);
-    if let Some(swapped) = headers.get(AUTHORIZATION).and_then(|v| swap(v, &real)) {
-        headers.insert(AUTHORIZATION, swapped);
-    }
-    let http = state.egress.http.get_or_init(|| {
-        reqwest::Client::builder()
-            .redirect(reqwest::redirect::Policy::none())
-            .connect_timeout(Duration::from_secs(10))
-            .build()
-            .unwrap_or_default()
-    });
-    let sent = http
+    replace_in(&mut headers, &swap.stand_in, &swap.real);
+    let sent = swap
+        .http
         .request(parts.method, url)
         .headers(headers)
         .body(reqwest::Body::wrap_stream(BodyDataStream::new(body)))
@@ -408,6 +447,8 @@ async fn forward(
     for name in HOP {
         headers.remove(name);
     }
+    // A service that echoes request headers must not hand the sandbox the real token.
+    replace_in(&mut headers, &swap.real, &swap.stand_in);
     let mut response = hyper::Response::new(
         StreamBody::new(
             upstream
@@ -422,41 +463,52 @@ async fn forward(
     Ok(response)
 }
 
-/// `value` with the stand-in replaced by `real`, if it carries the stand-in: `token X`,
-/// `Bearer X`, or git's `Basic base64(user:X)`.
-fn swap(value: &HeaderValue, real: &str) -> Option<HeaderValue> {
-    let stand_in = crate::logins::STAND_IN;
-    let (scheme, credential) = value.to_str().ok()?.split_once(' ')?;
-    let swapped = match scheme.to_ascii_lowercase().as_str() {
-        "token" | "bearer" if credential == stand_in => format!("{scheme} {real}"),
-        "basic" => {
-            let decoded = String::from_utf8(B64.decode(credential).ok()?).ok()?;
-            match decoded.split_once(':') {
-                Some((user, pass)) if pass == stand_in => {
-                    format!("{scheme} {}", B64.encode(format!("{user}:{real}")))
-                }
-                _ => return None,
-            }
+/// Replaces `from` with `to` in every header value that carries it, also inside `Basic`
+/// credentials (git's `base64(user:token)`); replaced values are marked sensitive.
+fn replace_in(headers: &mut HeaderMap, from: &str, to: &str) {
+    for value in headers.values_mut() {
+        if let Some(replaced) = replace(value, from, to) {
+            *value = replaced;
         }
-        _ => return None,
+    }
+}
+
+fn replace(value: &HeaderValue, from: &str, to: &str) -> Option<HeaderValue> {
+    let text = value.to_str().ok()?;
+    let replaced = if text.contains(from) {
+        text.replace(from, to)
+    } else {
+        let (scheme, credential) = text.split_once(' ')?;
+        if !scheme.eq_ignore_ascii_case("basic") {
+            return None;
+        }
+        let decoded = String::from_utf8(B64.decode(credential.trim()).ok()?).ok()?;
+        if !decoded.contains(from) {
+            return None;
+        }
+        format!("{scheme} {}", B64.encode(decoded.replace(from, to)))
     };
-    let mut header = HeaderValue::from_str(&swapped).ok()?;
+    let mut header = HeaderValue::from_str(&replaced).ok()?;
     header.set_sensitive(true);
     Some(header)
 }
 
-/// What the sandbox's TLS clients trust: its own bundle plus the local CA.
+/// What the sandbox's TLS clients trust: its own bundle plus the CAs of its `logins`.
 pub async fn trust_files(
     state: &AppState,
     system_bundle: &str,
+    logins: &[Login],
 ) -> Result<(String, String), String> {
-    let ca = ca_pem(state).await?;
+    let mut cas = String::new();
+    for login in logins {
+        cas.push_str(&pem(&ca(state, login).await?.cert));
+    }
     let mut bundle = system_bundle.to_owned();
     if !bundle.ends_with('\n') && !bundle.is_empty() {
         bundle.push('\n');
     }
-    bundle.push_str(&ca);
-    Ok((ca, bundle))
+    bundle.push_str(&cas);
+    Ok((cas, bundle))
 }
 
 #[cfg(test)]
@@ -466,9 +518,10 @@ mod tests {
     #[test]
     fn only_the_stand_in_is_swapped_in_every_form() {
         let real = "ghp_real";
-        let stand_in = crate::logins::STAND_IN;
+        let stand_in = "ferrobot-stand-in-github";
         let get = |v: &str| {
-            swap(&HeaderValue::from_str(v).unwrap(), real).map(|h| h.to_str().unwrap().to_owned())
+            replace(&HeaderValue::from_str(v).unwrap(), stand_in, real)
+                .map(|h| h.to_str().unwrap().to_owned())
         };
         assert_eq!(
             get(&format!("token {stand_in}")).as_deref(),
@@ -478,12 +531,27 @@ mod tests {
             get(&format!("Bearer {stand_in}")).as_deref(),
             Some("Bearer ghp_real")
         );
+        assert_eq!(
+            get(stand_in).as_deref(),
+            Some("ghp_real"),
+            "a bare key header"
+        );
         let basic = B64.encode(format!("x-access-token:{stand_in}"));
         let swapped = get(&format!("Basic {basic}")).unwrap();
         let decoded = B64.decode(swapped.trim_start_matches("Basic ")).unwrap();
         assert_eq!(decoded, b"x-access-token:ghp_real");
         assert_eq!(get("Bearer something-else"), None, "only the stand-in");
+        assert_eq!(
+            get("Bearer ferrobot-stand-in-example"),
+            None,
+            "not another login's"
+        );
         assert_eq!(get(&format!("Basic {}", B64.encode("u:other"))), None);
+        assert!(
+            replace(&HeaderValue::from_static("Bearer x"), "x", "y")
+                .unwrap()
+                .is_sensitive()
+        );
     }
 
     #[test]

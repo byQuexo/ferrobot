@@ -22,7 +22,7 @@ export type SandboxInfo = Schemas["SandboxInfo"];
 export type ExecOutput = Schemas["ExecOutput"];
 export type Interrupted = Schemas["Interrupted"];
 export type LoginView = Schemas["LoginView"];
-export type LoginKind = Schemas["LoginKind"];
+export type LoginSpec = Schemas["LoginSpec"];
 export type Snapshot = Schemas["SnapshotRecord"];
 export type CreateAgent = Schemas["CreateAgent"];
 export type UpdateAgent = Schemas["UpdateAgent"];
@@ -385,11 +385,13 @@ export class DaemonClient {
   setDiscordToken = (token: string | null): Promise<DiscordView> =>
     this.#request("PUT", "/v1/discord/token", { token });
   logins = (): Promise<LoginView[]> => this.#request("GET", "/v1/logins");
-  /** Lends the login to exactly these agents; their computers restart. */
-  setLoginAgents = (kind: LoginKind, agents: string[]): Promise<LoginView> =>
-    this.#request("PUT", `/v1/logins/${kind}`, { agents });
-  setLoginToken = (kind: LoginKind, token: string | null): Promise<LoginView> =>
-    this.#request("PUT", `/v1/logins/${kind}/token`, { token });
+  /** Adds or replaces a login; agents it reaches or leaves restart their computers. */
+  putLogin = (id: string, spec: LoginSpec): Promise<LoginView> =>
+    this.#request("PUT", `/v1/logins/${encodeURIComponent(id)}`, spec);
+  deleteLogin = (id: string): Promise<void> =>
+    this.#request("DELETE", `/v1/logins/${encodeURIComponent(id)}`);
+  setLoginToken = (id: string, token: string | null): Promise<LoginView> =>
+    this.#request("PUT", `/v1/logins/${encodeURIComponent(id)}/token`, { token });
   dashboards = (): Promise<Dashboard[]> => this.#request("GET", "/v1/dashboards");
   setDashboards = (list: Dashboard[]): Promise<Dashboard[]> =>
     this.#request("PUT", "/v1/dashboards", list);

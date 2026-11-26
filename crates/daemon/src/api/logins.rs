@@ -1,10 +1,11 @@
-//! `/v1/logins`: logins for CLIs in the sandboxes (GitHub first). Tokens go to the secret store
-//! and are never returned; agents get stand-ins and the login proxy (`egress.rs`).
+//! `/v1/logins`: logins for CLIs in the sandboxes, set up by the operator. Tokens go to the secret
+//! store and are never returned; agents get stand-ins and the login proxy (`egress.rs`).
 
 use std::collections::HashSet;
 
 use axum::Json;
 use axum::extract::{Path, State};
+use axum::http::StatusCode;
 use ferrobot_core::AgentId;
 use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;
@@ -12,29 +13,20 @@ use utoipa::ToSchema;
 use super::ApiResult;
 use crate::AppState;
 use crate::error::{ApiError, ErrorBody};
-use crate::logins::{self, LoginKind};
+use crate::logins::{self, Login};
 
 #[derive(Debug, Serialize, ToSchema)]
 pub(crate) struct LoginView {
-    kind: LoginKind,
+    #[serde(flatten)]
+    login: Login,
     /// Whether a token is stored. The token itself is never returned.
     has_token: bool,
-    /// The agents whose CLIs use this login.
-    #[schema(value_type = Vec<String>)]
-    agents: Vec<AgentId>,
-    /// The hosts whose requests get the token.
-    hosts: Vec<&'static str>,
 }
 
-async fn view(state: &AppState, kind: LoginKind) -> LoginView {
+async fn view(state: &AppState, login: Login) -> LoginView {
     LoginView {
-        kind,
-        has_token: logins::token(state, kind).await.is_some(),
-        agents: logins::assignments(state)
-            .await
-            .remove(&kind)
-            .unwrap_or_default(),
-        hosts: kind.hosts().to_vec(),
+        has_token: logins::token(state, &login.id).await.is_some(),
+        login,
     }
 }
 
@@ -43,29 +35,70 @@ async fn view(state: &AppState, kind: LoginKind) -> LoginView {
     responses((status = 200, body = [LoginView])))]
 pub(crate) async fn get_logins(State(state): State<AppState>) -> ApiResult<Vec<LoginView>> {
     let mut out = Vec::new();
-    for kind in LoginKind::ALL {
-        out.push(view(&state, kind).await);
+    for login in logins::all(&state).await {
+        out.push(view(&state, login).await);
     }
     Ok(Json(out))
 }
 
 #[derive(Debug, Deserialize, ToSchema)]
-pub(crate) struct LoginAgents {
+pub(crate) struct LoginSpec {
+    /// API hosts whose requests get the real token, e.g. `api.example.com`.
+    hosts: Vec<String>,
+    /// Environment variables the CLIs read their token from, e.g. `EXAMPLE_API_KEY`.
+    env: Vec<String>,
+    /// Program names that use the login, e.g. `example`.
+    #[serde(default)]
+    programs: Vec<String>,
+    /// Ask before every command that uses the login, unless Auto mode is on.
+    #[serde(default)]
+    confirm: bool,
+    /// The agents whose CLIs use the login.
+    #[serde(default)]
     #[schema(value_type = Vec<String>)]
     agents: Vec<AgentId>,
 }
 
-/// Lends the login to exactly these agents. Their computers restart (files kept) so the proxy
-/// and stand-in token reach them, or leave them.
-#[utoipa::path(put, path = "/v1/logins/{kind}", tag = "clis",
-    params(("kind" = LoginKind, Path, description = "The login")),
-    request_body = LoginAgents,
+fn words(list: Vec<String>, lower: bool) -> Vec<String> {
+    let mut out: Vec<String> = Vec::new();
+    for w in list {
+        let w = w.trim();
+        let w = if lower {
+            w.to_ascii_lowercase()
+        } else {
+            w.to_owned()
+        };
+        if !w.is_empty() && !out.contains(&w) {
+            out.push(w);
+        }
+    }
+    out
+}
+
+/// Restarts the computers of `agents` (files kept), so the proxy, stand-ins and trust reach or
+/// leave them.
+fn restart(state: &AppState, agents: impl IntoIterator<Item = AgentId>) {
+    for agent in agents {
+        let state = state.clone();
+        tokio::spawn(async move {
+            if let Err(e) = crate::lifecycle::recreate(&state, agent).await {
+                tracing::warn!(%agent, error = %e, "computer not restarted for a login change");
+            }
+        });
+    }
+}
+
+/// Adds or replaces a login. Agents it reaches or leaves restart their computers (files kept);
+/// so do all its agents when its hosts or variables change.
+#[utoipa::path(put, path = "/v1/logins/{id}", tag = "clis",
+    params(("id" = String, Path, description = "The login's id, e.g. `github`")),
+    request_body = LoginSpec,
     responses((status = 200, body = LoginView),
-        (status = 400, description = "An unknown agent", body = ErrorBody)))]
-pub(crate) async fn put_login_agents(
+        (status = 400, description = "An invalid field or an unknown agent", body = ErrorBody)))]
+pub(crate) async fn put_login(
     State(state): State<AppState>,
-    Path(kind): Path<LoginKind>,
-    Json(req): Json<LoginAgents>,
+    Path(id): Path<String>,
+    Json(req): Json<LoginSpec>,
 ) -> ApiResult<LoginView> {
     let known: HashSet<AgentId> = state
         .store
@@ -77,22 +110,58 @@ pub(crate) async fn put_login_agents(
     if req.agents.iter().any(|a| !known.contains(a)) {
         return Err(ApiError::BadRequest("an unknown agent".into()));
     }
-    let mut assigned = logins::assignments(&state).await;
-    let before: HashSet<AgentId> = assigned.get(&kind).into_iter().flatten().copied().collect();
     let mut agents = req.agents;
     agents.dedup();
-    let after: HashSet<AgentId> = agents.iter().copied().collect();
-    assigned.insert(kind, agents);
-    logins::save(&state, &assigned).await?;
-    for agent in before.symmetric_difference(&after).copied() {
-        let state = state.clone();
-        tokio::spawn(async move {
-            if let Err(e) = crate::lifecycle::recreate(&state, agent).await {
-                tracing::warn!(%agent, error = %e, "computer not restarted for a login change");
-            }
-        });
-    }
-    Ok(Json(view(&state, kind).await))
+    let login = Login {
+        id,
+        hosts: words(req.hosts, true),
+        env: words(req.env, false),
+        programs: words(req.programs, false),
+        confirm: req.confirm,
+        agents,
+    };
+    let mut all = logins::all(&state).await;
+    login.validate(&all).map_err(ApiError::BadRequest)?;
+    let old = all
+        .iter()
+        .position(|l| l.id == login.id)
+        .map(|i| all.remove(i));
+    let restarted: HashSet<AgentId> = match &old {
+        Some(old) if old.hosts == login.hosts && old.env == login.env => {
+            let before: HashSet<_> = old.agents.iter().copied().collect();
+            let after: HashSet<_> = login.agents.iter().copied().collect();
+            before.symmetric_difference(&after).copied().collect()
+        }
+        Some(old) => old.agents.iter().chain(&login.agents).copied().collect(),
+        None => login.agents.iter().copied().collect(),
+    };
+    all.push(login.clone());
+    logins::save(&state, &all).await?;
+    restart(&state, restarted);
+    Ok(Json(view(&state, login).await))
+}
+
+/// Removes a login, its token and its CA; its agents restart their computers (files kept).
+#[utoipa::path(delete, path = "/v1/logins/{id}", tag = "clis",
+    params(("id" = String, Path, description = "The login's id")),
+    responses((status = 204, description = "Removed"),
+        (status = 404, description = "No such login", body = ErrorBody)))]
+pub(crate) async fn delete_login(
+    State(state): State<AppState>,
+    Path(id): Path<String>,
+) -> Result<StatusCode, ApiError> {
+    let mut all = logins::all(&state).await;
+    let Some(i) = all.iter().position(|l| l.id == id) else {
+        return Err(ApiError::NotFound(format!("login {id:?} not found")));
+    };
+    let gone = all.remove(i);
+    logins::save(&state, &all).await?;
+    state.settings.secrets.delete(&gone.secret_key()).await?;
+    crate::egress::forget(&state, &gone.id)
+        .await
+        .map_err(ApiError::Internal)?;
+    restart(&state, gone.agents);
+    Ok(StatusCode::NO_CONTENT)
 }
 
 #[derive(Debug, Deserialize, ToSchema)]
@@ -102,16 +171,20 @@ pub(crate) struct LoginToken {
 }
 
 /// Stores or removes the login's token. Kept in the daemon's secret store, never returned.
-#[utoipa::path(put, path = "/v1/logins/{kind}/token", tag = "clis",
-    params(("kind" = LoginKind, Path, description = "The login")),
+#[utoipa::path(put, path = "/v1/logins/{id}/token", tag = "clis",
+    params(("id" = String, Path, description = "The login's id")),
     request_body = LoginToken,
     responses((status = 200, body = LoginView),
-        (status = 400, description = "Not a token", body = ErrorBody)))]
+        (status = 400, description = "Not a token", body = ErrorBody),
+        (status = 404, description = "No such login", body = ErrorBody)))]
 pub(crate) async fn put_login_token(
     State(state): State<AppState>,
-    Path(kind): Path<LoginKind>,
+    Path(id): Path<String>,
     Json(req): Json<LoginToken>,
 ) -> ApiResult<LoginView> {
+    let Some(login) = logins::all(&state).await.into_iter().find(|l| l.id == id) else {
+        return Err(ApiError::NotFound(format!("login {id:?} not found")));
+    };
     let secrets = &state.settings.secrets;
     match req.token.as_deref().map(str::trim) {
         Some(token) if !token.is_empty() => {
@@ -120,9 +193,9 @@ pub(crate) async fn put_login_token(
                     "a token is one word of up to 1024 characters".into(),
                 ));
             }
-            secrets.set(kind.secret_key(), token).await?;
+            secrets.set(&login.secret_key(), token).await?;
         }
-        _ => secrets.delete(kind.secret_key()).await?,
+        _ => secrets.delete(&login.secret_key()).await?,
     }
-    Ok(Json(view(&state, kind).await))
+    Ok(Json(view(&state, login).await))
 }
