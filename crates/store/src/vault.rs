@@ -1,6 +1,5 @@
-//! Memories as Markdown notes in an Obsidian vault: `<vault>/ferrobot/<agent>/<key>.md` and
-//! `<vault>/ferrobot/Global memory/<key>.md`, so the operator reads and edits them in Obsidian.
-//! The setting `memory_vault` turns it on; the `memories` tables then stay untouched.
+//! Memories as Markdown notes in an Obsidian vault (`<vault>/ferrobot/<agent>/<key>.md`), on
+//! while the setting `memory_vault` is set; the `memories` tables then stay untouched.
 
 use std::path::{Path, PathBuf};
 use std::time::SystemTime;
@@ -238,9 +237,8 @@ impl Store {
         self.with(|c| vault(c)).await
     }
 
-    /// Moves memories to `vault` (or back to the built-in memory with `None`). Memories already
-    /// stored are copied into the vault without replacing notes that hold the same key; the
-    /// built-in memory keeps its copy. Returns how many notes were written.
+    /// Moves memories to `vault` (`None`: back to the built-in memory), copying stored ones in
+    /// without replacing notes of the same key; returns how many notes were written.
     pub async fn set_memory_vault(&self, vault: Option<PathBuf>) -> Result<usize, StoreError> {
         self.with(move |c| {
             let mut copied = 0;

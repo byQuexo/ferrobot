@@ -262,7 +262,6 @@ impl Store {
                  VALUES (?1, ?2, ?3, ?4)",
                 params![id, msg.id, trigger.as_str(), ts],
             )?;
-            // A manual run does not move the schedule.
             if trigger == RunTrigger::Schedule {
                 tx.execute(
                     "UPDATE routines SET last_run_at = ?2, next_run_at = ?3 WHERE id = ?1",

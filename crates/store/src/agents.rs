@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 
 use ferrobot_core::{Agent, AgentId, AgentName, AgentStatus, AvatarCharacter, ToolGroup};
-use rusqlite::{OptionalExtension, Row, params};
+use rusqlite::{Connection, OptionalExtension, Params, Row, params};
 use sha2::{Digest, Sha256};
 
 use crate::events::insert_event;
@@ -124,6 +124,16 @@ fn not_found(key: &impl std::fmt::Display) -> StoreError {
     StoreError::not_found("agent", key)
 }
 
+fn find(c: &Connection, filter: &str, params: impl Params) -> Result<Option<Agent>, StoreError> {
+    c.query_row(
+        &format!("SELECT {COLUMNS} FROM agents WHERE {filter}"),
+        params,
+        |row| Ok(from_row(row)),
+    )
+    .optional()?
+    .transpose()
+}
+
 impl Store {
     pub async fn create_agent(&self, new: NewAgent) -> Result<Agent, StoreError> {
         let id = AgentId::new();
@@ -196,32 +206,20 @@ impl Store {
     }
 
     pub async fn get_agent(&self, id: AgentId) -> Result<Agent, StoreError> {
-        self.with(move |c| {
-            c.query_row(
-                &format!("SELECT {COLUMNS} FROM agents WHERE id = ?1"),
-                [id.to_string()],
-                |row| Ok(from_row(row)),
-            )
-            .optional()?
-            .ok_or_else(|| not_found(&id))?
-        })
-        .await
+        self.with(move |c| find(c, "id = ?1", [id.to_string()])?.ok_or_else(|| not_found(&id)))
+            .await
     }
 
     /// The agent with this name, or that had it before a rename (a current name wins).
     pub async fn get_agent_by_name(&self, name: AgentName) -> Result<Agent, StoreError> {
         self.with(move |c| {
-            c.query_row(
-                &format!(
-                    "SELECT {COLUMNS} FROM agents
-                     WHERE name = ?1 OR id = (SELECT agent_id FROM agent_aliases WHERE name = ?1)
-                     ORDER BY name = ?1 DESC LIMIT 1"
-                ),
+            find(
+                c,
+                "name = ?1 OR id = (SELECT agent_id FROM agent_aliases WHERE name = ?1)
+                 ORDER BY name = ?1 DESC LIMIT 1",
                 [name.as_str()],
-                |row| Ok(from_row(row)),
-            )
-            .optional()?
-            .ok_or_else(|| not_found(&name))?
+            )?
+            .ok_or_else(|| not_found(&name))
         })
         .await
     }
@@ -229,16 +227,7 @@ impl Store {
     /// Resolves a runner token to its agent. Returns `None` for unknown tokens.
     pub async fn agent_by_token(&self, token: &str) -> Result<Option<Agent>, StoreError> {
         let hash = hash_token(token);
-        self.with(move |c| {
-            c.query_row(
-                &format!("SELECT {COLUMNS} FROM agents WHERE token_hash = ?1"),
-                [hash],
-                |row| Ok(from_row(row)),
-            )
-            .optional()?
-            .transpose()
-        })
-        .await
+        self.with(move |c| find(c, "token_hash = ?1", [hash])).await
     }
 
     /// Stores the hash of a freshly issued runner token (rotates the old one).
@@ -350,10 +339,8 @@ impl Store {
         .await
     }
 
-    /// Old names of agents renamed before renames were recorded, read from history: the
-    /// sender name of each message an agent sent and the name each `create_agent` result
-    /// gave. Each becomes an alias plus a `renamed` event, so agents hear of it on their next
-    /// turn. Names another agent holds now are skipped. Returns how many were found.
+    /// Records the old names history shows for agents renamed before renames were recorded, as
+    /// aliases plus `renamed` events (names held now are skipped); returns how many.
     pub async fn backfill_aliases(&self) -> Result<usize, StoreError> {
         self.with(|c| {
             let mut stmt = c.prepare(
