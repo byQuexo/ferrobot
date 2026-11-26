@@ -493,6 +493,19 @@ impl ferrobot_mcp::MailboxNotifier for AppState {
         self.hub.current_turn(agent)
     }
 
+    fn request_cli(
+        &self,
+        requester: AgentId,
+        request: ferrobot_mcp::CliRequest,
+    ) -> ferrobot_mcp::BoxFuture<Result<i64, String>> {
+        let state = self.clone();
+        Box::pin(async move {
+            crate::api::clis::request_card(&state, requester, request)
+                .await
+                .map_err(|e| e.to_string())
+        })
+    }
+
     fn request_connector(
         &self,
         requester: AgentId,

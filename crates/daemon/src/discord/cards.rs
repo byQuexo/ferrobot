@@ -98,7 +98,11 @@ async fn post_card(
 fn in_discord(card: &QuestionEvent) -> Option<Question> {
     if matches!(
         card.approval,
-        Some(Approval::AddConnector { .. } | Approval::ToolCall { critical: true, .. })
+        Some(
+            Approval::AddConnector { .. }
+                | Approval::AddCli { .. }
+                | Approval::ToolCall { critical: true, .. },
+        )
     ) {
         return None;
     }

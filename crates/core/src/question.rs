@@ -116,6 +116,9 @@ pub enum Approval {
         /// The agent that asked: it gets the connector and a message with the outcome.
         requester: AgentId,
     },
+    /// An agent wants a CLI in its computer (`propose_cli` tool). Approving adds it for that
+    /// agent; a token, if it needs one, goes in under Settings, never on a card.
+    AddCli { cli: crate::Cli, requester: AgentId },
     /// An agent wants a routine of its own (`create_routine` tool): `prompt` reaches it on
     /// `schedule` (cron, the daemon's time zone).
     CreateRoutine {

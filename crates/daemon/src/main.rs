@@ -361,6 +361,7 @@ async fn make_backend(cli: &Cli, secrets: &SecretStore) -> Result<Arc<dyn Sandbo
                     .await
                     .map_err(|e| anyhow::anyhow!("--storage-url: {e}"))?,
                 accept_plaintext: storage::is_local(cli.storage_url.as_deref()),
+                owner: image_owner(&cli.data_dir),
                 ..DockerConfig::default()
             })?;
             // Keep running without an engine: /v1/health tells the app, which asks for Docker.
@@ -443,4 +444,11 @@ fn browser_url(listen: SocketAddr) -> String {
         listen.ip()
     };
     format!("http://{}", SocketAddr::new(ip, listen.port()))
+}
+
+/// Names this daemon's CLI images after its data dir, so daemons on one engine keep their own.
+fn image_owner(data_dir: &std::path::Path) -> String {
+    use sha2::Digest as _;
+    let hash = sha2::Sha256::digest(data_dir.to_string_lossy().as_bytes());
+    u32::from_be_bytes([hash[0], hash[1], hash[2], hash[3]]).to_string()
 }

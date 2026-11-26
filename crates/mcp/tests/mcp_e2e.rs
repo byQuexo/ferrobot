@@ -119,6 +119,7 @@ async fn tools_act_as_the_authenticated_agent() {
             "list_agents",
             "list_guides",
             "list_tasks",
+            "propose_cli",
             "react",
             "read_guide",
             "read_mailbox",

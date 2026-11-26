@@ -64,6 +64,7 @@ async fn container_lifecycle() {
         env: agent_env("test-token-lifecycle"),
         labels: BTreeMap::new(),
         image: None,
+        command: None,
     };
     let h = backend.create(&spec).await.expect("create");
     // create is idempotent
@@ -201,6 +202,7 @@ async fn archive_moves_the_sandbox_into_the_store_and_back() {
         env: agent_env("test-token-archive"),
         labels: BTreeMap::new(),
         image: None,
+        command: None,
     };
     let h = backend.create(&spec).await.expect("create");
     let note = SandboxPath::parse("/home/node/kept.txt").unwrap();

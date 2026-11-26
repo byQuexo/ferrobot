@@ -40,8 +40,9 @@ const CLI_TAG_PREFIX: &str = "ferrobot-runner:clis-";
 const INSTALL: &str = "export DEBIAN_FRONTEND=noninteractive && apt-get update \
     && apt-get install -y --no-install-recommends \"$@\" && rm -rf /var/lib/apt/lists/*";
 
-/// Deterministic tag for `packages` (sorted) on the base image `base_id`.
-fn cli_tag(base_id: &str, packages: &[String]) -> String {
+/// Deterministic tag for `packages` (sorted) on the base image `base_id`, per daemon (`owner`), so
+/// one daemon's sweep never removes another's image.
+fn cli_tag(owner: &str, base_id: &str, packages: &[String]) -> String {
     let mut ctx = ring::digest::Context::new(&ring::digest::SHA256);
     ctx.update(base_id.as_bytes());
     for p in packages {
@@ -50,7 +51,7 @@ fn cli_tag(base_id: &str, packages: &[String]) -> String {
     }
     ctx.finish().as_ref()[..8]
         .iter()
-        .fold(CLI_TAG_PREFIX.to_owned(), |mut tag, b| {
+        .fold(format!("{CLI_TAG_PREFIX}{owner}-"), |mut tag, b| {
             let _ = write!(tag, "{b:02x}");
             tag
         })
@@ -109,6 +110,9 @@ pub struct DockerConfig {
     pub image: String,
     /// Prefix for container and volume names.
     pub name_prefix: String,
+    /// Names this daemon's CLI images (lowercase letters and digits), so daemons sharing an
+    /// engine leave each other's alone.
+    pub owner: String,
     /// Mount point of the persistent per-agent volume (the runner's `$HOME`).
     pub home_dir: String,
     pub memory_bytes: i64,
@@ -130,6 +134,7 @@ impl Default for DockerConfig {
         Self {
             image: "ferrobot-runner:dev".into(),
             name_prefix: "ferrobot-".into(),
+            owner: "local".into(),
             home_dir: "/home/node".into(),
             memory_bytes: 2 * 1024 * 1024 * 1024,
             pids_limit: 512,
@@ -230,7 +235,8 @@ impl DockerBackend {
 
     /// Removes images from `build_image` other than `keep`; ones a sandbox still uses stay.
     async fn sweep_cli_images(&self, keep: Option<&str>) -> Result<(), SandboxError> {
-        let filters = HashMap::from([("reference", vec![format!("{CLI_TAG_PREFIX}*")])]);
+        let own = format!("{CLI_TAG_PREFIX}{}-", self.config.owner);
+        let filters = HashMap::from([("reference", vec![format!("{own}*")])]);
         let options = ListImagesOptionsBuilder::default()
             .filters(&filters)
             .build();
@@ -238,7 +244,7 @@ impl DockerBackend {
         let stale = images
             .iter()
             .flat_map(|i| &i.repo_tags)
-            .filter(|t| t.starts_with(CLI_TAG_PREFIX) && Some(t.as_str()) != keep);
+            .filter(|t| t.starts_with(&own) && Some(t.as_str()) != keep);
         for tag in stale {
             // 409: a container still uses it; a later sweep removes it.
             let removal = self
@@ -475,6 +481,7 @@ impl DockerBackend {
         let body = ContainerCreateBody {
             image: Some(image.to_owned()),
             env: Some(spec.env.iter().map(|(k, v)| format!("{k}={v}")).collect()),
+            cmd: spec.command.clone(),
             labels: Some(labels),
             host_config: Some(HostConfig {
                 binds: Some(vec![format!(
@@ -668,7 +675,7 @@ impl SandboxBackend for DockerBackend {
                 .and_then(|c| c.user)
                 .filter(|u| !u.is_empty())
                 .unwrap_or_else(|| "root".into());
-            let tag = cli_tag(&base_id, &packages);
+            let tag = cli_tag(&self.config.owner, &base_id, &packages);
             if !self.has_image(&tag).await? {
                 tracing::info!(%tag, ?packages, "building the CLI image");
                 self.build(&tag, &dockerfile(&base_id, &user, &packages)?)
@@ -1104,11 +1111,19 @@ mod tests {
         assert!(dockerfile("sha256:ab12", "node\nRUN id", &packages).is_err());
         assert!(dockerfile("x y", "node", &packages).is_err());
 
-        let tag = cli_tag("sha256:ab12", &packages);
-        assert!(tag.starts_with(CLI_TAG_PREFIX) && tag.len() == CLI_TAG_PREFIX.len() + 16);
-        assert_eq!(tag, cli_tag("sha256:ab12", &packages));
-        assert_ne!(tag, cli_tag("sha256:cd34", &packages));
-        assert_ne!(tag, cli_tag("sha256:ab12", &packages[..1]));
+        let tag = cli_tag("local", "sha256:ab12", &packages);
+        assert!(
+            tag.starts_with("ferrobot-runner:clis-local-")
+                && tag.len() == CLI_TAG_PREFIX.len() + 22
+        );
+        assert_eq!(tag, cli_tag("local", "sha256:ab12", &packages));
+        assert_ne!(tag, cli_tag("local", "sha256:cd34", &packages));
+        assert_ne!(tag, cli_tag("local", "sha256:ab12", &packages[..1]));
+        assert_ne!(
+            tag,
+            cli_tag("other", "sha256:ab12", &packages),
+            "per daemon"
+        );
     }
 
     #[test]

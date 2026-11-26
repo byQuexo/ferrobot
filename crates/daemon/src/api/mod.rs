@@ -9,7 +9,6 @@ pub(crate) mod diagnostics;
 pub(crate) mod discord;
 pub(crate) mod files;
 pub(crate) mod groups;
-pub(crate) mod logins;
 pub(crate) mod memory;
 pub(crate) mod otel;
 pub(crate) mod pins;
@@ -213,12 +212,14 @@ fn integrations() -> Router<AppState> {
         )
         .route("/v1/oauth/callback", get(connectors::oauth_callback))
         .route("/v1/clis", get(clis::get_clis).put(clis::put_clis))
-        .route("/v1/logins", get(logins::get_logins))
+        .route("/v1/clis/{id}", put(clis::put_cli).delete(clis::delete_cli))
+        .route("/v1/clis/{id}/token", put(clis::put_cli_token))
         .route(
-            "/v1/logins/{id}",
-            put(logins::put_login).delete(logins::delete_login),
+            "/v1/clis/{id}/sign-in",
+            post(clis::start_sign_in)
+                .get(clis::get_sign_in)
+                .delete(clis::cancel_sign_in),
         )
-        .route("/v1/logins/{id}/token", put(logins::put_login_token))
         .route("/v1/voice", get(voice::get_voice).put(voice::put_voice))
         .route(
             "/v1/voice/speech",

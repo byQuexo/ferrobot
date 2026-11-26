@@ -47,6 +47,10 @@ struct StatefulBackend {
     build_gate: tokio::sync::Mutex<()>,
     /// Path and length of every `write_file`.
     written: Mutex<Vec<(String, usize)>>,
+    /// Sandbox and command line of every `exec`.
+    execs: Mutex<Vec<(String, String)>>,
+    /// `exec` stdout for a command line containing the first part.
+    replies: Mutex<Vec<(String, String)>>,
 }
 
 impl StatefulBackend {
@@ -101,10 +105,23 @@ impl SandboxBackend for StatefulBackend {
         let images = self.images.lock().unwrap();
         Ok(images.get(&h.id).is_some_and(|i| i.as_deref() != image))
     }
-    async fn exec(&self, _: &SandboxHandle, _: &ExecRequest) -> Result<ExecOutput, SandboxError> {
+    async fn exec(&self, h: &SandboxHandle, req: &ExecRequest) -> Result<ExecOutput, SandboxError> {
+        let line = req.cmd.join(" ");
+        self.execs
+            .lock()
+            .unwrap()
+            .push((h.id.clone(), line.clone()));
+        let stdout = self
+            .replies
+            .lock()
+            .unwrap()
+            .iter()
+            .find(|(needle, _)| line.contains(needle.as_str()))
+            .map(|(_, out)| out.clone())
+            .unwrap_or_default();
         Ok(ExecOutput {
             exit_code: 0,
-            stdout: String::new(),
+            stdout,
             stderr: String::new(),
             truncated: false,
         })
@@ -7346,18 +7363,15 @@ async fn risky_tool_calls_wait_for_a_card_unless_auto_mode_is_on() {
         assert_eq!(got["allow"], allowed, "{answer}: {got}");
     }
 
-    // A login that asks first: a command that uses it waits for a card too.
-    let login = json!({
-        "hosts": ["api.example.com"],
-        "env": ["EXAMPLE_API_KEY"],
+    // A CLI account that asks first: a command that uses it waits for a card too.
+    let cli = json!({
+        "install": {"kind": "npm", "package": "example-cli"},
         "programs": ["example"],
-        "confirm": true,
+        "account": {"hosts": ["api.example.com"], "env": ["EXAMPLE_API_KEY"], "confirm": true},
         "agents": [id],
     });
     assert_eq!(
-        http(&d.ui, "PUT", "/v1/logins/example", Some(login))
-            .await
-            .0,
+        http(&d.ui, "PUT", "/v1/clis/example", Some(cli)).await.0,
         200
     );
     let fresh = || backend.envs.lock().unwrap()["toolie"]["FERROBOT_AGENT_TOKEN"].clone();
@@ -7647,52 +7661,55 @@ async fn the_login_proxy_swaps_the_token_only_for_its_agents_and_hosts() {
     create(&d, json!({"name": "bob"})).await;
     let github = |agents: Value| {
         json!({
-            "hosts": ["github.com", "api.github.com", "uploads.github.com"],
-            "env": ["GH_TOKEN", "GITHUB_TOKEN"],
+            "install": {"kind": "debian", "package": "gh"},
             "programs": ["gh"],
+            "account": {
+                "hosts": ["github.com", "api.github.com", "uploads.github.com"],
+                "env": ["GH_TOKEN", "GITHUB_TOKEN"],
+            },
             "agents": agents,
         })
     };
-    let (status, login) = http(
-        &d.ui,
-        "PUT",
-        "/v1/logins/github",
-        Some(github(json!([ann]))),
-    )
-    .await;
-    assert_eq!((status, &login["agents"]), (200, &json!([ann])), "{login}");
-    let token = json!({"token": "ghp_real_secret"});
-    let (status, login) = http(&d.ui, "PUT", "/v1/logins/github/token", Some(token)).await;
+    let (status, view) = http(&d.ui, "PUT", "/v1/clis/github", Some(github(json!([ann])))).await;
     assert_eq!(
-        (status, &login["has_token"]),
-        (200, &json!(true)),
-        "{login}"
+        (status, &cli_in(&view, "github")["agents"]),
+        (200, &json!([ann])),
+        "{view}"
     );
-    let (_, all) = http(&d.ui, "GET", "/v1/logins", None).await;
+    let token = json!({"token": "ghp_real_secret"});
+    let (status, view) = http(&d.ui, "PUT", "/v1/clis/github/token", Some(token)).await;
+    assert_eq!(
+        (status, &cli_in(&view, "github")["has_token"]),
+        (200, &json!(true)),
+        "{view}"
+    );
+    let (_, all) = http(&d.ui, "GET", "/v1/clis", None).await;
     assert!(!all.to_string().contains("ghp_real_secret"), "{all}");
     let unknown = github(json!(["00000000-0000-4000-8000-000000000099"]));
     assert_eq!(
-        http(&d.ui, "PUT", "/v1/logins/github", Some(unknown))
-            .await
-            .0,
+        http(&d.ui, "PUT", "/v1/clis/github", Some(unknown)).await.0,
         400
     );
     // The token goes only to public names, and the sandbox's own variables stay its own.
-    for bad in [
-        json!({"hosts": ["localhost"], "env": ["X_KEY"]}),
-        json!({"hosts": ["10.0.0.7"], "env": ["X_KEY"]}),
-        json!({"hosts": ["api.example.com"], "env": ["HTTPS_PROXY"]}),
-        json!({"hosts": ["api.example.com"], "env": ["FERROBOT_AGENT_TOKEN"]}),
-        json!({"hosts": ["api.github.com"], "env": ["X_KEY"]}),
+    for (hosts, env) in [
+        (json!(["localhost"]), json!(["X_KEY"])),
+        (json!(["10.0.0.7"]), json!(["X_KEY"])),
+        (json!(["api.example.com"]), json!(["HTTPS_PROXY"])),
+        (json!(["api.example.com"]), json!(["FERROBOT_AGENT_TOKEN"])),
+        (json!(["api.github.com"]), json!(["X_KEY"])),
     ] {
-        let (status, body) = http(&d.ui, "PUT", "/v1/logins/bad", Some(bad.clone())).await;
+        let bad = json!({
+            "install": {"kind": "npm", "package": "bad"},
+            "account": {"hosts": hosts, "env": env},
+        });
+        let (status, body) = http(&d.ui, "PUT", "/v1/clis/bad", Some(bad.clone())).await;
         assert_eq!(status, 400, "{bad}: {body}");
     }
     assert_eq!(
         http(
             &d.ui,
             "PUT",
-            "/v1/logins/nope/token",
+            "/v1/clis/nope/token",
             Some(json!({"token": "x"}))
         )
         .await
@@ -7747,21 +7764,20 @@ async fn the_login_proxy_swaps_the_token_only_for_its_agents_and_hosts() {
     // Any header carries a login's stand-in; another login's stays as it is, and an echoed
     // token goes back to the sandbox as the stand-in.
     let example = json!({
-        "hosts": ["api.example.com"],
-        "env": ["EXAMPLE_API_KEY"],
+        "install": {"kind": "npm", "package": "example-cli"},
         "programs": ["example"],
-        "confirm": true,
+        "account": {"hosts": ["api.example.com"], "env": ["EXAMPLE_API_KEY"], "confirm": true},
         "agents": [ann],
     });
     assert_eq!(
-        http(&d.ui, "PUT", "/v1/logins/example", Some(example))
+        http(&d.ui, "PUT", "/v1/clis/example", Some(example))
             .await
             .0,
         200
     );
     let token = json!({"token": "ex_real_key"});
     assert_eq!(
-        http(&d.ui, "PUT", "/v1/logins/example/token", Some(token))
+        http(&d.ui, "PUT", "/v1/clis/example/token", Some(token))
             .await
             .0,
         200
@@ -7794,20 +7810,17 @@ async fn the_login_proxy_swaps_the_token_only_for_its_agents_and_hosts() {
         &format!("ex_real_key | Bearer {STAND_IN}")
     );
 
-    // Removing a login removes its token.
-    let (status, _) = http(&d.ui, "DELETE", "/v1/logins/example", None).await;
+    // Removing a CLI removes its token.
+    let (status, _) = http(&d.ui, "DELETE", "/v1/clis/example", None).await;
     assert_eq!(status, 204);
-    let (_, all) = http(&d.ui, "GET", "/v1/logins", None).await;
-    assert_eq!(all.as_array().unwrap().len(), 1, "{all}");
+    let (_, all) = http(&d.ui, "GET", "/v1/clis", None).await;
+    assert_eq!(all["clis"].as_array().unwrap().len(), 1, "{all}");
     assert!(
         ferrobot_daemon::logins::token(&d.state, "example")
             .await
             .is_none()
     );
-    assert_eq!(
-        http(&d.ui, "DELETE", "/v1/logins/example", None).await.0,
-        404
-    );
+    assert_eq!(http(&d.ui, "DELETE", "/v1/clis/example", None).await.0, 404);
 
     // The agent API's own routes still answer behind the proxy.
     assert_eq!(
@@ -9193,4 +9206,138 @@ async fn agents_keep_the_operators_knowledge_base_and_read_it_in_their_instructi
             .is_err(),
         "cy has no memory tools, so nothing to update"
     );
+}
+
+/// The CLI named `id` in a `GET /v1/clis` answer.
+fn cli_in(view: &Value, id: &str) -> Value {
+    view["clis"]
+        .as_array()
+        .and_then(|all| all.iter().find(|c| c["id"] == id))
+        .cloned()
+        .unwrap_or(Value::Null)
+}
+
+#[tokio::test]
+async fn clis_install_per_agent_sign_in_in_a_throwaway_computer_and_can_be_proposed() {
+    let backend = Arc::new(StatefulBackend::default());
+    let d = start(backend.clone(), None, "127.0.0.1:0").await;
+    let ann = create(&d, json!({"name": "ann"})).await["id"].clone();
+    create(&d, json!({"name": "bob"})).await;
+
+    // The package list of before still works and shows up as CLIs.
+    let (status, view) = http(&d.ui, "PUT", "/v1/clis", Some(json!({"packages": ["jq"]}))).await;
+    assert_eq!((status, &view["packages"]), (200, &json!(["jq"])), "{view}");
+    assert_eq!(
+        cli_in(&view, "jq")["install"],
+        json!({"kind": "debian", "package": "jq"})
+    );
+
+    // A home install reaches only its agents, without a shell around the package name.
+    let npm = json!({
+        "install": {"kind": "npm", "package": "@scope/example-cli"},
+        "programs": ["example"],
+        "agents": [ann],
+    });
+    assert_eq!(
+        http(&d.ui, "PUT", "/v1/clis/example", Some(npm)).await.0,
+        200
+    );
+    let installed = |name: &'static str| {
+        let backend = backend.clone();
+        async move {
+            for _ in 0..100 {
+                let execs = backend.execs.lock().unwrap().clone();
+                if let Some((_, line)) = execs
+                    .iter()
+                    .find(|(id, line)| id == name && line.contains("npm install --global --prefix"))
+                {
+                    return Some(line.clone());
+                }
+                tokio::time::sleep(Duration::from_millis(20)).await;
+            }
+            None
+        }
+    };
+    assert!(
+        installed("ann")
+            .await
+            .unwrap()
+            .ends_with("@scope/example-cli")
+    );
+    assert!(installed("bob").await.is_none(), "bob was not picked");
+    let env = backend.envs.lock().unwrap()["ann"].clone();
+    assert!(env["PATH"].starts_with("/home/node/.local/bin:"), "{env:?}");
+
+    // The CLI's own device sign-in runs in a computer of its own; the token goes to the vault.
+    backend.replies.lock().unwrap().extend([
+        (
+            "ferrobot-sign-in.log".to_owned(),
+            "Enter ABCD-1234 at https://example.com/device\n\u{1e}0".to_owned(),
+        ),
+        (
+            "example auth token".to_owned(),
+            "tok_dummy_123\n".to_owned(),
+        ),
+    ]);
+    let signer = json!({
+        "install": {"kind": "npm", "package": "@scope/example-cli"},
+        "programs": ["example"],
+        "account": {
+            "hosts": ["api.example.com"],
+            "env": ["EXAMPLE_API_KEY"],
+            "sign_in": {"login": ["example", "auth", "login"], "token": ["example", "auth", "token"]},
+        },
+        "agents": [ann],
+    });
+    assert_eq!(
+        http(&d.ui, "PUT", "/v1/clis/example", Some(signer)).await.0,
+        200
+    );
+    let (status, started) = http(&d.ui, "POST", "/v1/clis/example/sign-in", None).await;
+    assert_eq!(
+        (status, &started["state"]),
+        (200, &json!("starting")),
+        "{started}"
+    );
+    let mut done = Value::Null;
+    for _ in 0..200 {
+        done = http(&d.ui, "GET", "/v1/clis/example/sign-in", None).await.1;
+        if done["state"] == "done" || done["state"] == "failed" {
+            break;
+        }
+        tokio::time::sleep(Duration::from_millis(20)).await;
+    }
+    assert_eq!(done["state"], "done", "{done}");
+    assert_eq!(
+        ferrobot_daemon::logins::token(&d.state, "example")
+            .await
+            .as_deref(),
+        Some("tok_dummy_123")
+    );
+    let log = backend.log.lock().unwrap().join("\n");
+    assert!(log.contains("create signin.example"), "{log}");
+    let (_, all) = http(&d.ui, "GET", "/v1/clis", None).await;
+    assert!(!all.to_string().contains("tok_dummy_123"), "{all}");
+    assert_eq!(cli_in(&all, "example")["has_token"], true);
+
+    // An agent proposes a CLI; the card shows what installs it, and approving adds it for that agent.
+    let mcp = mcp_as(&d, backend.token("ann")).await;
+    let proposal = json!({
+        "name": "fetcher",
+        "install": {"kind": "download", "url": "https://example.com/fetcher"},
+        "programs": ["fetcher"],
+        "reason": "to fetch reports",
+    });
+    call(&mcp, "propose_cli", proposal).await;
+    let ann_id = ann.as_str().unwrap();
+    let qid = approval_card(&d, ann_id, 0).await;
+    let card = events(&d, ann_id)
+        .await
+        .into_iter()
+        .find(|e| e["id"] == qid)
+        .unwrap();
+    assert!(card.to_string().contains("no checksum"), "{card}");
+    assert_eq!(decide(&d, ann_id, qid, "approve").await.0, 202);
+    let (_, all) = http(&d.ui, "GET", "/v1/clis", None).await;
+    assert_eq!(cli_in(&all, "fetcher")["agents"], json!([ann]), "{all}");
 }

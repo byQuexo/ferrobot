@@ -108,6 +108,12 @@ async fn fresh_spec(state: &AppState, agent: &Agent) -> Result<SandboxSpec, ApiE
     }
     let logins = crate::logins::of_agent(state, agent.id).await;
     let home = state.backend.home();
+    if state.backend.supports_image_builds() {
+        env.insert(
+            "PATH".to_owned(),
+            format!("{home}/.local/bin:{}", crate::clis::DEFAULT_PATH),
+        );
+    }
     // A login never replaces what the sandbox already set.
     for (k, v) in crate::logins::env(&logins, &s.sandbox_daemon_url, &token, &home) {
         env.entry(k).or_insert(v);
@@ -118,6 +124,7 @@ async fn fresh_spec(state: &AppState, agent: &Agent) -> Result<SandboxSpec, ApiE
         env,
         labels: BTreeMap::from([("dev.ferrobot.agent-id".to_owned(), agent.id.to_string())]),
         image: crate::clis::image(state).await?,
+        command: None,
     })
 }
 
@@ -186,6 +193,10 @@ async fn provision_locked(state: &AppState, agent: &Agent) -> Result<SandboxHand
             if spec.env.contains_key("HTTPS_PROXY") {
                 trust_login_ca(state, agent, &handle).await;
             }
+            if crate::clis::has_home(state, agent.id).await {
+                state.clis.take_pending(agent.id);
+                install_home(state, agent.id);
+            }
             Ok(handle)
         }
         Err(e) => {
@@ -194,6 +205,12 @@ async fn provision_locked(state: &AppState, agent: &Agent) -> Result<SandboxHand
             Err(e.into())
         }
     }
+}
+
+/// Installs the agent's home-folder CLIs in the background; its first turn may come before.
+fn install_home(state: &AppState, agent: AgentId) {
+    let state = state.clone();
+    tokio::spawn(async move { crate::clis::sync_home(&state, agent).await });
 }
 
 /// Starts the agent's sandbox, provisioning it if it does not exist (anymore) or runs an
@@ -213,6 +230,9 @@ pub async fn wake(state: &AppState, id: AgentId) -> Result<(), ApiError> {
     }
     match state.backend.wake(&handle).await {
         Ok(()) => {
+            if state.clis.take_pending(id) {
+                install_home(state, id);
+            }
             if agent.status != AgentStatus::Running {
                 state.record(id, None, "awake", json!({})).await;
             }

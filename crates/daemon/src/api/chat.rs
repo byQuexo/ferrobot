@@ -278,6 +278,9 @@ pub(crate) async fn answer_question(
             crate::api::connectors::answer_card(&state, id, qid, card, approval, req.answers)
                 .await?
         }
+        Some(approval @ Approval::AddCli { .. }) => {
+            crate::api::clis::answer_card(&state, id, qid, approval, req.answers).await?
+        }
         Some(approval @ Approval::CreateRoutine { .. }) => {
             crate::api::routines::answer_card(&state, id, qid, approval, req.answers).await?
         }

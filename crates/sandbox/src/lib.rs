@@ -65,6 +65,8 @@ pub struct SandboxSpec {
     pub labels: BTreeMap<String, String>,
     /// Image from [`SandboxBackend::build_image`]; `None`: the backend's default image.
     pub image: Option<String>,
+    /// Runs instead of the runner, e.g. to keep a helper container idle (Docker only).
+    pub command: Option<Vec<String>>,
 }
 
 /// Reference to an existing sandbox. Persisted by the daemon.

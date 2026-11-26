@@ -2,8 +2,8 @@ use std::borrow::Cow;
 
 use ferrobot_core::question::{QUESTION_CARD_VERSION, QuestionCard, QuestionEvent};
 use ferrobot_core::{
-    Agent, AgentId, AgentName, AvatarCharacter, ConnectorAuth, MailMessage, Sender, ToolGroup,
-    mention,
+    Account, Agent, AgentId, AgentName, AvatarCharacter, Cli, ConnectorAuth, Install, MailMessage,
+    Sender, ToolGroup, mention,
 };
 use ferrobot_store::StoreError;
 use rmcp::handler::server::tool::{Extension, ToolCallContext};
@@ -310,6 +310,27 @@ pub struct AddConnectorArgs {
     /// `token`: the operator puts a token in Settings → Vault after adding it. `oauth`: they sign
     /// in under Settings. `none`: no sign-in.
     pub auth: ConnectorAuth,
+    /// One line on what you need it for, shown on the card.
+    #[serde(default)]
+    pub reason: String,
+}
+
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct ProposeCliArgs {
+    /// 1-63 chars of `a-z0-9.+-`, e.g. `example`; also names its account.
+    pub name: String,
+    /// How it gets in: a Debian package (in every computer's image), an npm package, a download
+    /// of the program itself (give `sha256` when the project publishes one) or a shell script
+    /// that puts it in `~/.local/bin`.
+    pub install: Install,
+    /// The programs it brings, e.g. `["example"]`; a download needs one.
+    #[serde(default)]
+    pub programs: Vec<String>,
+    /// Only if it needs a token: the API hosts that get it, the variables the CLI reads it from
+    /// and, if the CLI has a sign-in that shows a one-time code, its login and token commands.
+    /// The operator adds the token or signs in; you never see it.
+    #[serde(default)]
+    pub account: Option<Account>,
     /// One line on what you need it for, shown on the card.
     #[serde(default)]
     pub reason: String,
@@ -990,6 +1011,43 @@ impl FerrobotTools {
     }
 
     #[tool(
+        description = "Ask your operator to add a CLI to your computer, e.g. one a task needs that \
+        you cannot install yourself, or one that needs a token. Find out from its docs how it \
+        installs and, if it needs a token, which API hosts use it and which environment variables \
+        it reads it from. They see a card with the exact install and hosts. A token goes in under \
+        Settings: you never see it, so never ask for keys or tokens. Tools that need no token you \
+        can also install yourself into ~/.local. Does not wait: a message tells you when it was \
+        added or declined. Finish your turn after asking."
+    )]
+    async fn propose_cli(
+        &self,
+        Extension(parts): Extension<http::request::Parts>,
+        Parameters(args): Parameters<ProposeCliArgs>,
+    ) -> ToolResult<AskUserResult> {
+        let me = caller(&parts)?.0.id;
+        let request = crate::CliRequest {
+            cli: Cli {
+                id: args.name.trim().to_owned(),
+                install: args.install,
+                programs: args.programs,
+                account: args.account,
+                agents: vec![me],
+            },
+            reason: args.reason.trim().to_owned(),
+        };
+        let question_id = self
+            .state
+            .notifier
+            .request_cli(me, request)
+            .await
+            .map_err(invalid)?;
+        Ok(Json(AskUserResult {
+            question_id,
+            note: PENDING_NOTE.into(),
+        }))
+    }
+
+    #[tool(
         description = "Give your operator a file you made, up to 10 MB: it is copied and shown in your \
         chat as a file they can open. Markdown and text are shown as text; an .html file opens as a \
         page inside ferrobot (everything inline: scripts, styles, images as data: URLs; the page \
@@ -1313,7 +1371,7 @@ pub(crate) fn group_of(tool: &str) -> Option<ToolGroup> {
         "ask_user" | "share_file" | "invite_to_call" | "hang_up" | "list_guides" | "read_guide"
         | "react" | "send_to_discord" => ToolGroup::Operator,
         "create_agent" | "set_agent_tools" => ToolGroup::CreateAgents,
-        "add_connector" => ToolGroup::AddConnectors,
+        "add_connector" | "propose_cli" => ToolGroup::AddConnectors,
         "create_routine" => ToolGroup::Routines,
         _ => return None,
     })
