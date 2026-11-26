@@ -6,6 +6,10 @@ All notable changes are listed here. The format follows
 
 ## [Unreleased]
 
+### Added
+
+- **Files and a console in the Computer tab.** Browse the agent's computer from its home folder and open files read-only, and run commands in it, one at a time and up to 60 s each, without asking the agent. Programs that need a full terminal, like vim, do not work there.
+
 ## [0.1.10] - 2026-11-26
 
 ### Added

@@ -40,6 +40,7 @@ import { buildTimeline, type TimelineItem } from "../lib/timeline.ts";
 import { modelLabel } from "../lib/models.ts";
 import { TagChips } from "./AgentMeta.tsx";
 import { Avatar } from "./Avatar.tsx";
+import { Console, Files } from "./ComputerTools.tsx";
 import { CredentialFix } from "./CredentialFix.tsx";
 import { ToolCard } from "./Chat.tsx";
 import { AgentWebhooks } from "./WebhooksSettings.tsx";
@@ -336,6 +337,15 @@ function Computer(props: { agent: Agent }): JSX.Element {
           )}
         </div>
       </section>
+
+      {asleep ? (
+        <p class="muted small">Wake the computer to browse its files and run commands.</p>
+      ) : (
+        <>
+          <Files key={`files-${id}`} agent={id} />
+          <Console key={`console-${id}`} agent={id} />
+        </>
+      )}
 
       <section class="card">
         <h3>

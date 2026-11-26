@@ -10,6 +10,14 @@ import {
 } from "../src/api.ts";
 import { ACCENTS, DEFAULT_APPEARANCE, readAppearance } from "../src/lib/appearance.ts";
 import { hash } from "../src/lib/avatar.ts";
+import {
+  consoleCommand,
+  joinPath,
+  parentOf,
+  parseConsole,
+  parseListing,
+  shortPath,
+} from "../src/lib/computer.ts";
 import { characterOf, deriveCharacter, moodOf, rerollCharacter } from "../src/lib/character.ts";
 import {
   computerSummary,
@@ -2546,5 +2554,43 @@ describe("splitDiscord", () => {
       text: "see (via Discord, from x) above",
       discord: null,
     });
+  });
+});
+
+describe("computer tools", () => {
+  it("lists folders first, then files by name", () => {
+    const out = "f\t12\tb.txt\0d\t4096\tsrc\0f\t3\ta\ttab.txt\0d\t4096\t.cache\0";
+    assert.deepEqual(parseListing(out), [
+      { name: ".cache", dir: true, size: 4096 },
+      { name: "src", dir: true, size: 4096 },
+      { name: "a\ttab.txt", dir: false, size: 3 },
+      { name: "b.txt", dir: false, size: 12 },
+    ]);
+    assert.deepEqual(parseListing(""), []);
+  });
+
+  it("walks paths and shortens the home folder", () => {
+    assert.equal(joinPath("/", "etc"), "/etc");
+    assert.equal(joinPath("/home/node", "src"), "/home/node/src");
+    assert.equal(parentOf("/home/node/src"), "/home/node");
+    assert.equal(parentOf("/etc"), "/");
+    assert.equal(shortPath("/home/node"), "~");
+    assert.equal(shortPath("/home/node/src"), "~/src");
+    assert.equal(shortPath("/home/nodejs"), "/home/nodejs");
+  });
+
+  it("keeps the directory a command ends in", () => {
+    const cmd = consoleCommand("cd src && ls");
+    assert.deepEqual(cmd.slice(0, 4), ["timeout", "60", "bash", "-c"]);
+    assert.ok(cmd[4]?.startsWith("cd src && ls\n"));
+    const out = {
+      exit_code: 0,
+      stdout: "a\nb\n\u001e/home/node/src",
+      stderr: "",
+      truncated: false,
+    };
+    assert.deepEqual(parseConsole(out), { stdout: "a\nb\n", cwd: "/home/node/src" });
+    const cut = { exit_code: 0, stdout: "lots", stderr: "", truncated: true };
+    assert.deepEqual(parseConsole(cut), { stdout: "lots", cwd: null });
   });
 });

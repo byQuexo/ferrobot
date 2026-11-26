@@ -19,6 +19,7 @@ export type MemoryEntry = Schemas["MemoryEntry"];
 export type Routine = Schemas["RoutineView"];
 export type RoutineRun = Schemas["RoutineRun"];
 export type SandboxInfo = Schemas["SandboxInfo"];
+export type ExecOutput = Schemas["ExecOutput"];
 export type Snapshot = Schemas["SnapshotRecord"];
 export type CreateAgent = Schemas["CreateAgent"];
 export type UpdateAgent = Schemas["UpdateAgent"];
@@ -294,6 +295,9 @@ export class DaemonClient {
     this.#request("POST", `/v1/agents/${id}/snapshots/${String(sid)}/restore`);
   deleteSnapshot = (id: string, sid: number): Promise<void> =>
     this.#request("DELETE", `/v1/agents/${id}/snapshots/${String(sid)}`);
+  /** Runs `cmd` (argv, no shell) in the agent's computer, waking it if it sleeps. */
+  exec = (id: string, cmd: string[], workdir?: string): Promise<ExecOutput> =>
+    this.#request("POST", `/v1/agents/${id}/exec`, { cmd, workdir });
 
   voice = (): Promise<VoiceView> => this.#request("GET", "/v1/voice");
   updateVoice = (req: UpdateVoice): Promise<VoiceView> => this.#request("PUT", "/v1/voice", req);

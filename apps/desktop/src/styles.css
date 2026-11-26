@@ -855,6 +855,17 @@ textarea { resize: vertical; min-height: 40px; line-height: 1.5; }
 .computer-details { margin-top: 8px; }
 .computer-details summary { cursor: pointer; font-size: 12px; color: var(--muted); }
 .computer-details[open] summary { color: var(--text-2); }
+.files-bar { display: flex; align-items: center; gap: 4px; margin-bottom: 4px; }
+.files li { padding: 4px 0; }
+.file-row { display: flex; align-items: center; gap: 8px; width: 100%; padding: 2px 0; border: none; background: none; color: inherit; font: inherit; text-align: left; cursor: pointer; }
+.file-row:hover .grow { color: var(--accent); }
+.file-text { margin: 0; max-height: 70vh; overflow: auto; font: 12px/1.5 var(--mono); white-space: pre-wrap; overflow-wrap: anywhere; }
+.console-out { max-height: 320px; overflow: auto; margin-bottom: 8px; padding: 8px; border-radius: var(--radius-sm); background: var(--surface-2); font: 12px/1.5 var(--mono); }
+.console-out pre { margin: 0; font: inherit; white-space: pre-wrap; overflow-wrap: anywhere; }
+.console-run + .console-run { margin-top: 8px; }
+.console-err { color: var(--err); }
+.console-in { display: flex; align-items: center; gap: 8px; }
+.console-in input { flex: 1; min-width: 0; }
 
 /* Appearance (Settings → Appearance) and keyboard shortcuts. Defaults keep the tokens above. */
 :root { --chat-bg: var(--bg); --chat-zoom: 1; }

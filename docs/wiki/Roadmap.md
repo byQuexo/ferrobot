@@ -52,7 +52,9 @@ In rough order. Nothing here has a date.
    from a webhook, and signed outgoing payloads.
 7. **The agent's computer in the app.** A file browser and a terminal in the
    agent's details panel (Computer tab), so you can look around and fix
-   things in its sandbox without asking the agent.
+   things in its sandbox without asking the agent. **Done** (next release): a
+   file browser (read-only) and a console that runs one command at a time,
+   up to 60 s each; full-screen programs like vim need a real terminal.
 8. **Logins for CLIs, finer connector scopes.** CLIs that need a login
    (`gh` and `git push` first, then `vercel` and `stripe`), without the token
    ever entering a sandbox. You sign in on your computer: the daemon runs the
