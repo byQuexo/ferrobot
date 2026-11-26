@@ -16,15 +16,13 @@ use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use async_trait::async_trait;
-use common::{events, eventually, http, start};
+use common::{Ws, events, eventually, http, next_frame, send, start};
 use ferrobot_core::protocol::{DaemonFrame, RunnerFrame, TurnEvent, TurnOutcome};
 use ferrobot_sandbox::{
     ExecOutput, ExecRequest, SandboxBackend, SandboxError, SandboxHandle, SandboxPath, SandboxSpec,
     SandboxState, SnapshotRef,
 };
-use futures_util::{SinkExt, StreamExt};
 use serde_json::json;
-use tokio_tungstenite::tungstenite::Message;
 use tokio_tungstenite::tungstenite::client::IntoClientRequest;
 
 /// Records specs instead of starting anything.
@@ -87,9 +85,6 @@ impl SandboxBackend for FakeBackend {
     }
 }
 
-type Ws =
-    tokio_tungstenite::WebSocketStream<tokio_tungstenite::MaybeTlsStream<tokio::net::TcpStream>>;
-
 async fn connect_runner(agents: &str, token: &str) -> Ws {
     let mut req = format!("ws://{agents}/runner/ws")
         .into_client_request()
@@ -106,33 +101,12 @@ async fn connect_runner(agents: &str, token: &str) -> Ws {
         session_id: Some("sess-1".into()),
         steering: false,
     };
-    ws.send(Message::text(serde_json::to_string(&hello).unwrap()))
-        .await
-        .unwrap();
+    send(&mut ws, &hello).await;
     match next_frame(&mut ws).await {
         DaemonFrame::Welcome { agent_name, .. } => assert_ne!(agent_name.as_str(), ""),
         other => panic!("expected welcome, got {other:?}"),
     }
     ws
-}
-
-async fn next_frame(ws: &mut Ws) -> DaemonFrame {
-    loop {
-        let msg = tokio::time::timeout(Duration::from_secs(10), ws.next())
-            .await
-            .expect("frame in time")
-            .expect("stream open")
-            .expect("ws ok");
-        if let Message::Text(t) = msg {
-            return serde_json::from_str(&t).expect("daemon frame");
-        }
-    }
-}
-
-async fn send(ws: &mut Ws, frame: &RunnerFrame) {
-    ws.send(Message::text(serde_json::to_string(frame).unwrap()))
-        .await
-        .unwrap();
 }
 
 #[tokio::test]

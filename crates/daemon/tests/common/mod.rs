@@ -10,10 +10,13 @@
 use std::sync::Arc;
 use std::time::Duration;
 
+use ferrobot_core::protocol::{DaemonFrame, RunnerFrame};
 use ferrobot_daemon::{AppState, Settings, agent_router, ui_router};
 use ferrobot_sandbox::SandboxBackend;
 use ferrobot_store::Store;
+use futures_util::{SinkExt, StreamExt};
 use serde_json::Value;
+use tokio_tungstenite::tungstenite::Message;
 
 /// Operator token the harness configures and sends on `/v1` requests.
 pub const TEST_TOKEN: &str = "test-operator-token-0123456789";
@@ -261,6 +264,28 @@ where
         );
         tokio::time::sleep(Duration::from_millis(100)).await;
     }
+}
+
+pub type Ws =
+    tokio_tungstenite::WebSocketStream<tokio_tungstenite::MaybeTlsStream<tokio::net::TcpStream>>;
+
+pub async fn next_frame(ws: &mut Ws) -> DaemonFrame {
+    loop {
+        let msg = tokio::time::timeout(Duration::from_secs(10), ws.next())
+            .await
+            .expect("frame in time")
+            .expect("stream open")
+            .expect("ws ok");
+        if let Message::Text(t) = msg {
+            return serde_json::from_str(&t).expect("daemon frame");
+        }
+    }
+}
+
+pub async fn send(ws: &mut Ws, frame: &RunnerFrame) {
+    ws.send(Message::text(serde_json::to_string(frame).unwrap()))
+        .await
+        .unwrap();
 }
 
 /// An agent's events, oldest first.
