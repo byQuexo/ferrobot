@@ -37,3 +37,20 @@ export interface ModelDriver {
 export class TurnAbortedError extends Error {
   override name = "TurnAbortedError";
 }
+
+export function throwIfAborted(signal: AbortSignal): void {
+  if (signal.aborted) throw new TurnAbortedError("interrupted");
+}
+
+export function whenAborted(signal: AbortSignal): Promise<"aborted"> {
+  return new Promise((resolve) => {
+    if (signal.aborted) resolve("aborted");
+    signal.addEventListener(
+      "abort",
+      () => {
+        resolve("aborted");
+      },
+      { once: true },
+    );
+  });
+}

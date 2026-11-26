@@ -9,10 +9,10 @@ import type { ToolGate } from "../gate.ts";
 import { errorMessage, log } from "../log.ts";
 import type { FerrobotMcp } from "../mcp-client.ts";
 import { decide, offGroups, type BuiltinGroup, type Decision } from "../permissions.ts";
-import { aborted, clip, latePrompt, systemAppend, turnPrompt } from "./claude.ts";
+import { clip, latePrompt, systemAppend, turnPrompt } from "./claude.ts";
 import { ThinkFilter } from "./think.ts";
 import type { ModelDriver, TurnContext, TurnResult } from "./types.ts";
-import { TurnAbortedError } from "./types.ts";
+import { TurnAbortedError, throwIfAborted } from "./types.ts";
 
 const MCP_PREFIX = "mcp__ferrobot__";
 const MAX_MODEL_CALLS = 50;
@@ -172,11 +172,11 @@ export class OpenAIDriver implements ModelDriver {
   }
 
   async runTurn(ctx: TurnContext): Promise<TurnResult> {
-    if (aborted(ctx.signal)) throw new TurnAbortedError("interrupted");
+    throwIfAborted(ctx.signal);
     try {
       return await this.#turn(ctx);
     } catch (err) {
-      if (aborted(ctx.signal)) throw new TurnAbortedError("interrupted");
+      throwIfAborted(ctx.signal);
       throw err;
     }
   }
@@ -353,7 +353,7 @@ export class OpenAIDriver implements ModelDriver {
     ctx: TurnContext,
     subagent?: (task: string, callId: string) => Promise<ToolOutcome>,
   ): Promise<string> {
-    if (aborted(ctx.signal)) throw new TurnAbortedError("interrupted");
+    throwIfAborted(ctx.signal);
     const { id, name, input } = call;
     if (input === null) {
       const output = `invalid JSON arguments for ${name}: ${call.args.slice(0, 200)}`;
@@ -377,7 +377,7 @@ export class OpenAIDriver implements ModelDriver {
           ? await subagent(stringArg(input, "task"), id)
           : await this.#execute(name, input, ctx.signal);
     } catch (err) {
-      if (aborted(ctx.signal)) throw new TurnAbortedError("interrupted");
+      throwIfAborted(ctx.signal);
       outcome = { output: errorMessage(err), isError: true };
     }
     ctx.emit({ kind: "tool_result", id, output: clip(outcome.output), is_error: outcome.isError });
@@ -576,7 +576,7 @@ function runBash(command: string, cwd: string, signal: AbortSignal): Promise<Too
     });
     child.on("close", (code, killedBy) => {
       settle();
-      if (aborted(signal)) {
+      if (signal.aborted) {
         reject(new TurnAbortedError("interrupted"));
         return;
       }
