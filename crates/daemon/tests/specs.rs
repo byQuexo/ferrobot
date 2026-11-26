@@ -79,6 +79,7 @@ fn every_routed_path_is_documented() {
         "/v1/agents/{id}/stop",
         "/v1/agents/{id}/wake",
         "/v1/agents/{id}/exec",
+        "/v1/agents/{id}/screen",
         "/v1/agents/{id}/snapshots",
         "/v1/agents/{id}/snapshots/{sid}",
         "/v1/agents/{id}/snapshots/{sid}/restore",
@@ -144,7 +145,7 @@ fn every_routed_path_is_documented() {
     }
     assert_eq!(
         documented.len(),
-        93,
+        94,
         "undocumented extra paths: {documented:?}"
     );
 }

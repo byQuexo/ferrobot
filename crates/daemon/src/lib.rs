@@ -11,6 +11,7 @@ pub mod clis;
 pub mod codex;
 pub mod connectors;
 pub mod credentials;
+pub mod desktop;
 pub mod discord;
 pub mod egress;
 pub mod error;

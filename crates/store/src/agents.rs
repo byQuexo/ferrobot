@@ -67,7 +67,7 @@ fn from_row(row: &Row<'_>) -> Result<Agent, StoreError> {
         tags: tags
             .and_then(|t| serde_json::from_str(&t).ok())
             .unwrap_or_default(),
-        tools: tools.map_or_else(ToolGroup::all, |t| parse_tools(&t)),
+        tools: tools.map_or_else(ToolGroup::defaults, |t| parse_tools(&t)),
         provider_id: provider_id
             .map(|id| uuid::Uuid::parse_str(&id))
             .transpose()
@@ -106,10 +106,11 @@ fn parse_tools(json: &str) -> Vec<ToolGroup> {
     ToolGroup::normalize(groups)
 }
 
-/// `tools` as stored: NULL for every group, so groups added later reach those agents too.
+/// `tools` as stored: NULL for the default profile, so default groups added later reach those
+/// agents too (opt-in ones like Desktop never do).
 fn tools_column(tools: Vec<ToolGroup>) -> Result<Option<String>, StoreError> {
     let tools = ToolGroup::normalize(tools);
-    if tools == ToolGroup::all() {
+    if tools == ToolGroup::defaults() {
         return Ok(None);
     }
     serde_json::to_string(&tools)
@@ -153,7 +154,7 @@ impl Store {
             sandbox_id: None,
             session_id: None,
             pinned: false,
-            tools: ToolGroup::all(),
+            tools: ToolGroup::defaults(),
             tags: Vec::new(),
             created_at: now(),
         };
@@ -800,7 +801,7 @@ mod tests {
     async fn tools_roundtrip_and_every_group_stays_null() {
         let store = Store::open_in_memory().unwrap();
         let a = store.create_agent(new("alice")).await.unwrap();
-        assert_eq!(a.tools, ToolGroup::all());
+        assert_eq!(a.tools, ToolGroup::defaults());
         let set = |tools: Vec<ToolGroup>| AgentPatch {
             tools: Some(tools),
             ..AgentPatch::default()
@@ -810,7 +811,7 @@ mod tests {
         let tools = store.get_agent(a.id).await.unwrap().tools;
         assert_eq!(tools, [ToolGroup::Team, ToolGroup::Shell]);
         store
-            .update_agent_profile(a.id, set(ToolGroup::all()))
+            .update_agent_profile(a.id, set(ToolGroup::defaults()))
             .await
             .unwrap();
         let stored: Option<String> = store

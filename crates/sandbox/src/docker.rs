@@ -743,6 +743,49 @@ impl SandboxBackend for DockerBackend {
         })
     }
 
+    async fn exec_stream(
+        &self,
+        sandbox: &SandboxHandle,
+        cmd: Vec<String>,
+    ) -> Result<crate::ExecStream, SandboxError> {
+        let id = sandbox.id_for(KIND)?;
+        let exec = self
+            .docker()
+            .create_exec(
+                id,
+                ExecConfig {
+                    cmd: Some(cmd),
+                    attach_stdin: Some(true),
+                    attach_stdout: Some(true),
+                    attach_stderr: Some(false),
+                    ..ExecConfig::default()
+                },
+            )
+            .await
+            .map_err(|e| not_found_or(e, id))?;
+        match self
+            .docker()
+            .start_exec(&exec.id, None::<StartExecOptions>)
+            .await?
+        {
+            StartExecResults::Attached { output, input } => Ok(crate::ExecStream {
+                output: output
+                    .filter_map(|chunk| async move {
+                        match chunk {
+                            Ok(bollard::container::LogOutput::StdErr { .. }) => None,
+                            Ok(out) => Some(Ok(out.into_bytes())),
+                            Err(e) => Some(Err(e.into())),
+                        }
+                    })
+                    .boxed(),
+                input,
+            }),
+            StartExecResults::Detached => {
+                Err(SandboxError::Other("the exec did not attach".into()))
+            }
+        }
+    }
+
     async fn exec(
         &self,
         sandbox: &SandboxHandle,

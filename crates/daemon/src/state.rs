@@ -300,6 +300,8 @@ pub struct AppState {
     pub discord: Arc<crate::discord::Discord>,
     /// The CLI-login proxy's CA and certificates.
     pub egress: Arc<crate::egress::Egress>,
+    /// Who holds the operator's control of each agent's desktop.
+    pub desktop: Arc<crate::desktop::Desktop>,
     /// When this daemon started.
     pub started: std::time::Instant,
 }
@@ -341,6 +343,7 @@ impl AppState {
             webhooks: Arc::default(),
             discord: Arc::default(),
             egress: Arc::default(),
+            desktop: Arc::default(),
             started: std::time::Instant::now(),
         }
     }
@@ -566,6 +569,15 @@ impl ferrobot_mcp::MailboxNotifier for AppState {
                 .await
                 .map_err(|e| e.to_string())
         })
+    }
+
+    fn desktop(
+        &self,
+        agent: AgentId,
+        action: ferrobot_mcp::DesktopAction,
+    ) -> ferrobot_mcp::BoxFuture<Result<rmcp::model::CallToolResult, String>> {
+        let state = self.clone();
+        Box::pin(async move { crate::desktop::act(&state, agent, action).await })
     }
 
     fn has_voice(&self) -> ferrobot_mcp::BoxFuture<bool> {

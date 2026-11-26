@@ -103,6 +103,37 @@ pub struct SharedFile {
     pub size: u64,
 }
 
+/// One step on an agent's desktop (`desktop` tool); coordinates are screen pixels.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum DesktopAction {
+    Screenshot,
+    /// `button`: 1 left, 2 middle, 3 right.
+    Click {
+        x: u32,
+        y: u32,
+        button: u8,
+        double: bool,
+    },
+    Move {
+        x: u32,
+        y: u32,
+    },
+    Type {
+        text: String,
+    },
+    /// xdotool key names and chords, e.g. `ctrl+l`, `Return`.
+    Key {
+        keys: Vec<String>,
+    },
+    /// `button`: 4 up, 5 down, 6 left, 7 right.
+    Scroll {
+        x: u32,
+        y: u32,
+        button: u8,
+        amount: u32,
+    },
+}
+
 /// How a [`AgentRequest`] ended.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum AgentRequestOutcome {
@@ -231,6 +262,16 @@ pub trait MailboxNotifier: Send + Sync + 'static {
     ) -> BoxFuture<Result<String, String>> {
         let _ = (agent, text, channel);
         Box::pin(async { Err("Discord is not supported here".to_owned()) })
+    }
+    /// Runs `action` on `agent`'s desktop; a screenshot comes back as an image. `Err` carries a
+    /// message for the agent.
+    fn desktop(
+        &self,
+        agent: AgentId,
+        action: DesktopAction,
+    ) -> BoxFuture<Result<rmcp::model::CallToolResult, String>> {
+        let _ = (agent, action);
+        Box::pin(async { Err("there is no desktop here".to_owned()) })
     }
     /// Whether voice is on and has a key; only then is `call_agents` listed.
     fn has_voice(&self) -> BoxFuture<bool> {

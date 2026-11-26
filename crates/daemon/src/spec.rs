@@ -83,6 +83,7 @@ pub const QUESTION_CARD_FILE: &str = "question-card.v1.schema.json";
         api::sandbox::wake,
         api::sandbox::destroy_sandbox,
         api::sandbox::exec,
+        api::desktop::screen,
         api::sandbox::list_snapshots,
         api::sandbox::create_snapshot,
         api::sandbox::restore_snapshot,

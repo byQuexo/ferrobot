@@ -24,8 +24,22 @@ pub use sprites::{SpritesBackend, SpritesConfig};
 /// Upper bound for captured exec output per stream.
 pub const MAX_EXEC_OUTPUT: usize = 1024 * 1024;
 
-/// Most Debian packages [`SandboxBackend::build_image`] installs.
-pub const MAX_PACKAGES: usize = 32;
+/// Most Debian packages [`SandboxBackend::build_image`] installs: the operator's CLIs plus the
+/// desktop's.
+pub const MAX_PACKAGES: usize = 48;
+
+/// A running command's stdout as a stream and its stdin as a writer
+/// ([`SandboxBackend::exec_stream`]).
+pub struct ExecStream {
+    pub output: futures_util::stream::BoxStream<'static, Result<bytes::Bytes, SandboxError>>,
+    pub input: std::pin::Pin<Box<dyn tokio::io::AsyncWrite + Send>>,
+}
+
+impl std::fmt::Debug for ExecStream {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("ExecStream").finish_non_exhaustive()
+    }
+}
 
 /// Validates Debian package names (policy 5.6.7: lower case letters, digits, `+`, `-`, `.`,
 /// alphanumeric first, at least two characters) and returns them sorted and deduplicated.
@@ -250,6 +264,20 @@ pub trait SandboxBackend: Send + Sync + std::fmt::Debug {
         sandbox: &SandboxHandle,
         req: &ExecRequest,
     ) -> Result<ExecOutput, SandboxError>;
+
+    /// Starts `cmd` with its stdin and stdout piped to the caller, e.g. a VNC session; stderr
+    /// is dropped. It runs until it exits or the input is closed.
+    async fn exec_stream(
+        &self,
+        sandbox: &SandboxHandle,
+        cmd: Vec<String>,
+    ) -> Result<ExecStream, SandboxError> {
+        let _ = (sandbox, cmd);
+        Err(SandboxError::NotImplemented {
+            backend: self.kind(),
+            operation: "streaming exec",
+        })
+    }
 
     /// Reads a file of at most [`MAX_FILE_BYTES`] ([`SandboxError::TooLarge`]).
     async fn read_file(

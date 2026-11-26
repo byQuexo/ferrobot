@@ -238,7 +238,7 @@ pub struct Agent {
     #[serde(default)]
     pub pinned: bool,
     /// Tool groups the agent may use; its connectors are its assignment.
-    #[serde(default = "crate::ToolGroup::all")]
+    #[serde(default = "crate::ToolGroup::defaults")]
     pub tools: Vec<crate::ToolGroup>,
     /// The operator's labels for the agent, in order.
     #[serde(default)]

@@ -5,6 +5,7 @@ pub(crate) mod chat;
 pub(crate) mod clis;
 pub(crate) mod connectors;
 pub(crate) mod dashboards;
+pub(crate) mod desktop;
 pub(crate) mod diagnostics;
 pub(crate) mod discord;
 pub(crate) mod files;
@@ -116,6 +117,7 @@ pub fn router() -> Router<AppState> {
         .route("/v1/agents/{id}/stop", post(sandbox::stop))
         .route("/v1/agents/{id}/wake", post(sandbox::wake))
         .route("/v1/agents/{id}/exec", post(sandbox::exec))
+        .route("/v1/agents/{id}/screen", get(desktop::screen))
         .route(
             "/v1/agents/{id}/snapshots",
             get(sandbox::list_snapshots).post(sandbox::create_snapshot),

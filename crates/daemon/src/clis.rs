@@ -34,6 +34,8 @@ pub(crate) struct Stored {
     #[serde(skip_serializing)]
     packages: Vec<String>,
     pub clis: Vec<Cli>,
+    /// Whether the image also has the desktop (`desktop::PACKAGES`).
+    pub desktop: bool,
     /// Last successful build; `None`: the base image.
     pub image: Option<String>,
 }
@@ -147,26 +149,47 @@ pub(crate) fn packages(clis: &[Cli]) -> Vec<String> {
     packages
 }
 
+/// The Debian packages the image gets: the CLIs', plus the desktop's when it is on.
+fn image_packages(clis: &[Cli], desktop: bool) -> Vec<String> {
+    let mut all = packages(clis);
+    if desktop {
+        all.extend(crate::desktop::PACKAGES.map(String::from));
+        all.sort();
+        all.dedup();
+    }
+    all
+}
+
 /// The image new sandboxes start from; `None`: the backend's default.
 pub(crate) async fn image(state: &AppState) -> Result<Option<String>, ApiError> {
     Ok(load(state).await?.image)
 }
 
 /// Keeps exactly `packages` as plain Debian CLIs (the `PUT /v1/clis` of before 0.1.11); other CLIs
-/// stay.
-pub(crate) async fn apply(state: &AppState, packages: Vec<String>) -> Result<(), ApiError> {
+/// stay, and `None` keeps the list. `desktop`: adds or removes the desktop; `None` keeps it.
+pub(crate) async fn apply(
+    state: &AppState,
+    packages: Option<Vec<String>>,
+    desktop: Option<bool>,
+) -> Result<(), ApiError> {
     let mut stored = load(state).await?;
     let before = stored.clis.clone();
-    stored.clis.retain(|c| {
-        !matches!(c.install, Install::Debian { .. }) || c.account.is_some() || !c.agents.is_empty()
-    });
-    for package in packages {
-        if !stored.clis.iter().any(|c| c.id == package) {
-            stored.clis.push(debian(package));
+    let had_desktop = stored.desktop;
+    stored.desktop = desktop.unwrap_or(had_desktop);
+    if let Some(packages) = packages {
+        stored.clis.retain(|c| {
+            !matches!(c.install, Install::Debian { .. })
+                || c.account.is_some()
+                || !c.agents.is_empty()
+        });
+        for package in packages {
+            if !stored.clis.iter().any(|c| c.id == package) {
+                stored.clis.push(debian(package));
+            }
         }
+        stored.clis.sort_by(|a, b| a.id.cmp(&b.id));
     }
-    stored.clis.sort_by(|a, b| a.id.cmp(&b.id));
-    commit(state, stored, &before).await
+    commit(state, stored, &before, had_desktop).await
 }
 
 /// Adds or replaces `cli`. Agents whose token setup changes restart (files kept); home installs
@@ -181,11 +204,15 @@ pub(crate) async fn put(state: &AppState, cli: Cli) -> Result<(), ApiError> {
     if !state.backend.supports_image_builds() {
         return Err(ApiError::BadRequest("CLIs need the Docker backend".into()));
     }
+    if cli.account.is_some() {
+        crate::desktop::check_account_agents(state, &cli.agents).await?;
+    }
     let before = stored.clis.clone();
+    let desktop = stored.desktop;
     stored.clis.retain(|c| c.id != cli.id);
     stored.clis.push(cli);
     stored.clis.sort_by(|a, b| a.id.cmp(&b.id));
-    commit(state, stored, &before).await
+    commit(state, stored, &before, desktop).await
 }
 
 /// Removes a CLI, its token and its CA, from the image or its agents' home folders.
@@ -195,8 +222,9 @@ pub(crate) async fn remove(state: &AppState, id: &str) -> Result<(), ApiError> {
     if !stored.clis.iter().any(|c| c.id == id) {
         return Err(ApiError::NotFound(format!("CLI {id:?} not found")));
     }
+    let desktop = stored.desktop;
     stored.clis.retain(|c| c.id != id);
-    commit(state, stored, &before).await?;
+    commit(state, stored, &before, desktop).await?;
     state
         .settings
         .secrets
@@ -207,10 +235,17 @@ pub(crate) async fn remove(state: &AppState, id: &str) -> Result<(), ApiError> {
         .map_err(ApiError::Internal)
 }
 
-/// Saves `stored` and carries out what changed since `before`: a build when the Debian packages
-/// differ, restarts where a token setup changed, home installs for the rest.
-async fn commit(state: &AppState, stored: Stored, before: &[Cli]) -> Result<(), ApiError> {
-    let rebuild = packages(before) != packages(&stored.clis);
+/// Saves `stored` and carries out what changed since `before` (and the desktop since
+/// `had_desktop`): a build when the image's packages differ, restarts where a token setup
+/// changed, home installs for the rest.
+async fn commit(
+    state: &AppState,
+    stored: Stored,
+    before: &[Cli],
+    had_desktop: bool,
+) -> Result<(), ApiError> {
+    let rebuild =
+        image_packages(before, had_desktop) != image_packages(&stored.clis, stored.desktop);
     if rebuild && !state.clis.start() {
         return Err(ApiError::Conflict(
             "the CLI image is still building; try again when it is done".into(),
@@ -308,7 +343,7 @@ pub fn resume(state: &AppState) {
                 .flat_map(|c| c.agents.iter().copied()),
         );
         crate::signin::sweep(&state, &stored.clis).await;
-        if !packages(&stored.clis).is_empty() && state.clis.start() {
+        if !image_packages(&stored.clis, stored.desktop).is_empty() && state.clis.start() {
             build(&state).await;
         }
     });
@@ -316,7 +351,8 @@ pub fn resume(state: &AppState) {
 
 async fn build(state: &AppState) {
     let outcome = async {
-        let packages = packages(&load(state).await?.clis);
+        let stored = load(state).await?;
+        let packages = image_packages(&stored.clis, stored.desktop);
         let image = tokio::time::timeout(BUILD_TIMEOUT, state.backend.build_image(&packages))
             .await
             .map_err(|_| ApiError::Upstream("the build took longer than 15 minutes".into()))??;
