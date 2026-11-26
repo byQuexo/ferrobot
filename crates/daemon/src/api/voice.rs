@@ -1,6 +1,8 @@
 //! Voice settings, speech, transcription and the voice call. Keys stay in the secret store and
 //! are never returned; text and audio are never logged.
 
+use std::collections::BTreeMap;
+
 use axum::Json;
 use axum::body::{Body, Bytes};
 use axum::extract::{Path, State};
@@ -49,6 +51,13 @@ fn internal(e: impl std::fmt::Display) -> ApiError {
 
 pub(crate) async fn load(state: &AppState) -> Result<VoiceSettings, ApiError> {
     super::settings::load_json(state, SETTING, "voice settings").await
+}
+
+fn clean_each(by_agent: BTreeMap<AgentId, String>) -> BTreeMap<AgentId, String> {
+    by_agent
+        .into_iter()
+        .filter_map(|(agent, v)| Some((agent, clean(Some(v))?)))
+        .collect()
 }
 
 pub(crate) async fn load_enabled(state: &AppState) -> Result<VoiceSettings, ApiError> {
@@ -116,18 +125,8 @@ pub(crate) async fn put_voice(
         tts_model: clean(req.settings.tts_model),
         voice: clean(req.settings.voice),
         stt_model: clean(req.settings.stt_model),
-        agent_voices: req
-            .settings
-            .agent_voices
-            .into_iter()
-            .filter_map(|(agent, voice)| Some((agent, clean(Some(voice))?)))
-            .collect(),
-        call_models: req
-            .settings
-            .call_models
-            .into_iter()
-            .filter_map(|(agent, model)| Some((agent, clean(Some(model))?)))
-            .collect(),
+        agent_voices: clean_each(req.settings.agent_voices),
+        call_models: clean_each(req.settings.call_models),
         call_pause: req.settings.call_pause,
     };
     settings.validate().map_err(ApiError::BadRequest)?;
@@ -718,11 +717,7 @@ pub(crate) async fn join_room_call(
     Path(id): Path<i64>,
 ) -> ApiResult<CallView> {
     state.store.room(id).await?;
-    if !load(&state).await?.enabled {
-        return Err(ApiError::Conflict(
-            "voice is switched off in the settings".into(),
-        ));
-    }
+    load_enabled(&state).await?;
     state
         .join_agent_call(id)
         .await
