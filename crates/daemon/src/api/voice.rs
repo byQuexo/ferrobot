@@ -48,10 +48,7 @@ fn internal(e: impl std::fmt::Display) -> ApiError {
 }
 
 pub(crate) async fn load(state: &AppState) -> Result<VoiceSettings, ApiError> {
-    match state.store.get_setting(SETTING).await? {
-        Some(raw) => serde_json::from_str(&raw).map_err(internal),
-        None => Ok(VoiceSettings::default()),
-    }
+    super::settings::load_json(state, SETTING, "voice settings").await
 }
 
 async fn view(state: &AppState, settings: VoiceSettings) -> Result<VoiceView, ApiError> {

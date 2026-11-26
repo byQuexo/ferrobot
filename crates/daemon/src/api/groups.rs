@@ -54,13 +54,7 @@ fn group_name(raw: &str) -> Result<String, ApiError> {
 
 /// Two or more known agents, each once, in the order given.
 async fn members(state: &AppState, wanted: Vec<AgentId>) -> Result<Vec<AgentId>, ApiError> {
-    let mut members = Vec::new();
-    for agent in wanted {
-        if !members.contains(&agent) {
-            state.store.get_agent(agent).await?;
-            members.push(agent);
-        }
-    }
+    let members = super::known_agents(state, wanted).await?;
     if members.len() < 2 {
         return Err(ApiError::BadRequest(
             "a group needs at least two agents".into(),

@@ -2,6 +2,7 @@
 
 use axum::Json;
 use axum::extract::State;
+use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;
 
@@ -25,12 +26,31 @@ pub(crate) struct GeneralSettings {
 /// Longest naming convention.
 const MAX_AGENT_NAMES: usize = 300;
 
-pub(crate) async fn load(state: &AppState) -> Result<GeneralSettings, ApiError> {
-    match state.store.get_setting(SETTING).await? {
-        Some(raw) => serde_json::from_str(&raw)
-            .map_err(|e| ApiError::Internal(format!("general settings: {e}"))),
-        None => Ok(GeneralSettings::default()),
+/// The JSON setting `key`, its default when unset; `what` names it in errors.
+pub(crate) async fn load_json<T: DeserializeOwned + Default>(
+    state: &AppState,
+    key: &str,
+    what: &str,
+) -> Result<T, ApiError> {
+    match state.store.get_setting(key).await? {
+        Some(raw) => {
+            serde_json::from_str(&raw).map_err(|e| ApiError::Internal(format!("{what}: {e}")))
+        }
+        None => Ok(T::default()),
     }
+}
+
+pub(crate) async fn save_json(
+    state: &AppState,
+    key: &str,
+    value: &impl Serialize,
+) -> Result<(), ApiError> {
+    let raw = serde_json::to_string(value).map_err(|e| ApiError::Internal(e.to_string()))?;
+    Ok(state.store.put_setting(key, raw).await?)
+}
+
+pub(crate) async fn load(state: &AppState) -> Result<GeneralSettings, ApiError> {
+    load_json(state, SETTING, "general settings").await
 }
 
 /// Unreadable settings fail closed: the operator gets the card.
@@ -61,15 +81,14 @@ pub(crate) async fn put_settings(
     if settings
         .agent_names
         .as_deref()
-        .is_some_and(|n| n.chars().count() > MAX_AGENT_NAMES || n.chars().any(char::is_control))
+        .is_some_and(|n| !super::is_printable(n, MAX_AGENT_NAMES))
     {
         return Err(ApiError::BadRequest(format!(
             "agent_names must be 1-{MAX_AGENT_NAMES} printable characters"
         )));
     }
     let renamed = load(&state).await?.agent_names != settings.agent_names;
-    let raw = serde_json::to_string(&settings).map_err(|e| ApiError::Internal(e.to_string()))?;
-    state.store.put_setting(SETTING, raw).await?;
+    save_json(&state, SETTING, &settings).await?;
     if renamed {
         crate::agents::reconfigure_creators(&state).await;
     }

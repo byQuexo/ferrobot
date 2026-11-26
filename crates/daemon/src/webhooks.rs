@@ -19,6 +19,7 @@ use time::OffsetDateTime;
 use utoipa::ToSchema;
 
 use crate::AppState;
+use crate::api::settings::{load_json, save_json};
 use crate::error::{ApiError, ErrorBody};
 use crate::otel::ExportStatus;
 
@@ -145,17 +146,11 @@ impl Webhooks {
 }
 
 pub(crate) async fn load(state: &AppState) -> Result<Stored, ApiError> {
-    match state.store.get_setting(SETTING).await? {
-        Some(raw) => {
-            serde_json::from_str(&raw).map_err(|e| ApiError::Internal(format!("webhooks: {e}")))
-        }
-        None => Ok(Stored::default()),
-    }
+    load_json(state, SETTING, "webhooks").await
 }
 
 pub(crate) async fn save(state: &AppState, stored: &Stored) -> Result<(), ApiError> {
-    let raw = serde_json::to_string(stored).map_err(|e| ApiError::Internal(e.to_string()))?;
-    Ok(state.store.put_setting(SETTING, raw).await?)
+    save_json(state, SETTING, stored).await
 }
 
 /// The URL of incoming webhook `id` with its secret.

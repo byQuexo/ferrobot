@@ -14,6 +14,7 @@ use serde_json::{Value, json};
 use time::OffsetDateTime;
 use utoipa::ToSchema;
 
+use crate::api::settings::{load_json, save_json};
 use crate::error::ApiError;
 use crate::{AppState, UiEvent};
 
@@ -107,16 +108,11 @@ impl Discord {
 }
 
 pub async fn load(state: &AppState) -> Result<DiscordSettings, ApiError> {
-    match state.store.get_setting(SETTING).await? {
-        Some(raw) => serde_json::from_str(&raw)
-            .map_err(|e| ApiError::Internal(format!("discord settings: {e}"))),
-        None => Ok(DiscordSettings::default()),
-    }
+    load_json(state, SETTING, "discord settings").await
 }
 
 pub async fn save(state: &AppState, settings: &DiscordSettings) -> Result<(), ApiError> {
-    let raw = serde_json::to_string(settings).map_err(|e| ApiError::Internal(e.to_string()))?;
-    Ok(state.store.put_setting(SETTING, raw).await?)
+    save_json(state, SETTING, settings).await
 }
 
 /// A Discord id: a snowflake, 15-21 digits.

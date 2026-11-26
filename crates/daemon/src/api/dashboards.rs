@@ -10,7 +10,8 @@ use serde::{Deserialize, Serialize};
 use time::OffsetDateTime;
 use utoipa::ToSchema;
 
-use super::ApiResult;
+use super::settings::{load_json, save_json};
+use super::{ApiResult, agent_ids, is_printable};
 use crate::AppState;
 use crate::error::{ApiError, ErrorBody};
 
@@ -38,13 +39,7 @@ pub(crate) struct Dashboard {
 }
 
 async fn resolve(state: &AppState, list: Vec<Dashboard>) -> Result<Vec<Dashboard>, ApiError> {
-    let agents: HashSet<AgentId> = state
-        .store
-        .list_agents()
-        .await?
-        .into_iter()
-        .map(|a| a.id)
-        .collect();
+    let agents = agent_ids(state).await?;
     let mut out = Vec::with_capacity(list.len());
     // A deleted agent takes its dashboards along.
     for mut d in list.into_iter().filter(|d| agents.contains(&d.agent_id)) {
@@ -59,11 +54,7 @@ async fn resolve(state: &AppState, list: Vec<Dashboard>) -> Result<Vec<Dashboard
 #[utoipa::path(get, path = "/v1/dashboards", tag = "chat",
     responses((status = 200, body = [Dashboard])))]
 pub(crate) async fn get_dashboards(State(state): State<AppState>) -> ApiResult<Vec<Dashboard>> {
-    let list = match state.store.get_setting(SETTING).await? {
-        Some(raw) => serde_json::from_str(&raw)
-            .map_err(|e| ApiError::Internal(format!("dashboards: {e}")))?,
-        None => Vec::new(),
-    };
+    let list = load_json(&state, SETTING, "dashboards").await?;
     Ok(Json(resolve(&state, list).await?))
 }
 
@@ -81,21 +72,13 @@ pub(crate) async fn put_dashboards(
             "at most {MAX_DASHBOARDS} dashboards"
         )));
     }
-    let agents: HashSet<AgentId> = state
-        .store
-        .list_agents()
-        .await?
-        .into_iter()
-        .map(|a| a.id)
-        .collect();
+    let agents = agent_ids(&state).await?;
     let mut seen = HashSet::new();
     let mut out = Vec::with_capacity(list.len());
     for mut d in list {
         let label = d.label.trim().to_owned();
         d.label = label;
-        if !(1..=MAX_LABEL).contains(&d.label.chars().count())
-            || d.label.chars().any(char::is_control)
-        {
+        if !is_printable(&d.label, MAX_LABEL) {
             return Err(ApiError::BadRequest(format!(
                 "a dashboard's name has 1-{MAX_LABEL} printable characters"
             )));
@@ -119,7 +102,6 @@ pub(crate) async fn put_dashboards(
             });
         }
     }
-    let raw = serde_json::to_string(&out).map_err(|e| ApiError::Internal(e.to_string()))?;
-    state.store.put_setting(SETTING, raw).await?;
+    save_json(&state, SETTING, &out).await?;
     Ok(Json(resolve(&state, out).await?))
 }

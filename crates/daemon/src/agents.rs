@@ -14,7 +14,7 @@ use ferrobot_core::{
 use ferrobot_mcp::{AgentRequestOutcome, AgentToolsOutcome, AgentToolsRequest};
 use ferrobot_store::{AgentPatch, NewAgent};
 
-use crate::api::check_len;
+use crate::api::{check_len, is_printable};
 use crate::error::ApiError;
 use crate::state::UiEvent;
 use crate::{AppState, lifecycle};
@@ -454,8 +454,7 @@ pub(crate) fn check_tags(tags: Vec<String>) -> Result<Vec<String>, ApiError> {
     let mut out: Vec<String> = Vec::with_capacity(tags.len());
     for tag in tags {
         let tag = tag.trim().to_owned();
-        let chars = tag.chars().count();
-        if chars == 0 || chars > MAX_TAG_CHARS || tag.chars().any(char::is_control) {
+        if !is_printable(&tag, MAX_TAG_CHARS) {
             return Err(ApiError::BadRequest(format!(
                 "tags must be 1-{MAX_TAG_CHARS} characters"
             )));

@@ -215,11 +215,7 @@ fn filter(q: &UsageQuery) -> Result<UsageFilter, ApiError> {
 }
 
 async fn overrides(state: &AppState) -> Result<Vec<PriceEntry>, ApiError> {
-    match state.store.get_setting(pricing::SETTING).await? {
-        Some(raw) => serde_json::from_str(&raw)
-            .map_err(|e| ApiError::Internal(format!("price overrides: {e}"))),
-        None => Ok(Vec::new()),
-    }
+    super::settings::load_json(state, pricing::SETTING, "price overrides").await
 }
 
 /// Calls, tokens and estimated cost of the model calls agents made through
@@ -370,8 +366,7 @@ pub(crate) async fn put_prices(
             source: None,
         });
     }
-    let raw = serde_json::to_string(&new).map_err(|e| ApiError::Internal(e.to_string()))?;
-    state.store.put_setting(pricing::SETTING, raw).await?;
+    super::settings::save_json(&state, pricing::SETTING, &new).await?;
     Ok(Json(pricing::effective(new)))
 }
 

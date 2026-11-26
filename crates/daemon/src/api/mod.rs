@@ -22,6 +22,8 @@ pub(crate) mod voice;
 pub(crate) mod webhooks;
 pub(crate) mod ws;
 
+use std::collections::HashSet;
+
 use axum::Json;
 use axum::Router;
 use axum::extract::State;
@@ -131,7 +133,6 @@ pub fn router() -> Router<AppState> {
         )
 }
 
-/// Model providers, connectors, CLIs, voice and webhooks.
 /// Pins, dashboards, trace export, webhooks and the Discord bridge.
 fn outside() -> Router<AppState> {
     Router::new()
@@ -257,6 +258,36 @@ pub(crate) fn check_len(field: &str, value: &str) -> Result<(), ApiError> {
         )));
     }
     Ok(())
+}
+
+/// 1 to `max` characters, none of them a control character.
+pub(crate) fn is_printable(s: &str, max: usize) -> bool {
+    (1..=max).contains(&s.chars().count()) && !s.chars().any(char::is_control)
+}
+
+pub(crate) async fn agent_ids(state: &AppState) -> Result<HashSet<AgentId>, ApiError> {
+    Ok(state
+        .store
+        .list_agents()
+        .await?
+        .into_iter()
+        .map(|a| a.id)
+        .collect())
+}
+
+/// `wanted` in order without repeats; each must be an agent.
+pub(crate) async fn known_agents(
+    state: &AppState,
+    wanted: Vec<AgentId>,
+) -> Result<Vec<AgentId>, ApiError> {
+    let mut agents = Vec::new();
+    for agent in wanted {
+        if !agents.contains(&agent) {
+            state.store.get_agent(agent).await?;
+            agents.push(agent);
+        }
+    }
+    Ok(agents)
 }
 
 /// How long a request waits for the sandbox backend, so a hanging engine cannot stall it.
