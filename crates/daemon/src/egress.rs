@@ -83,6 +83,14 @@ struct StoredCa {
     key: String,
     cert: String,
     domains: Vec<String>,
+    #[serde(default)]
+    name: String,
+}
+
+/// Each login's CA has its own name: TLS clients look the issuer up by name, so CAs sharing
+/// one made OpenSSL and GnuTLS try the wrong CA.
+fn ca_name(login: &str) -> String {
+    format!("ferrobot CLI login {login}")
 }
 
 /// Secret store entry of a login's CA: its key and certificate.
@@ -91,11 +99,11 @@ fn ca_secret(login: &str) -> String {
 }
 
 /// The CA's fixed fields; an issuer needs the same name and key usages as its certificate.
-fn ca_params(domains: &[String]) -> CertificateParams {
+fn ca_params(name: &str, domains: &[String]) -> CertificateParams {
     let mut params = CertificateParams::default();
-    let mut name = DistinguishedName::new();
-    name.push(DnType::CommonName, "ferrobot CLI logins");
-    params.distinguished_name = name;
+    let mut dn = DistinguishedName::new();
+    dn.push(DnType::CommonName, name);
+    params.distinguished_name = dn;
     params.is_ca = IsCa::Ca(BasicConstraints::Constrained(0));
     params.key_usages = vec![KeyUsagePurpose::KeyCertSign, KeyUsagePurpose::CrlSign];
     // Even misused, the CA cannot vouch for any other site.
@@ -110,9 +118,9 @@ fn ca_params(domains: &[String]) -> CertificateParams {
     params
 }
 
-fn make_ca(domains: &[String]) -> Result<(StoredCa, Ca), rcgen::Error> {
+fn make_ca(name: &str, domains: &[String]) -> Result<(StoredCa, Ca), rcgen::Error> {
     let key = KeyPair::generate()?;
-    let mut params = ca_params(domains);
+    let mut params = ca_params(name, domains);
     let now = time::OffsetDateTime::now_utc();
     params.not_before = now - time::Duration::days(1);
     params.not_after = now + time::Duration::days(3650);
@@ -121,6 +129,7 @@ fn make_ca(domains: &[String]) -> Result<(StoredCa, Ca), rcgen::Error> {
         key: B64.encode(key.serialize_der()),
         cert: B64.encode(&cert),
         domains: domains.to_vec(),
+        name: name.to_owned(),
     };
     Ok((
         stored,
@@ -137,7 +146,7 @@ fn load_ca(stored: &StoredCa) -> Option<Ca> {
     let cert = B64.decode(&stored.cert).ok()?;
     Some(Ca {
         cert,
-        issuer: Issuer::new(ca_params(&stored.domains), key),
+        issuer: Issuer::new(ca_params(&stored.name, &stored.domains), key),
         domains: stored.domains.clone(),
     })
 }
@@ -154,13 +163,13 @@ async fn ca(state: &AppState, login: &Login) -> Result<Arc<Ca>, String> {
     let stored = secrets.get(&key).await.map_err(|e| e.to_string())?;
     let loaded = stored
         .and_then(|raw| serde_json::from_str::<StoredCa>(&raw).ok())
-        .filter(|s| s.domains == login.hosts)
+        .filter(|s| s.domains == login.hosts && s.name == ca_name(&login.id))
         .as_ref()
         .and_then(load_ca);
     let ca = if let Some(ca) = loaded {
         ca
     } else {
-        let (stored, ca) = make_ca(&login.hosts).map_err(|e| e.to_string())?;
+        let (stored, ca) = make_ca(&ca_name(&login.id), &login.hosts).map_err(|e| e.to_string())?;
         let raw = serde_json::to_string(&stored).map_err(|e| e.to_string())?;
         secrets.set(&key, &raw).await.map_err(|e| e.to_string())?;
         ca
@@ -212,6 +221,7 @@ async fn leaf(state: &AppState, login: &Login, host: &str) -> Result<Arc<ServerC
     params.not_before = now - time::Duration::days(1);
     params.not_after = now + time::Duration::days(30);
     params.extended_key_usages = vec![ExtendedKeyUsagePurpose::ServerAuth];
+    params.use_authority_key_identifier_extension = true;
     let cert = params
         .signed_by(&key, &ca.issuer)
         .map_err(|e| e.to_string())?;
@@ -579,9 +589,16 @@ mod tests {
     #[test]
     fn the_ca_reloads_and_signs_only_under_its_domains() {
         let domains = vec!["github.com".to_owned()];
-        let (stored, made) = make_ca(&domains).unwrap();
+        let (stored, made) = make_ca(&ca_name("github"), &domains).unwrap();
         let loaded = load_ca(&stored).unwrap();
         assert_eq!(loaded.cert, made.cert);
+        let named = |der: &[u8], name: &str| der.windows(name.len()).any(|w| w == name.as_bytes());
+        assert!(named(&made.cert, "ferrobot CLI login github"));
+        let (_, other) = make_ca(&ca_name("example"), &["api.example.com".into()]).unwrap();
+        assert!(
+            !named(&other.cert, "login github"),
+            "every login's CA has its own name"
+        );
         let key = KeyPair::generate().unwrap();
         let leaf = CertificateParams::new(vec!["api.github.com".to_owned()])
             .unwrap()
