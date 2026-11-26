@@ -25,4 +25,11 @@ impl StoreError {
     pub(crate) fn corrupt(e: impl std::fmt::Display) -> Self {
         Self::Corrupt(e.to_string())
     }
+
+    pub(crate) fn not_found(entity: &'static str, key: impl std::fmt::Display) -> Self {
+        Self::NotFound {
+            entity,
+            key: key.to_string(),
+        }
+    }
 }

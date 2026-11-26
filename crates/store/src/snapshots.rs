@@ -98,10 +98,7 @@ impl Store {
                 |r| Ok(from_row(r)),
             )
             .optional()?
-            .ok_or_else(|| StoreError::NotFound {
-                entity: "snapshot",
-                key: id.to_string(),
-            })?
+            .ok_or_else(|| StoreError::not_found("snapshot", id))?
         })
         .await
     }

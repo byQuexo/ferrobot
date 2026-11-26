@@ -4,7 +4,8 @@ use ferrobot_core::{Agent, AgentId, AgentName, AgentStatus, AvatarCharacter, Too
 use rusqlite::{OptionalExtension, Row, params};
 use sha2::{Digest, Sha256};
 
-use crate::util::{fmt_ts, is_unique_violation, now, parse_ts};
+use crate::events::insert_event;
+use crate::util::{conflict_or, fmt_ts, is_unique_violation, now, parse_ts};
 use crate::{Store, StoreError};
 
 /// Input for registering an agent.
@@ -120,10 +121,7 @@ fn tools_column(tools: Vec<ToolGroup>) -> Result<Option<String>, StoreError> {
 const OPERATOR: &str = "operator";
 
 fn not_found(key: &impl std::fmt::Display) -> StoreError {
-    StoreError::NotFound {
-        entity: "agent",
-        key: key.to_string(),
-    }
+    StoreError::not_found("agent", key)
 }
 
 impl Store {
@@ -177,16 +175,7 @@ impl Store {
                         .map_or_else(|| OPERATOR.to_owned(), |id| id.to_string()),
                 ],
             )
-            .map_err(|e| {
-                if is_unique_violation(&e) {
-                    StoreError::Conflict {
-                        entity: "agent",
-                        key: row.name.to_string(),
-                    }
-                } else {
-                    e.into()
-                }
-            })?;
+            .map_err(|e| conflict_or(e, "agent", row.name.as_str()))?;
             // A new agent takes over a name another agent had before a rename.
             c.execute(
                 "DELETE FROM agent_aliases WHERE name = ?1",
@@ -404,11 +393,7 @@ impl Store {
                     continue;
                 }
                 let payload = serde_json::json!({ "from": old, "to": now_name }).to_string();
-                tx.execute(
-                    "INSERT INTO events (agent_id, turn_id, kind, payload, created_at)
-                     VALUES (?1, NULL, 'renamed', ?2, ?3)",
-                    params![id, payload, fmt_ts(now())],
-                )?;
+                insert_event(&tx, &id, None, "renamed", &payload)?;
                 added += 1;
             }
             tx.commit()?;

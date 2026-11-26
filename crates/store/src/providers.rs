@@ -4,7 +4,7 @@ use ferrobot_core::{Provider, ProviderKind};
 use rusqlite::{OptionalExtension, Row, params};
 use uuid::Uuid;
 
-use crate::util::{fmt_ts, is_unique_violation, parse_ts};
+use crate::util::{conflict_or, fmt_ts, parse_ts};
 use crate::{Store, StoreError};
 
 const COLUMNS: &str = "id, name, kind, base_url, region, project, default_model, created_at";
@@ -26,21 +26,7 @@ fn from_row(row: &Row<'_>) -> Result<Provider, StoreError> {
 }
 
 fn not_found(id: Uuid) -> StoreError {
-    StoreError::NotFound {
-        entity: "provider",
-        key: id.to_string(),
-    }
-}
-
-fn conflict(name: &str, e: rusqlite::Error) -> StoreError {
-    if is_unique_violation(&e) {
-        StoreError::Conflict {
-            entity: "provider",
-            key: name.to_owned(),
-        }
-    } else {
-        e.into()
-    }
+    StoreError::not_found("provider", id)
 }
 
 impl Store {
@@ -61,7 +47,7 @@ impl Store {
                     fmt_ts(p.created_at)
                 ],
             )
-            .map_err(|e| conflict(&p.name, e))?;
+            .map_err(|e| conflict_or(e, "provider", &p.name))?;
             Ok(p)
         })
         .await
@@ -84,7 +70,7 @@ impl Store {
                         p.default_model
                     ],
                 )
-                .map_err(|e| conflict(&p.name, e))?;
+                .map_err(|e| conflict_or(e, "provider", &p.name))?;
             if changed == 0 {
                 return Err(not_found(p.id));
             }

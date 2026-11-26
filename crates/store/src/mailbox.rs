@@ -3,7 +3,7 @@
 use ferrobot_core::{AgentId, MailMessage, MailStatus, Sender};
 use rusqlite::{OptionalExtension, Row, params};
 
-use crate::util::{fmt_ts, now, parse_ts};
+use crate::util::{fmt_ts, is_fk_violation, now, parse_ts};
 use crate::{MAX_DELIVERY_ATTEMPTS, Store, StoreError};
 
 pub(crate) const COLUMNS: &str =
@@ -80,16 +80,12 @@ pub(crate) fn insert_message(
             room
         ],
     )
-    .map_err(|e| match e {
-        rusqlite::Error::SqliteFailure(f, _)
-            if f.extended_code == rusqlite::ffi::SQLITE_CONSTRAINT_FOREIGNKEY =>
-        {
-            StoreError::NotFound {
-                entity: "agent or reply_to message",
-                key: recipient.to_string(),
-            }
+    .map_err(|e| {
+        if is_fk_violation(&e) {
+            StoreError::not_found("agent or reply_to message", recipient)
+        } else {
+            e.into()
         }
-        other => other.into(),
     })?;
     let id = c.last_insert_rowid();
     c.query_row(
@@ -173,10 +169,7 @@ impl Store {
                 |row| Ok(from_row(row)),
             )
             .optional()?
-            .ok_or_else(|| StoreError::NotFound {
-                entity: "message",
-                key: id.to_string(),
-            })?
+            .ok_or_else(|| StoreError::not_found("message", id))?
         })
         .await
     }

@@ -60,10 +60,7 @@ fn room(c: &Connection, id: i64) -> Result<Room, StoreError> {
         )
         .optional()?;
     let Some((created, ended, name)) = row else {
-        return Err(StoreError::NotFound {
-            entity: "room",
-            key: id.to_string(),
-        });
+        return Err(StoreError::not_found("room", id));
     };
     let mut stmt = c.prepare(
         "SELECT agent_id FROM room_members WHERE room_id = ?1 ORDER BY joined_at, rowid",
@@ -99,10 +96,7 @@ fn line(row: &Row<'_>) -> Result<RoomLine, StoreError> {
 fn group(c: &Connection, id: i64) -> Result<Room, StoreError> {
     match room(c, id) {
         Ok(r) if r.name.is_some() => Ok(r),
-        Ok(_) | Err(StoreError::NotFound { .. }) => Err(StoreError::NotFound {
-            entity: "group",
-            key: id.to_string(),
-        }),
+        Ok(_) | Err(StoreError::NotFound { .. }) => Err(StoreError::not_found("group", id)),
         Err(e) => Err(e),
     }
 }

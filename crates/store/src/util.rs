@@ -40,6 +40,26 @@ pub(crate) fn is_unique_violation(err: &rusqlite::Error) -> bool {
     )
 }
 
+pub(crate) fn is_fk_violation(err: &rusqlite::Error) -> bool {
+    matches!(
+        err,
+        rusqlite::Error::SqliteFailure(e, _)
+            if e.extended_code == rusqlite::ffi::SQLITE_CONSTRAINT_FOREIGNKEY
+    )
+}
+
+/// A unique-constraint violation as a [`StoreError::Conflict`] on `key`; other errors as they are.
+pub(crate) fn conflict_or(e: rusqlite::Error, entity: &'static str, key: &str) -> StoreError {
+    if is_unique_violation(&e) {
+        StoreError::Conflict {
+            entity,
+            key: key.to_owned(),
+        }
+    } else {
+        e.into()
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

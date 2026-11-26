@@ -4,8 +4,8 @@
 use ferrobot_core::{AgentId, MailMessage, MailStatus, Sender};
 use rusqlite::{OptionalExtension, Row, params};
 
+use crate::events::insert_event;
 use crate::mailbox::{COLUMNS, from_row_at, insert_message};
-use crate::util::{fmt_ts, now};
 use crate::{Store, StoreError};
 
 /// A task and how far it got.
@@ -64,22 +64,9 @@ fn task_row(row: &Row<'_>) -> Result<Task, StoreError> {
     })
 }
 
-fn mark(
-    c: &rusqlite::Connection,
-    agent: AgentId,
-    kind: &str,
-    task: i64,
-) -> rusqlite::Result<usize> {
-    c.execute(
-        "INSERT INTO events (agent_id, turn_id, kind, payload, created_at)
-         VALUES (?1, NULL, ?2, ?3, ?4)",
-        params![
-            agent.to_string(),
-            kind,
-            serde_json::json!({ "message_id": task }).to_string(),
-            fmt_ts(now())
-        ],
-    )
+fn mark(c: &rusqlite::Connection, agent: AgentId, kind: &str, task: i64) -> Result<(), StoreError> {
+    let payload = serde_json::json!({ "message_id": task }).to_string();
+    insert_event(c, &agent.to_string(), None, kind, &payload).map(drop)
 }
 
 impl Store {

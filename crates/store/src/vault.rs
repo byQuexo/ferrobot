@@ -50,10 +50,7 @@ pub(crate) fn folder(
                 |r| r.get(0),
             )
             .optional()?
-            .ok_or_else(|| StoreError::NotFound {
-                entity: "agent",
-                key: id.to_string(),
-            })?,
+            .ok_or_else(|| StoreError::not_found("agent", id))?,
     };
     Ok(vault.join(ROOT).join(name))
 }
