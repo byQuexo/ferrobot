@@ -79,9 +79,9 @@ your key or sign-in.
 
 ## Desktop
 
-The **Desktop** switch adds a screen to every agent's computer: a window
-manager with a taskbar, Chromium, a terminal and a file manager (about 110 MB
-more image). It starts when it is first needed and runs until the computer
+The **Desktop** switch adds a screen to every agent's computer: a dark desktop
+with a dock, Chromium, a terminal and a file manager (about 170 MB more
+image). It starts when it is first needed and runs until the computer
 stops.
 
 - The computer card at the top of the **Computer** tab shows a small live

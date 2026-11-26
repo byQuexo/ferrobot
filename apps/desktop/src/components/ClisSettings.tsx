@@ -109,7 +109,7 @@ export function ClisSettings(): JSX.Element | null {
       <ul class="pref-list">
         <PrefRow
           title="Desktop"
-          hint="A screen with a browser, a terminal and a file manager in every computer, about 110 MB more. You watch it in the Computer tab; agents with the Desktop tool use it."
+          hint="A screen with a browser, a terminal and a file manager in every computer, about 170 MB more. You watch it in the Computer tab; agents with the Desktop tool use it."
         >
           <Switch
             checked={view.desktop}

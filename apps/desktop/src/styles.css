@@ -849,9 +849,9 @@ textarea { resize: vertical; min-height: 40px; line-height: 1.5; }
 .console-err { color: var(--err); }
 .console-in { display: flex; align-items: center; gap: 8px; }
 .console-in input { flex: 1; min-width: 0; }
-.screen-thumb { position: relative; flex: none; display: grid; place-items: center; width: 120px; height: 75px; padding: 0; overflow: hidden; border: 1px solid var(--border); border-radius: var(--radius-sm); background: var(--surface); color: var(--muted); }
-button.screen-thumb { cursor: zoom-in; }
-button.screen-thumb:hover { border-color: var(--border-strong); }
+.screen-thumb { position: relative; flex: none; display: grid; place-items: center; width: 120px; height: 75px; padding: 0; overflow: hidden; border: 1px solid var(--border); border-radius: 10px; background: #0e1016; color: var(--muted); box-shadow: 0 1px 3px rgba(0, 0, 0, 0.25); }
+button.screen-thumb { cursor: zoom-in; transition: border-color 0.15s, box-shadow 0.15s; }
+button.screen-thumb:hover { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); }
 button.screen-thumb .screen-canvas { pointer-events: none; }
 .screen-thumb.idle { opacity: 0.6; display: flex; flex-direction: column; justify-content: center; gap: 4px; padding: 0 8px; }
 .thumb-note { font-size: 11px; line-height: 1.25; text-align: center; }
@@ -860,14 +860,20 @@ button.screen-thumb.idle { cursor: pointer; }
 .screen-live { position: absolute; inset: 0; }
 .screen-canvas { width: 100%; height: 100%; }
 .screen-lost { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 8px; background: color-mix(in srgb, var(--surface) 85%, transparent); }
-.screen-full { position: fixed; inset: 0; z-index: 60; display: flex; flex-direction: column; background: var(--bg); color: var(--text); }
-.screen-head { flex: none; display: flex; align-items: center; gap: 8px; min-width: 0; padding: 8px 12px; border-bottom: 1px solid var(--border); background: var(--surface); }
-.screen-head > svg { flex: none; color: var(--muted); }
-.screen-head strong { min-width: 0; font-size: 14px; }
-.screen-mode { flex: none; padding: 2px 8px; border-radius: 999px; background: var(--surface-2); font-size: 12px; color: var(--muted); white-space: nowrap; }
-.screen-mode.on { background: var(--accent-soft); color: var(--accent); }
-.screen-head .grow { flex: 1; }
-.screen-stage { position: relative; flex: 1; min-height: 0; margin: 12px; }
+/* The full view is dark in both themes: the desktop sits letterboxed on it. */
+.screen-full { position: fixed; inset: 0; z-index: 60; background: #0b0c10; color: #e6e7ec; }
+.screen-stage { position: absolute; inset: 52px 24px 80px; }
+.screen-stage canvas { border-radius: 10px; box-shadow: 0 24px 64px rgba(0, 0, 0, 0.55); }
+.screen-title { position: absolute; top: 16px; left: 24px; right: 72px; display: flex; align-items: center; gap: 8px; min-width: 0; font-size: 14px; font-weight: 500; color: #a9acb8; }
+.screen-title svg { flex: none; }
+.screen-close { position: absolute; top: 8px; right: 12px; }
+.screen-close .icon-btn { color: #a9acb8; }
+.screen-close .icon-btn:hover { background: rgba(255, 255, 255, 0.08); color: #ffffff; }
+.screen-pill { position: absolute; left: 50%; bottom: 18px; transform: translateX(-50%); display: flex; align-items: center; gap: 12px; padding: 5px 5px 5px 14px; border: 1px solid rgba(255, 255, 255, 0.09); border-radius: 999px; background: rgba(28, 30, 37, 0.92); box-shadow: 0 10px 32px rgba(0, 0, 0, 0.5); white-space: nowrap; }
+.screen-pill.on { border-color: color-mix(in srgb, var(--accent) 65%, transparent); }
+.screen-mode { display: flex; align-items: center; gap: 6px; font-size: 13px; color: #a9acb8; }
+.screen-pill.on .screen-mode { color: #e6e7ec; }
+.screen-pill.on .screen-mode svg { color: var(--accent); }
 
 /* Appearance (Settings → Appearance) and keyboard shortcuts. Defaults keep the tokens above. */
 :root { --chat-bg: var(--bg); --chat-zoom: 1; }

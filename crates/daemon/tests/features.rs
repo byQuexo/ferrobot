@@ -9441,7 +9441,9 @@ async fn the_desktop_is_opt_in_paused_for_the_operator_and_never_with_a_cli_acco
     let calls = backend.calls();
     let build = calls.iter().find(|c| c.starts_with("build ")).unwrap();
     assert!(
-        build.contains(" jq ") && build.ends_with(" xvfb"),
+        [" jq ", " openbox ", " tint2 ", " xvfb "]
+            .iter()
+            .all(|p| build.contains(p)),
         "{build}"
     );
     // The desktop alone can be switched off; the package list stays.
