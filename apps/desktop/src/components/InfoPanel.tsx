@@ -41,6 +41,7 @@ import { modelLabel } from "../lib/models.ts";
 import { TagChips } from "./AgentMeta.tsx";
 import { Avatar } from "./Avatar.tsx";
 import { Console, Files } from "./ComputerTools.tsx";
+import { DesktopPreview } from "./Desktop.tsx";
 import { CredentialFix } from "./CredentialFix.tsx";
 import { ToolCard } from "./Chat.tsx";
 import { AgentWebhooks } from "./WebhooksSettings.tsx";
@@ -282,11 +283,22 @@ function Computer(props: { agent: Agent }): JSX.Element {
     <div class="stack">
       <section class="card computer">
         <div class={`machine p-${info.presence}`}>
-          <Cpu size={24} />
-          <div>
-            <strong>{presenceLabel(info.presence)}</strong>
-            <span class="muted small">{computerSummary(props.agent.status, info)}</span>
+          <div class="grow">
+            <strong class="ellipsis" title={`${props.agent.name}'s computer`}>
+              {props.agent.name}'s computer
+            </strong>
+            <span class="muted small">
+              {asleep
+                ? computerSummary(props.agent.status, info)
+                : `${presenceLabel(info.presence)} · ${computerSummary(props.agent.status, info)}`}
+            </span>
           </div>
+          <DesktopPreview
+            key={`desktop-${id}`}
+            agent={id}
+            name={props.agent.name}
+            asleep={asleep}
+          />
         </div>
         <details class="computer-details">
           <summary>Details</summary>

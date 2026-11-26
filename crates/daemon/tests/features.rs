@@ -755,7 +755,7 @@ async fn cli_image_reaches_new_and_woken_sandboxes() {
     assert_eq!(status, 200);
     assert_eq!(
         v,
-        json!({"packages": [], "clis": [], "status": "idle", "error": null, "supported": true})
+        json!({"packages": [], "clis": [], "desktop": false, "status": "idle", "error": null, "supported": true})
     );
 
     let running = create(&d, json!({"name": "ada"})).await;
@@ -9344,4 +9344,112 @@ async fn clis_install_per_agent_sign_in_in_a_throwaway_computer_and_can_be_propo
     assert_eq!(decide(&d, ann_id, qid, "approve").await.0, 202);
     let (_, all) = http(&d.ui, "GET", "/v1/clis", None).await;
     assert_eq!(cli_in(&all, "fetcher")["agents"], json!([ann]), "{all}");
+}
+
+#[tokio::test]
+async fn the_desktop_is_opt_in_paused_for_the_operator_and_never_with_a_cli_account() {
+    let backend = Arc::new(StatefulBackend::default());
+    let d = start(backend.clone(), None, "127.0.0.1:0").await;
+    let ada = create(&d, json!({"name": "ada"})).await;
+    let ada_id = ada["id"].as_str().unwrap().to_owned();
+    assert!(
+        !ada["tools"].as_array().unwrap().contains(&json!("desktop")),
+        "off by default: {ada}"
+    );
+    let mcp = mcp_as(&d, backend.token("ada")).await;
+    let listed = |tools: Vec<rmcp::model::Tool>| tools.iter().any(|t| t.name == "desktop");
+    assert!(!listed(mcp.list_all_tools().await.unwrap()));
+
+    let mut tools = ada["tools"].as_array().unwrap().clone();
+    tools.push(json!("desktop"));
+    let path = format!("/v1/agents/{ada_id}");
+    let (status, a) = http(&d.ui, "PATCH", &path, Some(json!({ "tools": tools }))).await;
+    assert_eq!(status, 200, "{a}");
+    assert!(listed(mcp.list_all_tools().await.unwrap()));
+
+    // A screenshot comes back as an image; xdotool steps as text.
+    let desktop = |args: Value| {
+        mcp.call_tool(
+            rmcp::model::CallToolRequestParams::new("desktop")
+                .with_arguments(args.as_object().cloned().unwrap()),
+        )
+    };
+    let shot = desktop(json!({"action": "screenshot"})).await.unwrap();
+    assert!(
+        matches!(&shot.content[0], rmcp::model::ContentBlock::Image(i) if i.mime_type == "image/png"),
+        "{shot:?}"
+    );
+    let click = desktop(json!({"action": "click", "x": 10, "y": 10}))
+        .await
+        .unwrap();
+    assert_ne!(click.is_error, Some(true), "{click:?}");
+    let off = desktop(json!({"action": "click", "x": 5000, "y": 10}))
+        .await
+        .unwrap();
+    assert_eq!(off.is_error, Some(true), "off the screen");
+
+    // While the operator holds the desktop, the agent is told to wait, not kept waiting.
+    let control = d.state.desktop.take(ada_id.parse().unwrap());
+    let paused = desktop(json!({"action": "screenshot"})).await.unwrap();
+    assert_eq!(paused.is_error, Some(true));
+    assert!(
+        format!("{paused:?}").contains("operator is using"),
+        "{paused:?}"
+    );
+    drop(control);
+    let back = desktop(json!({"action": "screenshot"})).await.unwrap();
+    assert_ne!(back.is_error, Some(true));
+
+    // Never both a CLI account and the desktop, whichever comes first.
+    let lend = |agent: &str| {
+        let body = json!({
+            "install": {"kind": "npm", "package": "example-cli"},
+            "account": {"hosts": ["api.example.com"], "env": ["EXAMPLE_API_KEY"]},
+            "agents": [agent],
+        });
+        http(&d.ui, "PUT", "/v1/clis/example", Some(body))
+    };
+    let (status, body) = lend(&ada_id).await;
+    assert_eq!(status, 400, "{body}");
+    let bob = create(&d, json!({"name": "bob"})).await;
+    let bob_id = bob["id"].as_str().unwrap();
+    assert_eq!(lend(bob_id).await.0, 200);
+    let mut tools = bob["tools"].as_array().unwrap().clone();
+    tools.push(json!("desktop"));
+    let bob_path = format!("/v1/agents/{bob_id}");
+    let (status, body) = http(&d.ui, "PATCH", &bob_path, Some(json!({ "tools": tools }))).await;
+    assert_eq!(status, 400, "{body}");
+    assert!(
+        body["message"].as_str().unwrap().contains("CLI account"),
+        "{body}"
+    );
+
+    // The screen is an operator route like every other.
+    let screen = format!("/v1/agents/{ada_id}/screen");
+    let (status, _, _) = http_raw(&d.ui, "GET", &screen, &[("Authorization", "")], b"").await;
+    assert_eq!(status, 401);
+
+    // Turning the desktop on builds its packages into the CLIs image.
+    let body = json!({"packages": ["jq"], "desktop": true});
+    let (status, v) = http(&d.ui, "PUT", "/v1/clis", Some(body)).await;
+    assert_eq!((status, &v["desktop"]), (200, &json!(true)), "{v}");
+    eventually("the desktop image", Duration::from_secs(5), || async {
+        let (_, v) = http(&d.ui, "GET", "/v1/clis", None).await;
+        (v["status"] == "ready").then_some(())
+    })
+    .await;
+    let calls = backend.calls();
+    let build = calls.iter().find(|c| c.starts_with("build ")).unwrap();
+    assert!(
+        build.contains(" jq ") && build.ends_with(" xvfb"),
+        "{build}"
+    );
+    // The desktop alone can be switched off; the package list stays.
+    let off = json!({ "desktop": false });
+    let (status, v) = http(&d.ui, "PUT", "/v1/clis", Some(off)).await;
+    assert_eq!(status, 200, "{v}");
+    assert_eq!(
+        (&v["desktop"], &v["packages"]),
+        (&json!(false), &json!(["jq"]))
+    );
 }

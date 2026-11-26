@@ -371,9 +371,12 @@ export class DaemonClient {
   /** 5-hour and weekly plan use of Claude Code and ChatGPT-signed-in Codex providers. */
   limits = (): Promise<ProviderLimits[]> => this.#request("GET", "/v1/limits");
   clis = (): Promise<ClisView> => this.#request("GET", "/v1/clis");
-  /** Saves the packages and starts building their image. */
-  updateClis = (packages: string[]): Promise<ClisView> =>
-    this.#request("PUT", "/v1/clis", { packages });
+  /** Saves the plain packages and/or the desktop and starts building their image. */
+  updateClis = (update: { packages?: string[]; desktop?: boolean }): Promise<ClisView> =>
+    this.#request("PUT", "/v1/clis", update);
+  /** The agent's desktop as VNC over a WebSocket; `control`: mouse and keyboard reach it. */
+  screenUrl = (id: string, control: boolean): string =>
+    this.url(`/v1/agents/${id}/screen${control ? "?control=true" : ""}`).replace(/^http/, "ws");
   settings = (): Promise<GeneralSettings> => this.#request("GET", "/v1/settings");
   updateSettings = (s: GeneralSettings): Promise<GeneralSettings> =>
     this.#request("PUT", "/v1/settings", s);

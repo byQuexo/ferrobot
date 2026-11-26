@@ -15,7 +15,7 @@ import {
 } from "../lib/clis.ts";
 import { PrefRow } from "./AppearanceSettings.tsx";
 import { LinkOut } from "./ProvidersSettings.tsx";
-import { Button, Dialog, IconButton } from "./ui.tsx";
+import { Button, Dialog, IconButton, Switch } from "./ui.tsx";
 
 const STATUS: Record<ClisView["status"], string> = {
   idle: "",
@@ -106,6 +106,22 @@ export function ClisSettings(): JSX.Element | null {
         ))}
       </ul>
       {view.clis.length === 0 && <p class="muted small">No CLIs yet.</p>}
+      <ul class="pref-list">
+        <PrefRow
+          title="Desktop"
+          hint="A screen with a browser, a terminal and a file manager in every computer, about 110 MB more. You watch it in the Computer tab; agents with the Desktop tool use it."
+        >
+          <Switch
+            checked={view.desktop}
+            label="Desktop"
+            onChange={(on) =>
+              void run(async () => {
+                setView(await client.updateClis({ desktop: on }));
+              })
+            }
+          />
+        </PrefRow>
+      </ul>
       <div class="row-actions">
         <Button
           onClick={() => {

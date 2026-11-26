@@ -401,6 +401,125 @@ pub struct CallAgentsResult {
     pub note: String,
 }
 
+#[derive(Debug, Clone, Copy, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum DesktopStep {
+    Screenshot,
+    Click,
+    DoubleClick,
+    RightClick,
+    Move,
+    Type,
+    Key,
+    Scroll,
+}
+
+#[derive(Debug, Clone, Copy, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum ScrollDirection {
+    Up,
+    Down,
+    Left,
+    Right,
+}
+
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct DesktopArgs {
+    /// What to do: `screenshot` shows the screen; `click`, `double_click`, `right_click`,
+    /// `move` and `scroll` act at `x`,`y`; `type` types `text`; `key` presses `keys`.
+    pub action: DesktopStep,
+    /// Pixels from the screen's left edge, as in the screenshot.
+    pub x: Option<u32>,
+    /// Pixels from the screen's top edge.
+    pub y: Option<u32>,
+    /// `type`: the text, up to 2000 characters.
+    pub text: Option<String>,
+    /// `key`: keys or chords separated by spaces, e.g. `ctrl+l` or `Return`.
+    pub keys: Option<String>,
+    /// `scroll`: which way.
+    pub direction: Option<ScrollDirection>,
+    /// `scroll`: wheel steps, 1-20 (default 3).
+    pub amount: Option<u32>,
+}
+
+const MAX_DESKTOP_TEXT: usize = 2000;
+
+fn desktop_action(args: DesktopArgs) -> Result<crate::DesktopAction, String> {
+    use crate::DesktopAction as A;
+    let at = || match (args.x, args.y) {
+        (Some(x), Some(y)) => Ok((x, y)),
+        _ => Err("give x and y".to_owned()),
+    };
+    Ok(match args.action {
+        DesktopStep::Screenshot => A::Screenshot,
+        DesktopStep::Move => {
+            let (x, y) = at()?;
+            A::Move { x, y }
+        }
+        step @ (DesktopStep::Click | DesktopStep::DoubleClick | DesktopStep::RightClick) => {
+            let (x, y) = at()?;
+            let button = if matches!(step, DesktopStep::RightClick) {
+                3
+            } else {
+                1
+            };
+            A::Click {
+                x,
+                y,
+                button,
+                double: matches!(step, DesktopStep::DoubleClick),
+            }
+        }
+        DesktopStep::Type => {
+            let text = args.text.filter(|t| !t.is_empty()).ok_or("give text")?;
+            if text.chars().count() > MAX_DESKTOP_TEXT {
+                return Err(format!(
+                    "type at most {MAX_DESKTOP_TEXT} characters at once"
+                ));
+            }
+            A::Type { text }
+        }
+        DesktopStep::Key => {
+            let keys: Vec<String> = args
+                .keys
+                .unwrap_or_default()
+                .split_whitespace()
+                .map(str::to_owned)
+                .collect();
+            let name_ok = |k: &String| {
+                k.len() <= 40
+                    && k.bytes()
+                        .all(|b| b.is_ascii_alphanumeric() || b == b'_' || b == b'+')
+            };
+            if keys.is_empty() || keys.len() > 20 || !keys.iter().all(name_ok) {
+                return Err(
+                    "give keys like `ctrl+l` or `Return`, up to 20, separated by spaces".into(),
+                );
+            }
+            A::Key { keys }
+        }
+        DesktopStep::Scroll => {
+            let (x, y) = at()?;
+            let amount = args.amount.unwrap_or(3);
+            if !(1..=20).contains(&amount) {
+                return Err("scroll 1 to 20 steps".into());
+            }
+            let button = match args.direction.ok_or("give a direction")? {
+                ScrollDirection::Up => 4,
+                ScrollDirection::Down => 5,
+                ScrollDirection::Left => 6,
+                ScrollDirection::Right => 7,
+            };
+            A::Scroll {
+                x,
+                y,
+                button,
+                amount,
+            }
+        }
+    })
+}
+
 #[derive(Debug, Deserialize, JsonSchema)]
 pub struct ReadMailboxArgs {
     /// How many recent messages to return (default 20, max 100).
@@ -1223,6 +1342,26 @@ impl FerrobotTools {
         }))
     }
 
+    #[tool(
+        description = "Use your desktop: a screen with a browser, a terminal and a file manager \
+        in your computer. Take a screenshot first and act at the pixel positions you see in it: \
+        click, double_click, right_click, move, scroll, type text or press keys. Take another \
+        screenshot to check what happened. If your operator is using the desktop, wait and try \
+        again later."
+    )]
+    async fn desktop(
+        &self,
+        Extension(parts): Extension<http::request::Parts>,
+        Parameters(args): Parameters<DesktopArgs>,
+    ) -> Result<rmcp::model::CallToolResult, ErrorData> {
+        let me = caller(&parts)?.0.id;
+        let action = desktop_action(args).map_err(|e| ErrorData::invalid_params(e, None))?;
+        Ok(match self.state.notifier.desktop(me, action).await {
+            Ok(result) => result,
+            Err(e) => rmcp::model::CallToolResult::error(vec![rmcp::model::ContentBlock::text(e)]),
+        })
+    }
+
     #[tool(description = "Read the most recent messages addressed to you (newest last).")]
     async fn read_mailbox(
         &self,
@@ -1373,6 +1512,7 @@ pub(crate) fn group_of(tool: &str) -> Option<ToolGroup> {
         "create_agent" | "set_agent_tools" => ToolGroup::CreateAgents,
         "add_connector" | "propose_cli" => ToolGroup::AddConnectors,
         "create_routine" => ToolGroup::Routines,
+        "desktop" => ToolGroup::Desktop,
         _ => return None,
     })
 }
@@ -1439,6 +1579,44 @@ impl ServerHandler for FerrobotTools {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn desktop_steps_need_their_arguments() {
+        use crate::DesktopAction as A;
+        let args = |v: serde_json::Value| desktop_action(serde_json::from_value(v).unwrap());
+        assert_eq!(
+            args(serde_json::json!({"action": "double_click", "x": 5, "y": 7})),
+            Ok(A::Click {
+                x: 5,
+                y: 7,
+                button: 1,
+                double: true
+            })
+        );
+        assert_eq!(
+            args(serde_json::json!({"action": "scroll", "x": 1, "y": 2, "direction": "down"})),
+            Ok(A::Scroll {
+                x: 1,
+                y: 2,
+                button: 5,
+                amount: 3
+            })
+        );
+        assert_eq!(
+            args(serde_json::json!({"action": "key", "keys": "ctrl+l Return"})),
+            Ok(A::Key {
+                keys: vec!["ctrl+l".into(), "Return".into()]
+            })
+        );
+        for bad in [
+            serde_json::json!({"action": "click", "x": 5}),
+            serde_json::json!({"action": "type"}),
+            serde_json::json!({"action": "key", "keys": "--clearmodifiers"}),
+            serde_json::json!({"action": "scroll", "x": 1, "y": 1, "direction": "up", "amount": 99}),
+        ] {
+            assert!(args(bad.clone()).is_err(), "{bad}");
+        }
+    }
 
     #[test]
     fn guides_are_found_by_page_in_any_case() {

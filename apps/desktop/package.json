@@ -31,6 +31,7 @@
     "vite": "^8.3.8"
   },
   "dependencies": {
+    "@novnc/novnc": "1.7.0",
     "@tauri-apps/plugin-process": "^2.4.0",
     "@tauri-apps/plugin-updater": "^2.14.1",
     "lucide-preact": "^1.76.0",

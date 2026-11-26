@@ -75,7 +75,7 @@ async fn profile(
     creator: Option<AgentId>,
 ) -> Result<(Vec<ToolGroup>, Vec<Connector>), ApiError> {
     let Some(creator) = creator else {
-        let tools = spec.tools.clone().unwrap_or_else(ToolGroup::all);
+        let tools = spec.tools.clone().unwrap_or_else(ToolGroup::defaults);
         return Ok((ToolGroup::normalize(tools), Vec::new()));
     };
     let own = state.store.get_agent(creator).await?.tools;
@@ -198,6 +198,9 @@ pub async fn set_tools(
     }
     let me = state.store.get_agent(requester).await?;
     let tools = req.tools.map(|t| at_most(&me.tools, t)).transpose()?;
+    if let Some(tools) = &tools {
+        crate::desktop::check_tools(state, target.id, tools).await?;
+    }
     let mine = state.store.agent_connectors(requester).await?;
     let connectors = req.connectors.map(|n| pick(&mine, &n)).transpose()?;
     let have = state.store.agent_connectors(target.id).await?;

@@ -2166,6 +2166,70 @@
         }
       }
     },
+    "/v1/agents/{id}/screen": {
+      "get": {
+        "tags": [
+          "sandbox"
+        ],
+        "summary": "The agent's desktop as VNC (RFB) over binary WebSocket frames, for a VNC client such as\nnoVNC. Wakes the computer and starts the desktop; nothing listens on a port in it.",
+        "operationId": "screen",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "Agent id (UUID)",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "control",
+            "in": "path",
+            "description": "`true`: the operator's mouse and keyboard reach the desktop, and the agent's `desktop`\ntool waits until this connection closes. Otherwise view only.",
+            "required": true,
+            "schema": {
+              "type": "boolean"
+            }
+          }
+        ],
+        "responses": {
+          "101": {
+            "description": "Switching protocols; then RFB in binary frames"
+          },
+          "401": {
+            "description": "Missing or wrong API token",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Unknown agent",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "No desktop in this computer",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/v1/agents/{id}/snapshots": {
       "get": {
         "tags": [
@@ -8237,6 +8301,7 @@
         "required": [
           "packages",
           "clis",
+          "desktop",
           "status",
           "supported"
         ],
@@ -8253,6 +8318,10 @@
             "items": {
               "$ref": "#/components/schemas/CliView"
             }
+          },
+          "desktop": {
+            "type": "boolean",
+            "description": "Whether the image also has a desktop the operator watches and agents with the Desktop\ntools use."
           },
           "status": {
             "$ref": "#/components/schemas/BuildStatus"
@@ -11280,7 +11349,7 @@
       },
       "ToolGroup": {
         "type": "string",
-        "description": "A group of tools an agent can have on or off. The first six are ferrobot's own MCP tools\n(enforced by the daemon), the last three the model's built-in tools (enforced by the runner).",
+        "description": "A group of tools an agent can have on or off. Shell, Files and Web are the model's built-in\ntools (enforced by the runner); the others are ferrobot's own MCP tools (enforced by the daemon).",
         "enum": [
           "team",
           "memory",
@@ -11290,7 +11359,8 @@
           "routines",
           "shell",
           "files",
-          "web"
+          "web",
+          "desktop"
         ]
       },
       "ToolsUnsupported": {
@@ -11820,16 +11890,23 @@
       "UpdateClis": {
         "type": "object",
         "description": "A new Debian package list (before 0.1.11; `PUT /v1/clis/{id}` adds any CLI).",
-        "required": [
-          "packages"
-        ],
         "properties": {
           "packages": {
-            "type": "array",
+            "type": [
+              "array",
+              "null"
+            ],
             "items": {
               "type": "string"
             },
-            "description": "Debian package names, at most 32; other CLIs stay."
+            "description": "Debian package names, at most 32; other CLIs stay. Absent: unchanged."
+          },
+          "desktop": {
+            "type": [
+              "boolean",
+              "null"
+            ],
+            "description": "Adds (`true`) or removes (`false`) the desktop; absent: unchanged."
           }
         }
       },

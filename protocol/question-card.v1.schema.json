@@ -622,7 +622,7 @@
       "type": "string"
     },
     "ToolGroup": {
-      "description": "A group of tools an agent can have on or off. The first six are ferrobot's own MCP tools\n(enforced by the daemon), the last three the model's built-in tools (enforced by the runner).",
+      "description": "A group of tools an agent can have on or off. Shell, Files and Web are the model's built-in\ntools (enforced by the runner); the others are ferrobot's own MCP tools (enforced by the daemon).",
       "enum": [
         "team",
         "memory",
@@ -632,7 +632,8 @@
         "routines",
         "shell",
         "files",
-        "web"
+        "web",
+        "desktop"
       ],
       "type": "string"
     }

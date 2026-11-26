@@ -244,6 +244,32 @@ the code and this file together.
   The block calls the entries notes, not instructions, that never override
   theirs; the operator sees and edits them in Settings → Global memory.
 
+## Desktop (roadmap item 4, 0.1.11)
+
+- **An option of the CLIs image, not a second image.** Settings → CLIs → Desktop adds Xvfb,
+  IceWM, lxterminal, PCManFM, x11vnc, socat, xdotool, scrot and procps to the shared image
+  (Chromium is already in the runner image for PDFs), about 110 MB. The programs start on demand
+  (`desktop::START`, idempotent), since a stopped computer loses them.
+- **VNC over a streaming exec, no port.** Each screen connection runs x11vnc in inetd mode; its
+  inetd mode writes to stdin, so socat gives it a socketpair, and `DISPLAY` carries the display
+  because socat reads `:` as a separator. x11vnc ignores socat's SIGTERM at the end, so the
+  wrapper kills it by its own log name. `-unixsock` would avoid that but needs a patched
+  libvncserver. Watching connections get `-viewonly`, enforced by the server.
+- **Control belongs to a connection.** `?control=true` opens a non-view-only server and holds
+  `Desktop::take` until the WebSocket closes, so a closed window never leaves the agent paused;
+  the agent's `desktop` tool returns "your operator is using your desktop" instead of waiting.
+- **Agent actions run in the daemon** (xdotool, scrot through exec), so the runner image is
+  unchanged; a screenshot is an MCP image result. Whether a driver passes it to the model is the
+  driver's business (not checked per driver yet).
+- **Opt-in and never with a CLI account.** `ToolGroup::defaults()` leaves Desktop out, so NULL
+  tools (every default group) never include it. Typing into the desktop's terminal skips
+  `tool_check`, and with a login's token swap that could push or publish without a card, so the
+  daemon refuses the pair in both directions. Tim decides at review whether to relax this.
+- **noVNC 1.7.0** (`@novnc/novnc`, MPL-2.0, ESM, no dependencies; approved by Tim) draws the
+  screen in the UI. The bundler drops its license headers, so its notices (MPL-2.0, and the MIT
+  and BSD-style terms of the pako and DES code it bundles) are in
+  `apps/desktop/public/THIRD-PARTY-NOTICES.txt`, which the app bundle and the repo carry.
+
 ## Connectors
 
 - **The daemon is the MCP gateway.** It connects to each connector as an MCP

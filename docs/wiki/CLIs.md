@@ -77,6 +77,26 @@ checksum, or the whole script) and the hosts its token would go to; Auto mode
 never skips it. Approving adds the CLI for that agent; an account still needs
 your key or sign-in.
 
+## Desktop
+
+The **Desktop** switch adds a screen to every agent's computer: a window
+manager with a taskbar, Chromium, a terminal and a file manager (about 110 MB
+more image). It starts when it is first needed and runs until the computer
+stops.
+
+- The computer card at the top of the **Computer** tab shows a small live
+  view; click it to open the screen over the whole window (**Close** or Escape
+  leaves). It is view only until you press **Use it myself**; **Hand back**
+  returns it. While you use it, the agent's Desktop tool tells it to wait.
+- Agents use it with the **Desktop** tool group, which you switch on per agent
+  (see [[Tools and Permissions|Tools-and-Permissions]]): screenshots, clicks,
+  typing, keys and scrolling, run by the daemon in the agent's computer.
+- The view travels through the daemon; nothing in the computer listens on a
+  port.
+- An agent with a CLI account cannot have the Desktop tool, and the other way
+  round: commands typed into the desktop's terminal skip the checks on risky
+  steps.
+
 ## When agents get them
 
 - New agents start from the new image.

@@ -37,6 +37,9 @@ pub(crate) struct ClisView {
     /// Debian packages in the image, sorted (also in `clis`).
     packages: Vec<String>,
     clis: Vec<CliView>,
+    /// Whether the image also has a desktop the operator watches and agents with the Desktop
+    /// tools use.
+    desktop: bool,
     status: BuildStatus,
     /// Why the last build failed; null otherwise.
     error: Option<String>,
@@ -47,9 +50,16 @@ pub(crate) struct ClisView {
 /// A new Debian package list (before 0.1.11; `PUT /v1/clis/{id}` adds any CLI).
 #[derive(Debug, Deserialize, ToSchema)]
 pub(crate) struct UpdateClis {
-    /// Debian package names, at most 32; other CLIs stay.
-    packages: Vec<String>,
+    /// Debian package names, at most 32; other CLIs stay. Absent: unchanged.
+    #[serde(default)]
+    packages: Option<Vec<String>>,
+    /// Adds (`true`) or removes (`false`) the desktop; absent: unchanged.
+    #[serde(default)]
+    desktop: Option<bool>,
 }
+
+/// Most packages the operator lists; the desktop's come on top.
+const MAX_CLI_PACKAGES: usize = 32;
 
 /// A CLI as `PUT /v1/clis/{id}` takes it.
 #[derive(Debug, Deserialize, ToSchema)]
@@ -74,9 +84,9 @@ pub(crate) struct CliToken {
 
 async fn view(state: &AppState) -> ApiResult<ClisView> {
     let (status, error) = state.clis.get();
-    let all = clis::load(state).await?.clis;
+    let stored = clis::load(state).await?;
     let mut out = Vec::new();
-    for cli in all {
+    for cli in stored.clis {
         out.push(CliView {
             has_token: crate::logins::token(state, &cli.id).await.is_some(),
             error: state.clis.error_of(&cli.id),
@@ -87,6 +97,7 @@ async fn view(state: &AppState) -> ApiResult<ClisView> {
     Ok(Json(ClisView {
         packages: clis::packages(&plain),
         clis: out,
+        desktop: stored.desktop,
         status,
         error,
         supported: state.backend.supports_image_builds(),
@@ -120,16 +131,28 @@ pub(crate) async fn put_clis(
     State(state): State<AppState>,
     Json(req): Json<UpdateClis>,
 ) -> ApiResult<ClisView> {
-    let packages = ferrobot_sandbox::package_set(&req.packages)
+    let packages = req
+        .packages
+        .map(|p| ferrobot_sandbox::package_set(&p))
+        .transpose()
         .map_err(|e| ApiError::BadRequest(e.to_string()))?;
-    if !packages.is_empty() && !state.backend.supports_image_builds() {
+    if packages
+        .as_ref()
+        .is_some_and(|p| p.len() > MAX_CLI_PACKAGES)
+    {
+        return Err(ApiError::BadRequest(format!(
+            "at most {MAX_CLI_PACKAGES} packages"
+        )));
+    }
+    let wants_image = packages.as_ref().is_some_and(|p| !p.is_empty()) || req.desktop == Some(true);
+    if wants_image && !state.backend.supports_image_builds() {
         return Err(SandboxError::NotImplemented {
             backend: state.backend.kind(),
             operation: "image builds",
         }
         .into());
     }
-    clis::apply(&state, packages).await?;
+    clis::apply(&state, packages, req.desktop).await?;
     view(&state).await
 }
 

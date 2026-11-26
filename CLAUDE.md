@@ -167,6 +167,11 @@ Principles:
   `api/discord.rs` — `/v1/discord`. Settings in the `discord` setting.
 - `crates/daemon/src/stop.rs` — the operator's Stop (`interrupt?chain=true`): the agent's turn,
   the turns of agents working on messages from that chain, and agent messages queued among them.
+- `crates/daemon/src/desktop.rs`, `api/desktop.rs` — the agent's desktop: its
+  packages ride on the CLIs image (`clis.rs`, `desktop` flag), started on demand; the operator's
+  view is `/v1/agents/{id}/screen` (x11vnc in inetd mode behind socat over a streaming exec, no
+  port; `?control=true` takes it over and pauses the agent's `desktop` tool); agents act through
+  the opt-in Desktop group (xdotool, scrot). UI: `apps/desktop/src/components/Desktop.tsx` (noVNC).
 - `crates/daemon/src/tasks.rs` — tracked tasks: automatic report and reminder;
   `crates/store/src/tasks.rs` — task state from `task` events and the mailbox.
 - `crates/mcp/src/tools.rs` — MCP tools; `crates/mcp/src/lib.rs` — `MailboxNotifier`.
@@ -321,6 +326,12 @@ daemon, `docker ps -a` must be empty of ferrobot containers.
   An account's variables never replace the sandbox's own (proxy, CA, `FERROBOT_*`, `PATH`...). Other
   public hosts get a plain tunnel, port 443 only; private, loopback and link-local addresses are
   refused. Never log `Authorization` or `Proxy-Authorization`.
+- **The Desktop group is opt-in and never meets a CLI account.** It is not in
+  `ToolGroup::defaults()` (NULL tools), so no agent gets it unless it is switched on; an agent
+  never has both the Desktop group and a CLI account (`desktop::check_tools` on tool changes, the
+  same check in `put_cli` on account agents), because commands typed into its desktop's terminal
+  skip `tool_check`. The screen route stays inside the `/v1` auth layer, and nothing in a sandbox
+  listens on a port for it.
 - **Per-agent tokens** on `/runner/ws`, `/mcp`, `/model`, `/host/claude-code/turn`. An agent can only act
   as itself (MCP tools read the caller from the token). Only hashes are stored.
 - **`create_agent` needs operator approval unless Auto mode is on**: an

@@ -175,6 +175,9 @@ pub(crate) async fn update_agent(
     }
     check_character(req.character.flatten().as_ref())?;
     let tags = req.tags.map(check_tags).transpose()?;
+    if let Some(tools) = &req.tools {
+        crate::desktop::check_tools(&state, id, tools).await?;
+    }
     let reconfigure = name.is_some() || req.instructions.is_some() || req.tools.is_some();
     let old_name = match &name {
         Some(_) => Some(state.store.get_agent(id).await?.name),

@@ -23,7 +23,11 @@ In rough order. Nothing here has a date.
    screenshots in the chat's step trail, and a live view in the Computer tab.
    Like every other tool it stays inside the sandbox, goes through the tool
    groups (a new `computer` group, off by default) and the risky-step
-   classifier, and works with any model that accepts images.
+   classifier, and works with any model that accepts images. **Done** in
+   0.1.11: the desktop as an option of the
+   CLIs image, a live view in the Computer tab that you can take over, and the
+   `desktop` tool group (off by default, never together with a CLI account).
+   Open: screenshots in the chat's step trail, and checking typed commands.
 5. **Traces.** A trace view behind each reply's steps line: one timeline of
    the turn's model calls, tool calls, approval waits and the work it handed
    to other agents, with duration, counts and errors. The same traces go out
@@ -158,7 +162,7 @@ tested against fakes on a machine without KVM.
 | v0.1.8 | done | Dashboards, webhooks and a Discord bridge, trace waits and handoffs, deleted agents named in mentions, Auto mode keeps a card for the riskiest steps. |
 | v0.1.9 | done | Pins per chat, a redesigned Webhooks page, an agent's webhooks in its details, Discord reactions and a Discord chip in the chat. |
 | v0.1.10 | done | Cards answered from Discord, agents posting to Discord on their own, emoji-only replies, more Appearance settings, a faster first wake and smaller updates. |
-| v0.1.11 | done | Files and a console in the Computer tab, a quicker model in calls, calls among agents, Stop for a chain of work, Add CLI with accounts and per-tool connector scopes. |
+| v0.1.11 | done | A desktop for each agent that you can watch and take over, files and a console in the Computer tab, a quicker model in calls, calls among agents, Stop for a chain of work, Add CLI with accounts and per-tool connector scopes. |
 
 Ideas beyond this list are on [[Ideas]].
 

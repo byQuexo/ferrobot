@@ -5,8 +5,8 @@ on at most what they have, and some actions wait for your approval.
 ## Tool groups
 
 Set them in the agent's dialog (**New agent** or **Edit agent**), under
-**Tools**. A new agent you create gets every group unless you switch some
-off.
+**Tools**. A new agent you create gets every group but Desktop unless you
+switch some off.
 
 | Group | What it allows |
 | --- | --- |
@@ -19,9 +19,15 @@ off.
 | Shell | Run commands and every CLI on its computer |
 | Files | Read and edit files |
 | Web | Fetch pages and search the web |
+| Desktop | See and use its desktop: screenshots, clicks and typing (off unless you turn it on) |
 
-- The first six are ferrobot's own tools. The daemon hides the ones outside
-  the profile and refuses them if an agent calls them anyway.
+- Shell, Files and Web aside, these are ferrobot's own tools. The daemon hides
+  the ones outside the profile and refuses them if an agent calls them anyway.
+- **Desktop** is never on by default, not even for agents that have every
+  other group. It needs the desktop in Settings → CLIs (see [[CLIs]]), and an
+  agent with a CLI account cannot have it: commands typed into its desktop's
+  terminal would skip the checks on risky steps. While you use an agent's
+  desktop yourself, its Desktop tool tells it to wait.
 - Shell, Files and Web are the model harness's built-in tools. The runner
   turns them off per driver.
 - **Web** only shows for providers whose harness has web tools (Anthropic,
