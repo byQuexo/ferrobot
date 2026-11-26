@@ -1,4 +1,3 @@
-// Thin wrapper around the official MCP client for the daemon's tool server.
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import {
   StreamableHTTPClientTransport,

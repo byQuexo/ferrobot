@@ -5,6 +5,8 @@ import { readFile, writeFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import { fileURLToPath } from "node:url";
 
+import { errorMessage } from "./log.ts";
+
 /** Per stream; the host flags anything longer as truncated. */
 const MAX_OUTPUT = 1024 * 1024 + 1;
 
@@ -18,7 +20,7 @@ type Answer = Record<string, unknown>;
 function errorAnswer(err: unknown): Answer {
   const code = (err as { code?: unknown }).code;
   if (code === "ENOENT") return { error: "not_found" };
-  return { error: err instanceof Error ? err.message : String(err) };
+  return { error: errorMessage(err) };
 }
 
 function run(cmd: string[], cwd: string, env: Record<string, string>): Promise<Answer> {

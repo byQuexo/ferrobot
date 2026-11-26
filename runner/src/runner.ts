@@ -1,4 +1,3 @@
-// Turn orchestration: one turn at a time, interrupts, session persistence.
 import { errorMessage, log } from "./log.ts";
 import type { DaemonFrame, RunnerFrame, SteerFrame, TurnFrame } from "./protocol.ts";
 import type { SessionStore } from "./session.ts";
@@ -38,10 +37,7 @@ export class Runner {
   handle(frame: DaemonFrame): void {
     switch (frame.type) {
       case "welcome":
-        this.#instructions = frame.instructions;
-        this.#agentName = frame.agent_name;
-        this.#tools = frame.tools;
-        this.#deps.driver.reconfigure?.();
+        this.#configure(frame);
         this.#sessionId ??= frame.resume_session_id;
         log.info("welcome", { agent: frame.agent_name, resume: this.#sessionId });
         break;
@@ -54,10 +50,7 @@ export class Runner {
         break;
       case "configure":
         // Applies from the next turn; a running turn keeps its prompt and tools.
-        this.#instructions = frame.instructions;
-        this.#agentName = frame.agent_name;
-        this.#tools = frame.tools;
-        this.#deps.driver.reconfigure?.();
+        this.#configure(frame);
         log.info("profile updated", { agent: frame.agent_name });
         break;
       case "steer":
@@ -71,6 +64,13 @@ export class Runner {
         }
         break;
     }
+  }
+
+  #configure(frame: Extract<DaemonFrame, { type: "welcome" | "configure" }>): void {
+    this.#instructions = frame.instructions;
+    this.#agentName = frame.agent_name;
+    this.#tools = frame.tools;
+    this.#deps.driver.reconfigure?.();
   }
 
   /** The daemon redelivers in-flight messages, so a lost link aborts the turn. */

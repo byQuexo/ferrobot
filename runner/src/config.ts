@@ -1,8 +1,6 @@
 import { homedir } from "node:os";
 import { join } from "node:path";
 
-export type DriverKind = "mock" | "claude" | "openai" | "codex" | "acp" | "claude_code";
-
 interface CommonConfig {
   /** Agent API base, e.g. http://host.docker.internal:7879 */
   daemonUrl: URL;

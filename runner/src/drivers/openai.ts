@@ -511,7 +511,6 @@ function stringArg(input: Record<string, unknown>, key: string): string {
   return value;
 }
 
-/** The message of an OpenAI-style or daemon error envelope, else the start of the body. */
 const STATUS_HINTS: Record<number, string> = {
   401: "the key was refused",
   403: "access was refused",
@@ -522,6 +521,7 @@ const STATUS_HINTS: Record<number, string> = {
 const statusHint = (status: number): string =>
   STATUS_HINTS[status] ?? (status >= 500 ? "the provider had a problem" : "request refused");
 
+/** The message of an OpenAI-style or daemon error envelope, else the start of the body. */
 function errorSnippet(body: string): string {
   try {
     const parsed = JSON.parse(body) as unknown;

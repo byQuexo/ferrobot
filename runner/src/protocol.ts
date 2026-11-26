@@ -50,7 +50,6 @@ export const daemonFrameSchema = z.discriminatedUnion("type", [
 export type DaemonFrame = z.infer<typeof daemonFrameSchema>;
 export type TurnFrame = Extract<DaemonFrame, { type: "turn" }>;
 export type SteerFrame = Extract<DaemonFrame, { type: "steer" }>;
-export type WelcomeFrame = Extract<DaemonFrame, { type: "welcome" }>;
 
 export type TurnEvent =
   | { kind: "assistant_text"; text: string }
