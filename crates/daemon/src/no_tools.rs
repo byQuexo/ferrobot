@@ -9,7 +9,6 @@ use ferrobot_core::{Agent, AgentId};
 use serde_json::json;
 
 use crate::error::ApiError;
-use crate::state::UiEvent;
 use crate::views::ToolsUnsupported;
 use crate::{AppState, credentials};
 
@@ -120,12 +119,7 @@ async fn card(state: &AppState, agent: &Agent, model: &str, reason: &str) -> Res
     )
     .with_labels("Use without tools", "Keep tools")
     .in_turn(state.hub.current_turn(agent.id));
-    let payload = serde_json::to_value(&card).map_err(|e| ApiError::Internal(e.to_string()))?;
-    let event = state
-        .store
-        .append_event(agent.id, None, "question".into(), payload)
-        .await?;
-    state.publish(UiEvent::Event { event });
+    crate::agents::post_card(state, agent.id, &card).await?;
     Ok(())
 }
 
@@ -152,9 +146,7 @@ pub(crate) async fn answer_card(
         message_id: None,
         timed_out: false,
     };
-    let payload = serde_json::to_value(&answered).map_err(|e| ApiError::Internal(e.to_string()))?;
-    state.record(chat, None, "question_answered", payload).await;
-    Ok(answered)
+    crate::agents::record_answer(state, chat, answered).await
 }
 
 #[cfg(test)]
