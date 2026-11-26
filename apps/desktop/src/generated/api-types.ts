@@ -1096,6 +1096,60 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/logins": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Every login for CLIs, with its agents. */
+        get: operations["get_logins"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/logins/{kind}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * Lends the login to exactly these agents. Their computers restart (files kept) so the proxy
+         *     and stand-in token reach them, or leave them.
+         */
+        put: operations["put_login_agents"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/logins/{kind}/token": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /** Stores or removes the login's token. Kept in the daemon's secret store, never returned. */
+        put: operations["put_login_token"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/memory": {
         parameters: {
             query?: never;
@@ -2554,6 +2608,11 @@ export interface components {
              */
             url: string;
         };
+        LoginAgents: {
+            agents: string[];
+        };
+        /** @enum {string} */
+        LoginKind: "github";
         /** @description Sign-in progress per provider (in memory; a restart forgets pending ones). */
         LoginStatus: {
             /** @enum {string} */
@@ -2568,6 +2627,19 @@ export interface components {
             error: string;
             /** @enum {string} */
             state: "failed";
+        };
+        LoginToken: {
+            /** @description The service's token, e.g. a fine-grained GitHub token; `null` removes it. */
+            token?: string | null;
+        };
+        LoginView: {
+            kind: components["schemas"]["LoginKind"];
+            /** @description Whether a token is stored. The token itself is never returned. */
+            has_token: boolean;
+            /** @description The agents whose CLIs use this login. */
+            agents: string[];
+            /** @description The hosts whose requests get the token. */
+            hosts: string[];
         };
         /** @description One message in an agent's mailbox. */
         MailMessage: {
@@ -7151,6 +7223,122 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ProviderLimits"][];
+                };
+            };
+            /** @description Missing or wrong API token */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+        };
+    };
+    get_logins: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LoginView"][];
+                };
+            };
+            /** @description Missing or wrong API token */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+        };
+    };
+    put_login_agents: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The login */
+                kind: components["schemas"]["LoginKind"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["LoginAgents"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LoginView"];
+                };
+            };
+            /** @description An unknown agent */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Missing or wrong API token */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+        };
+    };
+    put_login_token: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The login */
+                kind: components["schemas"]["LoginKind"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["LoginToken"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LoginView"];
+                };
+            };
+            /** @description Not a token */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
                 };
             };
             /** @description Missing or wrong API token */

@@ -10,6 +10,7 @@ pub(crate) mod discord;
 pub(crate) mod files;
 pub(crate) mod flows;
 pub(crate) mod groups;
+pub(crate) mod logins;
 pub(crate) mod memory;
 pub(crate) mod otel;
 pub(crate) mod pins;
@@ -218,6 +219,9 @@ fn integrations() -> Router<AppState> {
         )
         .route("/v1/oauth/callback", get(connectors::oauth_callback))
         .route("/v1/clis", get(clis::get_clis).put(clis::put_clis))
+        .route("/v1/logins", get(logins::get_logins))
+        .route("/v1/logins/{kind}", put(logins::put_login_agents))
+        .route("/v1/logins/{kind}/token", put(logins::put_login_token))
         .route("/v1/voice", get(voice::get_voice).put(voice::put_voice))
         .route(
             "/v1/voice/speech",

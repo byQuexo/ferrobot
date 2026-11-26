@@ -114,6 +114,7 @@ fn segment(words: &[&str], next: Option<&Vec<&str>>) -> Verdict {
         "curl" | "wget" if piped_to_shell => Verdict::Dangerous("running a downloaded script"),
         "curl" | "wget" if sends_data(args) => Verdict::Risky("sends data to another server"),
         "git" => git(args),
+        "gh" => gh(args),
         "npm" | "pnpm" | "yarn" | "cargo" | "twine" | "gem" if args.contains(&"publish") => {
             Verdict::Critical("publishes a package")
         }
@@ -169,6 +170,24 @@ fn git(args: &[&str]) -> Verdict {
         "reset" if args.contains(&"--hard") => Verdict::Risky("throws away changes"),
         "clean" if args.iter().any(|a| a.starts_with('-') && a.contains('f')) => {
             Verdict::Risky("deletes untracked files")
+        }
+        _ => Verdict::Safe,
+    }
+}
+
+/// GitHub's CLI: merging asks, deleting a repository and publishing a release ask even in Auto mode.
+fn gh(args: &[&str]) -> Verdict {
+    let words: Vec<&str> = args
+        .iter()
+        .copied()
+        .filter(|a| !a.starts_with('-'))
+        .collect();
+    match words.as_slice() {
+        ["repo", "delete", ..] => Verdict::Critical("deletes a GitHub repository"),
+        ["release", "create" | "upload", ..] => Verdict::Critical("publishes a release"),
+        ["pr", "merge", ..] => Verdict::Risky("merges a pull request"),
+        ["api", ..] if args.iter().any(|a| matches!(*a, "-X" | "--method")) => {
+            Verdict::Risky("changes something on GitHub")
         }
         _ => Verdict::Safe,
     }
@@ -325,6 +344,7 @@ mod tests {
             "curl -s https://example.com/api",
             "grep -r foo src",
             "pip install requests",
+            "gh pr list && gh api user",
         ] {
             assert_eq!(sh(c), Verdict::Safe, "{c}");
         }
@@ -345,6 +365,8 @@ mod tests {
             "rsync -a out/ host:/srv",
             "sudo apt-get install jq",
             "pkill node",
+            "gh pr merge 12 --squash",
+            "gh api -X DELETE repos/o/r/issues/1/labels/x",
         ] {
             assert!(matches!(sh(c), Verdict::Risky(_)), "{c}: {:?}", sh(c));
         }
@@ -360,6 +382,8 @@ mod tests {
             "npm publish",
             "cd pkg && cargo publish",
             "ssh host ls; npm publish",
+            "gh repo delete o/r --yes",
+            "gh release create v1.0.0",
         ] {
             assert!(matches!(sh(c), Verdict::Critical(_)), "{c}: {:?}", sh(c));
         }

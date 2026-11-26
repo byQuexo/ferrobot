@@ -68,6 +68,8 @@ pub struct Settings {
     pub voice_upstream: Option<String>,
     /// Discord's REST API, for the Discord bridge (another one in tests).
     pub discord_api: String,
+    /// Base URL for every CLI-login host instead of the real one (tests).
+    pub login_upstream: Option<String>,
     /// Directory with the database and the API token file.
     pub data_dir: std::path::PathBuf,
     /// What `--storage-url` names, for diagnostics: `local` or its scheme (`s3`, ...).
@@ -109,6 +111,7 @@ impl std::fmt::Debug for Settings {
             storage,
             voice_upstream,
             discord_api,
+            login_upstream,
             data_dir,
             storage_kind,
             log,
@@ -143,6 +146,7 @@ impl std::fmt::Debug for Settings {
             .field("storage", storage)
             .field("voice_upstream", voice_upstream)
             .field("discord_api", discord_api)
+            .field("login_upstream", login_upstream)
             .field("data_dir", data_dir)
             .field("storage_kind", storage_kind)
             .field("log", log);
@@ -184,6 +188,7 @@ impl Settings {
             storage: Arc::new(object_store::memory::InMemory::new()),
             voice_upstream: None,
             discord_api: "https://discord.com/api/v10".into(),
+            login_upstream: None,
             data_dir: std::path::PathBuf::new(),
             storage_kind: "memory".into(),
             log: crate::logs::LogRing::default(),
@@ -297,6 +302,8 @@ pub struct AppState {
     pub discord: Arc<crate::discord::Discord>,
     /// Flow runs and their agent steps waiting for a turn.
     pub flows: Arc<crate::flows::Flows>,
+    /// The CLI-login proxy's CA and certificates.
+    pub egress: Arc<crate::egress::Egress>,
     /// When this daemon started.
     pub started: std::time::Instant,
 }
@@ -338,6 +345,7 @@ impl AppState {
             webhooks: Arc::default(),
             discord: Arc::default(),
             flows: Arc::default(),
+            egress: Arc::default(),
             started: std::time::Instant::now(),
         }
     }

@@ -70,7 +70,9 @@ In rough order. Nothing here has a date.
    with the key (AWS, Google Cloud) or pin their certificates. Per-tool
    scopes inside a connector (for example read-only GitHub tools), finer than
    today's switches per tool group. **Done** (next release): tools per
-   connector.
+   connector, and the GitHub login for `gh` and `git push` (token pasted in
+   Vault). Open: the daemon running `gh auth login --web` itself, and Vercel
+   and Stripe.
 9. **Faster, more natural calls.** Reasoning switched off or a fast model used
    only in calls, a setting for the pause that ends your turn, and calls
    among agents without you, with a pop-up to join. **Done** (next release):

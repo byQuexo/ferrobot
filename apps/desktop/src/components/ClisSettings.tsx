@@ -1,9 +1,10 @@
 import type { JSX } from "preact";
 import { useEffect, useState } from "preact/hooks";
 
-import type { ClisView } from "../api.ts";
+import type { ClisView, LoginView } from "../api.ts";
 import { useApp } from "../context.ts";
 import { Button } from "./ui.tsx";
+import { LOGIN_LABELS } from "./VaultSettings.tsx";
 
 /** Keyless tools that install cleanly on the runner image (Debian bookworm). */
 const CATALOG: [string, string][] = [
@@ -19,6 +20,7 @@ const CATALOG: [string, string][] = [
   ["tree", "Directory trees"],
   ["python3-pip", "Python with pip"],
   ["python3-venv", "Python virtual environments"],
+  ["gh", "GitHub CLI, with the GitHub login below"],
 ];
 
 /** Debian policy; the daemon checks again. */
@@ -108,8 +110,8 @@ export function ClisSettings(): JSX.Element | null {
           )}
         </div>
         <span class="hint">
-          Tools that need a login (gh, aws, gcloud) are left out: keys never enter a sandbox. Use a
-          connector for those.
+          gh and git push sign in through the GitHub login below. Other tools that need a login
+          (aws, gcloud) are left out: keys never enter a sandbox. Use a connector for those.
         </span>
       </span>
       <span class="field">
@@ -145,6 +147,63 @@ export function ClisSettings(): JSX.Element | null {
           {STATUS[view.status]} {view.error ?? ""}
         </span>
       </div>
+      <Logins />
     </section>
+  );
+}
+
+/** Which agents' CLIs sign in with each login; the token itself is set in Vault. */
+function Logins(): JSX.Element | null {
+  const { client, run, agents } = useApp();
+  const [logins, setLogins] = useState<LoginView[] | null>(null);
+  useEffect(() => {
+    void run(async () => {
+      setLogins(await client.logins());
+    });
+  }, []);
+  if (!logins) return null;
+  const list = [...agents.values()];
+  return (
+    <>
+      {logins.map((l, i) => (
+        <span key={l.kind} class="field">
+          {LOGIN_LABELS[l.kind]} login
+          <div
+            class="chips"
+            role="group"
+            aria-label={`Agents with the ${LOGIN_LABELS[l.kind]} login`}
+          >
+            {list.map((a) => {
+              const on = l.agents.includes(a.id);
+              return (
+                <button
+                  key={a.id}
+                  type="button"
+                  class={`chip${on ? " on" : ""}`}
+                  aria-pressed={on}
+                  onClick={() =>
+                    void run(async () => {
+                      const next = on ? l.agents.filter((x) => x !== a.id) : [...l.agents, a.id];
+                      const saved = await client.setLoginAgents(l.kind, next);
+                      setLogins((all) => all?.map((x, j) => (j === i ? saved : x)) ?? null);
+                    })
+                  }
+                >
+                  {a.name}
+                </button>
+              );
+            })}
+          </div>
+          <span class="hint">
+            {l.has_token
+              ? "Token stored in Vault."
+              : "No token yet: add one in Vault → CLI logins."}{" "}
+            The agents picked here get a stand-in token; the daemon swaps in the real one only for{" "}
+            {l.hosts.join(", ")}, so it never enters their computers. Changing the list restarts
+            their computers; their files stay.
+          </span>
+        </span>
+      ))}
+    </>
   );
 }

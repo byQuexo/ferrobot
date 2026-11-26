@@ -12,12 +12,14 @@ pub mod codex;
 pub mod connectors;
 pub mod credentials;
 pub mod discord;
+pub mod egress;
 pub mod error;
 pub mod files;
 pub mod flows;
 pub mod hub;
 pub mod lifecycle;
 pub mod limits;
+pub mod logins;
 pub mod logs;
 pub mod models;
 pub mod no_tools;
@@ -87,6 +89,10 @@ pub fn agent_router(state: AppState) -> Router {
         .merge(runner_ws::router().with_state(state.clone()))
         .merge(proxy::router().with_state(state.clone()))
         .merge(claude_code::router().with_state(state.clone()))
-        .merge(tool_check::router().with_state(state))
+        .merge(tool_check::router().with_state(state.clone()))
         .nest("/mcp", mcp)
+        .layer(axum::middleware::from_fn_with_state(
+            state,
+            egress::intercept,
+        ))
 }

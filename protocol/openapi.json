@@ -4537,6 +4537,161 @@
         }
       }
     },
+    "/v1/logins": {
+      "get": {
+        "tags": [
+          "clis"
+        ],
+        "summary": "Every login for CLIs, with its agents.",
+        "operationId": "get_logins",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/LoginView"
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or wrong API token",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/logins/{kind}": {
+      "put": {
+        "tags": [
+          "clis"
+        ],
+        "summary": "Lends the login to exactly these agents. Their computers restart (files kept) so the proxy\nand stand-in token reach them, or leave them.",
+        "operationId": "put_login_agents",
+        "parameters": [
+          {
+            "name": "kind",
+            "in": "path",
+            "description": "The login",
+            "required": true,
+            "schema": {
+              "$ref": "#/components/schemas/LoginKind"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/LoginAgents"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LoginView"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "An unknown agent",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or wrong API token",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/logins/{kind}/token": {
+      "put": {
+        "tags": [
+          "clis"
+        ],
+        "summary": "Stores or removes the login's token. Kept in the daemon's secret store, never returned.",
+        "operationId": "put_login_token",
+        "parameters": [
+          {
+            "name": "kind",
+            "in": "path",
+            "description": "The login",
+            "required": true,
+            "schema": {
+              "$ref": "#/components/schemas/LoginKind"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/LoginToken"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LoginView"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Not a token",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or wrong API token",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/v1/memory": {
       "get": {
         "tags": [
@@ -9098,6 +9253,26 @@
           }
         }
       },
+      "LoginAgents": {
+        "type": "object",
+        "required": [
+          "agents"
+        ],
+        "properties": {
+          "agents": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        }
+      },
+      "LoginKind": {
+        "type": "string",
+        "enum": [
+          "github"
+        ]
+      },
       "LoginStatus": {
         "oneOf": [
           {
@@ -9164,6 +9339,50 @@
           }
         ],
         "description": "Sign-in progress per provider (in memory; a restart forgets pending ones)."
+      },
+      "LoginToken": {
+        "type": "object",
+        "properties": {
+          "token": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "The service's token, e.g. a fine-grained GitHub token; `null` removes it."
+          }
+        }
+      },
+      "LoginView": {
+        "type": "object",
+        "required": [
+          "kind",
+          "has_token",
+          "agents",
+          "hosts"
+        ],
+        "properties": {
+          "kind": {
+            "$ref": "#/components/schemas/LoginKind"
+          },
+          "has_token": {
+            "type": "boolean",
+            "description": "Whether a token is stored. The token itself is never returned."
+          },
+          "agents": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "The agents whose CLIs use this login."
+          },
+          "hosts": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "The hosts whose requests get the token."
+          }
+        }
       },
       "MailMessage": {
         "type": "object",

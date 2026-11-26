@@ -2,11 +2,13 @@ import type { JSX } from "preact";
 import { useEffect, useRef, useState } from "preact/hooks";
 import { KeyRound, Trash2 } from "lucide-preact";
 
-import type { Connector, Provider, VoiceView } from "../api.ts";
+import type { Connector, LoginView, Provider, VoiceView } from "../api.ts";
 import { useApp } from "../context.ts";
 import { KIND_LABELS, KIND_LINKS, LinkOut, needsKey } from "./ProvidersSettings.tsx";
 import { Button, IconButton } from "./ui.tsx";
 import { VOICE_LABELS } from "./VoiceSettings.tsx";
+
+export const LOGIN_LABELS: Record<LoginView["kind"], string> = { github: "GitHub" };
 
 interface Entry {
   id: string;
@@ -31,6 +33,7 @@ export function VaultSettings(props: {
   const [providers, setProviders] = useState<Provider[]>([]);
   const [connectors, setConnectors] = useState<Connector[]>([]);
   const [voice, setVoice] = useState<VoiceView | null>(null);
+  const [logins, setLogins] = useState<LoginView[]>([]);
   const [editing, setEditing] = useState<string | null>(props.focus ?? null);
   const focusPending = useRef(props.focus !== undefined);
   const [value, setValue] = useState("");
@@ -40,15 +43,17 @@ export function VaultSettings(props: {
     setBusy(true);
     try {
       await action();
-      const [p, c, v] = await Promise.all([
+      const [p, c, v, l] = await Promise.all([
         client.listProviders(),
         client.listConnectors(),
         client.voice(),
+        client.logins(),
       ]);
       setProviders(p);
       props.onProviders?.(p);
       setConnectors(c);
       setVoice(v);
+      setLogins(l);
     } catch (err) {
       toast(err instanceof Error ? err.message : String(err));
     } finally {
@@ -96,6 +101,17 @@ export function VaultSettings(props: {
             ]
           : []),
       ]),
+    ],
+    [
+      "CLI logins",
+      logins.map((l) => ({
+        id: `login:${l.kind}`,
+        name: LOGIN_LABELS[l.kind],
+        what: "Token for gh and git",
+        stored: l.has_token,
+        keyUrl: "https://github.com/settings/personal-access-tokens/new",
+        save: (v) => client.setLoginToken(l.kind, v),
+      })),
     ],
     [
       "Voice",

@@ -1490,3 +1490,32 @@ slop, so polish mode: palette, accent, logo, layout and features stay.
   Delivery is one background POST per hook with a 10 s timeout and no retry.
   Discord gets `allowed_mentions: {parse: []}` so agent text cannot ping
   `@everyone`.
+
+## CLI logins through a token-swapping proxy (2026-11-26)
+
+- **The proxy sits on the agent listener.** `CONNECT` is intercepted before
+  routing (`egress::intercept`), so it is reachable exactly like `/model` and
+  authenticates with the same agent token (proxy password, Basic). No new port.
+- **Swap only what was decided by the daemon.** The swap happens for the
+  authenticated agent, a login lent to it and one of that login's hosts, and
+  only when the `Authorization` header carries the exact stand-in (`token`,
+  `Bearer` or git's `Basic x-access-token:`). Redirects are passed back, never
+  followed, so the real token goes to no other host.
+- **A name-constrained local CA.** `rcgen` makes it once (key and certificate in
+  the secret store, `logins:ca`); its permitted subtrees are the login domains,
+  so even a leaked or misused CA vouches for no other site. A new login service
+  changes the domain list and makes a new CA. Leaf certificates are made per
+  host in memory.
+- **Plain tunnels refuse private targets.** Port 443 only; a host that resolves
+  to any loopback, private, link-local, CGNAT or unique-local address is
+  refused, and the tunnel connects to the address it checked. Without this a
+  sandbox could reach the operator API on loopback through the daemon.
+- **Environment only for agents with a login.** `HTTPS_PROXY`, the stand-ins,
+  git's credential helper (`GIT_CONFIG_COUNT`, git 2.31+) and the CA bundle
+  (`SSL_CERT_FILE`, `GIT_SSL_CAINFO`, `CURL_CA_BUNDLE`, `REQUESTS_CA_BUNDLE`,
+  `NODE_EXTRA_CA_CERTS`) are set at provisioning; changing who has a login
+  recreates those computers (home kept), as a model switch does.
+- **Dependencies.** `rcgen` 0.14.10 (`ring` backend, already in the tree) brings
+  `rcgen` and `yasna`; the lockfile also lists `x509-parser` and its parsers for
+  an optional `rcgen` feature that is not built. `tokio-rustls`, `hyper`,
+  `hyper-util` and `http-body-util` were already in the tree.

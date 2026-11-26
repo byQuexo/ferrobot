@@ -22,6 +22,8 @@ export type SandboxInfo = Schemas["SandboxInfo"];
 export type ExecOutput = Schemas["ExecOutput"];
 export type Interrupted = Schemas["Interrupted"];
 export type Flow = Schemas["Flow"];
+export type LoginView = Schemas["LoginView"];
+export type LoginKind = Schemas["LoginKind"];
 export type FlowRun = Schemas["FlowRun"];
 export type Step = Schemas["Step"];
 export type RunStatus = Schemas["RunStatus"];
@@ -386,6 +388,12 @@ export class DaemonClient {
     this.#request("PUT", "/v1/discord", s);
   setDiscordToken = (token: string | null): Promise<DiscordView> =>
     this.#request("PUT", "/v1/discord/token", { token });
+  logins = (): Promise<LoginView[]> => this.#request("GET", "/v1/logins");
+  /** Lends the login to exactly these agents; their computers restart. */
+  setLoginAgents = (kind: LoginKind, agents: string[]): Promise<LoginView> =>
+    this.#request("PUT", `/v1/logins/${kind}`, { agents });
+  setLoginToken = (kind: LoginKind, token: string | null): Promise<LoginView> =>
+    this.#request("PUT", `/v1/logins/${kind}/token`, { token });
   flows = (): Promise<Flow[]> => this.#request("GET", "/v1/flows");
   setFlows = (list: Flow[]): Promise<Flow[]> => this.#request("PUT", "/v1/flows", list);
   runFlow = (id: string): Promise<FlowRun> =>

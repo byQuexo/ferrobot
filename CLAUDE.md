@@ -98,6 +98,9 @@ Principles:
   agents through `/mcp` (tokens in the keychain, never in a sandbox), and the
   `add_connector` approval card (Approve/Decline; tokens go in Settings → Vault);
   `oauth.rs` — their OAuth sign-in (rmcp's client, loopback callback).
+- `crates/daemon/src/logins.rs`, `api/logins.rs`, `egress.rs` — logins for CLIs (GitHub): the
+  token in the secret store (`login:github`), agents in the `logins` setting; their sandboxes get
+  a stand-in, `HTTPS_PROXY` to the agent listener and a CA bundle; `egress.rs` is the proxy.
 - `crates/daemon/src/clis.rs`, `api/clis.rs` — CLIs: keyless Debian packages
   built into one shared sandbox image (Docker, `build_image` in
   `crates/sandbox`); `lifecycle::wake` recreates outdated sandboxes, home kept.
@@ -286,6 +289,13 @@ daemon, `docker ps -a` must be empty of ferrobot containers.
   sandbox, event, log or API response. Cards answered from Discord take only allowed
   users' reactions or replies and go through the app's answer route; cards with a secret
   field or several questions, `add_connector` and very risky steps stay app-only.
+- **CLI logins keep their token in the daemon.** Agents with a login get a stand-in and send
+  HTTPS through `CONNECT` on the agent listener (`egress.rs`, agent token as proxy password);
+  only for the login's hosts does the daemon end TLS (leaf certificates from the local CA, which
+  is name-constrained to those domains and whose key stays in the secret store), swap the exact
+  stand-in for the real token and forward without following redirects. Other public hosts get a
+  plain tunnel, port 443 only; private, loopback and link-local addresses are refused. Never log
+  `Authorization` or `Proxy-Authorization`.
 - **Per-agent tokens** on `/runner/ws`, `/mcp`, `/model`, `/host/claude-code/turn`. An agent can only act
   as itself (MCP tools read the caller from the token). Only hashes are stored.
 - **`create_agent` needs operator approval unless Auto mode is on**: an
