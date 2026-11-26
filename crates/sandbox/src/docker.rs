@@ -8,7 +8,7 @@ use std::sync::{Arc, PoisonError, RwLock};
 use async_trait::async_trait;
 use bollard::Docker;
 use bollard::exec::{StartExecOptions, StartExecResults};
-use bollard::models::{ContainerCreateBody, ExecConfig, HostConfig};
+use bollard::models::{ContainerCreateBody, ContainerInspectResponse, ExecConfig, HostConfig};
 use bollard::query_parameters::{
     BuildImageOptionsBuilder, CommitContainerOptionsBuilder, CreateContainerOptionsBuilder,
     CreateImageOptionsBuilder, DownloadFromContainerOptionsBuilder, ImportImageOptionsBuilder,
@@ -21,10 +21,10 @@ use futures_util::{StreamExt, TryStreamExt};
 use object_store::path::Path as ObjectPath;
 use object_store::{ObjectStore, ObjectStoreExt};
 
-use crate::seal::{Opener, SealKey, Sealer};
+use crate::seal::{self, Opener, SealKey, Sealer};
 use crate::{
     ExecOutput, ExecRequest, MAX_FILE_BYTES, SandboxBackend, SandboxError, SandboxHandle,
-    SandboxPath, SandboxSpec, SandboxState, SleepLevel, SnapshotRef, capture,
+    SandboxPath, SandboxSpec, SandboxState, SleepLevel, SnapshotRef,
 };
 
 const KIND: &str = "docker";
@@ -56,11 +56,9 @@ fn cli_tag(base_id: &str, packages: &[String]) -> String {
         })
 }
 
-/// Whether a container from `current` must move to `wanted` (`None`: `base`). Only base and
-/// CLI images count: snapshot and archive containers keep their root filesystem.
-/// Whether a sandbox created from image `current` (name) should be recreated to run `wanted`
-/// (`None`: the base image). `ids`: (the image id it runs, the id `wanted` names now), known
-/// when the names match, so a rebuilt image under the same name counts as new.
+/// Whether a sandbox from image `current` (name) should be recreated to run `wanted` (`None`:
+/// `base`); snapshot and archive containers keep their root filesystem. `ids`: (the image id it
+/// runs, the id `wanted` names now) when the names match, so a rebuilt image counts as new.
 fn stale(current: &str, wanted: Option<&str>, base: &str, ids: Option<(&str, &str)>) -> bool {
     let built = current == base || current.starts_with(CLI_TAG_PREFIX);
     built && (current != wanted.unwrap_or(base) || ids.is_some_and(|(have, want)| have != want))
@@ -189,13 +187,14 @@ impl DockerBackend {
     }
 
     async fn has_image(&self, image: &str) -> Result<bool, SandboxError> {
-        match self.docker().inspect_image(image).await {
-            Ok(_) => Ok(true),
-            Err(bollard::errors::Error::DockerResponseServerError {
-                status_code: 404, ..
-            }) => Ok(false),
-            Err(e) => Err(e.into()),
-        }
+        Ok(unless_status(self.docker().inspect_image(image).await, &[404])?.is_some())
+    }
+
+    async fn inspect(&self, id: &str) -> Result<ContainerInspectResponse, SandboxError> {
+        self.docker()
+            .inspect_container(id, None::<InspectContainerOptions>)
+            .await
+            .map_err(|e| not_found_or(e, id))
     }
 
     /// Builds `tag` from a single-file context; a failed `apt-get` reports its own `E:` line.
@@ -241,19 +240,12 @@ impl DockerBackend {
             .flat_map(|i| &i.repo_tags)
             .filter(|t| t.starts_with(CLI_TAG_PREFIX) && Some(t.as_str()) != keep);
         for tag in stale {
-            match self
+            // 409: a container still uses it; a later sweep removes it.
+            let removal = self
                 .docker()
                 .remove_image(tag, None::<RemoveImageOptions>, None)
-                .await
-            {
-                // 409: a container still uses it; a later sweep removes it.
-                Ok(_)
-                | Err(bollard::errors::Error::DockerResponseServerError {
-                    status_code: 404 | 409,
-                    ..
-                }) => {}
-                Err(e) => return Err(e.into()),
-            }
+                .await;
+            unless_status(removal, &[404, 409])?;
         }
         Ok(())
     }
@@ -293,17 +285,6 @@ impl DockerBackend {
 
     fn volume_name(&self, name: &str) -> String {
         format!("{}{name}-home", self.config.name_prefix)
-    }
-
-    fn check(handle: &SandboxHandle) -> Result<&str, SandboxError> {
-        if handle.backend == KIND {
-            Ok(&handle.id)
-        } else {
-            Err(SandboxError::WrongBackend {
-                expected: KIND,
-                actual: handle.backend.clone(),
-            })
-        }
     }
 
     /// Store and key of the home archive for a snapshot image reference (`repo:tag`).
@@ -367,9 +348,13 @@ impl DockerBackend {
         key: &ObjectPath,
     ) -> Result<Bytes, SandboxError> {
         let bytes = store.get(key).await?.bytes().await?;
-        let mut opener = self.opener(key);
-        let mut plain = opener.push(&bytes)?;
-        plain.extend(opener.finish()?);
+        let config = &self.config;
+        let plain = seal::open(
+            config.archive_key.as_ref(),
+            key.as_ref(),
+            &bytes,
+            config.accept_plaintext,
+        )?;
         Ok(plain.into())
     }
 
@@ -383,7 +368,7 @@ impl DockerBackend {
     /// Moves a sandbox into the store: its committed image and home directory
     /// go to `archives/<name>/`; container, volume and image are removed.
     async fn archive_sandbox(&self, sandbox: &SandboxHandle) -> Result<(), SandboxError> {
-        let id = Self::check(sandbox)?;
+        let id = sandbox.id_for(KIND)?;
         let store = self
             .config
             .snapshot_store
@@ -392,11 +377,7 @@ impl DockerBackend {
                 backend: KIND,
                 operation: "archive (no object store configured)",
             })?;
-        let info = self
-            .docker()
-            .inspect_container(id, None::<InspectContainerOptions>)
-            .await
-            .map_err(|e| not_found_or(e, id))?;
+        let info = self.inspect(id).await?;
         let full = info.name.unwrap_or_default();
         let name = full
             .trim_start_matches('/')
@@ -531,11 +512,7 @@ impl DockerBackend {
     }
 
     async fn ensure_started(&self, id: &str) -> Result<(), SandboxError> {
-        let info = self
-            .docker()
-            .inspect_container(id, None::<InspectContainerOptions>)
-            .await
-            .map_err(|e| not_found_or(e, id))?;
+        let info = self.inspect(id).await?;
         let state = info.state.unwrap_or_default();
         if state.paused == Some(true) {
             self.docker().unpause_container(id).await?;
@@ -601,6 +578,22 @@ fn opened_stream(
             }
         },
     )
+}
+
+/// `None` when the engine answered with one of `statuses`.
+fn unless_status<T>(
+    result: Result<T, bollard::errors::Error>,
+    statuses: &[u16],
+) -> Result<Option<T>, SandboxError> {
+    match result {
+        Ok(value) => Ok(Some(value)),
+        Err(bollard::errors::Error::DockerResponseServerError { status_code, .. })
+            if statuses.contains(&status_code) =>
+        {
+            Ok(None)
+        }
+        Err(e) => Err(e.into()),
+    }
 }
 
 fn not_found_or(err: bollard::errors::Error, id: &str) -> SandboxError {
@@ -692,30 +685,19 @@ impl SandboxBackend for DockerBackend {
         sandbox: &SandboxHandle,
         image: Option<&str>,
     ) -> Result<bool, SandboxError> {
-        let id = Self::check(sandbox)?;
-        let (current, runs) = match self
+        let id = sandbox.id_for(KIND)?;
+        let inspected = self
             .docker()
             .inspect_container(id, None::<InspectContainerOptions>)
-            .await
-        {
-            Ok(info) => (
-                info.config.and_then(|c| c.image).unwrap_or_default(),
-                info.image.unwrap_or_default(),
-            ),
-            Err(bollard::errors::Error::DockerResponseServerError {
-                status_code: 404, ..
-            }) => return Ok(false),
-            Err(e) => return Err(e.into()),
+            .await;
+        let Some(info) = unless_status(inspected, &[404])? else {
+            return Ok(false);
         };
+        let current = info.config.and_then(|c| c.image).unwrap_or_default();
+        let runs = info.image.unwrap_or_default();
         let wanted = image.unwrap_or(&self.config.image);
         let now = if current == wanted {
-            match self.docker().inspect_image(wanted).await {
-                Ok(info) => info.id,
-                Err(bollard::errors::Error::DockerResponseServerError {
-                    status_code: 404, ..
-                }) => None,
-                Err(e) => return Err(e.into()),
-            }
+            unless_status(self.docker().inspect_image(wanted).await, &[404])?.and_then(|i| i.id)
         } else {
             None
         };
@@ -759,7 +741,7 @@ impl SandboxBackend for DockerBackend {
         sandbox: &SandboxHandle,
         req: &ExecRequest,
     ) -> Result<ExecOutput, SandboxError> {
-        let id = Self::check(sandbox)?;
+        let id = sandbox.id_for(KIND)?;
         let exec = self
             .docker()
             .create_exec(
@@ -804,14 +786,7 @@ impl SandboxBackend for DockerBackend {
             .await?
             .exit_code
             .unwrap_or(-1);
-        let (stdout, t1) = capture(&stdout);
-        let (stderr, t2) = capture(&stderr);
-        Ok(ExecOutput {
-            exit_code,
-            stdout,
-            stderr,
-            truncated: t1 || t2,
-        })
+        Ok(ExecOutput::captured(exit_code, &stdout, &stderr))
     }
 
     async fn read_file(
@@ -819,7 +794,7 @@ impl SandboxBackend for DockerBackend {
         sandbox: &SandboxHandle,
         path: &SandboxPath,
     ) -> Result<Vec<u8>, SandboxError> {
-        let id = Self::check(sandbox)?;
+        let id = sandbox.id_for(KIND)?;
         let options = DownloadFromContainerOptionsBuilder::default()
             .path(path.as_str())
             .build();
@@ -845,7 +820,7 @@ impl SandboxBackend for DockerBackend {
         path: &SandboxPath,
         contents: &[u8],
     ) -> Result<(), SandboxError> {
-        let id = Self::check(sandbox)?;
+        let id = sandbox.id_for(KIND)?;
         let archive = single_file_tar(path.file_name(), contents)?;
         let options = UploadToContainerOptionsBuilder::default()
             .path(path.parent())
@@ -862,7 +837,7 @@ impl SandboxBackend for DockerBackend {
         sandbox: &SandboxHandle,
         label: &str,
     ) -> Result<SnapshotRef, SandboxError> {
-        let id = Self::check(sandbox)?;
+        let id = sandbox.id_for(KIND)?;
         let tag = format!(
             "{}-{}",
             label
@@ -890,18 +865,14 @@ impl SandboxBackend for DockerBackend {
             // shortcut: the whole home archive is buffered and sent as one PUT (S3 caps
             // that at 5 GiB); switch to `put_multipart` once homes get that large.
             let mut tar = chunks.concat();
-            if let Some(mut sealer) = self.sealer(key)? {
-                let mut sealed = sealer.push(&tar)?;
-                sealed.extend(sealer.finish()?);
-                tar = sealed;
+            if let Some(k) = &self.config.archive_key {
+                tar = seal::seal(k, key.as_ref(), &tar)?;
             }
             store.put(key, tar.into()).await?;
         }
         let env = self
-            .docker()
-            .inspect_container(id, None::<InspectContainerOptions>)
-            .await
-            .map_err(|e| not_found_or(e, id))?
+            .inspect(id)
+            .await?
             .config
             .and_then(|c| c.env)
             .unwrap_or_default();
@@ -935,7 +906,7 @@ impl SandboxBackend for DockerBackend {
         spec: &SandboxSpec,
     ) -> Result<SandboxHandle, SandboxError> {
         let image = self.check_snapshot(snapshot)?;
-        Self::check(sandbox)?;
+        sandbox.id_for(KIND)?;
         self.docker()
             .inspect_image(image)
             .await
@@ -948,8 +919,6 @@ impl SandboxBackend for DockerBackend {
             },
             None => None,
         };
-        // With a home archive the volume is recreated from it; without one the
-        // current home volume is kept.
         self.destroy(sandbox, archive.is_some()).await?;
         let id = self.create_container(spec, image).await?;
         if let Some(archive) = archive {
@@ -963,23 +932,13 @@ impl SandboxBackend for DockerBackend {
     }
 
     async fn delete_archive(&self, name: &str) -> Result<(), SandboxError> {
+        let image = format!("{ARCHIVE_REPO}:{name}");
         // 409: a restored container still uses the image; it goes with a later purge.
-        match self
+        let removal = self
             .docker()
-            .remove_image(
-                &format!("{ARCHIVE_REPO}:{name}"),
-                None::<bollard::query_parameters::RemoveImageOptions>,
-                None,
-            )
-            .await
-        {
-            Ok(_)
-            | Err(bollard::errors::Error::DockerResponseServerError {
-                status_code: 404 | 409,
-                ..
-            }) => {}
-            Err(e) => return Err(e.into()),
-        }
+            .remove_image(&image, None::<RemoveImageOptions>, None)
+            .await;
+        unless_status(removal, &[404, 409])?;
         let Some(store) = self.config.snapshot_store.as_deref() else {
             return Ok(());
         };
@@ -996,13 +955,10 @@ impl SandboxBackend for DockerBackend {
     async fn delete_snapshot(&self, snapshot: &str) -> Result<(), SandboxError> {
         let image = self.check_snapshot(snapshot)?;
         let options = RemoveImageOptionsBuilder::default().force(true).build();
-        match self.docker().remove_image(image, Some(options), None).await {
-            Ok(_)
-            | Err(bollard::errors::Error::DockerResponseServerError {
-                status_code: 404, ..
-            }) => {}
-            Err(e) => return Err(e.into()),
-        }
+        unless_status(
+            self.docker().remove_image(image, Some(options), None).await,
+            &[404],
+        )?;
         if let Some((store, key)) = self.archive(image) {
             match store.delete(&key).await {
                 Ok(()) | Err(object_store::Error::NotFound { .. }) => {}
@@ -1013,7 +969,7 @@ impl SandboxBackend for DockerBackend {
     }
 
     async fn wake(&self, sandbox: &SandboxHandle) -> Result<(), SandboxError> {
-        self.ensure_started(Self::check(sandbox)?).await
+        self.ensure_started(sandbox.id_for(KIND)?).await
     }
 
     async fn sleep(
@@ -1032,7 +988,7 @@ impl SandboxBackend for DockerBackend {
             }
             SleepLevel::Warm => {}
         }
-        let id = Self::check(sandbox)?;
+        let id = sandbox.id_for(KIND)?;
         match self.docker().pause_container(id).await {
             Ok(()) => Ok(level),
             // 409: already paused, or not running (then it already sleeps cold).
@@ -1047,7 +1003,7 @@ impl SandboxBackend for DockerBackend {
     }
 
     async fn stop(&self, sandbox: &SandboxHandle) -> Result<(), SandboxError> {
-        let id = Self::check(sandbox)?;
+        let id = sandbox.id_for(KIND)?;
         // A paused container cannot handle SIGTERM; resume it so it stops cleanly.
         if self.state(sandbox).await? == SandboxState::Paused {
             self.docker().unpause_container(id).await?;
@@ -1064,7 +1020,7 @@ impl SandboxBackend for DockerBackend {
     }
 
     async fn destroy(&self, sandbox: &SandboxHandle, purge_disk: bool) -> Result<(), SandboxError> {
-        let id = Self::check(sandbox)?;
+        let id = sandbox.id_for(KIND)?;
         // Resolve the volume before the container disappears.
         let volume = if purge_disk {
             self.docker()
@@ -1077,13 +1033,10 @@ impl SandboxBackend for DockerBackend {
             None
         };
         let options = RemoveContainerOptionsBuilder::default().force(true).build();
-        match self.docker().remove_container(id, Some(options)).await {
-            Ok(())
-            | Err(bollard::errors::Error::DockerResponseServerError {
-                status_code: 404, ..
-            }) => {}
-            Err(e) => return Err(e.into()),
-        }
+        unless_status(
+            self.docker().remove_container(id, Some(options)).await,
+            &[404],
+        )?;
         if let Some(volume) = volume {
             self.docker()
                 .remove_volume(&volume, None::<RemoveVolumeOptions>)
@@ -1093,27 +1046,22 @@ impl SandboxBackend for DockerBackend {
     }
 
     async fn state(&self, sandbox: &SandboxHandle) -> Result<SandboxState, SandboxError> {
-        let id = Self::check(sandbox)?;
-        match self
+        let id = sandbox.id_for(KIND)?;
+        let inspected = self
             .docker()
             .inspect_container(id, None::<InspectContainerOptions>)
-            .await
-        {
-            Ok(info) => {
-                let state = info.state.unwrap_or_default();
-                Ok(if state.paused == Some(true) {
-                    SandboxState::Paused
-                } else if state.running == Some(true) {
-                    SandboxState::Running
-                } else {
-                    SandboxState::Stopped
-                })
-            }
-            Err(bollard::errors::Error::DockerResponseServerError {
-                status_code: 404, ..
-            }) => Ok(SandboxState::Missing),
-            Err(e) => Err(e.into()),
-        }
+            .await;
+        let Some(info) = unless_status(inspected, &[404])? else {
+            return Ok(SandboxState::Missing);
+        };
+        let state = info.state.unwrap_or_default();
+        Ok(if state.paused == Some(true) {
+            SandboxState::Paused
+        } else if state.running == Some(true) {
+            SandboxState::Running
+        } else {
+            SandboxState::Stopped
+        })
     }
 }
 
@@ -1212,7 +1160,7 @@ mod tests {
             id: "x".into(),
         };
         assert!(matches!(
-            DockerBackend::check(&h),
+            h.id_for(KIND),
             Err(SandboxError::WrongBackend { .. })
         ));
     }

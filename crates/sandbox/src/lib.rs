@@ -76,6 +76,30 @@ pub struct SandboxHandle {
     pub id: String,
 }
 
+impl SandboxHandle {
+    /// The id, if the handle belongs to backend `kind`.
+    pub(crate) fn id_for(&self, kind: &'static str) -> Result<&str, SandboxError> {
+        if self.backend == kind {
+            Ok(&self.id)
+        } else {
+            Err(SandboxError::WrongBackend {
+                expected: kind,
+                actual: self.backend.clone(),
+            })
+        }
+    }
+
+    /// [`Self::id_for`] for backends whose ids are directory names.
+    pub(crate) fn dir_name(&self, kind: &'static str) -> Result<&str, SandboxError> {
+        let id = self.id_for(kind)?;
+        // Refuse anything that could escape the backend's directory.
+        if id.is_empty() || !id.chars().all(|c| c.is_ascii_alphanumeric() || c == '-') {
+            return Err(SandboxError::NotFound(id.to_owned()));
+        }
+        Ok(id)
+    }
+}
+
 /// A sandbox's state as its backend reports it.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(utoipa::ToSchema))]
@@ -132,6 +156,20 @@ pub struct ExecOutput {
     pub stderr: String,
     /// True if output was cut at [`MAX_EXEC_OUTPUT`].
     pub truncated: bool,
+}
+
+impl ExecOutput {
+    /// Cuts each stream at [`MAX_EXEC_OUTPUT`] and decodes it lossily.
+    pub(crate) fn captured(exit_code: i64, stdout: &[u8], stderr: &[u8]) -> Self {
+        let cut =
+            |b: &[u8]| String::from_utf8_lossy(&b[..b.len().min(MAX_EXEC_OUTPUT)]).into_owned();
+        Self {
+            exit_code,
+            stdout: cut(stdout),
+            stderr: cut(stderr),
+            truncated: stdout.len().max(stderr.len()) > MAX_EXEC_OUTPUT,
+        }
+    }
 }
 
 /// A snapshot a backend took.
@@ -298,15 +336,12 @@ pub trait SandboxBackend: Send + Sync + std::fmt::Debug {
     async fn state(&self, sandbox: &SandboxHandle) -> Result<SandboxState, SandboxError>;
 }
 
-/// Truncates captured bytes to [`MAX_EXEC_OUTPUT`] and decodes lossily.
-pub(crate) fn capture(bytes: &[u8]) -> (String, bool) {
-    let truncated = bytes.len() > MAX_EXEC_OUTPUT;
-    let slice = if truncated {
-        &bytes[..MAX_EXEC_OUTPUT]
-    } else {
-        bytes
-    };
-    (String::from_utf8_lossy(slice).into_owned(), truncated)
+/// `Ok` also when there was nothing to remove.
+pub(crate) fn removed(result: std::io::Result<()>) -> Result<(), SandboxError> {
+    match result {
+        Err(e) if e.kind() != std::io::ErrorKind::NotFound => Err(e.into()),
+        _ => Ok(()),
+    }
 }
 
 #[cfg(test)]

@@ -3,11 +3,20 @@
 use ferrobot_core::{AgentId, MailMessage, MailStatus, Sender};
 use rusqlite::{OptionalExtension, Row, params};
 
-use crate::util::{fmt_ts, now, parse_ts};
+use crate::util::{fmt_ts, is_fk_violation, now, parse_ts};
 use crate::{MAX_DELIVERY_ATTEMPTS, Store, StoreError};
 
 pub(crate) const COLUMNS: &str =
     "id, sender, recipient, body, reply_to, status, attempts, created_at, priority, room_id";
+
+/// [`COLUMNS`] qualified with `table`.
+pub(crate) fn columns_of(table: &str) -> String {
+    let columns: Vec<String> = COLUMNS
+        .split(", ")
+        .map(|c| format!("{table}.{c}"))
+        .collect();
+    columns.join(", ")
+}
 
 fn priority_to_db(p: Option<bool>) -> i64 {
     match p {
@@ -80,16 +89,12 @@ pub(crate) fn insert_message(
             room
         ],
     )
-    .map_err(|e| match e {
-        rusqlite::Error::SqliteFailure(f, _)
-            if f.extended_code == rusqlite::ffi::SQLITE_CONSTRAINT_FOREIGNKEY =>
-        {
-            StoreError::NotFound {
-                entity: "agent or reply_to message",
-                key: recipient.to_string(),
-            }
+    .map_err(|e| {
+        if is_fk_violation(&e) {
+            StoreError::not_found("agent or reply_to message", recipient)
+        } else {
+            e.into()
         }
-        other => other.into(),
     })?;
     let id = c.last_insert_rowid();
     c.query_row(
@@ -173,10 +178,7 @@ impl Store {
                 |row| Ok(from_row(row)),
             )
             .optional()?
-            .ok_or_else(|| StoreError::NotFound {
-                entity: "message",
-                key: id.to_string(),
-            })?
+            .ok_or_else(|| StoreError::not_found("message", id))?
         })
         .await
     }
@@ -337,12 +339,8 @@ impl Store {
                 "SELECT {COLUMNS} FROM (SELECT * FROM messages WHERE recipient = ?1
                  ORDER BY id DESC LIMIT ?2) ORDER BY id"
             ))?;
-            let mut rows = stmt.query(params![agent.to_string(), limit])?;
-            let mut out = Vec::new();
-            while let Some(row) = rows.next()? {
-                out.push(from_row(row)?);
-            }
-            Ok(out)
+            let rows = stmt.query_map(params![agent.to_string(), limit], |r| Ok(from_row(r)))?;
+            rows.map(|r| r?).collect()
         })
         .await
     }
@@ -360,12 +358,10 @@ impl Store {
                  WHERE (recipient = ?1 OR sender = ?2) AND room_id IS NULL
                  ORDER BY id DESC LIMIT ?3) ORDER BY id"
             ))?;
-            let mut rows = stmt.query(params![id, format!("agent:{id}"), limit])?;
-            let mut out = Vec::new();
-            while let Some(row) = rows.next()? {
-                out.push(from_row(row)?);
-            }
-            Ok(out)
+            let rows = stmt.query_map(params![id, format!("agent:{id}"), limit], |r| {
+                Ok(from_row(r))
+            })?;
+            rows.map(|r| r?).collect()
         })
         .await
     }
@@ -384,11 +380,7 @@ impl Store {
                  )
                  SELECT p.a, p.b, p.n, {} FROM p JOIN messages ON messages.id = p.last_id
                  ORDER BY p.last_id DESC",
-                COLUMNS
-                    .split(", ")
-                    .map(|c| format!("messages.{c}"))
-                    .collect::<Vec<_>>()
-                    .join(", ")
+                columns_of("messages")
             ))?;
             let mut rows = stmt.query([])?;
             let mut out = Vec::new();
@@ -422,18 +414,17 @@ impl Store {
                    AND room_id IS NULL
                  ORDER BY id DESC LIMIT ?5) ORDER BY id"
             ))?;
-            let mut rows = stmt.query(params![
-                format!("agent:{a}"),
-                a.to_string(),
-                format!("agent:{b}"),
-                b.to_string(),
-                limit
-            ])?;
-            let mut out = Vec::new();
-            while let Some(row) = rows.next()? {
-                out.push(from_row(row)?);
-            }
-            Ok(out)
+            let rows = stmt.query_map(
+                params![
+                    format!("agent:{a}"),
+                    a.to_string(),
+                    format!("agent:{b}"),
+                    b.to_string(),
+                    limit
+                ],
+                |r| Ok(from_row(r)),
+            )?;
+            rows.map(|r| r?).collect()
         })
         .await
     }

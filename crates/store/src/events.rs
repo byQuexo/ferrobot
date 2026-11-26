@@ -1,7 +1,7 @@
 //! Append-only log of turn events per agent (what the UI renders).
 
 use ferrobot_core::AgentId;
-use rusqlite::{OptionalExtension, params};
+use rusqlite::{Connection, OptionalExtension, Row, params};
 use serde::Serialize;
 use time::OffsetDateTime;
 
@@ -24,6 +24,56 @@ pub struct StoredEvent {
     pub created_at: OffsetDateTime,
 }
 
+const COLUMNS: &str = "id, turn_id, kind, payload, created_at";
+
+fn event(
+    id: i64,
+    agent_id: AgentId,
+    turn_id: Option<String>,
+    kind: String,
+    payload: &str,
+    created: &str,
+) -> Result<StoredEvent, StoreError> {
+    Ok(StoredEvent {
+        id,
+        agent_id,
+        turn_id,
+        kind,
+        payload: serde_json::from_str(payload).map_err(StoreError::corrupt)?,
+        created_at: parse_ts(created)?,
+    })
+}
+
+/// Reads [`COLUMNS`].
+fn from_row(agent: AgentId, row: &Row<'_>) -> Result<StoredEvent, StoreError> {
+    let (payload, created): (String, String) = (row.get(3)?, row.get(4)?);
+    event(
+        row.get(0)?,
+        agent,
+        row.get(1)?,
+        row.get(2)?,
+        &payload,
+        &created,
+    )
+}
+
+/// Appends an event; returns its id and time.
+pub(crate) fn insert_event(
+    c: &Connection,
+    agent: &str,
+    turn_id: Option<&str>,
+    kind: &str,
+    payload: &str,
+) -> Result<(i64, OffsetDateTime), StoreError> {
+    let created_at = now();
+    c.execute(
+        "INSERT INTO events (agent_id, turn_id, kind, payload, created_at)
+         VALUES (?1, ?2, ?3, ?4, ?5)",
+        params![agent, turn_id, kind, payload, fmt_ts(created_at)],
+    )?;
+    Ok((c.last_insert_rowid(), created_at))
+}
+
 impl Store {
     pub async fn append_event(
         &self,
@@ -33,20 +83,15 @@ impl Store {
         payload: serde_json::Value,
     ) -> Result<StoredEvent, StoreError> {
         self.with(move |c| {
-            let created_at = now();
-            c.execute(
-                "INSERT INTO events (agent_id, turn_id, kind, payload, created_at)
-                 VALUES (?1, ?2, ?3, ?4, ?5)",
-                params![
-                    agent.to_string(),
-                    turn_id,
-                    kind,
-                    payload.to_string(),
-                    fmt_ts(created_at)
-                ],
+            let (id, created_at) = insert_event(
+                c,
+                &agent.to_string(),
+                turn_id.as_deref(),
+                &kind,
+                &payload.to_string(),
             )?;
             Ok(StoredEvent {
-                id: c.last_insert_rowid(),
+                id,
                 agent_id: agent,
                 turn_id,
                 kind,
@@ -60,37 +105,13 @@ impl Store {
     /// One event of `agent`.
     pub async fn get_event(&self, agent: AgentId, id: i64) -> Result<StoredEvent, StoreError> {
         self.with(move |c| {
-            let row = c.query_row(
-                "SELECT turn_id, kind, payload, created_at FROM events
-                 WHERE agent_id = ?1 AND id = ?2",
+            c.query_row(
+                &format!("SELECT {COLUMNS} FROM events WHERE agent_id = ?1 AND id = ?2"),
                 params![agent.to_string(), id],
-                |r| {
-                    Ok((
-                        r.get::<_, Option<String>>(0)?,
-                        r.get::<_, String>(1)?,
-                        r.get::<_, String>(2)?,
-                        r.get::<_, String>(3)?,
-                    ))
-                },
-            );
-            let (turn_id, kind, payload, created) = match row {
-                Ok(row) => row,
-                Err(rusqlite::Error::QueryReturnedNoRows) => {
-                    return Err(StoreError::NotFound {
-                        entity: "event",
-                        key: id.to_string(),
-                    });
-                }
-                Err(e) => return Err(e.into()),
-            };
-            Ok(StoredEvent {
-                id,
-                agent_id: agent,
-                turn_id,
-                kind,
-                payload: serde_json::from_str(&payload).map_err(StoreError::corrupt)?,
-                created_at: parse_ts(&created)?,
-            })
+                |r| Ok(from_row(agent, r)),
+            )
+            .optional()?
+            .ok_or_else(|| StoreError::not_found("event", id))?
         })
         .await
     }
@@ -219,25 +240,12 @@ impl Store {
         turn: String,
     ) -> Result<Vec<StoredEvent>, StoreError> {
         self.with(move |c| {
-            let mut stmt = c.prepare(
-                "SELECT id, kind, payload, created_at FROM events
-                 WHERE agent_id = ?1 AND turn_id = ?2 ORDER BY id",
-            )?;
-            let mut rows = stmt.query(params![agent.to_string(), turn])?;
-            let mut out = Vec::new();
-            while let Some(row) = rows.next()? {
-                let payload: String = row.get(2)?;
-                let created: String = row.get(3)?;
-                out.push(StoredEvent {
-                    id: row.get(0)?,
-                    agent_id: agent,
-                    turn_id: Some(turn.clone()),
-                    kind: row.get(1)?,
-                    payload: serde_json::from_str(&payload).map_err(StoreError::corrupt)?,
-                    created_at: parse_ts(&created)?,
-                });
-            }
-            Ok(out)
+            let mut stmt = c.prepare(&format!(
+                "SELECT {COLUMNS} FROM events WHERE agent_id = ?1 AND turn_id = ?2 ORDER BY id"
+            ))?;
+            let rows =
+                stmt.query_map(params![agent.to_string(), turn], |r| Ok(from_row(agent, r)))?;
+            rows.map(|r| r?).collect()
         })
         .await
     }
@@ -267,19 +275,12 @@ impl Store {
                 }
                 let agent_id: String = row.get(1)?;
                 let agent_id = agent_id.parse().map_err(StoreError::corrupt)?;
-                let event = |kind: &str, id: i64, payload: String, created: String| {
-                    Ok::<_, StoreError>(StoredEvent {
-                        id,
-                        agent_id,
-                        turn_id: None,
-                        kind: kind.into(),
-                        payload: serde_json::from_str(&payload).map_err(StoreError::corrupt)?,
-                        created_at: parse_ts(&created)?,
-                    })
+                let card = |kind: &str, id: i64, payload: String, created: String| {
+                    event(id, agent_id, None, kind.into(), &payload, &created)
                 };
-                let question = event("question", id, row.get(2)?, row.get(3)?)?;
+                let question = card("question", id, row.get(2)?, row.get(3)?)?;
                 let answer = match row.get::<_, Option<i64>>(4)? {
-                    Some(a) => Some(event("question_answered", a, row.get(5)?, row.get(6)?)?),
+                    Some(a) => Some(card("question_answered", a, row.get(5)?, row.get(6)?)?),
                     None => None,
                 };
                 out.push((question, answer));
@@ -318,25 +319,13 @@ impl Store {
         limit: u32,
     ) -> Result<Vec<StoredEvent>, StoreError> {
         self.with(move |c| {
-            let mut stmt = c.prepare(
-                "SELECT id, turn_id, kind, payload, created_at FROM events
-                 WHERE agent_id = ?1 AND id > ?2 ORDER BY id LIMIT ?3",
-            )?;
-            let mut rows = stmt.query(params![agent.to_string(), after, limit])?;
-            let mut out = Vec::new();
-            while let Some(row) = rows.next()? {
-                let payload: String = row.get(3)?;
-                let created: String = row.get(4)?;
-                out.push(StoredEvent {
-                    id: row.get(0)?,
-                    agent_id: agent,
-                    turn_id: row.get(1)?,
-                    kind: row.get(2)?,
-                    payload: serde_json::from_str(&payload).map_err(StoreError::corrupt)?,
-                    created_at: parse_ts(&created)?,
-                });
-            }
-            Ok(out)
+            let mut stmt = c.prepare(&format!(
+                "SELECT {COLUMNS} FROM events WHERE agent_id = ?1 AND id > ?2 ORDER BY id LIMIT ?3"
+            ))?;
+            let rows = stmt.query_map(params![agent.to_string(), after, limit], |r| {
+                Ok(from_row(agent, r))
+            })?;
+            rows.map(|r| r?).collect()
         })
         .await
     }

@@ -1,3 +1,5 @@
+use std::borrow::Cow;
+
 use ferrobot_core::question::{QUESTION_CARD_VERSION, QuestionCard, QuestionEvent};
 use ferrobot_core::{
     Agent, AgentId, AgentName, AvatarCharacter, ConnectorAuth, MailMessage, Sender, ToolGroup,
@@ -41,10 +43,24 @@ fn caller(parts: &http::request::Parts) -> Result<&Caller, ErrorData> {
         .ok_or_else(|| ErrorData::invalid_request("unauthenticated", None))
 }
 
+fn invalid(message: impl Into<Cow<'static, str>>) -> ErrorData {
+    ErrorData::invalid_params(message, None)
+}
+
+fn name_in(agents: &[Agent], id: AgentId) -> Option<String> {
+    agents
+        .iter()
+        .find(|a| a.id == id)
+        .map(|a| a.name.to_string())
+}
+
+const PENDING_NOTE: &str =
+    "Shown to the operator. A message tells you whether they approved it; finish your turn now.";
+
 fn store_err(e: StoreError) -> ErrorData {
     match e {
         StoreError::NotFound { .. } | StoreError::Conflict { .. } | StoreError::Core(_) => {
-            ErrorData::invalid_params(e.to_string(), None)
+            invalid(e.to_string())
         }
         other => {
             tracing::error!(error = %other, "store failure in MCP tool");
@@ -478,13 +494,10 @@ fn card_text(card: &QuestionCard) -> String {
 fn check_body(body: &str) -> Result<&str, ErrorData> {
     let body = body.trim();
     if body.is_empty() {
-        return Err(ErrorData::invalid_params("body must not be empty", None));
+        return Err(invalid("body must not be empty"));
     }
     if body.len() > MAX_MESSAGE_BYTES {
-        return Err(ErrorData::invalid_params(
-            format!("body exceeds {MAX_MESSAGE_BYTES} bytes"),
-            None,
-        ));
+        return Err(invalid(format!("body exceeds {MAX_MESSAGE_BYTES} bytes")));
     }
     Ok(body)
 }
@@ -550,8 +563,7 @@ impl FerrobotTools {
         if let Ok(id) = to.parse::<AgentId>() {
             store.get_agent(id).await
         } else {
-            let name =
-                AgentName::parse(to).map_err(|e| ErrorData::invalid_params(e.to_string(), None))?;
+            let name = AgentName::parse(to).map_err(|e| invalid(e.to_string()))?;
             store.get_agent_by_name(name).await
         }
         .map_err(store_err)
@@ -561,10 +573,7 @@ impl FerrobotTools {
     async fn recipient(&self, me: AgentId, to: &str) -> Result<Agent, ErrorData> {
         let recipient = self.agent(to).await?;
         if recipient.id == me {
-            return Err(ErrorData::invalid_params(
-                "cannot send a message to yourself",
-                None,
-            ));
+            return Err(invalid("cannot send a message to yourself"));
         }
         Ok(recipient)
     }
@@ -609,10 +618,10 @@ impl FerrobotTools {
     )]
     async fn read_guide(&self, Parameters(args): Parameters<ReadGuideArgs>) -> ToolResult<Guide> {
         let (page, title, markdown) = find_guide(&args.page).ok_or_else(|| {
-            ErrorData::invalid_params(
-                format!("no guide named {}; list_guides shows the pages", args.page),
-                None,
-            )
+            invalid(format!(
+                "no guide named {}; list_guides shows the pages",
+                args.page
+            ))
         })?;
         Ok(Json(Guide {
             page: (*page).to_owned(),
@@ -660,10 +669,7 @@ impl FerrobotTools {
         if let Some(reply_to) = args.reply_to {
             let original = store.get_message(reply_to).await.map_err(store_err)?;
             if original.recipient != me.id && original.sender != Sender::Agent(me.id) {
-                return Err(ErrorData::invalid_params(
-                    "reply_to must be a message you received or sent",
-                    None,
-                ));
+                return Err(invalid("reply_to must be a message you received or sent"));
             }
         }
         let msg = self
@@ -718,12 +724,8 @@ impl FerrobotTools {
         let store = &self.state.store;
         let tasks = store.tasks(me, 50).await.map_err(store_err)?;
         let agents = store.list_agents().await.map_err(store_err)?;
-        let name_of = |id: AgentId| {
-            agents
-                .iter()
-                .find(|a| a.id == id)
-                .map_or_else(|| "a deleted agent".to_owned(), |a| a.name.to_string())
-        };
+        let name_of =
+            |id: AgentId| name_in(&agents, id).unwrap_or_else(|| "a deleted agent".to_owned());
         let mut list = TaskList {
             given: Vec::new(),
             received: Vec::new(),
@@ -768,13 +770,11 @@ impl FerrobotTools {
     ) -> ToolResult<AskUserResult> {
         let me = caller(&parts)?.0.id;
         if self.state.notifier.in_call(me).await {
-            return Err(ErrorData::invalid_params(
+            return Err(invalid(
                 "You're in a voice call with the operator: ask out loud in your reply.",
-                None,
             ));
         }
-        card.normalize()
-            .map_err(|e| ErrorData::invalid_params(e, None))?;
+        card.normalize().map_err(invalid)?;
         let store = &self.state.store;
         let creator = store.get_agent(me).await.map_err(store_err)?.created_by;
         // The operator talks to the creator; it decides what reaches them.
@@ -842,7 +842,7 @@ impl FerrobotTools {
             .notifier
             .request_agent(me, request.clone())
             .await
-            .map_err(|e| ErrorData::invalid_params(e, None))?;
+            .map_err(invalid)?;
         Ok(Json(match outcome {
             AgentRequestOutcome::Created { id, name } => {
                 let note = match &task {
@@ -899,7 +899,7 @@ impl FerrobotTools {
             .notifier
             .set_agent_tools(me, request)
             .await
-            .map_err(|e| ErrorData::invalid_params(e, None))?;
+            .map_err(invalid)?;
         Ok(Json(match outcome {
             AgentToolsOutcome::Applied => SetAgentToolsResult {
                 status: "applied".into(),
@@ -907,9 +907,7 @@ impl FerrobotTools {
             },
             AgentToolsOutcome::Pending { .. } => SetAgentToolsResult {
                 status: "pending".into(),
-                note: "Shown to the operator. A message tells you whether they approved it; \
-                       finish your turn now."
-                    .into(),
+                note: PENDING_NOTE.into(),
             },
         }))
     }
@@ -938,7 +936,7 @@ impl FerrobotTools {
             .notifier
             .request_routine(me, request)
             .await
-            .map_err(|e| ErrorData::invalid_params(e, None))?;
+            .map_err(invalid)?;
         Ok(Json(match outcome {
             RoutineRequestOutcome::Created { id, when } => CreateRoutineResult {
                 status: "created".into(),
@@ -948,9 +946,7 @@ impl FerrobotTools {
             RoutineRequestOutcome::Pending { .. } => CreateRoutineResult {
                 status: "pending".into(),
                 routine_id: None,
-                note: "Shown to the operator. A message tells you whether they approved it; \
-                       finish your turn now."
-                    .into(),
+                note: PENDING_NOTE.into(),
             },
         }))
     }
@@ -984,7 +980,7 @@ impl FerrobotTools {
             .notifier
             .request_connector(me, request)
             .await
-            .map_err(|e| ErrorData::invalid_params(e, None))?;
+            .map_err(invalid)?;
         Ok(Json(AskUserResult {
             question_id,
             note: "Shown to the operator. A message tells you when they add or decline it; \
@@ -1010,7 +1006,7 @@ impl FerrobotTools {
             .notifier
             .share_file(me, args.path)
             .await
-            .map_err(|e| ErrorData::invalid_params(e, None))?;
+            .map_err(invalid)?;
         Ok(Json(ShareFileResult {
             file_id: shared.id,
             note: format!(
@@ -1035,14 +1031,14 @@ impl FerrobotTools {
         let me = caller(&parts)?.0.id;
         let text = args.text.trim();
         if text.is_empty() {
-            return Err(ErrorData::invalid_params("text is empty", None));
+            return Err(invalid("text is empty"));
         }
         let channel_id = self
             .state
             .notifier
             .send_to_discord(me, text.to_owned(), args.channel_id)
             .await
-            .map_err(|e| ErrorData::invalid_params(e, None))?;
+            .map_err(invalid)?;
         Ok(Json(SentToDiscord { channel_id }))
     }
 
@@ -1059,10 +1055,7 @@ impl FerrobotTools {
         let me = caller(&parts)?.0.id;
         let emoji = args.emoji.trim();
         if !ferrobot_core::is_reaction(emoji) {
-            return Err(ErrorData::invalid_params(
-                "emoji must be one emoji, like 👍",
-                None,
-            ));
+            return Err(invalid("emoji must be one emoji, like 👍"));
         }
         let store = &self.state.store;
         let theirs = store
@@ -1071,13 +1064,10 @@ impl FerrobotTools {
             .ok()
             .filter(|m| m.sender == Sender::User && m.recipient == me && m.room_id.is_none());
         if theirs.is_none() {
-            return Err(ErrorData::invalid_params(
-                format!(
-                    "message #{} is not one your operator sent you in your chat",
-                    args.message_id
-                ),
-                None,
-            ));
+            return Err(invalid(format!(
+                "message #{} is not one your operator sent you in your chat",
+                args.message_id
+            )));
         }
         let payload = serde_json::json!({ "message_id": args.message_id, "emoji": emoji });
         let event = store
@@ -1098,12 +1088,7 @@ impl FerrobotTools {
         Extension(parts): Extension<http::request::Parts>,
     ) -> ToolResult<HangUpResult> {
         let me = caller(&parts)?.0.id;
-        let ends_call = self
-            .state
-            .notifier
-            .hang_up(me)
-            .await
-            .map_err(|e| ErrorData::invalid_params(e, None))?;
+        let ends_call = self.state.notifier.hang_up(me).await.map_err(invalid)?;
         let note = if ends_call {
             "The call ends for everyone when your turn ends."
         } else {
@@ -1133,7 +1118,7 @@ impl FerrobotTools {
             .notifier
             .invite_to_call(me, guest.id, topic.to_owned())
             .await
-            .map_err(|e| ErrorData::invalid_params(e, None))?;
+            .map_err(invalid)?;
         Ok(Json(InviteToCallResult {
             note: format!(
                 "@{} joins the call and hears your topic now; what they say reaches you in the call.",
@@ -1193,10 +1178,7 @@ impl FerrobotTools {
         let agents = store.list_agents().await.map_err(store_err)?;
         let name_of = |s: &Sender| match s {
             Sender::User => "user".to_owned(),
-            Sender::Agent(id) => agents
-                .iter()
-                .find(|a| a.id == *id)
-                .map_or_else(|| format!("agent:{id}"), |a| a.name.to_string()),
+            Sender::Agent(id) => name_in(&agents, *id).unwrap_or_else(|| format!("agent:{id}")),
             Sender::Routine(id) => format!("routine:{id}"),
             Sender::Webhook(id) => format!("webhook:{id}"),
         };
@@ -1206,12 +1188,7 @@ impl FerrobotTools {
                 .map(|m| MailboxEntry {
                     id: m.id,
                     from: name_of(&m.sender),
-                    body: mention::render(&m.body, |id| {
-                        agents
-                            .iter()
-                            .find(|a| a.id == id)
-                            .map(|a| a.name.to_string())
-                    }),
+                    body: mention::render(&m.body, |id| name_in(&agents, id)),
                     reply_to: m.reply_to,
                     status: m.status.as_str().to_owned(),
                     created_at: m.created_at.to_string(),
@@ -1233,13 +1210,12 @@ impl FerrobotTools {
         let me = caller(&parts)?.0.id;
         let key = args.key.trim();
         if key.is_empty() || key.len() > MAX_MEMORY_KEY_BYTES {
-            return Err(ErrorData::invalid_params(
-                format!("key must be 1-{MAX_MEMORY_KEY_BYTES} bytes"),
-                None,
-            ));
+            return Err(invalid(format!(
+                "key must be 1-{MAX_MEMORY_KEY_BYTES} bytes"
+            )));
         }
         if args.content.len() > MAX_MESSAGE_BYTES {
-            return Err(ErrorData::invalid_params("content too large", None));
+            return Err(invalid("content too large"));
         }
         let store = &self.state.store;
         if args.global == Some(true) {
@@ -1273,10 +1249,7 @@ impl FerrobotTools {
         let agents = store.list_agents().await.map_err(store_err)?;
         let author = |id: Option<AgentId>| match id {
             None => "operator".to_owned(),
-            Some(id) => agents
-                .iter()
-                .find(|a| a.id == id)
-                .map_or_else(|| "a deleted agent".to_owned(), |a| a.name.to_string()),
+            Some(id) => name_in(&agents, id).unwrap_or_else(|| "a deleted agent".to_owned()),
         };
         let item = |global: bool| {
             move |m: ferrobot_store::MemoryEntry| MemoryItem {
@@ -1390,10 +1363,7 @@ impl ServerHandler for FerrobotTools {
         if router.has_route(&request.name) {
             // A model can call a tool by name without it being listed.
             if !allowed(me, &request.name) {
-                return Err(ErrorData::invalid_params(
-                    format!("{} is turned off for you", request.name),
-                    None,
-                ));
+                return Err(invalid(format!("{} is turned off for you", request.name)));
             }
             return router
                 .call(ToolCallContext::new(self, request, context))
@@ -1404,7 +1374,7 @@ impl ServerHandler for FerrobotTools {
             .call_connector_tool(me.id, request.name.into_owned(), request.arguments)
             .await
             .map(Into::into)
-            .map_err(|e| ErrorData::invalid_params(e, None))
+            .map_err(invalid)
     }
 }
 

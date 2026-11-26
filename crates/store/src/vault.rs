@@ -1,6 +1,5 @@
-//! Memories as Markdown notes in an Obsidian vault: `<vault>/ferrobot/<agent>/<key>.md` and
-//! `<vault>/ferrobot/Global memory/<key>.md`, so the operator reads and edits them in Obsidian.
-//! The setting `memory_vault` turns it on; the `memories` tables then stay untouched.
+//! Memories as Markdown notes in an Obsidian vault (`<vault>/ferrobot/<agent>/<key>.md`), on
+//! while the setting `memory_vault` is set; the `memories` tables then stay untouched.
 
 use std::path::{Path, PathBuf};
 use std::time::SystemTime;
@@ -10,6 +9,7 @@ use rusqlite::{Connection, OptionalExtension};
 use time::OffsetDateTime;
 
 use crate::memory::MemoryEntry;
+use crate::settings;
 use crate::{Store, StoreError};
 
 pub(crate) const SETTING: &str = "memory_vault";
@@ -23,14 +23,8 @@ fn io(e: &std::io::Error) -> StoreError {
 
 /// The vault folder, when memories live there.
 pub(crate) fn vault(c: &Connection) -> Result<Option<PathBuf>, StoreError> {
-    let raw: Option<String> = c
-        .query_row(
-            "SELECT value FROM settings WHERE key = ?1",
-            [SETTING],
-            |r| r.get(0),
-        )
-        .optional()?;
-    raw.map(|r| serde_json::from_str::<Option<PathBuf>>(&r).map_err(StoreError::corrupt))
+    settings::get(c, SETTING)?
+        .map(|r| serde_json::from_str::<Option<PathBuf>>(&r).map_err(StoreError::corrupt))
         .transpose()
         .map(Option::flatten)
 }
@@ -50,10 +44,7 @@ pub(crate) fn folder(
                 |r| r.get(0),
             )
             .optional()?
-            .ok_or_else(|| StoreError::NotFound {
-                entity: "agent",
-                key: id.to_string(),
-            })?,
+            .ok_or_else(|| StoreError::not_found("agent", id))?,
     };
     Ok(vault.join(ROOT).join(name))
 }
@@ -246,9 +237,8 @@ impl Store {
         self.with(|c| vault(c)).await
     }
 
-    /// Moves memories to `vault` (or back to the built-in memory with `None`). Memories already
-    /// stored are copied into the vault without replacing notes that hold the same key; the
-    /// built-in memory keeps its copy. Returns how many notes were written.
+    /// Moves memories to `vault` (`None`: back to the built-in memory), copying stored ones in
+    /// without replacing notes of the same key; returns how many notes were written.
     pub async fn set_memory_vault(&self, vault: Option<PathBuf>) -> Result<usize, StoreError> {
         self.with(move |c| {
             let mut copied = 0;
@@ -284,12 +274,7 @@ impl Store {
                 }
             }
             let value = serde_json::to_string(&vault).map_err(StoreError::corrupt)?;
-            c.execute(
-                "INSERT INTO settings (key, value, updated_at) VALUES (?1, ?2, ?3)
-                 ON CONFLICT (key) DO UPDATE SET value = excluded.value,
-                                                 updated_at = excluded.updated_at",
-                rusqlite::params![SETTING, value, crate::util::fmt_ts(crate::util::now())],
-            )?;
+            settings::put(c, SETTING, &value)?;
             Ok(copied)
         })
         .await

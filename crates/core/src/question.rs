@@ -201,9 +201,7 @@ impl QuestionEvent {
             turn_id: None,
         }
     }
-}
 
-impl QuestionEvent {
     /// Renames an approval card's Approve and Decline choices; their values stay.
     #[must_use]
     pub fn with_labels(mut self, approve: &str, decline: &str) -> Self {

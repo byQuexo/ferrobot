@@ -4,7 +4,7 @@ use ferrobot_core::{AgentId, Connector};
 use rusqlite::{OptionalExtension, Row, params};
 use uuid::Uuid;
 
-use crate::util::{fmt_ts, is_unique_violation, parse_ts};
+use crate::util::{conflict_or, fmt_ts, parse_ts};
 use crate::{Store, StoreError};
 
 const COLUMNS: &str = "id, name, url, created_at, command, token_env, tools";
@@ -48,21 +48,7 @@ fn command_column(c: &Connector) -> Result<Option<String>, StoreError> {
 }
 
 fn not_found(id: Uuid) -> StoreError {
-    StoreError::NotFound {
-        entity: "connector",
-        key: id.to_string(),
-    }
-}
-
-fn conflict(name: &str, e: rusqlite::Error) -> StoreError {
-    if is_unique_violation(&e) {
-        StoreError::Conflict {
-            entity: "connector",
-            key: name.to_owned(),
-        }
-    } else {
-        e.into()
-    }
+    StoreError::not_found("connector", id)
 }
 
 impl Store {
@@ -83,7 +69,7 @@ impl Store {
                     tools
                 ],
             )
-            .map_err(|e| conflict(&c.name, e))?;
+            .map_err(|e| conflict_or(e, "connector", &c.name))?;
             Ok(c)
         })
         .await
@@ -101,7 +87,7 @@ impl Store {
                      WHERE id = ?1",
                     params![c.id.to_string(), c.name, c.url, command, c.token_env, tools],
                 )
-                .map_err(|e| conflict(&c.name, e))?;
+                .map_err(|e| conflict_or(e, "connector", &c.name))?;
             if changed == 0 {
                 return Err(not_found(c.id));
             }

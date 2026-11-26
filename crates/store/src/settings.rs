@@ -1,36 +1,38 @@
 //! Daemon-wide settings, one JSON value per key. Never holds secrets.
 
-use rusqlite::{OptionalExtension, params};
+use rusqlite::{Connection, OptionalExtension, params};
 
 use crate::util::{fmt_ts, now};
 use crate::{Store, StoreError};
 
+pub(crate) fn get(c: &Connection, key: &str) -> Result<Option<String>, StoreError> {
+    Ok(
+        c.query_row("SELECT value FROM settings WHERE key = ?1", [key], |r| {
+            r.get(0)
+        })
+        .optional()?,
+    )
+}
+
+pub(crate) fn put(c: &Connection, key: &str, value: &str) -> Result<(), StoreError> {
+    c.execute(
+        "INSERT INTO settings (key, value, updated_at) VALUES (?1, ?2, ?3)
+         ON CONFLICT (key) DO UPDATE SET value = excluded.value,
+                                         updated_at = excluded.updated_at",
+        params![key, value, fmt_ts(now())],
+    )?;
+    Ok(())
+}
+
 impl Store {
     pub async fn get_setting(&self, key: &str) -> Result<Option<String>, StoreError> {
         let key = key.to_owned();
-        self.with(move |c| {
-            Ok(
-                c.query_row("SELECT value FROM settings WHERE key = ?1", [key], |r| {
-                    r.get(0)
-                })
-                .optional()?,
-            )
-        })
-        .await
+        self.with(move |c| get(c, &key)).await
     }
 
     pub async fn put_setting(&self, key: &str, value: String) -> Result<(), StoreError> {
         let key = key.to_owned();
-        self.with(move |c| {
-            c.execute(
-                "INSERT INTO settings (key, value, updated_at) VALUES (?1, ?2, ?3)
-                 ON CONFLICT (key) DO UPDATE SET value = excluded.value,
-                                                 updated_at = excluded.updated_at",
-                params![key, value, fmt_ts(now())],
-            )?;
-            Ok(())
-        })
-        .await
+        self.with(move |c| put(c, &key, &value)).await
     }
 }
 
