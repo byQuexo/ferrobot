@@ -16,6 +16,7 @@ use utoipa::ToSchema;
 use uuid::Uuid;
 
 use super::agents::explicit;
+use super::providers::has_secret;
 use super::{ApiResult, parse_id};
 use crate::connectors::{ConnectorCheck, check, check_soon, secret_key};
 use crate::error::{ApiError, ErrorBody};
@@ -47,12 +48,7 @@ pub(crate) struct ConnectorView {
 }
 
 async fn view(state: &AppState, connector: Connector) -> Result<ConnectorView, ApiError> {
-    let has_token = state
-        .settings
-        .secrets
-        .get(&secret_key(connector.id))
-        .await?
-        .is_some();
+    let has_token = has_secret(state, &secret_key(connector.id)).await?;
     let sign_in = oauth::sign_in(state, connector.id).await;
     let client = oauth::client_config(state, connector.id)
         .await
@@ -634,13 +630,7 @@ pub(crate) async fn start_oauth(
     Path(id): Path<String>,
 ) -> ApiResult<OAuthStart> {
     let c = state.store.get_connector(parse_cid(&id)?).await?;
-    if state
-        .settings
-        .secrets
-        .get(&secret_key(c.id))
-        .await?
-        .is_some()
-    {
+    if has_secret(&state, &secret_key(c.id)).await? {
         return Err(ApiError::BadRequest(format!(
             "{} uses a token; remove it to sign in with OAuth",
             c.name

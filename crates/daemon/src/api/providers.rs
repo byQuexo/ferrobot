@@ -27,12 +27,7 @@ pub(crate) struct ProviderView {
 }
 
 async fn view(state: &AppState, provider: Provider) -> Result<ProviderView, ApiError> {
-    let has_key = state
-        .settings
-        .secrets
-        .get(&secret_key(provider.id))
-        .await?
-        .is_some();
+    let has_key = has_secret(state, &secret_key(provider.id)).await?;
     Ok(ProviderView { provider, has_key })
 }
 
@@ -52,6 +47,10 @@ pub(crate) fn check_key(key: &str) -> Result<(), ApiError> {
         ));
     }
     Ok(())
+}
+
+pub(crate) async fn has_secret(state: &AppState, key: &str) -> Result<bool, ApiError> {
+    Ok(state.settings.secrets.get(key).await?.is_some())
 }
 
 /// Stores `value`, trimmed and checked, under `key`; `None` or blank removes it.

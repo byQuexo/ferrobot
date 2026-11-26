@@ -13,7 +13,7 @@ use utoipa::ToSchema;
 
 use super::ApiResult;
 use super::agents::explicit;
-use super::providers::{check_key, clean, set_secret};
+use super::providers::{check_key, clean, has_secret, set_secret};
 use crate::AppState;
 use crate::call::MAX_CALL_TEXT_BYTES;
 use crate::error::{ApiError, ErrorBody};
@@ -66,12 +66,7 @@ async fn view(state: &AppState, settings: VoiceSettings) -> Result<VoiceView, Ap
     for kind in VoiceProvider::ALL {
         providers.push(VoiceProviderView {
             kind,
-            has_key: state
-                .settings
-                .secrets
-                .get(kind.secret_key())
-                .await?
-                .is_some(),
+            has_key: has_secret(state, kind.secret_key()).await?,
             default_tts_model: kind.default_tts_model(),
             default_voice: kind.default_voice(),
             default_stt_model: kind.default_stt_model(),

@@ -6,7 +6,7 @@ use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;
 
 use super::ApiResult;
-use super::providers::set_secret;
+use super::providers::{has_secret, set_secret};
 use crate::AppState;
 use crate::error::{ApiError, ErrorBody};
 use crate::otel::{self, ExportStatus, OtelSettings};
@@ -30,7 +30,7 @@ pub(crate) struct OtelSecret {
 async fn view(state: &AppState, settings: OtelSettings) -> ApiResult<OtelView> {
     Ok(Json(OtelView {
         settings,
-        has_secret: state.settings.secrets.get(otel::SECRET).await?.is_some(),
+        has_secret: has_secret(state, otel::SECRET).await?,
         last_export: otel::last_export(),
     }))
 }

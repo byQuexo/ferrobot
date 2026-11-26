@@ -8,7 +8,7 @@ use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;
 
 use super::ApiResult;
-use super::providers::set_secret;
+use super::providers::{has_secret, set_secret};
 use crate::AppState;
 use crate::discord::{self, ChannelStatus, DiscordSettings, MAX_BRIDGES, MAX_USERS};
 use crate::error::{ApiError, ErrorBody};
@@ -31,7 +31,7 @@ pub(crate) struct DiscordToken {
 
 async fn view(state: &AppState, settings: DiscordSettings) -> ApiResult<DiscordView> {
     Ok(Json(DiscordView {
-        has_token: state.settings.secrets.get(discord::SECRET).await?.is_some(),
+        has_token: has_secret(state, discord::SECRET).await?,
         channels: state.discord.status(),
         settings,
     }))
@@ -55,19 +55,13 @@ pub(crate) async fn put_discord(
     State(state): State<AppState>,
     Json(mut settings): Json<DiscordSettings>,
 ) -> ApiResult<DiscordView> {
-    let trim = |ids: &mut Vec<String>| {
-        for id in ids.iter_mut() {
-            let t = id.trim().to_owned();
-            *id = t;
-        }
-    };
-    trim(&mut settings.users);
+    let bridged = settings.bridges.iter_mut().map(|b| &mut b.channel_id);
+    for id in settings.users.iter_mut().chain(bridged) {
+        let t = id.trim().to_owned();
+        *id = t;
+    }
     let mut seen = HashSet::new();
     settings.users.retain(|u| seen.insert(u.clone()));
-    for b in &mut settings.bridges {
-        let t = b.channel_id.trim().to_owned();
-        b.channel_id = t;
-    }
     if settings.users.len() > MAX_USERS || settings.bridges.len() > MAX_BRIDGES {
         return Err(ApiError::BadRequest(format!(
             "at most {MAX_USERS} users and {MAX_BRIDGES} channels"
