@@ -923,6 +923,34 @@
             "type"
           ],
           "type": "object"
+        },
+        {
+          "description": "An agent called teammates without the operator (`call_agents`); the operator may join\nwith `POST /v1/rooms/{id}/call`.",
+          "properties": {
+            "host": {
+              "$ref": "#/$defs/AgentId"
+            },
+            "room_id": {
+              "format": "int64",
+              "type": "integer"
+            },
+            "topic": {
+              "type": "string"
+            },
+            "type": {
+              "enum": [
+                "agent_call"
+              ],
+              "type": "string"
+            }
+          },
+          "required": [
+            "room_id",
+            "host",
+            "topic",
+            "type"
+          ],
+          "type": "object"
         }
       ]
     }

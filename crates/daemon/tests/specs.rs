@@ -105,6 +105,7 @@ fn every_routed_path_is_documented() {
         "/v1/call/messages",
         "/v1/rooms",
         "/v1/rooms/{id}",
+        "/v1/rooms/{id}/call",
         "/v1/groups",
         "/v1/groups/{id}",
         "/v1/groups/{id}/messages",
@@ -140,7 +141,7 @@ fn every_routed_path_is_documented() {
     }
     assert_eq!(
         documented.len(),
-        89,
+        90,
         "undocumented extra paths: {documented:?}"
     );
 }

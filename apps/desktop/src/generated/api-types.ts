@@ -1321,6 +1321,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/rooms/{id}/call": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Joins the call agents started in room `id` without the operator: it becomes the voice call
+         *     and goes on in the same room. End it with `PUT /v1/call` and no agents.
+         */
+        post: operations["join_room_call"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/routines/{rid}": {
         parameters: {
             query?: never;
@@ -2837,6 +2857,8 @@ export interface components {
             /** @description Oldest first; the last 1000. */
             lines: components["schemas"]["RoomLine"][];
             speaking?: components["schemas"]["AgentId"] | null;
+            /** @description A call among agents the operator can join (`POST /v1/rooms/{id}/call`). */
+            joinable: boolean;
         };
         /** @description A prompt an agent receives on a cron schedule. */
         Routine: {
@@ -3174,6 +3196,13 @@ export interface components {
             agent?: components["schemas"]["AgentId"] | null;
             /** @enum {string} */
             type: "room_floor";
+        } | {
+            /** Format: int64 */
+            room_id: number;
+            host: components["schemas"]["AgentId"];
+            topic: string;
+            /** @enum {string} */
+            type: "agent_call";
         };
         /** @description Partial profile update. Omitted fields stay unchanged. */
         UpdateAgent: {
@@ -7749,6 +7778,55 @@ export interface operations {
             };
             /** @description Unknown room */
             404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+        };
+    };
+    join_room_call: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Room id */
+                id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CallView"];
+                };
+            };
+            /** @description Missing or wrong API token */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Unknown room */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Voice is switched off, a call is running, or that call is over */
+            409: {
                 headers: {
                     [name: string]: unknown;
                 };

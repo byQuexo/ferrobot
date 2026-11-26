@@ -687,6 +687,8 @@ pub(crate) struct RoomTranscript {
     lines: Vec<RoomLine>,
     /// The member whose turn it is (writing or speaking), if any; `room_floor` events follow it.
     speaking: Option<AgentId>,
+    /// A call among agents the operator can join (`POST /v1/rooms/{id}/call`).
+    joinable: bool,
 }
 
 /// Call rooms (calls with two or more agents), newest first; the last 200.
@@ -709,7 +711,33 @@ pub(crate) async fn get_room(
         room: state.store.room(id).await?,
         lines: state.store.room_lines(id, 1000).await?,
         speaking: state.floor_of(id).await,
+        joinable: state.among_agents(id).await,
     }))
+}
+
+/// Joins the call agents started in room `id` without the operator: it becomes the voice call
+/// and goes on in the same room. End it with `PUT /v1/call` and no agents.
+#[utoipa::path(post, path = "/v1/rooms/{id}/call", tag = "voice",
+    params(("id" = i64, Path, description = "Room id")),
+    responses((status = 200, body = CallView),
+        (status = 404, description = "Unknown room", body = ErrorBody),
+        (status = 409, description = "Voice is switched off, a call is running, or that call is over",
+            body = ErrorBody)))]
+pub(crate) async fn join_room_call(
+    State(state): State<AppState>,
+    Path(id): Path<i64>,
+) -> ApiResult<CallView> {
+    state.store.room(id).await?;
+    if !load(&state).await?.enabled {
+        return Err(ApiError::Conflict(
+            "voice is switched off in the settings".into(),
+        ));
+    }
+    state
+        .join_agent_call(id)
+        .await
+        .map_err(ApiError::Conflict)?;
+    Ok(Json(call_view(&state).await))
 }
 
 #[cfg(test)]

@@ -1,6 +1,6 @@
 import type { JSX } from "preact";
 import { useEffect, useLayoutEffect, useRef, useState } from "preact/hooks";
-import { Pencil, Phone, PhoneOff } from "lucide-preact";
+import { Pencil, Phone, PhoneOff, X } from "lucide-preact";
 
 import type { Room, RoomTranscript, VoiceView } from "../api.ts";
 import { useApp } from "../context.ts";
@@ -11,7 +11,7 @@ import { Avatar } from "./Avatar.tsx";
 import { Composer } from "./Chat.tsx";
 import { GroupDialog } from "./Groups.tsx";
 import { RichText } from "./RichText.tsx";
-import { IconButton } from "./ui.tsx";
+import { Button, IconButton } from "./ui.tsx";
 
 /** Rooms of calls with two or more agents, newest first. */
 export function RoomList(props: {
@@ -111,7 +111,9 @@ export function RoomView(props: { id: number; onClose: () => void }): JSX.Elemen
     group === null
       ? room.ended_at
         ? `Ended ${clockTime(room.ended_at)}`
-        : "Call in progress"
+        : room.joinable
+          ? "Agents are talking"
+          : "Call in progress"
       : `${live ? "In a call · " : ""}${present.flatMap((id) => nameOf(id) ?? []).join(", ")}`;
   return (
     <section class="chat" aria-label={title}>
@@ -126,6 +128,20 @@ export function RoomView(props: { id: number; onClose: () => void }): JSX.Elemen
           <h1>{title}</h1>
           <span class="chat-sub">{sub}</span>
         </div>
+        {group === null && room.joinable && !room.ended_at && (
+          <>
+            <span class="spacer" />
+            <IconButton
+              label={callState ? "End the current call first" : "Join the call"}
+              disabled={callState !== null || !present[0]}
+              onClick={() => {
+                if (present[0]) void call.start(present[0], props.id, true);
+              }}
+            >
+              <Phone size={18} />
+            </IconButton>
+          </>
+        )}
         {group !== null && (
           <>
             <span class="spacer" />
@@ -230,5 +246,35 @@ export function RoomView(props: { id: number; onClose: () => void }): JSX.Elemen
         />
       )}
     </section>
+  );
+}
+
+/** An agent called teammates without the operator: join the call, open its room, or dismiss. */
+export function AgentCallNotice(props: {
+  host: string;
+  topic: string;
+  onJoin: () => void;
+  onOpen: () => void;
+  onDismiss: () => void;
+}): JSX.Element {
+  return (
+    <div class="agent-call-note" role="dialog" aria-label="Agents started a call">
+      <Phone size={18} />
+      <div class="grow">
+        <strong class="ellipsis">{props.host} started a call</strong>
+        <span class="muted small ellipsis" title={props.topic}>
+          {props.topic}
+        </span>
+      </div>
+      <Button small variant="primary" onClick={props.onJoin}>
+        Join
+      </Button>
+      <Button small variant="ghost" onClick={props.onOpen}>
+        Open
+      </Button>
+      <IconButton label="Dismiss" onClick={props.onDismiss}>
+        <X size={16} />
+      </IconButton>
+    </div>
   );
 }

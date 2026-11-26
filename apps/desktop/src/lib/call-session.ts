@@ -83,7 +83,8 @@ export class CallSession {
 
   /** Starts a call with `agent`, or with every member of `group`; hands-free listening needs
    * ElevenLabs. */
-  async start(agent: string, group?: number): Promise<void> {
+  /** Calls `agent`, or the group `group`; with `join`, joins the call agents started in room `group`. */
+  async start(agent: string, group?: number, join = false): Promise<void> {
     if (this.state) return;
     const round = ++this.#round;
     try {
@@ -95,7 +96,9 @@ export class CallSession {
       }
       const view = await (group === undefined
         ? this.#client.setCall([agent])
-        : this.#client.callGroup(group));
+        : join
+          ? this.#client.joinRoom(group)
+          : this.#client.callGroup(group));
       if (round !== this.#round) return;
       this.#set({
         agents: view.agents,

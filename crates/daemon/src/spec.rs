@@ -124,6 +124,7 @@ pub const QUESTION_CARD_FILE: &str = "question-card.v1.schema.json";
         api::voice::post_call_message,
         api::voice::list_rooms,
         api::voice::get_room,
+        api::voice::join_room_call,
         api::groups::list_groups,
         api::groups::create_group,
         api::groups::update_group,

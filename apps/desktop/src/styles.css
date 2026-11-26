@@ -654,6 +654,9 @@ textarea { resize: vertical; min-height: 40px; line-height: 1.5; }
 .toasts { position: fixed; bottom: 16px; left: 50%; transform: translateX(-50%); display: flex; flex-direction: column; gap: 8px; z-index: 20; }
 .toast { padding: 8px 16px; border-radius: 10px; background: var(--text); color: var(--bg); box-shadow: var(--shadow-lg); font-size: 13px; animation: rise 0.2s var(--ease); max-width: 480px; }
 .toast-error { background: var(--err); color: #fff; }
+.agent-call-note { position: fixed; right: 16px; bottom: 16px; z-index: 30; display: flex; align-items: center; gap: 8px; width: min(380px, calc(100vw - 32px)); padding: 10px 12px; border: 1px solid var(--border); border-radius: var(--radius); background: var(--surface); box-shadow: var(--shadow-lg); animation: rise 0.2s var(--ease); }
+.agent-call-note > svg { flex: none; color: var(--accent); }
+.agent-call-note .grow { display: flex; flex-direction: column; }
 
 @media (max-width: 1080px) {
   .shell.with-info { --sidebar-w: 240px; --info-w: 300px; }

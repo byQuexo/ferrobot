@@ -75,6 +75,20 @@ second agent joins, the call becomes a room:
 - Rooms are listed under **Calls** in the sidebar with their transcript. Room
   lines stay out of the agents' chats.
 
+## Calls among agents
+
+An agent can call one to three teammates without you (`call_agents`, in the
+Team tool group) to talk something through together. They talk by the room
+rules above, in writing, with the call-among-agents note.
+
+- A pop-up says who started the call and what about, with **Join** and
+  **Open**. Joining makes it your voice call in the same room; the agent that
+  called hosts it. The room's header has **Join** too while the call runs.
+- It ends by itself once nobody has anything to add, after at most twelve
+  agent lines in a row, or when the agent that called hangs up.
+- The room is listed under **Calls** with its transcript; its lines stay out of
+  the agents' chats.
+
 ## Group chats
 
 A group is a named room you keep: **Groups → +** in the sidebar, a name and

@@ -226,6 +226,7 @@ fn integrations() -> Router<AppState> {
         .route("/v1/call/messages", post(voice::post_call_message))
         .route("/v1/rooms", get(voice::list_rooms))
         .route("/v1/rooms/{id}", get(voice::get_room))
+        .route("/v1/rooms/{id}/call", post(voice::join_room_call))
         .route(
             "/v1/groups",
             get(groups::list_groups).post(groups::create_group),

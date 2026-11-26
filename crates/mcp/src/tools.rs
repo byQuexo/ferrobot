@@ -350,6 +350,21 @@ pub struct InviteToCallResult {
 }
 
 #[derive(Debug, Deserialize, JsonSchema)]
+pub struct CallAgentsArgs {
+    /// The teammates to call: one to three ids or `@name`s.
+    pub agents: Vec<String>,
+    /// What to talk through and what you want from them; the call's first line.
+    pub topic: String,
+}
+
+#[derive(Debug, Serialize, JsonSchema)]
+pub struct CallAgentsResult {
+    /// The call's room; the operator sees it under Calls.
+    pub room_id: i64,
+    pub note: String,
+}
+
+#[derive(Debug, Deserialize, JsonSchema)]
 pub struct ReadMailboxArgs {
     /// How many recent messages to return (default 20, max 100).
     pub limit: Option<u32>,
@@ -1127,6 +1142,44 @@ impl FerrobotTools {
         }))
     }
 
+    #[tool(
+        description = "Start a call with one to three teammates, without the operator, to talk \
+        something through together: everyone in it reads every line and they take turns. Your \
+        topic is the first line; the others answer after this turn, and their lines reach you in \
+        the call, where you reply in your turns. The operator may join. It ends when nobody adds \
+        anything, or when you hang_up."
+    )]
+    async fn call_agents(
+        &self,
+        Extension(parts): Extension<http::request::Parts>,
+        Parameters(args): Parameters<CallAgentsArgs>,
+    ) -> ToolResult<CallAgentsResult> {
+        let me = caller(&parts)?.0.id;
+        let topic = check_body(&args.topic)?;
+        if args.agents.is_empty() || args.agents.len() > 3 {
+            return Err(ErrorData::invalid_params(
+                "call one to three teammates",
+                None,
+            ));
+        }
+        let mut guests = Vec::new();
+        for agent in &args.agents {
+            guests.push(self.agent(agent).await?.id);
+        }
+        let room_id = self
+            .state
+            .notifier
+            .call_agents(me, guests, topic.to_owned())
+            .await
+            .map_err(|e| ErrorData::invalid_params(e, None))?;
+        Ok(Json(CallAgentsResult {
+            room_id,
+            note: "They hear your topic after this turn. Finish this turn briefly; the call goes \
+                   on in your next turns."
+                .into(),
+        }))
+    }
+
     #[tool(description = "Read the most recent messages addressed to you (newest last).")]
     async fn read_mailbox(
         &self,
@@ -1281,9 +1334,8 @@ fn context_caller(context: &RequestContext<RoleServer>) -> Option<&Agent> {
 /// The group of one of ferrobot's own tools; `None` (never offered) for a tool without one.
 pub(crate) fn group_of(tool: &str) -> Option<ToolGroup> {
     Some(match tool {
-        "list_agents" | "send_message" | "read_mailbox" | "assign_task" | "list_tasks" => {
-            ToolGroup::Team
-        }
+        "list_agents" | "send_message" | "read_mailbox" | "assign_task" | "list_tasks"
+        | "call_agents" => ToolGroup::Team,
         "remember" | "recall" | "forget" => ToolGroup::Memory,
         "ask_user" | "share_file" | "invite_to_call" | "hang_up" | "list_guides" | "read_guide"
         | "react" | "send_to_discord" => ToolGroup::Operator,

@@ -217,6 +217,17 @@ pub trait MailboxNotifier: Send + Sync + 'static {
         let _ = (agent, text, channel);
         Box::pin(async { Err("Discord is not supported here".to_owned()) })
     }
+    /// `host` calls `guests` without the operator; `Ok` carries the call's room id, `Err` a
+    /// message for the agent.
+    fn call_agents(
+        &self,
+        host: AgentId,
+        guests: Vec<AgentId>,
+        topic: String,
+    ) -> BoxFuture<Result<i64, String>> {
+        let _ = (host, guests, topic);
+        Box::pin(async { Err("calls are not supported here".to_owned()) })
+    }
     /// Brings `guest` into the operator's voice call that `host` is in
     /// and sends it `topic`. `Err` carries a message for the agent.
     fn invite_to_call(

@@ -237,6 +237,13 @@ pub enum UiEvent {
         room_id: i64,
         agent: Option<AgentId>,
     },
+    /// An agent called teammates without the operator (`call_agents`); the operator may join
+    /// with `POST /v1/rooms/{id}/call`.
+    AgentCall {
+        room_id: i64,
+        host: AgentId,
+        topic: String,
+    },
 }
 
 /// Shared daemon state. Cheap to clone.
@@ -540,6 +547,16 @@ impl ferrobot_mcp::MailboxNotifier for AppState {
                 .await
                 .map_err(|e| e.to_string())
         })
+    }
+
+    fn call_agents(
+        &self,
+        host: AgentId,
+        guests: Vec<AgentId>,
+        topic: String,
+    ) -> ferrobot_mcp::BoxFuture<Result<i64, String>> {
+        let state = self.clone();
+        Box::pin(async move { Ok(state.call_agents(host, guests, &topic).await?.id) })
     }
 
     fn invite_to_call(

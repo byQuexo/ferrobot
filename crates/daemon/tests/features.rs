@@ -7631,6 +7631,115 @@ async fn context_is_the_newest_call_since_the_last_new_chat() {
 }
 
 #[tokio::test]
+async fn agents_call_each_other_and_the_operator_can_join() {
+    let backend = Arc::new(StatefulBackend::default());
+    let d = start(backend.clone(), None, "127.0.0.1:0").await;
+    let mut ids = Vec::new();
+    for name in ["ann", "bob", "cy"] {
+        let agent = create(&d, json!({ "name": name })).await;
+        ids.push(agent["id"].as_str().unwrap().parse::<AgentId>().unwrap());
+    }
+    let [ann, bob, cy] = ids[..] else {
+        unreachable!()
+    };
+    let mut ann_ws = connect_runner(&d.agents, &backend.token("ann")).await;
+    let mut bob_ws = connect_runner(&d.agents, &backend.token("bob")).await;
+    let mut cy_ws = connect_runner(&d.agents, &backend.token("cy")).await;
+    let mcp = mcp_as(&d, backend.token("ann")).await;
+    let none = json!({"agents": [], "topic": "Hi"});
+    let refused = mcp
+        .call_tool(
+            rmcp::model::CallToolRequestParams::new("call_agents")
+                .with_arguments(none.as_object().cloned().unwrap()),
+        )
+        .await;
+    assert!(
+        format!("{refused:?}").contains("one to three"),
+        "{refused:?}"
+    );
+
+    // ann calls bob and cy: they take turns by the room rules, out of their chats.
+    let topic = json!({"agents": ["@bob", "@cy"], "topic": "Release on Friday?"});
+    let room = call(&mcp, "call_agents", topic).await["room_id"]
+        .as_i64()
+        .unwrap();
+    let (_, transcript) = http(&d.ui, "GET", &format!("/v1/rooms/{room}"), None).await;
+    assert_eq!(
+        (&transcript["members"], &transcript["joinable"]),
+        (&json!([ann, bob, cy]), &json!(true))
+    );
+    let body = say_turn(&mut bob_ws, "Friday works.").await;
+    assert!(body.starts_with("(Call among agents:"), "{body}");
+    assert!(body.ends_with("@ann: Release on Friday?"), "{body}");
+    assert!(
+        say_turn(&mut cy_ws, "(pass)")
+            .await
+            .ends_with("@bob: Friday works.")
+    );
+    assert!(
+        say_turn(&mut ann_ws, "Friday then.")
+            .await
+            .ends_with("@bob: Friday works.")
+    );
+    say_turn(&mut bob_ws, "(pass)").await;
+    say_turn(&mut cy_ws, "(pass)").await;
+
+    // Nobody is due any more: the call ends, and joining it is too late.
+    let ended = eventually("the call ends", Duration::from_secs(5), || async {
+        let (_, t) = http(&d.ui, "GET", &format!("/v1/rooms/{room}"), None).await;
+        (!t["ended_at"].is_null()).then_some(t)
+    })
+    .await;
+    assert_eq!(ended["joinable"], false);
+    let said: Vec<_> = ended["lines"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|l| l["body"].as_str().unwrap().to_owned())
+        .collect();
+    assert_eq!(
+        said,
+        ["Release on Friday?", "Friday works.", "Friday then."]
+    );
+    let join = format!("/v1/rooms/{room}/call");
+    assert_eq!(http(&d.ui, "POST", &join, None).await.0, 409);
+    assert!(received(&d, bob).await.is_empty() && received(&d, cy).await.is_empty());
+
+    // Joined, a call among agents becomes the operator's voice call in the same room.
+    let topic = json!({"agents": ["@bob"], "topic": "One more thing"});
+    let room = call(&mcp, "call_agents", topic).await["room_id"]
+        .as_i64()
+        .unwrap();
+    let again = json!({"agents": ["@cy"], "topic": "Busy?"});
+    let refused = mcp
+        .call_tool(
+            rmcp::model::CallToolRequestParams::new("call_agents")
+                .with_arguments(again.as_object().cloned().unwrap()),
+        )
+        .await;
+    assert!(
+        format!("{refused:?}").contains("already in a call"),
+        "{refused:?}"
+    );
+    let (status, view) = http(&d.ui, "POST", &format!("/v1/rooms/{room}/call"), None).await;
+    assert_eq!(
+        (status, view),
+        (200, json!({"agents": [ann, bob], "room_id": room}))
+    );
+    say_turn(&mut bob_ws, "Sure.").await;
+    let body = say_turn(&mut ann_ws, "(pass)").await;
+    assert!(
+        body.starts_with("(Voice call:") && body.contains("(You host the call."),
+        "{body}"
+    );
+    turns_done(&d, ann, 2).await;
+    let hang_up = json!({"agents": []});
+    assert_eq!(http(&d.ui, "PUT", "/v1/call", Some(hang_up)).await.0, 200);
+    let (_, t) = http(&d.ui, "GET", &format!("/v1/rooms/{room}"), None).await;
+    assert!(!t["ended_at"].is_null(), "{t}");
+}
+
+#[tokio::test]
 async fn groups_talk_by_room_rules_and_a_call_to_one_lands_in_it() {
     let backend = Arc::new(StatefulBackend::default());
     let d = start(backend.clone(), None, "127.0.0.1:0").await;

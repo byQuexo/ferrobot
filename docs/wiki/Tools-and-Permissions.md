@@ -10,7 +10,7 @@ off.
 
 | Group | What it allows |
 | --- | --- |
-| Team | Message teammates and give them tasks |
+| Team | Message teammates, give them tasks, and call them without you |
 | Memory | Remember and recall notes |
 | Operator | Ask you questions, share files, react to your messages, bring teammates into calls, post to its Discord channel, read the guides |
 | Create agents | Ask to create new agents |

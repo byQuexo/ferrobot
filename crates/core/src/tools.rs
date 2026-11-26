@@ -10,7 +10,7 @@ use serde::{Deserialize, Serialize};
 #[cfg_attr(feature = "mcp", derive(schemars::JsonSchema))]
 #[serde(rename_all = "snake_case")]
 pub enum ToolGroup {
-    /// `list_agents`, `send_message`, `read_mailbox`, `assign_task`, `list_tasks`.
+    /// `list_agents`, `send_message`, `read_mailbox`, `assign_task`, `list_tasks`, `call_agents`.
     Team,
     /// `remember`, `recall`, `forget`.
     Memory,

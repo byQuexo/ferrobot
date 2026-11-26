@@ -110,7 +110,9 @@ Principles:
   most; room messages carry `room_id` and stay out of chats; the call note goes
   to the model at hand-off, the host also gets the host note; `hang_up` takes
   effect when the agent's turn ends, and the call's end cuts off the room turn
-  holding the floor and drops queued ones; `ask_user` is refused in a call);
+  holding the floor and drops queued ones; `ask_user` is refused in a call;
+  `call_agents` starts a call among agents without the operator, which ends once
+  nobody is due (12 agent lines in a row at most) and which the operator can join);
   `apps/desktop/src/lib/voice.ts` — playback and recording in the UI;
   `lib/call-session.ts` — the call in the UI (outlives the chat),
   `lib/call.ts` — its sentence, barge-in and call-event rules.

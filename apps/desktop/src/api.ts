@@ -345,6 +345,9 @@ export class DaemonClient {
   /** Calls every member of a group; the group is the call's room. */
   callGroup = (id: number): Promise<CallView> =>
     this.#request("POST", `/v1/groups/${String(id)}/call`);
+  /** Joins a call agents started without the operator; it becomes the voice call. */
+  joinRoom = (id: number): Promise<CallView> =>
+    this.#request("POST", `/v1/rooms/${String(id)}/call`);
 
   /** `to` null means until now; `daily` adds each group's `days`. */
   usage = (
