@@ -2,7 +2,7 @@
 //! `file` event, so they outlive the sandbox and stay the version that was shared.
 
 use std::collections::VecDeque;
-use std::sync::{Arc, Mutex, PoisonError};
+use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use ferrobot_core::AgentId;
@@ -39,7 +39,7 @@ impl Previews {
     /// Keeps `html` under its SHA-256, so a block rendered again is kept once.
     pub fn put(&self, html: &str) -> String {
         let id = hex::encode(ring::digest::digest(&ring::digest::SHA256, html.as_bytes()));
-        let mut kept = self.0.lock().unwrap_or_else(PoisonError::into_inner);
+        let mut kept = crate::lock(&self.0);
         kept.retain(|(k, _)| *k != id);
         if kept.len() >= KEPT_BLOCKS {
             kept.pop_front();
@@ -49,7 +49,7 @@ impl Previews {
     }
 
     pub fn get(&self, id: &str) -> Option<Arc<str>> {
-        let kept = self.0.lock().unwrap_or_else(PoisonError::into_inner);
+        let kept = crate::lock(&self.0);
         kept.iter().find(|(k, _)| k == id).map(|(_, h)| h.clone())
     }
 }
@@ -155,7 +155,7 @@ async fn link_key(state: &AppState) -> Result<ring::hmac::Key, String> {
         .cloned()
 }
 
-fn unix_now() -> u64 {
+pub(crate) fn unix_now() -> u64 {
     std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .map_or(0, |d| d.as_secs())

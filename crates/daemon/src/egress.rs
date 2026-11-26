@@ -206,7 +206,7 @@ fn pem(der: &[u8]) -> String {
 /// The TLS setup that presents `host` a certificate from `login`'s CA.
 async fn leaf(state: &AppState, login: &Login, host: &str) -> Result<Arc<ServerConfig>, String> {
     let ca = ca(state, login).await?;
-    if let Some(leaf) = lock(&state.egress.leaves).get(host)
+    if let Some(leaf) = crate::lock(&state.egress.leaves).get(host)
         && leaf.made.elapsed() < LEAF_FOR
         && Arc::ptr_eq(&leaf.ca, &ca)
     {
@@ -236,7 +236,7 @@ async fn leaf(state: &AppState, login: &Login, host: &str) -> Result<Arc<ServerC
         .map_err(|e| e.to_string())?;
     config.alpn_protocols = vec![b"http/1.1".to_vec()];
     let config = Arc::new(config);
-    lock(&state.egress.leaves).insert(
+    crate::lock(&state.egress.leaves).insert(
         host.to_owned(),
         Leaf {
             made: Instant::now(),
@@ -245,10 +245,6 @@ async fn leaf(state: &AppState, login: &Login, host: &str) -> Result<Arc<ServerC
         },
     );
     Ok(config)
-}
-
-fn lock<T>(m: &Mutex<T>) -> std::sync::MutexGuard<'_, T> {
-    m.lock().unwrap_or_else(std::sync::PoisonError::into_inner)
 }
 
 /// Hands `CONNECT` requests to the proxy; everything else goes on to the agent API's routes.

@@ -1,8 +1,7 @@
-//! Sends each finished turn's trace to the operator's OTLP/HTTP endpoint (Phoenix, Langfuse or
-//! any OpenTelemetry backend), encoded as protobuf by hand: Phoenix accepts nothing else, and
-//! the few messages needed do not warrant the OpenTelemetry SDK.
+//! Sends each finished turn's trace to the operator's OTLP/HTTP endpoint as hand-encoded protobuf:
+//! Phoenix accepts nothing else, and the few messages needed do not warrant the OpenTelemetry SDK.
 
-use std::sync::{LazyLock, Mutex, PoisonError};
+use std::sync::{LazyLock, Mutex};
 use std::time::Duration;
 
 use ferrobot_core::{AgentId, ProviderKind};
@@ -51,7 +50,7 @@ pub struct ExportStatus {
 static LAST: LazyLock<Mutex<Option<ExportStatus>>> = LazyLock::new(Mutex::default);
 
 pub fn last_export() -> Option<ExportStatus> {
-    LAST.lock().unwrap_or_else(PoisonError::into_inner).clone()
+    crate::lock(&LAST).clone()
 }
 
 pub async fn load(state: &AppState) -> Result<OtelSettings, ApiError> {
@@ -116,7 +115,7 @@ pub fn turn_done(state: &AppState, agent: AgentId, turn: String) {
         if let Some(e) = &error {
             tracing::warn!(%turn, error = %e, "trace export failed");
         }
-        *LAST.lock().unwrap_or_else(PoisonError::into_inner) = Some(ExportStatus {
+        *crate::lock(&LAST) = Some(ExportStatus {
             at: OffsetDateTime::now_utc(),
             error,
         });

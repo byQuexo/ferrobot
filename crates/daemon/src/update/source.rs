@@ -3,7 +3,7 @@
 
 use std::path::{Path, PathBuf};
 use std::process::Stdio;
-use std::sync::{Arc, PoisonError};
+use std::sync::Arc;
 use std::time::Duration;
 
 use async_trait::async_trait;
@@ -150,15 +150,11 @@ fn not_source() -> ApiError {
 }
 
 fn set(state: &AppState, change: impl FnOnce(&mut UpdateInfo)) {
-    change(&mut state.update.lock().unwrap_or_else(PoisonError::into_inner));
+    change(&mut crate::lock(&state.update));
 }
 
 pub(crate) fn info(state: &AppState) -> UpdateInfo {
-    let mut info = state
-        .update
-        .lock()
-        .unwrap_or_else(PoisonError::into_inner)
-        .clone();
+    let mut info = crate::lock(&state.update).clone();
     info.version = env!("CARGO_PKG_VERSION").into();
     if let Some(source) = &state.settings.source_update {
         info.source_build = true;
@@ -176,7 +172,7 @@ pub(crate) async fn start(state: &AppState) -> Result<UpdateInfo, ApiError> {
         .ok_or_else(not_source)?;
     preflight(&source.repo).await?;
     {
-        let mut status = state.update.lock().unwrap_or_else(PoisonError::into_inner);
+        let mut status = crate::lock(&state.update);
         if matches!(status.state, UpdateState::Running | UpdateState::Restarting) {
             return Err(ApiError::Conflict("an update is already running".into()));
         }

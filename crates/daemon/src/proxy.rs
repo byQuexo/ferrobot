@@ -184,12 +184,7 @@ pub(crate) fn agent_token(headers: &HeaderMap) -> Option<&str> {
         .get("x-api-key")
         .or_else(|| headers.get("x-goog-api-key"))
         .and_then(|v| v.to_str().ok())
-        .or_else(|| {
-            headers
-                .get(header::AUTHORIZATION)
-                .and_then(|v| v.to_str().ok())
-                .and_then(|v| v.strip_prefix("Bearer "))
-        })
+        .or_else(|| crate::auth::bearer(headers))
 }
 
 fn error(status: StatusCode, message: &str) -> Response {
@@ -332,7 +327,6 @@ async fn route(state: &AppState, provider: Option<Provider>, path: &str) -> Resu
         return daemon_route(state, path);
     };
     let id = provider.id;
-    let unavailable = unconfigured;
     if provider.kind == ProviderKind::Anthropic && !path.starts_with("v1/") {
         return Err(Failure::new(
             StatusCode::NOT_FOUND,
@@ -349,11 +343,11 @@ async fn route(state: &AppState, provider: Option<Provider>, path: &str) -> Resu
         provider.upstream()
     };
     let upstream = upstream
-        .ok_or_else(|| unavailable(format!("provider {} has no upstream", provider.name)))?;
+        .ok_or_else(|| unconfigured(format!("provider {} has no upstream", provider.name)))?;
     let api = match provider.kind {
         ProviderKind::ClaudeCode => {
             let name = &provider.name;
-            return Err(unavailable(format!(
+            return Err(unconfigured(format!(
                 "provider {name} runs on the host's claude CLI"
             )));
         }

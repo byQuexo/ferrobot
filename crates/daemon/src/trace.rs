@@ -1,6 +1,5 @@
-//! One turn as a timeline: its model calls and tool calls with their times, built from the
-//! turn's events and the proxy's usage rows, plus the cards it waited on and the messages it
-//! handed to other agents. The same spans feed the trace view.
+//! One turn as a timeline: model and tool calls from its events and the proxy's usage rows, plus
+//! the cards it waited on and the messages it handed to other agents.
 
 use std::collections::HashMap;
 
@@ -268,13 +267,16 @@ pub fn build(
     let mut open: Vec<(Option<String>, usize)> = Vec::new();
     for e in events {
         let p = &e.payload;
+        let tool = || {
+            span(
+                SpanKind::Tool,
+                text(&p["name"]).unwrap_or_default(),
+                e.created_at,
+            )
+        };
         match e.kind.as_str() {
             "tool_use" => {
-                let mut s = span(
-                    SpanKind::Tool,
-                    text(&p["name"]).unwrap_or_default(),
-                    e.created_at,
-                );
+                let mut s = tool();
                 s.input = Some(p["input"].clone())
                     .filter(|i| !i.is_null() && i.to_string().len() <= MAX_INPUT_BYTES);
                 open.push((text(&p["id"]), trace.spans.len()));
@@ -293,11 +295,7 @@ pub fn build(
                 }
             }
             "tool_denied" => {
-                let mut s = span(
-                    SpanKind::Tool,
-                    text(&p["name"]).unwrap_or_default(),
-                    e.created_at,
-                );
+                let mut s = tool();
                 s.ended_at = Some(e.created_at);
                 s.error = Some(format!(
                     "denied: {}",

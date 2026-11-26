@@ -1,7 +1,7 @@
 //! Command-line tools in every agent's sandbox: one image, the base image plus Debian packages.
 //! A sandbox picks it up when it is next created or woken (`lifecycle::wake`).
 
-use std::sync::{Mutex, MutexGuard, PoisonError};
+use std::sync::{Mutex, MutexGuard};
 use std::time::Duration;
 
 use serde::{Deserialize, Serialize};
@@ -42,7 +42,7 @@ pub struct Builds(Mutex<(BuildStatus, Option<String>)>);
 
 impl Builds {
     fn lock(&self) -> MutexGuard<'_, (BuildStatus, Option<String>)> {
-        self.0.lock().unwrap_or_else(PoisonError::into_inner)
+        crate::lock(&self.0)
     }
 
     pub(crate) fn get(&self) -> (BuildStatus, Option<String>) {

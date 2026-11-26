@@ -1,13 +1,11 @@
-//! The opt-in Claude Code driver: the daemon host's own, unmodified `claude` CLI, signed in with
-//! the user's own Claude account through Anthropic's flow. ferrobot never reads, stores or relays
-//! that login; `claude` runs on the host with its built-in tools off and reaches the agent's
-//! sandbox only through the MCP tools below.
+//! The opt-in Claude Code driver: the host's own, unmodified `claude`, whose login ferrobot never
+//! reads, stores or relays. Its built-in tools are off; it reaches the sandbox only through MCP.
 
 use std::collections::HashSet;
 use std::ffi::OsStr;
 use std::path::{Path, PathBuf};
 use std::process::Stdio;
-use std::sync::{Arc, LazyLock, Mutex, PoisonError};
+use std::sync::{Arc, LazyLock, Mutex};
 use std::time::Duration;
 
 use axum::Json;
@@ -44,9 +42,8 @@ pub struct ClaudeCodeStatus {
     pub auth_method: Option<String>,
 }
 
-/// Variables the daemon may hold that would move `claude` off the user's own login (keys,
-/// tokens, another provider), make it think it runs inside another Claude Code, or hand the
-/// daemon's own secrets (operator token, storage keys) to hooks and plugins.
+/// Variables that would move `claude` off the user's own login, make it think it runs inside
+/// another Claude Code, or hand the daemon's secrets to hooks and plugins.
 fn foreign(key: &OsStr) -> bool {
     let key = key.to_string_lossy();
     ["ANTHROPIC_", "CLAUDE_CODE_", "FERROBOT_", "AWS_"]
@@ -333,14 +330,11 @@ pub async fn compact(state: &AppState, agent: AgentId) -> Result<String, Compact
         .ok_or(CompactError::NotNow(
             "there is no conversation to compact yet",
         ))?;
+    let in_turn = || CompactError::NotNow("the agent is in a turn; try again when it is done");
     if state.hub.is_working(agent) {
-        return Err(CompactError::NotNow(
-            "the agent is in a turn; try again when it is done",
-        ));
+        return Err(in_turn());
     }
-    let _busy = Busy::take(agent).ok_or(CompactError::NotNow(
-        "the agent is in a turn; try again when it is done",
-    ))?;
+    let _busy = Busy::take(agent).ok_or_else(in_turn)?;
     let mut cmd = claude(state);
     cmd.args([
         "-p",
@@ -512,17 +506,14 @@ struct Busy(AgentId);
 
 impl Busy {
     fn take(agent: AgentId) -> Option<Self> {
-        let mut busy = BUSY.lock().unwrap_or_else(PoisonError::into_inner);
         // Lazily: a `Busy` built for nothing would lock `BUSY` again in its `drop`.
-        busy.insert(agent).then(|| Self(agent))
+        crate::lock(&BUSY).insert(agent).then(|| Self(agent))
     }
 }
 
 impl Drop for Busy {
     fn drop(&mut self) {
-        BUSY.lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .remove(&self.0);
+        crate::lock(&BUSY).remove(&self.0);
     }
 }
 
@@ -852,9 +843,8 @@ fn write_turn_files(
     Ok(dir)
 }
 
-/// `claude` acts on prompt text before the model sees it: it attaches files named as `@path`
-/// (also outside its folder) and runs a leading `/command`. Those come from the sandbox or from
-/// other agents' messages, so a path after `@` gets a space and a leading `/` or `!` is refused.
+/// `claude` attaches any `@path` and runs a leading `/command` before the model sees the prompt,
+/// which comes from the sandbox or other agents: `@` paths get a space, a leading `/` or `!` fails.
 fn defuse(prompt: &str) -> Result<String, ()> {
     if matches!(prompt.trim_start().chars().next(), Some('/' | '!')) {
         return Err(());

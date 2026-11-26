@@ -221,13 +221,13 @@ pub fn secret_key(provider: Uuid) -> String {
 }
 
 /// Private `CODEX_HOME`s of running app-servers, under the codex dir.
-fn run_dir(codex_home: &Path) -> std::path::PathBuf {
+fn run_dir(codex_home: &Path) -> PathBuf {
     codex_home.join("run")
 }
 
 /// The codex dir, without private homes a crash left behind (they hold
 /// copies of `ChatGPT` sign-ins).
-pub fn clean_home(codex_home: std::path::PathBuf) -> std::path::PathBuf {
+pub fn clean_home(codex_home: PathBuf) -> PathBuf {
     let _ = std::fs::remove_dir_all(run_dir(&codex_home));
     codex_home
 }
@@ -271,15 +271,9 @@ impl Home {
         }
         let _ = tokio::fs::remove_dir_all(&legacy).await;
         if let Some(auth) = &stored {
-            let mut file = std::fs::OpenOptions::new();
-            file.write(true).create_new(true);
-            #[cfg(unix)]
-            std::os::unix::fs::OpenOptionsExt::mode(&mut file, 0o600);
-            std::io::Write::write_all(
-                &mut file.open(dir.path().join("auth.json")).map_err(io)?,
-                auth.as_bytes(),
-            )
-            .map_err(io)?;
+            let mut file =
+                crate::secrets::create_private(&dir.path().join("auth.json")).map_err(io)?;
+            std::io::Write::write_all(&mut file, auth.as_bytes()).map_err(io)?;
         }
         Ok(Self {
             dir,
@@ -461,7 +455,7 @@ pub async fn chatgpt_token(state: &AppState, provider: Uuid) -> Result<(String, 
         .to_owned();
     let lifetime = claims["exp"]
         .as_u64()
-        .and_then(|exp| exp.checked_sub(unix_now()))
+        .and_then(|exp| exp.checked_sub(crate::files::unix_now()))
         .map_or(Duration::ZERO, Duration::from_secs);
     // Ask Codex again well before expiry; it refreshes the token itself.
     let keep = lifetime
@@ -472,12 +466,6 @@ pub async fn chatgpt_token(state: &AppState, provider: Uuid) -> Result<(String, 
         (token.clone(), account.clone(), Instant::now() + keep),
     );
     Ok((token, account))
-}
-
-fn unix_now() -> u64 {
-    std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .map_or(0, |d| d.as_secs())
 }
 
 /// The (unverified) claims of a JWT; only used to read our own token's metadata.

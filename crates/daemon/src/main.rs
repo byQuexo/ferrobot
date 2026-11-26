@@ -228,10 +228,10 @@ async fn main() -> Result<()> {
     settings.anthropic_upstream = cli.anthropic_upstream.trim_end_matches('/').to_owned();
     settings.model = cli.model.clone();
     settings.turn_timeout = Duration::from_secs(cli.turn_timeout);
-    settings.idle_timeout = (cli.idle_timeout > 0).then(|| Duration::from_secs(cli.idle_timeout));
-    settings.warm_timeout = (cli.warm_after > 0).then(|| Duration::from_secs(cli.warm_after));
-    settings.archive_timeout =
-        (cli.archive_after > 0).then(|| Duration::from_secs(cli.archive_after));
+    let after = |secs: u64| (secs > 0).then(|| Duration::from_secs(secs));
+    settings.idle_timeout = after(cli.idle_timeout);
+    settings.warm_timeout = after(cli.warm_after);
+    settings.archive_timeout = after(cli.archive_after);
     // Check often enough that short idle timeouts are honoured promptly.
     if let Some(first) = settings
         .warm_timeout
@@ -280,7 +280,7 @@ async fn main() -> Result<()> {
     tokio::spawn(scheduler::run(state.clone()));
     tokio::spawn(ferrobot_daemon::discord::run(
         state.clone(),
-        std::time::Duration::from_secs(3),
+        Duration::from_secs(3),
     ));
     tokio::spawn(supervisor::run(state.clone()));
 
@@ -417,7 +417,7 @@ async fn make_backend(cli: &Cli, secrets: &SecretStore) -> Result<Arc<dyn Sandbo
     Ok(backend)
 }
 
-const SHUTDOWN_GRACE: std::time::Duration = std::time::Duration::from_secs(3);
+const SHUTDOWN_GRACE: Duration = Duration::from_secs(3);
 
 async fn shutdown() {
     let ctrl_c = async {

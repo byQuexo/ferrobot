@@ -1,5 +1,5 @@
 use std::collections::HashMap;
-use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
+use std::sync::{Arc, Mutex, MutexGuard};
 use std::time::Duration;
 
 use ferrobot_core::{AgentId, MailMessage};
@@ -346,9 +346,7 @@ impl AppState {
     }
 
     pub(crate) fn approvals_lock(&self) -> MutexGuard<'_, HashMap<i64, oneshot::Sender<bool>>> {
-        self.approvals
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
+        crate::lock(&self.approvals)
     }
 
     /// Broadcasts to UI clients; having no subscribers is fine.

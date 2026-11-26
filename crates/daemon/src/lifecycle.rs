@@ -174,8 +174,7 @@ async fn adopt(state: &AppState, id: AgentId, handle: &SandboxHandle) -> Result<
 
 /// Issues a fresh token and creates + starts the agent's sandbox.
 pub async fn provision(state: &AppState, agent: &Agent) -> Result<SandboxHandle, ApiError> {
-    let lock = state.hub.lifecycle_lock(agent.id);
-    let _guard = lock.lock().await;
+    let _guard = state.hub.lifecycle_lock(agent.id).await;
     provision_locked(state, agent).await
 }
 
@@ -200,8 +199,7 @@ async fn provision_locked(state: &AppState, agent: &Agent) -> Result<SandboxHand
 /// Starts the agent's sandbox, provisioning it if it does not exist (anymore) or runs an
 /// outdated image: other CLIs, or a rebuilt runner under the same name (the disk is kept).
 pub async fn wake(state: &AppState, id: AgentId) -> Result<(), ApiError> {
-    let lock = state.hub.lifecycle_lock(id);
-    let _guard = lock.lock().await;
+    let _guard = state.hub.lifecycle_lock(id).await;
     let agent = state.store.get_agent(id).await?;
     let Some(handle) = handle_of(&agent) else {
         provision_locked(state, &agent).await?;
@@ -246,8 +244,7 @@ pub async fn sleep(
     reason: &str,
     level: SleepLevel,
 ) -> Result<(), ApiError> {
-    let lock = state.hub.lifecycle_lock(id);
-    let _guard = lock.lock().await;
+    let _guard = state.hub.lifecycle_lock(id).await;
     let agent = state.store.get_agent(id).await?;
     let mut reached = SleepLevel::Cold;
     if let Some(handle) = handle_of(&agent) {
@@ -281,8 +278,7 @@ pub async fn sleep(
 
 /// Destroys the sandbox and removes the agent with all its data.
 pub async fn delete(state: &AppState, id: AgentId, purge_disk: bool) -> Result<(), ApiError> {
-    let lock = state.hub.lifecycle_lock(id);
-    let _guard = lock.lock().await;
+    let _guard = state.hub.lifecycle_lock(id).await;
     let agent = state.store.get_agent(id).await?;
     if let Some(handle) = handle_of(&agent) {
         state.backend.destroy(&handle, purge_disk).await?;
@@ -304,8 +300,7 @@ pub async fn delete(state: &AppState, id: AgentId, purge_disk: bool) -> Result<(
 
 /// Removes the sandbox but keeps the agent and its disk; `wake` recreates it.
 pub async fn destroy_sandbox(state: &AppState, id: AgentId) -> Result<(), ApiError> {
-    let lock = state.hub.lifecycle_lock(id);
-    let _guard = lock.lock().await;
+    let _guard = state.hub.lifecycle_lock(id).await;
     let agent = state.store.get_agent(id).await?;
     let handle = sandbox_handle(&agent)?;
     state.backend.destroy(&handle, false).await?;
@@ -318,8 +313,7 @@ pub async fn snapshot(
     id: AgentId,
     label: &str,
 ) -> Result<SnapshotRecord, ApiError> {
-    let lock = state.hub.lifecycle_lock(id);
-    let _guard = lock.lock().await;
+    let _guard = state.hub.lifecycle_lock(id).await;
     let agent = state.store.get_agent(id).await?;
     let handle = sandbox_handle(&agent)?;
     let snap = state.backend.snapshot(&handle, label).await?;
@@ -341,8 +335,7 @@ pub async fn snapshot(
 /// Rebuilds the sandbox (disk kept) so a new provider or model takes
 /// effect; a running agent comes back up right away.
 pub async fn recreate(state: &AppState, id: AgentId) -> Result<(), ApiError> {
-    let lock = state.hub.lifecycle_lock(id);
-    let _guard = lock.lock().await;
+    let _guard = state.hub.lifecycle_lock(id).await;
     let agent = state.store.get_agent(id).await?;
     let Some(handle) = handle_of(&agent) else {
         return Ok(());
@@ -357,8 +350,7 @@ pub async fn recreate(state: &AppState, id: AgentId) -> Result<(), ApiError> {
 
 /// Replaces the sandbox with one booted from a snapshot.
 pub async fn restore(state: &AppState, id: AgentId, snapshot_id: i64) -> Result<(), ApiError> {
-    let lock = state.hub.lifecycle_lock(id);
-    let _guard = lock.lock().await;
+    let _guard = state.hub.lifecycle_lock(id).await;
     let agent = state.store.get_agent(id).await?;
     let snap = owned_snapshot(state, id, snapshot_id).await?;
     let handle = sandbox_handle(&agent)?;
@@ -437,8 +429,6 @@ pub async fn reconcile(state: &AppState) {
                     tracing::warn!(agent = %agent.name, error = %e, "reconcile: wake failed");
                 }
             }
-            // Sleeping agents with something queued get woken; otherwise make
-            // sure the sandbox sleeps as deeply as the agent's status says.
             (AgentStatus::Archived, _) => {
                 let queued = state
                     .store
