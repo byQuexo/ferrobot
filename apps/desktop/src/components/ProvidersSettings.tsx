@@ -139,11 +139,8 @@ export function ChatgptLogin(props: {
     <div class="provider-login">
       {code && status?.state === "pending" ? (
         <span class="small">
-          Open{" "}
-          <a href={code.verification_url} target="_blank" rel="noreferrer">
-            {code.verification_url}
-          </a>{" "}
-          and enter <b class="mono">{code.user_code}</b>
+          Open <LinkOut label={code.verification_url} url={code.verification_url} /> and enter{" "}
+          <b class="mono">{code.user_code}</b>
         </span>
       ) : (
         <Button small onClick={() => void start()}>

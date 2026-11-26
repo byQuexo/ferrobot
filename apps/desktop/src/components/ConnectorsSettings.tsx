@@ -41,6 +41,7 @@ import {
   usersOf,
 } from "../lib/connectors.ts";
 import { errorText } from "../lib/format.ts";
+import { LinkOut } from "./ProvidersSettings.tsx";
 import { Button, Dialog, IconButton } from "./ui.tsx";
 
 /** Client id, issuer and scopes of an own OAuth app; its client secret lives in Vault. */
@@ -444,10 +445,7 @@ export function ConnectorsSettings(props: {
                     {signIn?.id === c.id && (
                       <span class="small">
                         Finish signing in in your browser. Nothing opened?{" "}
-                        <a href={signIn.url} target="_blank" rel="noreferrer">
-                          Open the sign-in page
-                        </a>
-                        .
+                        <LinkOut label="Open the sign-in page" url={signIn.url} />.
                       </span>
                     )}
                   </div>

@@ -19,6 +19,7 @@ import { CLAUDE_CODE_NOTICE, claudeCodeState } from "../lib/claude-code.ts";
 import {
   ChatgptLogin,
   ClaudeCodeLogin,
+  LinkOut,
   needsKey,
   ProvidersSettings,
 } from "./ProvidersSettings.tsx";
@@ -188,10 +189,8 @@ export function Welcome(props: {
                 Desktop and I’ll notice when it’s up.
               </p>
               <p>
-                <a href={DOCKER_URL} target="_blank" rel="noreferrer">
-                  Download Docker Desktop
-                </a>{" "}
-                · {guide("Troubleshooting", "Troubleshooting")}
+                <LinkOut label="Download Docker Desktop" url={DOCKER_URL} /> ·{" "}
+                {guide("Troubleshooting", "Troubleshooting")}
               </p>
             </>
           )}
