@@ -513,7 +513,8 @@ struct Busy(AgentId);
 impl Busy {
     fn take(agent: AgentId) -> Option<Self> {
         let mut busy = BUSY.lock().unwrap_or_else(PoisonError::into_inner);
-        busy.insert(agent).then_some(Self(agent))
+        // Lazily: a `Busy` built for nothing would lock `BUSY` again in its `drop`.
+        busy.insert(agent).then(|| Self(agent))
     }
 }
 
@@ -1105,6 +1106,15 @@ async fn run_computer(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_second_turn_for_a_busy_agent_is_refused_without_locking_up() {
+        let agent = AgentId::new();
+        let first = Busy::take(agent).expect("free");
+        assert!(Busy::take(agent).is_none(), "already busy");
+        drop(first);
+        assert!(Busy::take(agent).is_some(), "free again");
+    }
 
     #[test]
     fn context_is_the_newest_calls_tokens_with_the_window_claude_names() {
