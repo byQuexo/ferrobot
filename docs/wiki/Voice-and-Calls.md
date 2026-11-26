@@ -79,7 +79,8 @@ second agent joins, the call becomes a room:
 
 An agent can call one to three teammates without you (`call_agents`, in the
 Team tool group) to talk something through together. They talk by the room
-rules above, in writing, with the call-among-agents note.
+rules above, in writing, with the call-among-agents note. Agents get the tool
+only while voice is on with a key, because without voice you could not join.
 
 - A pop-up says who started the call and what about, with **Join** and
   **Open**. Joining makes it your voice call in the same room; the agent that

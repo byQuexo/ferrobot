@@ -111,7 +111,6 @@ async fn tools_act_as_the_authenticated_agent() {
             "add_connector",
             "ask_user",
             "assign_task",
-            "call_agents",
             "create_agent",
             "create_routine",
             "forget",

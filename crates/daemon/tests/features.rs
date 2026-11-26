@@ -7931,8 +7931,22 @@ async fn agents_call_each_other_and_the_operator_can_join() {
         "{refused:?}"
     );
 
-    // ann calls bob and cy: they take turns by the room rules, out of their chats.
+    // Without voice the operator could not join: the tool is hidden and refused.
+    let listed = |tools: Vec<rmcp::model::Tool>| tools.iter().any(|t| t.name == "call_agents");
+    assert!(!listed(mcp.list_all_tools().await.unwrap()));
     let topic = json!({"agents": ["@bob", "@cy"], "topic": "Release on Friday?"});
+    let refused = mcp
+        .call_tool(
+            rmcp::model::CallToolRequestParams::new("call_agents")
+                .with_arguments(topic.as_object().cloned().unwrap()),
+        )
+        .await;
+    assert!(format!("{refused:?}").contains("need voice"), "{refused:?}");
+    let (status, _) = put_voice(&d, json!({"provider": "elevenlabs", "api_key": "xi-test"})).await;
+    assert_eq!(status, 200);
+    assert!(listed(mcp.list_all_tools().await.unwrap()));
+
+    // ann calls bob and cy: they take turns by the room rules, out of their chats.
     let room = call(&mcp, "call_agents", topic).await["room_id"]
         .as_i64()
         .unwrap();

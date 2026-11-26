@@ -557,6 +557,11 @@ impl ferrobot_mcp::MailboxNotifier for AppState {
         })
     }
 
+    fn has_voice(&self) -> ferrobot_mcp::BoxFuture<bool> {
+        let state = self.clone();
+        Box::pin(async move { crate::api::voice::is_ready(&state).await })
+    }
+
     fn call_agents(
         &self,
         host: AgentId,
@@ -564,7 +569,13 @@ impl ferrobot_mcp::MailboxNotifier for AppState {
         topic: String,
     ) -> ferrobot_mcp::BoxFuture<Result<i64, String>> {
         let state = self.clone();
-        Box::pin(async move { Ok(state.call_agents(host, guests, &topic).await?.id) })
+        Box::pin(async move {
+            // Without voice the operator could not join, so it would only be a group chat.
+            if !crate::api::voice::is_ready(&state).await {
+                return Err("calls need voice set up in Settings → Voice".into());
+            }
+            Ok(state.call_agents(host, guests, &topic).await?.id)
+        })
     }
 
     fn invite_to_call(

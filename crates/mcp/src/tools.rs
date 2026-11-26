@@ -1372,6 +1372,9 @@ impl ServerHandler for FerrobotTools {
         if !self.state.notifier.has_discord(me.id).await {
             tools.retain(|t| t.name != "send_to_discord");
         }
+        if !self.state.notifier.has_voice().await {
+            tools.retain(|t| t.name != "call_agents");
+        }
         tools.extend(self.state.notifier.connector_tools(me.id).await);
         Ok(ListToolsResult::with_all_items(tools))
     }

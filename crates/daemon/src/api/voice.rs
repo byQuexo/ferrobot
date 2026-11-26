@@ -189,6 +189,11 @@ struct Ready {
     base: String,
 }
 
+/// Voice is on, has a provider and a key for it.
+pub(crate) async fn is_ready(state: &AppState) -> bool {
+    ready(state).await.is_ok()
+}
+
 async fn ready(state: &AppState) -> Result<Ready, ApiError> {
     let settings = load(state).await?;
     if !settings.enabled {

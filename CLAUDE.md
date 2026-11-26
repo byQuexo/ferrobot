@@ -115,7 +115,8 @@ Principles:
   effect when the agent's turn ends, and the call's end cuts off the room turn
   holding the floor and drops queued ones; `ask_user` is refused in a call;
   `call_agents` starts a call among agents without the operator, which ends once
-  nobody is due (12 agent lines in a row at most) and which the operator can join);
+  nobody is due (12 agent lines in a row at most) and which the operator can join;
+  listed and allowed only while voice is ready, `api::voice::is_ready`);
   `apps/desktop/src/lib/voice.ts` — playback and recording in the UI;
   `lib/call-session.ts` — the call in the UI (outlives the chat),
   `lib/call.ts` — its sentence, barge-in and call-event rules.
