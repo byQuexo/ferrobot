@@ -52,7 +52,7 @@ In rough order. Nothing here has a date.
    from a webhook, and signed outgoing payloads.
 7. **The agent's computer in the app.** A file browser and a terminal in the
    agent's details panel (Computer tab), so you can look around and fix
-   things in its sandbox without asking the agent. **Done** (next release): a
+   things in its sandbox without asking the agent. **Done** in 0.1.11: a
    file browser (read-only) and a console that runs one command at a time,
    up to 60 s each; full-screen programs like vim need a real terminal.
 8. **Logins for CLIs, finer connector scopes.** CLIs that need a login
@@ -69,31 +69,23 @@ In rough order. Nothing here has a date.
    trusts (new crate `rcgen`). Not possible for CLIs that sign each request
    with the key (AWS, Google Cloud) or pin their certificates. Per-tool
    scopes inside a connector (for example read-only GitHub tools), finer than
-   today's switches per tool group. **Done** (next release): tools per
+   today's switches per tool group. **Done** in 0.1.11: tools per
    connector, and the GitHub login for `gh` and `git push` (token pasted in
    Vault). Open: the daemon running `gh auth login --web` itself, and Vercel
    and Stripe.
 9. **Faster, more natural calls.** Reasoning switched off or a fast model used
    only in calls, a setting for the pause that ends your turn, and calls
-   among agents without you, with a pop-up to join. **Done** (next release):
+   among agents without you, with a pop-up to join. **Done** in 0.1.11:
    a model per agent for calls, the pause setting, and calls among agents
    (`call_agents`) with a pop-up to join. Reasoning settings per call: open.
 10. **Development builds.** A stable signature for development builds, so
     macOS stops asking for keychain access after every rebuild.
-11. **Flows.** Configurable flows: a series of steps (an agent's turn, a
-    message to another agent, a card that waits for you, a condition, a post to
-    an outgoing webhook) that you set up once in the app. A flow starts from a
-    trigger (an incoming webhook, a schedule, a Discord message, an event such
-    as a finished task) or from an agent through a tool, and every run shows as
-    a trace. Steps run with the tools and limits of the agents they use, risky
-    steps keep their cards, and a flow an agent creates needs your approval
-    unless Auto mode is on. This also covers starting work from a webhook (6).
-12. **Run in the cloud.** ferrobot on a server around the clock, reachable
+11. **Run in the cloud.** ferrobot on a server around the clock, reachable
     from anywhere: a sealed secret store for hosts without a keychain, the
     daemon serving the web UI, a server package, then a guest channel through
     the runner and sandbox backends for AWS Lambda MicroVMs and Firecracker on
     EC2. Plan: [docs/plans/cloud.md](../blob/main/docs/plans/cloud.md).
-13. **Later.** Moving warm agents to cold sleep under memory pressure (F4d), a
+12. **Later.** Moving warm agents to cold sleep under memory pressure (F4d), a
     native macOS app on the same `/v1` API, and optional self-hosted
     S3-compatible storage. New ideas go on [[Ideas]] first.
 
