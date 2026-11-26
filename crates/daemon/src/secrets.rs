@@ -129,7 +129,7 @@ impl SecretStore {
     /// Runs `f` on the blocking pool (keychains block), serialised for the file store.
     async fn run<T: Send + 'static>(
         &self,
-        f: impl FnOnce(&Self) -> Result<T, Box<dyn std::error::Error + Send + Sync>> + Send + 'static,
+        f: impl FnOnce(&Self) -> StoreResult<T> + Send + 'static,
     ) -> Result<T, ApiError> {
         let store = self.clone();
         tokio::task::spawn_blocking(move || {
@@ -145,9 +145,9 @@ impl SecretStore {
     }
 }
 
-type FileResult<T> = Result<T, Box<dyn std::error::Error + Send + Sync>>;
+type StoreResult<T> = Result<T, Box<dyn std::error::Error + Send + Sync>>;
 
-fn read_file(path: &PathBuf) -> FileResult<BTreeMap<String, String>> {
+fn read_file(path: &PathBuf) -> StoreResult<BTreeMap<String, String>> {
     match std::fs::read(path) {
         Ok(bytes) => Ok(serde_json::from_slice(&bytes)?),
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(BTreeMap::new()),
@@ -164,7 +164,7 @@ pub(crate) fn create_private(path: &Path) -> std::io::Result<std::fs::File> {
     options.open(path)
 }
 
-fn write_file(path: &PathBuf, all: &BTreeMap<String, String>) -> FileResult<()> {
+fn write_file(path: &PathBuf, all: &BTreeMap<String, String>) -> StoreResult<()> {
     let tmp = path.with_extension("tmp");
     // A planted tmp file (or symlink) would keep its own mode; start fresh.
     match std::fs::remove_file(&tmp) {
