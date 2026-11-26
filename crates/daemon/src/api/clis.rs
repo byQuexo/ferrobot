@@ -238,12 +238,19 @@ pub(crate) async fn put_cli_token(
     params(("id" = String, Path, description = "The CLI's name")),
     responses((status = 200, body = SignInView),
         (status = 400, description = "The CLI has no sign-in", body = ErrorBody),
-        (status = 404, description = "No such CLI", body = ErrorBody)))]
+        (status = 404, description = "No such CLI", body = ErrorBody),
+        (status = 409, description = "Its image is still building", body = ErrorBody)))]
 pub(crate) async fn start_sign_in(
     State(state): State<AppState>,
     Path(id): Path<String>,
 ) -> ApiResult<SignInView> {
     let cli = find(&state, &id).await?;
+    if matches!(cli.install, Install::Debian { .. }) && state.clis.get().0 == BuildStatus::Building
+    {
+        return Err(ApiError::Conflict(format!(
+            "the image with {id} is still building; sign in when it is done"
+        )));
+    }
     Ok(Json(signin::start(&state, cli)?))
 }
 

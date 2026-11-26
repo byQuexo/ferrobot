@@ -3406,6 +3406,16 @@
                 }
               }
             }
+          },
+          "409": {
+            "description": "Its image is still building",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
           }
         }
       },
