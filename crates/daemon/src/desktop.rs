@@ -17,18 +17,24 @@ use crate::AppState;
 use crate::error::ApiError;
 
 /// Debian packages of the desktop, added to the CLIs image.
-pub const PACKAGES: [&str; 11] = [
+pub const PACKAGES: [&str; 17] = [
+    "arc-theme",
     "chromium",
     "fonts-dejavu-core",
-    "icewm",
+    "fonts-inter",
+    "fonts-jetbrains-mono",
+    "fonts-wqy-microhei",
     "lxterminal",
-    "pcmanfm",
+    "openbox",
     "procps",
     "scrot",
     "socat",
+    "thunar",
+    "tint2",
     "x11vnc",
     "xdotool",
     "xvfb",
+    "xwallpaper",
 ];
 pub const WIDTH: u32 = 1280;
 pub const HEIGHT: u32 = 800;
@@ -37,22 +43,9 @@ const DISPLAY: &str = ":1";
 const NO_DESKTOP: i64 = 3;
 const SHOT: &str = "/tmp/ferrobot-screen.png";
 
-/// Starts Xvfb and the window manager unless they run. Chromium in a container needs
-/// `--no-sandbox` and no `/dev/shm`; programs started from the desktop inherit the flags.
-const START: &str = r##"command -v Xvfb >/dev/null || exit 3
-export DISPLAY=:1 CHROMIUM_FLAGS="--no-sandbox --disable-dev-shm-usage --disable-gpu"
-if ! pgrep -x Xvfb >/dev/null; then
-  rm -f /tmp/.X1-lock /tmp/.X11-unix/X1
-  setsid Xvfb :1 -screen 0 1280x800x24 -nolisten tcp >/tmp/xvfb.log 2>&1 &
-  for i in $(seq 50); do [ -e /tmp/.X11-unix/X1 ] && break; sleep 0.1; done
-fi
-if ! pgrep -x icewm >/dev/null; then
-  setsid icewm >/tmp/icewm.log 2>&1 &
-  sleep 0.3
-  # A plain colour instead of the theme's wallpaper.
-  icewmbg --replace -i "" -k "#2e3440" >/dev/null 2>&1
-fi
-"##;
+/// Writes the desktop's look once (theme, dock, terminal, wallpaper, a Chromium wrapper with the
+/// flags a container needs) and starts Xvfb, the window manager and the dock unless they run.
+const START: &str = include_str!("desktop-start.sh");
 
 /// Why an agent never has both a CLI account and the Desktop group.
 const ACCOUNT_CONFLICT: &str = "an agent cannot have both a CLI account and the Desktop tools, \
