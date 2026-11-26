@@ -189,12 +189,8 @@ impl Store {
     pub async fn list_agents(&self) -> Result<Vec<Agent>, StoreError> {
         self.with(|c| {
             let mut stmt = c.prepare(&format!("SELECT {COLUMNS} FROM agents ORDER BY name"))?;
-            let mut rows = stmt.query([])?;
-            let mut out = Vec::new();
-            while let Some(row) = rows.next()? {
-                out.push(from_row(row)?);
-            }
-            Ok(out)
+            let rows = stmt.query_map([], |r| Ok(from_row(r)))?;
+            rows.map(|r| r?).collect()
         })
         .await
     }

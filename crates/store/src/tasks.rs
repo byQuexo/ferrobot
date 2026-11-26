@@ -5,7 +5,7 @@ use ferrobot_core::{AgentId, MailMessage, MailStatus, Sender};
 use rusqlite::{OptionalExtension, Row, params};
 
 use crate::events::insert_event;
-use crate::mailbox::{COLUMNS, from_row_at, insert_message};
+use crate::mailbox::{COLUMNS, columns_of, from_row_at, insert_message};
 use crate::{Store, StoreError};
 
 /// A task and how far it got.
@@ -41,7 +41,6 @@ impl Task {
 
 /// Tasks with their state; `filter` continues the `WHERE`.
 fn select(filter: &str) -> String {
-    let columns: Vec<String> = COLUMNS.split(", ").map(|c| format!("m.{c}")).collect();
     format!(
         "SELECT {},
            EXISTS (SELECT 1 FROM messages r LEFT JOIN messages p ON p.id = r.reply_to
@@ -51,7 +50,7 @@ fn select(filter: &str) -> String {
                      AND n.kind = 'task_nudged' AND json_extract(n.payload, '$.message_id') = m.id)
          FROM events e JOIN messages m ON m.id = json_extract(e.payload, '$.message_id')
          WHERE e.kind = 'task' AND e.agent_id = m.recipient {filter}",
-        columns.join(", ")
+        columns_of("m")
     )
 }
 
@@ -115,13 +114,11 @@ impl Store {
             let mut stmt = c.prepare(&select(
                 "AND (m.recipient = ?1 OR m.sender = ?2) ORDER BY m.id DESC LIMIT ?3",
             ))?;
-            let mut rows =
-                stmt.query(params![agent.to_string(), format!("agent:{agent}"), limit])?;
-            let mut out = Vec::new();
-            while let Some(row) = rows.next()? {
-                out.push(task_row(row)?);
-            }
-            Ok(out)
+            let rows = stmt.query_map(
+                params![agent.to_string(), format!("agent:{agent}"), limit],
+                |r| Ok(task_row(r)),
+            )?;
+            rows.map(|r| r?).collect()
         })
         .await
     }

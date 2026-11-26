@@ -235,32 +235,24 @@ impl Store {
             if let Some(v) = vault::vault(c)? {
                 return Ok(vault::search(&vault::folder(c, &v, None)?, &query, limit));
             }
-            recall_global_sql(c, &query, limit)
+            match fts_query(&query) {
+                Some(q) => collect(
+                    c,
+                    "SELECT m.key, m.content, m.updated_at, m.author FROM global_memories_fts f
+                     JOIN global_memories m ON m.id = f.rowid
+                     WHERE global_memories_fts MATCH ?1
+                     ORDER BY bm25(global_memories_fts) LIMIT ?2",
+                    params![q, limit],
+                ),
+                None => collect(
+                    c,
+                    "SELECT key, content, updated_at, author FROM global_memories
+                     ORDER BY updated_at DESC LIMIT ?1",
+                    params![limit],
+                ),
+            }
         })
         .await
-    }
-}
-
-fn recall_global_sql(
-    c: &rusqlite::Connection,
-    query: &str,
-    limit: u32,
-) -> Result<Vec<MemoryEntry>, StoreError> {
-    match fts_query(query) {
-        Some(q) => collect(
-            c,
-            "SELECT m.key, m.content, m.updated_at, m.author FROM global_memories_fts f
-                 JOIN global_memories m ON m.id = f.rowid
-                 WHERE global_memories_fts MATCH ?1
-                 ORDER BY bm25(global_memories_fts) LIMIT ?2",
-            params![q, limit],
-        ),
-        None => collect(
-            c,
-            "SELECT key, content, updated_at, author FROM global_memories
-                 ORDER BY updated_at DESC LIMIT ?1",
-            params![limit],
-        ),
     }
 }
 
@@ -270,12 +262,8 @@ fn collect(
     params: impl rusqlite::Params,
 ) -> Result<Vec<MemoryEntry>, StoreError> {
     let mut stmt = c.prepare(sql)?;
-    let mut rows = stmt.query(params)?;
-    let mut out = Vec::new();
-    while let Some(row) = rows.next()? {
-        out.push(from_row(row)?);
-    }
-    Ok(out)
+    let rows = stmt.query_map(params, |r| Ok(from_row(r)))?;
+    rows.map(|r| r?).collect()
 }
 
 #[cfg(test)]

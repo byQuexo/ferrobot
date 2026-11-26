@@ -65,11 +65,10 @@ fn room(c: &Connection, id: i64) -> Result<Room, StoreError> {
     let mut stmt = c.prepare(
         "SELECT agent_id FROM room_members WHERE room_id = ?1 ORDER BY joined_at, rowid",
     )?;
-    let mut rows = stmt.query([id])?;
-    let mut members = Vec::new();
-    while let Some(row) = rows.next()? {
-        members.push(row.get::<_, String>(0)?.parse()?);
-    }
+    let members = stmt
+        .query_map([id], |r| Ok(r.get::<_, String>(0)?.parse()))?
+        .map(|r| Ok(r??))
+        .collect::<Result<_, StoreError>>()?;
     Ok(Room {
         id,
         name,
@@ -217,11 +216,7 @@ impl Store {
     /// Adds `agent` to the room unless it already took part.
     pub async fn add_room_member(&self, id: i64, agent: AgentId) -> Result<Room, StoreError> {
         self.with(move |c| {
-            c.execute(
-                "INSERT OR IGNORE INTO room_members (room_id, agent_id, joined_at)
-                 VALUES (?1, ?2, ?3)",
-                params![id, agent.to_string(), fmt_ts(now())],
-            )?;
+            add_members(c, id, vec![agent])?;
             room(c, id)
         })
         .await
@@ -317,12 +312,8 @@ impl Store {
                 "SELECT * FROM (SELECT id, room_id, speaker, body, created_at, invited FROM room_lines
                  WHERE room_id = ?1 ORDER BY id DESC LIMIT ?2) ORDER BY id",
             )?;
-            let mut rows = stmt.query(params![id, limit])?;
-            let mut out = Vec::new();
-            while let Some(row) = rows.next()? {
-                out.push(line(row)?);
-            }
-            Ok(out)
+            let rows = stmt.query_map(params![id, limit], |r| Ok(line(r)))?;
+            rows.map(|r| r?).collect()
         })
         .await
     }

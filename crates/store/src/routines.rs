@@ -230,12 +230,8 @@ impl Store {
     ) -> Result<Vec<Routine>, StoreError> {
         self.with(move |c| {
             let mut stmt = c.prepare(&format!("SELECT {COLUMNS} FROM routines {clause}"))?;
-            let mut rows = stmt.query(rusqlite::params_from_iter(args))?;
-            let mut out = Vec::new();
-            while let Some(row) = rows.next()? {
-                out.push(from_row(row)?);
-            }
-            Ok(out)
+            let rows = stmt.query_map(rusqlite::params_from_iter(args), |r| Ok(from_row(r)))?;
+            rows.map(|r| r?).collect()
         })
         .await
     }
