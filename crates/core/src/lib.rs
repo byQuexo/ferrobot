@@ -2,6 +2,7 @@
 //! daemon <-> runner wire protocol. No I/O and no async runtime, on purpose.
 
 pub mod agent;
+pub mod cli;
 pub mod connector;
 pub mod error;
 pub mod mail;
@@ -14,6 +15,7 @@ pub mod tools;
 pub use agent::{
     Agent, AgentId, AgentName, AgentStatus, AvatarCharacter, CharacterBody, CharacterEyes,
 };
+pub use cli::{Account, Cli, CliSignIn, Install};
 pub use connector::{Connector, ConnectorAuth};
 pub use error::CoreError;
 pub use mail::{MailMessage, MailStatus, Sender, is_reaction};

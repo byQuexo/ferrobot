@@ -20,7 +20,7 @@ import {
   treeRows,
 } from "../src/lib/computer.ts";
 import { characterOf, deriveCharacter, moodOf, rerollCharacter } from "../src/lib/character.ts";
-import { loginLabel, specOf, splitList } from "../src/lib/logins.ts";
+import { accountLabel, installLabel, knownCli, specOf, splitList } from "../src/lib/clis.ts";
 import {
   computerSummary,
   linkLabel,
@@ -2567,26 +2567,28 @@ describe("splitDiscord", () => {
   });
 });
 
-describe("logins", () => {
-  it("reads lists, names presets and turns a login back into what PUT takes", () => {
+describe("clis", () => {
+  it("reads lists, describes installs and turns a CLI back into what PUT takes", () => {
     assert.deepEqual(splitList(" api.example.com,\nb.example.com  api.example.com "), [
       "api.example.com",
       "b.example.com",
     ]);
     assert.deepEqual(splitList(""), []);
-    assert.equal(loginLabel("github"), "GitHub");
-    assert.equal(loginLabel("example"), "example");
-    const view = {
+    assert.equal(knownCli("gh")?.spec.account?.sign_in?.token.join(" "), "gh auth token");
+    const download = { install: { kind: "download" as const, url: "https://example.com/x" } };
+    assert.equal(installLabel(download), "Download from example.com, no checksum");
+    const cli = {
       id: "example",
-      hosts: ["api.example.com"],
-      env: ["EXAMPLE_API_KEY"],
-      has_token: true,
+      install: { kind: "npm" as const, package: "example-cli" },
+      account: { hosts: ["api.example.com"], env: ["EXAMPLE_API_KEY"] },
+      has_token: false,
     };
-    assert.deepEqual(specOf(view), {
-      hosts: ["api.example.com"],
-      env: ["EXAMPLE_API_KEY"],
+    assert.equal(accountLabel(cli), "Needs a token");
+    assert.equal(accountLabel({ ...cli, account: null }), "");
+    assert.deepEqual(specOf(cli), {
+      install: { kind: "npm", package: "example-cli" },
       programs: [],
-      confirm: false,
+      account: { hosts: ["api.example.com"], env: ["EXAMPLE_API_KEY"] },
       agents: [],
     });
   });

@@ -36,6 +36,14 @@ pub struct AgentRequest {
     pub connectors: Option<Vec<String>>,
 }
 
+/// An agent's request for a CLI in its computer (`propose_cli` tool).
+#[derive(Debug, Clone)]
+pub struct CliRequest {
+    pub cli: ferrobot_core::Cli,
+    /// Why the agent wants it, shown on the card.
+    pub reason: String,
+}
+
 /// An agent's request to add a connector (`add_connector` tool).
 #[derive(Debug, Clone)]
 pub struct ConnectorRequest {
@@ -164,6 +172,16 @@ pub trait MailboxNotifier: Send + Sync + 'static {
     ) -> BoxFuture<Result<i64, String>> {
         let _ = (requester, request);
         Box::pin(async { Err("adding connectors is not supported here".to_owned()) })
+    }
+    /// Shows the operator a card to add a CLI for `requester`; returns the card's event id at once.
+    /// Auto mode never skips it. `Err` carries a message for the agent.
+    fn request_cli(
+        &self,
+        requester: AgentId,
+        request: CliRequest,
+    ) -> BoxFuture<Result<i64, String>> {
+        let _ = (requester, request);
+        Box::pin(async { Err("adding CLIs is not supported here".to_owned()) })
     }
     /// Creates a routine for `requester`, or shows the operator a card for it unless Auto mode
     /// is on. `Err` carries a message for the agent.

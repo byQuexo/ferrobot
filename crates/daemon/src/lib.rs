@@ -29,6 +29,7 @@ pub mod proxy;
 pub mod runner_ws;
 pub mod scheduler;
 pub mod secrets;
+pub mod signin;
 pub mod spec;
 pub mod state;
 pub mod stop;

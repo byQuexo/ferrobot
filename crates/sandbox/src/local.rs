@@ -280,6 +280,7 @@ mod tests {
             env: BTreeMap::from([("FOO".into(), "bar".into())]),
             labels: BTreeMap::new(),
             image: None,
+            command: None,
         }
     }
 
