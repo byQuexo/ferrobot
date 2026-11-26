@@ -52,10 +52,20 @@ In rough order. Nothing here has a date.
    agent's details panel (Computer tab), so you can look around and fix
    things in its sandbox without asking the agent.
 8. **Logins for CLIs, finer connector scopes.** CLIs that need a login
-   (`gh`, `vercel`, `stripe`) through a daemon-side proxy that swaps in the
-   token the way the model proxy does, for services without an MCP server.
-   Per-tool scopes inside a connector (for example read-only GitHub tools),
-   finer than today's switches per tool group.
+   (`gh` and `git push` first, then `vercel` and `stripe`), without the token
+   ever entering a sandbox. You sign in on your computer: the daemon runs the
+   CLI's own login (`gh auth login --web`, `vercel login`, `stripe login`) in
+   a private temporary folder and keeps the token in the keychain, or you
+   paste one in the Vault. In the sandbox the CLI holds only a stand-in token,
+   and its traffic goes through the daemon, which swaps in the real one only
+   for that service's API hosts and only for agents you assigned the login;
+   every other host gets a plain tunnel. Risky commands keep their cards
+   (merging, deploying to production, moving money; deleting a repository and
+   force-pushing ask even in Auto mode). Needs a certificate the sandbox
+   trusts (new crate `rcgen`). Not possible for CLIs that sign each request
+   with the key (AWS, Google Cloud) or pin their certificates. Per-tool
+   scopes inside a connector (for example read-only GitHub tools), finer than
+   today's switches per tool group.
 9. **Faster, more natural calls.** Reasoning switched off or a fast model used
    only in calls, a setting for the pause that ends your turn, and calls
    among agents without you, with a pop-up to join.

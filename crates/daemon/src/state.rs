@@ -547,6 +547,21 @@ impl ferrobot_mcp::MailboxNotifier for AppState {
         Box::pin(async move { state.invite_to_call(host, guest, &topic).await })
     }
 
+    fn has_discord(&self, agent: AgentId) -> ferrobot_mcp::BoxFuture<bool> {
+        let state = self.clone();
+        Box::pin(async move { !crate::discord::channels_of(&state, agent).await.is_empty() })
+    }
+
+    fn send_to_discord(
+        &self,
+        agent: AgentId,
+        text: String,
+        channel: Option<String>,
+    ) -> ferrobot_mcp::BoxFuture<Result<String, String>> {
+        let state = self.clone();
+        Box::pin(async move { crate::discord::send(&state, agent, &text, channel).await })
+    }
+
     fn share_file(
         &self,
         agent: AgentId,

@@ -273,3 +273,36 @@ async fn archive_moves_the_sandbox_into_the_store_and_back() {
         .await
         .expect("no archive left is fine");
 }
+
+#[tokio::test]
+async fn prefetch_downloads_a_missing_image() {
+    let image = "hello-world:latest";
+    let docker = bollard::Docker::connect_with_local_defaults().unwrap();
+    let _ = docker
+        .remove_image(
+            image,
+            None::<bollard::query_parameters::RemoveImageOptions>,
+            None,
+        )
+        .await;
+    let backend = DockerBackend::connect(DockerConfig {
+        image: image.into(),
+        name_prefix: "ferrobot-test-".into(),
+        ..DockerConfig::default()
+    })
+    .expect("docker client");
+    tokio::time::timeout(
+        std::time::Duration::from_secs(120),
+        backend.prefetch_image(),
+    )
+    .await
+    .expect("prefetch finishes");
+    assert!(docker.inspect_image(image).await.is_ok(), "{image} pulled");
+    let _ = docker
+        .remove_image(
+            image,
+            None::<bollard::query_parameters::RemoveImageOptions>,
+            None,
+        )
+        .await;
+}

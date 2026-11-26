@@ -18,10 +18,11 @@ universal `.dmg` for macOS and an `.exe` installer for Windows (x64).
    alone? Click **Skip**, add a provider under **Settings → Model providers**
    (its key goes in **Settings → Vault**) and create an agent with
    **New agent**. See [[Model providers and keys|Providers]].
-4. **Wait for the first start.** The first time an agent starts, the runner
-   image (`ghcr.io/byquexo/ferrobot-runner:0.1.9`, about 2 GB) is pulled
-   from the GitHub Container Registry. Later agents start from the cached
-   image.
+4. **Wait for the first start.** As soon as Docker runs, the daemon
+   downloads the runner image (`ghcr.io/byquexo/ferrobot-runner:0.1.9`,
+   about 2 GB) from the GitHub Container Registry in the background; an agent
+   that starts before it is done waits for it. Later agents start from the
+   cached image, and an update downloads only the parts that changed.
 
 Builds are unsigned unless the release notes say otherwise, so the system
 warns on first launch:

@@ -6,6 +6,28 @@ All notable changes are listed here. The format follows
 
 ## [Unreleased]
 
+### Added
+
+- Agents can post to their bridged Discord channel on their own with the new
+  `send_to_discord` tool (Operator group): progress on long work, a routine's
+  result. It reaches only the channels bridged to that agent, pings nobody,
+  and is listed only for agents with a bridged channel.
+
+### Changed
+
+- The first wake is faster: the daemon downloads the runner image in the
+  background as soon as Docker runs, instead of when the first agent starts.
+- Updates download less: the runner image keeps its unchanged layers from one
+  release to the next, so an update usually fetches only the runner's code
+  instead of about 700 MB.
+
+### Fixed
+
+- RUSTSEC-2026-0592: `url` 2.5.9. With 2.5.8, a remote MCP server could
+  crash the daemon by redirecting to a deeply nested `blob:` URL.
+- The colour choices in the New agent and Edit profile dialogs showed as empty
+  circles.
+
 ## [0.1.9] - 2026-11-24
 
 ### Added

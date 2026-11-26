@@ -28,6 +28,8 @@ use crate::{
 };
 
 const KIND: &str = "docker";
+/// How often `prefetch_image` looks for an engine that is not up yet.
+const PREFETCH_RETRY: std::time::Duration = std::time::Duration::from_secs(15);
 const LABEL_MANAGED: &str = "dev.ferrobot.managed";
 /// Image repository for archived sandboxes (separate from snapshots).
 const ARCHIVE_REPO: &str = "ferrobot-archive";
@@ -254,6 +256,17 @@ impl DockerBackend {
             }
         }
         Ok(())
+    }
+
+    /// Downloads the runner image as soon as the engine answers, so the first wake after an
+    /// install or update does not wait for it. Gives up after one failed pull.
+    pub async fn prefetch_image(&self) {
+        while self.ping().await.is_err() {
+            tokio::time::sleep(PREFETCH_RETRY).await;
+        }
+        if let Err(e) = self.pull_if_missing(&self.config.image).await {
+            tracing::warn!(error = %e, "could not download the runner image ahead of the first wake");
+        }
     }
 
     /// Pulls `image` unless the engine has it (a release build names a registry image).

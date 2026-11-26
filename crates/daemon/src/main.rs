@@ -367,7 +367,12 @@ async fn make_backend(cli: &Cli, secrets: &SecretStore) -> Result<Arc<dyn Sandbo
             if let Err(e) = docker.ping().await {
                 tracing::error!(error = %e, "Docker/Podman engine not reachable; agents cannot start until it runs");
             }
-            Arc::new(docker)
+            let docker = Arc::new(docker);
+            tokio::spawn({
+                let docker = docker.clone();
+                async move { docker.prefetch_image().await }
+            });
+            docker
         }
         Backend::Firecracker => {
             let firecracker = FirecrackerBackend::new(FirecrackerConfig {

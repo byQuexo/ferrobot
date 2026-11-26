@@ -7,7 +7,14 @@ COPY runner/package.json runner/package-lock.json ./
 RUN npm ci --no-audit --no-fund
 COPY runner/tsconfig.json runner/tsconfig.build.json ./
 COPY runner/src ./src
-RUN npm run build && npm prune --omit=dev
+RUN npm run build
+
+# Runtime dependencies in their own stage: a release that changes only the runner's code
+# reuses this layer, so an update downloads just the code.
+FROM node:24-bookworm-slim AS deps
+WORKDIR /src
+COPY runner/package.json runner/package-lock.json ./
+RUN npm ci --omit=dev --no-audit --no-fund
 
 FROM node:24-bookworm-slim
 # A few everyday tools so the agent's computer is actually usable, and
@@ -22,8 +29,8 @@ COPY runner/bin/ferrobot-pdf /usr/local/bin/ferrobot-pdf
 RUN npm install -g --no-audit --no-fund @openai/codex@0.166.0 && npm cache clean --force
 RUN npm install -g --no-audit --no-fund @google/gemini-cli@0.67.0 && npm cache clean --force
 WORKDIR /opt/ferrobot-runner
-COPY --from=build /src/package.json ./
-COPY --from=build /src/node_modules ./node_modules
+COPY --from=deps /src/package.json ./
+COPY --from=deps /src/node_modules ./node_modules
 COPY --from=build /src/dist ./dist
 ENV NODE_ENV=production
 # Non-root; $HOME (/home/node) is the per-agent persistent volume.

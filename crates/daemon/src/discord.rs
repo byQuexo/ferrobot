@@ -326,7 +326,7 @@ pub fn turn_done(state: &AppState, message: i64, turn: (AgentId, &str), result: 
             Some(r) => r,
             None => last_reply(&state, agent, turn).await.unwrap_or_default(),
         };
-        if text.trim().is_empty() || post(&state, &token, &target, &text).await {
+        if text.trim().is_empty() || post(&state, &token, &target.0, Some(&target.1), &text).await {
             settle(&state, &token, &target, true).await;
         }
     });
@@ -345,12 +345,65 @@ pub fn turn_failed(state: &AppState, message: i64) {
         post(
             &state,
             &token,
-            &target,
+            &target.0,
+            Some(&target.1),
             "(The agent could not answer; see ferrobot.)",
         )
         .await;
         settle(&state, &token, &target, false).await;
     });
+}
+
+/// The channels bridged to `agent` while the bridge is on.
+pub async fn channels_of(state: &AppState, agent: AgentId) -> Vec<String> {
+    let settings = load(state).await.unwrap_or_default();
+    if !settings.enabled {
+        return Vec::new();
+    }
+    settings
+        .bridges
+        .into_iter()
+        .filter(|b| b.agent_id == agent)
+        .map(|b| b.channel_id)
+        .collect()
+}
+
+/// `agent` posts `text` on its own to its bridged channel (`channel`: which one, when it has
+/// several); only channels bridged to it are reachable. `Ok` is the channel id.
+pub async fn send(
+    state: &AppState,
+    agent: AgentId,
+    text: &str,
+    channel: Option<String>,
+) -> Result<String, String> {
+    let mine = channels_of(state, agent).await;
+    let channel = match (channel, mine.as_slice()) {
+        (_, []) => return Err("no Discord channel is bridged to you".into()),
+        (None, [only]) => only.clone(),
+        (Some(c), _) if mine.contains(&c) => c,
+        (None, _) => {
+            return Err(format!(
+                "several Discord channels are bridged to you; pass channel_id, one of: {}",
+                mine.join(", ")
+            ));
+        }
+        (Some(c), _) => {
+            return Err(format!(
+                "channel {c} is not bridged to you; yours: {}",
+                mine.join(", ")
+            ));
+        }
+    };
+    let Ok(Some(token)) = state.settings.secrets.get(SECRET).await else {
+        return Err(
+            "the Discord bot token is missing; your operator adds it in Settings → Discord".into(),
+        );
+    };
+    if post(state, &token, &channel, None, text).await {
+        Ok(channel)
+    } else {
+        Err("Discord refused the message; your operator sees why in Settings → Discord".into())
+    }
 }
 
 fn take_pending(state: &AppState, message: i64) -> Option<(String, String)> {
@@ -374,18 +427,18 @@ async fn last_reply(state: &AppState, agent: AgentId, turn: String) -> Option<St
     Some(state.render_mentions(&text).await)
 }
 
-/// Posts the reply, the first part as a reply to the operator's message; false if Discord refused.
+/// Posts `text`, the first part as a reply to `reply_to` when given; false if Discord refused.
 async fn post(
     state: &AppState,
     token: &str,
-    (channel, discord_id): &(String, String),
+    channel: &str,
+    reply_to: Option<&str>,
     text: &str,
 ) -> bool {
     for (n, part) in split(text).iter().enumerate() {
         let mut body = json!({ "content": part, "allowed_mentions": { "parse": [] } });
-        if n == 0 {
-            body["message_reference"] =
-                json!({ "message_id": discord_id, "fail_if_not_exists": false });
+        if let (0, Some(id)) = (n, reply_to) {
+            body["message_reference"] = json!({ "message_id": id, "fail_if_not_exists": false });
         }
         let sent = state
             .http
