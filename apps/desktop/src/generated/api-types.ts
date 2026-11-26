@@ -459,6 +459,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/agents/{id}/screen": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * The agent's desktop as VNC (RFB) over binary WebSocket frames, for a VNC client such as
+         *     noVNC. Wakes the computer and starts the desktop; nothing listens on a port in it.
+         */
+        get: operations["screen"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/agents/{id}/snapshots": {
         parameters: {
             query?: never;
@@ -2126,6 +2146,11 @@ export interface components {
             /** @description Debian packages in the image, sorted (also in `clis`). */
             packages: string[];
             clis: components["schemas"]["CliView"][];
+            /**
+             * @description Whether the image also has a desktop the operator watches and agents with the Desktop
+             *     tools use.
+             */
+            desktop: boolean;
             status: components["schemas"]["BuildStatus"];
             /** @description Why the last build failed; null otherwise. */
             error?: string | null;
@@ -3256,11 +3281,11 @@ export interface components {
             created_at: string;
         };
         /**
-         * @description A group of tools an agent can have on or off. The first six are ferrobot's own MCP tools
-         *     (enforced by the daemon), the last three the model's built-in tools (enforced by the runner).
+         * @description A group of tools an agent can have on or off. Shell, Files and Web are the model's built-in
+         *     tools (enforced by the runner); the others are ferrobot's own MCP tools (enforced by the daemon).
          * @enum {string}
          */
-        ToolGroup: "team" | "memory" | "operator" | "create_agents" | "add_connectors" | "routines" | "shell" | "files" | "web";
+        ToolGroup: "team" | "memory" | "operator" | "create_agents" | "add_connectors" | "routines" | "shell" | "files" | "web" | "desktop";
         /**
          * @description The agent's model refused a request with tools. The agent's messages wait until the operator
          *     approves the card to run it without tools, changes its provider or model, or retries. Kept in
@@ -3410,8 +3435,10 @@ export interface components {
         };
         /** @description A new Debian package list (before 0.1.11; `PUT /v1/clis/{id}` adds any CLI). */
         UpdateClis: {
-            /** @description Debian package names, at most 32; other CLIs stay. */
-            packages: string[];
+            /** @description Debian package names, at most 32; other CLIs stay. Absent: unchanged. */
+            packages?: string[] | null;
+            /** @description Adds (`true`) or removes (`false`) the desktop; absent: unchanged. */
+            desktop?: boolean | null;
         };
         UpdateConnector: {
             name?: string | null;
@@ -5277,6 +5304,59 @@ export interface operations {
             };
             /** @description Sandbox backend error */
             502: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+        };
+    };
+    screen: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Agent id (UUID) */
+                id: string;
+                /**
+                 * @description `true`: the operator's mouse and keyboard reach the desktop, and the agent's `desktop`
+                 *     tool waits until this connection closes. Otherwise view only.
+                 */
+                control: boolean;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Switching protocols; then RFB in binary frames */
+            101: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Missing or wrong API token */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Unknown agent */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description No desktop in this computer */
+            409: {
                 headers: {
                     [name: string]: unknown;
                 };

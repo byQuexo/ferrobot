@@ -37,8 +37,10 @@ const TOOL_GROUPS: readonly [ToolGroup, string, string][] = [
   ["shell", "Shell", "Run commands and every CLI on its computer"],
   ["files", "Files", "Read and edit files"],
   ["web", "Web", "Fetch pages and search the web"],
+  ["desktop", "Desktop", "See and use its desktop: screenshots, clicks and typing"],
 ];
-const ALL_TOOLS = TOOL_GROUPS.map(([g]) => g);
+// Desktop is opt-in, as in the daemon.
+const DEFAULT_TOOLS = TOOL_GROUPS.map(([g]) => g).filter((g) => g !== "desktop");
 
 /** Models driven by ferrobot's own loop for OpenAI-compatible APIs have no web tools. */
 function hasWebTools(kind: ProviderKind): boolean {
@@ -67,7 +69,7 @@ export function AgentDialog(props: {
   const [connectors, setConnectors] = useState<Connector[]>([]);
   const [given, setGiven] = useState<string[] | null>(editing ? null : []);
   const [picked, setPicked] = useState<string[]>([]);
-  const [tools, setTools] = useState<ToolGroup[]>(editing?.tools ?? ALL_TOOLS);
+  const [tools, setTools] = useState<ToolGroup[]>(editing?.tools ?? DEFAULT_TOOLS);
   const [toolsOpen, setToolsOpen] = useState(false);
   const [tags, setTags] = useState<string[]>(editing?.tags ?? []);
   const [tagText, setTagText] = useState("");
