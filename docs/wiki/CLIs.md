@@ -1,63 +1,81 @@
-CLIs are command-line tools in every agent's computer: `jq`, `pandoc`,
-`ffmpeg` and the like. They are Debian packages, built into one shared
-sandbox image on top of the runner image (Debian bookworm). Every agent with
-the **Shell** tool can use them.
+CLIs are command-line tools in the agents' computers: `jq`, `pandoc`, `gh`,
+an npm tool, a program from a download link. Every agent with the **Shell**
+tool can use the ones it has.
 
-## Add CLIs
+## Add a CLI
 
-1. Open **Settings → CLIs**.
-2. Pick tools from the list, or type another Debian package name under
-   **Other Debian package** and click **Add**.
-3. Click **Build image**. The build runs in the background and can take a few
-   minutes.
+1. Open **Settings → CLIs** and choose **Add CLI**.
+2. Pick a known CLI, or give it a name and choose how it installs:
+   - **Debian package**: built into the one image every computer starts from
+     (Debian bookworm). Every agent gets it; the build takes a few minutes and
+     agents switch when their computer next starts or wakes.
+   - **npm package**, **Download link** (the program itself; add its SHA-256
+     to have it checked) or **Install script** (runs as the agent's user and
+     should put the CLI in `~/.local/bin`): installed into the home folder of
+     each agent you pick, once, right away for running agents and on the next
+     wake for the others. Nobody else rebuilds or restarts, and recreating a
+     computer keeps it.
+3. List its **Programs** (needed for a download, and for "ask first").
+4. Pick the agents and save.
 
-The list offers: `jq`, `sqlite3`, `poppler-utils` (PDF text), `pandoc`,
+The known list has `jq`, `sqlite3`, `poppler-utils` (PDF text), `pandoc`,
 `imagemagick`, `ffmpeg`, `graphviz`, `zip`, `unzip`, `tree`, `python3-pip`,
-`python3-venv` and `gh` (with a GitHub login below).
+`python3-venv` and `gh` (with its account and sign-in filled in). Agents can
+also install tools that need no token into `~/.local` themselves.
 
-## Logins (gh, git push and other CLIs with a token)
+## Accounts (gh, git push and other CLIs with a token)
 
-Agents can use CLIs that read a token from an environment variable, like `gh`,
-without the token ever entering their computer.
+A CLI that reads a token from an environment variable can have an account;
+the token never enters an agent's computer.
 
-1. In **Settings → CLIs → Logins**, choose **Add login**. **GitHub** is ready
-   to use; for another CLI enter a name, its API hosts (e.g.
-   `api.example.com`), the variables it reads its token from (e.g.
-   `EXAMPLE_API_KEY`) and the programs that use it.
-2. Paste the token in **Settings → Vault → CLI logins**. For GitHub, use a
-   fine-grained token limited to the repositories and permissions the agents
-   need.
-3. Pick the agents that may use the login. Their computers restart once; their
-   files stay.
-4. Add the CLI to the tools and build the image if it is a Debian package
-   (`gh` is in the list; `git` is already there).
+- **API key**: paste it in the dialog (or later in **Settings → Vault**). For
+  GitHub, use a fine-grained token limited to the repositories and
+  permissions the agents need.
+- **Sign in with the CLI**: for CLIs whose own sign-in shows a one-time code
+  (`gh auth login --web`). The daemon runs it in a throwaway computer from the
+  agents' image (no agent token, none of your files), shows you the address
+  and code, then reads the token with the CLI's token command (`gh auth
+  token`), puts it in the vault and removes that computer. Cancel removes it
+  too. The CLI sees your token once during its own sign-in, exactly like
+  running it on your computer; for a CLI you do not trust, paste a narrowly
+  scoped API key instead. CLIs that wait for the browser to call back to
+  `localhost` are not supported; use an API key for those.
+- **Advanced**: the API hosts that get the token, the variables the CLI reads
+  it from, and for a sign-in its login and token commands.
 
-How it works: the picked agents get a stand-in token in the login's variables
-(for GitHub also git's credential helper) and send HTTPS through the daemon
-(`HTTPS_PROXY`, with the agent's own token as the password). For the login's
-hosts the daemon ends TLS with a certificate from that login's own local CA,
-which their computers trust and which can only vouch for those hosts. There it
-swaps the stand-in for the real token in the request headers (never in the
-address), puts the stand-in back if a response header repeats the token, and
-forwards the request to a public address, without following redirects. Every
-other public host gets a plain tunnel; private addresses (this computer, your
-network) are refused. The CAs' keys and the tokens stay in the daemon's
-keychain.
+How it works: the picked agents get a stand-in token in the account's
+variables (for a CLI with `github.com` also git's credential helper) and send
+HTTPS through the daemon (`HTTPS_PROXY`, with the agent's own token as the
+password). For the account's hosts the daemon ends TLS with a certificate
+from that CLI's own local CA, which their computers trust and which can only
+vouch for those hosts. There it swaps the stand-in for the real token in the
+request headers (never in the address), puts the stand-in back if a response
+header repeats the token, and forwards the request to a public address,
+without following redirects. Every other public host gets a plain tunnel;
+private addresses (this computer, your network) are refused.
 
-A login's hosts must be public names (no IP addresses, `localhost` or
+An account's hosts must be public names (no IP addresses, `localhost` or
 `.local`/`.internal` names), and its variables cannot be ones the computer
 needs itself (the proxy and certificate settings, `PATH`, `FERROBOT_…`).
 
-**Ask before every command that uses it** (on by default for a new login, off
-for GitHub) puts a card before each command that runs one of the login's
-programs or names one of its variables or hosts, unless Auto mode is on. It
-looks at the command line only: a script the agent wrote can still reach the
-login. For GitHub, merging a pull request asks first; deleting a repository,
-publishing a release and force-pushing ask even in Auto mode.
+**Ask before every command that uses it** (on by default, off for `gh`) puts
+a card before each command that runs one of the CLI's programs or names one
+of its variables or hosts, unless Auto mode is on. It looks at the command
+line only: a script the agent wrote can still reach the account. For `gh`,
+merging a pull request asks first; deleting a repository, publishing a
+release and force-pushing ask even in Auto mode.
 
 It cannot work for CLIs that ignore `HTTPS_PROXY` or the system's certificate
 settings, that sign every request with the key (AWS, Google Cloud), that pin
 their certificates, or whose tokens refresh themselves.
+
+## Agents propose CLIs
+
+An agent with the **Add connectors** tool can ask for a CLI (`propose_cli`).
+Your card shows the exact install (package, address with or without a
+checksum, or the whole script) and the hosts its token would go to; Auto mode
+never skips it. Approving adds the CLI for that agent; an account still needs
+your key or sign-in.
 
 ## When agents get them
 
@@ -73,9 +91,9 @@ their certificates, or whose tokens refresh themselves.
 
 - Docker only. On other backends the page says "CLIs need the Docker
   backend".
-- At most 32 packages. Names follow Debian's rules: lowercase letters,
-  digits, `+`, `.` and `-`.
-- Only keyless tools, apart from the logins above. Tools that sign each request
+- At most 32 Debian packages. Names follow Debian's rules: lowercase
+  letters, digits, `+`, `.` and `-`.
+- Tokens only through accounts. Tools that sign each request
   with a key (`aws`, `gcloud`) are left out on purpose: keys never enter a
   sandbox. Use a connector for those services instead. See
   [[Connectors and OAuth|Connectors-and-OAuth]].

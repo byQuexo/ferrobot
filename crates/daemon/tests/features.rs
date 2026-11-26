@@ -755,7 +755,7 @@ async fn cli_image_reaches_new_and_woken_sandboxes() {
     assert_eq!(status, 200);
     assert_eq!(
         v,
-        json!({"packages": [], "status": "idle", "error": null, "supported": true})
+        json!({"packages": [], "clis": [], "status": "idle", "error": null, "supported": true})
     );
 
     let running = create(&d, json!({"name": "ada"})).await;
@@ -7160,7 +7160,11 @@ async fn claude_code_agents_use_the_hosts_own_cli_and_nothing_enters_the_sandbox
     let env = backend.envs.lock().unwrap()["clio"].clone();
     assert_eq!(env["FERROBOT_DRIVER"], "claude_code");
     // No key, no Claude login and no claude config: only ferrobot's own settings.
-    assert!(env.keys().all(|k| k.starts_with("FERROBOT_")), "{env:?}");
+    assert!(
+        env.keys()
+            .all(|k| k.starts_with("FERROBOT_") || k == "PATH"),
+        "{env:?}"
+    );
 
     let token = env["FERROBOT_AGENT_TOKEN"].clone();
     let (status, out) = claude_code_turn(&d.agents, &token, "hi there", true).await;

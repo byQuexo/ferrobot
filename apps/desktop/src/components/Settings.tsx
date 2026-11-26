@@ -115,7 +115,7 @@ export const SECTIONS: [SettingsSection, string, string, typeof KeyRound, string
   [
     "clis",
     "CLIs",
-    "Command-line tools in every agent’s computer, built into one shared image.",
+    "Command-line tools in the agents’ computers, and accounts whose tokens stay in the daemon.",
     Terminal,
   ],
   [

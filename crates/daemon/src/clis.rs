@@ -165,6 +165,7 @@ pub(crate) async fn apply(state: &AppState, packages: Vec<String>) -> Result<(),
             stored.clis.push(debian(package));
         }
     }
+    stored.clis.sort_by(|a, b| a.id.cmp(&b.id));
     commit(state, stored, &before).await
 }
 

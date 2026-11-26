@@ -87,7 +87,7 @@ export function installLabel(cli: Pick<Cli, "install">): string {
 /** The CLI's account state, in a few words; empty without an account. */
 export function accountLabel(cli: Pick<CliView, "account" | "has_token">): string {
   if (!cli.account) return "";
-  return cli.has_token ? "Signed in" : "Needs a token";
+  return cli.has_token ? "Token stored" : "Needs a token";
 }
 
 /** The CLI as `PUT /v1/clis/{id}` takes it. */

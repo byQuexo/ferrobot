@@ -1550,3 +1550,39 @@ slop, so polish mode: palette, accent, logo, layout and features stay.
   `rcgen` and `yasna`; the lockfile also lists `x509-parser` and its parsers for
   an optional `rcgen` feature that is not built. `tokio-rustls`, `hyper`,
   `hyper-util` and `http-body-util` were already in the tree.
+
+## Add CLI (2026-11-26)
+
+- **One list of CLIs, one dialog.** Tim asked for "CLI → Add CLI" instead of a login set up
+  in one place and a token in another. A CLI (`ferrobot_core::Cli`) is its install, its programs,
+  an optional account and its agents, all in the `clis` setting; the earlier `logins` setting and
+  `/v1/logins` never shipped and are gone. `logins::all` derives today's logins from CLIs with an
+  account, so the proxy, the sandbox environment and the ask-first check did not change.
+  The package list of before is read once into Debian CLIs, and `PUT /v1/clis {packages}` keeps
+  working (additive API).
+- **Debian into the image, everything else into homes (Tim's option D).** A new CLI in the image
+  means a build and a restart for every agent, which Tim did not want for every tool. npm,
+  download and script installs go into `~/.local` of the picked agents (`PATH` puts
+  `~/.local/bin` first, set at provisioning; every agent is recreated anyway when the runner image
+  changes), once per agent: a marker file per CLI holds the install it ran, so a change reinstalls
+  and a removal can uninstall (npm, download; a script's files stay). It runs on provisioning, on
+  a change for running agents, and on the next wake for the others (a pending set, filled again
+  at startup) rather than on every wake. Root exec does not exist, so no symlinks into `/usr`.
+- **The CLI's own device sign-in, in a throwaway sandbox.** Reading a CLI's token from its config
+  needs knowing where each CLI keeps it; its token command (`gh auth token`) does not. The login
+  runs in the background with output to a file (`gh` 2.23 prints its code without a TTY), the daemon
+  polls it for the address and code, then runs the token command and stores the result. The
+  sandbox (`signin.<id>`, a name no agent can have; `sleep infinity` instead of the runner) has no
+  agent token, no proxy and no mounts, is removed afterwards or on cancel, and leftovers are
+  removed at startup. Remaining risk, told to Tim: the CLI, and whatever its install ran, sees the
+  token during its own sign-in, as when run on the operator's computer. Device sign-ins only;
+  callback-to-localhost sign-ins would need a forwarded port.
+- **Agents propose, the operator installs.** `propose_cli` (Add connectors group) shows the exact
+  install, "no checksum" for a download without one, and the token hosts; approving adds the CLI
+  for the proposer without a token. Auto mode never skips it, because the card decides what runs in
+  the computers and where a token would go.
+- **CLI images per daemon.** The image sweep removed every `ferrobot-runner:clis-*` image on the
+  engine, so a second daemon (a test copy) could remove the operator's image. Tags now carry the
+  daemon's data dir hash (`clis-<owner>-<hash>`) and the sweep only removes its own; images from
+  before are no longer swept.
+

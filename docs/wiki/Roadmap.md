@@ -70,10 +70,12 @@ In rough order. Nothing here has a date.
    with the key (AWS, Google Cloud) or pin their certificates. Per-tool
    scopes inside a connector (for example read-only GitHub tools), finer than
    today's switches per tool group. **Done** in 0.1.11: tools per
-   connector, and logins for any CLI that reads a token from a variable (hosts,
-   variables and programs set by you, GitHub ready-made, token pasted in
-   Vault, optional card before each command). Open: the daemon running a CLI's
-   own browser sign-in itself, and more ready-made logins.
+   connector, and **Add CLI**: Debian packages, npm packages, downloads and
+   scripts (the last three per agent, without a rebuild), accounts for any CLI
+   that reads a token from a variable (API key, or the CLI's own device sign-in
+   in a throwaway computer; `gh` ready-made), an optional card before each
+   command, and CLIs proposed by agents. Open: sign-ins that call back to
+   `localhost`, and more ready-made CLIs.
 9. **Faster, more natural calls.** Reasoning switched off or a fast model used
    only in calls, a setting for the pause that ends your turn, and calls
    among agents without you, with a pop-up to join. **Done** in 0.1.11:
@@ -156,7 +158,7 @@ tested against fakes on a machine without KVM.
 | v0.1.8 | done | Dashboards, webhooks and a Discord bridge, trace waits and handoffs, deleted agents named in mentions, Auto mode keeps a card for the riskiest steps. |
 | v0.1.9 | done | Pins per chat, a redesigned Webhooks page, an agent's webhooks in its details, Discord reactions and a Discord chip in the chat. |
 | v0.1.10 | done | Cards answered from Discord, agents posting to Discord on their own, emoji-only replies, more Appearance settings, a faster first wake and smaller updates. |
-| v0.1.11 | done | Files and a console in the Computer tab, a quicker model in calls, calls among agents, Stop for a chain of work, logins for CLIs and per-tool connector scopes. |
+| v0.1.11 | done | Files and a console in the Computer tab, a quicker model in calls, calls among agents, Stop for a chain of work, Add CLI with accounts and per-tool connector scopes. |
 
 Ideas beyond this list are on [[Ideas]].
 

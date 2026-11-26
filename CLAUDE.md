@@ -114,13 +114,16 @@ Principles:
   agents through `/mcp` (tokens in the keychain, never in a sandbox), and the
   `add_connector` approval card (Approve/Decline; tokens go in Settings → Vault);
   `oauth.rs` — their OAuth sign-in (rmcp's client, loopback callback).
-- `crates/daemon/src/logins.rs`, `api/logins.rs`, `egress.rs` — logins for CLIs, set up by the
-  operator (hosts, variables, programs, ask-first, agents; GitHub is a preset in the app) in the
-  `logins` setting, each token in the secret store (`login:<id>`); their sandboxes get a stand-in
-  per login, `HTTPS_PROXY` to the agent listener and a CA bundle; `egress.rs` is the proxy.
-- `crates/daemon/src/clis.rs`, `api/clis.rs` — CLIs: keyless Debian packages
-  built into one shared sandbox image (Docker, `build_image` in
-  `crates/sandbox`); `lifecycle::wake` recreates outdated sandboxes, home kept.
+- `crates/daemon/src/clis.rs`, `api/clis.rs` — CLIs (`ferrobot_core::Cli`, the `clis` setting):
+  Debian packages in one shared sandbox image (Docker, `build_image` in `crates/sandbox`, tags per
+  daemon); npm, download and script installs into the picked agents' homes (`~/.local`, first on
+  `PATH`; a marker per CLI under `~/.ferrobot/clis`), run on provision, on change and after a
+  pending wake; `lifecycle::wake` recreates outdated sandboxes, home kept; `propose_cli` cards.
+- `crates/daemon/src/logins.rs`, `egress.rs` — the token side of CLIs with an account (each token
+  in the secret store as `login:<id>`): their agents' sandboxes get a stand-in, `HTTPS_PROXY` to
+  the agent listener and a CA bundle; `egress.rs` is the proxy. `signin.rs` — a CLI's own device
+  sign-in in a throwaway sandbox (`signin.<id>`, no agent token, removed after; token read with
+  its token command straight into the secret store).
 - `crates/daemon/src/voice.rs`, `api/voice.rs` — voice: speech and
   transcription for the operator's chat via ElevenLabs or OpenRouter (keys
   in the keychain as `voice:<provider>`); `call.rs` — the operator's voice
@@ -304,14 +307,18 @@ daemon, `docker ps -a` must be empty of ferrobot containers.
   sandbox, event, log or API response. Cards answered from Discord take only allowed
   users' reactions or replies and go through the app's answer route; cards with a secret
   field or several questions, `add_connector` and very risky steps stay app-only.
-- **CLI logins keep their token in the daemon.** Only the operator sets up logins (never an
-  agent). Agents with a login get a stand-in and send HTTPS through `CONNECT` on the agent
-  listener (`egress.rs`, agent token as proxy password); only for the login's hosts (public names,
+- **CLI accounts keep their token in the daemon.** Only the operator sets up CLIs and accounts;
+  an agent's `propose_cli` is an Approve/Decline card that shows the exact install and token
+  hosts, never skipped in Auto mode, and never carries a token. A CLI's sign-in runs in a
+  throwaway sandbox with no agent token and is removed afterwards; its token goes from the token
+  command's output straight to the secret store, never to a log, event or response. Agents with an
+  account get a stand-in and send HTTPS through `CONNECT` on the agent
+  listener (`egress.rs`, agent token as proxy password); only for the account's hosts (public names,
   checked when saved and resolved to public addresses when used) does the daemon end TLS (leaf
-  certificates from that login's own CA, name-constrained to its hosts, key in the secret store),
+  certificates from that CLI's own CA, name-constrained to its hosts, key in the secret store),
   swap its exact stand-in for the real token in request headers only (never the URL), put the
   stand-in back where a response header echoes the token, and forward without following redirects.
-  A login's variables never replace the sandbox's own (proxy, CA, `FERROBOT_*`, `PATH`...). Other
+  An account's variables never replace the sandbox's own (proxy, CA, `FERROBOT_*`, `PATH`...). Other
   public hosts get a plain tunnel, port 443 only; private, loopback and link-local addresses are
   refused. Never log `Authorization` or `Proxy-Authorization`.
 - **Per-agent tokens** on `/runner/ws`, `/mcp`, `/model`, `/host/claude-code/turn`. An agent can only act
