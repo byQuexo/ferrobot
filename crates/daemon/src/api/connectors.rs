@@ -228,6 +228,7 @@ pub(crate) async fn create_connector(
         url: req.url.trim().to_owned(),
         command: req.command,
         token_env: req.token_env.map(|e| e.trim().to_owned()),
+        tools: None,
         created_at: time::OffsetDateTime::now_utc(),
     };
     connector.validate().map_err(ApiError::BadRequest)?;
@@ -294,6 +295,7 @@ pub(crate) async fn request_card(
         url: request.url,
         command: request.command,
         token_env: request.token_env,
+        tools: None,
         created_at: time::OffsetDateTime::now_utc(),
     };
     connector.validate().map_err(ApiError::BadRequest)?;
@@ -414,6 +416,7 @@ pub(crate) async fn answer_card(
             url: url.clone(),
             command: command.clone(),
             token_env: token_env.clone(),
+            tools: None,
             created_at: time::OffsetDateTime::now_utc(),
         };
         connector.validate().map_err(ApiError::BadRequest)?;
@@ -480,6 +483,10 @@ pub(crate) async fn answer_card(
 pub(crate) struct UpdateConnector {
     name: Option<String>,
     url: Option<String>,
+    /// The server's tools agents may use, by its own names; `null`: all of them.
+    #[serde(default, deserialize_with = "explicit")]
+    #[schema(value_type = Option<Vec<String>>)]
+    tools: Option<Option<Vec<String>>>,
     /// New token; `null` removes the stored one.
     #[serde(default, deserialize_with = "explicit")]
     #[schema(value_type = Option<String>)]
@@ -522,6 +529,9 @@ pub(crate) async fn update_connector(
     }
     if let Some(url) = req.url {
         url.trim().clone_into(&mut c.url);
+    }
+    if let Some(tools) = req.tools {
+        c.tools = tools;
     }
     c.validate().map_err(ApiError::BadRequest)?;
     let token = req.token.map(clean_token).transpose()?;

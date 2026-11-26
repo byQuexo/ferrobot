@@ -64,6 +64,12 @@ connector. Changes apply from the agent's next turn.
   agent never sees it.
 - An agent that creates another agent can give it at most its own
   connectors. See [[Tools and permissions|Tools-and-Permissions]].
+- **Only some of its tools:** the list button on a connector in
+  **Settings → Connectors** lists the server's tools once a check reached it.
+  Agents with the connector get only the ticked ones, for example only the
+  read tools of GitHub; the daemon leaves the others out of their tool list
+  and refuses calls to them. For a different set per agent, add the server a
+  second time under another name.
 
 ## Own OAuth app
 

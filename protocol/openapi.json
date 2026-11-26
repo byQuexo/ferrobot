@@ -7932,6 +7932,16 @@
             ],
             "description": "The environment variable a local server gets the connector's Vault token in, e.g.\n`GITHUB_TOKEN`."
           },
+          "tools": {
+            "type": [
+              "array",
+              "null"
+            ],
+            "items": {
+              "type": "string"
+            },
+            "description": "The server's tools agents may use, by the server's own names; `None`: all of them."
+          },
           "created_at": {
             "type": "string",
             "format": "date-time"
@@ -7963,8 +7973,15 @@
               "integer",
               "null"
             ],
-            "description": "Tools agents can use (with `ok`).",
+            "description": "Tools agents can use (with `ok`), within the connector's `tools`.",
             "minimum": 0
+          },
+          "names": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Every tool the server offers, by its own name (with `ok`), to choose `tools` from."
           },
           "error": {
             "type": [
@@ -11469,6 +11486,16 @@
               "string",
               "null"
             ]
+          },
+          "tools": {
+            "type": [
+              "array",
+              "null"
+            ],
+            "items": {
+              "type": "string"
+            },
+            "description": "The server's tools agents may use, by its own names; `null`: all of them."
           },
           "token": {
             "type": [

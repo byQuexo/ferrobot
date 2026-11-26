@@ -69,7 +69,8 @@ In rough order. Nothing here has a date.
    trusts (new crate `rcgen`). Not possible for CLIs that sign each request
    with the key (AWS, Google Cloud) or pin their certificates. Per-tool
    scopes inside a connector (for example read-only GitHub tools), finer than
-   today's switches per tool group.
+   today's switches per tool group. **Done** (next release): tools per
+   connector.
 9. **Faster, more natural calls.** Reasoning switched off or a fast model used
    only in calls, a setting for the pause that ends your turn, and calls
    among agents without you, with a pop-up to join. **Done** (next release):

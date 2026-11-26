@@ -715,6 +715,7 @@ mod tests {
             url: "https://example.com/mcp".into(),
             command: None,
             token_env: None,
+            tools: None,
             created_at: time::OffsetDateTime::UNIX_EPOCH,
         };
         let (gh, db) = (connector("github"), connector("db"));

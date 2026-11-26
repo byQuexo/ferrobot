@@ -668,6 +668,7 @@ textarea { resize: vertical; min-height: 40px; line-height: 1.5; }
 .flow-step { display: flex; flex-direction: column; gap: 6px; }
 .flow-step-head { display: flex; align-items: center; gap: 8px; }
 .flow-step textarea, .flow-step input { width: 100%; }
+.scope-list { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 4px 12px; max-height: 240px; overflow: auto; }
 
 @media (max-width: 1080px) {
   .shell.with-info { --sidebar-w: 240px; --info-w: 300px; }

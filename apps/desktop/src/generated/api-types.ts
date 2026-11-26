@@ -2083,6 +2083,8 @@ export interface components {
              *     `GITHUB_TOKEN`.
              */
             token_env?: string | null;
+            /** @description The server's tools agents may use, by the server's own names; `None`: all of them. */
+            tools?: string[] | null;
             /** Format: date-time */
             created_at: string;
         };
@@ -2094,8 +2096,10 @@ export interface components {
         /** @description The outcome of connecting to a connector as the daemon and listing its tools. */
         ConnectorCheck: {
             status: components["schemas"]["CheckStatus"];
-            /** @description Tools agents can use (with `ok`). */
+            /** @description Tools agents can use (with `ok`), within the connector's `tools`. */
             tools?: number | null;
+            /** @description Every tool the server offers, by its own name (with `ok`), to choose `tools` from. */
+            names?: string[];
             /** @description Why it failed (with `failed`), in ferrobot's words, never the server's. */
             error?: string | null;
             /**
@@ -3353,6 +3357,8 @@ export interface components {
         UpdateConnector: {
             name?: string | null;
             url?: string | null;
+            /** @description The server's tools agents may use, by its own names; `null`: all of them. */
+            tools?: string[] | null;
             /** @description New token; `null` removes the stored one. */
             token?: string | null;
             /**

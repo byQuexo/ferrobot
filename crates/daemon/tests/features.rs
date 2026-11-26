@@ -3572,6 +3572,30 @@ async fn connectors_lend_upstream_tools_to_assigned_agents_only() {
             .is_err()
     );
 
+    // A scope leaves the connector's other tools out, listed and called alike.
+    let path = format!("/v1/connectors/{}", conn["id"].as_str().unwrap());
+    let scope = json!({"tools": ["read_mailbox"]});
+    let (status, scoped) = http(&d.ui, "PATCH", &path, Some(scope)).await;
+    assert_eq!(status, 200, "{scoped}");
+    assert_eq!(scoped["tools"], json!(["read_mailbox"]));
+    let tools = as_ann.list_all_tools().await.unwrap();
+    let up: Vec<_> = tools
+        .iter()
+        .filter(|t| t.name.starts_with("up__"))
+        .map(|t| t.name.to_string())
+        .collect();
+    assert_eq!(up, ["up__read_mailbox"]);
+    assert!(
+        as_ann
+            .call_tool(CallToolRequestParams::new("up__list_agents"))
+            .await
+            .is_err()
+    );
+    let bad = json!({"tools": ["bad name"]});
+    assert_eq!(http(&d.ui, "PATCH", &path, Some(bad)).await.0, 400);
+    let (status, all) = http(&d.ui, "PATCH", &path, Some(json!({"tools": null}))).await;
+    assert_eq!((status, &all["tools"]), (200, &Value::Null));
+
     // Agents created by ann inherit its connectors.
     let spec = ferrobot_daemon::agents::AgentSpec {
         name: "cal".into(),

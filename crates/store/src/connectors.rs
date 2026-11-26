@@ -7,12 +7,13 @@ use uuid::Uuid;
 use crate::util::{fmt_ts, is_unique_violation, parse_ts};
 use crate::{Store, StoreError};
 
-const COLUMNS: &str = "id, name, url, created_at, command, token_env";
+const COLUMNS: &str = "id, name, url, created_at, command, token_env, tools";
 
 fn from_row(row: &Row<'_>) -> Result<Connector, StoreError> {
     let id: String = row.get(0)?;
     let created: String = row.get(3)?;
     let command: Option<String> = row.get(4)?;
+    let tools: Option<String> = row.get(6)?;
     Ok(Connector {
         id: Uuid::parse_str(&id).map_err(StoreError::corrupt)?,
         name: row.get(1)?,
@@ -22,8 +23,20 @@ fn from_row(row: &Row<'_>) -> Result<Connector, StoreError> {
             .transpose()
             .map_err(StoreError::corrupt)?,
         token_env: row.get(5)?,
+        tools: tools
+            .map(|t| serde_json::from_str(&t))
+            .transpose()
+            .map_err(StoreError::corrupt)?,
         created_at: parse_ts(&created)?,
     })
+}
+
+fn tools_column(c: &Connector) -> Result<Option<String>, StoreError> {
+    c.tools
+        .as_ref()
+        .map(serde_json::to_string)
+        .transpose()
+        .map_err(StoreError::corrupt)
 }
 
 fn command_column(c: &Connector) -> Result<Option<String>, StoreError> {
@@ -55,17 +68,19 @@ fn conflict(name: &str, e: rusqlite::Error) -> StoreError {
 impl Store {
     pub async fn create_connector(&self, c: Connector) -> Result<Connector, StoreError> {
         let command = command_column(&c)?;
+        let tools = tools_column(&c)?;
         self.with(move |conn| {
             conn.execute(
-                "INSERT INTO connectors (id, name, url, created_at, command, token_env)
-                 VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+                "INSERT INTO connectors (id, name, url, created_at, command, token_env, tools)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
                 params![
                     c.id.to_string(),
                     c.name,
                     c.url,
                     fmt_ts(c.created_at),
                     command,
-                    c.token_env
+                    c.token_env,
+                    tools
                 ],
             )
             .map_err(|e| conflict(&c.name, e))?;
@@ -74,15 +89,17 @@ impl Store {
         .await
     }
 
-    /// Replaces `name`, `url`, `command` and `token_env`.
+    /// Replaces `name`, `url`, `command`, `token_env` and `tools`.
     pub async fn update_connector(&self, c: Connector) -> Result<(), StoreError> {
         let command = command_column(&c)?;
+        let tools = tools_column(&c)?;
         self.with(move |conn| {
             let changed = conn
                 .execute(
-                    "UPDATE connectors SET name = ?2, url = ?3, command = ?4, token_env = ?5
+                    "UPDATE connectors SET name = ?2, url = ?3, command = ?4, token_env = ?5,
+                                           tools = ?6
                      WHERE id = ?1",
-                    params![c.id.to_string(), c.name, c.url, command, c.token_env],
+                    params![c.id.to_string(), c.name, c.url, command, c.token_env, tools],
                 )
                 .map_err(|e| conflict(&c.name, e))?;
             if changed == 0 {
@@ -131,7 +148,8 @@ impl Store {
     pub async fn agent_connectors(&self, agent: AgentId) -> Result<Vec<Connector>, StoreError> {
         self.with(move |c| {
             let mut stmt = c.prepare(
-                "SELECT c.id, c.name, c.url, c.created_at, c.command, c.token_env FROM connectors c
+                "SELECT c.id, c.name, c.url, c.created_at, c.command, c.token_env, c.tools
+                 FROM connectors c
                  JOIN agent_connectors a ON a.connector_id = c.id
                  WHERE a.agent_id = ?1 ORDER BY c.name",
             )?;
@@ -191,6 +209,7 @@ mod tests {
             url: "https://example.test/mcp".into(),
             command: None,
             token_env: None,
+            tools: None,
             created_at: OffsetDateTime::UNIX_EPOCH,
         }
     }

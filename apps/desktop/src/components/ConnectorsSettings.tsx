@@ -9,6 +9,7 @@ import {
   CreditCard,
   Database,
   KeyRound,
+  ListChecks,
   ListTodo,
   LogIn,
   LogOut,
@@ -128,6 +129,57 @@ const AUTH_LABELS: Record<CatalogEntry["auth"], string> = {
 };
 
 /** A catalog server shows its kind's icon, any other its initials; the hue comes from the name. */
+/** Which of the server's tools agents with this connector may use; all ticked saves "all". */
+function ToolScope(props: {
+  connector: Connector;
+  busy: boolean;
+  onSave: (tools: string[] | null) => void;
+}): JSX.Element {
+  const names = props.connector.check?.names ?? [];
+  const [picked, setPicked] = useState<ReadonlySet<string>>(
+    new Set(props.connector.tools ?? names),
+  );
+  if (names.length === 0)
+    return <p class="hint conn-app">Its tools show here once a check reaches the server.</p>;
+  const all = names.every((n) => picked.has(n));
+  return (
+    <form
+      class="form conn-app"
+      onSubmit={(e) => {
+        e.preventDefault();
+        props.onSave(all ? null : names.filter((n) => picked.has(n)));
+      }}
+    >
+      <span class="hint">
+        Agents with this connector get only the tools ticked here. For a different set per agent,
+        add the server again under another name.
+      </span>
+      <div class="scope-list">
+        {names.map((n) => (
+          <label key={n} class="check">
+            <input
+              type="checkbox"
+              checked={picked.has(n)}
+              onChange={(e) => {
+                const next = new Set(picked);
+                if (e.currentTarget.checked) next.add(n);
+                else next.delete(n);
+                setPicked(next);
+              }}
+            />
+            <span class="mono small">{n}</span>
+          </label>
+        ))}
+      </div>
+      <div>
+        <Button small type="submit" disabled={props.busy}>
+          Save tools
+        </Button>
+      </div>
+    </form>
+  );
+}
+
 function Tile(props: { name: string; kind?: CatalogKind | undefined }): JSX.Element {
   const Icon = props.kind ? KIND_ICONS[props.kind] : undefined;
   return (
@@ -159,6 +211,7 @@ export function ConnectorsSettings(props: {
   const [ownApp, setOwnApp] = useState(false);
   const [app, setApp] = useState<AppDraft>(EMPTY_APP);
   const [editApp, setEditApp] = useState<({ id: string } & AppDraft) | null>(null);
+  const [scoping, setScoping] = useState<string | null>(null);
   const [signIn, setSignIn] = useState<{ id: string; url: string } | null>(null);
   const [adding, setAdding] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -466,6 +519,15 @@ export function ConnectorsSettings(props: {
                       <KeyRound size={16} />
                     </IconButton>
                     <IconButton
+                      label={`Tools of ${c.name} agents may use`}
+                      pressed={scoping === c.id}
+                      onClick={() => {
+                        setScoping(scoping === c.id ? null : c.id);
+                      }}
+                    >
+                      <ListChecks size={16} />
+                    </IconButton>
+                    <IconButton
                       label={`OAuth app of ${c.name}`}
                       pressed={editApp?.id === c.id}
                       onClick={() => {
@@ -492,6 +554,18 @@ export function ConnectorsSettings(props: {
                       <Trash2 size={16} />
                     </IconButton>
                   </div>
+                  {scoping === c.id && (
+                    <ToolScope
+                      connector={c}
+                      busy={busy}
+                      onSave={(tools) =>
+                        void run(async () => {
+                          await client.updateConnector(c.id, { tools });
+                          setScoping(null);
+                        })
+                      }
+                    />
+                  )}
                   {editApp?.id === c.id && (
                     <form
                       class="form conn-app"

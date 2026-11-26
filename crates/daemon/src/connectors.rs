@@ -99,8 +99,11 @@ pub enum CheckStatus {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, utoipa::ToSchema)]
 pub struct ConnectorCheck {
     pub status: CheckStatus,
-    /// Tools agents can use (with `ok`).
+    /// Tools agents can use (with `ok`), within the connector's `tools`.
     pub tools: Option<usize>,
+    /// Every tool the server offers, by its own name (with `ok`), to choose `tools` from.
+    #[serde(default)]
+    pub names: Vec<String>,
     /// Why it failed (with `failed`), in ferrobot's words, never the server's.
     pub error: Option<String>,
     /// When the check started.
@@ -372,19 +375,23 @@ pub async fn check(state: &AppState, c: &Connector) -> ConnectorCheck {
         Ok(tools
             .iter()
             .filter(|t| exposed_name(&c.name, &t.name).is_some())
-            .count())
+            .map(|t| t.name.to_string())
+            .collect::<Vec<_>>())
     };
     let outcome = tokio::time::timeout(CHECK_TIMEOUT, probe)
         .await
         .unwrap_or_else(|_| Err(failed("the server did not answer in time")));
-    let (status, tools, error) = match outcome {
-        Ok(n) => (CheckStatus::Ok, Some(n), None),
+    let (status, names, error) = match outcome {
+        Ok(names) => (CheckStatus::Ok, Some(names), None),
         Err(Failure::SignIn) => (CheckStatus::NeedsSignIn, None, None),
         Err(Failure::Failed(e)) => (CheckStatus::Failed, None, Some(e)),
     };
     let check = ConnectorCheck {
         status,
-        tools,
+        tools: names
+            .as_ref()
+            .map(|n| n.iter().filter(|t| in_scope(c, t)).count()),
+        names: names.unwrap_or_default(),
         error,
         at,
     };
@@ -422,6 +429,11 @@ fn exposed_name(connector: &str, tool: &str) -> Option<String> {
     (plain && CLIENT_PREFIX.len() + name.len() <= MAX_TOOL_NAME).then_some(name)
 }
 
+/// Whether the connector's scope lets agents use the server's tool `tool`.
+fn in_scope(c: &Connector, tool: &str) -> bool {
+    c.tools.as_ref().is_none_or(|t| t.iter().any(|n| n == tool))
+}
+
 async fn list(state: &AppState, agent: AgentId, c: &Connector) -> Result<Vec<Tool>, String> {
     let s = session(state, agent, c).await?;
     let tools = match s.list_all_tools().await {
@@ -433,6 +445,7 @@ async fn list(state: &AppState, agent: AgentId, c: &Connector) -> Result<Vec<Too
     };
     Ok(tools
         .into_iter()
+        .filter(|t| in_scope(c, &t.name))
         .filter_map(|mut t| {
             let Some(name) = exposed_name(&c.name, &t.name) else {
                 tracing::warn!(connector = %c.name, tool = %t.name, "tool name unusable, skipped");
@@ -489,7 +502,7 @@ pub async fn call(
     // The assignment is checked here too: an agent can call names it was never shown.
     let c = connectors
         .iter()
-        .find(|c| c.name == connector)
+        .find(|c| c.name == connector && in_scope(c, tool))
         .ok_or_else(unknown)?;
     let s = tokio::time::timeout(CONNECT_TIMEOUT, session(state, agent, c))
         .await
