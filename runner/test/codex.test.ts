@@ -6,9 +6,9 @@ import { after, describe, it } from "node:test";
 
 import { ConfigError, loadConfig } from "../src/config.ts";
 import { CodexDriver, codexConfigToml } from "../src/drivers/codex.ts";
-import { TurnAbortedError, type TurnContext } from "../src/drivers/types.ts";
-import type { TurnEvent } from "../src/protocol.ts";
+import { TurnAbortedError } from "../src/drivers/types.ts";
 import type { Params, Scenario, Step } from "./fixtures/fake-codex.ts";
+import { context, fakeBin, fakeLog } from "./helpers.ts";
 
 interface Received {
   id?: string | number;
@@ -21,13 +21,7 @@ interface Received {
   token?: string;
 }
 
-// The fake runs through a shell wrapper, like a real `codex` binary on PATH.
-const BIN = join(mkdtempSync(join(tmpdir(), "ferrobot-codex-bin-")), "codex");
-writeFileSync(
-  BIN,
-  `#!/bin/sh\nexec "${process.execPath}" --no-warnings "${join(import.meta.dirname, "fixtures", "fake-codex.ts")}" "$@"\n`,
-  { mode: 0o755 },
-);
+const BIN = fakeBin("codex", "fake-codex.ts");
 
 const drivers: CodexDriver[] = [];
 after(() => Promise.all(drivers.map((d) => d.close())));
@@ -50,36 +44,7 @@ function setup(bin = BIN) {
   const script = (scenario: Scenario): void => {
     writeFileSync(join(codexHome, "scenario.json"), JSON.stringify(scenario));
   };
-  const received = (): Received[] =>
-    readFileSync(join(codexHome, "received.jsonl"), "utf8")
-      .trim()
-      .split("\n")
-      .map((line) => JSON.parse(line) as Received);
-  const sent = (method: string): Received[] => received().filter((m) => m.method === method);
-  const answer = (id: string): Received | undefined =>
-    received().find((m) => m.id === id && !m.method);
-  return { driver, script, received, sent, answer, workspaceDir, codexHome };
-}
-
-function context(overrides: Partial<TurnContext> = {}): { ctx: TurnContext; events: TurnEvent[] } {
-  const events: TurnEvent[] = [];
-  const ctx: TurnContext = {
-    turn: {
-      type: "turn",
-      turn_id: "t1",
-      message_id: 7,
-      sender: { kind: "user" },
-      sender_name: "user",
-      body: "hi",
-    },
-    instructions: "Be brief.",
-    agentName: "alice",
-    sessionId: null,
-    signal: new AbortController().signal,
-    emit: (e) => events.push(e),
-    ...overrides,
-  };
-  return { ctx, events };
+  return { driver, script, ...fakeLog<Received>(codexHome), workspaceDir, codexHome };
 }
 
 const message = (text: string): Params => ({ type: "agentMessage", id: "msg-1", text });

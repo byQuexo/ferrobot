@@ -3,31 +3,10 @@ import { readFileSync } from "node:fs";
 import { describe, it } from "node:test";
 
 import { ClaudeCodeDriver } from "../src/drivers/claude-code.ts";
-import type { TurnContext } from "../src/drivers/types.ts";
-import type { TurnEvent } from "../src/protocol.ts";
+import { context } from "./helpers.ts";
 
 // A real `claude -p` stream-json turn, trimmed to the fields the driver reads.
 const TURN = readFileSync(new URL("fixtures/claude-code-turn.jsonl", import.meta.url), "utf8");
-
-function context(sessionId: string | null): { ctx: TurnContext; events: TurnEvent[] } {
-  const events: TurnEvent[] = [];
-  const ctx: TurnContext = {
-    turn: {
-      type: "turn",
-      turn_id: "t1",
-      message_id: 7,
-      sender: { kind: "user" },
-      sender_name: "user",
-      body: "hi",
-    },
-    instructions: "Be brief.",
-    agentName: "alice",
-    sessionId,
-    signal: new AbortController().signal,
-    emit: (e) => events.push(e),
-  };
-  return { ctx, events };
-}
 
 /** Answers like the daemon's turn endpoint, in uneven chunks. */
 function daemon(
@@ -61,7 +40,7 @@ const driver = (f: typeof fetch): ClaudeCodeDriver =>
 describe("ClaudeCodeDriver", () => {
   it("hands the turn to the host's claude and maps its stream", async () => {
     const d = daemon(200, TURN);
-    const { ctx, events } = context(null);
+    const { ctx, events } = context();
     const out = await driver(d.fetch).runTurn(ctx);
     assert.deepEqual(out, { result: "OK", sessionId: "e91ba174-e016-40e1-b41e-1e478eb267e4" });
     assert.deepEqual(
@@ -85,12 +64,12 @@ describe("ClaudeCodeDriver", () => {
     const failed =
       '{"type":"result","subtype":"success","is_error":true,"result":"Not logged in · Please run /login"}\n';
     await assert.rejects(
-      driver(daemon(200, failed).fetch).runTurn(context("s1").ctx),
+      driver(daemon(200, failed).fetch).runTurn(context({ sessionId: "s1" }).ctx),
       /Not logged in/,
     );
     await assert.rejects(
       driver(daemon(403, '{"error":"this agent does not run on Claude Code"}').fetch).runTurn(
-        context("s1").ctx,
+        context({ sessionId: "s1" }).ctx,
       ),
       /answered 403: .*does not run on Claude Code/,
     );
