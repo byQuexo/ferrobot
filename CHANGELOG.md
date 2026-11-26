@@ -19,6 +19,10 @@ All notable changes are listed here. The format follows
 - **Pause that ends your turn** in Settings → Voice → Calls: how long you can stop talking before agents answer, 0.5 to 3 seconds instead of a fixed 1.5.
 - The ideas list has Flows, taken off the roadmap for now, and a Twilio connector so an agent can call your phone.
 
+### Fixed
+
+- In Add a custom connector, the choice between a remote and a local server showed each radio button far from its text.
+
 ## [0.1.10] - 2026-11-26
 
 ### Added

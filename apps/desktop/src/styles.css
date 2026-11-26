@@ -162,7 +162,7 @@ b, strong { font-weight: 600; }
 .icon-btn.tone-accent:hover:not(:disabled) { background: var(--accent); color: var(--accent-text); }
 .icon-btn.tone-danger:hover:not(:disabled) { background: var(--err-soft); color: var(--err); }
 
-input:not([type="checkbox"]), textarea, select {
+input:not([type="checkbox"], [type="radio"]), textarea, select {
   width: 100%; border: 1px solid var(--border-strong); background: var(--surface);
   border-radius: var(--radius-sm); padding: 8px 12px; line-height: 18px; outline: none;
   transition: border-color 0.15s, box-shadow 0.15s;
