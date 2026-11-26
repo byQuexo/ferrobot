@@ -4,7 +4,7 @@ import RFB from "@novnc/novnc";
 import { Eye, Hand, Monitor, MonitorOff, Moon, MousePointer2, RotateCw, X } from "lucide-preact";
 
 import { useApp } from "../context.ts";
-import { Button, IconButton } from "./ui.tsx";
+import { Button, Dialog, IconButton } from "./ui.tsx";
 
 /** A live VNC view of the agent's desktop, scaled to its box; view only unless `control`. */
 function Live(props: { agent: string; control: boolean; small?: boolean }): JSX.Element {
@@ -119,7 +119,7 @@ function FullScreen(props: { agent: string; name: string; onClose: () => void })
   );
 }
 
-type Readiness = "checking" | "off" | "restart" | "ready";
+type Readiness = "checking" | "off" | "building" | "restart" | "ready";
 
 /** The computer card's small screen: live while awake, a placeholder otherwise; opens full. */
 export function DesktopPreview(props: {
@@ -131,12 +131,15 @@ export function DesktopPreview(props: {
   const [ready, setReady] = useState<Readiness>("checking");
   const [open, setOpen] = useState(false);
   const [tick, setTick] = useState(0);
+  const [asking, setAsking] = useState(false);
 
   useEffect(() => {
     if (props.asleep) return;
     let live = true;
     const check = async (): Promise<Readiness> => {
-      if (!(await client.clis()).desktop) return "off";
+      const clis = await client.clis();
+      if (!clis.desktop) return "off";
+      if (clis.status === "building") return "building";
       const out = await client.exec(props.agent, ["sh", "-c", "command -v Xvfb"]);
       return out.exit_code === 0 ? "ready" : "restart";
     };
@@ -152,6 +155,15 @@ export function DesktopPreview(props: {
       live = false;
     };
   }, [props.agent, props.asleep, tick]);
+  useEffect(() => {
+    if (ready !== "building") return;
+    const timer = setTimeout(() => {
+      setTick((t) => t + 1);
+    }, 5000);
+    return () => {
+      clearTimeout(timer);
+    };
+  }, [ready, tick]);
 
   if (props.asleep) {
     return (
@@ -163,9 +175,67 @@ export function DesktopPreview(props: {
   if (ready === "checking") return <span class="screen-thumb idle" />;
   if (ready === "off") {
     return (
+      <>
+        <button
+          type="button"
+          class="screen-thumb idle"
+          onClick={() => {
+            setAsking(true);
+          }}
+        >
+          <MonitorOff size={16} aria-hidden="true" />
+          <span class="thumb-note">Set up a desktop</span>
+        </button>
+        {asking && (
+          <Dialog
+            title="Set up a desktop?"
+            onClose={() => {
+              setAsking(false);
+            }}
+            footer={
+              <>
+                <Button
+                  variant="ghost"
+                  onClick={() => {
+                    setAsking(false);
+                  }}
+                >
+                  Cancel
+                </Button>
+                <Button
+                  variant="primary"
+                  onClick={() =>
+                    void run(async () => {
+                      await client.updateClis({ desktop: true });
+                      setAsking(false);
+                      setTick((t) => t + 1);
+                    })
+                  }
+                >
+                  Set up
+                </Button>
+              </>
+            }
+          >
+            <p>
+              Every agent's computer gets a screen with a browser, a terminal and a file manager,
+              about 170 MB more. ferrobot builds it once; computers pick it up when they next
+              restart, and their files stay.
+            </p>
+            <p class="muted small">
+              You can watch and use any agent's screen. An agent uses it on its own only with the
+              Desktop tool, which includes a terminal. Turn it off again in Settings → Computers.
+            </p>
+          </Dialog>
+        )}
+      </>
+    );
+  }
+  if (ready === "building") {
+    return (
       <span class="screen-thumb idle">
-        <MonitorOff size={16} aria-hidden="true" />
-        <span class="thumb-note">No desktop: turn it on in Settings → CLIs</span>
+        <Monitor size={16} aria-hidden="true" />
+        <span class="thumb-note">Setting up the desktop…</span>
       </span>
     );
   }

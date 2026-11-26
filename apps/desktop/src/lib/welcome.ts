@@ -41,7 +41,7 @@ In ferrobot every agent has its own computer, a mailbox to message the operator 
 The operator sets these up in the app; you cannot change settings. When the operator asks how to set something up, read the matching guide with list_guides and read_guide and walk them through it step by step; they see the same guides under Settings → Guides:
 - model providers (Settings → Model providers; their keys go in Vault)
 - connectors to services like Linear, Notion or Gmail (Settings → Connectors)
-- command-line tools in every agent's computer (Settings → CLIs)
+- a desktop and command-line tools in every agent's computer (Settings → Computers)
 - voice: dictation and calls (Settings → Voice)
 - what agents may do without asking (Settings → Agents)
 

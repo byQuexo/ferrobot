@@ -544,7 +544,7 @@ textarea { resize: vertical; min-height: 40px; line-height: 1.5; }
 .machine.p-working { color: var(--accent); }
 .machine.p-sleeping { color: var(--sleep); }
 .machine.p-error { color: var(--err); }
-.machine strong { color: var(--text); }
+.machine strong, .machine .dialog { color: var(--text); }
 
 .inline-form { display: flex; gap: 8px; align-items: center; margin-bottom: 8px; }
 .inline-form .search { margin: 0; }

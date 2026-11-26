@@ -284,9 +284,7 @@ function Computer(props: { agent: Agent }): JSX.Element {
       <section class="card computer">
         <div class={`machine p-${info.presence}`}>
           <div class="grow">
-            <strong class="ellipsis" title={`${props.agent.name}'s computer`}>
-              {props.agent.name}'s computer
-            </strong>
+            <strong>{props.agent.name}'s computer</strong>
             <span class="muted small">
               {asleep
                 ? computerSummary(props.agent.status, info)

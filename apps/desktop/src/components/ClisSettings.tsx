@@ -70,6 +70,23 @@ export function ClisSettings(): JSX.Element | null {
   return (
     <section class="settings-section form">
       <ul class="pref-list">
+        <PrefRow
+          title="Desktop"
+          hint="A screen with a browser, a terminal and a file manager in every computer, about 170 MB more. You watch it in the Computer tab; agents with the Desktop tool use it, and that tool includes a terminal."
+        >
+          <Switch
+            checked={view.desktop}
+            label="Desktop"
+            onChange={(on) =>
+              void run(async () => {
+                setView(await client.updateClis({ desktop: on }));
+              })
+            }
+          />
+        </PrefRow>
+      </ul>
+      <h3 class="pref-head">CLIs</h3>
+      <ul class="pref-list">
         {view.clis.map((cli) => (
           <PrefRow key={cli.id} title={cli.id} hint={hint(cli)}>
             {cli.account?.sign_in && (
@@ -106,22 +123,6 @@ export function ClisSettings(): JSX.Element | null {
         ))}
       </ul>
       {view.clis.length === 0 && <p class="muted small">No CLIs yet.</p>}
-      <ul class="pref-list">
-        <PrefRow
-          title="Desktop"
-          hint="A screen with a browser, a terminal and a file manager in every computer, about 170 MB more. You watch it in the Computer tab; agents with the Desktop tool use it."
-        >
-          <Switch
-            checked={view.desktop}
-            label="Desktop"
-            onChange={(on) =>
-              void run(async () => {
-                setView(await client.updateClis({ desktop: on }));
-              })
-            }
-          />
-        </PrefRow>
-      </ul>
       <div class="row-actions">
         <Button
           onClick={() => {

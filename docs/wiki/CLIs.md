@@ -4,7 +4,7 @@ tool can use the ones it has.
 
 ## Add a CLI
 
-1. Open **Settings → CLIs** and choose **Add CLI**.
+1. Open **Settings → Computers** and choose **Add CLI**.
 2. Pick a known CLI, or give it a name and choose how it installs:
    - **Debian package**: built into the one image every computer starts from
      (Debian bookworm). Every agent gets it; the build takes a few minutes and

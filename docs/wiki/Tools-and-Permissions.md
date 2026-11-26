@@ -24,7 +24,7 @@ switch some off.
 - Shell, Files and Web aside, these are ferrobot's own tools. The daemon hides
   the ones outside the profile and refuses them if an agent calls them anyway.
 - **Desktop** is never on by default, not even for agents that have every
-  other group. It needs the desktop in Settings → CLIs (see [[CLIs]]), and an
+  other group. It needs the desktop in Settings → Computers (see [[CLIs]]), and an
   agent with a CLI account cannot have it: commands typed into its desktop's
   terminal would skip the checks on risky steps. While you use an agent's
   desktop yourself, its Desktop tool tells it to wait.
