@@ -1,5 +1,5 @@
-//! Rule-based tool-call classifier: risky calls get a card unless Auto mode is on, critical ones
-//! (money, deletes in a connected service, force-push, publish) always do, dangerous are refused.
+//! Rule-based tool-call classifier: dangerous calls are refused, critical ones (money, deletes in
+//! a connected service, force-push, publish) always get a card, risky ones unless Auto mode is on.
 
 use axum::Json;
 use axum::Router;
