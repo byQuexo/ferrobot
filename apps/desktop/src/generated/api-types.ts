@@ -1866,6 +1866,11 @@ export interface components {
             detail: string;
             /** @description What made the call risky, e.g. "pushes code". */
             reason: string;
+            /**
+             * @description A very risky step (money, deleting in a connected service, force-pushing,
+             *     publishing): Auto mode still asks, and only the app answers it.
+             */
+            critical?: boolean;
             /** @enum {string} */
             kind: "tool_call";
         };

@@ -20,7 +20,13 @@ export interface Appearance {
   accent: Accent;
   bubbles: "solid" | "soft" | "plain";
   chatBg: "default" | "tinted" | "plain";
+  pattern: "none" | "dots" | "grid" | "lines" | "aurora";
   textSize: "small" | "default" | "large";
+  font: "default" | "system" | "rounded" | "serif" | "mono";
+  corners: "sharp" | "rounded" | "round";
+  density: "compact" | "cozy" | "spacious";
+  width: "narrow" | "default" | "wide";
+  motion: "full" | "reduced";
 }
 
 export const DEFAULT_APPEARANCE: Appearance = {
@@ -28,7 +34,13 @@ export const DEFAULT_APPEARANCE: Appearance = {
   accent: "blue",
   bubbles: "soft",
   chatBg: "default",
+  pattern: "none",
   textSize: "default",
+  font: "default",
+  corners: "rounded",
+  density: "cozy",
+  width: "default",
+  motion: "full",
 };
 
 /** Each preference's choices with their labels, in the order Settings shows them. */
@@ -49,10 +61,43 @@ export const CHOICES: { [K in keyof Appearance]: readonly (readonly [Appearance[
     ["tinted", "Tinted"],
     ["plain", "Plain"],
   ],
+  pattern: [
+    ["none", "None"],
+    ["dots", "Dots"],
+    ["grid", "Grid"],
+    ["lines", "Lines"],
+    ["aurora", "Aurora"],
+  ],
   textSize: [
     ["small", "Small"],
     ["default", "Default"],
     ["large", "Large"],
+  ],
+  font: [
+    ["default", "Default"],
+    ["system", "System"],
+    ["rounded", "Rounded"],
+    ["serif", "Serif"],
+    ["mono", "Mono"],
+  ],
+  corners: [
+    ["sharp", "Sharp"],
+    ["rounded", "Rounded"],
+    ["round", "Round"],
+  ],
+  density: [
+    ["compact", "Compact"],
+    ["cozy", "Cozy"],
+    ["spacious", "Spacious"],
+  ],
+  width: [
+    ["narrow", "Narrow"],
+    ["default", "Default"],
+    ["wide", "Wide"],
+  ],
+  motion: [
+    ["full", "Full"],
+    ["reduced", "Reduced"],
   ],
 };
 
@@ -61,7 +106,13 @@ const KEYS: Record<keyof Appearance, string> = {
   accent: "ferrobot.accent",
   bubbles: "ferrobot.bubbles",
   chatBg: "ferrobot.chat-bg",
+  pattern: "ferrobot.pattern",
   textSize: "ferrobot.text-size",
+  font: "ferrobot.font",
+  corners: "ferrobot.corners",
+  density: "ferrobot.density",
+  width: "ferrobot.width",
+  motion: "ferrobot.motion",
 };
 
 /** The stored preferences; a missing or unknown value falls back to its default. */
@@ -70,13 +121,9 @@ export function readAppearance(get: (key: string) => string | null): Appearance 
     const stored = get(KEYS[k]);
     return CHOICES[k].find(([v]) => v === stored)?.[0] ?? DEFAULT_APPEARANCE[k];
   };
-  return {
-    theme: pick("theme"),
-    accent: pick("accent"),
-    bubbles: pick("bubbles"),
-    chatBg: pick("chatBg"),
-    textSize: pick("textSize"),
-  };
+  const look: Partial<Record<keyof Appearance, string>> = {};
+  for (const k of Object.keys(KEYS) as (keyof Appearance)[]) look[k] = pick(k);
+  return look as Appearance;
 }
 
 export function loadAppearance(): Appearance {
@@ -102,13 +149,7 @@ export function applyAppearance(look: Appearance): void {
   const dark =
     look.theme === "dark" ||
     (look.theme === "system" && matchMedia("(prefers-color-scheme: dark)").matches);
-  Object.assign(root.dataset, {
-    theme: dark ? "dark" : "light",
-    accent: look.accent,
-    bubbles: look.bubbles,
-    chatBg: look.chatBg,
-    textSize: look.textSize,
-  });
+  Object.assign(root.dataset, { ...look, theme: dark ? "dark" : "light" });
   const { light, dark: night } = ACCENTS[look.accent];
   root.style.setProperty("--accent-l", light[0]);
   root.style.setProperty("--accent-strong-l", light[1]);

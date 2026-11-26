@@ -146,6 +146,10 @@ pub enum Approval {
         detail: String,
         /// What made the call risky, e.g. "pushes code".
         reason: String,
+        /// A very risky step (money, deleting in a connected service, force-pushing,
+        /// publishing): Auto mode still asks, and only the app answers it.
+        #[serde(default)]
+        critical: bool,
     },
 }
 

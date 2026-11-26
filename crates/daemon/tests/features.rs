@@ -8478,3 +8478,265 @@ async fn the_discord_bridge_brings_allowed_messages_in_and_replies_out() {
     tokio::time::sleep(Duration::from_millis(200)).await;
     quiet(&mut ws).await;
 }
+
+#[tokio::test]
+async fn the_discord_bridge_answers_cards_and_passes_on_reactions() {
+    #[derive(Default)]
+    struct Fake {
+        reads: usize,
+        messages: Vec<Value>,
+        posted: Vec<(String, Value)>,
+        mine: Vec<(String, String, String)>,
+        reacted_by: HashMap<(String, String), Vec<Value>>,
+        edits: Vec<(String, String)>,
+    }
+    type MessagePath = axum::extract::Path<(String, String)>;
+    type EmojiPath = axum::extract::Path<(String, String, String)>;
+    let fake: Arc<Mutex<Fake>> = Arc::default();
+    let user = "111111111111111111";
+    let (f1, f2, f3, f4, f5) = (
+        fake.clone(),
+        fake.clone(),
+        fake.clone(),
+        fake.clone(),
+        fake.clone(),
+    );
+    let read = move |axum::extract::Query(q): axum::extract::Query<HashMap<String, String>>| {
+        let f = f1.clone();
+        async move {
+            let mut f = f.lock().unwrap();
+            f.reads += 1;
+            let after: u64 = q.get("after").and_then(|a| a.parse().ok()).unwrap_or(0);
+            let page: Vec<Value> = f
+                .messages
+                .iter()
+                .filter(|m| m["id"].as_str().unwrap().parse::<u64>().unwrap() > after)
+                .cloned()
+                .collect();
+            axum::Json(Value::Array(page))
+        }
+    };
+    let write = move |axum::Json(body): axum::Json<Value>| {
+        let f = f2.clone();
+        async move {
+            let mut f = f.lock().unwrap();
+            let id = (5000 + f.posted.len()).to_string();
+            f.posted.push((id.clone(), body));
+            axum::Json(json!({ "id": id }))
+        }
+    };
+    let edit = move |axum::extract::Path((_, message)): MessagePath,
+                     axum::Json(body): axum::Json<Value>| {
+        let f = f3.clone();
+        async move {
+            let content = body["content"].as_str().unwrap_or_default().to_owned();
+            f.lock().unwrap().edits.push((message.clone(), content));
+            axum::Json(json!({ "id": message }))
+        }
+    };
+    let who = move |axum::extract::Path((_, message, emoji)): EmojiPath| {
+        let f = f4.clone();
+        async move {
+            let f = f.lock().unwrap();
+            let users = f
+                .reacted_by
+                .get(&(message, emoji))
+                .cloned()
+                .unwrap_or_default();
+            axum::Json(Value::Array(users))
+        }
+    };
+    let mine = move |method: axum::http::Method,
+                     axum::extract::Path((_, message, emoji)): EmojiPath| {
+        let f = f5.clone();
+        async move {
+            f.lock()
+                .unwrap()
+                .mine
+                .push((method.to_string(), message, emoji));
+            axum::http::StatusCode::NO_CONTENT
+        }
+    };
+    let app = axum::Router::new()
+        .route(
+            "/channels/{id}/messages",
+            axum::routing::get(read).post(write),
+        )
+        .route(
+            "/channels/{id}/messages/{message}",
+            axum::routing::patch(edit),
+        )
+        .route(
+            "/channels/{id}/messages/{message}/reactions/{emoji}",
+            axum::routing::get(who),
+        )
+        .route(
+            "/channels/{id}/messages/{message}/reactions/{emoji}/@me",
+            axum::routing::put(mine.clone()).delete(mine),
+        );
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let base = format!("http://{}", listener.local_addr().unwrap());
+    tokio::spawn(async move { axum::serve(listener, app).await });
+
+    let backend = Arc::new(StatefulBackend::default());
+    let d = start_with(backend.clone(), None, "127.0.0.1:0", |s| {
+        s.discord_api = base.clone();
+    })
+    .await;
+    let ada = create(&d, json!({"name": "ada"})).await["id"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    let mut ws = connect_runner(&d.agents, &backend.token("ada")).await;
+    http(
+        &d.ui,
+        "PUT",
+        "/v1/discord/token",
+        Some(json!({"token": "t"})),
+    )
+    .await;
+    let settings = json!({
+        "enabled": true,
+        "users": [user],
+        "bridges": [{"channel_id": "222222222222222222", "agent_id": ada}],
+    });
+    assert_eq!(
+        http(&d.ui, "PUT", "/v1/discord", Some(settings)).await.0,
+        200
+    );
+    tokio::spawn(ferrobot_daemon::discord::run(
+        d.state.clone(),
+        Duration::from_millis(50),
+    ));
+    eventually("the first read", Duration::from_secs(5), || async {
+        (fake.lock().unwrap().reads > 0).then_some(())
+    })
+    .await;
+    let posted = |needle: &'static str| {
+        let fake = fake.clone();
+        async move {
+            eventually(needle, Duration::from_secs(5), || async {
+                let f = fake.lock().unwrap();
+                f.posted
+                    .iter()
+                    .find(|(_, b)| b["content"].as_str().unwrap().contains(needle))
+                    .cloned()
+            })
+            .await
+        }
+    };
+    let edited = |message: String, needle: &'static str| {
+        let fake = fake.clone();
+        async move {
+            eventually(needle, Duration::from_secs(5), || async {
+                let f = fake.lock().unwrap();
+                f.edits
+                    .iter()
+                    .any(|(m, c)| *m == message && c.contains(needle))
+                    .then_some(())
+            })
+            .await;
+        }
+    };
+
+    // An approval: the bot offers ✅ and ❌, an allowed user's ✅ approves it.
+    let (agents, token) = (d.agents.clone(), backend.token("ada"));
+    let waiting =
+        tokio::spawn(async move { tool_check(&agents, &token, "git push origin main").await });
+    let (card, body) = posted("asks for your approval").await;
+    assert!(
+        body["content"].as_str().unwrap().contains("React ✅"),
+        "{body}"
+    );
+    assert_eq!(body["allowed_mentions"]["parse"], json!([]));
+    eventually(
+        "the bot's own ✅ and ❌",
+        Duration::from_secs(5),
+        || async {
+            let f = fake.lock().unwrap();
+            let has = |e: &str| {
+                f.mine
+                    .iter()
+                    .any(|(m, c, x)| m == "PUT" && *c == card && x == e)
+            };
+            (has("✅") && has("❌")).then_some(())
+        },
+    )
+    .await;
+    fake.lock().unwrap().reacted_by.insert(
+        (card.clone(), "✅".into()),
+        vec![json!({"id": "999999999999999999", "username": "stranger"})],
+    );
+    tokio::time::sleep(Duration::from_millis(300)).await;
+    assert!(!waiting.is_finished(), "a stranger's ✅ approves nothing");
+    fake.lock().unwrap().reacted_by.insert(
+        (card.clone(), "✅".into()),
+        vec![json!({"id": user, "username": "tim"})],
+    );
+    let got = tokio::time::timeout(Duration::from_secs(5), waiting)
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(got["allow"], true, "{got}");
+    edited(card, "Approved by tim").await;
+
+    // A question: a reply with a number answers it, and is not delivered as a message.
+    let as_ada = mcp_as(&d, backend.token("ada")).await;
+    let ask = json!({"questions": [{"prompt": "Which day?", "kind": "single",
+        "choices": [{"label": "Monday"}, {"label": "Friday"}]}]});
+    call(&as_ada, "ask_user", ask).await;
+    let (card, body) = posted("Which day?").await;
+    let content = body["content"].as_str().unwrap();
+    assert!(
+        content.contains("2. Friday") && content.contains("Reply to this message"),
+        "{content}"
+    );
+    fake.lock()
+        .unwrap()
+        .messages
+        .push(json!({"id": "1001", "content": "2",
+        "author": {"id": user, "username": "tim", "bot": false},
+        "message_reference": {"message_id": card}}));
+    edited(card, "tim answered: Friday").await;
+    let (turn, _, body) = next_turn(&mut ws).await;
+    assert!(
+        body.contains("Friday") && !body.contains("via Discord"),
+        "{body}"
+    );
+    finish(&mut ws, turn, Some("Noted")).await;
+
+    // An emoji alone answers a message: it shows in Discord, with no text and no ✅.
+    fake.lock()
+        .unwrap()
+        .messages
+        .push(json!({"id": "1002", "content": "thanks!",
+        "author": {"id": user, "username": "tim", "bot": false}}));
+    let (turn, mail, body) = next_turn(&mut ws).await;
+    assert!(body.contains("via Discord"), "{body}");
+    call(&as_ada, "react", json!({"message_id": mail, "emoji": "👍"})).await;
+    finish(&mut ws, turn, None).await;
+    eventually("👍 on, 👀 off", Duration::from_secs(5), || async {
+        let f = fake.lock().unwrap();
+        let did = |m: &str, e: &str| {
+            f.mine
+                .iter()
+                .any(|(x, c, y)| x == m && c == "1002" && y == e)
+        };
+        (did("PUT", "👍") && did("DELETE", "👀")).then_some(())
+    })
+    .await;
+    tokio::time::sleep(Duration::from_millis(200)).await;
+    let f = fake.lock().unwrap();
+    assert!(
+        !f.mine
+            .iter()
+            .any(|(m, c, e)| m == "PUT" && c == "1002" && e == "✅"),
+        "no ✅ beside the emoji"
+    );
+    assert!(
+        !f.posted
+            .iter()
+            .any(|(_, b)| b["message_reference"]["message_id"] == "1002"),
+        "no text reply"
+    );
+}

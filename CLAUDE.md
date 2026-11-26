@@ -136,7 +136,8 @@ Principles:
 - `crates/daemon/src/discord.rs` — the Discord bridge: polls bridged channels through
   Discord's REST API with the operator's bot token (keychain `discord:bot`); messages
   from allowed Discord users go to the channel's agent as the operator's, replies go back
-  (👀, then ✅); an agent posts to its own bridged channels with `send_to_discord`;
+  (👀, then ✅, or only the agent's emoji); an agent posts to its own bridged channels
+  with `send_to_discord`; `discord/cards.rs` — cards in the channel (✅/❌, replies);
   `api/discord.rs` — `/v1/discord`. Settings in the `discord` setting.
 - `crates/daemon/src/tasks.rs` — tracked tasks: automatic report and reminder;
   `crates/store/src/tasks.rs` — task state from `task` events and the mailbox.
@@ -275,7 +276,9 @@ daemon, `docker ps -a` must be empty of ferrobot containers.
 - **The Discord bridge listens only to allowed users.** Only messages from the Discord
   user ids the operator listed reach an agent (as the operator's); everyone else and all
   bots are ignored. The bot token stays in the secret store and the daemon: never in a
-  sandbox, event, log or API response.
+  sandbox, event, log or API response. Cards answered from Discord take only allowed
+  users' reactions or replies and go through the app's answer route; cards with a secret
+  field or several questions, `add_connector` and very risky steps stay app-only.
 - **Per-agent tokens** on `/runner/ws`, `/mcp`, `/model`, `/host/claude-code/turn`. An agent can only act
   as itself (MCP tools read the caller from the token). Only hashes are stored.
 - **`create_agent` needs operator approval unless Auto mode is on**: an

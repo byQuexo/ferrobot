@@ -184,6 +184,10 @@
             "agent": {
               "$ref": "#/$defs/AgentId"
             },
+            "critical": {
+              "description": "A very risky step (money, deleting in a connected service, force-pushing,\npublishing): Auto mode still asks, and only the app answers it.",
+              "type": "boolean"
+            },
             "detail": {
               "description": "The command or the call's arguments, shortened.",
               "type": "string"

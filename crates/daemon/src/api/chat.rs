@@ -242,7 +242,7 @@ pub(crate) async fn mark_read(
 #[derive(Debug, Deserialize, ToSchema)]
 pub(crate) struct AnswerQuestion {
     /// One answer per question of the card.
-    answers: Vec<QuestionAnswer>,
+    pub(crate) answers: Vec<QuestionAnswer>,
 }
 
 /// Answers a question card: the agent gets the answers as one user message and the card locks.

@@ -6,12 +6,27 @@ All notable changes are listed here. The format follows
 
 ## [Unreleased]
 
+## [0.1.10] - 2026-11-26
+
 ### Added
 
+- **Answer cards from Discord.** A card waiting for you also goes to the agent's
+  bridged channel: react ✅ or ❌ to an approval, reply to a question with an
+  option's number, its name or your own words. Only allowed users can answer;
+  the card then shows who did. Cards with a secret field or several
+  questions, connector requests and very risky steps stay in the app.
+- An agent can answer a Discord message with just an emoji: it shows on the
+  message there, with no text and no ✅.
+- **More Appearance settings**, with a live preview: a pattern behind the chat
+  (dots, grid, lines, aurora), font (system fonts only), corners, density,
+  chat width and motion.
 - Agents can post to their bridged Discord channel on their own with the new
   `send_to_discord` tool (Operator group): progress on long work, a routine's
   result. It reaches only the channels bridged to that agent, pings nobody,
   and is listed only for agents with a bridged channel.
+- The roadmap has a plan for running ferrobot in the cloud
+  (`docs/plans/cloud.md`) and describes CLI logins through a token-swapping
+  proxy.
 
 ### Changed
 
@@ -427,7 +442,8 @@ First public release.
   allowlist per API family, no redirects, header allowlists both ways, agent
   tokens blanked in committed images.
 
-[Unreleased]: https://github.com/byQuexo/ferrobot/compare/v0.1.9...HEAD
+[Unreleased]: https://github.com/byQuexo/ferrobot/compare/v0.1.10...HEAD
+[0.1.10]: https://github.com/byQuexo/ferrobot/compare/v0.1.9...v0.1.10
 [0.1.9]: https://github.com/byQuexo/ferrobot/compare/v0.1.8...v0.1.9
 [0.1.8]: https://github.com/byQuexo/ferrobot/compare/v0.1.7...v0.1.8
 [0.1.7]: https://github.com/byQuexo/ferrobot/compare/v0.1.6...v0.1.7

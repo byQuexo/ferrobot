@@ -2117,6 +2117,28 @@ describe("appearance", () => {
     );
   });
 
+  it("reads the pattern, font, corners, density, width and motion choices", () => {
+    const stored = new Map([
+      ["ferrobot.pattern", "aurora"],
+      ["ferrobot.font", "serif"],
+      ["ferrobot.corners", "sharp"],
+      ["ferrobot.density", "tight"],
+      ["ferrobot.width", "wide"],
+      ["ferrobot.motion", "reduced"],
+    ]);
+    assert.deepEqual(
+      readAppearance((k) => stored.get(k) ?? null),
+      {
+        ...DEFAULT_APPEARANCE,
+        pattern: "aurora",
+        font: "serif",
+        corners: "sharp",
+        width: "wide",
+        motion: "reduced",
+      },
+    );
+  });
+
   it("keeps every accent readable with the theme's accent text and as text on surfaces", () => {
     const lum = (hex: string): number => {
       const [r = 0, g = 0, b = 0] = [1, 3, 5].map((i) => {

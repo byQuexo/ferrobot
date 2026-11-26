@@ -8,6 +8,7 @@ use std::sync::{Mutex, PoisonError};
 use std::time::Duration;
 
 use ferrobot_core::{AgentId, Sender};
+use ferrobot_store::StoredEvent;
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 use time::OffsetDateTime;
@@ -15,6 +16,9 @@ use utoipa::ToSchema;
 
 use crate::error::ApiError;
 use crate::{AppState, UiEvent};
+
+mod cards;
+pub(crate) use cards::question;
 
 const SETTING: &str = "discord";
 /// The secret store entry holding the bot token.
@@ -71,6 +75,10 @@ pub struct Discord {
     channels: Mutex<HashMap<String, ChannelStatus>>,
     /// Mail message id → (channel, Discord message id), for the reply.
     pending: Mutex<HashMap<i64, (String, String)>>,
+    /// Cards posted to channels and still waiting for an answer there.
+    cards: Mutex<Vec<cards::Posted>>,
+    /// Discord message id → the emoji the agent answered it with.
+    reacted: Mutex<HashMap<String, String>>,
 }
 
 impl Discord {
@@ -174,6 +182,28 @@ async fn get(state: &AppState, token: &str, path: &str) -> Result<Value, String>
         .map_err(|_| "Discord sent no JSON".to_owned())
 }
 
+/// The first read only notes where the channel is; older messages are not replayed.
+async fn first_read(state: &AppState, token: &str, channel: &str) -> Result<(), String> {
+    let newest = get(
+        state,
+        token,
+        &format!("/channels/{channel}/messages?limit=1"),
+    )
+    .await?;
+    let last = newest
+        .as_array()
+        .and_then(|m| m.first())
+        .and_then(|m| m["id"].as_str())
+        .and_then(|id| id.parse().ok())
+        .unwrap_or(0);
+    state.discord.update(channel, |c| {
+        c.last_id = Some(last);
+        c.checked_at = Some(OffsetDateTime::now_utc());
+        c.error = None;
+    });
+    Ok(())
+}
+
 async fn read_channel(
     state: &AppState,
     token: &str,
@@ -182,25 +212,7 @@ async fn read_channel(
 ) -> Result<(), String> {
     let channel = &bridge.channel_id;
     let Some(after) = state.discord.last_id(channel) else {
-        // The first read only notes where the channel is; older messages are not replayed.
-        let newest = get(
-            state,
-            token,
-            &format!("/channels/{channel}/messages?limit=1"),
-        )
-        .await?;
-        let last = newest
-            .as_array()
-            .and_then(|m| m.first())
-            .and_then(|m| m["id"].as_str())
-            .and_then(|id| id.parse().ok())
-            .unwrap_or(0);
-        state.discord.update(channel, |c| {
-            c.last_id = Some(last);
-            c.checked_at = Some(OffsetDateTime::now_utc());
-            c.error = None;
-        });
-        return Ok(());
+        return first_read(state, token, channel).await;
     };
     let page = get(
         state,
@@ -251,6 +263,10 @@ async fn read_channel(
             continue;
         }
         let who = author["username"].as_str().unwrap_or("someone");
+        if let Some(card) = cards::replied(state, m) {
+            cards::answer_reply(state, token, card, &text, who).await;
+            continue;
+        }
         let id = id.to_string();
         // Before delivery, so a fast answer's ✅ cannot land before the 👀.
         if let Err(e) = react(state, token, (channel, &id), SEEN, true).await {
@@ -265,6 +281,7 @@ async fn read_channel(
         .await?;
         delivered += 1;
     }
+    cards::check(state, token, &settings.users, channel).await;
     if seen > 0 {
         tracing::info!(%channel, seen, delivered, skipped = ?note, "discord bridge read new messages");
     }
@@ -326,10 +343,62 @@ pub fn turn_done(state: &AppState, message: i64, turn: (AgentId, &str), result: 
             Some(r) => r,
             None => last_reply(&state, agent, turn).await.unwrap_or_default(),
         };
+        let only_reacted = take_reacted(&state, &target.1) && text.trim().is_empty();
         if text.trim().is_empty() || post(&state, &token, &target.0, Some(&target.1), &text).await {
-            settle(&state, &token, &target, true).await;
+            // An emoji alone is the whole answer: no ✅ beside it.
+            settle(&state, &token, &target, !only_reacted).await;
         }
     });
+}
+
+/// The agent reacted to a message from Discord: the same emoji goes on it there, replacing
+/// the agent's earlier one.
+pub fn reaction(state: &AppState, event: &StoredEvent) {
+    let (Some(message), Some(emoji)) = (
+        event.payload["message_id"].as_i64(),
+        event.payload["emoji"].as_str(),
+    ) else {
+        return;
+    };
+    let Some((channel, id)) = state
+        .discord
+        .pending
+        .lock()
+        .unwrap_or_else(PoisonError::into_inner)
+        .get(&message)
+        .cloned()
+    else {
+        return;
+    };
+    // Recorded before the turn can end, so its ✅ is left out.
+    let earlier = state
+        .discord
+        .reacted
+        .lock()
+        .unwrap_or_else(PoisonError::into_inner)
+        .insert(id.clone(), emoji.to_owned());
+    let (state, emoji) = (state.clone(), emoji.to_owned());
+    tokio::spawn(async move {
+        let Ok(Some(token)) = state.settings.secrets.get(SECRET).await else {
+            return;
+        };
+        if let Some(old) = earlier.filter(|old| *old != emoji) {
+            let _ = react(&state, &token, (&channel, &id), &old, false).await;
+        }
+        if let Err(e) = react(&state, &token, (&channel, &id), &emoji, true).await {
+            state.discord.update(&channel, |c| c.note = Some(e));
+        }
+    });
+}
+
+fn take_reacted(state: &AppState, discord_id: &str) -> bool {
+    state
+        .discord
+        .reacted
+        .lock()
+        .unwrap_or_else(PoisonError::into_inner)
+        .remove(discord_id)
+        .is_some()
 }
 
 /// A turn on a message from Discord failed for good: the channel hears so.
@@ -350,6 +419,7 @@ pub fn turn_failed(state: &AppState, message: i64) {
             "(The agent could not answer; see ferrobot.)",
         )
         .await;
+        take_reacted(&state, &target.1);
         settle(&state, &token, &target, false).await;
     });
 }

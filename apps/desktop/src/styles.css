@@ -349,7 +349,7 @@ textarea { resize: vertical; min-height: 40px; line-height: 1.5; }
 .row-tool { padding-left: 40px; margin-top: -8px; }
 .row-a2a, .row-routine { padding-left: 40px; }
 
-.bubble { max-width: min(560px, 78%); padding: 8px 12px; border-radius: 16px; position: relative; overflow-wrap: anywhere; }
+.bubble { max-width: min(560px, 78%); padding: 8px 12px; border-radius: var(--bubble-radius, 16px); position: relative; overflow-wrap: anywhere; }
 .bubble-user { background: var(--user-bubble); color: var(--user-text); border-bottom-right-radius: 4px; }
 /* Agent replies: plain text next to the avatar, no bubble. */
 .bubble-agent { flex: 1; max-width: 640px; padding: 0; border-radius: 0; background: none; }
@@ -871,6 +871,41 @@ textarea { resize: vertical; min-height: 40px; line-height: 1.5; }
 :root[data-chat-bg="tinted"] { --chat-bg: color-mix(in srgb, var(--accent) 5%, var(--bg)); }
 :root[data-chat-bg="plain"] { --chat-bg: var(--surface); }
 :root[data-text-size="small"] { --chat-zoom: 0.9; }
+/* Pattern: a texture over the chat background, also used by the Settings tiles and preview. */
+.pat-dots, :root[data-pattern="dots"] :is(.timeline, .look-preview) {
+  background-image: radial-gradient(color-mix(in srgb, var(--text) 16%, transparent) 1px, transparent 1.6px);
+  background-size: 16px 16px;
+}
+.pat-grid, :root[data-pattern="grid"] :is(.timeline, .look-preview) {
+  background-image: linear-gradient(color-mix(in srgb, var(--text) 8%, transparent) 1px, transparent 1px),
+    linear-gradient(90deg, color-mix(in srgb, var(--text) 8%, transparent) 1px, transparent 1px);
+  background-size: 24px 24px;
+}
+.pat-lines, :root[data-pattern="lines"] :is(.timeline, .look-preview) {
+  background-image: repeating-linear-gradient(135deg, color-mix(in srgb, var(--text) 7%, transparent) 0 1px, transparent 1px 12px);
+}
+.pat-aurora, :root[data-pattern="aurora"] :is(.timeline, .look-preview) {
+  background-image: radial-gradient(60% 55% at 12% 8%, color-mix(in srgb, var(--accent) 28%, transparent), transparent 70%),
+    radial-gradient(55% 50% at 92% 92%, color-mix(in srgb, #c86bfa 16%, transparent), transparent 70%);
+}
+/* Font: stacks of fonts the system already has. */
+:root[data-font="system"] { --font: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
+:root[data-font="rounded"] { --font: ui-rounded, "SF Pro Rounded", "Nunito", "Varela Round", system-ui, sans-serif; }
+:root[data-font="serif"] { --font: ui-serif, "New York", "Iowan Old Style", Charter, Georgia, serif; }
+:root[data-font="mono"] { --font: ui-monospace, "SF Mono", Menlo, "Cascadia Code", Consolas, monospace; }
+:root[data-corners="sharp"] { --radius: 6px; --radius-sm: 4px; --bubble-radius: 6px; }
+:root[data-corners="round"] { --radius: 20px; --radius-sm: 14px; --bubble-radius: 22px; }
+:root[data-density="compact"] .timeline { gap: 8px; padding-top: 16px; }
+:root[data-density="compact"] .agent-row { padding-block: 4px; }
+:root[data-density="spacious"] .timeline { gap: 26px; padding-top: 36px; }
+:root[data-density="spacious"] .agent-row { padding-block: 12px; }
+:root[data-width="narrow"] :is(.row, .composer) { max-width: 620px; }
+:root[data-width="wide"] :is(.row, .composer) { max-width: 1040px; }
+/* Ends animations at once instead of removing them, so animationend handlers still run. */
+:root[data-motion="reduced"] *, :root[data-motion="reduced"] *::before, :root[data-motion="reduced"] *::after {
+  animation-duration: 0.001ms !important; animation-iteration-count: 1 !important;
+  transition-duration: 0.001ms !important; scroll-behavior: auto !important;
+}
 :root[data-text-size="large"] { --chat-zoom: 1.15; }
 .shell > .chat, .chat-head { background: var(--chat-bg); }
 .chat-head .pair-avatars .avatar + .avatar { box-shadow: 0 0 0 2px var(--chat-bg); }
@@ -896,6 +931,21 @@ textarea { resize: vertical; min-height: 40px; line-height: 1.5; }
 .pref-title { font-weight: 500; }
 .pref-row .segmented { align-self: center; }
 .swatches { display: flex; flex-wrap: wrap; gap: 8px; }
+.look-preview {
+  display: flex; flex-direction: column; gap: 10px; margin-bottom: 16px; padding: 16px 20px;
+  border: 1px solid var(--border); border-radius: var(--radius); background-color: var(--chat-bg); zoom: var(--chat-zoom);
+}
+.look-preview .bubble-agent { margin: 0; }
+.look-row { display: flex; justify-content: flex-end; }
+.pattern-tiles { display: flex; flex-wrap: wrap; gap: 8px; }
+.pattern-tile {
+  width: 44px; height: 30px; padding: 0; border: 1px solid var(--border-strong); border-radius: var(--radius-sm);
+  background-color: var(--chat-bg); cursor: pointer;
+}
+.pattern-tile.pat-dots { background-size: 7px 7px; }
+.pattern-tile.pat-grid { background-size: 9px 9px; }
+.pattern-tile.pat-lines { background-image: repeating-linear-gradient(135deg, color-mix(in srgb, var(--text) 12%, transparent) 0 1px, transparent 1px 6px); }
+.pattern-tile[aria-checked="true"] { box-shadow: 0 0 0 2px var(--surface), 0 0 0 4px var(--accent); }
 .swatches .swatch { width: 24px; height: 24px; padding: 0; border: none; border-radius: 50%; background: var(--swatch-l); }
 :root[data-theme="dark"] .swatches .swatch { background: var(--swatch-d); }
 .swatches .swatch[aria-checked="true"] { box-shadow: 0 0 0 2px var(--surface), 0 0 0 4px var(--text-2); }

@@ -2,7 +2,7 @@ Two ways in: download the desktop app, or build from source.
 
 ## A. Desktop download
 
-Desktop builds come from the repository's Releases page: v0.1.9 has a
+Desktop builds come from the repository's Releases page: v0.1.10 has a
 universal `.dmg` for macOS and an `.exe` installer for Windows (x64).
 
 1. **Install Docker Desktop** and start it. Every agent runs in a container,
@@ -19,7 +19,7 @@ universal `.dmg` for macOS and an `.exe` installer for Windows (x64).
    (its key goes in **Settings → Vault**) and create an agent with
    **New agent**. See [[Model providers and keys|Providers]].
 4. **Wait for the first start.** As soon as Docker runs, the daemon
-   downloads the runner image (`ghcr.io/byquexo/ferrobot-runner:0.1.9`,
+   downloads the runner image (`ghcr.io/byquexo/ferrobot-runner:0.1.10`,
    about 2 GB) from the GitHub Container Registry in the background; an agent
    that starts before it is done waits for it. Later agents start from the
    cached image, and an update downloads only the parts that changed.
@@ -45,8 +45,9 @@ wiki.
 - **⌘1–9** the 1st to 9th agent in the sidebar
 - **Esc** close the open dialog, menu, page or panel · **⌘/** all shortcuts
 
-How the app looks (theme, accent color, bubbles, chat background, text size)
-is under **Settings → Appearance**.
+How the app looks (theme, accent color, bubbles, chat background, a pattern
+behind the chat, text size, font, corners, density, chat width and motion) is
+under **Settings → Appearance**, with a preview at the top.
 
 ### Pins
 

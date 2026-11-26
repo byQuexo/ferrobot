@@ -338,11 +338,16 @@ impl AppState {
 
     /// Broadcasts to UI clients; having no subscribers is fine.
     pub fn publish(&self, event: UiEvent) {
-        // Every question card is published here, so outgoing webhooks see them all.
-        if let UiEvent::Event { event } = &event
-            && event.kind == "question"
-        {
-            crate::webhooks::question(self, event);
+        // Every card and reaction is published here, so webhooks and the bridge see them all.
+        if let UiEvent::Event { event } = &event {
+            match event.kind.as_str() {
+                "question" => {
+                    crate::webhooks::question(self, event);
+                    crate::discord::question(self, event);
+                }
+                "reaction" => crate::discord::reaction(self, event),
+                _ => {}
+            }
         }
         let _ = self.ui.send(event);
     }

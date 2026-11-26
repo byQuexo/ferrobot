@@ -10,7 +10,7 @@
       "name": "MIT OR Apache-2.0",
       "identifier": "MIT OR Apache-2.0"
     },
-    "version": "0.1.9"
+    "version": "0.1.10"
   },
   "servers": [
     {
@@ -7381,6 +7381,10 @@
               "reason": {
                 "type": "string",
                 "description": "What made the call risky, e.g. \"pushes code\"."
+              },
+              "critical": {
+                "type": "boolean",
+                "description": "A very risky step (money, deleting in a connected service, force-pushing,\npublishing): Auto mode still asks, and only the app answers it."
               },
               "kind": {
                 "type": "string",
