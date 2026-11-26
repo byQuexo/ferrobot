@@ -215,11 +215,7 @@ fn filter(q: &UsageQuery) -> Result<UsageFilter, ApiError> {
 }
 
 async fn overrides(state: &AppState) -> Result<Vec<PriceEntry>, ApiError> {
-    match state.store.get_setting(pricing::SETTING).await? {
-        Some(raw) => serde_json::from_str(&raw)
-            .map_err(|e| ApiError::Internal(format!("price overrides: {e}"))),
-        None => Ok(Vec::new()),
-    }
+    super::settings::load_json(state, pricing::SETTING, "price overrides").await
 }
 
 /// Calls, tokens and estimated cost of the model calls agents made through
@@ -370,8 +366,7 @@ pub(crate) async fn put_prices(
             source: None,
         });
     }
-    let raw = serde_json::to_string(&new).map_err(|e| ApiError::Internal(e.to_string()))?;
-    state.store.put_setting(pricing::SETTING, raw).await?;
+    super::settings::save_json(&state, pricing::SETTING, &new).await?;
     Ok(Json(pricing::effective(new)))
 }
 
@@ -410,19 +405,18 @@ pub(crate) async fn get_context(
         Some(p) => state.store.get_provider(p).await.ok(),
         None => None,
     };
-    if provider
+    let claude_code = provider
         .as_ref()
-        .is_some_and(|p| p.kind == ProviderKind::ClaudeCode)
-    {
+        .is_some_and(|p| p.kind == ProviderKind::ClaudeCode);
+    let configured = agent
+        .model
+        .or_else(|| provider.and_then(|p| p.default_model));
+    if claude_code {
         let fresh = !state.store.new_session_pending(agent.id).await?;
         let saved = crate::claude_code::context(&state, agent.id)
             .await
             .filter(|_| fresh);
-        let model = saved.as_ref().and_then(|c| c.model.clone()).or_else(|| {
-            agent
-                .model
-                .or_else(|| provider.and_then(|p| p.default_model))
-        });
+        let model = saved.as_ref().and_then(|c| c.model.clone()).or(configured);
         return Ok(Json(AgentContext {
             tracked: true,
             tokens: saved.as_ref().map(|c| c.tokens),
@@ -436,9 +430,6 @@ pub(crate) async fn get_context(
         }));
     }
     // shortcut: an agent on its provider's default can show a side call on a smaller model; name the driver's main model here if that misleads.
-    let configured = agent
-        .model
-        .or_else(|| provider.and_then(|p| p.default_model));
     let usage = state
         .store
         .context_usage(agent.id, configured.clone())

@@ -8,11 +8,13 @@ use ferrobot_core::protocol::DaemonFrame;
 use ferrobot_core::question::{
     APPROVE, Approval, DECLINE, QuestionAnswer, QuestionAnswered, QuestionEvent, approves,
 };
-use ferrobot_core::{Agent, AgentId, AgentName, AvatarCharacter, Connector, Sender, ToolGroup};
+use ferrobot_core::{
+    Agent, AgentId, AgentName, AvatarCharacter, Connector, MailMessage, Sender, ToolGroup,
+};
 use ferrobot_mcp::{AgentRequestOutcome, AgentToolsOutcome, AgentToolsRequest};
 use ferrobot_store::{AgentPatch, NewAgent};
 
-use crate::api::check_len;
+use crate::api::{check_len, is_printable};
 use crate::error::ApiError;
 use crate::state::UiEvent;
 use crate::{AppState, lifecycle};
@@ -212,11 +214,7 @@ pub async fn set_tools(
         return Ok(AgentToolsOutcome::Applied);
     }
     let chat = chat_of(state, requester).await?;
-    // Unreadable settings fail closed: the operator gets the card.
-    if crate::api::settings::load(state)
-        .await
-        .is_ok_and(|s| s.auto_mode)
-    {
+    if crate::api::settings::auto_mode(state).await {
         set_profile(state, target.id, tools, ids).await?;
         let notice = serde_json::json!({
             "name": target.name, "id": target.id, "by": me.name, "auto": true
@@ -247,13 +245,7 @@ pub async fn set_tools(
         },
     )
     .in_turn(state.hub.current_turn(requester));
-    let payload = serde_json::to_value(&card).map_err(|e| ApiError::Internal(e.to_string()))?;
-    let event = state
-        .store
-        .append_event(chat, None, "question".into(), payload)
-        .await?;
-    let question_id = event.id;
-    state.publish(UiEvent::Event { event });
+    let question_id = post_card(state, chat, &card).await?;
     Ok(AgentToolsOutcome::Pending { question_id })
 }
 
@@ -284,14 +276,7 @@ pub(crate) async fn answer_tools_card(
         Ok(target) => format!("The operator declined the new tools for {}.", target.name),
     };
     let message_id = if state.store.get_agent(*requester).await.is_ok() {
-        let msg = state
-            .store
-            .enqueue_message(Sender::User, *requester, note, None)
-            .await?;
-        state.message_arrived(*requester);
-        let id = msg.id;
-        state.publish(UiEvent::Message { message: msg });
-        Some(id)
+        Some(tell(state, *requester, note).await?.id)
     } else {
         None
     };
@@ -301,6 +286,48 @@ pub(crate) async fn answer_tools_card(
         message_id,
         timed_out: false,
     };
+    record_answer(state, chat, answered).await
+}
+
+/// Queues `body` from the operator for `to` and wakes it.
+pub(crate) async fn tell(
+    state: &AppState,
+    to: AgentId,
+    body: String,
+) -> Result<MailMessage, ApiError> {
+    let msg = state
+        .store
+        .enqueue_message(Sender::User, to, body, None)
+        .await?;
+    state.message_arrived(to);
+    state.publish(UiEvent::Message {
+        message: msg.clone(),
+    });
+    Ok(msg)
+}
+
+/// Puts a question card in `chat`; returns its event id.
+pub(crate) async fn post_card(
+    state: &AppState,
+    chat: AgentId,
+    card: &QuestionEvent,
+) -> Result<i64, ApiError> {
+    let payload = serde_json::to_value(card).map_err(|e| ApiError::Internal(e.to_string()))?;
+    let event = state
+        .store
+        .append_event(chat, None, "question".into(), payload)
+        .await?;
+    let qid = event.id;
+    state.publish(UiEvent::Event { event });
+    Ok(qid)
+}
+
+/// Records the operator's answer to a card in `chat`.
+pub(crate) async fn record_answer(
+    state: &AppState,
+    chat: AgentId,
+    answered: QuestionAnswered,
+) -> Result<QuestionAnswered, ApiError> {
     let payload = serde_json::to_value(&answered).map_err(|e| ApiError::Internal(e.to_string()))?;
     state.record(chat, None, "question_answered", payload).await;
     Ok(answered)
@@ -386,16 +413,20 @@ async fn reconfigure_with(state: &AppState, group: ToolGroup) {
         return;
     };
     for agent in agents.into_iter().filter(|a| a.tools.contains(&group)) {
-        let instructions = runner_instructions(state, &agent).await;
-        state.hub.send(
-            agent.id,
-            DaemonFrame::Configure {
-                agent_name: agent.name,
-                instructions,
-                tools: agent.tools,
-            },
-        );
+        configure(state, agent).await;
     }
+}
+
+async fn configure(state: &AppState, agent: Agent) {
+    let instructions = runner_instructions(state, &agent).await;
+    state.hub.send(
+        agent.id,
+        DaemonFrame::Configure {
+            agent_name: agent.name,
+            instructions,
+            tools: agent.tools,
+        },
+    );
 }
 
 /// Lets the agent's connector sessions and runner pick up a changed profile.
@@ -411,24 +442,16 @@ pub(crate) async fn reconfigure(state: &AppState, id: AgentId) -> Result<(), Api
         // An older runner would ignore the tools: a new computer gets the current runner.
         return lifecycle::recreate(state, id).await;
     }
-    let instructions = runner_instructions(state, &agent).await;
-    state.hub.send(
-        id,
-        DaemonFrame::Configure {
-            agent_name: agent.name,
-            instructions,
-            tools: agent.tools,
-        },
-    );
+    configure(state, agent).await;
     Ok(())
 }
 
-/// Checks that the provider exists and that a model is known where the
-/// provider needs one. Returns the normalised model.
 /// Why an agent without a provider cannot reach a model on this daemon.
 pub(crate) const NO_DAEMON_KEY: &str = "the daemon has no Anthropic key: pick a model provider \
     (add one in Settings, Model providers, with its key in Vault)";
 
+/// Checks that the provider exists and that a model is known where the
+/// provider needs one. Returns the normalised model.
 pub(crate) async fn check_model(
     state: &AppState,
     provider_id: Option<uuid::Uuid>,
@@ -479,8 +502,7 @@ pub(crate) fn check_tags(tags: Vec<String>) -> Result<Vec<String>, ApiError> {
     let mut out: Vec<String> = Vec::with_capacity(tags.len());
     for tag in tags {
         let tag = tag.trim().to_owned();
-        let chars = tag.chars().count();
-        if chars == 0 || chars > MAX_TAG_CHARS || tag.chars().any(char::is_control) {
+        if !is_printable(&tag, MAX_TAG_CHARS) {
             return Err(ApiError::BadRequest(format!(
                 "tags must be 1-{MAX_TAG_CHARS} characters"
             )));
@@ -618,16 +640,11 @@ fn card_prompt(
     if !instructions.trim().is_empty() {
         let _ = write!(prompt, "\nInstructions: {}", shorten(instructions, 600));
     }
-    let tools: Vec<&str> = tools.iter().map(|g| g.as_str()).collect();
-    let tools = if tools.is_empty() {
-        "none".to_owned()
-    } else {
-        tools.join(", ")
-    };
-    let _ = write!(prompt, "\nTools: {tools}");
+    let names = tools.iter().map(|g| g.as_str());
+    let _ = write!(prompt, "\nTools: {}", list(names));
     if !connectors.is_empty() {
-        let names: Vec<&str> = connectors.iter().map(|c| c.name.as_str()).collect();
-        let _ = write!(prompt, "\nConnectors: {}", names.join(", "));
+        let names = connectors.iter().map(|c| c.name.as_str());
+        let _ = write!(prompt, "\nConnectors: {}", list(names));
     }
     prompt
 }
@@ -668,8 +685,7 @@ pub(crate) async fn await_card(
         message_id: None,
         timed_out: true,
     };
-    let payload = serde_json::to_value(&answered).map_err(|e| ApiError::Internal(e.to_string()))?;
-    state.record(chat, None, "question_answered", payload).await;
+    record_answer(state, chat, answered).await?;
     Ok(None)
 }
 
@@ -688,11 +704,7 @@ pub async fn request(
     spec.tools = Some(tools.clone());
     spec.connectors = Some(connectors.iter().map(|c| c.name.clone()).collect());
     let chat = chat_of(state, requester).await?;
-    // Unreadable settings fail closed: the operator gets the card.
-    if crate::api::settings::load(state)
-        .await
-        .is_ok_and(|s| s.auto_mode)
-    {
+    if crate::api::settings::auto_mode(state).await {
         let by = state.store.get_agent(requester).await?.name;
         let agent = create(state, spec, Some(requester)).await?;
         let notice =

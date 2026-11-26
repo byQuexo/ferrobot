@@ -13,7 +13,7 @@ use utoipa::ToSchema;
 
 use super::ApiResult;
 use super::agents::explicit;
-use super::providers::{check_key, clean};
+use super::providers::{check_key, clean, has_secret, set_secret};
 use crate::AppState;
 use crate::call::MAX_CALL_TEXT_BYTES;
 use crate::error::{ApiError, ErrorBody};
@@ -48,10 +48,17 @@ fn internal(e: impl std::fmt::Display) -> ApiError {
 }
 
 pub(crate) async fn load(state: &AppState) -> Result<VoiceSettings, ApiError> {
-    match state.store.get_setting(SETTING).await? {
-        Some(raw) => serde_json::from_str(&raw).map_err(internal),
-        None => Ok(VoiceSettings::default()),
+    super::settings::load_json(state, SETTING, "voice settings").await
+}
+
+pub(crate) async fn load_enabled(state: &AppState) -> Result<VoiceSettings, ApiError> {
+    let settings = load(state).await?;
+    if !settings.enabled {
+        return Err(ApiError::Conflict(
+            "voice is switched off in the settings".into(),
+        ));
     }
+    Ok(settings)
 }
 
 async fn view(state: &AppState, settings: VoiceSettings) -> Result<VoiceView, ApiError> {
@@ -59,12 +66,7 @@ async fn view(state: &AppState, settings: VoiceSettings) -> Result<VoiceView, Ap
     for kind in VoiceProvider::ALL {
         providers.push(VoiceProviderView {
             kind,
-            has_key: state
-                .settings
-                .secrets
-                .get(kind.secret_key())
-                .await?
-                .is_some(),
+            has_key: has_secret(state, kind.secret_key()).await?,
             default_tts_model: kind.default_tts_model(),
             default_voice: kind.default_voice(),
             default_stt_model: kind.default_stt_model(),
@@ -140,11 +142,7 @@ pub(crate) async fn put_voice(
     let json = serde_json::to_string(&settings).map_err(internal)?;
     state.store.put_setting(SETTING, json).await?;
     if let (Some(provider), Some(key)) = (provider, key) {
-        let secrets = &state.settings.secrets;
-        match key {
-            Some(key) => secrets.set(provider.secret_key(), &key).await?,
-            None => secrets.delete(provider.secret_key()).await?,
-        }
+        set_secret(&state, provider.secret_key(), key).await?;
     }
     Ok(Json(view(&state, settings).await?))
 }
@@ -169,14 +167,7 @@ pub(crate) async fn put_voice_key(
 ) -> ApiResult<VoiceView> {
     let provider: VoiceProvider = serde_json::from_value(serde_json::Value::String(provider))
         .map_err(|_| ApiError::NotFound("unknown speech provider".into()))?;
-    let secrets = &state.settings.secrets;
-    match clean(req.api_key) {
-        Some(key) => {
-            check_key(&key)?;
-            secrets.set(provider.secret_key(), &key).await?;
-        }
-        None => secrets.delete(provider.secret_key()).await?,
-    }
+    set_secret(&state, provider.secret_key(), req.api_key).await?;
     let settings = load(&state).await?;
     Ok(Json(view(&state, settings).await?))
 }
@@ -195,12 +186,7 @@ pub(crate) async fn is_ready(state: &AppState) -> bool {
 }
 
 async fn ready(state: &AppState) -> Result<Ready, ApiError> {
-    let settings = load(state).await?;
-    if !settings.enabled {
-        return Err(ApiError::Conflict(
-            "voice is switched off in the settings".into(),
-        ));
-    }
+    let settings = load_enabled(state).await?;
     let provider = settings
         .provider
         .ok_or_else(|| ApiError::Conflict("voice is not set up".into()))?;
@@ -258,6 +244,13 @@ async fn send(request: reqwest::RequestBuilder) -> Result<reqwest::Response, Api
     Err(ApiError::Upstream(format!(
         "voice provider answered {status}: {reason}"
     )))
+}
+
+async fn json_list(response: reqwest::Response) -> Result<serde_json::Value, ApiError> {
+    response
+        .json()
+        .await
+        .map_err(|_| ApiError::Upstream("the voice provider sent no list".into()))
 }
 
 #[derive(Debug, Deserialize, ToSchema, utoipa::IntoParams)]
@@ -416,12 +409,6 @@ const MAX_VOICE_PAGES: usize = 3;
 /// The `ElevenLabs` account's voices, fetched live.
 async fn account_voices(state: &AppState, r: &Ready) -> Result<Vec<VoiceOption>, ApiError> {
     let base = r.base.trim_end_matches('/');
-    let json = |response: reqwest::Response| async move {
-        response
-            .json::<serde_json::Value>()
-            .await
-            .map_err(|_| ApiError::Upstream("the voice provider sent no list".into()))
-    };
     let mut voices = Vec::new();
     let mut cursor: Option<String> = None;
     for _ in 0..MAX_VOICE_PAGES {
@@ -438,7 +425,7 @@ async fn account_voices(state: &AppState, r: &Ready) -> Result<Vec<VoiceOption>,
             .get(url)
             .header("xi-api-key", &r.key)
             .timeout(voice::TIMEOUT);
-        let (page, next) = voice::parse_voices(&json(send(request).await?).await?);
+        let (page, next) = voice::parse_voices(&json_list(send(request).await?).await?);
         voices.extend(page);
         cursor = next;
         if cursor.is_none() {
@@ -520,12 +507,6 @@ pub(crate) async fn catalog(State(state): State<AppState>) -> ApiResult<VoiceCat
         return Ok(Json(VoiceCatalog::default()));
     }
     let base = r.base.trim_end_matches('/');
-    let json = |response: reqwest::Response| async move {
-        response
-            .json::<serde_json::Value>()
-            .await
-            .map_err(|_| ApiError::Upstream("the voice provider sent no list".into()))
-    };
     let mut voices = account_voices(&state, &r).await?;
     voices.sort_by_key(|v| v.name.to_lowercase());
     let models = state
@@ -533,7 +514,7 @@ pub(crate) async fn catalog(State(state): State<AppState>) -> ApiResult<VoiceCat
         .get(format!("{base}/v1/models"))
         .header("xi-api-key", &r.key)
         .timeout(voice::TIMEOUT);
-    let tts_models = voice::parse_models(&json(send(models).await?).await?);
+    let tts_models = voice::parse_models(&json_list(send(models).await?).await?);
     Ok(Json(VoiceCatalog { voices, tts_models }))
 }
 
@@ -633,10 +614,8 @@ pub(crate) async fn put_call(
     State(state): State<AppState>,
     Json(req): Json<CallView>,
 ) -> ApiResult<CallView> {
-    if !req.agents.is_empty() && !load(&state).await?.enabled {
-        return Err(ApiError::Conflict(
-            "voice is switched off in the settings".into(),
-        ));
+    if !req.agents.is_empty() {
+        load_enabled(&state).await?;
     }
     for agent in &req.agents {
         state.store.get_agent(*agent).await?;
@@ -670,17 +649,23 @@ pub(crate) async fn post_call_message(
     State(state): State<AppState>,
     Json(req): Json<CallMessage>,
 ) -> Result<(StatusCode, Json<Vec<MailMessage>>), ApiError> {
-    let body = state.normalize_mentions(req.body.trim()).await;
-    if body.is_empty() || body.len() > MAX_CALL_TEXT_BYTES {
-        return Err(ApiError::BadRequest(format!(
-            "body must be 1..{MAX_CALL_TEXT_BYTES} bytes"
-        )));
-    }
+    let body = call_text(&state, &req.body).await?;
     let sent = state
         .say_in_call(&body)
         .await
         .ok_or_else(|| ApiError::Conflict("there is no voice call".into()))?;
     Ok((StatusCode::ACCEPTED, Json(sent)))
+}
+
+/// The operator's words to a call or group, with `@name` mentions stored as tokens.
+pub(crate) async fn call_text(state: &AppState, raw: &str) -> Result<String, ApiError> {
+    let body = state.normalize_mentions(raw.trim()).await;
+    if body.is_empty() || body.len() > MAX_CALL_TEXT_BYTES {
+        return Err(ApiError::BadRequest(format!(
+            "body must be 1..{MAX_CALL_TEXT_BYTES} bytes"
+        )));
+    }
+    Ok(body)
 }
 
 /// A room with what was said in it.

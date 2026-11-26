@@ -1,11 +1,5 @@
-//! The operator's voice call with agents. With one agent it happens in that agent's chat; once a
-//! second agent joins it moves into a room. There every line (the operator's words or an agent's
-//! reply) is due for every other member, and they take it one at a time: the floor goes host
-//! first, then in join order, and each speaks or `(pass)`es having heard the one before. At most
-//! [`MAX_AGENT_LINES`] agent lines in a row make others due; then the room waits for the operator.
-//! Chats and rooms show only the words; the call note and what an agent missed go to its model.
-//! A group chat is a named room that talks by the same rules outside a call, with the group note;
-//! calling the group makes its room the call's.
+//! The operator's voice call (in one agent's chat, or a room once a second agent joins) and group
+//! chats, rooms where every line is due for every other member, who take the floor one at a time.
 
 use std::collections::{HashMap, VecDeque};
 

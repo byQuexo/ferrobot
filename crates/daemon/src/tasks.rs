@@ -55,13 +55,7 @@ pub(crate) async fn report(
         }
     };
     let mut body = state.normalize_mentions(&body).await;
-    if body.len() > MAX_MESSAGE_BYTES {
-        let mut end = MAX_MESSAGE_BYTES;
-        while !body.is_char_boundary(end) {
-            end -= 1;
-        }
-        body.truncate(end);
-    }
+    crate::webhooks::truncate(&mut body, MAX_MESSAGE_BYTES);
     match state
         .store
         .enqueue_message(Sender::Agent(agent), assigner, body, Some(id))

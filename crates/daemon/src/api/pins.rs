@@ -9,7 +9,8 @@ use ferrobot_core::AgentId;
 use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;
 
-use super::ApiResult;
+use super::settings::{load_json, save_json};
+use super::{ApiResult, agent_ids, is_printable};
 use crate::AppState;
 use crate::error::{ApiError, ErrorBody};
 
@@ -38,18 +39,8 @@ pub(crate) struct Pin {
 }
 
 async fn load(state: &AppState) -> Result<Vec<Pin>, ApiError> {
-    let Some(raw) = state.store.get_setting(SETTING).await? else {
-        return Ok(Vec::new());
-    };
-    let pins: Vec<Pin> =
-        serde_json::from_str(&raw).map_err(|e| ApiError::Internal(format!("pins: {e}")))?;
-    let agents: HashSet<AgentId> = state
-        .store
-        .list_agents()
-        .await?
-        .into_iter()
-        .map(|a| a.id)
-        .collect();
+    let pins: Vec<Pin> = load_json(state, SETTING, "pins").await?;
+    let agents = agent_ids(state).await?;
     // A deleted agent takes its pins along.
     Ok(pins
         .into_iter()
@@ -76,21 +67,13 @@ pub(crate) async fn put_pins(
     if pins.len() > MAX_PINS {
         return Err(ApiError::BadRequest(format!("at most {MAX_PINS} pins")));
     }
-    let agents: HashSet<AgentId> = state
-        .store
-        .list_agents()
-        .await?
-        .into_iter()
-        .map(|a| a.id)
-        .collect();
+    let agents = agent_ids(&state).await?;
     let mut seen = HashSet::new();
     let mut out = Vec::with_capacity(pins.len());
     for mut pin in pins {
         let label = pin.label.trim().to_owned();
         pin.label = label;
-        let label_ok = (1..=MAX_LABEL).contains(&pin.label.chars().count())
-            && !pin.label.chars().any(char::is_control);
-        if !label_ok {
+        if !is_printable(&pin.label, MAX_LABEL) {
             return Err(ApiError::BadRequest(format!(
                 "a pin's label has 1-{MAX_LABEL} printable characters"
             )));
@@ -104,7 +87,6 @@ pub(crate) async fn put_pins(
             out.push(pin);
         }
     }
-    let raw = serde_json::to_string(&out).map_err(|e| ApiError::Internal(e.to_string()))?;
-    state.store.put_setting(SETTING, raw).await?;
+    save_json(&state, SETTING, &out).await?;
     Ok(Json(out))
 }

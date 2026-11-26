@@ -16,7 +16,6 @@ use crate::error::{ApiError, ErrorBody};
 use crate::views::{self, AgentView};
 use crate::{AppState, lifecycle};
 
-/// Largest accepted avatar image.
 const MAX_AVATAR_BYTES: usize = 512 * 1024;
 const AVATAR_TYPES: &[&str] = &["image/png", "image/jpeg", "image/webp", "image/gif"];
 
@@ -118,6 +117,10 @@ pub(crate) async fn get_agent(
 
 /// Partial profile update. Omitted fields stay unchanged.
 #[derive(Debug, Deserialize, ToSchema)]
+#[allow(
+    clippy::option_option,
+    reason = "omitted vs. explicit null in a PATCH body"
+)]
 pub(crate) struct UpdateAgent {
     /// New name (same rules as on create). The agent keeps its id, sandbox,
     /// disk, memory and history.
@@ -129,27 +132,15 @@ pub(crate) struct UpdateAgent {
     /// New character avatar look; `null` goes back to the one derived from the id.
     #[serde(default, deserialize_with = "explicit")]
     #[schema(value_type = Option<AvatarCharacter>)]
-    #[allow(
-        clippy::option_option,
-        reason = "omitted vs. explicit null in a PATCH body"
-    )]
     character: Option<Option<AvatarCharacter>>,
     /// New model provider; `null` goes back to the daemon's default. Changing
     /// provider or model restarts the agent's computer (its disk is kept).
     #[serde(default, deserialize_with = "explicit")]
     #[schema(value_type = Option<uuid::Uuid>)]
-    #[allow(
-        clippy::option_option,
-        reason = "omitted vs. explicit null in a PATCH body"
-    )]
     provider_id: Option<Option<uuid::Uuid>>,
     /// New model id; `null` goes back to the provider's default model.
     #[serde(default, deserialize_with = "explicit")]
     #[schema(value_type = Option<String>)]
-    #[allow(
-        clippy::option_option,
-        reason = "omitted vs. explicit null in a PATCH body"
-    )]
     model: Option<Option<String>>,
     /// Pin to the top of the agent list (or unpin).
     pinned: Option<bool>,

@@ -23,10 +23,12 @@ pub(crate) mod voice;
 pub(crate) mod webhooks;
 pub(crate) mod ws;
 
+use std::collections::HashSet;
+
 use axum::Json;
 use axum::Router;
 use axum::extract::State;
-use axum::routing::{get, post, put};
+use axum::routing::{delete, get, patch, post, put};
 use ferrobot_core::AgentId;
 use serde::Serialize;
 use utoipa::ToSchema;
@@ -71,7 +73,7 @@ pub fn router() -> Router<AppState> {
         )
         .route(
             "/v1/agents/{id}/memory/{key}",
-            axum::routing::delete(memory::delete_memory),
+            delete(memory::delete_memory),
         )
         .route(
             "/v1/memory",
@@ -81,17 +83,14 @@ pub fn router() -> Router<AppState> {
             "/v1/memory-vault",
             get(memory::get_memory_vault).put(memory::put_memory_vault),
         )
-        .route(
-            "/v1/memory/{key}",
-            axum::routing::delete(memory::delete_global_memory),
-        )
+        .route("/v1/memory/{key}", delete(memory::delete_global_memory))
         .route(
             "/v1/agents/{id}/routines",
             get(routines::list_routines).post(routines::create_routine),
         )
         .route(
             "/v1/routines/{rid}",
-            axum::routing::patch(routines::update_routine).delete(routines::delete_routine),
+            patch(routines::update_routine).delete(routines::delete_routine),
         )
         .route(
             "/v1/settings",
@@ -124,7 +123,7 @@ pub fn router() -> Router<AppState> {
         )
         .route(
             "/v1/agents/{id}/snapshots/{sid}",
-            axum::routing::delete(sandbox::delete_snapshot),
+            delete(sandbox::delete_snapshot),
         )
         .route(
             "/v1/agents/{id}/snapshots/{sid}/restore",
@@ -132,7 +131,6 @@ pub fn router() -> Router<AppState> {
         )
 }
 
-/// Model providers, connectors, CLIs, voice and webhooks.
 /// Pins, dashboards, trace export, webhooks and the Discord bridge.
 fn outside() -> Router<AppState> {
     Router::new()
@@ -151,7 +149,7 @@ fn outside() -> Router<AppState> {
         .route("/v1/webhooks/incoming", post(webhooks::create_incoming))
         .route(
             "/v1/webhooks/incoming/{id}",
-            axum::routing::delete(webhooks::delete_incoming),
+            delete(webhooks::delete_incoming),
         )
         .route(
             "/v1/webhooks/incoming/{id}/secret",
@@ -160,7 +158,7 @@ fn outside() -> Router<AppState> {
         .route("/v1/webhooks/outgoing", post(webhooks::create_outgoing))
         .route(
             "/v1/webhooks/outgoing/{id}",
-            axum::routing::delete(webhooks::delete_outgoing),
+            delete(webhooks::delete_outgoing),
         )
         .route("/v1/otel/secret", put(otel::put_otel_secret))
 }
@@ -173,7 +171,7 @@ fn integrations() -> Router<AppState> {
         )
         .route(
             "/v1/providers/{id}",
-            axum::routing::patch(providers::update_provider).delete(providers::delete_provider),
+            patch(providers::update_provider).delete(providers::delete_provider),
         )
         .route("/v1/providers/{id}/models", get(providers::provider_models))
         .route("/v1/claude-code", get(providers::claude_code_status))
@@ -199,7 +197,7 @@ fn integrations() -> Router<AppState> {
         )
         .route(
             "/v1/connectors/{id}",
-            axum::routing::patch(connectors::update_connector).delete(connectors::delete_connector),
+            patch(connectors::update_connector).delete(connectors::delete_connector),
         )
         .route(
             "/v1/agents/{id}/connectors",
@@ -240,7 +238,7 @@ fn integrations() -> Router<AppState> {
         )
         .route(
             "/v1/groups/{id}",
-            axum::routing::patch(groups::update_group).delete(groups::delete_group),
+            patch(groups::update_group).delete(groups::delete_group),
         )
         .route("/v1/groups/{id}/messages", post(groups::post_group_message))
         .route("/v1/groups/{id}/call", post(groups::call_group))
@@ -257,7 +255,6 @@ pub(crate) fn parse_id(raw: &str) -> Result<AgentId, ApiError> {
         .map_err(|_| ApiError::NotFound(format!("agent {raw} not found")))
 }
 
-/// Rejects texts over [`MAX_TEXT_BYTES`].
 pub(crate) fn check_len(field: &str, value: &str) -> Result<(), ApiError> {
     if value.len() > MAX_TEXT_BYTES {
         return Err(ApiError::BadRequest(format!(
@@ -265,6 +262,36 @@ pub(crate) fn check_len(field: &str, value: &str) -> Result<(), ApiError> {
         )));
     }
     Ok(())
+}
+
+/// 1 to `max` characters, none of them a control character.
+pub(crate) fn is_printable(s: &str, max: usize) -> bool {
+    (1..=max).contains(&s.chars().count()) && !s.chars().any(char::is_control)
+}
+
+pub(crate) async fn agent_ids(state: &AppState) -> Result<HashSet<AgentId>, ApiError> {
+    Ok(state
+        .store
+        .list_agents()
+        .await?
+        .into_iter()
+        .map(|a| a.id)
+        .collect())
+}
+
+/// `wanted` in order without repeats; each must be an agent.
+pub(crate) async fn known_agents(
+    state: &AppState,
+    wanted: Vec<AgentId>,
+) -> Result<Vec<AgentId>, ApiError> {
+    let mut agents = Vec::new();
+    for agent in wanted {
+        if !agents.contains(&agent) {
+            state.store.get_agent(agent).await?;
+            agents.push(agent);
+        }
+    }
+    Ok(agents)
 }
 
 /// How long a request waits for the sandbox backend, so a hanging engine cannot stall it.

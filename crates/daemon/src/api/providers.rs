@@ -27,12 +27,7 @@ pub(crate) struct ProviderView {
 }
 
 async fn view(state: &AppState, provider: Provider) -> Result<ProviderView, ApiError> {
-    let has_key = state
-        .settings
-        .secrets
-        .get(&secret_key(provider.id))
-        .await?
-        .is_some();
+    let has_key = has_secret(state, &secret_key(provider.id)).await?;
     Ok(ProviderView { provider, has_key })
 }
 
@@ -50,6 +45,27 @@ pub(crate) fn check_key(key: &str) -> Result<(), ApiError> {
         return Err(ApiError::BadRequest(
             "api_key must be 1-4096 printable characters".into(),
         ));
+    }
+    Ok(())
+}
+
+pub(crate) async fn has_secret(state: &AppState, key: &str) -> Result<bool, ApiError> {
+    Ok(state.settings.secrets.get(key).await?.is_some())
+}
+
+/// Stores `value`, trimmed and checked, under `key`; `None` or blank removes it.
+pub(crate) async fn set_secret(
+    state: &AppState,
+    key: &str,
+    value: Option<String>,
+) -> Result<(), ApiError> {
+    let secrets = &state.settings.secrets;
+    match clean(value) {
+        Some(value) => {
+            check_key(&value)?;
+            secrets.set(key, &value).await?;
+        }
+        None => secrets.delete(key).await?,
     }
     Ok(())
 }
@@ -184,10 +200,8 @@ pub(crate) async fn update_provider(
         check_key(key)?;
     }
     state.store.update_provider(new.clone()).await?;
-    match key {
-        Some(Some(key)) => state.settings.secrets.set(&secret_key(id), &key).await?,
-        Some(None) => state.settings.secrets.delete(&secret_key(id)).await?,
-        None => {}
+    if let Some(key) = key {
+        set_secret(&state, &secret_key(id), key).await?;
     }
     models::forget(&state, id);
     let baked_into_env = (&old.region, &old.project, &old.default_model)

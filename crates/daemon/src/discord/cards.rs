@@ -1,9 +1,7 @@
-//! Cards in a bridged channel: an approval takes a ✅ or ❌ reaction, a single question a
-//! reply. Only allowed users answer, through the same route as the app. Cards with a secret
-//! field or several questions, an `add_connector` approval and very risky steps stay in the app.
+//! Cards in a bridged channel, answered by allowed users through the app's route. Secret fields,
+//! several questions, `add_connector` and very risky steps stay in the app.
 
 use std::fmt::Write as _;
-use std::sync::PoisonError;
 
 use axum::Json;
 use axum::extract::{Path, State};
@@ -12,15 +10,17 @@ use ferrobot_core::question::{
     APPROVE, Approval, DECLINE, Question, QuestionAnswer, QuestionEvent, QuestionKind,
 };
 use ferrobot_store::StoredEvent;
-use serde_json::{Value, json};
+use reqwest::Method;
+use serde_json::Value;
 
-use super::{MAX_CHARS, SECRET, TIMEOUT, api, channels_of, get, post, react};
+use super::{MAX_CHARS, SECRET, channels_of, content, get, lock, post, react, request};
 use crate::AppState;
 use crate::api::chat::{AnswerQuestion, answer_question};
 use crate::error::ApiError;
 
 const APPROVED: &str = "✅";
 const DECLINED: &str = "❌";
+const GONE: &str = "No longer waiting: answered in ferrobot or timed out.";
 
 /// A card posted to a channel and still waiting there.
 #[derive(Debug, Clone)]
@@ -237,13 +237,7 @@ pub(super) async fn check(state: &AppState, token: &str, users: &[String], chann
             .await
             .unwrap_or(false)
         {
-            close(
-                state,
-                token,
-                &card,
-                "No longer waiting: answered in ferrobot or timed out.",
-            )
-            .await;
+            close(state, token, &card, GONE).await;
             continue;
         }
         if !card.approval {
@@ -314,15 +308,7 @@ async fn finish(
     let path = Path((card.agent.to_string(), card.qid));
     match answer_question(State(state.clone()), path, Json(AnswerQuestion { answers })).await {
         Ok(_) => close(state, token, card, &outcome).await,
-        Err(ApiError::Conflict(_)) => {
-            close(
-                state,
-                token,
-                card,
-                "No longer waiting: answered in ferrobot or timed out.",
-            )
-            .await;
-        }
+        Err(ApiError::Conflict(_)) => close(state, token, card, GONE).await,
         Err(ApiError::BadRequest(e)) => {
             post(state, token, &card.channel, Some(&card.message), &e).await;
         }
@@ -335,17 +321,10 @@ async fn finish(
 /// Drops the card and writes the outcome under it in Discord.
 async fn close(state: &AppState, token: &str, card: &Posted, outcome: &str) {
     cards(state).retain(|c| c.message != card.message);
-    let url = api(
-        state,
-        &format!("/channels/{}/messages/{}", card.channel, card.message),
-    );
-    let content = format!("{}\n\n{outcome}", card.text);
-    let sent = state
-        .http
-        .patch(url)
-        .header("authorization", format!("Bot {token}"))
-        .timeout(TIMEOUT)
-        .json(&json!({ "content": content, "allowed_mentions": { "parse": [] } }))
+    let path = format!("/channels/{}/messages/{}", card.channel, card.message);
+    let text = format!("{}\n\n{outcome}", card.text);
+    let sent = request(state, Method::PATCH, token, &path)
+        .json(&content(&text))
         .send()
         .await;
     if let Err(e) = sent {
@@ -353,19 +332,11 @@ async fn close(state: &AppState, token: &str, card: &Posted, outcome: &str) {
     }
 }
 
-/// Posts `content` and returns the new message's id.
-async fn send(
-    state: &AppState,
-    token: &str,
-    channel: &str,
-    content: &str,
-) -> Result<String, String> {
-    let res = state
-        .http
-        .post(api(state, &format!("/channels/{channel}/messages")))
-        .header("authorization", format!("Bot {token}"))
-        .timeout(TIMEOUT)
-        .json(&json!({ "content": content, "allowed_mentions": { "parse": [] } }))
+/// Posts `text` and returns the new message's id.
+async fn send(state: &AppState, token: &str, channel: &str, text: &str) -> Result<String, String> {
+    let path = format!("/channels/{channel}/messages");
+    let res = request(state, Method::POST, token, &path)
+        .json(&content(text))
         .send()
         .await
         .map_err(|e| e.without_url().to_string())?;
@@ -383,11 +354,7 @@ async fn send(
 }
 
 fn cards(state: &AppState) -> std::sync::MutexGuard<'_, Vec<Posted>> {
-    state
-        .discord
-        .cards
-        .lock()
-        .unwrap_or_else(PoisonError::into_inner)
+    lock(&state.discord.cards)
 }
 
 #[cfg(test)]
