@@ -27,7 +27,7 @@ use std::collections::HashSet;
 use axum::Json;
 use axum::Router;
 use axum::extract::State;
-use axum::routing::{get, post, put};
+use axum::routing::{delete, get, patch, post, put};
 use ferrobot_core::AgentId;
 use serde::Serialize;
 use utoipa::ToSchema;
@@ -72,7 +72,7 @@ pub fn router() -> Router<AppState> {
         )
         .route(
             "/v1/agents/{id}/memory/{key}",
-            axum::routing::delete(memory::delete_memory),
+            delete(memory::delete_memory),
         )
         .route(
             "/v1/memory",
@@ -82,17 +82,14 @@ pub fn router() -> Router<AppState> {
             "/v1/memory-vault",
             get(memory::get_memory_vault).put(memory::put_memory_vault),
         )
-        .route(
-            "/v1/memory/{key}",
-            axum::routing::delete(memory::delete_global_memory),
-        )
+        .route("/v1/memory/{key}", delete(memory::delete_global_memory))
         .route(
             "/v1/agents/{id}/routines",
             get(routines::list_routines).post(routines::create_routine),
         )
         .route(
             "/v1/routines/{rid}",
-            axum::routing::patch(routines::update_routine).delete(routines::delete_routine),
+            patch(routines::update_routine).delete(routines::delete_routine),
         )
         .route(
             "/v1/settings",
@@ -125,7 +122,7 @@ pub fn router() -> Router<AppState> {
         )
         .route(
             "/v1/agents/{id}/snapshots/{sid}",
-            axum::routing::delete(sandbox::delete_snapshot),
+            delete(sandbox::delete_snapshot),
         )
         .route(
             "/v1/agents/{id}/snapshots/{sid}/restore",
@@ -151,7 +148,7 @@ fn outside() -> Router<AppState> {
         .route("/v1/webhooks/incoming", post(webhooks::create_incoming))
         .route(
             "/v1/webhooks/incoming/{id}",
-            axum::routing::delete(webhooks::delete_incoming),
+            delete(webhooks::delete_incoming),
         )
         .route(
             "/v1/webhooks/incoming/{id}/secret",
@@ -160,7 +157,7 @@ fn outside() -> Router<AppState> {
         .route("/v1/webhooks/outgoing", post(webhooks::create_outgoing))
         .route(
             "/v1/webhooks/outgoing/{id}",
-            axum::routing::delete(webhooks::delete_outgoing),
+            delete(webhooks::delete_outgoing),
         )
         .route("/v1/otel/secret", put(otel::put_otel_secret))
 }
@@ -173,7 +170,7 @@ fn integrations() -> Router<AppState> {
         )
         .route(
             "/v1/providers/{id}",
-            axum::routing::patch(providers::update_provider).delete(providers::delete_provider),
+            patch(providers::update_provider).delete(providers::delete_provider),
         )
         .route("/v1/providers/{id}/models", get(providers::provider_models))
         .route("/v1/claude-code", get(providers::claude_code_status))
@@ -199,7 +196,7 @@ fn integrations() -> Router<AppState> {
         )
         .route(
             "/v1/connectors/{id}",
-            axum::routing::patch(connectors::update_connector).delete(connectors::delete_connector),
+            patch(connectors::update_connector).delete(connectors::delete_connector),
         )
         .route(
             "/v1/agents/{id}/connectors",
@@ -233,7 +230,7 @@ fn integrations() -> Router<AppState> {
         )
         .route(
             "/v1/groups/{id}",
-            axum::routing::patch(groups::update_group).delete(groups::delete_group),
+            patch(groups::update_group).delete(groups::delete_group),
         )
         .route("/v1/groups/{id}/messages", post(groups::post_group_message))
         .route("/v1/groups/{id}/call", post(groups::call_group))
