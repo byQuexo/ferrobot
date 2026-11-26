@@ -5,6 +5,7 @@ import { Check, Sunrise } from "lucide-preact";
 import type { Agent, Provider } from "../api.ts";
 import { useApp } from "../context.ts";
 import { deriveCharacter, type Character } from "../lib/character.ts";
+import { errorText } from "../lib/format.ts";
 import {
   STARTER_DESCRIPTION,
   STARTER_INSTRUCTIONS,
@@ -105,7 +106,7 @@ export function Welcome(props: {
         model: model.trim() || null,
       });
     } catch (err) {
-      setError(err instanceof Error ? err.message : String(err));
+      setError(errorText(err));
       setBusy(false);
       return;
     }

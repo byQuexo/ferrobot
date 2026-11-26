@@ -5,6 +5,7 @@ import { Play, SlidersHorizontal } from "lucide-preact";
 import type { Agent, UpdateVoice, VoiceCatalog, VoiceView } from "../api.ts";
 import { useApp } from "../context.ts";
 import { speedLabel } from "../lib/call.ts";
+import { errorText } from "../lib/format.ts";
 import { withSaved } from "../lib/models.ts";
 import { IconButton, Slider, useDismiss } from "./ui.tsx";
 import { languagesOf, patchVoice } from "./VoiceSettings.tsx";
@@ -43,7 +44,7 @@ export function VoiceQuick(props: {
       try {
         props.onView(await patchVoice(client, changes));
       } catch (err) {
-        toast(err instanceof Error ? err.message : String(err));
+        toast(errorText(err));
       }
     });
   };
@@ -59,7 +60,7 @@ export function VoiceQuick(props: {
       };
       await audio.play();
     } catch (err) {
-      toast(err instanceof Error ? err.message : String(err));
+      toast(errorText(err));
     } finally {
       setTesting(false);
     }

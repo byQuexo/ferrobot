@@ -3,6 +3,7 @@ import { useEffect, useState } from "preact/hooks";
 import { Check, Copy, Maximize2 } from "lucide-preact";
 
 import { useApp } from "../context.ts";
+import { errorText } from "../lib/format.ts";
 import { Dialog } from "./ui.tsx";
 
 const LABELS = { mermaid: "Mermaid", html: "HTML" } as const;
@@ -109,7 +110,7 @@ function HtmlPage(props: { code: string; big: boolean }): JSX.Element {
         if (live) setOut({ url: `${client.base}${r.url}` });
       },
       (err: unknown) => {
-        if (live) setOut({ error: err instanceof Error ? err.message : String(err) });
+        if (live) setOut({ error: errorText(err) });
       },
     );
     return () => {
@@ -205,8 +206,7 @@ async function renderMermaid(code: string, dark: boolean): Promise<Rendered> {
     return { url: svgImage(svg) };
   } catch (err) {
     document.getElementById(`d${id}`)?.remove();
-    const message = err instanceof Error ? err.message : String(err);
-    return { error: message.split("\n")[0] ?? "unknown error" };
+    return { error: errorText(err).split("\n")[0] ?? "unknown error" };
   }
 }
 

@@ -4,6 +4,7 @@ import { KeyRound, Trash2 } from "lucide-preact";
 
 import type { Connector, Provider, VoiceView } from "../api.ts";
 import { useApp } from "../context.ts";
+import { errorText } from "../lib/format.ts";
 import { KIND_LABELS, KIND_LINKS, LinkOut, needsKey } from "./ProvidersSettings.tsx";
 import { Button, IconButton } from "./ui.tsx";
 import { VOICE_LABELS } from "./VoiceSettings.tsx";
@@ -50,7 +51,7 @@ export function VaultSettings(props: {
       setConnectors(c);
       setVoice(v);
     } catch (err) {
-      toast(err instanceof Error ? err.message : String(err));
+      toast(errorText(err));
     } finally {
       setBusy(false);
     }

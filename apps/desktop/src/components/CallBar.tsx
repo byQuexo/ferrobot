@@ -23,6 +23,7 @@ import {
   talkKey,
   volumeLabel,
 } from "../lib/call.ts";
+import { errorText } from "../lib/format.ts";
 import { Avatar } from "./Avatar.tsx";
 import { IconButton, Slider, useDismiss } from "./ui.tsx";
 import { patchVoice } from "./VoiceSettings.tsx";
@@ -102,7 +103,7 @@ export function CallBar(): JSX.Element | null {
       try {
         await patchVoice(client, { speed: speed === 1 ? null : speed });
       } catch (err) {
-        toast(err instanceof Error ? err.message : String(err));
+        toast(errorText(err));
         client.voice().then(setVoice, () => undefined);
       }
     });

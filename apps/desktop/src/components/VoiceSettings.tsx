@@ -5,6 +5,7 @@ import { Trash2 } from "lucide-preact";
 import type { DaemonClient, UpdateVoice, VoiceCatalog, VoiceProvider, VoiceView } from "../api.ts";
 import { useApp } from "../context.ts";
 import { speedLabel, volumeLabel } from "../lib/call.ts";
+import { errorText } from "../lib/format.ts";
 import { withSaved } from "../lib/models.ts";
 import { hasVoiceKey, pickProvider, switchProvider } from "../lib/voice.ts";
 import { PrefRow } from "./AppearanceSettings.tsx";
@@ -71,8 +72,6 @@ export function languagesOf(
     catalog?.tts_models[0]?.languages;
   return listed?.length ? listed.map((l) => [l.code, l.name || l.code]) : COMMON_LANGUAGES;
 }
-
-const message = (err: unknown): string => (err instanceof Error ? err.message : String(err));
 
 /** The speech provider's key: pasted here, kept in the daemon's keychain, never shown again. */
 function KeyRow(props: {
@@ -209,7 +208,7 @@ export function VoiceSettings(): JSX.Element {
   };
   useEffect(() => {
     client.voice().then(show, (err: unknown) => {
-      toast(message(err));
+      toast(errorText(err));
     });
   }, []);
   // The call bar changes these too.
@@ -231,7 +230,7 @@ export function VoiceSettings(): JSX.Element {
     }
     client.voiceCatalog().then(setCatalog, (err: unknown) => {
       setCatalog(null);
-      setCatalogError(message(err));
+      setCatalogError(errorText(err));
     });
   }, [ready, keySaves]);
 
@@ -244,7 +243,7 @@ export function VoiceSettings(): JSX.Element {
       try {
         setSaved(await patchVoice(client, changes));
       } catch (err) {
-        toast(message(err));
+        toast(errorText(err));
         await client.voice().then(show, () => undefined);
       }
     });
@@ -275,7 +274,7 @@ export function VoiceSettings(): JSX.Element {
       toast(key ? "Key saved" : "Key removed", "info");
       return true;
     } catch (err) {
-      toast(message(err));
+      toast(errorText(err));
       return false;
     }
   };

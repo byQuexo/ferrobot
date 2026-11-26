@@ -43,7 +43,7 @@ import type {
 } from "../api.ts";
 import { useApp } from "../context.ts";
 import { isPass } from "../lib/call.ts";
-import { clockTime, statusOf, stepLabel, stepsLabel, toolLabel } from "../lib/format.ts";
+import { clockTime, errorText, statusOf, stepLabel, stepsLabel, toolLabel } from "../lib/format.ts";
 import {
   buildTimeline,
   firstNewKey,
@@ -1025,7 +1025,7 @@ function MicButton(props: {
       setRecording(true);
       limit.current = setTimeout(() => void finish(), 120_000);
     } catch (err) {
-      toast(err instanceof Error ? err.message : String(err));
+      toast(errorText(err));
     }
   };
   const active = (): boolean => session.current !== null || rec.current !== null;

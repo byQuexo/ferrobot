@@ -4,6 +4,7 @@ import { Download } from "lucide-preact";
 
 import type { SharedFile } from "../api.ts";
 import { useApp } from "../context.ts";
+import { errorText } from "../lib/format.ts";
 import { RichText } from "./RichText.tsx";
 import { Button, Dialog, Skeleton } from "./ui.tsx";
 
@@ -39,7 +40,7 @@ export function FileViewer(props: {
         }
       },
       (err: unknown) => {
-        toast(err instanceof Error ? err.message : String(err));
+        toast(errorText(err));
         props.onClose();
       },
     );

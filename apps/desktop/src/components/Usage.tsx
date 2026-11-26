@@ -12,6 +12,7 @@ import type {
   UsageTotals,
 } from "../api.ts";
 import { useApp } from "../context.ts";
+import { errorText } from "../lib/format.ts";
 import {
   chartMetric,
   costLabel,
@@ -98,7 +99,7 @@ export function Usage(props: { onClose: () => void }): JSX.Element {
   useEffect(() => {
     setLimits(null);
     client.limits().then(setLimits, (err: unknown) => {
-      setLimits({ error: err instanceof Error ? err.message : String(err) });
+      setLimits({ error: errorText(err) });
     });
   }, [limitsReload]);
 
@@ -122,7 +123,7 @@ export function Usage(props: { onClose: () => void }): JSX.Element {
         setReports({ day, provider, model, agent });
         setPrices(p);
       } catch (err) {
-        if (live) setError(err instanceof Error ? err.message : String(err));
+        if (live) setError(errorText(err));
       }
     };
     void load();

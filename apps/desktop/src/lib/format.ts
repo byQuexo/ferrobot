@@ -19,6 +19,9 @@ export function credentialLabel(kind: "missing" | "rejected"): string {
   return kind === "missing" ? "Key missing" : "Key rejected";
 }
 
+export const errorText = (err: unknown): string =>
+  err instanceof Error ? err.message : String(err);
+
 export const TOOLS_UNSUPPORTED = "Model can't use tools";
 
 /** The agent's status dot and label: a model credential or tools problem outranks presence. */

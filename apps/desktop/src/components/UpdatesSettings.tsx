@@ -5,10 +5,10 @@ import { check, type Update } from "@tauri-apps/plugin-updater";
 
 import type { UpdateInfo } from "../api.ts";
 import { useApp } from "../context.ts";
+import { errorText } from "../lib/format.ts";
 import { pollOutcome } from "../lib/update.ts";
 import { Button } from "./ui.tsx";
 
-const errorText = (err: unknown): string => (err instanceof Error ? err.message : String(err));
 const sleep = (ms: number): Promise<void> =>
   new Promise((resolve) => {
     setTimeout(resolve, ms);

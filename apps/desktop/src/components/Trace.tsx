@@ -4,6 +4,7 @@ import { ArrowLeft, Brain, Hourglass, Send, Wrench } from "lucide-preact";
 
 import type { Agent, Trace, TurnLink } from "../api.ts";
 import { useApp } from "../context.ts";
+import { errorText } from "../lib/format.ts";
 import {
   layoutTrace,
   traceDuration,
@@ -53,7 +54,7 @@ export function TraceDialog(props: {
           if (t.ended_at == null) timer = window.setTimeout(load, REFRESH_MS);
         },
         (err: unknown) => {
-          if (live) setError(err instanceof Error ? err.message : String(err));
+          if (live) setError(errorText(err));
         },
       );
     };

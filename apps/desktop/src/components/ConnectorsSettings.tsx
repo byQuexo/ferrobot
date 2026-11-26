@@ -40,6 +40,7 @@ import {
   usedByLabel,
   usersOf,
 } from "../lib/connectors.ts";
+import { errorText } from "../lib/format.ts";
 import { Button, Dialog, IconButton } from "./ui.tsx";
 
 /** Client id, issuer and scopes of an own OAuth app; its client secret lives in Vault. */
@@ -164,7 +165,6 @@ export function ConnectorsSettings(props: {
   const [busy, setBusy] = useState(false);
   const [checking, setChecking] = useState<ReadonlySet<string>>(new Set());
   const redirectUri = connectors[0]?.redirect_uri ?? `${client.base}/v1/oauth/callback`;
-  const errorText = (err: unknown): string => (err instanceof Error ? err.message : String(err));
 
   const run = async (action: () => Promise<unknown>): Promise<void> => {
     setBusy(true);
