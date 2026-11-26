@@ -79,7 +79,7 @@ import { MailGroup } from "./MailGroup.tsx";
 import { QuestionCardView } from "./QuestionCard.tsx";
 import { RichText, type ChatFiles } from "./RichText.tsx";
 import { TraceDialog } from "./Trace.tsx";
-import { Button, IconButton } from "./ui.tsx";
+import { IconButton } from "./ui.tsx";
 import { VoiceQuick } from "./VoiceQuick.tsx";
 import { VOICE_LABELS } from "./VoiceSettings.tsx";
 
@@ -266,6 +266,15 @@ export function Chat(props: {
           void run(() => client.interrupt(id));
         }
       : undefined;
+  const stop = working
+    ? (): void => {
+        void run(async () => {
+          const stopped = await client.interrupt(id, true);
+          const summary = stopSummary(stopped.agents.length, stopped.dropped);
+          if (summary) toast(summary, "info");
+        });
+      }
+    : undefined;
   useShortcuts((shortcut) => {
     // In the message box the box handles it, with what was typed.
     if (shortcut === "send-now" && !(document.activeElement instanceof HTMLTextAreaElement))
@@ -301,21 +310,6 @@ export function Chat(props: {
         </div>
         <span class="spacer" />
         <ChatPins agent={id} />
-        {working && (
-          <Button
-            variant="secondary"
-            small
-            onClick={() =>
-              void run(async () => {
-                const stopped = await client.interrupt(id, true);
-                const summary = stopSummary(stopped.agents.length, stopped.dropped);
-                if (summary) toast(summary, "info");
-              })
-            }
-          >
-            <CircleStop size={16} /> Stop
-          </Button>
-        )}
         {voiceEnabled && (
           <span class="voice-tools">
             <VoiceQuick agent={agent} view={voiceView} onView={setVoiceView} />
@@ -421,6 +415,7 @@ export function Chat(props: {
         }
         send={send}
         sendNow={sendNow}
+        onStop={stop}
         voice={voiceEnabled ? voiceView : null}
         onTalk={() => {
           call.quiet();
@@ -1109,6 +1104,8 @@ export function Composer(props: {
   send: (body: string, now?: boolean) => Promise<unknown>;
   /** Pushes what is already queued; unset when nothing is. */
   sendNow?: (() => void) | undefined;
+  /** Takes Send's place while the box is empty; unset when nothing runs. */
+  onStop?: (() => void) | undefined;
   /** `null`: voice is off, no microphone. */
   voice: VoiceView | null;
   onTalk: () => void;
@@ -1322,15 +1319,27 @@ export function Composer(props: {
           onTalk={props.onTalk}
         />
       )}
-      <button
-        type="submit"
-        class="send"
-        disabled={(!text.trim() && files.length === 0) || sending}
-        aria-label="Send"
-        title="Send (Enter)"
-      >
-        <SendHorizontal size={18} />
-      </button>
+      {props.onStop && !text.trim() && files.length === 0 ? (
+        <button
+          type="button"
+          class="send"
+          aria-label="Stop"
+          title="Stop this turn and the work it handed out"
+          onClick={props.onStop}
+        >
+          <Square size={14} fill="currentColor" />
+        </button>
+      ) : (
+        <button
+          type="submit"
+          class="send"
+          disabled={(!text.trim() && files.length === 0) || sending}
+          aria-label="Send"
+          title="Send (Enter)"
+        >
+          <SendHorizontal size={18} />
+        </button>
+      )}
     </form>
   );
 }

@@ -495,9 +495,10 @@ function AgentRow(props: {
   onSelect: (id: string) => void;
   row: RowHandlers;
 }): JSX.Element {
+  const { nameOf } = useApp();
   const a = props.agent;
   const status = statusOf(a);
-  const line = rowLine(a);
+  const line = rowLine(a, Date.now(), nameOf);
   const { class: drop, ...row } = props.row;
   return (
     <div class={`agent-row-wrap${drop}`} {...row}>

@@ -51,7 +51,7 @@ under **Settings → Appearance**, with a preview at the top.
 
 ### Stop
 
-While an agent works, its chat header has **Stop**. It stops the agent and
+While an agent works, the Send button in its message box turns into **Stop**. It stops the agent and
 every agent working on something it handed out (a task, a message, and so on
 down the line), and drops the messages agents queued for each other there, so
 a loop between agents ends too. Your own queued messages, routines and

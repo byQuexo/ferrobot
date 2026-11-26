@@ -921,6 +921,13 @@ describe("ui polish", () => {
       last_reply: { text: "# AI news: **Nvidia** `x`", at: "2026-11-23T11:55:00Z" },
     };
     assert.equal(rowLine(md, now).text, "AI news: Nvidia x");
+    const id = "3356aa5f-b061-49c4-bc00-000000000001";
+    const mention = {
+      ...agent,
+      last_reply: { text: `ask <@${id}> > why`, at: "2026-11-23T11:55:00Z" },
+    };
+    const names = (x: string) => (x === id ? "triage" : undefined);
+    assert.equal(rowLine(mention, now, names).text, "ask @triage why");
     assert.equal(rowLine({ ...replied, waiting: 2 }, now).text, "2 questions for you");
     assert.equal(rowLine({ ...replied, waiting: 2, presence: "error" }, now).tone, "bad");
   });

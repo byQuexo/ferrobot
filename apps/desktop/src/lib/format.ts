@@ -1,4 +1,5 @@
 import type { Agent, Presence } from "../api.ts";
+import { mentionsAsText } from "./mentions.ts";
 
 export function presenceLabel(p: Presence): string {
   switch (p) {
@@ -89,6 +90,7 @@ export function rowLine(
     "presence" | "credential_error" | "tools_unsupported" | "waiting" | "last_reply" | "description"
   >,
   now: number = Date.now(),
+  nameOf: (id: string) => string | undefined = () => undefined,
 ): { text: string; tone: "bad" | "wait" | ""; time: string } {
   if (a.credential_error || a.tools_unsupported || a.presence === "error")
     return { text: statusOf(a).label, tone: "bad", time: "" };
@@ -101,7 +103,7 @@ export function rowLine(
   if (a.last_reply?.text) {
     const time = relativeTime(a.last_reply.at, now).replace(/ ago$/, "");
     // A preview, not Markdown: drop heading, emphasis, quote and code marks.
-    const text = a.last_reply.text
+    const text = mentionsAsText(a.last_reply.text, nameOf)
       .replace(/[#*`>]+/g, "")
       .replace(/\s+/g, " ")
       .trim();
