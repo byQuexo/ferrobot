@@ -35,6 +35,50 @@ export function parseListing(stdout: string): DirEntry[] {
   return entries.sort((a, b) => Number(b.dir) - Number(a.dir) || a.name.localeCompare(b.name));
 }
 
+/** A folder's entries once listed, or why it could not be. */
+export type Listing = DirEntry[] | { error: string };
+
+export type TreeRow =
+  | { key: string; depth: number; path: string; entry: DirEntry; open: boolean }
+  | { key: string; depth: number; note: string };
+
+/** The rows of the tree under `root`: each expanded folder's entries right below it, indented. */
+export function treeRows(
+  root: string,
+  listings: ReadonlyMap<string, Listing>,
+  expanded: ReadonlySet<string>,
+  max: number,
+): TreeRow[] {
+  const rows: TreeRow[] = [];
+  const walk = (dir: string, depth: number): void => {
+    const listing = listings.get(dir);
+    const note = (text: string): void => {
+      rows.push({ key: `${dir}\0${text}`, depth, note: text });
+    };
+    if (!listing) {
+      note("Loading…");
+      return;
+    }
+    if ("error" in listing) {
+      note(listing.error);
+      return;
+    }
+    if (listing.length === 0) {
+      note("This folder is empty.");
+      return;
+    }
+    for (const entry of listing.slice(0, max)) {
+      const path = joinPath(dir, entry.name);
+      const open = entry.dir && expanded.has(path);
+      rows.push({ key: path, depth, path, entry, open });
+      if (open) walk(path, depth + 1);
+    }
+    if (listing.length > max) note(`${listing.length - max} more not shown`);
+  };
+  walk(root, 0);
+  return rows;
+}
+
 export const readCommand = (path: string): string[] => ["head", "-c", String(VIEW_BYTES), path];
 
 export const joinPath = (dir: string, name: string): string =>

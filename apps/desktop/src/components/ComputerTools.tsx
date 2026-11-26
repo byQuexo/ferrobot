@@ -6,11 +6,10 @@ import type { ExecOutput } from "../api.ts";
 import { useApp } from "../context.ts";
 import {
   CONSOLE_TIMEOUT_S,
-  type DirEntry,
   HOME,
+  type Listing,
   VIEW_BYTES,
   consoleCommand,
-  joinPath,
   listCommand,
   parentOf,
   parseConsole,
@@ -18,6 +17,7 @@ import {
   readCommand,
   shortPath,
   timedOut,
+  treeRows,
 } from "../lib/computer.ts";
 import { fileSize } from "./FileViewer.tsx";
 import { Dialog, IconButton, Skeleton } from "./ui.tsx";
@@ -25,43 +25,50 @@ import { Dialog, IconButton, Skeleton } from "./ui.tsx";
 const MAX_SHOWN = 500;
 const message = (err: unknown): string => (err instanceof Error ? err.message : String(err));
 
-/** Browses the agent's computer from its home folder; files open read-only. */
+/** Browses the agent's computer from its home folder as a tree; files open read-only. */
 export function Files(props: { agent: string }): JSX.Element {
   const { client, run } = useApp();
-  const [dir, setDir] = useState(HOME);
+  const [root, setRoot] = useState(HOME);
   const [tick, setTick] = useState(0);
-  const [entries, setEntries] = useState<DirEntry[] | null>(null);
-  const [error, setError] = useState<string | null>(null);
+  const [listings, setListings] = useState<ReadonlyMap<string, Listing>>(new Map());
+  const [expanded, setExpanded] = useState<ReadonlySet<string>>(new Set());
   const [opened, setOpened] = useState<{ path: string; text: string; cut: boolean } | null>(null);
 
-  useEffect(() => {
-    let live = true;
-    setEntries(null);
-    setError(null);
-    client.exec(props.agent, listCommand(dir)).then(
-      (out) => {
-        if (!live) return;
-        setEntries(out.exit_code === 0 ? parseListing(out.stdout) : []);
-        if (out.exit_code !== 0) setError(out.stderr.trim() || "This folder cannot be read.");
-      },
-      (err: unknown) => {
-        if (!live) return;
-        setEntries([]);
-        setError(message(err));
-      },
-    );
-    return () => {
-      live = false;
-    };
-  }, [props.agent, dir, tick]);
+  const load = (dir: string): void => {
+    void client
+      .exec(props.agent, listCommand(dir))
+      .then(
+        (out): Listing =>
+          out.exit_code === 0
+            ? parseListing(out.stdout)
+            : { error: out.stderr.trim() || "This folder cannot be read." },
+        (err: unknown): Listing => ({ error: message(err) }),
+      )
+      .then((listing) => {
+        setListings((m) => new Map(m).set(dir, listing));
+      });
+  };
 
-  const open = (entry: DirEntry): void => {
-    const path = joinPath(dir, entry.name);
+  useEffect(() => {
+    load(root);
+    for (const dir of expanded) load(dir);
+  }, [props.agent, root, tick]);
+
+  const toggle = (dir: string): void => {
+    const next = new Set(expanded);
+    if (!next.delete(dir)) {
+      next.add(dir);
+      if (!listings.has(dir)) load(dir);
+    }
+    setExpanded(next);
+  };
+
+  const open = (path: string, size: number): void => {
     void run(async () => {
       const out = await client.exec(props.agent, readCommand(path));
       if (out.exit_code !== 0) throw new Error(out.stderr.trim() || "This file cannot be read.");
       const text = out.stdout.includes("\0") ? "Binary file, not shown." : out.stdout;
-      setOpened({ path, text, cut: entry.size > VIEW_BYTES });
+      setOpened({ path, text, cut: size > VIEW_BYTES });
     });
   };
 
@@ -73,15 +80,16 @@ export function Files(props: { agent: string }): JSX.Element {
       <div class="files-bar">
         <IconButton
           label="Up one folder"
-          disabled={dir === "/"}
+          disabled={root === "/"}
           onClick={() => {
-            setDir(parentOf(dir));
+            setExpanded(new Set());
+            setRoot(parentOf(root));
           }}
         >
           <ArrowUp size={16} />
         </IconButton>
-        <span class="mono ellipsis grow" title={dir}>
-          {shortPath(dir)}
+        <span class="mono ellipsis grow" title={root}>
+          {shortPath(root)}
         </span>
         <IconButton
           label="Refresh"
@@ -92,34 +100,38 @@ export function Files(props: { agent: string }): JSX.Element {
           <RefreshCw size={16} />
         </IconButton>
       </div>
-      {entries === null ? (
-        <Skeleton lines={3} />
-      ) : error ? (
-        <p class="muted small">{error}</p>
-      ) : entries.length === 0 ? (
-        <p class="muted small">This folder is empty.</p>
-      ) : (
+      {listings.has(root) ? (
         <ul class="list files">
-          {entries.slice(0, MAX_SHOWN).map((e) => (
-            <li key={e.name}>
-              <button
-                type="button"
-                class="file-row"
-                onClick={() => {
-                  if (e.dir) setDir(joinPath(dir, e.name));
-                  else open(e);
-                }}
-              >
-                {e.dir ? <Folder size={16} /> : <File size={16} />}
-                <span class="grow ellipsis">{e.name}</span>
-                {!e.dir && <span class="muted small">{fileSize(e.size)}</span>}
-              </button>
+          {treeRows(root, listings, expanded, MAX_SHOWN).map((row) => (
+            <li key={row.key} style={{ paddingLeft: `${row.depth * 16}px` }}>
+              {"note" in row ? (
+                <span class="muted small">{row.note}</span>
+              ) : (
+                <button
+                  type="button"
+                  class="file-row"
+                  aria-expanded={row.entry.dir ? row.open : undefined}
+                  onClick={() => {
+                    if (row.entry.dir) toggle(row.path);
+                    else open(row.path, row.entry.size);
+                  }}
+                >
+                  {row.open ? (
+                    <FolderOpen size={16} />
+                  ) : row.entry.dir ? (
+                    <Folder size={16} />
+                  ) : (
+                    <File size={16} />
+                  )}
+                  <span class="grow ellipsis">{row.entry.name}</span>
+                  {!row.entry.dir && <span class="muted small">{fileSize(row.entry.size)}</span>}
+                </button>
+              )}
             </li>
           ))}
-          {entries.length > MAX_SHOWN && (
-            <li class="muted small">{entries.length - MAX_SHOWN} more not shown</li>
-          )}
         </ul>
+      ) : (
+        <Skeleton lines={3} />
       )}
       {opened && (
         <Dialog

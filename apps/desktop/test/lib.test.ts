@@ -17,6 +17,7 @@ import {
   parseConsole,
   parseListing,
   shortPath,
+  treeRows,
 } from "../src/lib/computer.ts";
 import { characterOf, deriveCharacter, moodOf, rerollCharacter } from "../src/lib/character.ts";
 import {
@@ -2578,6 +2579,37 @@ describe("computer tools", () => {
     assert.equal(shortPath("/home/node"), "~");
     assert.equal(shortPath("/home/node/src"), "~/src");
     assert.equal(shortPath("/home/nodejs"), "/home/nodejs");
+  });
+
+  it("shows an expanded folder's entries right below it, indented", () => {
+    const dir = (name: string) => ({ name, dir: true, size: 4096 });
+    const file = (name: string) => ({ name, dir: false, size: 1 });
+    const listings = new Map([
+      ["/r", [dir("a"), dir("b"), file("c")]],
+      ["/r/a", [file("x")]],
+      ["/r/b", { error: "Permission denied" }],
+    ]);
+    const shown = (expanded: string[]) =>
+      treeRows("/r", listings, new Set(expanded), 2).map((r) =>
+        "note" in r ? `${r.depth}:${r.note}` : `${r.depth}:${r.entry.name}${r.open ? "/" : ""}`,
+      );
+    assert.deepEqual(shown([]), ["0:a", "0:b", "0:1 more not shown"]);
+    assert.deepEqual(shown(["/r/a", "/r/b"]), [
+      "0:a/",
+      "1:x",
+      "0:b/",
+      "1:Permission denied",
+      "0:1 more not shown",
+    ]);
+    assert.deepEqual(
+      shown(["/r/a/x"]),
+      ["0:a", "0:b", "0:1 more not shown"],
+      "only expanded parents show",
+    );
+    assert.deepEqual(
+      treeRows("/gone", listings, new Set(), 2).map((r) => "note" in r && r.note),
+      ["Loading…"],
+    );
   });
 
   it("keeps the directory a command ends in", () => {
