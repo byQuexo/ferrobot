@@ -285,6 +285,8 @@ export function VoiceSettings(): JSX.Element {
   };
 
   const elevenlabs = view.provider === "elevenlabs";
+  const pause = view.call_pause ?? 1.5;
+  const pauseLabel = `${String(pause)} s`;
   const voices = voiceOptions(catalog);
   const models: [string, string][] =
     catalog?.tts_models.map((m) => [m.model_id, m.name || m.model_id]) ?? [];
@@ -483,17 +485,17 @@ export function VoiceSettings(): JSX.Element {
                 <span class="pref-slider">
                   <Slider
                     label="Pause that ends your turn"
-                    text={`${String(view.call_pause ?? 1.5)} s`}
+                    text={pauseLabel}
                     min={0.5}
                     max={3}
                     step={0.25}
-                    value={view.call_pause ?? 1.5}
+                    value={pause}
                     onInput={(call_pause) => {
                       setView((v) => v && { ...v, call_pause });
                     }}
                     onChange={(p) => void save({ call_pause: p === 1.5 ? null : p })}
                   />
-                  <output aria-hidden="true">{`${String(view.call_pause ?? 1.5)} s`}</output>
+                  <output aria-hidden="true">{pauseLabel}</output>
                 </span>
               </PrefRow>
             )}

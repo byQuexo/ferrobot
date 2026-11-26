@@ -221,7 +221,7 @@ export function linkLabel(url: string): string {
 export function stopSummary(agents: number, dropped: number): string {
   const parts = [
     agents > 1 ? `${String(agents)} agents stopped` : "",
-    dropped > 0 ? `${String(dropped)} queued message${dropped === 1 ? "" : "s"} dropped` : "",
+    dropped > 0 ? `${plural(dropped, "queued message")} dropped` : "",
   ].filter(Boolean);
   return parts.join(", ");
 }

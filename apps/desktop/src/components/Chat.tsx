@@ -1194,6 +1194,7 @@ export function Composer(props: {
       setFiles([]);
     }
   };
+  const empty = !text.trim() && files.length === 0;
 
   return (
     <form
@@ -1317,7 +1318,7 @@ export function Composer(props: {
           onTalk={props.onTalk}
         />
       )}
-      {props.onStop && !text.trim() && files.length === 0 ? (
+      {props.onStop && empty ? (
         <button
           type="button"
           class="send"
@@ -1331,7 +1332,7 @@ export function Composer(props: {
         <button
           type="submit"
           class="send"
-          disabled={(!text.trim() && files.length === 0) || sending}
+          disabled={empty || sending}
           aria-label="Send"
           title="Send (Enter)"
         >
