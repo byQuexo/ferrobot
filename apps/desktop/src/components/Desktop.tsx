@@ -1,7 +1,7 @@
 import type { JSX } from "preact";
 import { useEffect, useRef, useState } from "preact/hooks";
 import RFB from "@novnc/novnc";
-import { Hand, Monitor, MonitorOff, Moon, MousePointer2, RotateCw, X } from "lucide-preact";
+import { Eye, Hand, Monitor, MonitorOff, Moon, MousePointer2, RotateCw, X } from "lucide-preact";
 
 import { useApp } from "../context.ts";
 import { Button, IconButton } from "./ui.tsx";
@@ -73,13 +73,27 @@ function FullScreen(props: { agent: string; name: string; onClose: () => void })
       aria-modal="true"
       aria-label={`${props.name}'s computer`}
     >
-      <header class="screen-head">
+      <div class="screen-stage">
+        <Live agent={props.agent} control={control} />
+      </div>
+      <span class="screen-title">
         <Monitor size={16} aria-hidden="true" />
-        <strong class="ellipsis">{props.name}'s computer</strong>
-        <span class={`screen-mode${control ? " on" : ""}`}>
+        <span class="ellipsis">{props.name}'s computer</span>
+      </span>
+      <span class="screen-close">
+        <IconButton label="Close" onClick={props.onClose}>
+          <X size={16} />
+        </IconButton>
+      </span>
+      <div class={`screen-pill${control ? " on" : ""}`}>
+        <span class="screen-mode">
+          {control ? (
+            <MousePointer2 size={16} aria-hidden="true" />
+          ) : (
+            <Eye size={16} aria-hidden="true" />
+          )}
           {control ? `Using it yourself, ${props.name} waits` : "View only"}
         </span>
-        <span class="grow" />
         {control ? (
           <Button
             small
@@ -100,12 +114,6 @@ function FullScreen(props: { agent: string; name: string; onClose: () => void })
             <MousePointer2 size={16} /> Use it myself
           </Button>
         )}
-        <IconButton label="Close" onClick={props.onClose}>
-          <X size={16} />
-        </IconButton>
-      </header>
-      <div class="screen-stage">
-        <Live agent={props.agent} control={control} />
       </div>
     </div>
   );
