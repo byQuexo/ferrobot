@@ -3,7 +3,7 @@
 
 use std::collections::{HashMap, VecDeque};
 
-use ferrobot_core::mention::{Segment, segments};
+use ferrobot_core::mention::{Segment, segments, token};
 use ferrobot_core::protocol::TurnOutcome;
 use ferrobot_core::{AgentId, MailMessage, Sender};
 use ferrobot_store::Room;
@@ -140,7 +140,17 @@ fn named(text: &str, members: &[AgentId]) -> Vec<AgentId> {
 
 fn line_of(agent: AgentId, text: &str) -> String {
     let text: String = text.chars().take(MAX_LINE_CHARS).collect();
-    format!("<@{agent}>: {text}")
+    format!("{}: {text}", token(agent))
+}
+
+fn unique(agents: impl IntoIterator<Item = AgentId>) -> Vec<AgentId> {
+    let mut out = Vec::new();
+    for agent in agents {
+        if !out.contains(&agent) {
+            out.push(agent);
+        }
+    }
+    out
 }
 
 impl Call {
@@ -255,6 +265,35 @@ impl Call {
             .is_some_and(|f| f.turn.as_deref() == Some(turn))
     }
 
+    /// `host` opened with `topic`: the others hear it, and `host`'s running turn `turn` speaks
+    /// first while the floor is free.
+    fn announce(&mut self, host: AgentId, topic: &str, turn: Option<String>) {
+        self.hear(Some(host), &line_of(host, topic));
+        self.last = Some((Sender::Agent(host), topic.to_owned()));
+        if self.floor.is_none()
+            && let Some(turn) = turn
+        {
+            self.floor = Some(Floor {
+                agent: host,
+                turn: Some(turn),
+                said: None,
+            });
+        }
+    }
+
+    /// Who stays when `agent` hangs up: nobody if it is the host, else everyone else.
+    fn without(&self, agent: AgentId) -> Vec<AgentId> {
+        if self.agents.first() == Some(&agent) {
+            Vec::new()
+        } else {
+            self.agents
+                .iter()
+                .copied()
+                .filter(|a| *a != agent)
+                .collect()
+        }
+    }
+
     /// Keeps who is due and what is unheard for `agents` only.
     fn set_agents(&mut self, agents: Vec<AgentId>) {
         self.heard.retain(|a, _| agents.contains(a));
@@ -341,12 +380,7 @@ impl AppState {
 
     /// Replaces who is in the call; empty ends it.
     pub async fn set_call(&self, wanted: Vec<AgentId>) -> Result<(), String> {
-        let mut agents = Vec::new();
-        for agent in wanted {
-            if !agents.contains(&agent) {
-                agents.push(agent);
-            }
-        }
+        let agents = unique(wanted);
         if agents.len() > MAX_CALL_AGENTS {
             return Err(format!("a call has at most {MAX_CALL_AGENTS} agents"));
         }
@@ -380,12 +414,7 @@ impl AppState {
         topic: &str,
     ) -> Result<Room, String> {
         let mut rooms = self.rooms().await;
-        let mut agents = vec![host];
-        for guest in guests {
-            if !agents.contains(&guest) {
-                agents.push(guest);
-            }
-        }
+        let agents = unique(std::iter::once(host).chain(guests));
         if agents.len() < 2 {
             return Err("call at least one other agent".into());
         }
@@ -418,19 +447,10 @@ impl AppState {
             agents,
             room: Some(room.id),
             among_agents: true,
-            last: Some((Sender::Agent(host), topic.to_owned())),
             agent_lines: 1,
             ..Call::default()
         };
-        talk.hear(Some(host), &line_of(host, topic));
-        // The host's turn that called comes first, as with an invitation.
-        if let Some(turn) = self.hub.current_turn(host) {
-            talk.floor = Some(Floor {
-                agent: host,
-                turn: Some(turn),
-                said: None,
-            });
-        }
+        talk.announce(host, topic, self.hub.current_turn(host));
         self.hand_on(&mut talk).await;
         rooms.groups.insert(room.id, talk);
         self.publish(UiEvent::AgentCall {
@@ -484,16 +504,7 @@ impl AppState {
         let mut ended = Vec::new();
         for (&id, talk) in groups.iter_mut().filter(|(_, t)| t.among_agents) {
             if let Some(agent) = agent.filter(|a| talk.leaving.contains(a)) {
-                let rest = if talk.agents.first() == Some(&agent) {
-                    Vec::new()
-                } else {
-                    talk.agents
-                        .iter()
-                        .copied()
-                        .filter(|a| *a != agent)
-                        .collect()
-                };
-                talk.set_agents(rest);
+                talk.set_agents(talk.without(agent));
             }
             if talk.agents.len() >= 2 && talk.floor.is_none() {
                 self.hand_on(talk).await;
@@ -753,15 +764,7 @@ impl AppState {
         self.settle_agent_calls(groups, Some(agent)).await;
         self.turn_said(call, turn, outcome).await;
         if call.leaving.contains(&agent) {
-            let rest = if call.agents.first() == Some(&agent) {
-                Vec::new()
-            } else {
-                call.agents
-                    .iter()
-                    .copied()
-                    .filter(|a| *a != agent)
-                    .collect()
-            };
+            let rest = call.without(agent);
             // Fewer agents than before always fit.
             let _ = self.apply(call, rest, Some(agent)).await;
         }
@@ -807,21 +810,10 @@ impl AppState {
         call.heard
             .entry(guest)
             .or_default()
-            .push_back(format!("<@{host}>{INVITED}"));
-        call.hear(Some(host), &line_of(host, topic));
-        call.last = Some((Sender::Agent(host), topic.to_owned()));
+            .push_back(format!("{}{INVITED}", token(host)));
         call.order.retain(|a| *a != guest);
         call.order.push_front(guest);
-        // The host's announcement in the turn that invited comes first.
-        if call.floor.is_none()
-            && let Some(turn) = self.hub.current_turn(host)
-        {
-            call.floor = Some(Floor {
-                agent: host,
-                turn: Some(turn),
-                said: None,
-            });
-        }
+        call.announce(host, topic, self.hub.current_turn(host));
         self.hand_on(call).await;
         Ok(())
     }
