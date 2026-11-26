@@ -13,6 +13,8 @@ export function ModelPicker(props: {
   value: string;
   placeholder: string;
   onChange: (v: string) => void;
+  /** Reports a typed model on blur or Enter only, where each change is saved. */
+  lazy?: boolean;
 }): JSX.Element {
   const { client } = useApp();
   const [models, setModels] = useState<ModelInfo[]>([]);
@@ -39,6 +41,7 @@ export function ModelPicker(props: {
       value={props.value}
       options={modelOptions(models, props.value)}
       placeholder={props.placeholder}
+      lazy={props.lazy}
       onChange={props.onChange}
     />
   );

@@ -316,6 +316,18 @@ impl AppState {
         self.rooms().await.call.agents.contains(&agent)
     }
 
+    /// The model the operator picked for `agent`'s turns in a call, while it is in one.
+    pub async fn call_model(&self, agent: AgentId) -> Option<String> {
+        if !self.in_call(agent).await {
+            return None;
+        }
+        crate::api::voice::load(self)
+            .await
+            .ok()?
+            .call_models
+            .remove(&agent)
+    }
+
     /// Replaces who is in the call; empty ends it.
     pub async fn set_call(&self, wanted: Vec<AgentId>) -> Result<(), String> {
         let mut agents = Vec::new();

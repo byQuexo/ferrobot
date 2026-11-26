@@ -72,7 +72,8 @@ In rough order. Nothing here has a date.
    today's switches per tool group.
 9. **Faster, more natural calls.** Reasoning switched off or a fast model used
    only in calls, a setting for the pause that ends your turn, and calls
-   among agents without you, with a pop-up to join.
+   among agents without you, with a pop-up to join. **Done** (next release):
+   a model per agent for calls and the pause setting.
 10. **Development builds.** A stable signature for development builds, so
     macOS stops asking for keychain access after every rebuild.
 11. **Flows.** Configurable flows: a series of steps (an agent's turn, a

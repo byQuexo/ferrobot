@@ -3420,6 +3420,18 @@ export interface components {
              *     `null`: detected.
              */
             language?: string | null;
+            /**
+             * @description Models by agent id for its turns in a call, such as a quicker one for spoken replies;
+             *     only where the request names the model (not Bedrock, Vertex or Gemini).
+             */
+            call_models?: {
+                [key: string]: string;
+            };
+            /**
+             * Format: float
+             * @description Seconds of silence that end what the operator says in a call, 0.5-3; `null`: 1.5.
+             */
+            call_pause?: number | null;
         };
         VoiceView: components["schemas"]["VoiceSettings"] & {
             /** @description Every provider with its defaults and whether its key is stored. */

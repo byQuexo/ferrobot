@@ -2065,6 +2065,7 @@ async fn echo_upstream() -> String {
             "goog_key": header("x-goog-api-key"),
             "session": header("x-session-id"),
             "cache_control": body.get("cache_control"),
+            "model": body.get("model"),
             "query": parts.uri.query(),
             "accounts": parts.headers.get_all("chatgpt-account-id").iter()
                 .filter_map(|v| v.to_str().ok()).collect::<Vec<_>>(),
@@ -2528,6 +2529,62 @@ async fn openrouter_calls_cache_claude_and_stick_to_one_provider() {
         "only OpenRouter"
     );
     let _ = bob;
+}
+
+#[tokio::test]
+async fn agents_use_their_call_model_only_while_in_a_call() {
+    let upstream = echo_upstream().await;
+    let backend = Arc::new(StatefulBackend::default());
+    let d = start(backend.clone(), None, "127.0.0.1:0").await;
+    let body = json!({"name": "or", "kind": "openrouter", "base_url": format!("{upstream}/v1"),
+                      "api_key": "k", "default_model": "m"});
+    let (status, p) = http(&d.ui, "POST", "/v1/providers", Some(body)).await;
+    assert_eq!(status, 201, "{p}");
+    let ann = create(&d, json!({"name": "ann", "provider_id": p["id"]})).await;
+    let id = ann["id"].as_str().unwrap();
+    let voice = json!({"provider": "elevenlabs", "api_key": "xi-k",
+                       "call_models": {id: "quick/model"}, "call_pause": 0.8});
+    let (status, view) = put_voice(&d, voice).await;
+    assert_eq!(status, 200, "{view}");
+    assert_eq!(
+        (&view["call_models"][id], &view["call_pause"]),
+        (&json!("quick/model"), &json!(0.8))
+    );
+    let model = || {
+        let bearer = format!("Bearer {}", backend.token("ann"));
+        let ui = d.agents.clone();
+        async move {
+            let body = json!({"model": "slow/model", "messages": []}).to_string();
+            let headers = [
+                ("authorization", bearer.as_str()),
+                ("content-type", "application/json"),
+            ];
+            let (_, _, out) = http_raw(
+                &ui,
+                "POST",
+                "/model/chat/completions",
+                &headers,
+                body.as_bytes(),
+            )
+            .await;
+            serde_json::from_slice::<Value>(&out).unwrap()["model"].clone()
+        }
+    };
+
+    assert_eq!(model().await, "slow/model", "not in a call");
+    let call = Some(json!({"agents": [id]}));
+    assert_eq!(http(&d.ui, "PUT", "/v1/call", call).await.0, 200);
+    assert_eq!(model().await, "quick/model");
+    let usage = http(&d.ui, "GET", "/v1/usage?group_by=model", None).await.1;
+    assert!(
+        usage.to_string().contains("quick/model"),
+        "billed as the model that ran: {usage}"
+    );
+    let hang_up = Some(json!({"agents": []}));
+    assert_eq!(http(&d.ui, "PUT", "/v1/call", hang_up).await.0, 200);
+    assert_eq!(model().await, "slow/model");
+    let bad = json!({"provider": "elevenlabs", "call_pause": 9});
+    assert_eq!(put_voice(&d, bad).await.0, 400);
 }
 
 #[tokio::test]

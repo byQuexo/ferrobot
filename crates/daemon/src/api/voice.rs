@@ -120,6 +120,13 @@ pub(crate) async fn put_voice(
             .into_iter()
             .filter_map(|(agent, voice)| Some((agent, clean(Some(voice))?)))
             .collect(),
+        call_models: req
+            .settings
+            .call_models
+            .into_iter()
+            .filter_map(|(agent, model)| Some((agent, clean(Some(model))?)))
+            .collect(),
+        call_pause: req.settings.call_pause,
     };
     settings.validate().map_err(ApiError::BadRequest)?;
     let key = req.api_key.map(clean);
@@ -560,7 +567,7 @@ pub(crate) async fn live(
         ));
     }
     // Fails before the provider is asked for a token.
-    voice::live_url(&r.base, "-", req.mode, req.sample_rate, None, &[])
+    voice::live_url(&r.base, "-", req.mode, req.sample_rate, None, &[], None)
         .map_err(ApiError::BadRequest)?;
     // Agent names are what generic transcription gets wrong most ("builder" → "Biller").
     let agents = state.store.list_agents().await?;
@@ -581,6 +588,7 @@ pub(crate) async fn live(
         req.sample_rate,
         r.settings.language.as_deref(),
         &keyterms,
+        r.settings.call_pause,
     )
     .map_err(ApiError::BadRequest)?;
     Ok(Json(LiveSession { url }))

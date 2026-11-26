@@ -11540,6 +11540,24 @@
               "null"
             ],
             "description": "Language of speech and dictation, ISO 639-1 or 639-3 (`de`, `fil`);\n`null`: detected."
+          },
+          "call_models": {
+            "type": "object",
+            "description": "Models by agent id for its turns in a call, such as a quicker one for spoken replies;\nonly where the request names the model (not Bedrock, Vertex or Gemini).",
+            "additionalProperties": {
+              "type": "string"
+            },
+            "propertyNames": {
+              "type": "string"
+            }
+          },
+          "call_pause": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "format": "float",
+            "description": "Seconds of silence that end what the operator says in a call, 0.5-3; `null`: 1.5."
           }
         }
       },

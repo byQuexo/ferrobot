@@ -49,6 +49,8 @@ export function voiceUpdate(view: VoiceView, changes: Partial<UpdateVoice>): Upd
     agent_voices: view.agent_voices ?? {},
     speed: view.speed ?? null,
     language: view.language ?? null,
+    call_models: view.call_models ?? {},
+    call_pause: view.call_pause ?? null,
     ...changes,
   };
 }
@@ -475,6 +477,28 @@ export function VoiceSettings(): JSX.Element {
 
           <h3 class="pref-head">Calls</h3>
           <ul class="pref-list">
+            {elevenlabs && (
+              <PrefRow
+                title="Pause that ends your turn"
+                hint="How long you can stop talking before agents answer. From the next call."
+              >
+                <span class="pref-slider">
+                  <Slider
+                    label="Pause that ends your turn"
+                    text={`${String(view.call_pause ?? 1.5)} s`}
+                    min={0.5}
+                    max={3}
+                    step={0.25}
+                    value={view.call_pause ?? 1.5}
+                    onInput={(call_pause) => {
+                      setView((v) => v && { ...v, call_pause });
+                    }}
+                    onChange={(p) => void save({ call_pause: p === 1.5 ? null : p })}
+                  />
+                  <output aria-hidden="true">{`${String(view.call_pause ?? 1.5)} s`}</output>
+                </span>
+              </PrefRow>
+            )}
             {elevenlabs && (
               <PrefRow
                 title="Push to talk"

@@ -52,6 +52,13 @@ Click the phone button in an agent's chat (**Start a voice call**).
   while you hold **Hold to talk** or Space (outside text fields). Words count
   once you let go and pause briefly; **Mute** still wins. This computer
   remembers the choice.
+- **Pause that ends your turn** (**Settings → Voice → Calls**, ElevenLabs):
+  how long you can stop talking before agents answer, 0.5 to 3 seconds
+  (default 1.5). It applies from the next call.
+- **Model in calls** (the chat's sliders button): a quicker model this agent
+  uses only while it is in a call, such as a small model for spoken replies.
+  It applies where the request names the model, so not to Bedrock, Vertex or
+  Gemini agents.
 - Longer work: the agent says so and does it after the call, in its chat.
 - An agent cannot show question cards during a call; it asks out loud.
 

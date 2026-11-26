@@ -700,7 +700,11 @@ async fn turn(
             "a Claude Code turn is already running",
         );
     };
-    let model = agent.model.clone().or(provider.default_model);
+    let model = state
+        .call_model(agent.id)
+        .await
+        .or_else(|| agent.model.clone())
+        .or(provider.default_model);
     if model.as_deref().is_some_and(|m| !valid_model(m)) {
         return refuse(StatusCode::BAD_REQUEST, "invalid model name");
     }
