@@ -10,6 +10,7 @@ use rusqlite::{Connection, OptionalExtension};
 use time::OffsetDateTime;
 
 use crate::memory::MemoryEntry;
+use crate::settings;
 use crate::{Store, StoreError};
 
 pub(crate) const SETTING: &str = "memory_vault";
@@ -23,14 +24,8 @@ fn io(e: &std::io::Error) -> StoreError {
 
 /// The vault folder, when memories live there.
 pub(crate) fn vault(c: &Connection) -> Result<Option<PathBuf>, StoreError> {
-    let raw: Option<String> = c
-        .query_row(
-            "SELECT value FROM settings WHERE key = ?1",
-            [SETTING],
-            |r| r.get(0),
-        )
-        .optional()?;
-    raw.map(|r| serde_json::from_str::<Option<PathBuf>>(&r).map_err(StoreError::corrupt))
+    settings::get(c, SETTING)?
+        .map(|r| serde_json::from_str::<Option<PathBuf>>(&r).map_err(StoreError::corrupt))
         .transpose()
         .map(Option::flatten)
 }
@@ -281,12 +276,7 @@ impl Store {
                 }
             }
             let value = serde_json::to_string(&vault).map_err(StoreError::corrupt)?;
-            c.execute(
-                "INSERT INTO settings (key, value, updated_at) VALUES (?1, ?2, ?3)
-                 ON CONFLICT (key) DO UPDATE SET value = excluded.value,
-                                                 updated_at = excluded.updated_at",
-                rusqlite::params![SETTING, value, crate::util::fmt_ts(crate::util::now())],
-            )?;
+            settings::put(c, SETTING, &value)?;
             Ok(copied)
         })
         .await
