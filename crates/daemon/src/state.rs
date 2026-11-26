@@ -249,8 +249,6 @@ pub enum UiEvent {
         host: AgentId,
         topic: String,
     },
-    /// A flow run started or one of its steps moved on.
-    FlowRun { run: crate::flows::FlowRun },
 }
 
 /// Shared daemon state. Cheap to clone.
@@ -300,8 +298,6 @@ pub struct AppState {
     pub webhooks: Arc<crate::webhooks::Webhooks>,
     /// The Discord bridge's channels and the replies it owes.
     pub discord: Arc<crate::discord::Discord>,
-    /// Flow runs and their agent steps waiting for a turn.
-    pub flows: Arc<crate::flows::Flows>,
     /// The CLI-login proxy's CA and certificates.
     pub egress: Arc<crate::egress::Egress>,
     /// When this daemon started.
@@ -344,7 +340,6 @@ impl AppState {
             clis: Arc::default(),
             webhooks: Arc::default(),
             discord: Arc::default(),
-            flows: Arc::default(),
             egress: Arc::default(),
             started: std::time::Instant::now(),
         }

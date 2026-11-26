@@ -929,58 +929,6 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/v1/flows": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /** The flows, in order. */
-        get: operations["get_flows"];
-        /** Replaces the flows: adding, editing, reordering and removing all send the whole list. */
-        put: operations["put_flows"];
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/v1/flows/runs": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /** Runs since the daemon started, newest first (at most 50). */
-        get: operations["list_flow_runs"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/v1/flows/{id}/run": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /** Starts a run of the flow; `flow_run` events follow it. */
-        post: operations["run_flow"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
     "/v1/groups": {
         parameters: {
             query?: never;
@@ -2446,29 +2394,6 @@ export interface components {
             /** @description Why it failed; `null` when it went through. */
             error?: string | null;
         };
-        /** @description A flow: its steps run in order. */
-        Flow: {
-            /** @description Chosen by the app: 1-64 letters, digits or `-`, unique. */
-            id: string;
-            /** @description 1-60 characters. */
-            name: string;
-            steps: components["schemas"]["Step"][];
-        };
-        /** @description One run of a flow. */
-        FlowRun: {
-            /** Format: int64 */
-            id: number;
-            flow_id: string;
-            flow_name: string;
-            status: components["schemas"]["RunStatus"];
-            /** @description Why the run stopped or failed. */
-            reason?: string | null;
-            /** @description The flow's steps as they were when the run started. */
-            plan: components["schemas"]["Step"][];
-            steps: components["schemas"]["StepRun"][];
-            /** Format: date-time */
-            started_at: string;
-        };
         /** @description A deleted agent's last name, so mentions of it can still be read. */
         FormerAgent: {
             id: string;
@@ -3061,8 +2986,6 @@ export interface components {
             /** @description English description of the schedule, e.g. "At 09:00 on Monday through Friday". */
             schedule_text: string;
         };
-        /** @enum {string} */
-        RunStatus: "waiting" | "running" | "done" | "stopped" | "failed";
         /**
          * @description What started a run.
          * @enum {string}
@@ -3229,29 +3152,6 @@ export interface components {
             text: string;
             agent_id?: components["schemas"]["AgentId"] | null;
         };
-        /** @description One step of a flow. */
-        Step: {
-            agent: string;
-            prompt: string;
-            /** @enum {string} */
-            kind: "agent";
-        } | {
-            contains: string;
-            /** @enum {string} */
-            kind: "condition";
-        } | {
-            agent: string;
-            /** @enum {string} */
-            kind: "message";
-        };
-        /** @description What one step did in a run. */
-        StepRun: {
-            status: components["schemas"]["RunStatus"];
-            /** @description An agent step's turn, for its trace (`GET /v1/agents/{id}/turns/{turn_id}/trace`). */
-            turn_id?: string | null;
-            /** @description The step's output: an agent's reply. */
-            output?: string | null;
-        };
         /** @description One recorded event in an agent's chat. */
         StoredEvent: {
             /** Format: int64 */
@@ -3386,10 +3286,6 @@ export interface components {
             topic: string;
             /** @enum {string} */
             type: "agent_call";
-        } | {
-            run: components["schemas"]["FlowRun"];
-            /** @enum {string} */
-            type: "flow_run";
         };
         /** @description Partial profile update. Omitted fields stay unchanged. */
         UpdateAgent: {
@@ -6744,143 +6640,6 @@ export interface operations {
             };
             /** @description Missing or wrong API token */
             401: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorBody"];
-                };
-            };
-        };
-    };
-    get_flows: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["Flow"][];
-                };
-            };
-            /** @description Missing or wrong API token */
-            401: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorBody"];
-                };
-            };
-        };
-    };
-    put_flows: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["Flow"][];
-            };
-        };
-        responses: {
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["Flow"][];
-                };
-            };
-            /** @description Too many, a bad id, name, step or an unknown agent */
-            400: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorBody"];
-                };
-            };
-            /** @description Missing or wrong API token */
-            401: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorBody"];
-                };
-            };
-        };
-    };
-    list_flow_runs: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["FlowRun"][];
-                };
-            };
-            /** @description Missing or wrong API token */
-            401: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorBody"];
-                };
-            };
-        };
-    };
-    run_flow: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                /** @description Flow id */
-                id: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            202: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["FlowRun"];
-                };
-            };
-            /** @description Missing or wrong API token */
-            401: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorBody"];
-                };
-            };
-            /** @description Unknown flow */
-            404: {
                 headers: {
                     [name: string]: unknown;
                 };

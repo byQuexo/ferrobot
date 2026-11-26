@@ -657,17 +657,6 @@ textarea { resize: vertical; min-height: 40px; line-height: 1.5; }
 .agent-call-note { position: fixed; right: 16px; bottom: 16px; z-index: 30; display: flex; align-items: center; gap: 8px; width: min(380px, calc(100vw - 32px)); padding: 10px 12px; border: 1px solid var(--border); border-radius: var(--radius); background: var(--surface); box-shadow: var(--shadow-lg); animation: rise 0.2s var(--ease); }
 .agent-call-note > svg { flex: none; color: var(--accent); }
 .agent-call-note .grow { display: flex; flex-direction: column; }
-.flow-run details > summary { display: flex; align-items: center; gap: 8px; cursor: pointer; }
-.run-status { flex: none; padding: 1px 8px; border-radius: 999px; font-size: 11px; background: var(--surface-2); color: var(--muted); }
-.run-running { color: var(--accent); } .run-done { color: var(--ok); } .run-failed { color: var(--err); }
-.run-steps { margin: 8px 0 0; padding-left: 20px; display: flex; flex-direction: column; gap: 6px; }
-.list .run-steps li, .list .flow-steps li { display: block; padding: 0; border-top: none; }
-.run-step-head { display: flex; align-items: center; gap: 8px; }
-.run-output { margin: 4px 0 0; max-height: 160px; overflow: auto; padding: 6px 8px; border-radius: var(--radius-sm); background: var(--surface-2); font: 12px/1.5 var(--mono); white-space: pre-wrap; overflow-wrap: anywhere; }
-.flow-steps { margin: 12px 0; padding-left: 20px; display: flex; flex-direction: column; gap: 10px; }
-.flow-step { display: flex; flex-direction: column; gap: 6px; }
-.flow-step-head { display: flex; align-items: center; gap: 8px; }
-.flow-step textarea, .flow-step input { width: 100%; }
 .scope-list { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 4px 12px; max-height: 240px; overflow: auto; }
 
 @media (max-width: 1080px) {

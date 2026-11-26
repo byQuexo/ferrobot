@@ -144,9 +144,6 @@ Principles:
   (👀, then ✅, or only the agent's emoji); an agent posts to its own bridged channels
   with `send_to_discord`; `discord/cards.rs` — cards in the channel (✅/❌, replies);
   `api/discord.rs` — `/v1/discord`. Settings in the `discord` setting.
-- `crates/daemon/src/flows.rs`, `api/flows.rs` — flows (proof of concept): linear steps (agent
-  turn, condition, message) in the `flows` setting, run by hand; an agent step waits for its
-  message's turn in `runner_ws::settle`; runs in memory.
 - `crates/daemon/src/stop.rs` — the operator's Stop (`interrupt?chain=true`): the agent's turn,
   the turns of agents working on messages from that chain, and agent messages queued among them.
 - `crates/daemon/src/tasks.rs` — tracked tasks: automatic report and reminder;

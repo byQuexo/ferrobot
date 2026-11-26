@@ -432,7 +432,7 @@ async fn skip(state: &AppState, id: i64) {
 
 /// Steered messages the model saw are delivered; the rest wait for the next
 /// turn (also after a failed turn, which is retried without them).
-async fn settle_steered(state: &AppState, (steered, turn): (Vec<i64>, &str), done: Option<&Done>) {
+async fn settle_steered(state: &AppState, steered: Vec<i64>, done: Option<&Done>) {
     let seen: &[i64] = match done {
         Some(d) if matches!(d.outcome, TurnOutcome::Completed | TurnOutcome::Interrupted) => {
             &d.steered
@@ -440,9 +440,7 @@ async fn settle_steered(state: &AppState, (steered, turn): (Vec<i64>, &str), don
         _ => &[],
     };
     for id in steered {
-        let settled = if let Some(done) = done.filter(|_| seen.contains(&id)) {
-            // A flow step steered into a running turn ends with that turn.
-            crate::flows::turn_ended(state, id, turn, done.outcome, done.result.as_deref());
+        let settled = if seen.contains(&id) {
             state.store.complete_message(id).await
         } else {
             state.store.requeue_message(id).await
@@ -589,7 +587,7 @@ async fn run_turn(
     {
         done.outcome = TurnOutcome::Failed;
     }
-    settle_steered(state, (steered, &turn_id), result.as_ref()).await;
+    settle_steered(state, steered, result.as_ref()).await;
     if result.is_none() {
         tracing::warn!(%agent, turn = %turn_id, "turn timed out, interrupting");
         let turn_id = turn_id.clone();
@@ -618,7 +616,6 @@ async fn settle(
             ..
         }) => {
             tasks::report(state, (agent, turn), msg, outcome, result.as_deref()).await;
-            crate::flows::turn_ended(state, msg.id, turn, outcome, result.as_deref());
             if outcome == TurnOutcome::Completed {
                 crate::discord::turn_done(state, msg.id, (agent, turn), result.clone());
             }
@@ -648,7 +645,6 @@ async fn settle(
                 Ok(MailStatus::Failed) => {
                     tasks::report(state, (agent, turn), msg, TurnOutcome::Failed, Some(&error))
                         .await;
-                    crate::flows::turn_ended(state, msg.id, turn, TurnOutcome::Failed, None);
                     crate::discord::turn_failed(state, msg.id);
                     let summary = "failed a turn".into();
                     webhooks::notify(state, agent, WebhookEvent::TurnFailed, summary, Some(error));

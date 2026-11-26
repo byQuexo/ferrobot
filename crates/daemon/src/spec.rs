@@ -143,10 +143,6 @@ pub const QUESTION_CARD_FILE: &str = "question-card.v1.schema.json";
         api::logins::get_logins,
         api::logins::put_login_agents,
         api::logins::put_login_token,
-        api::flows::get_flows,
-        api::flows::put_flows,
-        api::flows::run_flow,
-        api::flows::list_flow_runs,
         api::discord::get_discord,
         api::discord::put_discord,
         api::discord::put_discord_token,
@@ -195,7 +191,6 @@ pub const QUESTION_CARD_FILE: &str = "question-card.v1.schema.json";
         (name = "usage", description = "Model calls, tokens, estimated cost and plan limits"),
         (name = "settings", description = "Daemon-wide operator settings"),
         (name = "webhooks", description = "Messages from other services in, chosen events out"),
-        (name = "flows", description = "Steps set up once and run in order (proof of concept)"),
     )
 )]
 struct ApiDoc;

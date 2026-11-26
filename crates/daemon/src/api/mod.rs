@@ -8,7 +8,6 @@ pub(crate) mod dashboards;
 pub(crate) mod diagnostics;
 pub(crate) mod discord;
 pub(crate) mod files;
-pub(crate) mod flows;
 pub(crate) mod groups;
 pub(crate) mod logins;
 pub(crate) mod memory;
@@ -148,9 +147,6 @@ fn outside() -> Router<AppState> {
             "/v1/dashboards",
             get(dashboards::get_dashboards).put(dashboards::put_dashboards),
         )
-        .route("/v1/flows", get(flows::get_flows).put(flows::put_flows))
-        .route("/v1/flows/runs", get(flows::list_flow_runs))
-        .route("/v1/flows/{id}/run", post(flows::run_flow))
         .route("/v1/webhooks", get(webhooks::list_webhooks))
         .route("/v1/webhooks/incoming", post(webhooks::create_incoming))
         .route(
