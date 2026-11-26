@@ -19,7 +19,7 @@ export class FerrobotMcp {
 
   async #connect(): Promise<Client> {
     if (this.#client) return this.#client;
-    const client = new Client({ name: "ferrobot-runner", version: "0.1.10" });
+    const client = new Client({ name: "ferrobot-runner", version: "0.1.11" });
     const transport = new StreamableHTTPClientTransport(this.#url, {
       requestInit: { headers: { Authorization: `Bearer ${this.#token}` } },
     });

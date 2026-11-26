@@ -163,6 +163,7 @@ tested against fakes on a machine without KVM.
 | v0.1.8 | done | Dashboards, webhooks and a Discord bridge, trace waits and handoffs, deleted agents named in mentions, Auto mode keeps a card for the riskiest steps. |
 | v0.1.9 | done | Pins per chat, a redesigned Webhooks page, an agent's webhooks in its details, Discord reactions and a Discord chip in the chat. |
 | v0.1.10 | done | Cards answered from Discord, agents posting to Discord on their own, emoji-only replies, more Appearance settings, a faster first wake and smaller updates. |
+| v0.1.11 | done | Files and a console in the Computer tab, a quicker model in calls, calls among agents, Stop for a chain of work, a GitHub login for CLIs and per-tool connector scopes. |
 
 Ideas beyond this list are on [[Ideas]].
 

@@ -6,6 +6,8 @@ All notable changes are listed here. The format follows
 
 ## [Unreleased]
 
+## [0.1.11] - 2026-11-26
+
 ### Added
 
 - **Files and a console in the Computer tab.** Browse the agent's computer from its home folder and open files read-only, and run commands in it, one at a time and up to 60 s each, without asking the agent. Programs that need a full terminal, like vim, do not work there.
@@ -452,7 +454,8 @@ First public release.
   allowlist per API family, no redirects, header allowlists both ways, agent
   tokens blanked in committed images.
 
-[Unreleased]: https://github.com/byQuexo/ferrobot/compare/v0.1.10...HEAD
+[Unreleased]: https://github.com/byQuexo/ferrobot/compare/v0.1.11...HEAD
+[0.1.11]: https://github.com/byQuexo/ferrobot/compare/v0.1.10...v0.1.11
 [0.1.10]: https://github.com/byQuexo/ferrobot/compare/v0.1.9...v0.1.10
 [0.1.9]: https://github.com/byQuexo/ferrobot/compare/v0.1.8...v0.1.9
 [0.1.8]: https://github.com/byQuexo/ferrobot/compare/v0.1.7...v0.1.8

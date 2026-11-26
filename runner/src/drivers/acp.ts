@@ -392,7 +392,7 @@ export class AcpDriver implements ModelDriver {
         protocolVersion: ACP_VERSION,
         // No fs/terminal: the agent uses its own tools inside the sandbox.
         clientCapabilities: { fs: { readTextFile: false, writeTextFile: false }, terminal: false },
-        clientInfo: { name: "ferrobot", version: "0.1.10" },
+        clientInfo: { name: "ferrobot", version: "0.1.11" },
       })) as InitializeResult | null;
       if (init?.protocolVersion !== ACP_VERSION) {
         throw new Error(

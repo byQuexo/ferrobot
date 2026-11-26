@@ -397,7 +397,7 @@ export class CodexDriver implements ModelDriver {
       );
     }
     try {
-      await server.request("initialize", { clientInfo: { name: "ferrobot", version: "0.1.10" } });
+      await server.request("initialize", { clientInfo: { name: "ferrobot", version: "0.1.11" } });
       server.notify("initialized");
     } catch (err) {
       server.kill();
