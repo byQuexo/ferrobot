@@ -6,6 +6,8 @@ All notable changes are listed here. The format follows
 
 ## [Unreleased]
 
+## [0.1.10] - 2026-11-26
+
 ### Added
 
 - **Answer cards from Discord.** A card waiting for you also goes to the agent's
@@ -440,7 +442,8 @@ First public release.
   allowlist per API family, no redirects, header allowlists both ways, agent
   tokens blanked in committed images.
 
-[Unreleased]: https://github.com/byQuexo/ferrobot/compare/v0.1.9...HEAD
+[Unreleased]: https://github.com/byQuexo/ferrobot/compare/v0.1.10...HEAD
+[0.1.10]: https://github.com/byQuexo/ferrobot/compare/v0.1.9...v0.1.10
 [0.1.9]: https://github.com/byQuexo/ferrobot/compare/v0.1.8...v0.1.9
 [0.1.8]: https://github.com/byQuexo/ferrobot/compare/v0.1.7...v0.1.8
 [0.1.7]: https://github.com/byQuexo/ferrobot/compare/v0.1.6...v0.1.7
