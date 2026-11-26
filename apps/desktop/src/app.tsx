@@ -239,33 +239,27 @@ export function App(): JSX.Element {
     };
   }, [call]);
 
-  const openAgent = useCallback((id: string) => {
+  const closeMain = (): void => {
     setPair(null);
     setRoom(null);
     setSettings(null);
     setUsage(false);
     setBoard(null);
+  };
+  const openAgent = useCallback((id: string) => {
+    closeMain();
     setSelected(id);
   }, []);
   const openConversation = useCallback((a: string, b: string) => {
-    setSettings(null);
-    setUsage(false);
-    setRoom(null);
-    setBoard(null);
+    closeMain();
     setPair(a < b ? [a, b] : [b, a]);
   }, []);
   const openRoom = useCallback((id: number) => {
-    setSettings(null);
-    setUsage(false);
-    setPair(null);
-    setBoard(null);
+    closeMain();
     setRoom(id);
   }, []);
   const openDashboard = useCallback((index: number) => {
-    setSettings(null);
-    setUsage(false);
-    setPair(null);
-    setRoom(null);
+    closeMain();
     setBoard(index);
   }, []);
   const closeRoom = useCallback(() => {
