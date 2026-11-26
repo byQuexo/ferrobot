@@ -214,11 +214,27 @@ function CliDialog(props: {
         return { kind, script: source };
     }
   };
+  const what = {
+    debian: "the package",
+    npm: "the package",
+    download: "the link",
+    script: "the script",
+  };
+  const missing = [
+    ...(id.trim() ? [] : ["a name"]),
+    ...(source.trim() ? [] : [what[kind]]),
+    ...(choice !== "none" && !hosts.trim() ? ["API hosts"] : []),
+    ...(choice !== "none" && !env.trim() ? ["token variables"] : []),
+    ...(choice === "sign-in" && !login.trim() ? ["login command"] : []),
+    ...(choice === "sign-in" && !tokenCmd.trim() ? ["token command"] : []),
+  ];
   const save = (): void =>
     void run(async () => {
+      const listed = splitList(programs);
       const spec: CliSpec = {
         install: install(),
-        programs: splitList(programs),
+        // A downloaded binary needs a file name; the CLI's name is the usual one.
+        programs: listed.length || kind === "debian" ? listed : [id.trim()],
         account:
           choice === "none"
             ? null
@@ -247,16 +263,11 @@ function CliDialog(props: {
       onClose={props.onClose}
       footer={
         <>
+          {missing.length > 0 && <span class="hint grow">Still needed: {missing.join(", ")}</span>}
           <Button variant="ghost" onClick={props.onClose}>
             Cancel
           </Button>
-          <Button
-            variant="primary"
-            disabled={
-              !id.trim() || !source.trim() || (choice !== "none" && (!hosts.trim() || !env.trim()))
-            }
-            onClick={save}
-          >
+          <Button variant="primary" disabled={missing.length > 0} onClick={save}>
             {choice === "sign-in" ? "Save and sign in" : "Save"}
           </Button>
         </>
@@ -356,7 +367,7 @@ function CliDialog(props: {
           <input
             value={programs}
             spellcheck={false}
-            placeholder="example"
+            placeholder="Empty: the CLI's name"
             onInput={(e) => {
               setPrograms(e.currentTarget.value);
             }}
@@ -411,7 +422,7 @@ function CliDialog(props: {
               <input
                 value={hosts}
                 spellcheck={false}
-                placeholder="api.example.com"
+                placeholder="e.g. api.example.com"
                 onInput={(e) => {
                   setHosts(e.currentTarget.value);
                 }}
@@ -423,7 +434,7 @@ function CliDialog(props: {
               <input
                 value={env}
                 spellcheck={false}
-                placeholder="EXAMPLE_API_KEY"
+                placeholder="e.g. EXAMPLE_API_KEY"
                 onInput={(e) => {
                   setEnv(e.currentTarget.value);
                 }}
@@ -436,7 +447,7 @@ function CliDialog(props: {
                   <input
                     value={login}
                     spellcheck={false}
-                    placeholder="example auth login --web"
+                    placeholder="e.g. example auth login --web"
                     onInput={(e) => {
                       setLogin(e.currentTarget.value);
                     }}
@@ -447,7 +458,7 @@ function CliDialog(props: {
                   <input
                     value={tokenCmd}
                     spellcheck={false}
-                    placeholder="example auth token"
+                    placeholder="e.g. example auth token"
                     onInput={(e) => {
                       setTokenCmd(e.currentTarget.value);
                     }}
