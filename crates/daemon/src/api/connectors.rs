@@ -10,7 +10,7 @@ use std::fmt::Write as _;
 use ferrobot_core::question::{
     Approval, QuestionAnswer, QuestionAnswered, QuestionCard, QuestionEvent, approves, take_secret,
 };
-use ferrobot_core::{AgentId, Connector, ConnectorAuth, Sender};
+use ferrobot_core::{AgentId, Connector, ConnectorAuth};
 use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;
 use uuid::Uuid;
@@ -19,7 +19,6 @@ use super::agents::explicit;
 use super::{ApiResult, parse_id};
 use crate::connectors::{ConnectorCheck, check, check_soon, secret_key};
 use crate::error::{ApiError, ErrorBody};
-use crate::state::UiEvent;
 use crate::{AppState, oauth};
 
 #[derive(Debug, Serialize, ToSchema)]
@@ -373,15 +372,8 @@ pub(crate) async fn request_card(
         },
     )
     .in_turn(state.hub.current_turn(requester));
-    let payload = serde_json::to_value(&card).map_err(|e| ApiError::Internal(e.to_string()))?;
     let chat = crate::agents::chat_of(state, requester).await?;
-    let event = state
-        .store
-        .append_event(chat, None, "question".into(), payload)
-        .await?;
-    let qid = event.id;
-    state.publish(UiEvent::Event { event });
-    Ok(qid)
+    crate::agents::post_card(state, chat, &card).await
 }
 
 /// The operator's answer to an add-connector card: approved, the connector is created and given to
@@ -450,14 +442,7 @@ pub(crate) async fn answer_card(
         format!("The operator declined adding the connector \"{name}\".")
     };
     let message_id = if state.store.get_agent(*requester).await.is_ok() {
-        let msg = state
-            .store
-            .enqueue_message(Sender::User, *requester, note, None)
-            .await?;
-        state.message_arrived(*requester);
-        let id = msg.id;
-        state.publish(UiEvent::Message { message: msg });
-        Some(id)
+        Some(crate::agents::tell(state, *requester, note).await?.id)
     } else {
         None
     };
@@ -467,9 +452,7 @@ pub(crate) async fn answer_card(
         message_id,
         timed_out: false,
     };
-    let payload = serde_json::to_value(&answered).map_err(|e| ApiError::Internal(e.to_string()))?;
-    state.record(chat, None, "question_answered", payload).await;
-    Ok(answered)
+    crate::agents::record_answer(state, chat, answered).await
 }
 
 #[derive(Debug, Deserialize, ToSchema)]

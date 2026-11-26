@@ -33,6 +33,11 @@ pub(crate) async fn load(state: &AppState) -> Result<GeneralSettings, ApiError> 
     }
 }
 
+/// Unreadable settings fail closed: the operator gets the card.
+pub(crate) async fn auto_mode(state: &AppState) -> bool {
+    load(state).await.is_ok_and(|s| s.auto_mode)
+}
+
 /// The daemon-wide settings.
 #[utoipa::path(get, path = "/v1/settings", tag = "settings",
     responses((status = 200, body = GeneralSettings)))]
