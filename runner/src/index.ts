@@ -1,4 +1,3 @@
-// Entry point of the in-sandbox agent runner.
 import { mkdir } from "node:fs/promises";
 import { homedir } from "node:os";
 
@@ -75,10 +74,11 @@ async function main(): Promise<void> {
 
 function createDriver(config: RunnerConfig, session: SessionStore): ModelDriver {
   const gate = new ToolGate(config.daemonUrl, config.token);
+  const mcp = mcpUrl(config.daemonUrl);
   switch (config.driver) {
     case "claude":
       return new ClaudeDriver({
-        mcpUrl: mcpUrl(config.daemonUrl),
+        mcpUrl: mcp,
         token: config.token,
         workspaceDir: config.workspaceDir,
         model: config.model,
@@ -92,14 +92,14 @@ function createDriver(config: RunnerConfig, session: SessionStore): ModelDriver 
         token: config.token,
         workspaceDir: config.workspaceDir,
         stateDir: config.stateDir,
-        mcp: new FerrobotMcp(mcpUrl(config.daemonUrl), config.token),
+        mcp: new FerrobotMcp(mcp, config.token),
         gate,
       });
     case "codex":
       return new CodexDriver({
         bin: config.codexBin,
         baseUrl: config.codexBaseUrl,
-        mcpUrl: mcpUrl(config.daemonUrl),
+        mcpUrl: mcp,
         model: config.model,
         token: config.token,
         workspaceDir: config.workspaceDir,
@@ -110,7 +110,7 @@ function createDriver(config: RunnerConfig, session: SessionStore): ModelDriver 
       return new AcpDriver({
         bin: config.acpBin,
         model: config.model,
-        mcpUrl: mcpUrl(config.daemonUrl),
+        mcpUrl: mcp,
         token: config.token,
         workspaceDir: config.workspaceDir,
         homeDir: homedir(),
@@ -119,7 +119,7 @@ function createDriver(config: RunnerConfig, session: SessionStore): ModelDriver 
     case "claude_code":
       return new ClaudeCodeDriver({ daemonUrl: config.daemonUrl, token: config.token });
     case "mock":
-      return new MockDriver(new FerrobotMcp(mcpUrl(config.daemonUrl), config.token));
+      return new MockDriver(new FerrobotMcp(mcp, config.token));
   }
 }
 

@@ -18,7 +18,9 @@ use async_trait::async_trait;
 use axum::body::Body;
 use axum::http::HeaderMap;
 use axum::response::IntoResponse;
-use common::{Daemon, events, eventually, http, http_raw, start, start_on, start_with};
+use common::{
+    Daemon, Ws, events, eventually, http, http_raw, next_frame, send, start, start_on, start_with,
+};
 use ferrobot_core::protocol::{DaemonFrame, RunnerFrame};
 use ferrobot_core::{AgentId, Sender};
 use ferrobot_daemon::files;
@@ -27,9 +29,8 @@ use ferrobot_sandbox::{
     ExecOutput, ExecRequest, SandboxBackend, SandboxError, SandboxHandle, SandboxPath, SandboxSpec,
     SandboxState, SleepLevel, SnapshotRef,
 };
-use futures_util::{SinkExt, StreamExt};
+use futures_util::StreamExt;
 use serde_json::{Value, json};
-use tokio_tungstenite::tungstenite::Message;
 use tokio_tungstenite::tungstenite::client::IntoClientRequest;
 
 /// Tracks container state like a real engine would.
@@ -197,9 +198,6 @@ impl SandboxBackend for StatefulBackend {
     }
 }
 
-type Ws =
-    tokio_tungstenite::WebSocketStream<tokio_tungstenite::MaybeTlsStream<tokio::net::TcpStream>>;
-
 async fn connect_runner(agents: &str, token: &str) -> Ws {
     connect_runner_with(agents, token, false).await
 }
@@ -219,9 +217,7 @@ async fn open_runner(agents: &str, token: &str, protocol_version: u32, steering:
         session_id: None,
         steering,
     };
-    ws.send(Message::text(serde_json::to_string(&hello).unwrap()))
-        .await
-        .unwrap();
+    send(&mut ws, &hello).await;
     ws
 }
 
@@ -234,23 +230,15 @@ async fn connect_runner_with(agents: &str, token: &str, steering: bool) -> Ws {
     ws
 }
 
-async fn next_frame(ws: &mut Ws) -> DaemonFrame {
-    loop {
-        let msg = tokio::time::timeout(Duration::from_secs(10), ws.next())
-            .await
-            .expect("frame in time")
-            .expect("stream open")
-            .expect("ws ok");
-        if let Message::Text(t) = msg {
-            return serde_json::from_str(&t).expect("daemon frame");
-        }
-    }
-}
-
 async fn create(d: &Daemon, body: Value) -> Value {
     let (status, agent) = http(&d.ui, "POST", "/v1/agents", Some(body)).await;
     assert_eq!(status, 201, "{agent}");
     agent
+}
+
+/// Creates an agent; returns its id.
+async fn create_id(d: &Daemon, body: Value) -> String {
+    create(d, body).await["id"].as_str().unwrap().to_owned()
 }
 
 const PNG: &[u8] = b"\x89PNG\r\n\x1a\n\0\0\0\rIHDR-not-a-real-image";
@@ -397,9 +385,7 @@ async fn profile_avatar_unread_and_memory() {
         turn_id: turn_id.clone(),
         event: ferrobot_core::protocol::TurnEvent::AssistantDelta { text: "hi".into() },
     };
-    ws.send(Message::text(serde_json::to_string(&delta).unwrap()))
-        .await
-        .unwrap();
+    send(&mut ws, &delta).await;
     let got = tokio::time::timeout(Duration::from_secs(5), async {
         loop {
             if let ferrobot_daemon::UiEvent::Delta {
@@ -413,17 +399,7 @@ async fn profile_avatar_unread_and_memory() {
     .await
     .unwrap();
     assert_eq!(got, (turn_id.clone(), "hi".to_owned()));
-    let done = RunnerFrame::TurnDone {
-        turn_id,
-        outcome: ferrobot_core::protocol::TurnOutcome::Completed,
-        session_id: None,
-        result: Some("hi".into()),
-        error: None,
-        steered: vec![],
-    };
-    ws.send(Message::text(serde_json::to_string(&done).unwrap()))
-        .await
-        .unwrap();
+    finish(&mut ws, turn_id, Some("hi")).await;
     eventually("unread", Duration::from_secs(5), || async {
         let (_, a) = http(&d.ui, "GET", &format!("/v1/agents/{id}"), None).await;
         (a["unread"] == 1).then_some(())
@@ -488,10 +464,7 @@ async fn profile_avatar_unread_and_memory() {
 async fn routines_crud_run_now_and_schedule() {
     let backend = Arc::new(StatefulBackend::default());
     let d = start(backend.clone(), None, "127.0.0.1:0").await;
-    let id = create(&d, json!({"name": "rex"})).await["id"]
-        .as_str()
-        .unwrap()
-        .to_owned();
+    let id = create_id(&d, json!({"name": "rex"})).await;
     let list = format!("/v1/agents/{id}/routines");
     for bad in [
         json!({"name": "x", "schedule": "61 * * * *", "prompt": "p"}),
@@ -591,10 +564,7 @@ async fn idle_sleep_auto_wake_and_crash_recovery() {
         s.idle_timeout = Some(Duration::from_millis(300));
     })
     .await;
-    let id = create(&d, json!({"name": "sam"})).await["id"]
-        .as_str()
-        .unwrap()
-        .to_owned();
+    let id = create_id(&d, json!({"name": "sam"})).await;
     let ws = connect_runner(&d.agents, &backend.token("sam")).await;
 
     ferrobot_daemon::supervisor::check_all(&d.state).await;
@@ -670,10 +640,7 @@ async fn idle_sleep_auto_wake_and_crash_recovery() {
 async fn snapshots_create_restore_delete() {
     let backend = Arc::new(StatefulBackend::default());
     let d = start(backend.clone(), None, "127.0.0.1:0").await;
-    let id = create(&d, json!({"name": "sid"})).await["id"]
-        .as_str()
-        .unwrap()
-        .to_owned();
+    let id = create_id(&d, json!({"name": "sid"})).await;
     let old_token = backend.token("sid");
     let snaps = format!("/v1/agents/{id}/snapshots");
     let (status, s) = http(
@@ -732,10 +699,7 @@ async fn snapshots_create_restore_delete() {
         "{calls:?}"
     );
 
-    let keep = create(&d, json!({"name": "keeper"})).await["id"]
-        .as_str()
-        .unwrap()
-        .to_owned();
+    let keep = create_id(&d, json!({"name": "keeper"})).await;
     let keep_snaps = format!("/v1/agents/{keep}/snapshots");
     let (status, _) = http(&d.ui, "POST", &keep_snaps, Some(json!({"label": "kept"}))).await;
     assert_eq!(status, 201);
@@ -1143,11 +1107,7 @@ async fn fake_upstream() -> String {
         )
             .into_response()
     }
-    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
-    let addr = listener.local_addr().unwrap();
-    let app = axum::Router::new().route("/v1/messages", axum::routing::post(handler));
-    tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });
-    format!("http://{addr}")
+    serve(axum::Router::new().route("/v1/messages", axum::routing::post(handler))).await
 }
 
 #[tokio::test]
@@ -1161,10 +1121,7 @@ async fn a_turns_trace_lines_up_its_model_and_tool_calls() {
         s.anthropic_upstream = upstream;
     })
     .await;
-    let id = create(&d, json!({"name": "tia"})).await["id"]
-        .as_str()
-        .unwrap()
-        .to_owned();
+    let id = create_id(&d, json!({"name": "tia"})).await;
     let token = backend.envs.lock().unwrap()["tia"]["FERROBOT_AGENT_TOKEN"].clone();
     let mut ws = connect_runner(&d.agents, &token).await;
     let path = format!("/v1/agents/{id}/messages");
@@ -1203,9 +1160,7 @@ async fn a_turns_trace_lines_up_its_model_and_tool_calls() {
             turn_id: turn_id.clone(),
             event,
         };
-        ws.send(Message::text(serde_json::to_string(&frame).unwrap()))
-            .await
-            .unwrap();
+        send(&mut ws, &frame).await;
     }
     answer(&mut ws, turn_id.clone(), "done").await;
     let agent: AgentId = id.parse().unwrap();
@@ -1343,14 +1298,8 @@ async fn state_survives_a_daemon_restart() {
         |_| {},
     )
     .await;
-    let awake = create(&d, json!({"name": "amy", "description": "stays up"})).await["id"]
-        .as_str()
-        .unwrap()
-        .to_owned();
-    let asleep = create(&d, json!({"name": "bob"})).await["id"]
-        .as_str()
-        .unwrap()
-        .to_owned();
+    let awake = create_id(&d, json!({"name": "amy", "description": "stays up"})).await;
+    let asleep = create_id(&d, json!({"name": "bob"})).await;
     http(
         &d.ui,
         "POST",
@@ -1521,10 +1470,7 @@ async fn mentions_priorities_and_conversations() {
 async fn question_cards_are_answered_once() {
     let backend = Arc::new(StatefulBackend::default());
     let d = start(backend.clone(), None, "127.0.0.1:0").await;
-    let ada = create(&d, json!({"name": "ada"})).await["id"]
-        .as_str()
-        .unwrap()
-        .to_owned();
+    let ada = create_id(&d, json!({"name": "ada"})).await;
     let ada_id: AgentId = ada.parse().unwrap();
     let card = json!({"version": 1, "card": {"title": "Release", "questions": [
         {"id": "day", "prompt": "Which day?", "kind": "single", "allow_custom": true,
@@ -1610,6 +1556,20 @@ fn agent_request(name: &str) -> ferrobot_mcp::AgentRequest {
         character: None,
         tools: None,
         connectors: None,
+    }
+}
+
+fn agent_spec(name: &str) -> ferrobot_daemon::agents::AgentSpec {
+    ferrobot_daemon::agents::AgentSpec {
+        name: name.into(),
+        description: String::new(),
+        instructions: String::new(),
+        character: None,
+        provider_id: None,
+        model: None,
+        tools: None,
+        connectors: None,
+        tags: Vec::new(),
     }
 }
 
@@ -1930,10 +1890,7 @@ async fn agents_create_agents_only_with_approval() {
 async fn agent_limit_applies_to_api_and_agents() {
     let backend = Arc::new(StatefulBackend::default());
     let d = start_with(backend, None, "127.0.0.1:0", |s| s.max_agents = 2).await;
-    let ada = create(&d, json!({"name": "ada"})).await["id"]
-        .as_str()
-        .unwrap()
-        .to_owned();
+    let ada = create_id(&d, json!({"name": "ada"})).await;
     create(&d, json!({"name": "bob"})).await;
     let (status, body) = http(&d.ui, "POST", "/v1/agents", Some(json!({"name": "cy"}))).await;
     assert_eq!(status, 409, "{body}");
@@ -1991,10 +1948,7 @@ async fn auto_mode_creates_agents_without_a_card() {
     let (_, body) = http(&d.ui, "GET", "/v1/settings", None).await;
     assert_eq!(body["auto_mode"], true);
 
-    let ada = create(&d, json!({"name": "ada"})).await["id"]
-        .as_str()
-        .unwrap()
-        .to_owned();
+    let ada = create_id(&d, json!({"name": "ada"})).await;
     let AgentRequestOutcome::Created { id: scout, .. } = d
         .state
         .request_agent(ada.parse().unwrap(), agent_request("scout"))
@@ -2074,11 +2028,7 @@ async fn echo_upstream() -> String {
         }))
         .into_response()
     }
-    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
-    let addr = listener.local_addr().unwrap();
-    let app = axum::Router::new().fallback(handler);
-    tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });
-    format!("http://{addr}")
+    serve(axum::Router::new().fallback(handler)).await
 }
 
 async fn model_call(d: &Daemon, path: &str, auth: (&str, &str)) -> (u16, Value) {
@@ -2096,9 +2046,7 @@ async fn fail(ws: &mut Ws, turn_id: String, error: &str) {
         error: Some(error.into()),
         steered: vec![],
     };
-    ws.send(Message::text(serde_json::to_string(&done).unwrap()))
-        .await
-        .unwrap();
+    send(ws, &done).await;
 }
 
 #[tokio::test]
@@ -2106,10 +2054,7 @@ async fn credential_problems_hold_turns_until_fixed() {
     let upstream = echo_upstream().await;
     let backend = Arc::new(StatefulBackend::default());
     let d = start(backend.clone(), None, "127.0.0.1:0").await;
-    let id = create(&d, json!({"name": "kim"})).await["id"]
-        .as_str()
-        .unwrap()
-        .to_owned();
+    let id = create_id(&d, json!({"name": "kim"})).await;
     let mut ws = connect_runner(&d.agents, &backend.token("kim")).await;
     let post = |body: &'static str| {
         let path = format!("/v1/agents/{id}/messages");
@@ -2282,11 +2227,7 @@ async fn no_tools_upstream() -> String {
         axum::Json(json!({"choices": [{"message": {"role": "assistant", "content": "hi"}}]}))
             .into_response()
     }
-    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
-    let addr = listener.local_addr().unwrap();
-    let app = axum::Router::new().fallback(handler);
-    tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });
-    format!("http://{addr}/v1")
+    format!("{}/v1", serve(axum::Router::new().fallback(handler)).await)
 }
 
 #[tokio::test]
@@ -2299,10 +2240,7 @@ async fn models_without_tools_ask_once_and_hold_turns() {
                       "api_key": "or-key", "default_model": "dolphin"});
     let (status, provider) = http(&d.ui, "POST", "/v1/providers", Some(body)).await;
     assert_eq!(status, 201, "{provider}");
-    let id = create(&d, json!({"name": "kim", "provider_id": provider["id"]})).await["id"]
-        .as_str()
-        .unwrap()
-        .to_owned();
+    let id = create_id(&d, json!({"name": "kim", "provider_id": provider["id"]})).await;
     let (d, id) = (&d, id.as_str());
     let conn = add_connector(d, json!({"name": "open", "url": keyless_upstream().await})).await;
     let assign = format!("/v1/agents/{id}/connectors");
@@ -2986,10 +2924,7 @@ async fn idle_agents_pause_before_they_stop() {
         s.idle_timeout = Some(Duration::from_millis(600));
     })
     .await;
-    let id = create(&d, json!({"name": "wren"})).await["id"]
-        .as_str()
-        .unwrap()
-        .to_owned();
+    let id = create_id(&d, json!({"name": "wren"})).await;
     let _ws = connect_runner(&d.agents, &backend.token("wren")).await;
     let agent = || async {
         http(&d.ui, "GET", &format!("/v1/agents/{id}"), None)
@@ -3066,10 +3001,7 @@ async fn backends_without_pause_stay_awake_until_the_cold_timeout() {
         s.idle_timeout = Some(Duration::from_secs(60));
     })
     .await;
-    let id = create(&d, json!({"name": "lou"})).await["id"]
-        .as_str()
-        .unwrap()
-        .to_owned();
+    let id = create_id(&d, json!({"name": "lou"})).await;
     tokio::time::sleep(Duration::from_millis(200)).await;
     ferrobot_daemon::supervisor::check_all(&d.state).await;
     let (_, a) = http(&d.ui, "GET", &format!("/v1/agents/{id}"), None).await;
@@ -3162,14 +3094,7 @@ async fn models_upstream() -> String {
         };
         axum::Json(body).into_response()
     }
-    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
-    let addr = listener.local_addr().unwrap();
-    tokio::spawn(async move {
-        axum::serve(listener, axum::Router::new().fallback(handler))
-            .await
-            .unwrap();
-    });
-    format!("http://{addr}")
+    serve(axum::Router::new().fallback(handler)).await
 }
 
 async fn model_list(d: &Daemon, provider: &str) -> Value {
@@ -3276,10 +3201,7 @@ async fn idle_sleeping_agents_are_archived_and_restored_on_wake() {
         s.archive_timeout = Some(Duration::from_millis(400));
     })
     .await;
-    let id = create(&d, json!({"name": "arlo"})).await["id"]
-        .as_str()
-        .unwrap()
-        .to_owned();
+    let id = create_id(&d, json!({"name": "arlo"})).await;
     let old_token = backend.token("arlo");
     assert_ne!(mcp_status(&d.agents, &old_token).await, 401);
     let status = || async {
@@ -3406,10 +3328,15 @@ async fn keyless_app() -> axum::Router {
 }
 
 async fn serve_upstream(app: axum::Router) -> String {
+    format!("{}/mcp", serve(app).await)
+}
+
+/// Serves `app` on a free local port; returns its base URL.
+async fn serve(app: axum::Router) -> String {
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
-    let url = format!("http://{}/mcp", listener.local_addr().unwrap());
+    let base = format!("http://{}", listener.local_addr().unwrap());
     tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });
-    url
+    base
 }
 
 /// [`upstream_mcp`] accepting `token`, plus `extra` routes on the same origin.
@@ -3518,10 +3445,7 @@ async fn connectors_lend_upstream_tools_to_assigned_agents_only() {
     let (url, seen) = upstream_mcp().await;
     let backend = Arc::new(StatefulBackend::default());
     let d = start(backend.clone(), None, "127.0.0.1:0").await;
-    let ann = create(&d, json!({"name": "ann"})).await["id"]
-        .as_str()
-        .unwrap()
-        .to_owned();
+    let ann = create_id(&d, json!({"name": "ann"})).await;
     create(&d, json!({"name": "ben"})).await;
 
     let body = json!({"name": "up", "url": url, "token": "secret"});
@@ -3599,20 +3523,10 @@ async fn connectors_lend_upstream_tools_to_assigned_agents_only() {
     assert_eq!((status, &all["tools"]), (200, &Value::Null));
 
     // Agents created by ann inherit its connectors.
-    let spec = ferrobot_daemon::agents::AgentSpec {
-        name: "cal".into(),
-        description: String::new(),
-        instructions: String::new(),
-        character: None,
-        provider_id: None,
-        model: None,
-        tools: None,
-        connectors: None,
-        tags: Vec::new(),
-    };
-    let cal = ferrobot_daemon::agents::create(&d.state, spec, Some(ann.parse().unwrap()))
-        .await
-        .unwrap();
+    let cal =
+        ferrobot_daemon::agents::create(&d.state, agent_spec("cal"), Some(ann.parse().unwrap()))
+            .await
+            .unwrap();
     let path = format!("/v1/agents/{}/connectors", cal.id);
     let (_, ids) = http(&d.ui, "GET", &path, None).await;
     assert_eq!(ids, json!([conn["id"]]));
@@ -3637,10 +3551,7 @@ async fn connectors_sign_in_with_oauth() {
     let (url, seen) = upstream_with("at-1", move |base| fake_auth_server(base, as_challenge)).await;
     let backend = Arc::new(StatefulBackend::default());
     let d = start(backend.clone(), None, "127.0.0.1:0").await;
-    let ann = create(&d, json!({"name": "ann"})).await["id"]
-        .as_str()
-        .unwrap()
-        .to_owned();
+    let ann = create_id(&d, json!({"name": "ann"})).await;
     let (_, conn) = http(
         &d.ui,
         "POST",
@@ -3918,10 +3829,7 @@ async fn a_local_server_runs_here_with_only_its_own_token() {
     std::fs::write(&script, FAKE_LOCAL_SERVER).unwrap();
     let backend = Arc::new(StatefulBackend::default());
     let d = start(backend.clone(), None, "127.0.0.1:0").await;
-    let ann = create(&d, json!({"name": "ann"})).await["id"]
-        .as_str()
-        .unwrap()
-        .to_owned();
+    let ann = create_id(&d, json!({"name": "ann"})).await;
     let body = json!({"name": "fake", "command": ["python3", script.to_str().unwrap()],
         "token_env": "FAKE_TOKEN", "token": "tok-local-1"});
     let (status, conn) = http(&d.ui, "POST", "/v1/connectors", Some(body)).await;
@@ -3958,10 +3866,7 @@ async fn a_local_server_runs_here_with_only_its_own_token() {
 async fn an_agent_proposes_a_local_server_on_a_card_that_shows_its_command() {
     let backend = Arc::new(StatefulBackend::default());
     let d = start(backend.clone(), None, "127.0.0.1:0").await;
-    let ann = create(&d, json!({"name": "ann"})).await["id"]
-        .as_str()
-        .unwrap()
-        .to_owned();
+    let ann = create_id(&d, json!({"name": "ann"})).await;
     // Auto mode never skips it: a local server runs code on this computer.
     let auto = Some(json!({"auto_mode": true}));
     assert_eq!(http(&d.ui, "PUT", "/v1/settings", auto).await.0, 200);
@@ -4004,14 +3909,8 @@ async fn an_agent_proposes_a_local_server_on_a_card_that_shows_its_command() {
 #[tokio::test]
 async fn a_renamed_agent_still_answers_to_its_old_name() {
     let d = start(Arc::new(StatefulBackend::default()), None, "127.0.0.1:0").await;
-    let scout = create(&d, json!({"name": "scout"})).await["id"]
-        .as_str()
-        .unwrap()
-        .to_owned();
-    let ferro = create(&d, json!({"name": "ferro"})).await["id"]
-        .as_str()
-        .unwrap()
-        .to_owned();
+    let scout = create_id(&d, json!({"name": "scout"})).await;
+    let ferro = create_id(&d, json!({"name": "ferro"})).await;
     let path = format!("/v1/agents/{scout}");
     let (status, _) = http(&d.ui, "PATCH", &path, Some(json!({"name": "scout-x"}))).await;
     assert_eq!(status, 200);
@@ -4045,10 +3944,7 @@ async fn a_renamed_agent_still_answers_to_its_old_name() {
 async fn the_ui_hears_when_a_turn_takes_a_message() {
     let backend = Arc::new(StatefulBackend::default());
     let d = start(backend.clone(), None, "127.0.0.1:0").await;
-    let id = create(&d, json!({ "name": "nova" })).await["id"]
-        .as_str()
-        .unwrap()
-        .to_owned();
+    let id = create_id(&d, json!({ "name": "nova" })).await;
     let mut ws = connect_runner(&d.agents, &backend.token("nova")).await;
     let mut ui = d.state.ui.subscribe();
     let path = format!("/v1/agents/{id}/messages");
@@ -4087,10 +3983,7 @@ async fn send_now_stops_only_a_turn_that_cannot_take_the_message() {
     let backend = Arc::new(StatefulBackend::default());
     let d = start(backend.clone(), None, "127.0.0.1:0").await;
     for (name, steering) in [("quill", false), ("stella", true)] {
-        let id = create(&d, json!({ "name": name })).await["id"]
-            .as_str()
-            .unwrap()
-            .to_owned();
+        let id = create_id(&d, json!({ "name": name })).await;
         let mut ws = connect_runner_with(&d.agents, &backend.token(name), steering).await;
         let path = format!("/v1/agents/{id}/messages");
         let post = |body: Value| {
@@ -4115,9 +4008,7 @@ async fn send_now_stops_only_a_turn_that_cannot_take_the_message() {
                     error: None,
                     steered: vec![],
                 };
-                ws.send(Message::text(serde_json::to_string(&done).unwrap()))
-                    .await
-                    .unwrap();
+                send(&mut ws, &done).await;
                 let (_, message_id, body) = next_turn(&mut ws).await;
                 assert_eq!((message_id, body.as_str()), (now, "hotels instead"));
             }
@@ -4137,10 +4028,7 @@ async fn messages_reach_a_running_turn_when_the_runner_can_take_them() {
     use ferrobot_core::protocol::TurnOutcome;
     let backend = Arc::new(StatefulBackend::default());
     let d = start(backend.clone(), None, "127.0.0.1:0").await;
-    let id = create(&d, json!({"name": "stella"})).await["id"]
-        .as_str()
-        .unwrap()
-        .to_owned();
+    let id = create_id(&d, json!({"name": "stella"})).await;
     let mut ws = connect_runner_with(&d.agents, &backend.token("stella"), true).await;
     let post = |body: &'static str| {
         let path = format!("/v1/agents/{id}/messages");
@@ -4193,9 +4081,7 @@ async fn messages_reach_a_running_turn_when_the_runner_can_take_them() {
         error: None,
         steered: vec![hotels],
     };
-    ws.send(Message::text(serde_json::to_string(&done).unwrap()))
-        .await
-        .unwrap();
+    send(&mut ws, &done).await;
     let DaemonFrame::Turn { message_id, .. } = next_frame(&mut ws).await else {
         panic!("expected the unseen message as a turn");
     };
@@ -4219,10 +4105,7 @@ async fn messages_reach_a_running_turn_when_the_runner_can_take_them() {
 #[tokio::test]
 async fn the_operator_reacts_to_an_agent_message_and_the_agent_is_told() {
     let d = start(Arc::new(StatefulBackend::default()), None, "127.0.0.1:0").await;
-    let ann = create(&d, json!({"name": "ann"})).await["id"]
-        .as_str()
-        .unwrap()
-        .to_owned();
+    let ann = create_id(&d, json!({"name": "ann"})).await;
     let ann_id: AgentId = ann.parse().unwrap();
     let said = d
         .state
@@ -4331,10 +4214,7 @@ async fn html_blocks_from_the_chat_open_as_sandboxed_pages() {
 async fn agents_share_files_that_open_from_storage() {
     let backend = Arc::new(StatefulBackend::default());
     let d = start(backend.clone(), None, "127.0.0.1:0").await;
-    let ann = create(&d, json!({"name": "ann"})).await["id"]
-        .as_str()
-        .unwrap()
-        .to_owned();
+    let ann = create_id(&d, json!({"name": "ann"})).await;
     let ann_id: AgentId = ann.parse().unwrap();
 
     let plan = d.state.share_file(ann_id, "plan.md".into()).await.unwrap();
@@ -4414,11 +4294,7 @@ async fn agents_share_files_that_open_from_storage() {
     assert_eq!(get(expired).await, 404, "links expire");
 
     // A file event pointing outside the agent's own files is never served.
-    let bob: AgentId = create(&d, json!({"name": "bob"})).await["id"]
-        .as_str()
-        .unwrap()
-        .parse()
-        .unwrap();
+    let bob: AgentId = create_id(&d, json!({"name": "bob"})).await.parse().unwrap();
     let bob_file = d.state.share_file(bob, "secret.md".into()).await.unwrap();
     let bob_key = d
         .state
@@ -4632,10 +4508,7 @@ async fn connectors_keep_the_secret_a_server_registered_them_with() {
     let (url, _) = upstream_with("at-1", move |base| fake_app_server(base, server_log)).await;
     let backend = Arc::new(StatefulBackend::default());
     let d = start(backend.clone(), None, "127.0.0.1:0").await;
-    let ann = create(&d, json!({"name": "ann"})).await["id"]
-        .as_str()
-        .unwrap()
-        .to_owned();
+    let ann = create_id(&d, json!({"name": "ann"})).await;
     let body = json!({"name": "reg", "url": url});
     let (_, conn) = http(&d.ui, "POST", "/v1/connectors", Some(body)).await;
     let id = conn["id"].as_str().unwrap().to_owned();
@@ -4700,10 +4573,7 @@ async fn connectors_use_an_own_oauth_app_refresh_and_revoke() {
     let (url, _) = upstream_with("at-1", move |base| fake_app_server(base, server_log)).await;
     let backend = Arc::new(StatefulBackend::default());
     let d = start(backend.clone(), None, "127.0.0.1:0").await;
-    let ann = create(&d, json!({"name": "ann"})).await["id"]
-        .as_str()
-        .unwrap()
-        .to_owned();
+    let ann = create_id(&d, json!({"name": "ann"})).await;
     let issuer = url.trim_end_matches("/mcp").to_owned();
     let body = json!({"name": "app", "url": url, "client_id": "client-app", "issuer": issuer,
                       "client_secret": "app-secret", "scopes": ["mail.read mail.read", "mail.compose"]});
@@ -4859,9 +4729,7 @@ async fn finish(ws: &mut Ws, turn_id: String, result: Option<&str>) {
         error: None,
         steered: vec![],
     };
-    ws.send(Message::text(serde_json::to_string(&done).unwrap()))
-        .await
-        .unwrap();
+    send(ws, &done).await;
 }
 
 async fn next_turn(ws: &mut Ws) -> (String, i64, String) {
@@ -4933,10 +4801,7 @@ async fn agent_mail_wakes_sleeping_agents() {
         ("cole", SleepLevel::Cold, "stopped"),
         ("arch", SleepLevel::Archived, "archived"),
     ] {
-        let id = create(&d, json!({"name": name})).await["id"]
-            .as_str()
-            .unwrap()
-            .to_owned();
+        let id = create_id(&d, json!({"name": name})).await;
         ferrobot_daemon::lifecycle::sleep(&d.state, id.parse().unwrap(), "test", level)
             .await
             .unwrap();
@@ -5174,10 +5039,7 @@ async fn new_agents_greet_the_operator_first() {
     };
     // Created by the operator, with and without a message queued before its runner connects.
     for (name, queued) in [("gia", None), ("hal", Some("plan the trip"))] {
-        let id = create(&d, json!({"name": name})).await["id"]
-            .as_str()
-            .unwrap()
-            .to_owned();
+        let id = create_id(&d, json!({"name": name})).await;
         let queued_id = match queued {
             Some(body) => post(id.clone(), body).await,
             None => 0,
@@ -5197,18 +5059,7 @@ async fn new_agents_greet_the_operator_first() {
         .unwrap()
         .parse()
         .unwrap();
-    let spec = ferrobot_daemon::agents::AgentSpec {
-        name: "ivy".into(),
-        description: String::new(),
-        instructions: String::new(),
-        character: None,
-        provider_id: None,
-        model: None,
-        tools: None,
-        connectors: None,
-        tags: Vec::new(),
-    };
-    let ivy = ferrobot_daemon::agents::create(&d.state, spec, Some(gia))
+    let ivy = ferrobot_daemon::agents::create(&d.state, agent_spec("ivy"), Some(gia))
         .await
         .unwrap();
     let mut ws = connect_runner(&d.agents, &backend.token("ivy")).await;
@@ -5277,11 +5128,7 @@ async fn voice_upstream() -> (String, Arc<Mutex<Vec<Value>>>) {
             }
         }
     };
-    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
-    let addr = listener.local_addr().unwrap();
-    let app = axum::Router::new().fallback(handler);
-    tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });
-    (format!("http://{addr}"), seen)
+    (serve(axum::Router::new().fallback(handler)).await, seen)
 }
 
 async fn speak(d: &Daemon, text: &str) -> (u16, Vec<(String, String)>, Vec<u8>) {
@@ -5474,14 +5321,8 @@ async fn voice_speaks_and_listens_with_keys_kept_in_the_daemon() {
     assert_eq!(last()["path"], "/v1/text-to-speech/bobvoice/stream");
 
     // In a call, an agent without a voice of its own speaks with one nobody else there uses.
-    let host = create(&d, json!({"name": "hal"})).await["id"]
-        .as_str()
-        .unwrap()
-        .to_owned();
-    let guest = create(&d, json!({"name": "gus"})).await["id"]
-        .as_str()
-        .unwrap()
-        .to_owned();
+    let host = create_id(&d, json!({"name": "hal"})).await;
+    let guest = create_id(&d, json!({"name": "gus"})).await;
     let both = Some(json!({"agents": [host, guest]}));
     assert_eq!(http(&d.ui, "PUT", "/v1/call", both).await.0, 200);
     for (who, voice) in [(&host, "voice123"), (&guest, "id-Ada")] {
@@ -5557,12 +5398,11 @@ async fn voice_speaks_and_listens_with_keys_kept_in_the_daemon() {
 
 /// Messages queued for `agent` (not the ones it sent).
 async fn received(d: &Daemon, agent: AgentId) -> Vec<Value> {
-    let (_, msgs) = http(&d.ui, "GET", &format!("/v1/agents/{agent}/messages"), None).await;
-    msgs.as_array()
-        .unwrap()
-        .iter()
-        .filter(|m| m["recipient"] == agent.to_string())
-        .cloned()
+    let agent = agent.to_string();
+    mail(d, &agent)
+        .await
+        .into_iter()
+        .filter(|m| m["recipient"] == agent)
         .collect()
 }
 
@@ -5589,9 +5429,7 @@ async fn answer_with(
         },
     ];
     for frame in frames {
-        ws.send(Message::text(serde_json::to_string(&frame).unwrap()))
-            .await
-            .unwrap();
+        send(ws, &frame).await;
     }
 }
 
@@ -5971,11 +5809,7 @@ async fn message_limits_count_mentions_as_stored() {
     use rmcp::model::CallToolRequestParams;
     let backend = Arc::new(StatefulBackend::default());
     let d = start(backend.clone(), None, "127.0.0.1:0").await;
-    let ada: AgentId = create(&d, json!({"name": "ada"})).await["id"]
-        .as_str()
-        .unwrap()
-        .parse()
-        .unwrap();
+    let ada: AgentId = create_id(&d, json!({"name": "ada"})).await.parse().unwrap();
     create(&d, json!({"name": "bob"})).await;
     let (status, _) = http(&d.ui, "PUT", "/v1/call", Some(json!({"agents": [ada]}))).await;
     assert_eq!(status, 200);
@@ -6079,8 +5913,6 @@ data: {"type":"message_"#,
         "data: {\"choices\":[],\"usage\":{\"prompt_tokens\":900,\"completion_tokens\":50,\"cost\":0.0042}}\n\n",
         "data: [DONE]\n\n",
     ];
-    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
-    let addr = listener.local_addr().unwrap();
     let app = axum::Router::new()
         .route(
             "/v1/messages",
@@ -6104,8 +5936,7 @@ data: {"type":"message_"#,
                 }
             }),
         );
-    tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });
-    format!("http://{addr}")
+    serve(app).await
 }
 
 #[tokio::test]
@@ -6675,10 +6506,7 @@ async fn agents_get_connectors_through_a_card_whose_token_they_never_see() {
     let (url, seen) = upstream_with(TOKEN, |_| axum::Router::new()).await;
     let backend = Arc::new(StatefulBackend::default());
     let d = start(backend.clone(), None, "127.0.0.1:0").await;
-    let ann = create(&d, json!({"name": "ann"})).await["id"]
-        .as_str()
-        .unwrap()
-        .to_owned();
+    let ann = create_id(&d, json!({"name": "ann"})).await;
     // Auto mode does not skip a connector card.
     let auto = Some(json!({"auto_mode": true}));
     assert_eq!(http(&d.ui, "PUT", "/v1/settings", auto).await.0, 200);
@@ -6870,10 +6698,7 @@ async fn agents_create_routines_with_approval_or_in_auto_mode() {
         prompt: "Summarise yesterday's mail".into(),
     };
     let d = start(Arc::new(StatefulBackend::default()), None, "127.0.0.1:0").await;
-    let ada = create(&d, json!({"name": "ada"})).await["id"]
-        .as_str()
-        .unwrap()
-        .to_owned();
+    let ada = create_id(&d, json!({"name": "ada"})).await;
     let id: AgentId = ada.parse().unwrap();
     let routines = || {
         let path = format!("/v1/agents/{ada}/routines");
@@ -6982,20 +6807,13 @@ async fn agents_change_the_tools_of_agents_they_created() {
             assert_eq!(http(&ui, "PUT", "/v1/settings", body).await.0, 200);
         }
     };
-    let ada = create(
+    let ada = create_id(
         &d,
         json!({"name": "ada", "tools": ["team", "memory", "create_agents", "shell"]}),
     )
-    .await["id"]
-        .as_str()
-        .unwrap()
-        .to_owned();
+    .await;
     let ada_id: AgentId = ada.parse().unwrap();
-    let bob: AgentId = create(&d, json!({"name": "bob"})).await["id"]
-        .as_str()
-        .unwrap()
-        .parse()
-        .unwrap();
+    let bob: AgentId = create_id(&d, json!({"name": "bob"})).await.parse().unwrap();
     let gone = "http://127.0.0.1:1/mcp";
     let gh = add_connector(&d, json!({"name": "github", "url": gone})).await["id"].clone();
     let db = add_connector(&d, json!({"name": "db", "url": gone})).await["id"].clone();
@@ -8353,10 +8171,7 @@ async fn groups_talk_by_room_rules_and_a_call_to_one_lands_in_it() {
 async fn operator_uploads_land_in_the_agents_workspace() {
     let backend = Arc::new(StatefulBackend::default());
     let d = start(backend.clone(), None, "127.0.0.1:0").await;
-    let ann = create(&d, json!({"name": "ann"})).await["id"]
-        .as_str()
-        .unwrap()
-        .to_owned();
+    let ann = create_id(&d, json!({"name": "ann"})).await;
     let upload = async |agent: &str, name: &str, auth: &[(&str, &str)], body: &[u8]| {
         let path = format!("/v1/agents/{agent}/uploads?name={name}");
         let (status, _, body) = http_raw(&d.ui, "POST", &path, auth, body).await;
@@ -8459,15 +8274,13 @@ async fn a_finished_turn_goes_to_the_trace_endpoint_as_protobuf() {
             }
         }),
     );
-    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
-    let addr = listener.local_addr().unwrap();
-    tokio::spawn(async move { axum::serve(listener, receiver).await });
+    let base = serve(receiver).await;
 
     let backend = Arc::new(StatefulBackend::default());
     let d = start(backend.clone(), None, "127.0.0.1:0").await;
     let settings = json!({
         "enabled": true,
-        "endpoint": format!("http://{addr}/v1/traces"),
+        "endpoint": format!("{base}/v1/traces"),
         "header": "Authorization",
     });
     let (status, body) = http(&d.ui, "PUT", "/v1/otel", Some(settings)).await;
@@ -8477,10 +8290,7 @@ async fn a_finished_turn_goes_to_the_trace_endpoint_as_protobuf() {
     assert_eq!(view["has_secret"], true);
     assert!(!view.to_string().contains("phoenix-key"), "{view}");
 
-    let id = create(&d, json!({"name": "ada"})).await["id"]
-        .as_str()
-        .unwrap()
-        .to_owned();
+    let id = create_id(&d, json!({"name": "ada"})).await;
     let mut ws = connect_runner(&d.agents, &backend.token("ada")).await;
     let path = format!("/v1/agents/{id}/messages");
     let (status, _) = http(&d.ui, "POST", &path, Some(json!({"body": "hello"}))).await;
@@ -8543,14 +8353,8 @@ async fn memories_move_into_an_obsidian_vault_folder() {
 async fn teammates_hear_of_a_rename_on_their_next_turn() {
     let backend = Arc::new(StatefulBackend::default());
     let d = start(backend.clone(), None, "127.0.0.1:0").await;
-    let ada = create(&d, json!({"name": "ada"})).await["id"]
-        .as_str()
-        .unwrap()
-        .to_owned();
-    let bob = create(&d, json!({"name": "bob"})).await["id"]
-        .as_str()
-        .unwrap()
-        .to_owned();
+    let ada = create_id(&d, json!({"name": "ada"})).await;
+    let bob = create_id(&d, json!({"name": "bob"})).await;
     let mut ws = connect_runner(&d.agents, &backend.token("bob")).await;
     let to_bob = format!("/v1/agents/{bob}/messages");
     let send = |body: &'static str| {
@@ -8568,10 +8372,7 @@ async fn teammates_hear_of_a_rename_on_their_next_turn() {
     let path = format!("/v1/agents/{ada}");
     let (status, _) = http(&d.ui, "PATCH", &path, Some(json!({"name": "ada-two"}))).await;
     assert_eq!(status, 200);
-    let late = create(&d, json!({"name": "cy"})).await["id"]
-        .as_str()
-        .unwrap()
-        .to_owned();
+    let late = create_id(&d, json!({"name": "cy"})).await;
 
     assert_eq!(send("next").await, 202);
     let told = say_turn(&mut ws, "Noted.").await;
@@ -8598,14 +8399,8 @@ async fn teammates_hear_of_a_rename_on_their_next_turn() {
 #[tokio::test]
 async fn pins_keep_their_order_and_go_with_their_agent() {
     let d = start(Arc::new(StatefulBackend::default()), None, "127.0.0.1:0").await;
-    let ada = create(&d, json!({"name": "ada"})).await["id"]
-        .as_str()
-        .unwrap()
-        .to_owned();
-    let bob = create(&d, json!({"name": "bob"})).await["id"]
-        .as_str()
-        .unwrap()
-        .to_owned();
+    let ada = create_id(&d, json!({"name": "ada"})).await;
+    let bob = create_id(&d, json!({"name": "bob"})).await;
     let (status, pins) = http(&d.ui, "GET", "/v1/pins", None).await;
     assert_eq!((status, pins), (200, json!([])));
     let list = json!([
@@ -8635,14 +8430,8 @@ async fn pins_keep_their_order_and_go_with_their_agent() {
 async fn a_deleted_agent_is_still_named_in_mentions() {
     let backend = Arc::new(StatefulBackend::default());
     let d = start(backend.clone(), None, "127.0.0.1:0").await;
-    let calc = create(&d, json!({"name": "calc-a"})).await["id"]
-        .as_str()
-        .unwrap()
-        .to_owned();
-    let ferro = create(&d, json!({"name": "ferro"})).await["id"]
-        .as_str()
-        .unwrap()
-        .to_owned();
+    let calc = create_id(&d, json!({"name": "calc-a"})).await;
+    let ferro = create_id(&d, json!({"name": "ferro"})).await;
     let mut ws = connect_runner(&d.agents, &backend.token("ferro")).await;
     let (status, _, _) = http_raw(&d.ui, "DELETE", &format!("/v1/agents/{calc}"), &[], b"").await;
     assert_eq!(status, 204);
@@ -8666,10 +8455,7 @@ async fn a_deleted_agent_is_still_named_in_mentions() {
 #[tokio::test]
 async fn a_dashboard_shows_the_newest_share_of_its_file() {
     let d = start(Arc::new(StatefulBackend::default()), None, "127.0.0.1:0").await;
-    let ada = create(&d, json!({"name": "ada"})).await["id"]
-        .as_str()
-        .unwrap()
-        .to_owned();
+    let ada = create_id(&d, json!({"name": "ada"})).await;
     let agent: AgentId = ada.parse().unwrap();
     let share = |path: &'static str| {
         let state = d.state.clone();
@@ -8720,10 +8506,7 @@ async fn post_hook(d: &Daemon, path: &str, headers: &[(&str, &str)], body: &[u8]
 async fn an_incoming_webhook_is_a_framed_message_opened_only_by_its_secret() {
     let backend = Arc::new(StatefulBackend::default());
     let d = start(backend.clone(), None, "127.0.0.1:0").await;
-    let ada = create(&d, json!({"name": "ada"})).await["id"]
-        .as_str()
-        .unwrap()
-        .to_owned();
+    let ada = create_id(&d, json!({"name": "ada"})).await;
     let mut ws = connect_runner(&d.agents, &backend.token("ada")).await;
     let new = json!({"name": "github", "agent_id": ada});
     let (status, created) = http(&d.ui, "POST", "/v1/webhooks/incoming", Some(new)).await;
@@ -8822,14 +8605,8 @@ async fn outgoing_webhooks_get_their_events_in_their_format() {
 
     let backend = Arc::new(StatefulBackend::default());
     let d = start(backend.clone(), None, "127.0.0.1:0").await;
-    let ada = create(&d, json!({"name": "ada"})).await["id"]
-        .as_str()
-        .unwrap()
-        .to_owned();
-    let bob = create(&d, json!({"name": "bob"})).await["id"]
-        .as_str()
-        .unwrap()
-        .to_owned();
+    let ada = create_id(&d, json!({"name": "ada"})).await;
+    let bob = create_id(&d, json!({"name": "bob"})).await;
     let hooks = [
         json!({"name": "team", "url": format!("http://{addr}/discord?token=sekrit"),
                "events": ["reply"], "format": "discord"}),
@@ -8965,19 +8742,14 @@ async fn the_discord_bridge_brings_allowed_messages_in_and_replies_out() {
         "/channels/{id}/messages/{message}/reactions/{emoji}/@me",
         axum::routing::put(react.clone()).delete(react),
     );
-    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
-    let base = format!("http://{}", listener.local_addr().unwrap());
-    tokio::spawn(async move { axum::serve(listener, app).await });
+    let base = serve(app).await;
 
     let backend = Arc::new(StatefulBackend::default());
     let d = start_with(backend.clone(), None, "127.0.0.1:0", |s| {
         s.discord_api = base.clone();
     })
     .await;
-    let ada = create(&d, json!({"name": "ada"})).await["id"]
-        .as_str()
-        .unwrap()
-        .to_owned();
+    let ada = create_id(&d, json!({"name": "ada"})).await;
     let mut ws = connect_runner(&d.agents, &backend.token("ada")).await;
     let token = json!({"token": "test-bot-token"});
     let (_, view) = http(&d.ui, "PUT", "/v1/discord/token", Some(token)).await;
@@ -9192,19 +8964,14 @@ async fn the_discord_bridge_answers_cards_and_passes_on_reactions() {
             "/channels/{id}/messages/{message}/reactions/{emoji}/@me",
             axum::routing::put(mine.clone()).delete(mine),
         );
-    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
-    let base = format!("http://{}", listener.local_addr().unwrap());
-    tokio::spawn(async move { axum::serve(listener, app).await });
+    let base = serve(app).await;
 
     let backend = Arc::new(StatefulBackend::default());
     let d = start_with(backend.clone(), None, "127.0.0.1:0", |s| {
         s.discord_api = base.clone();
     })
     .await;
-    let ada = create(&d, json!({"name": "ada"})).await["id"]
-        .as_str()
-        .unwrap()
-        .to_owned();
+    let ada = create_id(&d, json!({"name": "ada"})).await;
     let mut ws = connect_runner(&d.agents, &backend.token("ada")).await;
     http(
         &d.ui,

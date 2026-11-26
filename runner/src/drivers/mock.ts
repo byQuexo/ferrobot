@@ -3,7 +3,7 @@
 // (single, multiple with custom answer, free text); else echo, and agents get one "re: text" reply.
 import type { FerrobotMcp } from "../mcp-client.ts";
 import type { ModelDriver, TurnContext, TurnResult } from "./types.ts";
-import { TurnAbortedError } from "./types.ts";
+import { throwIfAborted } from "./types.ts";
 
 export type MockAction =
   | { kind: "send"; to: string; body: string }
@@ -87,7 +87,7 @@ export class MockDriver implements ModelDriver {
     const action = planMockAction(turn.body, turn.sender.kind, replyTo);
     let calls = 0;
     const tool = async (name: string, input: Record<string, unknown>): Promise<unknown> => {
-      if (ctx.signal.aborted) throw new TurnAbortedError("interrupted");
+      throwIfAborted(ctx.signal);
       calls += 1;
       const id = `mock_${turn.turn_id}_${String(calls)}`;
       emit({ kind: "tool_use", id, name: `mcp__ferrobot__${name}`, input });
@@ -129,7 +129,7 @@ export class MockDriver implements ModelDriver {
         break;
     }
     for (const piece of streamPieces(result)) {
-      if (ctx.signal.aborted) throw new TurnAbortedError("interrupted");
+      throwIfAborted(ctx.signal);
       emit({ kind: "assistant_delta", text: piece });
     }
     emit({ kind: "assistant_text", text: result });

@@ -151,14 +151,14 @@ fn open_external(url: &tauri::Url) {
         return;
     }
     let mut opener = if cfg!(target_os = "macos") {
-        std::process::Command::new("open")
+        Command::new("open")
     } else if cfg!(windows) {
         // explorer.exe opens File Explorer instead of the browser for long query URLs (OAuth).
-        let mut c = std::process::Command::new("rundll32");
+        let mut c = Command::new("rundll32");
         c.arg("url.dll,FileProtocolHandler");
         c
     } else {
-        std::process::Command::new("xdg-open")
+        Command::new("xdg-open")
     };
     match opener.arg(url.as_str()).spawn() {
         Ok(mut child) => {

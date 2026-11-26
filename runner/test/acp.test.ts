@@ -7,9 +7,9 @@ import { after, describe, it } from "node:test";
 import { ConfigError, loadConfig } from "../src/config.ts";
 import { AcpDriver, writeGeminiSettings, toolUse } from "../src/drivers/acp.ts";
 import { systemAppend } from "../src/drivers/claude.ts";
-import { TurnAbortedError, type TurnContext } from "../src/drivers/types.ts";
-import type { TurnEvent } from "../src/protocol.ts";
+import { TurnAbortedError } from "../src/drivers/types.ts";
 import type { Params, Scenario, Step } from "./fixtures/fake-acp.ts";
+import { context, fakeBin, fakeLog } from "./helpers.ts";
 
 interface Received {
   jsonrpc?: string;
@@ -30,13 +30,7 @@ interface Received {
 process.env["GEMINI_API_KEY"] = "agent-token";
 process.env["GOOGLE_GEMINI_BASE_URL"] = "http://daemon:7879/model";
 
-// The fake runs through a shell wrapper, like a real `gemini` binary on PATH.
-const BIN = join(mkdtempSync(join(tmpdir(), "ferrobot-acp-bin-")), "gemini");
-writeFileSync(
-  BIN,
-  `#!/bin/sh\nexec "${process.execPath}" --no-warnings "${join(import.meta.dirname, "fixtures", "fake-acp.ts")}" "$@"\n`,
-  { mode: 0o755 },
-);
+const BIN = fakeBin("gemini", "fake-acp.ts");
 
 const drivers: AcpDriver[] = [];
 after(() => Promise.all(drivers.map((d) => d.close())));
@@ -56,38 +50,12 @@ function setup(bin = BIN) {
   const script = (scenario: Scenario): void => {
     writeFileSync(join(homeDir, "scenario.json"), JSON.stringify(scenario));
   };
-  const received = (): Received[] =>
-    readFileSync(join(homeDir, "received.jsonl"), "utf8")
-      .trim()
-      .split("\n")
-      .map((line) => JSON.parse(line) as Received);
-  const sent = (method: string): Received[] => received().filter((m) => m.method === method);
-  const answer = (id: string): Received | undefined =>
-    received().find((m) => m.id === id && !m.method);
+  const log = fakeLog<Received>(homeDir);
   const prompts = (): string[] =>
-    sent("session/prompt").map((m) => (m.params?.["prompt"] as { text: string }[])[0]?.text ?? "");
-  return { driver, script, received, sent, answer, prompts, workspaceDir, homeDir };
-}
-
-function context(overrides: Partial<TurnContext> = {}): { ctx: TurnContext; events: TurnEvent[] } {
-  const events: TurnEvent[] = [];
-  const ctx: TurnContext = {
-    turn: {
-      type: "turn",
-      turn_id: "t1",
-      message_id: 7,
-      sender: { kind: "user" },
-      sender_name: "user",
-      body: "hi",
-    },
-    instructions: "Be brief.",
-    agentName: "alice",
-    sessionId: null,
-    signal: new AbortController().signal,
-    emit: (e) => events.push(e),
-    ...overrides,
-  };
-  return { ctx, events };
+    log
+      .sent("session/prompt")
+      .map((m) => (m.params?.["prompt"] as { text: string }[])[0]?.text ?? "");
+  return { driver, script, ...log, prompts, workspaceDir, homeDir };
 }
 
 const PROMPT = "Message #7 from user:\n\nhi";

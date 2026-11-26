@@ -4,7 +4,7 @@ import type { SDKMessage } from "@anthropic-ai/claude-agent-sdk";
 
 import { mapSdkMessage, systemAppend, turnPrompt } from "./claude.ts";
 import type { ModelDriver, TurnContext, TurnResult } from "./types.ts";
-import { TurnAbortedError } from "./types.ts";
+import { throwIfAborted } from "./types.ts";
 
 const COMPUTER = [
   "Your computer is reached through the bash, read_file and write_file tools; they act in your",
@@ -39,7 +39,7 @@ export class ClaudeCodeDriver implements ModelDriver {
     try {
       return await this.#turn(ctx);
     } catch (err) {
-      if (ctx.signal.aborted) throw new TurnAbortedError("interrupted");
+      throwIfAborted(ctx.signal);
       throw err;
     }
   }

@@ -6,10 +6,10 @@ import { describe, it } from "node:test";
 
 import { ConfigError, loadConfig } from "../src/config.ts";
 import { OpenAIDriver, plainSchema, type ChatMessage } from "../src/drivers/openai.ts";
-import { TurnAbortedError, type TurnContext } from "../src/drivers/types.ts";
+import { TurnAbortedError } from "../src/drivers/types.ts";
 import { ToolGate } from "../src/gate.ts";
 import type { FerrobotMcp } from "../src/mcp-client.ts";
-import type { TurnEvent } from "../src/protocol.ts";
+import { context } from "./helpers.ts";
 
 type Chunk = Record<string, unknown>;
 
@@ -94,27 +94,6 @@ function setup(opts: Setup = {}) {
     ...(opts.gate ? { gate: opts.gate } : {}),
   });
   return { driver, sent, mcpCalls, workspaceDir, stateDir };
-}
-
-function context(overrides: Partial<TurnContext> = {}): { ctx: TurnContext; events: TurnEvent[] } {
-  const events: TurnEvent[] = [];
-  const ctx: TurnContext = {
-    turn: {
-      type: "turn",
-      turn_id: "t1",
-      message_id: 7,
-      sender: { kind: "user" },
-      sender_name: "user",
-      body: "hi",
-    },
-    instructions: "Be brief.",
-    agentName: "alice",
-    sessionId: null,
-    signal: new AbortController().signal,
-    emit: (e) => events.push(e),
-    ...overrides,
-  };
-  return { ctx, events };
 }
 
 describe("OpenAIDriver", () => {

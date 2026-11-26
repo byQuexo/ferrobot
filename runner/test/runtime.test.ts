@@ -79,10 +79,18 @@ function turn(id: string) {
   };
 }
 
+function runnerFor(driver: ModelDriver, sessionId: string | null = null) {
+  const sent: RunnerFrame[] = [];
+  const session = new SessionStore(mkdtempSync(join(tmpdir(), "ferrobot-")));
+  const runner = new Runner(
+    { driver, session, agentName: "a", send: (f) => sent.push(f) > 0 },
+    sessionId,
+  );
+  return { runner, sent, session };
+}
+
 describe("Runner", () => {
   it("reports completion and persists the session", async () => {
-    const sent: RunnerFrame[] = [];
-    const dir = mkdtempSync(join(tmpdir(), "ferrobot-"));
     const driver: ModelDriver = {
       name: "fake",
       runTurn: (ctx) => {
@@ -91,11 +99,7 @@ describe("Runner", () => {
       },
       close: () => Promise.resolve(),
     };
-    const session = new SessionStore(dir);
-    const runner = new Runner(
-      { driver, session, agentName: "a", send: (f) => sent.push(f) > 0 },
-      null,
-    );
+    const { runner, sent, session } = runnerFor(driver);
     runner.handle(turn("t1"));
     await waitFor(() => sent.some((f) => f.type === "turn_done"));
     const done = sent.find((f) => f.type === "turn_done");
@@ -113,13 +117,7 @@ describe("Runner", () => {
       },
       close: () => Promise.resolve(),
     };
-    const dir = mkdtempSync(join(tmpdir(), "ferrobot-"));
-    const session = new SessionStore(dir);
-    const sent: RunnerFrame[] = [];
-    const runner = new Runner(
-      { driver, session, agentName: "a", send: (f) => sent.push(f) > 0 },
-      "old",
-    );
+    const { runner, sent, session } = runnerFor(driver, "old");
     const done = (n: number) => () => sent.filter((f) => f.type === "turn_done").length === n;
     runner.handle(turn("t1"));
     await waitFor(done(1));
@@ -130,7 +128,6 @@ describe("Runner", () => {
   });
 
   it("hands mid-turn messages to a steering driver and reports the seen ones", async () => {
-    const sent: RunnerFrame[] = [];
     let release = (): void => undefined;
     const driver: ModelDriver = {
       name: "steer",
@@ -144,11 +141,7 @@ describe("Runner", () => {
       },
       close: () => Promise.resolve(),
     };
-    const session = new SessionStore(mkdtempSync(join(tmpdir(), "ferrobot-")));
-    const runner = new Runner(
-      { driver, session, agentName: "a", send: (f) => sent.push(f) > 0 },
-      null,
-    );
+    const { runner, sent } = runnerFor(driver);
     runner.handle(turn("t1"));
     const steer = (turnId: string, id: number) => ({
       type: "steer" as const,
@@ -167,7 +160,6 @@ describe("Runner", () => {
   });
 
   it("interrupts the matching turn", async () => {
-    const sent: RunnerFrame[] = [];
     const driver: ModelDriver = {
       name: "slow",
       runTurn: (ctx) =>
@@ -178,11 +170,7 @@ describe("Runner", () => {
         }),
       close: () => Promise.resolve(),
     };
-    const session = new SessionStore(mkdtempSync(join(tmpdir(), "ferrobot-")));
-    const runner = new Runner(
-      { driver, session, agentName: "a", send: (f) => sent.push(f) > 0 },
-      null,
-    );
+    const { runner, sent } = runnerFor(driver);
     runner.handle(turn("t1"));
     assert.equal(runner.busy, true);
     runner.handle({ type: "interrupt", turn_id: "other" });
@@ -218,12 +206,7 @@ describe("Runner configure", () => {
       },
       close: () => Promise.resolve(),
     };
-    const dir = mkdtempSync(join(tmpdir(), "ferrobot-"));
-    const sent: RunnerFrame[] = [];
-    const runner = new Runner(
-      { driver, session: new SessionStore(dir), agentName: "a", send: (f) => sent.push(f) > 0 },
-      null,
-    );
+    const { runner } = runnerFor(driver);
     runner.handle({
       type: "welcome",
       protocol_version: 2,
