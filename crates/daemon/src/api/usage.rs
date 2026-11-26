@@ -401,10 +401,7 @@ pub(crate) async fn get_context(
     Path(id): Path<String>,
 ) -> ApiResult<AgentContext> {
     let agent = state.store.get_agent(parse_id(&id)?).await?;
-    let provider = match agent.provider_id {
-        Some(p) => state.store.get_provider(p).await.ok(),
-        None => None,
-    };
+    let provider = crate::agents::provider_of(&state, &agent).await;
     let claude_code = provider
         .as_ref()
         .is_some_and(|p| p.kind == ProviderKind::ClaudeCode);
