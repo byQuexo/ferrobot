@@ -1,6 +1,5 @@
-//! One turn as a timeline: its model calls and tool calls with their times, built from the
-//! turn's events and the proxy's usage rows, plus the cards it waited on and the messages it
-//! handed to other agents. The same spans feed the trace view.
+//! One turn as a timeline: model and tool calls from its events and the proxy's usage rows, plus
+//! the cards it waited on and the messages it handed to other agents.
 
 use std::collections::HashMap;
 

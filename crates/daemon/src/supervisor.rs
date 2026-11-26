@@ -73,7 +73,6 @@ async fn check(state: &AppState, agent: &Agent) -> Result<(), crate::error::ApiE
         }
         return Ok(());
     }
-    // Crash recovery: the agent should be awake but its sandbox is not running.
     match state.backend.state(&handle).await? {
         SandboxState::Running => {}
         live @ (SandboxState::Paused | SandboxState::Stopped | SandboxState::Missing) => {
@@ -104,7 +103,6 @@ async fn check(state: &AppState, agent: &Agent) -> Result<(), crate::error::ApiE
         state.backend.stop(&handle).await?;
         return lifecycle::wake(state, id).await;
     }
-    // Idle auto-sleep: the deepest level whose timeout has passed.
     let s = &state.settings;
     let level = if s.idle_timeout.is_some_and(|t| idle >= t) {
         Some(SleepLevel::Cold)

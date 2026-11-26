@@ -1,6 +1,5 @@
-//! Sends each finished turn's trace to the operator's OTLP/HTTP endpoint (Phoenix, Langfuse or
-//! any OpenTelemetry backend), encoded as protobuf by hand: Phoenix accepts nothing else, and
-//! the few messages needed do not warrant the OpenTelemetry SDK.
+//! Sends each finished turn's trace to the operator's OTLP/HTTP endpoint as hand-encoded protobuf:
+//! Phoenix accepts nothing else, and the few messages needed do not warrant the OpenTelemetry SDK.
 
 use std::sync::{LazyLock, Mutex, PoisonError};
 use std::time::Duration;

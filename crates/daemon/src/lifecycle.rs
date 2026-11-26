@@ -392,8 +392,6 @@ pub async fn reconcile(state: &AppState) {
                     tracing::warn!(agent = %agent.name, error = %e, "reconcile: wake failed");
                 }
             }
-            // Sleeping agents with something queued get woken; otherwise make
-            // sure the sandbox sleeps as deeply as the agent's status says.
             (AgentStatus::Archived, _) => {
                 let queued = state
                     .store

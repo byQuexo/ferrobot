@@ -221,9 +221,8 @@ const LOCAL_ENV: [&str; 7] = ["PATH", "HOME", "USER", "LANG", "LC_ALL", "TMPDIR"
 /// Where `npx` and friends usually live: an app started from the Dock gets a bare `PATH`.
 const LOCAL_PATHS: [&str; 3] = ["/opt/homebrew/bin", "/usr/local/bin", "/usr/bin"];
 
-/// Starts a local server on this computer and talks MCP over its stdin and stdout. It gets a
-/// cleared environment plus its token under `token_env`; it stops with its session (its stdin
-/// closes) or with the daemon.
+/// Starts a local server on this computer and talks MCP over its stdio, with a cleared environment
+/// plus its token under `token_env`; it stops with its session (its stdin closes) or the daemon.
 async fn connect_local(
     state: &AppState,
     c: &Connector,

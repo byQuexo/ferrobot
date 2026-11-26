@@ -1,7 +1,5 @@
-//! The tool-call classifier: plain rules sort a shell command or a connector call into safe,
-//! risky, critical or dangerous. Risky calls wait for an approval card unless Auto mode is on;
-//! critical ones (money, deleting in a connected service, force-pushing, publishing) always get
-//! a card; dangerous ones are always refused.
+//! Rule-based tool-call classifier: risky calls get a card unless Auto mode is on, critical ones
+//! (money, deletes in a connected service, force-push, publish) always do, dangerous are refused.
 
 use axum::Json;
 use axum::Router;

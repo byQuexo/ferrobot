@@ -219,7 +219,6 @@ impl utoipa::Modify for SecurityAddon {
                  (WebSocket upgrades, images).",
             ))),
         );
-        // Every authenticated operation can answer 401.
         let unauthorized = utoipa::openapi::ResponseBuilder::new()
             .description("Missing or wrong API token")
             .content(

@@ -25,9 +25,8 @@ pub(crate) fn sends_tools(body: &[u8]) -> bool {
     serde_json::from_slice::<Request>(body).is_ok_and(|r| r.tools.is_some_and(|t| !t.is_empty()))
 }
 
-/// Whether an upstream error says the model can't use tools: `OpenRouter`'s "No endpoints found
-/// that support tool use", Ollama's "... does not support tools", or an OpenAI-compatible
-/// server's "function calling is not supported".
+/// Whether an upstream error says the model can't use tools, as `OpenRouter`, Ollama and
+/// OpenAI-compatible servers word it.
 pub(crate) fn refuses_tools(status: StatusCode, body: &[u8]) -> bool {
     if !matches!(status.as_u16(), 400 | 404 | 422) {
         return false;
@@ -73,8 +72,7 @@ pub(crate) async fn check(
     copy.into()
 }
 
-/// Holds the agent's turns because its model refused tools. The first report leaves a notice in
-/// its chat and, unless one is still open, a card offering to run it without tools.
+/// Holds the agent's turns; the first report leaves a notice and, unless one is open, the card.
 /// Synchronous with the proxy's answer, so the failing turn already sees it when it settles.
 async fn set(state: &AppState, agent: &Agent, model: &str) {
     let provider = match agent.provider_id {
