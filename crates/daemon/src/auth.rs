@@ -5,7 +5,7 @@ use std::io::{self, Write};
 use std::path::{Path, PathBuf};
 
 use axum::extract::{Request, State};
-use axum::http::{Method, header};
+use axum::http::{HeaderMap, Method, header};
 use axum::middleware::Next;
 use axum::response::{IntoResponse, Response};
 use sha2::{Digest, Sha256};
@@ -54,17 +54,8 @@ pub fn load_or_create(data_dir: &Path) -> io::Result<String> {
             Ok(token)
         }
         Err(e) if e.kind() == io::ErrorKind::NotFound => {
-            let token = format!(
-                "{}{}",
-                uuid::Uuid::new_v4().simple(),
-                uuid::Uuid::new_v4().simple()
-            );
-            let mut options = std::fs::OpenOptions::new();
-            options.write(true).create_new(true);
-            #[cfg(unix)]
-            std::os::unix::fs::OpenOptionsExt::mode(&mut options, 0o600);
-            let mut file = options.open(&path)?;
-            writeln!(file, "{token}")?;
+            let token = crate::lifecycle::new_token();
+            writeln!(crate::secrets::create_private(&path)?, "{token}")?;
             Ok(token)
         }
         Err(e) => Err(e),
@@ -97,12 +88,16 @@ pub fn tokens_equal(given: &str, expected: &str) -> bool {
         == 0
 }
 
-fn presented(req: &Request) -> Option<&str> {
-    let header = req
-        .headers()
+/// The token of an `Authorization: Bearer` header.
+pub(crate) fn bearer(headers: &HeaderMap) -> Option<&str> {
+    headers
         .get(header::AUTHORIZATION)
         .and_then(|v| v.to_str().ok())
-        .and_then(|v| v.strip_prefix("Bearer "));
+        .and_then(|v| v.strip_prefix("Bearer "))
+}
+
+fn presented(req: &Request) -> Option<&str> {
+    let header = bearer(req.headers());
     if header.is_some() || req.method() != Method::GET {
         return header;
     }

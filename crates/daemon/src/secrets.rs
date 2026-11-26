@@ -2,7 +2,7 @@
 //! (headless CI only: a plaintext file), never in SQLite, a sandbox, a log or an event.
 
 use std::collections::BTreeMap;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 
 use crate::error::ApiError;
@@ -155,6 +155,15 @@ fn read_file(path: &PathBuf) -> FileResult<BTreeMap<String, String>> {
     }
 }
 
+/// Creates a new file only its owner can read (mode 0600); fails if `path` exists.
+pub(crate) fn create_private(path: &Path) -> std::io::Result<std::fs::File> {
+    let mut options = std::fs::OpenOptions::new();
+    options.write(true).create_new(true);
+    #[cfg(unix)]
+    std::os::unix::fs::OpenOptionsExt::mode(&mut options, 0o600);
+    options.open(path)
+}
+
 fn write_file(path: &PathBuf, all: &BTreeMap<String, String>) -> FileResult<()> {
     let tmp = path.with_extension("tmp");
     // A planted tmp file (or symlink) would keep its own mode; start fresh.
@@ -162,11 +171,7 @@ fn write_file(path: &PathBuf, all: &BTreeMap<String, String>) -> FileResult<()> 
         Err(e) if e.kind() != std::io::ErrorKind::NotFound => return Err(e.into()),
         _ => {}
     }
-    let mut options = std::fs::OpenOptions::new();
-    options.write(true).create_new(true);
-    #[cfg(unix)]
-    std::os::unix::fs::OpenOptionsExt::mode(&mut options, 0o600);
-    std::io::Write::write_all(&mut options.open(&tmp)?, &serde_json::to_vec(all)?)?;
+    std::io::Write::write_all(&mut create_private(&tmp)?, &serde_json::to_vec(all)?)?;
     std::fs::rename(tmp, path)?;
     Ok(())
 }

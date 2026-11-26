@@ -184,12 +184,7 @@ pub(crate) fn agent_token(headers: &HeaderMap) -> Option<&str> {
         .get("x-api-key")
         .or_else(|| headers.get("x-goog-api-key"))
         .and_then(|v| v.to_str().ok())
-        .or_else(|| {
-            headers
-                .get(header::AUTHORIZATION)
-                .and_then(|v| v.to_str().ok())
-                .and_then(|v| v.strip_prefix("Bearer "))
-        })
+        .or_else(|| crate::auth::bearer(headers))
 }
 
 fn error(status: StatusCode, message: &str) -> Response {

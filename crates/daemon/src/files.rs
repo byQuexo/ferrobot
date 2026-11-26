@@ -155,7 +155,7 @@ async fn link_key(state: &AppState) -> Result<ring::hmac::Key, String> {
         .cloned()
 }
 
-fn unix_now() -> u64 {
+pub(crate) fn unix_now() -> u64 {
     std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .map_or(0, |d| d.as_secs())
