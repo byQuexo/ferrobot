@@ -52,7 +52,6 @@ export function Sidebar(props: {
   onOpenRoom: (id: number) => void;
   onCreate: () => void;
   onSettings: () => void;
-  /** Opens Settings → Updates. */
   onUpdates: () => void;
   settingsOpen: boolean;
   onUsage: () => void;
@@ -428,7 +427,6 @@ function AgentMenu(props: {
       {icon} {label}
     </button>
   );
-  // Kept inside the window near the pointer.
   const left = Math.min(props.x, window.innerWidth - 200);
   const top = Math.min(props.y, window.innerHeight - 170);
   return (

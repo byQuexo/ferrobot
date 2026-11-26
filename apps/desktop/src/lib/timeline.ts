@@ -134,11 +134,8 @@ const SYSTEM_TEXT: Record<string, (p: Payload) => string> = {
   renamed: (p) => `Renamed from @${str(p["from"])} to @${str(p["to"])}`,
 };
 
-/**
- * An agent's chat without its call room messages and the turns they started (their events
- * and streaming text): those belong to the room. Cards and files have no turn and stay.
- * `roomTurn` says whether the newest turn is one of them.
- */
+/** An agent's chat without its call room messages and the turns they started; cards and files
+ * have no turn and stay. `roomTurn`: the newest turn is one of them. */
 export function withoutRoomTurns(
   messages: readonly MailMessage[],
   events: readonly StoredEvent[],

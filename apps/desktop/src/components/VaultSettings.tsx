@@ -21,7 +21,6 @@ interface Entry {
 
 /** Every stored key in one place. Values go to the daemon’s keychain and never come back. */
 export function VaultSettings(props: {
-  /** Show only the model provider keys. */
   providersOnly?: boolean;
   /** Called with the providers after every load or change. */
   onProviders?: (providers: Provider[]) => void;
