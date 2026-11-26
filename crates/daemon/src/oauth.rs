@@ -47,6 +47,19 @@ struct Registration {
     client_secret: String,
 }
 
+/// The JSON value kept under `key`.
+async fn secret_json<T: serde::de::DeserializeOwned>(
+    secrets: &SecretStore,
+    key: &str,
+) -> Result<Option<T>, String> {
+    match secrets.get(key).await.map_err(|e| e.to_string())? {
+        Some(json) => serde_json::from_str(&json)
+            .map(Some)
+            .map_err(|e| e.to_string()),
+        None => Ok(None),
+    }
+}
+
 /// The secret of `client_id`: the own app's, else the one a server issued
 /// when it registered that client.
 async fn secret_for(
@@ -58,22 +71,17 @@ async fn secret_for(
     if config.client_id.as_deref() == Some(client_id) {
         return Ok(config.client_secret.clone());
     }
-    let Some(json) = state
-        .settings
-        .secrets
-        .get(&registration_key(id))
-        .await
-        .map_err(|e| e.to_string())?
-    else {
-        return Ok(None);
-    };
-    let reg: Registration = serde_json::from_str(&json).map_err(|e| e.to_string())?;
-    Ok((reg.client_id == client_id).then_some(reg.client_secret))
+    let reg: Option<Registration> =
+        secret_json(&state.settings.secrets, &registration_key(id)).await?;
+    Ok(reg
+        .filter(|r| r.client_id == client_id)
+        .map(|r| r.client_secret))
 }
 
 async fn stored_credentials(state: &AppState, id: Uuid) -> Option<StoredCredentials> {
-    let json = state.settings.secrets.get(&secret_key(id)).await.ok()??;
-    serde_json::from_str(&json).ok()
+    secret_json(&state.settings.secrets, &secret_key(id))
+        .await
+        .ok()?
 }
 
 /// Forgets the connector's tokens, registration and open sign-ins.
@@ -116,16 +124,9 @@ impl std::fmt::Debug for ClientConfig {
 
 /// The connector's own OAuth app, if the operator set one.
 pub async fn client_config(state: &AppState, id: Uuid) -> Result<ClientConfig, String> {
-    match state
-        .settings
-        .secrets
-        .get(&client_key(id))
-        .await
-        .map_err(|e| e.to_string())?
-    {
-        Some(json) => serde_json::from_str(&json).map_err(|e| e.to_string()),
-        None => Ok(ClientConfig::default()),
-    }
+    Ok(secret_json(&state.settings.secrets, &client_key(id))
+        .await?
+        .unwrap_or_default())
 }
 
 /// Stores the connector's own OAuth app (or removes it when empty).
@@ -157,10 +158,9 @@ fn store_err(e: impl std::fmt::Display) -> AuthError {
 #[async_trait]
 impl CredentialStore for Keychain {
     async fn load(&self) -> Result<Option<StoredCredentials>, AuthError> {
-        match self.secrets.get(&self.key).await.map_err(store_err)? {
-            Some(json) => serde_json::from_str(&json).map(Some).map_err(store_err),
-            None => Ok(None),
-        }
+        secret_json(&self.secrets, &self.key)
+            .await
+            .map_err(store_err)
     }
 
     async fn save(&self, credentials: StoredCredentials) -> Result<(), AuthError> {
@@ -213,10 +213,9 @@ pub enum SignIn {
 
 /// Where the connector stands with OAuth.
 pub async fn sign_in(state: &AppState, id: Uuid) -> SignIn {
-    let Ok(Some(json)) = state.settings.secrets.get(&secret_key(id)).await else {
-        return SignIn::SignedOut;
-    };
-    let Ok(value) = serde_json::from_str::<serde_json::Value>(&json) else {
+    let Ok(Some(value)) =
+        secret_json::<serde_json::Value>(&state.settings.secrets, &secret_key(id)).await
+    else {
         return SignIn::SignedOut;
     };
     if value["expired"] == true {
@@ -593,16 +592,11 @@ async fn checked_addr(url: &url::Url, local_ok: bool) -> Result<std::net::Socket
 }
 
 async fn revoke(state: &AppState, c: &Connector) -> Result<(), String> {
-    let Some(json) = state
-        .settings
-        .secrets
-        .get(&secret_key(c.id))
-        .await
-        .map_err(|e| e.to_string())?
+    let Some(stored) =
+        secret_json::<StoredCredentials>(&state.settings.secrets, &secret_key(c.id)).await?
     else {
         return Ok(());
     };
-    let stored: StoredCredentials = serde_json::from_str(&json).map_err(|e| e.to_string())?;
     let Some(tokens) = stored.token_response else {
         return Ok(());
     };
