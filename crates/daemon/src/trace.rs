@@ -4,11 +4,13 @@
 use std::collections::HashMap;
 
 use ferrobot_core::question::{QuestionAnswered, approves};
-use ferrobot_core::{AgentId, Sender};
+use ferrobot_core::{Agent, AgentId, Sender};
 use ferrobot_store::{Store, StoreError, StoredEvent, TurnCall};
 use serde::Serialize;
 use time::OffsetDateTime;
 use utoipa::ToSchema;
+
+use crate::AppState;
 
 /// Largest tool input a trace carries, so the view can label the step.
 const MAX_INPUT_BYTES: usize = 4096;
@@ -242,6 +244,22 @@ fn streamed(e: &StoredEvent) -> Span {
     s.cache_read_tokens = p["cache_read_tokens"].as_i64();
     s.cache_write_tokens = p["cache_write_tokens"].as_i64();
     s
+}
+
+/// The trace of `agent`'s turn `turn` (`None` when it has no events) and the turn's events.
+pub async fn for_turn(
+    state: &AppState,
+    agent: &Agent,
+    turn: &str,
+) -> Result<(Option<Trace>, Vec<StoredEvent>), StoreError> {
+    let events = state.store.turn_events(agent.id, turn.to_owned()).await?;
+    let calls = state.store.turn_calls(agent.id, turn.to_owned()).await?;
+    // Claude Code turns before its calls were recorded have none.
+    let models_tracked = !crate::agents::on_claude_code(state, agent).await
+        || !calls.is_empty()
+        || events.iter().any(|e| e.kind == "model_call");
+    let links = links(&state.store, turn, &events).await?;
+    Ok((build(turn, &events, &calls, models_tracked, &links), events))
 }
 
 /// The trace of `turn` from its events and proxied calls; `None` when it has no events.

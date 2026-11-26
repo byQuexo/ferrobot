@@ -181,9 +181,7 @@ pub async fn save_settings(
     state: &AppState,
     settings: &ClaudeCodeSettings,
 ) -> Result<(), crate::error::ApiError> {
-    let raw = serde_json::to_string(settings)
-        .map_err(|e| crate::error::ApiError::Internal(e.to_string()))?;
-    Ok(state.store.put_setting(SETTING, raw).await?)
+    crate::api::settings::save_json(state, SETTING, settings).await
 }
 
 /// The plugins installed in the host's Claude Code, from `claude plugin list`.
@@ -676,10 +674,7 @@ async fn turn(
         Ok(None) => return refuse(StatusCode::UNAUTHORIZED, "unknown agent token"),
         Err(e) => return refuse(StatusCode::INTERNAL_SERVER_ERROR, &e.to_string()),
     };
-    let provider = match agent.provider_id {
-        Some(id) => state.store.get_provider(id).await.ok(),
-        None => None,
-    };
+    let provider = crate::agents::provider_of(&state, &agent).await;
     let Some(provider) = provider.filter(|p| p.kind == ProviderKind::ClaudeCode) else {
         return refuse(
             StatusCode::FORBIDDEN,
@@ -961,10 +956,9 @@ fn computer_names(kind: Option<ProviderKind>, groups: &[ToolGroup]) -> Vec<&'sta
 
 async fn agent_and_kind(state: &AppState, agent: AgentId) -> Option<(Agent, Option<ProviderKind>)> {
     let agent = state.store.get_agent(agent).await.ok()?;
-    let kind = match agent.provider_id {
-        Some(id) => state.store.get_provider(id).await.ok().map(|p| p.kind),
-        None => None,
-    };
+    let kind = crate::agents::provider_of(state, &agent)
+        .await
+        .map(|p| p.kind);
     Some((agent, kind))
 }
 

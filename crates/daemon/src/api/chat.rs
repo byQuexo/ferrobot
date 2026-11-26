@@ -5,7 +5,7 @@ use axum::http::StatusCode;
 use axum::routing::{get, post};
 use axum::{Json, Router};
 use ferrobot_core::question::{Approval, QuestionAnswer, QuestionAnswered, QuestionEvent};
-use ferrobot_core::{Agent, MailMessage, ProviderKind, Sender};
+use ferrobot_core::{MailMessage, Sender};
 use ferrobot_store::StoredEvent;
 use serde::{Deserialize, Serialize};
 use utoipa::{IntoParams, ToSchema};
@@ -385,7 +385,7 @@ pub(crate) async fn compact(
     Path(id): Path<String>,
 ) -> Result<StatusCode, ApiError> {
     let agent = state.store.get_agent(parse_id(&id)?).await?;
-    if !on_claude_code(&state, &agent).await {
+    if !crate::agents::on_claude_code(&state, &agent).await {
         return Err(ApiError::BadRequest(
             "compacting works for Claude Code agents for now".into(),
         ));
@@ -414,27 +414,10 @@ pub(crate) async fn turn_trace(
     Path((id, turn)): Path<(String, String)>,
 ) -> ApiResult<crate::trace::Trace> {
     let agent = state.store.get_agent(parse_id(&id)?).await?;
-    let events = state.store.turn_events(agent.id, turn.clone()).await?;
-    let calls = state.store.turn_calls(agent.id, turn.clone()).await?;
-    // Claude Code turns before its calls were recorded have none.
-    let models_tracked = !on_claude_code(&state, &agent).await
-        || !calls.is_empty()
-        || events.iter().any(|e| e.kind == "model_call");
-    let links = crate::trace::links(&state.store, &turn, &events).await?;
-    crate::trace::build(&turn, &events, &calls, models_tracked, &links)
+    let (trace, _) = crate::trace::for_turn(&state, &agent, &turn).await?;
+    trace
         .map(Json)
         .ok_or_else(|| ApiError::NotFound("turn not found".into()))
-}
-
-async fn on_claude_code(state: &AppState, agent: &Agent) -> bool {
-    match agent.provider_id {
-        Some(p) => state
-            .store
-            .get_provider(p)
-            .await
-            .is_ok_and(|p| p.kind == ProviderKind::ClaudeCode),
-        None => false,
-    }
 }
 
 /// Starts a new chat: the agent's next turn begins a fresh model session without the earlier

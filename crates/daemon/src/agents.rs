@@ -9,7 +9,8 @@ use ferrobot_core::question::{
     APPROVE, Approval, DECLINE, QuestionAnswer, QuestionAnswered, QuestionEvent, approves,
 };
 use ferrobot_core::{
-    Agent, AgentId, AgentName, AvatarCharacter, Connector, MailMessage, Sender, ToolGroup,
+    Agent, AgentId, AgentName, AvatarCharacter, Connector, MailMessage, Provider, ProviderKind,
+    Sender, ToolGroup,
 };
 use ferrobot_mcp::{AgentRequestOutcome, AgentToolsOutcome, AgentToolsRequest};
 use ferrobot_store::{AgentPatch, NewAgent};
@@ -304,6 +305,17 @@ pub(crate) async fn tell(
         message: msg.clone(),
     });
     Ok(msg)
+}
+
+/// The agent's provider; `None` without one or when it is gone.
+pub(crate) async fn provider_of(state: &AppState, agent: &Agent) -> Option<Provider> {
+    state.store.get_provider(agent.provider_id?).await.ok()
+}
+
+pub(crate) async fn on_claude_code(state: &AppState, agent: &Agent) -> bool {
+    provider_of(state, agent)
+        .await
+        .is_some_and(|p| p.kind == ProviderKind::ClaudeCode)
 }
 
 /// Puts a question card in `chat`; returns its event id.

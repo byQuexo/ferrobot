@@ -4,7 +4,7 @@
 use std::sync::{LazyLock, Mutex};
 use std::time::Duration;
 
-use ferrobot_core::{AgentId, ProviderKind};
+use ferrobot_core::AgentId;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use time::OffsetDateTime;
@@ -54,16 +54,11 @@ pub fn last_export() -> Option<ExportStatus> {
 }
 
 pub async fn load(state: &AppState) -> Result<OtelSettings, ApiError> {
-    match state.store.get_setting(SETTING).await? {
-        Some(raw) => serde_json::from_str(&raw)
-            .map_err(|e| ApiError::Internal(format!("trace export settings: {e}"))),
-        None => Ok(OtelSettings::default()),
-    }
+    crate::api::settings::load_json(state, SETTING, "trace export settings").await
 }
 
 pub async fn save(state: &AppState, settings: &OtelSettings) -> Result<(), ApiError> {
-    let raw = serde_json::to_string(settings).map_err(|e| ApiError::Internal(e.to_string()))?;
-    Ok(state.store.put_setting(SETTING, raw).await?)
+    crate::api::settings::save_json(state, SETTING, settings).await
 }
 
 /// Trims and checks the settings.
@@ -133,30 +128,10 @@ async fn export(
         .get_agent(agent)
         .await
         .map_err(|e| e.to_string())?;
-    let events = state
-        .store
-        .turn_events(agent.id, turn.to_owned())
+    let (trace, events) = crate::trace::for_turn(state, &agent, turn)
         .await
         .map_err(|e| e.to_string())?;
-    let calls = state
-        .store
-        .turn_calls(agent.id, turn.to_owned())
-        .await
-        .map_err(|e| e.to_string())?;
-    let claude_code = match agent.provider_id {
-        Some(p) => state
-            .store
-            .get_provider(p)
-            .await
-            .is_ok_and(|p| p.kind == ProviderKind::ClaudeCode),
-        None => false,
-    };
-    let models_tracked =
-        !claude_code || !calls.is_empty() || events.iter().any(|e| e.kind == "model_call");
-    let links = crate::trace::links(&state.store, turn, &events)
-        .await
-        .map_err(|e| e.to_string())?;
-    let Some(trace) = crate::trace::build(turn, &events, &calls, models_tracked, &links) else {
+    let Some(trace) = trace else {
         return Ok(());
     };
     let output = events
