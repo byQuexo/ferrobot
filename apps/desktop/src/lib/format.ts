@@ -143,6 +143,17 @@ export function computerSummary(
 }
 
 /** What a running tool call is doing, in a few words, for the chat. */
+function desktopLabel(action: string): string {
+  const labels: Record<string, string> = {
+    screenshot: "Looking at its screen",
+    type: "Typing on its screen",
+    key: "Pressing keys on its screen",
+    scroll: "Scrolling on its screen",
+    move: "Moving the pointer on its screen",
+  };
+  return labels[action] ?? "Clicking on its screen";
+}
+
 export function stepLabel(
   name: string,
   input: unknown,
@@ -168,6 +179,7 @@ export function stepLabel(
       remember: "Taking notes",
       recall: "Looking through notes",
       forget: "Tidying up notes",
+      desktop: desktopLabel(str("action")),
     };
     return labels[tool] ?? `Using ${tool}`;
   }
@@ -177,8 +189,12 @@ export function stepLabel(
   if (said) return short(said.charAt(0).toUpperCase() + said.slice(1));
   switch (tool) {
     case "Bash":
-    case "bash":
-      return "Working on its computer";
+    case "bash": {
+      const command = str("command").trim().split("\n")[0] ?? "";
+      return command ? `Running ${short(command)}` : "Working on its computer";
+    }
+    case "desktop":
+      return desktopLabel(str("action"));
     case "Read":
     case "read_file":
       return `Reading ${file(str("file_path") || str("path"))}`;

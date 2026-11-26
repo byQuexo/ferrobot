@@ -238,7 +238,16 @@ describe("format", () => {
     const nameOf = (id: string): string | undefined => (id === "b-1" ? "bob" : undefined);
     assert.equal(stepLabel("mcp__ferrobot__send_message", { to: "b-1" }, nameOf), "Messaging @bob");
     assert.equal(stepLabel("mcp__ferrobot__github__create_issue", {}, nameOf), "Using github");
-    assert.equal(stepLabel("Bash", { command: "ls -la" }, nameOf), "Working on its computer");
+    assert.equal(stepLabel("Bash", { command: "ls -la" }, nameOf), "Running ls -la");
+    assert.equal(stepLabel("bash", { command: "" }, nameOf), "Working on its computer");
+    assert.equal(
+      stepLabel("mcp__ferrobot__desktop", { action: "screenshot" }, nameOf),
+      "Looking at its screen",
+    );
+    assert.equal(
+      stepLabel("mcp__ferrobot__desktop", { action: "double_click" }, nameOf),
+      "Clicking on its screen",
+    );
     assert.equal(
       stepLabel("bash", { command: "curl x", description: "checking flight prices" }, nameOf),
       "Checking flight prices",
@@ -946,10 +955,7 @@ describe("ui polish", () => {
     );
     assert.equal(computerSummary("paused", { idle_s: 999 }), "Paused · resumes quickly");
     const none = (): undefined => undefined;
-    assert.equal(
-      stepLabel("mcp__ferrobot__bash", { command: "ls" }, none),
-      "Working on its computer",
-    );
+    assert.equal(stepLabel("mcp__ferrobot__bash", { command: "ls" }, none), "Running ls");
     assert.equal(stepLabel("mcp__ferrobot__remember", {}, none), "Taking notes");
   });
 
