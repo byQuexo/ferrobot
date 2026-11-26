@@ -1,5 +1,5 @@
 //! The operator's Stop: an agent's turn, the turns of agents working on its messages (and so on)
-//! and agent messages queued among them; the operator's, routines' and webhooks' stay queued.
+//! and agent messages to or from any of them; the operator's, routines' and webhooks' stay queued.
 
 use ferrobot_core::{AgentId, MailMessage, MailStatus, Sender};
 

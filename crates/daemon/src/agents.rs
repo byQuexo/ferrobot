@@ -312,6 +312,7 @@ pub(crate) async fn provider_of(state: &AppState, agent: &Agent) -> Option<Provi
     state.store.get_provider(agent.provider_id?).await.ok()
 }
 
+/// Whether the agent runs on the host's Claude Code.
 pub(crate) async fn on_claude_code(state: &AppState, agent: &Agent) -> bool {
     provider_of(state, agent)
         .await
