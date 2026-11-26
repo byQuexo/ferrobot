@@ -9,7 +9,7 @@ export function ownAppEntry(url: string): CatalogEntry | undefined {
 }
 
 /** Such a server without an OAuth app: it may list its tools, but they never work. */
-export const needsOwnApp = (c: Connector): boolean =>
+const needsOwnApp = (c: Connector): boolean =>
   !c.client_id && ownAppEntry(c.url) !== undefined;
 
 /** The catalog entry a connector was added from, matched like `isAdded`. */

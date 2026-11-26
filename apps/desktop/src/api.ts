@@ -44,13 +44,11 @@ export type DeviceCode = Schemas["DeviceCode"];
 export type LoginStatus = Schemas["LoginStatus"];
 export type ClaudeCodeStatus = Schemas["ClaudeCodeStatus"];
 export type ClaudeCodeSettings = Schemas["ClaudeCodeSettings"];
-export type Hook = Schemas["Hook"];
 export type HookEvent = Schemas["HookEvent"];
 export type InstalledPlugin = Schemas["InstalledPlugin"];
 export type OtelSettings = Schemas["OtelSettings"];
 export type OtelView = Schemas["OtelView"];
 export type WebhooksView = Schemas["WebhooksView"];
-export type IncomingWebhook = Schemas["IncomingWebhook"];
 export type IncomingWebhookCreated = Schemas["IncomingWebhookCreated"];
 export type NewIncomingWebhook = Schemas["NewIncomingWebhook"];
 export type OutgoingWebhookView = Schemas["OutgoingWebhookView"];
@@ -85,7 +83,6 @@ export type DiagnosticsLog = Schemas["DiagnosticsLog"];
 export type ClisView = Schemas["ClisView"];
 export type CallView = Schemas["CallView"];
 export type Room = Schemas["Room"];
-export type RoomLine = Schemas["RoomLine"];
 export type RoomTranscript = Schemas["RoomTranscript"];
 export type UsageGroupBy = "day" | "agent" | "provider" | "model";
 
@@ -160,7 +157,7 @@ export class DaemonClient {
   url(path: string): string {
     if (!this.#token) return `${this.base}${path}`;
     const sep = path.includes("?") ? "&" : "?";
-    return `${this.base}${path}${sep}access_token=${encodeURIComponent(this.#token)}`;
+    return `${this.base}${path}${sep}access_token=${enc(this.#token)}`;
   }
 
   health = (): Promise<Health> => this.#request("GET", "/v1/health");
@@ -233,7 +230,7 @@ export class DaemonClient {
   upload = (id: string, file: File): Promise<Upload> =>
     this.#request(
       "POST",
-      `/v1/agents/${id}/uploads?name=${encodeURIComponent(file.name)}`,
+      `/v1/agents/${id}/uploads?name=${enc(file.name)}`,
       file,
       "application/octet-stream",
     );
@@ -255,7 +252,7 @@ export class DaemonClient {
   compact = (id: string): Promise<void> => this.#request("POST", `/v1/agents/${id}/compact`);
   /** One of the agent's turns as a timeline. */
   trace = (id: string, turn: string): Promise<Trace> =>
-    this.#request("GET", `/v1/agents/${id}/turns/${encodeURIComponent(turn)}/trace`);
+    this.#request("GET", `/v1/agents/${id}/turns/${enc(turn)}/trace`);
   answerQuestion = (
     id: string,
     question: number,

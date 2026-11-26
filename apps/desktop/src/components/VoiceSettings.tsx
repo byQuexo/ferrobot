@@ -39,9 +39,13 @@ const COMMON_LANGUAGES: [string, string][] = [
   ["zh", "Chinese"],
 ];
 
-/** The fields of `PUT /v1/voice` from what the daemon reported, with `changes` applied. */
-export function voiceUpdate(view: VoiceView, changes: Partial<UpdateVoice>): UpdateVoice {
-  return {
+/** Applies `changes` to the daemon's current voice settings; the update replaces all of them. */
+export async function patchVoice(
+  client: DaemonClient,
+  changes: Partial<UpdateVoice>,
+): Promise<VoiceView> {
+  const view = await client.voice();
+  return client.updateVoice({
     enabled: view.enabled,
     provider: view.provider ?? null,
     tts_model: view.tts_model ?? null,
@@ -51,15 +55,7 @@ export function voiceUpdate(view: VoiceView, changes: Partial<UpdateVoice>): Upd
     speed: view.speed ?? null,
     language: view.language ?? null,
     ...changes,
-  };
-}
-
-/** Applies `changes` to the daemon's current voice settings; the update replaces all of them. */
-export async function patchVoice(
-  client: DaemonClient,
-  changes: Partial<UpdateVoice>,
-): Promise<VoiceView> {
-  return client.updateVoice(voiceUpdate(await client.voice(), changes));
+  });
 }
 
 /** Languages the chosen speech model speaks, else a common list. */

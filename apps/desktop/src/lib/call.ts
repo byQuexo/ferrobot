@@ -339,7 +339,7 @@ export const meterDots = (rms: number): number =>
   Math.min(METER_DOTS, Math.round(Math.sqrt(Math.max(0, rms)) * METER_DOTS * 2));
 
 /** Speeds the call bar steps through (ElevenLabs takes 0.7-1.2). */
-export const CALL_SPEEDS = [0.7, 0.8, 0.9, 1, 1.1, 1.2] as const;
+const CALL_SPEEDS = [0.7, 0.8, 0.9, 1, 1.1, 1.2] as const;
 
 /** The next speed up from `speed` (`null`: normal), back to the slowest after the fastest. */
 export const nextSpeed = (speed: number | null): number =>

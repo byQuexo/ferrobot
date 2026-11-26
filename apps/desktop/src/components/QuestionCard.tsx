@@ -18,7 +18,7 @@ interface Draft {
 const EMPTY: Draft = { values: [], custom: "" };
 
 /** True when the draft answer is complete for this question. */
-export function isAnswered(q: Question, a: Draft | undefined): boolean {
+function isAnswered(q: Question, a: Draft | undefined): boolean {
   const custom = (a?.custom ?? "").trim() !== "";
   const picked = a?.values.length ?? 0;
   if (q.kind === "text") return custom;
@@ -27,7 +27,7 @@ export function isAnswered(q: Question, a: Draft | undefined): boolean {
 }
 
 /** Human-readable answer, e.g. "Email, Chat". */
-export function answerLabel(q: Question, a: QuestionAnswer | undefined): string {
+function answerLabel(q: Question, a: QuestionAnswer | undefined): string {
   if (!a) return "";
   const parts = (a.values ?? []).map(
     (v) => (q.choices ?? []).find((c) => c.value === v)?.label ?? v,
