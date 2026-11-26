@@ -69,6 +69,13 @@ export function languagesOf(
   return listed?.length ? listed.map((l) => [l.code, l.name || l.code]) : COMMON_LANGUAGES;
 }
 
+/** The account's voices as picker options, each with the languages it speaks. */
+export const voiceOptions = (catalog: VoiceCatalog | null): [string, string][] =>
+  catalog?.voices.map((v) => [
+    v.voice_id,
+    `${v.name}${v.languages.length ? ` · ${v.languages.join(", ")}` : ""}`,
+  ]) ?? [];
+
 /** The speech provider's key: pasted here, kept in the daemon's keychain, never shown again. */
 function KeyRow(props: {
   kind: VoiceProvider;
@@ -276,11 +283,7 @@ export function VoiceSettings(): JSX.Element {
   };
 
   const elevenlabs = view.provider === "elevenlabs";
-  const voices: [string, string][] =
-    catalog?.voices.map((v) => [
-      v.voice_id,
-      `${v.name}${v.languages.length ? ` · ${v.languages.join(", ")}` : ""}`,
-    ]) ?? [];
+  const voices = voiceOptions(catalog);
   const models: [string, string][] =
     catalog?.tts_models.map((m) => [m.model_id, m.name || m.model_id]) ?? [];
   const voiceHint = !elevenlabs

@@ -8,7 +8,7 @@ import { speedLabel } from "../lib/call.ts";
 import { errorText } from "../lib/format.ts";
 import { withSaved } from "../lib/models.ts";
 import { IconButton, Slider, useDismiss } from "./ui.tsx";
-import { languagesOf, patchVoice } from "./VoiceSettings.tsx";
+import { languagesOf, patchVoice, voiceOptions } from "./VoiceSettings.tsx";
 
 /** The chat header's sliders button and its popover: this agent's voice, language and speed,
  * saved right away. */
@@ -67,11 +67,6 @@ export function VoiceQuick(props: {
   };
 
   const mine = view?.agent_voices?.[id] ?? "";
-  const voices: [string, string][] =
-    catalog?.voices.map((v) => [
-      v.voice_id,
-      `${v.name}${v.languages.length ? ` · ${v.languages.join(", ")}` : ""}`,
-    ]) ?? [];
   const shownSpeed = speed ?? view?.speed ?? 1;
   return (
     <span class="voice-quick-wrap" ref={wrap}>
@@ -106,7 +101,7 @@ export function VoiceQuick(props: {
                 }}
               >
                 <option value="">Default voice</option>
-                {withSaved(voices, mine).map(([v, label]) => (
+                {withSaved(voiceOptions(catalog), mine).map(([v, label]) => (
                   <option key={v} value={v}>
                     {label}
                   </option>
