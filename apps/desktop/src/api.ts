@@ -20,6 +20,7 @@ export type Routine = Schemas["RoutineView"];
 export type RoutineRun = Schemas["RoutineRun"];
 export type SandboxInfo = Schemas["SandboxInfo"];
 export type ExecOutput = Schemas["ExecOutput"];
+export type Interrupted = Schemas["Interrupted"];
 export type Snapshot = Schemas["SnapshotRecord"];
 export type CreateAgent = Schemas["CreateAgent"];
 export type UpdateAgent = Schemas["UpdateAgent"];
@@ -246,7 +247,9 @@ export class DaemonClient {
     this.#request("GET", `/v1/agents/${agent}/files/${String(file)}`);
   /** A ```html block from the chat, served by the daemon as a sandboxed page. */
   preview = (html: string): Promise<PreviewLink> => this.#request("POST", "/v1/previews", { html });
-  interrupt = (id: string): Promise<unknown> => this.#request("POST", `/v1/agents/${id}/interrupt`);
+  /** Stops the agent's turn; with `chain`, also the work it handed out (Stop). */
+  interrupt = (id: string, chain = false): Promise<Interrupted> =>
+    this.#request("POST", `/v1/agents/${id}/interrupt${chain ? "?chain=true" : ""}`);
   retry = (id: string): Promise<Agent> => this.#request("POST", `/v1/agents/${id}/retry`);
   /** The agent's next turn starts a fresh model session; the chat stays. */
   newSession = (id: string): Promise<void> => this.#request("POST", `/v1/agents/${id}/new-session`);

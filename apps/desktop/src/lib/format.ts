@@ -208,3 +208,12 @@ export function linkLabel(url: string): string {
   const query = keys.length ? `?${keys.join("&")}${params.length > 2 ? "&…" : ""}` : "";
   return `${host}${path}${query}${hash === undefined ? "" : "#…"}`;
 }
+
+/** What a Stop ended beyond the agent's own turn; empty when nothing else. */
+export function stopSummary(agents: number, dropped: number): string {
+  const parts = [
+    agents > 1 ? `${String(agents)} agents stopped` : "",
+    dropped > 0 ? `${String(dropped)} queued message${dropped === 1 ? "" : "s"} dropped` : "",
+  ].filter(Boolean);
+  return parts.join(", ");
+}

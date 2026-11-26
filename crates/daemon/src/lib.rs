@@ -29,6 +29,7 @@ pub mod scheduler;
 pub mod secrets;
 pub mod spec;
 pub mod state;
+pub mod stop;
 pub mod storage;
 pub mod supervisor;
 pub mod tasks;

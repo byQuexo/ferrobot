@@ -1318,7 +1318,7 @@
         "tags": [
           "chat"
         ],
-        "summary": "Aborts the agent's running turn, if any. Interrupted messages are not retried.",
+        "summary": "Aborts the agent's running turn, if any; with `chain`, the work it set off as well (Stop).\nInterrupted messages are not retried.",
         "operationId": "interrupt",
         "parameters": [
           {
@@ -1328,6 +1328,15 @@
             "required": true,
             "schema": {
               "type": "string"
+            }
+          },
+          {
+            "name": "chain",
+            "in": "query",
+            "description": "Also stop every agent working on a message from this one (and from those, and so on), and\ndrop the agent messages queued to or from any of them.",
+            "required": false,
+            "schema": {
+              "type": "boolean"
             }
           }
         ],
@@ -8705,6 +8714,10 @@
       },
       "Interrupted": {
         "type": "object",
+        "required": [
+          "agents",
+          "dropped"
+        ],
         "properties": {
           "turn_id": {
             "type": [
@@ -8712,6 +8725,18 @@
               "null"
             ],
             "description": "The interrupted turn, or null if the agent was idle."
+          },
+          "agents": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "With `chain`: every agent whose work was stopped, this one first."
+          },
+          "dropped": {
+            "type": "integer",
+            "description": "With `chain`: how many queued agent messages were dropped.",
+            "minimum": 0
           }
         }
       },

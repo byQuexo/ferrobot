@@ -289,6 +289,47 @@ impl Store {
         .await
     }
 
+    /// Messages queued or being worked on, oldest first.
+    pub async fn open_messages(&self) -> Result<Vec<MailMessage>, StoreError> {
+        self.with(|c| {
+            let mut stmt = c.prepare(&format!(
+                "SELECT {COLUMNS} FROM messages WHERE status IN ('pending', 'in_flight') ORDER BY id"
+            ))?;
+            let mut rows = stmt.query([])?;
+            let mut out = Vec::new();
+            while let Some(row) = rows.next()? {
+                out.push(from_row(row)?);
+            }
+            Ok(out)
+        })
+        .await
+    }
+
+    /// Drops the queued messages among `ids` (delivered, `reason` as their error) and returns
+    /// them; a message already taken stays as it is.
+    pub async fn drop_messages(
+        &self,
+        ids: Vec<i64>,
+        reason: String,
+    ) -> Result<Vec<i64>, StoreError> {
+        self.with(move |c| {
+            let mut stmt = c.prepare(
+                "UPDATE messages SET status = 'delivered', last_error = ?2, updated_at = ?3
+                 WHERE id = ?1 AND status = 'pending' RETURNING id",
+            )?;
+            let at = fmt_ts(now());
+            let mut dropped = Vec::new();
+            for id in ids {
+                dropped.extend(
+                    stmt.query_row(params![id, reason, at], |r| r.get::<_, i64>(0))
+                        .optional()?,
+                );
+            }
+            Ok(dropped)
+        })
+        .await
+    }
+
     /// Most recent messages addressed to `agent` (newest last).
     pub async fn inbox(&self, agent: AgentId, limit: u32) -> Result<Vec<MailMessage>, StoreError> {
         self.with(move |c| {

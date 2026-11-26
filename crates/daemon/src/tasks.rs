@@ -36,6 +36,10 @@ pub(crate) async fn report(
     let Some(assigner) = task.assigner() else {
         return;
     };
+    // The operator stopped the assigner too; the report would start its work again.
+    if outcome == TurnOutcome::Interrupted && state.hub.recently_stopped(assigner) {
+        return;
+    }
     let id = task.message.id;
     let text = text.map(str::trim).filter(|t| !t.is_empty());
     let body = match (outcome, text) {

@@ -46,7 +46,12 @@ struct Inner {
     credentials: HashMap<AgentId, CredentialError>,
     /// Agents whose model refused tools; their turns wait too.
     no_tools: HashMap<AgentId, ToolsUnsupported>,
+    /// When the operator last stopped each agent's chain of work.
+    stopped: HashMap<AgentId, Instant>,
 }
+
+/// How long after a Stop a stopped delegate's task report is left out.
+const STOPPED_FOR: std::time::Duration = std::time::Duration::from_secs(60);
 
 impl Hub {
     fn lock(&self) -> MutexGuard<'_, Inner> {
@@ -262,6 +267,23 @@ impl Hub {
                 turn_id: turn.to_owned(),
             });
         }
+    }
+
+    /// The operator stopped these agents' work.
+    pub fn mark_stopped(&self, agents: &[AgentId]) {
+        let mut inner = self.lock();
+        inner.stopped.retain(|_, at| at.elapsed() < STOPPED_FOR);
+        for agent in agents {
+            inner.stopped.insert(*agent, Instant::now());
+        }
+    }
+
+    /// Whether the operator stopped `agent`'s work within the last minute.
+    pub fn recently_stopped(&self, agent: AgentId) -> bool {
+        self.lock()
+            .stopped
+            .get(&agent)
+            .is_some_and(|at| at.elapsed() < STOPPED_FOR)
     }
 
     pub fn forget(&self, agent: AgentId) {

@@ -43,7 +43,14 @@ import type {
 } from "../api.ts";
 import { useApp } from "../context.ts";
 import { isPass } from "../lib/call.ts";
-import { clockTime, statusOf, stepLabel, stepsLabel, toolLabel } from "../lib/format.ts";
+import {
+  clockTime,
+  statusOf,
+  stepLabel,
+  stepsLabel,
+  stopSummary,
+  toolLabel,
+} from "../lib/format.ts";
 import {
   buildTimeline,
   firstNewKey,
@@ -295,8 +302,18 @@ export function Chat(props: {
         <span class="spacer" />
         <ChatPins agent={id} />
         {working && (
-          <Button variant="secondary" small onClick={() => void run(() => client.interrupt(id))}>
-            <CircleStop size={16} /> Stop turn
+          <Button
+            variant="secondary"
+            small
+            onClick={() =>
+              void run(async () => {
+                const stopped = await client.interrupt(id, true);
+                const summary = stopSummary(stopped.agents.length, stopped.dropped);
+                if (summary) toast(summary, "info");
+              })
+            }
+          >
+            <CircleStop size={16} /> Stop
           </Button>
         )}
         {voiceEnabled && (

@@ -49,6 +49,15 @@ How the app looks (theme, accent color, bubbles, chat background, a pattern
 behind the chat, text size, font, corners, density, chat width and motion) is
 under **Settings → Appearance**, with a preview at the top.
 
+### Stop
+
+While an agent works, its chat header has **Stop**. It stops the agent and
+every agent working on something it handed out (a task, a message, and so on
+down the line), and drops the messages agents queued for each other there, so
+a loop between agents ends too. Your own queued messages, routines and
+webhooks stay; a stopped agent's task does not report back to an agent you
+stopped.
+
 ### Pins
 
 Keep important things one click away. Hover a reply or a shared file and

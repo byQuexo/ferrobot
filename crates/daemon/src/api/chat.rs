@@ -341,25 +341,50 @@ pub(crate) async fn answer_question(
     Ok((StatusCode::ACCEPTED, Json(answered)))
 }
 
+#[derive(Debug, Deserialize, IntoParams)]
+#[into_params(parameter_in = Query)]
+pub(crate) struct InterruptQuery {
+    /// Also stop every agent working on a message from this one (and from those, and so on), and
+    /// drop the agent messages queued to or from any of them.
+    #[serde(default)]
+    chain: bool,
+}
+
 #[derive(Debug, Serialize, ToSchema)]
 pub(crate) struct Interrupted {
     /// The interrupted turn, or null if the agent was idle.
     turn_id: Option<String>,
+    /// With `chain`: every agent whose work was stopped, this one first.
+    #[schema(value_type = Vec<String>)]
+    agents: Vec<ferrobot_core::AgentId>,
+    /// With `chain`: how many queued agent messages were dropped.
+    dropped: usize,
 }
 
-/// Aborts the agent's running turn, if any. Interrupted messages are not retried.
+/// Aborts the agent's running turn, if any; with `chain`, the work it set off as well (Stop).
+/// Interrupted messages are not retried.
 #[utoipa::path(post, path = "/v1/agents/{id}/interrupt", tag = "chat",
-    params(("id" = String, Path, description = "Agent id (UUID)")),
+    params(("id" = String, Path, description = "Agent id (UUID)"), InterruptQuery),
     responses((status = 200, body = Interrupted),
         (status = 404, description = "Unknown agent", body = ErrorBody)))]
 pub(crate) async fn interrupt(
     State(state): State<AppState>,
     Path(id): Path<String>,
+    Query(q): Query<InterruptQuery>,
 ) -> ApiResult<Interrupted> {
     let id = parse_id(&id)?;
     state.store.get_agent(id).await?;
+    let turn_id = state.hub.current_turn(id);
+    let (agents, dropped) = if q.chain {
+        crate::stop::stop_chain(&state, id).await?
+    } else {
+        state.hub.interrupt(id);
+        (Vec::new(), 0)
+    };
     Ok(Json(Interrupted {
-        turn_id: state.hub.interrupt(id),
+        turn_id,
+        agents,
+        dropped,
     }))
 }
 

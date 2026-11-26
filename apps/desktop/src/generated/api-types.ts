@@ -276,7 +276,10 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** Aborts the agent's running turn, if any. Interrupted messages are not retried. */
+        /**
+         * Aborts the agent's running turn, if any; with `chain`, the work it set off as well (Stop).
+         *     Interrupted messages are not retried.
+         */
         post: operations["interrupt"];
         delete?: never;
         options?: never;
@@ -2422,6 +2425,10 @@ export interface components {
         Interrupted: {
             /** @description The interrupted turn, or null if the agent was idle. */
             turn_id?: string | null;
+            /** @description With `chain`: every agent whose work was stopped, this one first. */
+            agents: string[];
+            /** @description With `chain`: how many queued agent messages were dropped. */
+            dropped: number;
         };
         /** @description A language a model speaks. */
         LanguageOption: {
@@ -4454,7 +4461,13 @@ export interface operations {
     };
     interrupt: {
         parameters: {
-            query?: never;
+            query?: {
+                /**
+                 * @description Also stop every agent working on a message from this one (and from those, and so on), and
+                 *     drop the agent messages queued to or from any of them.
+                 */
+                chain?: boolean;
+            };
             header?: never;
             path: {
                 /** @description Agent id (UUID) */

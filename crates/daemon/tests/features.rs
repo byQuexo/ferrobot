@@ -7631,6 +7631,74 @@ async fn context_is_the_newest_call_since_the_last_new_chat() {
 }
 
 #[tokio::test]
+async fn stop_ends_the_chain_of_work_an_agent_set_off() {
+    use ferrobot_core::protocol::TurnOutcome::Interrupted;
+    let backend = Arc::new(StatefulBackend::default());
+    let d = start(backend.clone(), None, "127.0.0.1:0").await;
+    let mut ids = Vec::new();
+    for name in ["ann", "bob", "cy", "dot"] {
+        let agent = create(&d, json!({ "name": name })).await;
+        ids.push(agent["id"].as_str().unwrap().parse::<AgentId>().unwrap());
+    }
+    let [ann, bob, _cy, dot] = ids[..] else {
+        unreachable!()
+    };
+    let mut ann_ws = connect_runner(&d.agents, &backend.token("ann")).await;
+    let mut bob_ws = connect_runner(&d.agents, &backend.token("bob")).await;
+    let mut dot_ws = connect_runner(&d.agents, &backend.token("dot")).await;
+    let tell = |agent: AgentId, body: &'static str| {
+        let ui = d.ui.clone();
+        async move {
+            let path = format!("/v1/agents/{agent}/messages");
+            let (status, _) = http(&ui, "POST", &path, Some(json!({ "body": body }))).await;
+            assert_eq!(status, 202);
+        }
+    };
+
+    // ann works on the operator's message, gives bob a task and writes to cy, whose message waits.
+    tell(ann, "Ship it").await;
+    let (ann_turn, _, _) = next_turn(&mut ann_ws).await;
+    let mcp = mcp_as(&d, backend.token("ann")).await;
+    call(
+        &mcp,
+        "assign_task",
+        json!({"to": "bob", "task": "Run the tests"}),
+    )
+    .await;
+    let (bob_turn, _, _) = next_turn(&mut bob_ws).await;
+    let sent = json!({"to": "cy", "body": "Update the docs"});
+    let queued = call(&mcp, "send_message", sent).await["message_id"]
+        .as_i64()
+        .unwrap();
+    // dot works on the operator's own message, outside ann's chain.
+    tell(dot, "Something else").await;
+    let (dot_turn, _, _) = next_turn(&mut dot_ws).await;
+
+    let path = format!("/v1/agents/{ann}/interrupt?chain=true");
+    let (status, stopped) = http(&d.ui, "POST", &path, None).await;
+    assert_eq!(status, 200, "{stopped}");
+    assert_eq!(
+        (&stopped["turn_id"], &stopped["agents"], &stopped["dropped"]),
+        (&json!(ann_turn), &json!([ann, bob]), &json!(1))
+    );
+    for (ws, turn) in [(&mut ann_ws, ann_turn), (&mut bob_ws, bob_turn)] {
+        match next_frame(ws).await {
+            DaemonFrame::Interrupt { turn_id } => assert_eq!(turn_id, turn),
+            other => panic!("expected the turn stopped, got {other:?}"),
+        }
+        answer_with(ws, turn, "", Interrupted).await;
+    }
+    quiet(&mut dot_ws).await;
+    let dropped = d.state.store.get_message(queued).await.unwrap();
+    assert_eq!(dropped.status, ferrobot_core::MailStatus::Delivered);
+    // bob's stopped task does not report back to ann, which would start its work again.
+    turns_done(&d, bob, 1).await;
+    quiet(&mut ann_ws).await;
+    answer(&mut dot_ws, dot_turn, "Done.").await;
+    turns_done(&d, dot, 1).await;
+}
+
+#[tokio::test]
 async fn agents_call_each_other_and_the_operator_can_join() {
     let backend = Arc::new(StatefulBackend::default());
     let d = start(backend.clone(), None, "127.0.0.1:0").await;

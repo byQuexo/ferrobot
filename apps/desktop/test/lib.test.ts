@@ -25,6 +25,7 @@ import {
   relativeTime,
   rowLine,
   statusOf,
+  stopSummary,
   stepLabel,
   stepsLabel,
   toolLabel,
@@ -2592,5 +2593,13 @@ describe("computer tools", () => {
     assert.deepEqual(parseConsole(out), { stdout: "a\nb\n", cwd: "/home/node/src" });
     const cut = { exit_code: 0, stdout: "lots", stderr: "", truncated: true };
     assert.deepEqual(parseConsole(cut), { stdout: "lots", cwd: null });
+  });
+});
+
+describe("stop", () => {
+  it("says what else a Stop ended", () => {
+    assert.equal(stopSummary(1, 0), "");
+    assert.equal(stopSummary(3, 1), "3 agents stopped, 1 queued message dropped");
+    assert.equal(stopSummary(1, 2), "2 queued messages dropped");
   });
 });
