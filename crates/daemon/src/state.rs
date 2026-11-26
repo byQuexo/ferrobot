@@ -478,7 +478,7 @@ impl ferrobot_mcp::MailboxNotifier for AppState {
     }
 
     fn global_memory_changed(&self) {
-        self.publish(UiEvent::GlobalMemoryChanged);
+        crate::agents::global_memory_changed(self);
     }
 
     fn event_recorded(&self, event: &StoredEvent) {

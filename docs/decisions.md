@@ -227,13 +227,22 @@ the code and this file together.
   than a nullable `memories.agent_id`, which would need a table rebuild.
   `remember`/`forget` take `global: true`; `recall` searches both scopes,
   alternating hits so neither crowds out the other, and marks global ones.
-- **Agents may write global memory, but only change their own entries.**
-  That is what makes it useful (one agent learns where the operator flies
-  from, all know). Each entry records its author (v10; `NULL` = the
-  operator); agents cannot overwrite or delete entries of other agents or of
-  the operator, `recall` says who wrote each one, and the Global memory dialog
-  shows it. Remaining risk: a hijacked agent can still add new entries every
-  agent reads; `recall` calls them notes, not instructions.
+- **Agents may write global memory and change each other's entries, never the
+  operator's.** That is what makes it useful (one agent learns where the
+  operator flies from, all know). Each entry records its author (v10; `NULL` =
+  the operator); agents cannot overwrite or delete the operator's entries,
+  `recall` says who wrote each one, and the Global memory dialog shows it.
+  Until 0.1.11 an agent could only change its own entries; Tim asked for
+  agents that keep the operator's knowledge base current on their own
+  (2026-11-26), which needs refreshing and removing what another agent wrote.
+- **The knowledge base is in every memory agent's instructions.** The daemon
+  appends the rule to keep it current and the newest 50 global entries (300
+  characters each) to the instructions of agents with the Memory group, and
+  re-sends them (`Configure`) on every change, so no runner change was needed.
+  Remaining risk, larger than before: a hijacked agent can write an entry that
+  now reaches every memory agent's system prompt, not only a `recall` result.
+  The block calls the entries notes, not instructions, that never override
+  theirs; the operator sees and edits them in Settings → Global memory.
 
 ## Connectors
 

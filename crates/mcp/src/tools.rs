@@ -1222,8 +1222,8 @@ impl FerrobotTools {
 
     #[tool(
         description = "Store a long-term memory under a key (overwrites an existing key). \
-        `global: true` stores it in the global memory all agents share; you can only overwrite \
-        global memories you wrote."
+        `global: true` stores it in the global memory all agents share (your operator's \
+        knowledge base); you can change any agent's entry there, but not your operator's."
     )]
     async fn remember(
         &self,

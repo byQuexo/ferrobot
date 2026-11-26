@@ -17,6 +17,7 @@ All notable changes are listed here. The format follows
 - **Only some of a connector's tools.** Settings → Connectors → a connector's list button: agents get only the tools you tick, for example GitHub's read tools; the daemon refuses the rest. Database migration v23: this daemon's data cannot be opened by an older one.
 - **Stop ends a chain of work.** **Stop**, now in the message box where Send is while an agent works (formerly Stop turn in the header), also stops every agent working on something the agent handed out, and drops the messages agents queued for each other there, so a loop between agents ends. `POST /v1/agents/{id}/interrupt?chain=true`.
 - **Pause that ends your turn** in Settings → Voice → Calls: how long you can stop talking before agents answer, 0.5 to 3 seconds instead of a fixed 1.5.
+- **Agents keep a knowledge base about you.** Agents with the Memory tool save what they learn about you in the global memory on their own (preferences, projects, people, tools, decisions), update what changed and remove what is out of date. Every such agent reads the newest 50 entries in its instructions. Agents can now change each other's global entries, never yours.
 - The ideas list has Flows, taken off the roadmap for now, and a Twilio connector so an agent can call your phone.
 
 ### Fixed

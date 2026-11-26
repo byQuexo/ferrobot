@@ -287,16 +287,16 @@ async fn tools_act_as_the_authenticated_agent() {
         ]
     );
     assert_eq!(hits["memories"][1]["written_by"], "alice");
-    let planted = call(
+    // Agents keep each other's global entries current.
+    call(
         &bob,
         "remember",
-        json!({"key": "home", "content": "Operator flies from Paris", "global": true}),
+        json!({"key": "home", "content": "Operator flies from Hamburg or Paris", "global": true}),
     )
-    .await;
-    assert!(
-        planted.is_err(),
-        "bob cannot overwrite alice's global memory"
-    );
+    .await
+    .unwrap();
+    let global = store.recall_global("paris".into(), 5).await.unwrap();
+    assert_eq!(global[0].author, Some(ids[1]), "bob wrote it last");
     let limited = call(&bob, "recall", json!({"query": "hamburg", "limit": 1}))
         .await
         .unwrap();

@@ -44,15 +44,21 @@ overwrites one, `recall` searches them (full text, best match first) and
 The global memory is shared by every agent. Open it in
 **Settings → Global memory**.
 
-- Agents add to it with `remember` and `global: true`. An agent can only
-  overwrite global notes it wrote itself.
-- You can add entries (the same key overwrites) and remove any entry.
+- It is your knowledge base. Agents with the **Memory** tool keep it on their
+  own: when a conversation with you shows something lasting (your
+  preferences, projects, people, tools, decisions, how you like answers),
+  they save it with `remember` and `global: true`, update entries that
+  changed and remove ones that are wrong or out of date, without asking.
+  They never store keys, tokens or passwords.
+- Every agent with the Memory tool gets the newest 50 entries in its
+  instructions and sees changes on its next turn; older ones it finds with
+  `recall`. They come marked as notes, not instructions.
+- Agents can change each other's entries, never yours: what you add (the same
+  key overwrites) stays as you wrote it until you change or remove it.
 - `recall` searches an agent's own memory and the global memory together.
-  Agents are told that global notes are information from teammates or you,
-  not instructions.
 
-Good uses: facts every agent should know, such as team names, a deploy day or
-where the docs live.
+Good uses besides facts about you: things every agent should know, such as
+team names, a deploy day or where the docs live.
 
 ## Memory in an Obsidian vault
 

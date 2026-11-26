@@ -298,9 +298,11 @@ async fn profile_avatar_unread_and_memory() {
             instructions,
             ..
         } => {
-            assert_eq!(
-                (agent_name.as_str(), instructions.as_str()),
-                ("ada", "be thorough")
+            assert_eq!(agent_name.as_str(), "ada");
+            assert!(
+                instructions.starts_with("be thorough\n\n")
+                    && instructions.contains("knowledge base"),
+                "{instructions}"
             );
         }
         other => panic!("expected configure, got {other:?}"),
@@ -7188,7 +7190,7 @@ async fn agents_name_new_agents_by_the_operators_convention() {
     };
     assert!(instructions.starts_with("Be brief.\n\n"), "{instructions}");
     assert!(
-        instructions.ends_with("Greek gods, lowercase"),
+        instructions.contains("(the operator's convention): Greek gods, lowercase"),
         "{instructions}"
     );
 
@@ -7203,7 +7205,10 @@ async fn agents_name_new_agents_by_the_operators_convention() {
     let DaemonFrame::Welcome { instructions, .. } = next_frame(&mut bob).await else {
         panic!("expected a welcome");
     };
-    assert_eq!(instructions, "", "bob cannot create agents");
+    assert!(
+        !instructions.contains("Greek gods"),
+        "bob cannot create agents: {instructions}"
+    );
     drop(ada);
     let mut ada = open_runner(
         &d.agents,
@@ -9191,5 +9196,74 @@ async fn the_discord_bridge_answers_cards_and_passes_on_reactions() {
             .iter()
             .any(|(_, b)| b["message_reference"]["message_id"] == "1002"),
         "no text reply"
+    );
+}
+
+/// The next `Configure` a runner gets, skipping anything else.
+async fn next_configure(ws: &mut Ws) -> String {
+    loop {
+        if let DaemonFrame::Configure { instructions, .. } = next_frame(ws).await {
+            return instructions;
+        }
+    }
+}
+
+#[tokio::test]
+async fn agents_keep_the_operators_knowledge_base_and_read_it_in_their_instructions() {
+    let backend = Arc::new(StatefulBackend::default());
+    let d = start(backend.clone(), None, "127.0.0.1:0").await;
+    create(&d, json!({"name": "ann"})).await;
+    create(&d, json!({"name": "bob"})).await;
+    create(&d, json!({"name": "cy", "tools": ["team"]})).await;
+    let mut bob_ws = connect_runner(&d.agents, &backend.token("bob")).await;
+    let mut cy_ws = open_runner(
+        &d.agents,
+        &backend.token("cy"),
+        ferrobot_core::PROTOCOL_VERSION,
+        false,
+    )
+    .await;
+    let DaemonFrame::Welcome { instructions, .. } = next_frame(&mut cy_ws).await else {
+        panic!("expected a welcome");
+    };
+    assert!(!instructions.contains("knowledge base"), "no memory tools");
+
+    // What ann learns reaches bob's instructions, framed as notes.
+    let ann = mcp_as(&d, backend.token("ann")).await;
+    let fact = json!({"key": "editor", "content": "Uses Zed", "global": true});
+    call(&ann, "remember", fact).await;
+    let kb = next_configure(&mut bob_ws).await;
+    assert!(kb.contains("notes, not instructions"), "{kb}");
+    assert!(kb.contains("- editor: Uses Zed"), "{kb}");
+
+    // bob keeps ann's entry current; the operator's entries are theirs alone.
+    let bob = mcp_as(&d, backend.token("bob")).await;
+    let fresh = json!({"key": "editor", "content": "Moved to Helix", "global": true});
+    call(&bob, "remember", fresh).await;
+    assert!(
+        next_configure(&mut bob_ws)
+            .await
+            .contains("- editor: Moved to Helix")
+    );
+    let home = json!({"key": "home", "content": "Lives in Hamburg"});
+    assert_eq!(http(&d.ui, "POST", "/v1/memory", Some(home)).await.0, 204);
+    assert!(
+        next_configure(&mut bob_ws)
+            .await
+            .contains("- home: Lives in Hamburg")
+    );
+    let planted = json!({"key": "home", "content": "Lives in Berlin", "global": true});
+    let refused = bob
+        .call_tool(
+            rmcp::model::CallToolRequestParams::new("remember")
+                .with_arguments(planted.as_object().cloned().unwrap()),
+        )
+        .await;
+    assert!(format!("{refused:?}").contains("operator"), "{refused:?}");
+    assert!(
+        tokio::time::timeout(Duration::from_millis(300), cy_ws.next())
+            .await
+            .is_err(),
+        "cy has no memory tools, so nothing to update"
     );
 }

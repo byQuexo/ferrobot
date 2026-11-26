@@ -391,6 +391,15 @@ mod tests {
             "deploy"
         );
         assert_eq!(store.recall(bob, String::new(), 10).await.unwrap(), []);
+        // Agents keep each other's notes current, never the operator's.
+        store
+            .remember_global("team".into(), "Ship daily, bob agrees".into(), Some(bob))
+            .await
+            .unwrap();
+        store
+            .remember_global("team".into(), "Ship daily, test first".into(), None)
+            .await
+            .unwrap();
         assert!(matches!(
             store
                 .remember_global("team".into(), "mine".into(), Some(bob))
@@ -401,10 +410,6 @@ mod tests {
             store.forget_global("team".into(), Some(bob)).await,
             Err(StoreError::Conflict { .. })
         ));
-        store
-            .remember_global("team".into(), "Ship daily, test first".into(), None)
-            .await
-            .unwrap();
         let global = store.recall_global("test".into(), 10).await.unwrap();
         assert_eq!(
             (global[0].content.as_str(), global[0].author),
