@@ -339,8 +339,8 @@ impl Store {
         .await
     }
 
-    /// Records the old names history shows for agents renamed before renames were recorded, as
-    /// aliases plus `renamed` events (names held now are skipped); returns how many.
+    /// Aliases old names history shows for agents renamed before renames were recorded, plus a
+    /// `renamed` event each so agents hear of it; names held now are skipped. Returns how many.
     pub async fn backfill_aliases(&self) -> Result<usize, StoreError> {
         self.with(|c| {
             let mut stmt = c.prepare(
