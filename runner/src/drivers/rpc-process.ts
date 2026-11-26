@@ -37,19 +37,19 @@ export async function spawnAgent(
   cwd: string,
   env: NodeJS.ProcessEnv,
 ): Promise<ChildProcessWithoutNullStreams> {
-  const child = spawn(bin, args, { cwd, env, stdio: "pipe" });
   try {
+    const child = spawn(bin, args, { cwd, env, stdio: "pipe" });
     await new Promise<void>((resolve, reject) => {
       child.once("spawn", resolve);
       child.once("error", reject);
     });
+    return child;
   } catch (err) {
     throw new Error(
       `${name} is not installed in this sandbox image (${bin}: ${errorMessage(err)})`,
       { cause: err },
     );
   }
-  return child;
 }
 
 export class RpcProcess {
