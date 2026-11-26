@@ -155,8 +155,9 @@ export function DesktopPreview(props: {
   if (ready === "checking") return <span class="screen-thumb idle" />;
   if (ready === "off") {
     return (
-      <span class="screen-thumb idle" title="No desktop: turn it on in Settings → CLIs">
+      <span class="screen-thumb idle">
         <MonitorOff size={16} aria-hidden="true" />
+        <span class="thumb-note">No desktop: turn it on in Settings → CLIs</span>
       </span>
     );
   }
@@ -175,6 +176,7 @@ export function DesktopPreview(props: {
         }
       >
         <RotateCw size={16} aria-hidden="true" />
+        <span class="thumb-note">Restart to get the desktop</span>
       </button>
     );
   }

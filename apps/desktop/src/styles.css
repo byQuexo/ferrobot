@@ -853,7 +853,8 @@ textarea { resize: vertical; min-height: 40px; line-height: 1.5; }
 button.screen-thumb { cursor: zoom-in; }
 button.screen-thumb:hover { border-color: var(--border-strong); }
 button.screen-thumb .screen-canvas { pointer-events: none; }
-.screen-thumb.idle { opacity: 0.6; }
+.screen-thumb.idle { opacity: 0.6; display: flex; flex-direction: column; justify-content: center; gap: 4px; padding: 0 8px; }
+.thumb-note { font-size: 11px; line-height: 1.25; text-align: center; }
 button.screen-thumb.idle { cursor: pointer; }
 /* Absolute, so noVNC measures the box and not the 1280-pixel canvas inside it. */
 .screen-live { position: absolute; inset: 0; }
