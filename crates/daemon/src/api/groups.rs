@@ -10,8 +10,8 @@ use serde::Deserialize;
 use utoipa::ToSchema;
 
 use super::ApiResult;
-use super::voice::{CallView, call_view, load};
-use crate::call::{MAX_CALL_AGENTS, MAX_CALL_TEXT_BYTES};
+use super::voice::{CallView, call_text, call_view, load_enabled};
+use crate::call::MAX_CALL_AGENTS;
 use crate::error::{ApiError, ErrorBody};
 use crate::{AppState, UiEvent};
 
@@ -168,12 +168,7 @@ pub(crate) async fn post_group_message(
     Json(req): Json<GroupMessage>,
 ) -> Result<(StatusCode, Json<Vec<MailMessage>>), ApiError> {
     let group = state.store.group(id).await?;
-    let body = state.normalize_mentions(req.body.trim()).await;
-    if body.is_empty() || body.len() > MAX_CALL_TEXT_BYTES {
-        return Err(ApiError::BadRequest(format!(
-            "body must be 1..{MAX_CALL_TEXT_BYTES} bytes"
-        )));
-    }
+    let body = call_text(&state, &req.body).await?;
     Ok((
         StatusCode::ACCEPTED,
         Json(state.say_in_group(&group, &body).await),
@@ -193,11 +188,7 @@ pub(crate) async fn call_group(
     Path(id): Path<i64>,
 ) -> ApiResult<CallView> {
     let mut group = state.store.group(id).await?;
-    if !load(&state).await?.enabled {
-        return Err(ApiError::Conflict(
-            "voice is switched off in the settings".into(),
-        ));
-    }
+    load_enabled(&state).await?;
     let mut present = Vec::new();
     for agent in group.members {
         if state.store.get_agent(agent).await.is_ok() {
