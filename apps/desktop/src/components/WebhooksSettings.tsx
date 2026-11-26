@@ -19,6 +19,7 @@ import type {
   WebhooksView,
 } from "../api.ts";
 import { useApp } from "../context.ts";
+import { clockTime } from "../lib/format.ts";
 import { Button, Dialog, IconButton } from "./ui.tsx";
 
 const EVENTS: [WebhookEvent, string][] = [
@@ -64,8 +65,6 @@ const JSON_FORMAT: (typeof FORMATS)[number] = [
 ];
 const formatOf = (id: WebhookFormat): (typeof FORMATS)[number] =>
   FORMATS.find(([f]) => f === id) ?? JSON_FORMAT;
-const time = (at: string): string =>
-  new Date(at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
 
 interface Draft {
   name: string;
@@ -278,8 +277,8 @@ function OutgoingCard(props: {
   const status = !last
     ? { cls: "", text: "Nothing sent yet" }
     : last.error
-      ? { cls: "p-error", text: `Failed ${time(last.at)}` }
-      : { cls: "p-awake", text: `Delivered ${time(last.at)}` };
+      ? { cls: "p-error", text: `Failed ${clockTime(last.at)}` }
+      : { cls: "p-awake", text: `Delivered ${clockTime(last.at)}` };
   return (
     <li class="conn-card">
       <span class="conn-tile hook-tile" aria-hidden="true">
@@ -607,7 +606,7 @@ export function AgentWebhooks(props: { agent: string }): JSX.Element | null {
             ? { cls: "", text: "Not used yet" }
             : last.error
               ? { cls: "p-error", text: "Failed" }
-              : { cls: "p-awake", text: `Sent ${time(last.at)}` };
+              : { cls: "p-awake", text: `Sent ${clockTime(last.at)}` };
           const detail = `${formatOf(h.format)[1]} · ${h.events.map(eventLabel).join(", ")}`;
           return row(`out-${String(h.id)}`, ICONS[h.format], h.name, detail, status);
         })}

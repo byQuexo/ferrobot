@@ -3,6 +3,7 @@ import { useEffect, useState } from "preact/hooks";
 
 import type { OtelView } from "../api.ts";
 import { useApp } from "../context.ts";
+import { clockTime } from "../lib/format.ts";
 import { authValue, backendOf, OTEL_ENDPOINTS, type OtelBackend } from "../lib/otel.ts";
 import { PrefRow } from "./AppearanceSettings.tsx";
 import { Button, Switch } from "./ui.tsx";
@@ -16,7 +17,7 @@ const BACKENDS: [OtelBackend, string][] = [
 function statusOf(view: OtelView): string {
   const last = view.last_export;
   if (!last) return view.enabled ? "No turn sent yet." : "";
-  const at = new Date(last.at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+  const at = clockTime(last.at);
   return last.error
     ? `Last export failed (${at}): ${last.error}`
     : `Last export went through at ${at}.`;

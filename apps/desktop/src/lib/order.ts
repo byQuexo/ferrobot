@@ -57,8 +57,5 @@ export function pickSelection<T extends Orderable>(
   loaded: boolean,
 ): string | null | undefined {
   if (!loaded || (selected && agents.has(selected))) return undefined;
-  const first = [...agents.values()].sort(
-    (a, b) => Number(Boolean(b.pinned)) - Number(Boolean(a.pinned)) || a.name.localeCompare(b.name),
-  )[0];
-  return first?.id ?? null;
+  return orderAgents([...agents.values()], [])[0]?.id ?? null;
 }

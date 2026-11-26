@@ -52,7 +52,6 @@ export function Sidebar(props: {
   onOpenRoom: (id: number) => void;
   onCreate: () => void;
   onSettings: () => void;
-  /** Opens Settings → Updates. */
   onUpdates: () => void;
   settingsOpen: boolean;
   onUsage: () => void;
@@ -162,6 +161,20 @@ export function Sidebar(props: {
     />
   );
   const connLabel = props.online ? "Daemon connected" : "Daemon offline";
+  const tools = (
+    <>
+      <IconButton label="Usage" onClick={props.onUsage} pressed={props.usageOpen}>
+        <ChartColumn size={18} />
+      </IconButton>
+      <PinsMenu />
+      <IconButton label="Settings" onClick={props.onSettings} pressed={props.settingsOpen}>
+        <Settings size={18} />
+      </IconButton>
+      <IconButton label="New agent" onClick={props.onCreate} tone="accent">
+        <Plus size={18} />
+      </IconButton>
+    </>
+  );
 
   return (
     <aside class={`sidebar${props.rail ? " rail" : ""}`} ref={aside}>
@@ -175,16 +188,7 @@ export function Sidebar(props: {
             {railAgents.filter((a) => !a.pinned).map(railItem)}
           </nav>
           <div class="rail-tools">
-            <IconButton label="Usage" onClick={props.onUsage} pressed={props.usageOpen}>
-              <ChartColumn size={18} />
-            </IconButton>
-            <PinsMenu />
-            <IconButton label="Settings" onClick={props.onSettings} pressed={props.settingsOpen}>
-              <Settings size={18} />
-            </IconButton>
-            <IconButton label="New agent" onClick={props.onCreate} tone="accent">
-              <Plus size={18} />
-            </IconButton>
+            {tools}
             <IconButton label="Expand sidebar" expanded={false} onClick={toggle}>
               <PanelLeftOpen size={18} />
             </IconButton>
@@ -196,16 +200,7 @@ export function Sidebar(props: {
             <Logo />
             <span class="brand-name">ferrobot</span>
             <span class="spacer" />
-            <IconButton label="Usage" onClick={props.onUsage} pressed={props.usageOpen}>
-              <ChartColumn size={18} />
-            </IconButton>
-            <PinsMenu />
-            <IconButton label="Settings" onClick={props.onSettings} pressed={props.settingsOpen}>
-              <Settings size={18} />
-            </IconButton>
-            <IconButton label="New agent" onClick={props.onCreate} tone="accent">
-              <Plus size={18} />
-            </IconButton>
+            {tools}
             <IconButton label="Collapse sidebar" expanded onClick={toggle}>
               <PanelLeftClose size={18} />
             </IconButton>
@@ -432,7 +427,6 @@ function AgentMenu(props: {
       {icon} {label}
     </button>
   );
-  // Kept inside the window near the pointer.
   const left = Math.min(props.x, window.innerWidth - 200);
   const top = Math.min(props.y, window.innerHeight - 170);
   return (
@@ -452,6 +446,15 @@ function AgentMenu(props: {
       })}
       {item(`Delete ${props.agent.name}…`, <Trash2 size={16} />, props.onDelete, true)}
     </div>
+  );
+}
+
+function Unread(props: { count: number }): JSX.Element | null {
+  if (props.count <= 0) return null;
+  return (
+    <span class="badge" aria-label={`${String(props.count)} unread`}>
+      {props.count > 99 ? "99+" : props.count}
+    </span>
   );
 }
 
@@ -478,11 +481,7 @@ function PinnedAgent(props: {
       >
         <Avatar agent={a} size={60} presence={status.presence} />
         <span class="pinned-name">{a.name}</span>
-        {a.unread > 0 && (
-          <span class="badge" aria-label={`${String(a.unread)} unread`}>
-            {a.unread > 99 ? "99+" : a.unread}
-          </span>
-        )}
+        <Unread count={a.unread} />
       </button>
       <PinToggle agent={a} />
     </div>
@@ -520,11 +519,7 @@ function AgentRow(props: {
           </span>
           <span class={`agent-desc${line.tone ? ` ${line.tone}` : ""}`}>{line.text}</span>
         </span>
-        {a.unread > 0 && (
-          <span class="badge" aria-label={`${String(a.unread)} unread`}>
-            {a.unread > 99 ? "99+" : a.unread}
-          </span>
-        )}
+        <Unread count={a.unread} />
       </button>
       <PinToggle agent={a} />
     </div>

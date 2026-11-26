@@ -19,11 +19,11 @@ import {
   timedOut,
   treeRows,
 } from "../lib/computer.ts";
+import { errorText } from "../lib/format.ts";
 import { fileSize } from "./FileViewer.tsx";
 import { Dialog, IconButton, Skeleton } from "./ui.tsx";
 
 const MAX_SHOWN = 500;
-const message = (err: unknown): string => (err instanceof Error ? err.message : String(err));
 
 /** Browses the agent's computer from its home folder as a tree; files open read-only. */
 export function Files(props: { agent: string }): JSX.Element {
@@ -42,7 +42,7 @@ export function Files(props: { agent: string }): JSX.Element {
           out.exit_code === 0
             ? parseListing(out.stdout)
             : { error: out.stderr.trim() || "This folder cannot be read." },
-        (err: unknown): Listing => ({ error: message(err) }),
+        (err: unknown): Listing => ({ error: errorText(err) }),
       )
       .then((listing) => {
         setListings((m) => new Map(m).set(dir, listing));
@@ -187,7 +187,7 @@ export function Console(props: { agent: string }): JSX.Element {
         finish(id, { out: { ...out, stdout } });
       },
       (err: unknown) => {
-        finish(id, { failed: message(err) });
+        finish(id, { failed: errorText(err) });
       },
     );
   };

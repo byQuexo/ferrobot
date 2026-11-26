@@ -5,6 +5,7 @@ import { Check, Sunrise } from "lucide-preact";
 import type { Agent, Provider } from "../api.ts";
 import { useApp } from "../context.ts";
 import { deriveCharacter, type Character } from "../lib/character.ts";
+import { errorText } from "../lib/format.ts";
 import {
   STARTER_DESCRIPTION,
   STARTER_INSTRUCTIONS,
@@ -18,6 +19,7 @@ import { CLAUDE_CODE_NOTICE, claudeCodeState } from "../lib/claude-code.ts";
 import {
   ChatgptLogin,
   ClaudeCodeLogin,
+  LinkOut,
   needsKey,
   ProvidersSettings,
 } from "./ProvidersSettings.tsx";
@@ -105,7 +107,7 @@ export function Welcome(props: {
         model: model.trim() || null,
       });
     } catch (err) {
-      setError(err instanceof Error ? err.message : String(err));
+      setError(errorText(err));
       setBusy(false);
       return;
     }
@@ -187,10 +189,8 @@ export function Welcome(props: {
                 Desktop and I’ll notice when it’s up.
               </p>
               <p>
-                <a href={DOCKER_URL} target="_blank" rel="noreferrer">
-                  Download Docker Desktop
-                </a>{" "}
-                · {guide("Troubleshooting", "Troubleshooting")}
+                <LinkOut label="Download Docker Desktop" url={DOCKER_URL} /> ·{" "}
+                {guide("Troubleshooting", "Troubleshooting")}
               </p>
             </>
           )}

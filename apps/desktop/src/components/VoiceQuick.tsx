@@ -5,10 +5,11 @@ import { Play, SlidersHorizontal } from "lucide-preact";
 import type { Agent, Provider, UpdateVoice, VoiceCatalog, VoiceView } from "../api.ts";
 import { useApp } from "../context.ts";
 import { speedLabel } from "../lib/call.ts";
+import { errorText } from "../lib/format.ts";
 import { withSaved } from "../lib/models.ts";
 import { ModelPicker } from "./ModelPicker.tsx";
 import { IconButton, Slider, useDismiss } from "./ui.tsx";
-import { languagesOf, patchVoice } from "./VoiceSettings.tsx";
+import { languagesOf, patchVoice, voiceOptions } from "./VoiceSettings.tsx";
 
 /** The chat header's sliders button and its popover: this agent's voice, language and speed,
  * saved right away. */
@@ -46,7 +47,7 @@ export function VoiceQuick(props: {
       try {
         props.onView(await patchVoice(client, changes));
       } catch (err) {
-        toast(err instanceof Error ? err.message : String(err));
+        toast(errorText(err));
       }
     });
   };
@@ -62,7 +63,7 @@ export function VoiceQuick(props: {
       };
       await audio.play();
     } catch (err) {
-      toast(err instanceof Error ? err.message : String(err));
+      toast(errorText(err));
     } finally {
       setTesting(false);
     }
@@ -73,11 +74,6 @@ export function VoiceQuick(props: {
   const provider = providers.find((p) => p.id === props.agent.provider_id);
   const others = (byAgent: Record<string, string> | undefined): Record<string, string> =>
     Object.fromEntries(Object.entries(byAgent ?? {}).filter(([agent]) => agent !== id));
-  const voices: [string, string][] =
-    catalog?.voices.map((v) => [
-      v.voice_id,
-      `${v.name}${v.languages.length ? ` · ${v.languages.join(", ")}` : ""}`,
-    ]) ?? [];
   const shownSpeed = speed ?? view?.speed ?? 1;
   return (
     <span class="voice-quick-wrap" ref={wrap}>
@@ -110,7 +106,7 @@ export function VoiceQuick(props: {
                 }}
               >
                 <option value="">Default voice</option>
-                {withSaved(voices, mine).map(([v, label]) => (
+                {withSaved(voiceOptions(catalog), mine).map(([v, label]) => (
                   <option key={v} value={v}>
                     {label}
                   </option>

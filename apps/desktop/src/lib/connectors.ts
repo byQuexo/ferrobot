@@ -1,6 +1,7 @@
 import type { Connector } from "../api.ts";
 import { hash } from "./avatar.ts";
 import { CATALOG, type CatalogEntry, isAdded } from "./catalog.ts";
+import { plural } from "./format.ts";
 
 /** The catalog entry for `url` whose server only works with the operator's own OAuth app. */
 export function ownAppEntry(url: string): CatalogEntry | undefined {
@@ -8,8 +9,7 @@ export function ownAppEntry(url: string): CatalogEntry | undefined {
 }
 
 /** Such a server without an OAuth app: it may list its tools, but they never work. */
-export const needsOwnApp = (c: Connector): boolean =>
-  !c.client_id && ownAppEntry(c.url) !== undefined;
+const needsOwnApp = (c: Connector): boolean => !c.client_id && ownAppEntry(c.url) !== undefined;
 
 /** The catalog entry a connector was added from, matched like `isAdded`. */
 export const entryOf = (c: Connector): CatalogEntry | undefined =>
@@ -25,10 +25,8 @@ export function checkLabel(c: Connector, checking: boolean): string {
   const check = c.check;
   if (!check) return "not checked yet";
   switch (check.status) {
-    case "ok": {
-      const n = check.tools ?? 0;
-      return `connected · ${n} ${n === 1 ? "tool" : "tools"}`;
-    }
+    case "ok":
+      return `connected · ${plural(check.tools ?? 0, "tool")}`;
     case "needs_sign_in":
       if (tokenOnly(c)) return "needs a token";
       return c.sign_in === "expired" ? "sign-in expired, sign in again" : "needs sign-in";

@@ -11,7 +11,7 @@ import {
 } from "lucide-preact";
 
 import { useApp } from "../context.ts";
-import { clockTime } from "../lib/format.ts";
+import { clockTime, errorText } from "../lib/format.ts";
 import { boardLabel, isBoard, toggleBoard } from "../lib/dashboards.ts";
 import { IconButton } from "./ui.tsx";
 
@@ -91,7 +91,7 @@ export function DashboardView(props: {
         if (live && f.page_url) setSrc(`${client.base}${f.page_url}`);
       },
       (err: unknown) => {
-        toast(err instanceof Error ? err.message : String(err));
+        toast(errorText(err));
       },
     );
     return () => {

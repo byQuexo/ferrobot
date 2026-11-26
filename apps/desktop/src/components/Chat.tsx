@@ -45,6 +45,8 @@ import { useApp } from "../context.ts";
 import { isPass } from "../lib/call.ts";
 import {
   clockTime,
+  errorText,
+  plural,
   statusOf,
   stepLabel,
   stepsLabel,
@@ -567,7 +569,6 @@ function ExchangeHint(props: { item: Exchange; agent: Agent }): JSX.Element {
   const { agents, openConversation } = useApp();
   const [open, setOpen] = useState(false);
   const peer = agents.get(item.peerId);
-  const n = item.messages.length;
   return (
     <>
       <div class={`row row-center exchange${open ? " open" : ""}`}>
@@ -579,9 +580,7 @@ function ExchangeHint(props: { item: Exchange; agent: Agent }): JSX.Element {
             setOpen(!open);
           }}
         >
-          <span>
-            {n} {n === 1 ? "message" : "messages"} with
-          </span>
+          <span>{plural(item.messages.length, "message")} with</span>
           {peer && <Avatar agent={peer} size={18} />}
           <strong>{peer?.name ?? item.peerName}</strong>
           <ChevronRight size={16} class="chev" />
@@ -626,7 +625,6 @@ function Item(props: {
   onActivities?: () => void;
   /** Stops the running turn so queued messages go next; unset when nothing is queued. */
   sendNow?: (() => void) | undefined;
-  /** Opens a turn's trace. */
   onTrace?: (turn: string) => void;
   /** On a turn's last reply: its steps, shown in the footer. */
   footSteps?: { count: number; seconds: number } | undefined;
@@ -1037,7 +1035,7 @@ function MicButton(props: {
       setRecording(true);
       limit.current = setTimeout(() => void finish(), 120_000);
     } catch (err) {
-      toast(err instanceof Error ? err.message : String(err));
+      toast(errorText(err));
     }
   };
   const active = (): boolean => session.current !== null || rec.current !== null;
@@ -1091,12 +1089,12 @@ function MicButton(props: {
 
 const MAX_UPLOAD = 25 * 1024 * 1024;
 
-/** The message box of a chat or call room (`chat` is its id). */
 const SEND_NOW = SHORTCUTS.find((s) => s.id === "send-now");
 
 /** Unsent text per chat, so it survives switching to Settings or another chat (not a restart). */
 const drafts = new Map<string, string>();
 
+/** The message box of a chat or call room (`chat` is its id). */
 export function Composer(props: {
   chat: string;
   placeholder: string;

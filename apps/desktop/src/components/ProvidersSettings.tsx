@@ -5,6 +5,7 @@ import { LogIn, Plus, Trash2 } from "lucide-preact";
 import type { ClaudeCodeStatus, DeviceCode, LoginStatus, Provider, ProviderKind } from "../api.ts";
 import { useApp } from "../context.ts";
 import { CLAUDE_CODE_NOTICE, claudeCodeState } from "../lib/claude-code.ts";
+import { errorText } from "../lib/format.ts";
 import { ModelPicker } from "./ModelPicker.tsx";
 import { Button, IconButton } from "./ui.tsx";
 
@@ -128,7 +129,7 @@ export function ChatgptLogin(props: {
     try {
       setCode(await client.startChatgptLogin(id));
     } catch (err) {
-      toast(err instanceof Error ? err.message : String(err));
+      toast(errorText(err));
     }
   };
 
@@ -138,11 +139,8 @@ export function ChatgptLogin(props: {
     <div class="provider-login">
       {code && status?.state === "pending" ? (
         <span class="small">
-          Open{" "}
-          <a href={code.verification_url} target="_blank" rel="noreferrer">
-            {code.verification_url}
-          </a>{" "}
-          and enter <b class="mono">{code.user_code}</b>
+          Open <LinkOut label={code.verification_url} url={code.verification_url} /> and enter{" "}
+          <b class="mono">{code.user_code}</b>
         </span>
       ) : (
         <Button small onClick={() => void start()}>
@@ -262,7 +260,7 @@ export function ProvidersSettings(props: {
       setProviders(list);
       props.onChange?.(list);
     } catch (err) {
-      toast(err instanceof Error ? err.message : String(err));
+      toast(errorText(err));
     } finally {
       setBusy(false);
     }

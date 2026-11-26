@@ -5,6 +5,7 @@ import { KeyRound, Trash2 } from "lucide-preact";
 import type { Connector, LoginView, Provider, VoiceView } from "../api.ts";
 import { useApp } from "../context.ts";
 import { loginLabel, presetOf } from "../lib/logins.ts";
+import { errorText } from "../lib/format.ts";
 import { KIND_LABELS, KIND_LINKS, LinkOut, needsKey } from "./ProvidersSettings.tsx";
 import { Button, IconButton } from "./ui.tsx";
 import { VOICE_LABELS } from "./VoiceSettings.tsx";
@@ -21,7 +22,6 @@ interface Entry {
 
 /** Every stored key in one place. Values go to the daemon’s keychain and never come back. */
 export function VaultSettings(props: {
-  /** Show only the model provider keys. */
   providersOnly?: boolean;
   /** Called with the providers after every load or change. */
   onProviders?: (providers: Provider[]) => void;
@@ -54,7 +54,7 @@ export function VaultSettings(props: {
       setVoice(v);
       setLogins(l);
     } catch (err) {
-      toast(err instanceof Error ? err.message : String(err));
+      toast(errorText(err));
     } finally {
       setBusy(false);
     }

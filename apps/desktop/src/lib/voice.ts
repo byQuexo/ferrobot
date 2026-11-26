@@ -7,11 +7,8 @@ import { mentionsAsText } from "./mentions.ts";
 export const hasVoiceKey = (v: VoiceView): boolean =>
   v.providers.some((p) => p.kind === v.provider && p.has_key);
 
-/**
- * What choosing `kind` in Settings → Voice does while `shown` is selected: nothing, go back to
- * the saved provider, ask first (the picked voices would be lost), switch at once (its key is
- * stored) or ask for its key (saving it switches).
- */
+/** What choosing `kind` in Settings → Voice does while `shown` is selected: nothing, go back,
+ * ask first (picked voices would be lost), switch at once (key stored) or ask for its key. */
 export function pickProvider(
   view: VoiceView,
   shown: VoiceProvider | null,

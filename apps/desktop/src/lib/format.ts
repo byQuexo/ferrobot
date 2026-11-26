@@ -20,6 +20,12 @@ export function credentialLabel(kind: "missing" | "rejected"): string {
   return kind === "missing" ? "Key missing" : "Key rejected";
 }
 
+export const errorText = (err: unknown): string =>
+  err instanceof Error ? err.message : String(err);
+
+export const plural = (n: number, word: string): string =>
+  `${String(n)} ${word}${n === 1 ? "" : "s"}`;
+
 export const TOOLS_UNSUPPORTED = "Model can't use tools";
 
 /** The agent's status dot and label: a model credential or tools problem outranks presence. */
@@ -38,7 +44,7 @@ export function toolsSummary(on: number, total: number, connectors: number): str
   const tools =
     on >= total ? "All tools" : on === 0 ? "No tools" : `${String(on)} of ${String(total)} tools`;
   if (!connectors) return tools;
-  return `${tools} + ${String(connectors)} ${connectors === 1 ? "connector" : "connectors"}`;
+  return `${tools} + ${plural(connectors, "connector")}`;
 }
 
 /** "just now", "5 min ago", "3 h ago", "2 d ago"; future times as "in 5 min". */
@@ -114,7 +120,7 @@ export function rowLine(
 
 /** A finished run of tool calls in the chat, e.g. "3 steps · 40 s". */
 export function stepsLabel(count: number, seconds: number): string {
-  const steps = `${String(count)} ${count === 1 ? "step" : "steps"}`;
+  const steps = plural(count, "step");
   return seconds >= 1 ? `${steps} · ${duration(Math.round(seconds))}` : steps;
 }
 

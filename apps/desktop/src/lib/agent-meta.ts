@@ -1,8 +1,8 @@
 import type { AgentContext } from "../api.ts";
 import { count } from "./usage.ts";
 
-export const MAX_TAGS = 5;
-export const MAX_TAG_CHARS = 20;
+const MAX_TAGS = 5;
+const MAX_TAG_CHARS = 20;
 
 /** `tags` with `raw` added under the daemon's rules, or why it can't be. */
 export function addTag(

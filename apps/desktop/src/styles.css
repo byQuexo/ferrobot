@@ -1,7 +1,3 @@
-/* ferrobot desktop: calm neutrals, one cool accent, soft depth.
-   Fonts: open-licensed sans stack (Inter / Geist when installed, else the system UI font).
-   Type 12/13/14/16/20 at 400/500 (600 only for bold in content), spacing on a 4px grid. */
-
 :root {
   --font: "Inter Variable", Inter, Geist, ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, "Noto Sans", sans-serif;
   --mono: "Geist Mono", ui-monospace, "SF Mono", "Cascadia Code", "JetBrains Mono", Menlo, Consolas, monospace;
@@ -44,8 +40,6 @@
   --series-5: #e87ba4;
   --shadow: 0 1px 2px rgba(16, 24, 40, 0.04), 0 4px 14px rgba(16, 24, 40, 0.05);
   --shadow-lg: 0 20px 50px rgba(16, 24, 40, 0.18);
-  --avatar-l: 56%;
-  --avatar-s: 52%;
   color-scheme: light;
 }
 
@@ -82,8 +76,6 @@
   --series-5: #d55181;
   --shadow: 0 1px 2px rgba(0, 0, 0, 0.3), 0 6px 18px rgba(0, 0, 0, 0.22);
   --shadow-lg: 0 24px 60px rgba(0, 0, 0, 0.55);
-  --avatar-l: 50%;
-  --avatar-s: 46%;
   color-scheme: dark;
 }
 
@@ -222,20 +214,16 @@ textarea { resize: vertical; min-height: 40px; line-height: 1.5; }
 .char-eyes, .char-look, .char-figure { transform-box: view-box; transform-origin: 24px 30px; }
 .char-eyes { animation: char-blink 5s var(--blink-delay, 0s) infinite; }
 @keyframes char-blink { 0%, 93%, 100% { transform: scaleY(1); } 95.5% { transform: scaleY(0.08); } }
-/* thinking: eyes drift up to the side, head tilts slowly */
 .m-thinking .char-look { transform: translate(1.6px, -2px); }
 .m-thinking .char-figure { animation: char-tilt 3.2s ease-in-out infinite; }
 @keyframes char-tilt { 50% { transform: rotate(-5deg); } }
-/* working: small hop, eyes scan */
 .m-working .char-figure { animation: char-hop 0.9s ease-in-out infinite; }
 .m-working .char-look { animation: char-scan 2.4s ease-in-out infinite; }
 @keyframes char-hop { 50% { transform: translateY(-1.6px); } }
 @keyframes char-scan { 0%, 100% { transform: translateX(-1.6px); } 50% { transform: translateX(1.6px); } }
-/* sleeping: eyes closed, slow breathing, muted color */
 .m-sleeping .char-figure { animation: char-breathe 4s ease-in-out infinite; filter: saturate(0.55); }
 @keyframes char-breathe { 50% { transform: scale(1.03); } }
 
-/* Something is wrong: a small shiver now and then, eyes down. */
 .m-trouble .char-figure { animation: char-shiver 2.8s ease-in-out infinite; filter: saturate(0.7); }
 .m-trouble .char-look { transform: translateY(1.6px); }
 .m-trouble .char-cheek { fill: var(--err); opacity: 0.55; }
@@ -245,7 +233,6 @@ textarea { resize: vertical; min-height: 40px; line-height: 1.5; }
   88% { transform: translateX(0.9px) rotate(3deg); }
   92% { transform: translateX(-0.5px) rotate(-1.5deg); }
 }
-/* A question card waits for the operator: a light bob, looking up at them. */
 .m-waiting .char-figure { animation: char-bob 1.6s ease-in-out infinite; }
 .m-waiting .char-look { transform: translateY(-2.2px); }
 @keyframes char-bob { 50% { transform: translateY(-2.2px); } }
@@ -253,7 +240,6 @@ textarea { resize: vertical; min-height: 40px; line-height: 1.5; }
   position: absolute; right: -1px; bottom: -1px; width: 28%; height: 28%; min-width: 10px; min-height: 10px;
   border-radius: 50%; border: 2px solid var(--sidebar); background: var(--sleep);
 }
-/* The presence dot is the signature: agents, and key or sign-in state in Settings. */
 .dot { display: inline-block; width: 8px; height: 8px; flex: none; border-radius: 50%; background: var(--sleep); }
 .p-awake .dot, .dot.p-awake, .presence-dot.p-awake { background: var(--ok); }
 .p-working .dot, .dot.p-working, .presence-dot.p-working { background: var(--accent); animation: pulse 1.4s ease-in-out infinite; }
@@ -351,13 +337,8 @@ textarea { resize: vertical; min-height: 40px; line-height: 1.5; }
 
 .bubble { max-width: min(560px, 78%); padding: 8px 12px; border-radius: var(--bubble-radius, 16px); position: relative; overflow-wrap: anywhere; }
 .bubble-user { background: var(--user-bubble); color: var(--user-text); border-bottom-right-radius: 4px; }
-/* Agent replies: plain text next to the avatar, no bubble. */
 .bubble-agent { flex: 1; max-width: 640px; padding: 0; border-radius: 0; background: none; }
-.agent-msg-head { display: flex; align-items: baseline; gap: 8px; margin: 1px 0 2px; }
 .bubble-agent > .meta { display: block; margin-top: 2px; }
-.agent-msg-head strong { font-size: 14px; font-weight: 500; }
-.agent-msg-head .meta { display: inline; margin: 0; }
-/* In read-only threads the second agent's messages sit on the right in a soft bubble. */
 .row-peer .bubble-agent { flex: 0 1 auto; max-width: min(560px, 78%); padding: 8px 12px; border-radius: 16px; border-top-right-radius: 4px; background: var(--surface-2); }
 .bubble-agent.streaming .rich > :last-child::after {
   content: ""; display: inline-block; width: 8px; height: 16px; margin-left: 4px; vertical-align: -3px;
@@ -427,7 +408,6 @@ textarea { resize: vertical; min-height: 40px; line-height: 1.5; }
 .pin-toggle { position: absolute; top: 8px; right: 8px; display: grid; place-items: center; width: 24px; height: 24px; border: none; border-radius: 6px; background: transparent; color: var(--muted); opacity: 0; cursor: pointer; }
 .agent-row-wrap:hover .pin-toggle, .pin-toggle:focus-visible { opacity: 1; }
 .pin-toggle:hover { background: var(--surface-2); }
-.file-frame { display: block; width: 100%; height: 72vh; border: 1px solid var(--border); border-radius: 8px; background: #fff; }
 .rich table { border-collapse: collapse; font-size: 13px; }
 .rich th, .rich td { border: 1px solid var(--border); padding: 4px 8px; text-align: left; vertical-align: top; }
 .rich th { background: var(--surface-2); font-weight: 500; }
@@ -755,7 +735,6 @@ textarea { resize: vertical; min-height: 40px; line-height: 1.5; }
 .settings-head h2 { margin: 0 0 4px; font-size: 20px; line-height: 32px; font-weight: 500; }
 .settings-head p { margin: 0; }
 .settings-section + .settings-section { margin-top: 24px; padding-top: 24px; border-top: 1px solid var(--border); }
-.settings-actions { margin-top: 24px; }
 @media (max-width: 720px) { .settings { grid-template-columns: 1fr; } .settings-nav { flex-direction: row; flex-wrap: wrap; border-right: none; border-bottom: 1px solid var(--border); } }
 
 /* ---------- usage ---------- */
@@ -850,7 +829,6 @@ textarea { resize: vertical; min-height: 40px; line-height: 1.5; }
 .steps-line:hover, .turn-failed:hover { background: var(--surface-2); color: var(--text-2); }
 .turn-failed { color: var(--warn); }
 
-/* New items rise in; what was there when the chat opened does not. */
 .enter, .settled { display: contents; }
 .enter > * { animation: rise 0.28s var(--ease) both; }
 
@@ -926,7 +904,6 @@ textarea { resize: vertical; min-height: 40px; line-height: 1.5; }
 .shell > .chat, .chat-head { background: var(--chat-bg); }
 .chat-head .pair-avatars .avatar + .avatar { box-shadow: 0 0 0 2px var(--chat-bg); }
 :root[data-bubbles="solid"] .bubble-user { background: var(--accent); color: var(--accent-text); }
-/* Inside an accent bubble, links, code and the time take the bubble's text colour. */
 :root[data-bubbles="solid"] .bubble-user > * {
   --accent: var(--accent-text);
   --accent-soft: color-mix(in srgb, var(--accent-text) 18%, transparent);
@@ -1328,11 +1305,8 @@ input.slider:is(:focus-visible, :active)::-moz-range-thumb { box-shadow: 0 0 0 1
 .hook-add > .hook-command-input { flex-basis: 260px; }
 
 /* Settings → Webhooks */
-.webhook-new { display: flex; flex-direction: column; align-items: flex-start; gap: 8px; margin-top: 12px; padding: 12px 16px; border-radius: 12px; background: var(--surface-2); }
-.webhook-new .code-block { align-self: stretch; margin: 0; background: var(--surface); }
 .webhook-url { display: flex; align-items: center; gap: 8px; align-self: stretch; }
 .webhook-url code { flex: 1; min-width: 0; overflow-wrap: anywhere; font-size: 12px; }
-.webhook-add { margin-top: 12px; }
 
 /* Settings → Global memory: the Obsidian vault */
 .memory-vault { margin-bottom: 20px; }

@@ -14,7 +14,7 @@ import {
   type Character,
 } from "../lib/character.ts";
 import { addTag } from "../lib/agent-meta.ts";
-import { toolsSummary } from "../lib/format.ts";
+import { errorText, toolsSummary } from "../lib/format.ts";
 import { toAvatarPng } from "../lib/image.ts";
 import { AGENT_NAME } from "../lib/welcome.ts";
 import { CharacterFace } from "./Character.tsx";
@@ -188,7 +188,7 @@ export function AgentDialog(props: {
       else if (avatar === null && editing?.avatar_url) agent = await client.removeAvatar(agent.id);
       props.onSaved(agent);
     } catch (err) {
-      toast(err instanceof Error ? err.message : String(err));
+      toast(errorText(err));
     } finally {
       setSaving(false);
     }
