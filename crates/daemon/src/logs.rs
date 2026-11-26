@@ -2,7 +2,7 @@
 
 use std::collections::VecDeque;
 use std::io;
-use std::sync::{Arc, Mutex, PoisonError};
+use std::sync::{Arc, Mutex};
 
 use tracing::Subscriber;
 use tracing_subscriber::Layer;
@@ -27,12 +27,7 @@ struct Ring {
 
 impl std::fmt::Debug for LogRing {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        let lines = self
-            .0
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .lines
-            .len();
+        let lines = crate::lock(&self.0).lines.len();
         f.debug_struct("LogRing").field("lines", &lines).finish()
     }
 }
@@ -48,7 +43,7 @@ impl LogRing {
             line.truncate(end);
             line.push('…');
         }
-        let mut ring = self.0.lock().unwrap_or_else(PoisonError::into_inner);
+        let mut ring = crate::lock(&self.0);
         ring.bytes += line.len();
         ring.lines.push_back(line);
         while ring.lines.len() > MAX_LINES || ring.bytes > MAX_BYTES {
@@ -61,7 +56,7 @@ impl LogRing {
 
     /// The latest `n` lines, oldest first.
     pub fn tail(&self, n: usize) -> Vec<String> {
-        let ring = self.0.lock().unwrap_or_else(PoisonError::into_inner);
+        let ring = crate::lock(&self.0);
         let skip = ring.lines.len().saturating_sub(n);
         ring.lines.iter().skip(skip).cloned().collect()
     }

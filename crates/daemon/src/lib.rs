@@ -46,6 +46,11 @@ use tower_http::cors::CorsLayer;
 
 pub use state::{AppState, Settings, UiEvent};
 
+/// A poisoned lock only means another task panicked mid-update of plain data; keep serving.
+pub(crate) fn lock<T>(m: &std::sync::Mutex<T>) -> std::sync::MutexGuard<'_, T> {
+    m.lock().unwrap_or_else(std::sync::PoisonError::into_inner)
+}
+
 /// Router for the operator-facing UI API.
 pub fn ui_router(state: AppState) -> Router {
     let cors = CorsLayer::new()

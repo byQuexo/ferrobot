@@ -50,11 +50,7 @@ struct Inner {
 
 impl Hub {
     fn lock(&self) -> MutexGuard<'_, Inner> {
-        // A poisoned lock only means another task panicked mid-update of a
-        // plain map; the data is still consistent enough to keep serving.
-        self.inner
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner)
+        crate::lock(&self.inner)
     }
 
     /// The wake-up signal for an agent's dispatch loop.

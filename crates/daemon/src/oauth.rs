@@ -2,7 +2,7 @@
 //! RFC 7009 revocation). The daemon is the client; tokens never reach a sandbox.
 
 use std::collections::HashMap;
-use std::sync::{Arc, PoisonError};
+use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use async_trait::async_trait;
@@ -259,8 +259,7 @@ impl std::fmt::Debug for OAuth {
 
 impl OAuth {
     fn refresh_lock(&self, connector: Uuid) -> Arc<tokio::sync::Mutex<()>> {
-        let mut locks = self.refresh.lock().unwrap_or_else(PoisonError::into_inner);
-        Arc::clone(locks.entry(connector).or_default())
+        Arc::clone(crate::lock(&self.refresh).entry(connector).or_default())
     }
 
     /// Cancels the connector's open sign-ins (deleted, signed out, URL changed).

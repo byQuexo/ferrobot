@@ -2,7 +2,7 @@
 //! built-in list per kind. The key goes only into the request to the provider.
 
 use std::collections::HashMap;
-use std::sync::{Mutex, PoisonError};
+use std::sync::Mutex;
 use std::time::{Duration, Instant};
 
 use ferrobot_core::{Provider, ProviderKind};
@@ -106,10 +106,7 @@ pub fn suggested(kind: ProviderKind) -> ModelList {
 
 /// The provider's own list, or the kind's suggestions when it has none or the fetch fails.
 pub async fn list(state: &AppState, provider: &Provider) -> ModelList {
-    let cached = state
-        .model_lists
-        .lock()
-        .unwrap_or_else(PoisonError::into_inner)
+    let cached = crate::lock(&state.model_lists)
         .get(&provider.id)
         .filter(|(at, _)| at.elapsed() < CACHE_TTL)
         .map(|(_, models)| models.clone());
@@ -121,11 +118,7 @@ pub async fn list(state: &AppState, provider: &Provider) -> ModelList {
     }
     match fetch(state, provider).await {
         Ok(models) if !models.is_empty() => {
-            state
-                .model_lists
-                .lock()
-                .unwrap_or_else(PoisonError::into_inner)
-                .insert(provider.id, (Instant::now(), models.clone()));
+            crate::lock(&state.model_lists).insert(provider.id, (Instant::now(), models.clone()));
             ModelList {
                 models,
                 source: ModelSource::Provider,
@@ -141,11 +134,7 @@ pub async fn list(state: &AppState, provider: &Provider) -> ModelList {
 
 /// Drops a provider's cached list, e.g. after its key or URL changed.
 pub fn forget(state: &AppState, provider: Uuid) {
-    state
-        .model_lists
-        .lock()
-        .unwrap_or_else(PoisonError::into_inner)
-        .remove(&provider);
+    crate::lock(&state.model_lists).remove(&provider);
 }
 
 /// The list endpoint below the provider's upstream, as the proxy reaches it.

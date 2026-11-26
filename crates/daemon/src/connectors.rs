@@ -3,7 +3,7 @@
 
 use std::collections::HashMap;
 use std::error::Error;
-use std::sync::{Arc, PoisonError};
+use std::sync::Arc;
 use std::time::Duration;
 
 use ferrobot_core::{AgentId, Connector};
@@ -74,7 +74,7 @@ impl Sessions {
     }
 
     fn checks_lock(&self) -> std::sync::MutexGuard<'_, HashMap<Uuid, ConnectorCheck>> {
-        self.checks.lock().unwrap_or_else(PoisonError::into_inner)
+        crate::lock(&self.checks)
     }
 
     /// The connector's last check since the daemon started or the connector changed.

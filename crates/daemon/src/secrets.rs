@@ -3,9 +3,10 @@
 
 use std::collections::BTreeMap;
 use std::path::PathBuf;
-use std::sync::{Arc, Mutex, PoisonError};
+use std::sync::{Arc, Mutex};
 
 use crate::error::ApiError;
+use crate::lock;
 
 const SERVICE: &str = "ferrobot";
 
@@ -133,7 +134,7 @@ impl SecretStore {
         let store = self.clone();
         tokio::task::spawn_blocking(move || {
             let _guard = match &store {
-                Self::File(_, gate) => Some(gate.lock().unwrap_or_else(PoisonError::into_inner)),
+                Self::File(_, gate) => Some(lock(gate)),
                 _ => None,
             };
             f(&store)
@@ -142,10 +143,6 @@ impl SecretStore {
         .map_err(internal)?
         .map_err(internal)
     }
-}
-
-fn lock<T>(m: &Mutex<T>) -> std::sync::MutexGuard<'_, T> {
-    m.lock().unwrap_or_else(PoisonError::into_inner)
 }
 
 type FileResult<T> = Result<T, Box<dyn std::error::Error + Send + Sync>>;

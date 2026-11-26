@@ -5,7 +5,7 @@ use std::collections::HashSet;
 use std::ffi::OsStr;
 use std::path::{Path, PathBuf};
 use std::process::Stdio;
-use std::sync::{Arc, LazyLock, Mutex, PoisonError};
+use std::sync::{Arc, LazyLock, Mutex};
 use std::time::Duration;
 
 use axum::Json;
@@ -509,16 +509,13 @@ struct Busy(AgentId);
 
 impl Busy {
     fn take(agent: AgentId) -> Option<Self> {
-        let mut busy = BUSY.lock().unwrap_or_else(PoisonError::into_inner);
-        busy.insert(agent).then_some(Self(agent))
+        crate::lock(&BUSY).insert(agent).then_some(Self(agent))
     }
 }
 
 impl Drop for Busy {
     fn drop(&mut self) {
-        BUSY.lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .remove(&self.0);
+        crate::lock(&BUSY).remove(&self.0);
     }
 }
 
