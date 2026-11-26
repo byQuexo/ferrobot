@@ -48,8 +48,13 @@ what went wrong (a wrong token, a channel the bot cannot see).
   example progress on long work or a routine's result; it reaches only the
   channels bridged to it.
 - Replies never ping anyone (`@everyone` and mentions are turned off).
-- Question and approval cards are still answered in the app. To hear about
-  them in Discord, add an outgoing [[Webhooks]] entry for "Cards waiting for
-  you".
+- Cards come to the channel too. An approval shows ✅ and ❌: react with one
+  to approve or decline. A question takes a reply to its message: the
+  number of an option, its name, or your own words. Only the users you
+  allowed can answer, and the card then says who did. Cards with a secret
+  field or several questions, a request to add a connector and very risky
+  steps say "Answer it in ferrobot" and are answered only in the app.
+- The agent can answer with just an emoji: it shows on your message, with no
+  text and no ✅.
 - Risky steps follow the same rules as in the app: a card unless Auto mode is
   on, dangerous ones refused.

@@ -253,6 +253,7 @@ pub async fn gate(state: &AppState, agent: AgentId, call: Call<'_>) -> Result<()
             tool,
             detail,
             reason: reason.to_owned(),
+            critical,
         },
     )
     .in_turn(state.hub.current_turn(agent));
