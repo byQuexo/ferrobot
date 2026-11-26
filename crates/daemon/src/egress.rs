@@ -88,7 +88,7 @@ struct StoredCa {
 }
 
 /// Each login's CA has its own name: TLS clients look the issuer up by name, so CAs sharing
-/// one made OpenSSL and GnuTLS try the wrong CA.
+/// one made clients try the wrong CA.
 fn ca_name(login: &str) -> String {
     format!("ferrobot CLI login {login}")
 }
