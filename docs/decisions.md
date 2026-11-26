@@ -247,9 +247,16 @@ the code and this file together.
 ## Desktop (roadmap item 4, 0.1.11)
 
 - **An option of the CLIs image, not a second image.** Settings → CLIs → Desktop adds Xvfb,
-  IceWM, lxterminal, PCManFM, x11vnc, socat, xdotool, scrot and procps to the shared image
-  (Chromium is already in the runner image for PDFs), about 110 MB. The programs start on demand
-  (`desktop::START`, idempotent), since a stopped computer loses them.
+  Openbox, tint2, lxterminal, Thunar, the Arc-Dark GTK theme, Inter, JetBrains Mono, a small CJK
+  font, xwallpaper, x11vnc, socat, xdotool, scrot and procps to the shared image (Chromium is
+  already in the runner image for PDFs), about 170 MB. The programs start on demand
+  (`desktop-start.sh`, idempotent), since a stopped computer loses them.
+- **Its look is written at the first start, from files only.** Openbox (our own dark theme and
+  title buttons), a tint2 dock and lxterminal are configured by plain files, so no D-Bus or
+  xfconf runs; the wallpaper and two icons are drawn there by a short Node script, so neither
+  the image nor the repo carries picture files. A first, icewm-based look was replaced in the
+  same release (Tim: too plain); it cost about 50 MB less. Debian's `chromium` wrapper ignores
+  flags from the environment, so `~/.local/bin/chromium` passes `--no-sandbox` and the rest.
 - **VNC over a streaming exec, no port.** Each screen connection runs x11vnc in inetd mode; its
   inetd mode writes to stdin, so socat gives it a socketpair, and `DISPLAY` carries the display
   because socat reads `:` as a separator. x11vnc ignores socat's SIGTERM at the end, so the
