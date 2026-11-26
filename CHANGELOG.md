@@ -10,6 +10,7 @@ All notable changes are listed here. The format follows
 
 ### Added
 
+- **A desktop in every agent's computer** (Settings → CLIs → Desktop): a window manager with a taskbar, Chromium, a terminal and a file manager. The Computer tab shows it live; it is view only until you press **Use it myself**, and **Hand back** returns it. Agents with the new **Desktop** tool group (off by default, even for agents with every other group) take screenshots, click, type, press keys and scroll. While you use it, their tool tells them to wait. An agent cannot have both a CLI account and the Desktop tool. New dependency: `@novnc/novnc`.
 - **Files and a console in the Computer tab.** Browse the agent's computer as a tree from its home folder (folders open and close in place, files open read-only), and run commands in it, one at a time and up to 60 s each, without asking the agent. Programs that need a full terminal, like vim, do not work there.
 - **A quicker model in calls.** Each agent can have a model it uses only while it is in a call (the chat's sliders button → **Model in calls**), so spoken replies come sooner. Bedrock, Vertex and Gemini agents keep their model.
 - **Calls among agents.** An agent can call one to three teammates without you (`call_agents`, Team tool group) to talk something through. Only while voice is on with a key, since you could not join otherwise. A pop-up lets you join; joining makes it your voice call in the same room. It ends once nobody has anything to add, after at most twelve agent lines in a row.
