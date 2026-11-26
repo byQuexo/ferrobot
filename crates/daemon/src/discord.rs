@@ -304,13 +304,7 @@ async fn deliver(
     text: &str,
 ) -> Result<(), String> {
     let mut body = state.normalize_mentions(text).await;
-    if body.len() > ferrobot_mcp::MAX_MESSAGE_BYTES {
-        let mut end = ferrobot_mcp::MAX_MESSAGE_BYTES;
-        while !body.is_char_boundary(end) {
-            end -= 1;
-        }
-        body.truncate(end);
-    }
+    crate::webhooks::truncate(&mut body, ferrobot_mcp::MAX_MESSAGE_BYTES);
     let msg = state
         .store
         .enqueue_message(Sender::User, bridge.agent_id, body, None)

@@ -191,7 +191,7 @@ fn frame(name: &str, payload: &str) -> String {
     body
 }
 
-fn truncate(text: &mut String, max_bytes: usize) {
+pub(crate) fn truncate(text: &mut String, max_bytes: usize) {
     if text.len() > max_bytes {
         let mut end = max_bytes;
         while !text.is_char_boundary(end) {
