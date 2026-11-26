@@ -4,7 +4,7 @@ use std::collections::hash_map::Entry;
 use std::collections::{HashMap, HashSet};
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex, MutexGuard};
-use std::time::Instant;
+use std::time::{Duration, Instant};
 
 use ferrobot_core::AgentId;
 use ferrobot_core::protocol::DaemonFrame;
@@ -51,7 +51,7 @@ struct Inner {
 }
 
 /// How long after a Stop a stopped delegate's task report is left out.
-const STOPPED_FOR: std::time::Duration = std::time::Duration::from_secs(60);
+const STOPPED_FOR: Duration = Duration::from_secs(60);
 
 fn insert_new<V>(map: &mut HashMap<AgentId, V>, agent: AgentId, value: V) -> bool {
     let Entry::Vacant(e) = map.entry(agent) else {

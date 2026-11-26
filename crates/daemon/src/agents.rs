@@ -415,7 +415,7 @@ pub(crate) async fn reconfigure_creators(state: &AppState) {
 
 /// Tells the UI and gives every agent with memory tools the changed knowledge base.
 pub(crate) fn global_memory_changed(state: &AppState) {
-    state.publish(crate::state::UiEvent::GlobalMemoryChanged);
+    state.publish(UiEvent::GlobalMemoryChanged);
     let state = state.clone();
     tokio::spawn(async move { reconfigure_with(&state, ToolGroup::Memory).await });
 }
