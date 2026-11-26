@@ -80,9 +80,8 @@ export class CallSession {
     };
   }
 
-  /** Starts a call with `agent`, or with every member of `group`; hands-free listening needs
-   * ElevenLabs. */
-  /** Calls `agent`, or the group `group`; with `join`, joins the call agents started in room `group`. */
+  /** Starts a call with `agent`, or with every member of `group` (with `join`: the call agents
+   * started in room `group`); hands-free listening needs ElevenLabs. */
   async start(agent: string, group?: number, join = false): Promise<void> {
     if (this.state) return;
     const round = ++this.#round;

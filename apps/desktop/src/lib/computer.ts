@@ -7,7 +7,7 @@ export const CONSOLE_TIMEOUT_S = 60;
 export const VIEW_BYTES = 256 * 1024;
 const PWD_MARK = "\u001e";
 
-export interface DirEntry {
+interface DirEntry {
   name: string;
   dir: boolean;
   size: number;
@@ -38,7 +38,7 @@ export function parseListing(stdout: string): DirEntry[] {
 /** A folder's entries once listed, or why it could not be. */
 export type Listing = DirEntry[] | { error: string };
 
-export type TreeRow =
+type TreeRow =
   | { key: string; depth: number; path: string; entry: DirEntry; open: boolean }
   | { key: string; depth: number; note: string };
 
