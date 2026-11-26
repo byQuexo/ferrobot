@@ -43,7 +43,7 @@ pub struct ClaudeCodeStatus {
 }
 
 /// Variables that would move `claude` off the user's own login, make it think it runs inside
-/// another Claude Code, or hand the daemon's secrets (operator token, storage keys) to hooks.
+/// another Claude Code, or hand the daemon's secrets to hooks and plugins.
 fn foreign(key: &OsStr) -> bool {
     let key = key.to_string_lossy();
     ["ANTHROPIC_", "CLAUDE_CODE_", "FERROBOT_", "AWS_"]
