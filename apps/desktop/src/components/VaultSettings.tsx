@@ -2,9 +2,9 @@ import type { JSX } from "preact";
 import { useEffect, useRef, useState } from "preact/hooks";
 import { KeyRound, Trash2 } from "lucide-preact";
 
-import type { Connector, LoginView, Provider, VoiceView } from "../api.ts";
+import type { CliView, Connector, Provider, VoiceView } from "../api.ts";
 import { useApp } from "../context.ts";
-import { loginLabel, presetOf } from "../lib/logins.ts";
+import { knownCli } from "../lib/clis.ts";
 import { errorText } from "../lib/format.ts";
 import { KIND_LABELS, KIND_LINKS, LinkOut, needsKey } from "./ProvidersSettings.tsx";
 import { Button, IconButton } from "./ui.tsx";
@@ -32,7 +32,7 @@ export function VaultSettings(props: {
   const [providers, setProviders] = useState<Provider[]>([]);
   const [connectors, setConnectors] = useState<Connector[]>([]);
   const [voice, setVoice] = useState<VoiceView | null>(null);
-  const [logins, setLogins] = useState<LoginView[]>([]);
+  const [clis, setClis] = useState<CliView[]>([]);
   const [editing, setEditing] = useState<string | null>(props.focus ?? null);
   const focusPending = useRef(props.focus !== undefined);
   const [value, setValue] = useState("");
@@ -46,13 +46,13 @@ export function VaultSettings(props: {
         client.listProviders(),
         client.listConnectors(),
         client.voice(),
-        client.logins(),
+        client.clis(),
       ]);
       setProviders(p);
       props.onProviders?.(p);
       setConnectors(c);
       setVoice(v);
-      setLogins(l);
+      setClis(l.clis);
     } catch (err) {
       toast(errorText(err));
     } finally {
@@ -102,15 +102,21 @@ export function VaultSettings(props: {
       ]),
     ],
     [
-      "CLI logins",
-      logins.map((l) => ({
-        id: `login:${l.id}`,
-        name: loginLabel(l.id),
-        what: `Token for ${(l.programs ?? []).join(", ") || l.hosts.join(", ")}`,
-        stored: l.has_token,
-        keyUrl: presetOf(l.id)?.keyUrl,
-        save: (v) => client.setLoginToken(l.id, v),
-      })),
+      "CLIs",
+      clis.flatMap((c) =>
+        c.account
+          ? [
+              {
+                id: `login:${c.id}`,
+                name: c.id,
+                what: `Token for ${c.account.hosts.join(", ")}`,
+                stored: c.has_token,
+                keyUrl: knownCli(c.id)?.keyUrl,
+                save: (v: string | null) => client.setCliToken(c.id, v),
+              },
+            ]
+          : [],
+      ),
     ],
     [
       "Voice",

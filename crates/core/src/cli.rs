@@ -64,7 +64,7 @@ impl Install {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(utoipa::ToSchema))]
 #[cfg_attr(feature = "mcp", derive(schemars::JsonSchema))]
-pub struct SignIn {
+pub struct CliSignIn {
     /// The login command, e.g. `["example", "auth", "login", "--web"]`.
     pub login: Vec<String>,
     /// The command that prints the token afterwards, e.g. `["example", "auth", "token"]`.
@@ -86,7 +86,7 @@ pub struct Account {
     pub confirm: bool,
     /// The CLI's own device sign-in; without it the operator pastes a token.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub sign_in: Option<SignIn>,
+    pub sign_in: Option<CliSignIn>,
 }
 
 /// A CLI in the agents' computers.

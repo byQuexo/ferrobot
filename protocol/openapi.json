@@ -7324,7 +7324,7 @@
           "sign_in": {
             "oneOf": [
               {
-                "$ref": "#/components/schemas/SignIn",
+                "$ref": "#/components/schemas/CliSignIn",
                 "description": "The CLI's own device sign-in; without it the operator pastes a token."
               },
               {
@@ -8118,6 +8118,30 @@
               "type": "string"
             },
             "description": "Agents that get it in their home folder and get its account. A Debian package is in\nevery computer."
+          }
+        }
+      },
+      "CliSignIn": {
+        "type": "object",
+        "description": "A CLI's own browser sign-in that shows a one-time code (device login).",
+        "required": [
+          "login",
+          "token"
+        ],
+        "properties": {
+          "login": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "The login command, e.g. `[\"example\", \"auth\", \"login\", \"--web\"]`."
+          },
+          "token": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "The command that prints the token afterwards, e.g. `[\"example\", \"auth\", \"token\"]`."
           }
         }
       },
@@ -10916,28 +10940,13 @@
         }
       },
       "SignIn": {
-        "type": "object",
-        "description": "A CLI's own browser sign-in that shows a one-time code (device login).",
-        "required": [
-          "login",
-          "token"
-        ],
-        "properties": {
-          "login": {
-            "type": "array",
-            "items": {
-              "type": "string"
-            },
-            "description": "The login command, e.g. `[\"example\", \"auth\", \"login\", \"--web\"]`."
-          },
-          "token": {
-            "type": "array",
-            "items": {
-              "type": "string"
-            },
-            "description": "The command that prints the token afterwards, e.g. `[\"example\", \"auth\", \"token\"]`."
-          }
-        }
+        "type": "string",
+        "description": "Where a connector stands with OAuth.",
+        "enum": [
+          "signed_out",
+          "signed_in",
+          "expired"
+        ]
       },
       "SignInView": {
         "oneOf": [

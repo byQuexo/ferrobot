@@ -21,8 +21,10 @@ export type RoutineRun = Schemas["RoutineRun"];
 export type SandboxInfo = Schemas["SandboxInfo"];
 export type ExecOutput = Schemas["ExecOutput"];
 export type Interrupted = Schemas["Interrupted"];
-export type LoginView = Schemas["LoginView"];
-export type LoginSpec = Schemas["LoginSpec"];
+export type Cli = Schemas["Cli"];
+export type CliSpec = Schemas["CliSpec"];
+export type CliView = Schemas["CliView"];
+export type SignInView = Schemas["SignInView"];
 export type Snapshot = Schemas["SnapshotRecord"];
 export type CreateAgent = Schemas["CreateAgent"];
 export type UpdateAgent = Schemas["UpdateAgent"];
@@ -381,14 +383,17 @@ export class DaemonClient {
     this.#request("PUT", "/v1/discord", s);
   setDiscordToken = (token: string | null): Promise<DiscordView> =>
     this.#request("PUT", "/v1/discord/token", { token });
-  logins = (): Promise<LoginView[]> => this.#request("GET", "/v1/logins");
-  /** Adds or replaces a login; agents it reaches or leaves restart their computers. */
-  putLogin = (id: string, spec: LoginSpec): Promise<LoginView> =>
-    this.#request("PUT", `/v1/logins/${encodeURIComponent(id)}`, spec);
-  deleteLogin = (id: string): Promise<void> =>
-    this.#request("DELETE", `/v1/logins/${encodeURIComponent(id)}`);
-  setLoginToken = (id: string, token: string | null): Promise<LoginView> =>
-    this.#request("PUT", `/v1/logins/${encodeURIComponent(id)}/token`, { token });
+  /** Adds or replaces a CLI; a Debian package rebuilds the image. */
+  putCli = (id: string, spec: CliSpec): Promise<ClisView> =>
+    this.#request("PUT", `/v1/clis/${enc(id)}`, spec);
+  deleteCli = (id: string): Promise<void> => this.#request("DELETE", `/v1/clis/${enc(id)}`);
+  setCliToken = (id: string, token: string | null): Promise<ClisView> =>
+    this.#request("PUT", `/v1/clis/${enc(id)}/token`, { token });
+  startSignIn = (id: string): Promise<SignInView> =>
+    this.#request("POST", `/v1/clis/${enc(id)}/sign-in`);
+  signIn = (id: string): Promise<SignInView> => this.#request("GET", `/v1/clis/${enc(id)}/sign-in`);
+  cancelSignIn = (id: string): Promise<void> =>
+    this.#request("DELETE", `/v1/clis/${enc(id)}/sign-in`);
   dashboards = (): Promise<Dashboard[]> => this.#request("GET", "/v1/dashboards");
   setDashboards = (list: Dashboard[]): Promise<Dashboard[]> =>
     this.#request("PUT", "/v1/dashboards", list);

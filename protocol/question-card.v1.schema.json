@@ -24,7 +24,7 @@
         "sign_in": {
           "oneOf": [
             {
-              "$ref": "#/$defs/SignIn",
+              "$ref": "#/$defs/CliSignIn",
               "description": "The CLI's own device sign-in; without it the operator pastes a token."
             },
             {
@@ -338,6 +338,30 @@
       ],
       "type": "object"
     },
+    "CliSignIn": {
+      "description": "A CLI's own browser sign-in that shows a one-time code (device login).",
+      "properties": {
+        "login": {
+          "description": "The login command, e.g. `[\"example\", \"auth\", \"login\", \"--web\"]`.",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "token": {
+          "description": "The command that prints the token afterwards, e.g. `[\"example\", \"auth\", \"token\"]`.",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "login",
+        "token"
+      ],
+      "type": "object"
+    },
     "ConnectorAuth": {
       "description": "How a connector an agent proposes signs in (`add_connector` tool).",
       "enum": [
@@ -596,30 +620,6 @@
         "secret"
       ],
       "type": "string"
-    },
-    "SignIn": {
-      "description": "A CLI's own browser sign-in that shows a one-time code (device login).",
-      "properties": {
-        "login": {
-          "description": "The login command, e.g. `[\"example\", \"auth\", \"login\", \"--web\"]`.",
-          "items": {
-            "type": "string"
-          },
-          "type": "array"
-        },
-        "token": {
-          "description": "The command that prints the token afterwards, e.g. `[\"example\", \"auth\", \"token\"]`.",
-          "items": {
-            "type": "string"
-          },
-          "type": "array"
-        }
-      },
-      "required": [
-        "login",
-        "token"
-      ],
-      "type": "object"
     },
     "ToolGroup": {
       "description": "A group of tools an agent can have on or off. The first six are ferrobot's own MCP tools\n(enforced by the daemon), the last three the model's built-in tools (enforced by the runner).",

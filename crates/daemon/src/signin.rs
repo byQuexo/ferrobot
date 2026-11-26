@@ -6,7 +6,7 @@ use std::collections::{BTreeMap, HashMap};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
-use ferrobot_core::{Cli, SignIn};
+use ferrobot_core::{Cli, CliSignIn};
 use ferrobot_sandbox::{ExecRequest, SandboxHandle, SandboxSpec};
 use serde::Serialize;
 use tokio::sync::Notify;
@@ -138,7 +138,7 @@ pub(crate) async fn sweep(state: &AppState, clis: &[Cli]) {
 async fn run(
     state: &AppState,
     cli: &Cli,
-    sign_in: &SignIn,
+    sign_in: &CliSignIn,
     created: &Mutex<Option<SandboxHandle>>,
 ) -> Result<(), String> {
     remove(state, &cli.id).await;

@@ -15,7 +15,7 @@ pub mod tools;
 pub use agent::{
     Agent, AgentId, AgentName, AgentStatus, AvatarCharacter, CharacterBody, CharacterEyes,
 };
-pub use cli::{Account, Cli, Install, SignIn};
+pub use cli::{Account, Cli, CliSignIn, Install};
 pub use connector::{Connector, ConnectorAuth};
 pub use error::CoreError;
 pub use mail::{MailMessage, MailStatus, Sender, is_reaction};
