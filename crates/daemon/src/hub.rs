@@ -48,6 +48,14 @@ struct Inner {
     no_tools: HashMap<AgentId, ToolsUnsupported>,
 }
 
+fn insert_new<V>(map: &mut HashMap<AgentId, V>, agent: AgentId, value: V) -> bool {
+    let Entry::Vacant(e) = map.entry(agent) else {
+        return false;
+    };
+    e.insert(value);
+    true
+}
+
 impl Hub {
     fn lock(&self) -> MutexGuard<'_, Inner> {
         crate::lock(&self.inner)
@@ -104,13 +112,7 @@ impl Hub {
 
     /// Records the agent's credential problem unless one is already known; true if it is new.
     pub fn set_credential_error(&self, agent: AgentId, error: CredentialError) -> bool {
-        match self.lock().credentials.entry(agent) {
-            Entry::Occupied(_) => false,
-            Entry::Vacant(e) => {
-                e.insert(error);
-                true
-            }
-        }
+        insert_new(&mut self.lock().credentials, agent, error)
     }
 
     /// Forgets the agent's credential problem; true if there was one.
@@ -124,13 +126,7 @@ impl Hub {
 
     /// Records that the agent's model refused tools unless already known; true if it is new.
     pub fn set_tools_unsupported(&self, agent: AgentId, problem: ToolsUnsupported) -> bool {
-        match self.lock().no_tools.entry(agent) {
-            Entry::Occupied(_) => false,
-            Entry::Vacant(e) => {
-                e.insert(problem);
-                true
-            }
-        }
+        insert_new(&mut self.lock().no_tools, agent, problem)
     }
 
     /// Forgets that the agent's model refused tools; true if it had.
@@ -178,9 +174,10 @@ impl Hub {
             .is_some_and(|c| c.current_turn.is_some())
     }
 
-    /// Lock that serializes wake/stop/restore/delete for one agent.
-    pub fn lifecycle_lock(&self, agent: AgentId) -> Arc<tokio::sync::Mutex<()>> {
-        Arc::clone(self.lock().lifecycle.entry(agent).or_default())
+    /// Serializes wake/stop/restore/delete for one agent while the guard lives.
+    pub async fn lifecycle_lock(&self, agent: AgentId) -> tokio::sync::OwnedMutexGuard<()> {
+        let lock = Arc::clone(self.lock().lifecycle.entry(agent).or_default());
+        lock.lock_owned().await
     }
 
     /// Records activity (resets the idle timer).
