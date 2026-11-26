@@ -45,8 +45,9 @@ wiki.
 - **⌘1–9** the 1st to 9th agent in the sidebar
 - **Esc** close the open dialog, menu, page or panel · **⌘/** all shortcuts
 
-How the app looks (theme, accent color, bubbles, chat background, text size)
-is under **Settings → Appearance**.
+How the app looks (theme, accent color, bubbles, chat background, a pattern
+behind the chat, text size, font, corners, density, chat width and motion) is
+under **Settings → Appearance**, with a preview at the top.
 
 ### Pins
 

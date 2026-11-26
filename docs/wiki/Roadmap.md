@@ -46,8 +46,10 @@ In rough order. Nothing here has a date.
    outgoing webhooks for those four events in Discord, Slack or JSON format,
    URLs in the keychain ([[Webhooks]]), and the Discord bridge: allowed users
    write to an agent from a channel and get its reply there ([[Discord]]);
-   **open:** starting a routine from a webhook, answering cards from Discord,
-   and signed outgoing payloads.
+   **Done since:** agents post to their channel on their own
+   (`send_to_discord`, 0.1.10), and cards are answered from Discord, approvals
+   with ✅ or ❌ and questions by reply (0.1.10); **open:** starting a routine
+   from a webhook, and signed outgoing payloads.
 7. **The agent's computer in the app.** A file browser and a terminal in the
    agent's details panel (Computer tab), so you can look around and fix
    things in its sandbox without asking the agent.
@@ -79,7 +81,12 @@ In rough order. Nothing here has a date.
     a trace. Steps run with the tools and limits of the agents they use, risky
     steps keep their cards, and a flow an agent creates needs your approval
     unless Auto mode is on. This also covers starting work from a webhook (6).
-12. **Later.** Moving warm agents to cold sleep under memory pressure (F4d), a
+12. **Run in the cloud.** ferrobot on a server around the clock, reachable
+    from anywhere: a sealed secret store for hosts without a keychain, the
+    daemon serving the web UI, a server package, then a guest channel through
+    the runner and sandbox backends for AWS Lambda MicroVMs and Firecracker on
+    EC2. Plan: [docs/plans/cloud.md](../blob/main/docs/plans/cloud.md).
+13. **Later.** Moving warm agents to cold sleep under memory pressure (F4d), a
     native macOS app on the same `/v1` API, and optional self-hosted
     S3-compatible storage. New ideas go on [[Ideas]] first.
 
