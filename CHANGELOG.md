@@ -22,6 +22,7 @@ All notable changes are listed here. The format follows
 ### Fixed
 
 - In Add a custom connector, the choice between a remote and a local server showed each radio button far from its text.
+- The agent list showed mentions in a reply preview as an id instead of the agent's name.
 
 ## [0.1.10] - 2026-11-26
 
