@@ -330,14 +330,11 @@ pub async fn compact(state: &AppState, agent: AgentId) -> Result<String, Compact
         .ok_or(CompactError::NotNow(
             "there is no conversation to compact yet",
         ))?;
+    let in_turn = || CompactError::NotNow("the agent is in a turn; try again when it is done");
     if state.hub.is_working(agent) {
-        return Err(CompactError::NotNow(
-            "the agent is in a turn; try again when it is done",
-        ));
+        return Err(in_turn());
     }
-    let _busy = Busy::take(agent).ok_or(CompactError::NotNow(
-        "the agent is in a turn; try again when it is done",
-    ))?;
+    let _busy = Busy::take(agent).ok_or_else(in_turn)?;
     let mut cmd = claude(state);
     cmd.args([
         "-p",

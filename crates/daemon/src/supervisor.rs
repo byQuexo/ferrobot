@@ -44,7 +44,7 @@ pub async fn check_all(state: &AppState) {
     crate::tasks::nudge(state).await;
 }
 
-async fn check(state: &AppState, agent: &Agent) -> Result<(), crate::error::ApiError> {
+async fn check(state: &AppState, agent: &Agent) -> Result<(), ApiError> {
     let id = agent.id;
     let Some(handle) = handle_of(agent) else {
         return Ok(());
