@@ -1,6 +1,8 @@
 //! `@name` mentions, stored as `<@agent-id>` tokens so they survive renames; unknown
 //! names stay plain text. [`render`] turns tokens back into `@current-name`.
 
+use std::fmt::Write as _;
+
 use crate::AgentId;
 
 const TOKEN_OPEN: &str = "<@";
@@ -37,9 +39,7 @@ fn wrapped(text: &str, marker: &str, lookup: &impl Fn(&str) -> Option<AgentId>) 
             .flatten();
         if let Some(id) = id {
             out.push_str(&rest[..open]);
-            out.push_str(TOKEN_OPEN);
-            out.push_str(&id.to_string());
-            out.push('>');
+            let _ = write!(out, "{TOKEN_OPEN}{id}>");
             rest = &rest[close..];
         } else {
             out.push_str(&rest[..inner_start]);
@@ -79,9 +79,7 @@ fn at_mentions(text: &str, lookup: impl Fn(&str) -> Option<AgentId>) -> String {
         }
         if let Some(id) = lookup(&text[start..end].to_ascii_lowercase()) {
             out.push_str(&text[copied..i]);
-            out.push_str(TOKEN_OPEN);
-            out.push_str(&id.to_string());
-            out.push('>');
+            let _ = write!(out, "{TOKEN_OPEN}{id}>");
             copied = end;
         }
         i = end;
