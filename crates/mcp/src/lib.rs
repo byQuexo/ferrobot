@@ -14,9 +14,6 @@ use ferrobot_store::{Store, StoredEvent};
 pub use auth::{Caller, router};
 pub use tools::FerrobotTools;
 
-/// MCP server name as seen by clients. Claude exposes tools as `mcp__<name>__<tool>`.
-pub const SERVER_NAME: &str = "ferrobot";
-
 /// Upper bound for one message body (bytes).
 pub const MAX_MESSAGE_BYTES: usize = 32 * 1024;
 
