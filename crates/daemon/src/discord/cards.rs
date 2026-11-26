@@ -1,6 +1,5 @@
-//! Cards in a bridged channel: an approval takes a ✅ or ❌ reaction, a single question a
-//! reply. Only allowed users answer, through the same route as the app. Cards with a secret
-//! field or several questions, an `add_connector` approval and very risky steps stay in the app.
+//! Cards in a bridged channel, answered by allowed users through the app's route. Secret fields,
+//! several questions, `add_connector` and very risky steps stay in the app.
 
 use std::fmt::Write as _;
 

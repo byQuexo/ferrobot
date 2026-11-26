@@ -250,7 +250,6 @@ pub(crate) fn parse_id(raw: &str) -> Result<AgentId, ApiError> {
         .map_err(|_| ApiError::NotFound(format!("agent {raw} not found")))
 }
 
-/// Rejects texts over [`MAX_TEXT_BYTES`].
 pub(crate) fn check_len(field: &str, value: &str) -> Result<(), ApiError> {
     if value.len() > MAX_TEXT_BYTES {
         return Err(ApiError::BadRequest(format!(

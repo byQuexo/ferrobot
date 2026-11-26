@@ -1,7 +1,5 @@
-//! The Discord bridge: in a bridged channel, messages from the Discord users the operator
-//! allowed reach an agent as the operator's own, and the agent's reply goes back to the channel.
-//! The daemon polls Discord's REST API with the operator's bot token (secret store
-//! `discord:bot`), so it needs no public URL. The token never leaves the daemon.
+//! The Discord bridge: allowed users' messages in a bridged channel reach its agent as the
+//! operator's and replies go back. Polled with the bot token, which never leaves the daemon.
 
 use std::collections::HashMap;
 use std::sync::{Mutex, MutexGuard, PoisonError};

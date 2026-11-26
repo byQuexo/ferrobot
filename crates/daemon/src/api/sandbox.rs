@@ -147,7 +147,6 @@ pub(crate) async fn exec(
         return Err(ApiError::BadRequest("cmd must not be empty".into()));
     }
     let id = parse_id(&id)?;
-    // Operator commands count as activity and wake a sleeping computer.
     lifecycle::ensure_awake(&state, id).await?;
     state.hub.touch(id);
     let agent = state.store.get_agent(id).await?;

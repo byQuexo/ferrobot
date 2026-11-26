@@ -23,7 +23,6 @@ pub(crate) struct GeneralSettings {
     pub agent_names: Option<String>,
 }
 
-/// Longest naming convention.
 const MAX_AGENT_NAMES: usize = 300;
 
 /// The JSON setting `key`, its default when unset; `what` names it in errors.
