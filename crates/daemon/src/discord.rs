@@ -4,11 +4,12 @@
 //! `discord:bot`), so it needs no public URL. The token never leaves the daemon.
 
 use std::collections::HashMap;
-use std::sync::{Mutex, PoisonError};
+use std::sync::{Mutex, MutexGuard, PoisonError};
 use std::time::Duration;
 
 use ferrobot_core::{AgentId, Sender};
 use ferrobot_store::StoredEvent;
+use reqwest::{Method, RequestBuilder};
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 use time::OffsetDateTime;
@@ -84,14 +85,13 @@ pub struct Discord {
 
 impl Discord {
     pub fn status(&self) -> Vec<ChannelStatus> {
-        let channels = self.channels.lock().unwrap_or_else(PoisonError::into_inner);
-        let mut out: Vec<ChannelStatus> = channels.values().cloned().collect();
+        let mut out: Vec<ChannelStatus> = lock(&self.channels).values().cloned().collect();
         out.sort_by(|a, b| a.channel_id.cmp(&b.channel_id));
         out
     }
 
     fn update(&self, channel: &str, f: impl FnOnce(&mut ChannelStatus)) {
-        let mut channels = self.channels.lock().unwrap_or_else(PoisonError::into_inner);
+        let mut channels = lock(&self.channels);
         let entry = channels
             .entry(channel.to_owned())
             .or_insert_with(|| ChannelStatus {
@@ -102,9 +102,12 @@ impl Discord {
     }
 
     fn last_id(&self, channel: &str) -> Option<u64> {
-        let channels = self.channels.lock().unwrap_or_else(PoisonError::into_inner);
-        channels.get(channel).and_then(|c| c.last_id)
+        lock(&self.channels).get(channel).and_then(|c| c.last_id)
     }
+}
+
+fn lock<T>(m: &Mutex<T>) -> MutexGuard<'_, T> {
+    m.lock().unwrap_or_else(PoisonError::into_inner)
 }
 
 pub async fn load(state: &AppState) -> Result<DiscordSettings, ApiError> {
@@ -150,16 +153,23 @@ pub async fn run(state: AppState, poll: Duration) {
     }
 }
 
-fn api(state: &AppState, path: &str) -> String {
-    format!("{}{path}", state.settings.discord_api.trim_end_matches('/'))
+/// A request to Discord's API with the bot token.
+fn request(state: &AppState, method: Method, token: &str, path: &str) -> RequestBuilder {
+    let base = state.settings.discord_api.trim_end_matches('/');
+    state
+        .http
+        .request(method, format!("{base}{path}"))
+        .header("authorization", format!("Bot {token}"))
+        .timeout(TIMEOUT)
+}
+
+/// A message body that pings nobody.
+fn content(text: &str) -> Value {
+    json!({ "content": text, "allowed_mentions": { "parse": [] } })
 }
 
 async fn get(state: &AppState, token: &str, path: &str) -> Result<Value, String> {
-    let res = state
-        .http
-        .get(api(state, path))
-        .header("authorization", format!("Bot {token}"))
-        .timeout(TIMEOUT)
+    let res = request(state, Method::GET, token, path)
         .send()
         .await
         .map_err(|e| e.without_url().to_string())?;
@@ -306,12 +316,7 @@ async fn deliver(
         .enqueue_message(Sender::User, bridge.agent_id, body, None)
         .await
         .map_err(|e| e.to_string())?;
-    state
-        .discord
-        .pending
-        .lock()
-        .unwrap_or_else(PoisonError::into_inner)
-        .insert(msg.id, (bridge.channel_id.clone(), discord_id.to_owned()));
+    lock(&state.discord.pending).insert(msg.id, (bridge.channel_id.clone(), discord_id.to_owned()));
     state.message_arrived(bridge.agent_id);
     state.publish(UiEvent::Message { message: msg });
     Ok(())
@@ -350,23 +355,11 @@ pub fn reaction(state: &AppState, event: &StoredEvent) {
     ) else {
         return;
     };
-    let Some((channel, id)) = state
-        .discord
-        .pending
-        .lock()
-        .unwrap_or_else(PoisonError::into_inner)
-        .get(&message)
-        .cloned()
-    else {
+    let Some((channel, id)) = lock(&state.discord.pending).get(&message).cloned() else {
         return;
     };
     // Recorded before the turn can end, so its ✅ is left out.
-    let earlier = state
-        .discord
-        .reacted
-        .lock()
-        .unwrap_or_else(PoisonError::into_inner)
-        .insert(id.clone(), emoji.to_owned());
+    let earlier = lock(&state.discord.reacted).insert(id.clone(), emoji.to_owned());
     let (state, emoji) = (state.clone(), emoji.to_owned());
     tokio::spawn(async move {
         let Ok(Some(token)) = state.settings.secrets.get(SECRET).await else {
@@ -382,13 +375,7 @@ pub fn reaction(state: &AppState, event: &StoredEvent) {
 }
 
 fn take_reacted(state: &AppState, discord_id: &str) -> bool {
-    state
-        .discord
-        .reacted
-        .lock()
-        .unwrap_or_else(PoisonError::into_inner)
-        .remove(discord_id)
-        .is_some()
+    lock(&state.discord.reacted).remove(discord_id).is_some()
 }
 
 /// A turn on a message from Discord failed for good: the channel hears so.
@@ -467,12 +454,7 @@ pub async fn send(
 }
 
 fn take_pending(state: &AppState, message: i64) -> Option<(String, String)> {
-    state
-        .discord
-        .pending
-        .lock()
-        .unwrap_or_else(PoisonError::into_inner)
-        .remove(&message)
+    lock(&state.discord.pending).remove(&message)
 }
 
 async fn last_reply(state: &AppState, agent: AgentId, turn: String) -> Option<String> {
@@ -496,15 +478,12 @@ async fn post(
     text: &str,
 ) -> bool {
     for (n, part) in split(text).iter().enumerate() {
-        let mut body = json!({ "content": part, "allowed_mentions": { "parse": [] } });
+        let mut body = content(part);
         if let (0, Some(id)) = (n, reply_to) {
             body["message_reference"] = json!({ "message_id": id, "fail_if_not_exists": false });
         }
-        let sent = state
-            .http
-            .post(api(state, &format!("/channels/{channel}/messages")))
-            .header("authorization", format!("Bot {token}"))
-            .timeout(TIMEOUT)
+        let path = format!("/channels/{channel}/messages");
+        let sent = request(state, Method::POST, token, &path)
             .json(&body)
             .send()
             .await;
@@ -552,19 +531,10 @@ async fn react(
     emoji: &str,
     add: bool,
 ) -> Result<(), String> {
-    let url = api(
-        state,
-        &format!("/channels/{channel}/messages/{message}/reactions/{emoji}/@me"),
-    );
-    let request = if add {
-        state.http.put(url)
-    } else {
-        state.http.delete(url)
-    };
-    let status = match request
-        .header("authorization", format!("Bot {token}"))
+    let path = format!("/channels/{channel}/messages/{message}/reactions/{emoji}/@me");
+    let method = if add { Method::PUT } else { Method::DELETE };
+    let status = match request(state, method, token, &path)
         .header("content-length", "0")
-        .timeout(TIMEOUT)
         .send()
         .await
     {
