@@ -6,7 +6,7 @@ use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;
 
 use super::ApiResult;
-use super::providers::{check_key, clean};
+use super::providers::set_secret;
 use crate::AppState;
 use crate::error::{ApiError, ErrorBody};
 use crate::otel::{self, ExportStatus, OtelSettings};
@@ -65,14 +65,7 @@ pub(crate) async fn put_otel_secret(
     State(state): State<AppState>,
     Json(req): Json<OtelSecret>,
 ) -> ApiResult<OtelView> {
-    let secrets = &state.settings.secrets;
-    match clean(req.value) {
-        Some(value) => {
-            check_key(&value)?;
-            secrets.set(otel::SECRET, &value).await?;
-        }
-        None => secrets.delete(otel::SECRET).await?,
-    }
+    set_secret(&state, otel::SECRET, req.value).await?;
     let settings = otel::load(&state).await?;
     view(&state, settings).await
 }

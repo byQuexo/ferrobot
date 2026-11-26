@@ -13,7 +13,7 @@ use utoipa::ToSchema;
 
 use super::ApiResult;
 use super::agents::explicit;
-use super::providers::{check_key, clean};
+use super::providers::{check_key, clean, set_secret};
 use crate::AppState;
 use crate::call::MAX_CALL_TEXT_BYTES;
 use crate::error::{ApiError, ErrorBody};
@@ -133,11 +133,7 @@ pub(crate) async fn put_voice(
     let json = serde_json::to_string(&settings).map_err(internal)?;
     state.store.put_setting(SETTING, json).await?;
     if let (Some(provider), Some(key)) = (provider, key) {
-        let secrets = &state.settings.secrets;
-        match key {
-            Some(key) => secrets.set(provider.secret_key(), &key).await?,
-            None => secrets.delete(provider.secret_key()).await?,
-        }
+        set_secret(&state, provider.secret_key(), key).await?;
     }
     Ok(Json(view(&state, settings).await?))
 }
@@ -162,14 +158,7 @@ pub(crate) async fn put_voice_key(
 ) -> ApiResult<VoiceView> {
     let provider: VoiceProvider = serde_json::from_value(serde_json::Value::String(provider))
         .map_err(|_| ApiError::NotFound("unknown speech provider".into()))?;
-    let secrets = &state.settings.secrets;
-    match clean(req.api_key) {
-        Some(key) => {
-            check_key(&key)?;
-            secrets.set(provider.secret_key(), &key).await?;
-        }
-        None => secrets.delete(provider.secret_key()).await?,
-    }
+    set_secret(&state, provider.secret_key(), req.api_key).await?;
     let settings = load(&state).await?;
     Ok(Json(view(&state, settings).await?))
 }

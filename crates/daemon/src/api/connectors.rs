@@ -543,10 +543,8 @@ pub(crate) async fn update_connector(
     if moved {
         oauth::forget_tokens(&state, id).await?;
     }
-    match token {
-        Some(Some(token)) => state.settings.secrets.set(&secret_key(id), &token).await?,
-        Some(None) => state.settings.secrets.delete(&secret_key(id)).await?,
-        None => {}
+    if let Some(token) = token {
+        super::providers::set_secret(&state, &secret_key(id), token).await?;
     }
     state.connectors.evict_connector(id).await;
     check(&state, &c).await;

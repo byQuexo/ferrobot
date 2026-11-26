@@ -8,7 +8,7 @@ use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;
 
 use super::ApiResult;
-use super::providers::{check_key, clean};
+use super::providers::set_secret;
 use crate::AppState;
 use crate::discord::{self, ChannelStatus, DiscordSettings, MAX_BRIDGES, MAX_USERS};
 use crate::error::{ApiError, ErrorBody};
@@ -106,14 +106,7 @@ pub(crate) async fn put_discord_token(
     State(state): State<AppState>,
     Json(req): Json<DiscordToken>,
 ) -> ApiResult<DiscordView> {
-    let secrets = &state.settings.secrets;
-    match clean(req.token) {
-        Some(token) => {
-            check_key(&token)?;
-            secrets.set(discord::SECRET, &token).await?;
-        }
-        None => secrets.delete(discord::SECRET).await?,
-    }
+    set_secret(&state, discord::SECRET, req.token).await?;
     let settings = discord::load(&state).await?;
     view(&state, settings).await
 }

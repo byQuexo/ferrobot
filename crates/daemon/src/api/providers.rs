@@ -54,6 +54,23 @@ pub(crate) fn check_key(key: &str) -> Result<(), ApiError> {
     Ok(())
 }
 
+/// Stores `value`, trimmed and checked, under `key`; `None` or blank removes it.
+pub(crate) async fn set_secret(
+    state: &AppState,
+    key: &str,
+    value: Option<String>,
+) -> Result<(), ApiError> {
+    let secrets = &state.settings.secrets;
+    match clean(value) {
+        Some(value) => {
+            check_key(&value)?;
+            secrets.set(key, &value).await?;
+        }
+        None => secrets.delete(key).await?,
+    }
+    Ok(())
+}
+
 /// Configured model providers, by name.
 #[utoipa::path(get, path = "/v1/providers", tag = "providers",
     responses((status = 200, body = Vec<ProviderView>)))]
@@ -184,10 +201,8 @@ pub(crate) async fn update_provider(
         check_key(key)?;
     }
     state.store.update_provider(new.clone()).await?;
-    match key {
-        Some(Some(key)) => state.settings.secrets.set(&secret_key(id), &key).await?,
-        Some(None) => state.settings.secrets.delete(&secret_key(id)).await?,
-        None => {}
+    if let Some(key) = key {
+        set_secret(&state, &secret_key(id), key).await?;
     }
     models::forget(&state, id);
     let baked_into_env = (&old.region, &old.project, &old.default_model)
