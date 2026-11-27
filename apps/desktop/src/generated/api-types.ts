@@ -267,6 +267,31 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/agents/{id}/goal": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** The agent's task with a goal. */
+        get: operations["get_goal"];
+        /**
+         * Gives the agent a task with a goal, replacing its current one. The goal goes out as the
+         *     operator's message. After each turn on one of the operator's messages the agent is sent back
+         *     to work until it calls `finish_task` and has reported; then, for Claude Code, Anthropic and
+         *     OpenAI-compatible providers, a model checks its work. A stopped, interrupted or failed turn
+         *     ends the task, and so does reaching `max_continuations`.
+         */
+        put: operations["put_goal"];
+        post?: never;
+        /** Clears the agent's task without stopping its turn; a waiting continuation is dropped. */
+        delete: operations["delete_goal"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/agents/{id}/interrupt": {
         parameters: {
             query?: never;
@@ -277,8 +302,8 @@ export interface paths {
         get?: never;
         put?: never;
         /**
-         * Aborts the agent's running turn, if any; with `chain`, the work it set off as well (Stop).
-         *     Interrupted messages are not retried.
+         * Aborts the agent's running turn, if any; with `chain`, the work it set off as well and its
+         *     task with a goal (Stop). Interrupted messages are not retried.
          */
         post: operations["interrupt"];
         delete?: never;
@@ -786,6 +811,24 @@ export interface paths {
         get?: never;
         /** Stores or removes a CLI's token. Kept in the daemon's secret store, never returned. */
         put: operations["put_cli_token"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/commands": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** The operator's slash commands; a daemon that never saved any lists the example `/goal`. */
+        get: operations["get_commands"];
+        /** Replaces the slash commands: adding, editing and deleting all send the whole list. */
+        put: operations["put_commands"];
         post?: never;
         delete?: never;
         options?: never;
@@ -2157,6 +2200,23 @@ export interface components {
             /** @description Whether the sandbox backend can build images (Docker only). */
             supported: boolean;
         };
+        /** @description A slash command: `/name rest` sends its prompt with `rest` filled in. */
+        Command: {
+            /**
+             * @description What follows the `/`: 1-32 of `a-z`, `0-9` and `-`, starting with a letter; not a
+             *     built-in command (`task`).
+             */
+            name: string;
+            /** @description One short line for the menu, 1-100 characters. */
+            description: string;
+            /**
+             * @description What is sent, up to 4000 bytes. `$ARGUMENTS` becomes the text after the command;
+             *     without it, that text follows after a blank line.
+             */
+            prompt: string;
+            /** @description Send it as a task with a goal, like `/task`. */
+            as_task?: boolean;
+        };
         /** @description A remote MCP server whose tools assigned agents can use. */
         Connector: {
             /** Format: uuid */
@@ -3146,6 +3206,15 @@ export interface components {
             /** @enum {string} */
             kind: "webhook";
         };
+        SetGoal: {
+            /** @description What the agent should get done; 1..32768 bytes after trimming. */
+            goal: string;
+            /**
+             * Format: int32
+             * @description How often the agent is sent back to work before it gives up; 1-100, default 20.
+             */
+            max_continuations?: number | null;
+        };
         SetMemoryVault: {
             /**
              * @description An existing folder (absolute, or starting with `~/`); `null` goes back to the built-in
@@ -3280,6 +3349,28 @@ export interface components {
             /** Format: date-time */
             created_at: string;
         };
+        /** @description An agent's task with a goal. */
+        TaskGoal: {
+            /** @description What the operator wants done. */
+            goal: string;
+            /**
+             * Format: int32
+             * @description How often the agent was sent back to work so far.
+             */
+            continuations: number;
+            /**
+             * Format: int32
+             * @description After this many, the agent gives up.
+             */
+            max_continuations: number;
+            /** @description The agent's `finish_task` summary, until its turn is checked. */
+            summary?: string | null;
+            /**
+             * Format: int64
+             * @description The continuation waiting in the mailbox, if any.
+             */
+            pending?: number | null;
+        };
         /**
          * @description A group of tools an agent can have on or off. Shell, Files and Web are the model's built-in
          *     tools (enforced by the runner); the others are ferrobot's own MCP tools (enforced by the daemon).
@@ -3369,6 +3460,10 @@ export interface components {
             agent_id: components["schemas"]["AgentId"];
             /** @enum {string} */
             type: "routines_changed";
+        } | {
+            agent_id: components["schemas"]["AgentId"];
+            /** @enum {string} */
+            type: "goal_changed";
         } | {
             agents: components["schemas"]["AgentId"][];
             /** Format: int64 */
@@ -4645,6 +4740,138 @@ export interface operations {
                 };
             };
             /** @description Unknown agent or file */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+        };
+    };
+    get_goal: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Agent id (UUID) */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TaskGoal"];
+                };
+            };
+            /** @description Missing or wrong API token */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Unknown agent, or it has no task */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+        };
+    };
+    put_goal: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Agent id (UUID) */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SetGoal"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TaskGoal"];
+                };
+            };
+            /** @description An empty or too long goal, or a bad limit */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Missing or wrong API token */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Unknown agent */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+        };
+    };
+    delete_goal: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Agent id (UUID) */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Cleared, or there was none */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Missing or wrong API token */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Unknown agent */
             404: {
                 headers: {
                     [name: string]: unknown;
@@ -6472,6 +6699,75 @@ export interface operations {
             };
             /** @description No such CLI */
             404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+        };
+    };
+    get_commands: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Command"][];
+                };
+            };
+            /** @description Missing or wrong API token */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+        };
+    };
+    put_commands: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["Command"][];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Command"][];
+                };
+            };
+            /** @description Too many, a bad or taken name, or a bad description or prompt */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Missing or wrong API token */
+            401: {
                 headers: {
                     [name: string]: unknown;
                 };

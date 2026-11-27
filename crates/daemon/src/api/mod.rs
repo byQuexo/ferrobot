@@ -3,12 +3,14 @@
 pub(crate) mod agents;
 pub(crate) mod chat;
 pub(crate) mod clis;
+pub(crate) mod commands;
 pub(crate) mod connectors;
 pub(crate) mod dashboards;
 pub(crate) mod desktop;
 pub(crate) mod diagnostics;
 pub(crate) mod discord;
 pub(crate) mod files;
+pub(crate) mod goal;
 pub(crate) mod groups;
 pub(crate) mod memory;
 pub(crate) mod otel;
@@ -66,6 +68,12 @@ pub fn router() -> Router<AppState> {
                 .delete(agents::delete_avatar),
         )
         .merge(chat::router())
+        .route(
+            "/v1/agents/{id}/goal",
+            get(goal::get_goal)
+                .put(goal::put_goal)
+                .delete(goal::delete_goal),
+        )
         .route("/v1/agents/{id}/context", get(usage::get_context))
         .route(
             "/v1/agents/{id}/memory",
@@ -95,6 +103,10 @@ pub fn router() -> Router<AppState> {
         .route(
             "/v1/settings",
             get(settings::get_settings).put(settings::put_settings),
+        )
+        .route(
+            "/v1/commands",
+            get(commands::get_commands).put(commands::put_commands),
         )
         .route(
             "/v1/update",

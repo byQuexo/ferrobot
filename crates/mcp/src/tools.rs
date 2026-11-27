@@ -383,6 +383,17 @@ pub struct SentToDiscord {
 }
 
 #[derive(Debug, Deserialize, JsonSchema)]
+pub struct FinishTaskArgs {
+    /// One line: what was done.
+    pub summary: String,
+}
+
+#[derive(Debug, Serialize, JsonSchema)]
+pub struct TaskFinished {
+    pub note: String,
+}
+
+#[derive(Debug, Deserialize, JsonSchema)]
 pub struct InviteToCallArgs {
     /// The teammate to bring in: its id or `@name`.
     pub agent: String,
@@ -1235,6 +1246,31 @@ impl FerrobotTools {
     }
 
     #[tool(
+        description = "Say that the task your operator gave you is done, with a one-line \
+        summary. Call it only when the goal is reached, then end your turn with your report to \
+        your operator. Your work may be checked; if the goal is not met yet, you are sent back to it."
+    )]
+    async fn finish_task(
+        &self,
+        Extension(parts): Extension<http::request::Parts>,
+        Parameters(args): Parameters<FinishTaskArgs>,
+    ) -> ToolResult<TaskFinished> {
+        let me = caller(&parts)?.0.id;
+        let summary = args.summary.trim();
+        if summary.is_empty() || summary.chars().count() > 300 || summary.contains('\n') {
+            return Err(invalid("summary is one line of 1-300 characters"));
+        }
+        self.state
+            .notifier
+            .finish_goal(me, summary.to_owned())
+            .await
+            .map_err(invalid)?;
+        Ok(Json(TaskFinished {
+            note: "Noted. Now end your turn with your report to your operator.".into(),
+        }))
+    }
+
+    #[tool(
         description = "React to a message your operator sent you with one emoji; it shows on \
         their message in your chat. Use it to acknowledge without words instead of replying \
         \"ok\". A new reaction replaces your earlier one on that message."
@@ -1523,7 +1559,7 @@ pub(crate) fn group_of(tool: &str) -> Option<ToolGroup> {
         | "call_agents" => ToolGroup::Team,
         "remember" | "recall" | "forget" => ToolGroup::Memory,
         "ask_user" | "share_file" | "invite_to_call" | "hang_up" | "list_guides" | "read_guide"
-        | "react" | "send_to_discord" => ToolGroup::Operator,
+        | "react" | "send_to_discord" | "finish_task" => ToolGroup::Operator,
         "create_agent" | "set_agent_tools" => ToolGroup::CreateAgents,
         "add_connector" | "propose_cli" => ToolGroup::AddConnectors,
         "create_routine" => ToolGroup::Routines,
@@ -1533,7 +1569,8 @@ pub(crate) fn group_of(tool: &str) -> Option<ToolGroup> {
 }
 
 fn allowed(agent: &Agent, tool: &str) -> bool {
-    group_of(tool).is_some_and(|g| agent.tools.contains(&g))
+    // An operator's task can be finished whatever the profile; it is listed only during one.
+    tool == "finish_task" || group_of(tool).is_some_and(|g| agent.tools.contains(&g))
 }
 
 #[allow(
@@ -1557,6 +1594,9 @@ impl ServerHandler for FerrobotTools {
         tools.retain(|t| allowed(me, &t.name));
         if !self.state.notifier.has_discord(me.id).await {
             tools.retain(|t| t.name != "send_to_discord");
+        }
+        if !self.state.notifier.has_goal(me.id).await {
+            tools.retain(|t| t.name != "finish_task");
         }
         if !self.state.notifier.has_voice().await {
             tools.retain(|t| t.name != "call_agents");

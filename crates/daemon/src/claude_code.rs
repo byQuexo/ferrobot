@@ -369,6 +369,52 @@ pub async fn compact(state: &AppState, agent: AgentId) -> Result<String, Compact
     Ok(report["result"].as_str().unwrap_or_default().to_owned())
 }
 
+/// One answer from the host's `claude` on `model`: no tools, settings, MCP servers or session.
+/// The prompt goes on stdin, so it never shows in a process list.
+pub(crate) async fn ask(
+    state: &AppState,
+    model: &str,
+    prompt: &str,
+    timeout: Duration,
+) -> Result<String, String> {
+    let dir = tempfile::tempdir().map_err(|e| e.to_string())?;
+    let mut cmd = claude(state);
+    cmd.args([
+        "-p",
+        "--setting-sources=",
+        "--tools=",
+        "--strict-mcp-config",
+        "--no-session-persistence",
+        "--output-format=json",
+        &format!("--model={model}"),
+    ])
+    .current_dir(dir.path())
+    .stdin(Stdio::piped())
+    .stdout(Stdio::piped())
+    .stderr(Stdio::null())
+    .kill_on_drop(true);
+    let mut child = cmd
+        .spawn()
+        .map_err(|e| format!("cannot start claude: {e}"))?;
+    if let Some(mut stdin) = child.stdin.take() {
+        stdin
+            .write_all(prompt.as_bytes())
+            .await
+            .map_err(|e| e.to_string())?;
+    }
+    let out = tokio::time::timeout(timeout, child.wait_with_output())
+        .await
+        .map_err(|_| "Claude Code took too long".to_owned())?
+        .map_err(|e| e.to_string())?;
+    let report: Value =
+        serde_json::from_slice(&out.stdout).map_err(|_| "Claude Code gave no answer".to_owned())?;
+    let text = report["result"].as_str().unwrap_or_default().to_owned();
+    if report["is_error"] == true {
+        return Err(text);
+    }
+    Ok(text)
+}
+
 /// The seat's 5-hour and weekly use from `claude`'s own `/usage` report, which makes no model
 /// call. The report also names the account and its habits; only the two limit lines are kept.
 pub async fn plan_limits(state: &AppState) -> Result<PlanLimits, String> {

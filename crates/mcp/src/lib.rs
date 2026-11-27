@@ -252,6 +252,17 @@ pub trait MailboxNotifier: Send + Sync + 'static {
         let _ = agent;
         Box::pin(async { false })
     }
+    /// Whether `agent` has a task with a goal from its operator; only then is `finish_task`
+    /// listed for it.
+    fn has_goal(&self, agent: AgentId) -> BoxFuture<bool> {
+        let _ = agent;
+        Box::pin(async { false })
+    }
+    /// `agent` says its task is done, in one line. `Err` carries a message for the agent.
+    fn finish_goal(&self, agent: AgentId, summary: String) -> BoxFuture<Result<(), String>> {
+        let _ = (agent, summary);
+        Box::pin(async { Err("there are no tasks here".to_owned()) })
+    }
     /// Posts `text` from `agent` to its bridged Discord channel (`channel`: which one, when it
     /// has several). `Ok` carries the channel id; `Err` a message for the agent.
     fn send_to_discord(

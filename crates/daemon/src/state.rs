@@ -223,6 +223,8 @@ pub enum UiEvent {
     GlobalMemoryChanged,
     /// The agent's routines or their runs changed; refetch them.
     RoutinesChanged { agent_id: AgentId },
+    /// The agent's task with a goal was set, continued or ended; refetch it.
+    GoalChanged { agent_id: AgentId },
     /// Who is in the operator's voice call changed (empty: it ended). `room_id`: the call's room,
     /// once a second agent joined. `hung_up`: the agent whose hang-up this is; its goodbye may
     /// still be playing.
@@ -609,6 +611,20 @@ impl ferrobot_mcp::MailboxNotifier for AppState {
     ) -> ferrobot_mcp::BoxFuture<Result<(), String>> {
         let state = self.clone();
         Box::pin(async move { state.invite_to_call(host, guest, &topic).await })
+    }
+
+    fn has_goal(&self, agent: AgentId) -> ferrobot_mcp::BoxFuture<bool> {
+        let state = self.clone();
+        Box::pin(async move { crate::goal::get(&state, agent).await.is_some() })
+    }
+
+    fn finish_goal(
+        &self,
+        agent: AgentId,
+        summary: String,
+    ) -> ferrobot_mcp::BoxFuture<Result<(), String>> {
+        let state = self.clone();
+        Box::pin(async move { crate::goal::finish(&state, agent, summary).await })
     }
 
     fn has_discord(&self, agent: AgentId) -> ferrobot_mcp::BoxFuture<bool> {

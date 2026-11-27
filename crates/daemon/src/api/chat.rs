@@ -347,8 +347,8 @@ pub(crate) struct Interrupted {
     dropped: usize,
 }
 
-/// Aborts the agent's running turn, if any; with `chain`, the work it set off as well (Stop).
-/// Interrupted messages are not retried.
+/// Aborts the agent's running turn, if any; with `chain`, the work it set off as well and its
+/// task with a goal (Stop). Interrupted messages are not retried.
 #[utoipa::path(post, path = "/v1/agents/{id}/interrupt", tag = "chat",
     params(("id" = String, Path, description = "Agent id (UUID)"), InterruptQuery),
     responses((status = 200, body = Interrupted),
@@ -362,6 +362,8 @@ pub(crate) async fn interrupt(
     state.store.get_agent(id).await?;
     let turn_id = state.hub.current_turn(id);
     let (agents, dropped) = if q.chain {
+        let stopped = "stopped by the operator";
+        crate::goal::end(&state, id, crate::goal::End::Stopped, stopped).await;
         crate::stop::stop_chain(&state, id).await?
     } else {
         state.hub.interrupt(id);
