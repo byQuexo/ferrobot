@@ -7169,6 +7169,22 @@ async fn claude_code_agents_use_the_hosts_own_cli_and_nothing_enters_the_sandbox
     let token = env["FERROBOT_AGENT_TOKEN"].clone();
     let (status, out) = claude_code_turn(&d.agents, &token, "hi there", true).await;
     assert_eq!(status, 200, "{out}");
+    assert!(
+        !out.contains(r#""type":"system""#),
+        "the host's init line stays on the host: {out}"
+    );
+    // The computer's files go through the engine as root: only the agent's home.
+    let mcp = mcp_as(&d, token.clone()).await;
+    let outside = mcp
+        .call_tool(
+            rmcp::model::CallToolRequestParams::new("read_file")
+                .with_arguments(json!({"path": "/etc/passwd"}).as_object().cloned().unwrap()),
+        )
+        .await;
+    assert!(
+        format!("{outside:?}").contains("only files in your home folder"),
+        "{outside:?}"
+    );
     let (_, ctx) = http(&d.ui, "GET", &context, None).await;
     assert_eq!(
         (&ctx["tokens"], &ctx["window"], &ctx["model"]),
