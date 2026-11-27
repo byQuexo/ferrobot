@@ -1,0 +1,5 @@
+# Scripts that run inside Linux computers and images keep LF on every checkout: a Windows
+# checkout with core.autocrlf would give them CRLF, and the daemon embeds desktop-start.sh.
+*.sh text eol=lf
+runner/bin/* text eol=lf
+scripts/firecracker/ferrobot-init text eol=lf

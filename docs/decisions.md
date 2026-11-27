@@ -1308,6 +1308,11 @@ slop, so polish mode: palette, accent, logo, layout and features stay.
   stale when the image its name points to has another id; it is recreated on
   its next wake with its home volume kept. Snapshot and archive containers
   still never count as stale.
+- Any tag of the base image's repository counts as the base (2026-11-27): the app pins the runner
+  to its own version (`ghcr.io/byquexo/ferrobot-runner:<version>`), so after an update the old
+  computers ran a tag that was neither the base nor a CLI image and were never recreated; they kept
+  the old runner and never got the desktop. Other repositories (snapshots, archives, an
+  operator's own image) are still left alone.
 - `(pass)` is also recognised without brackets or with a full stop ("pass",
   "Pass."), in the daemon and the UI.
 
@@ -1671,3 +1676,72 @@ A review of the release before it shipped changed these decisions:
 - **Vault notes follow the agent, not its name.** A deleted agent's folder moves to
   `ferrobot/.archived/<name>-<id>` (Obsidian hides dot folders); creating a name archives any
   folder left under it, and a rename archives the target first instead of merging.
+
+## Skills from skills.sh (2026-11-27)
+
+- **Agents find and install skills themselves, through the shell.** Tim's idea: an agent with a
+  task it has no knowledge for looks up a skill on skills.sh (`npx -y skills@1.9.1 find`), installs
+  it into its home and follows its `SKILL.md`. Going through the shell instead of a harness's own
+  skill tool means it works for every driver, including Claude Code on the host, whose built-in
+  `Skill` tool stays off.
+- **Install asks, looking does not.** `skills add`, `update` and the experimental install commands
+  are Risky in `tool_check` (a card unless Auto mode is on); `find`, `list` and `use` are safe.
+- **Pinned and framed.** The CLI version is fixed in the instructions (`SKILLS_CLI`), and a skill is
+  described to the agent as third-party content that never overrides its instructions. Remaining
+  risk: a skill is someone else's instructions and scripts, like a web page the agent acts on; keys
+  and CLI tokens are not in the sandbox, and its commands meet the same checks.
+- **Only agents with Shell** get the note: without a shell they could not run the CLI or a
+  skill's scripts.
+- **find-skills ships with ferrobot.** Tim wanted every agent to start with it. It is one MIT
+  `SKILL.md` (vercel-labs/skills at e7fd0e9), vendored under `crates/daemon/src/skills/` with its
+  licence and written into `~/.agents/skills/find-skills/` when a computer is made or wakes without
+  this version (marker `.ferrobot-defaults`). Vendoring instead of `npx skills add` at provision:
+  no network at provision, no upstream change reaching agents unseen.
+
+## Tasks with a goal and slash commands (2026-11-27)
+
+- **The agent says when it is done, and a model checks.** Tim wanted `/task` to work like a goal
+  that holds across turns, for every provider. The daemon's turn-end hook (`runner_ws::settle`)
+  sends the agent back to work until it calls `finish_task` and ends a turn with a report; then a
+  check reads the goal, the summary, the turn's steps and the report and answers `{met, reason}`.
+  Hooks inside one harness would have covered Claude only.
+- **The check uses what the agent already uses.** Claude Code: Haiku through the host's own
+  `claude -p` (no tools, settings, MCP servers or session; the prompt on stdin). Anthropic and the
+  daemon's own key: the Messages API. OpenAI-compatible kinds (OpenAI, Gemini, OpenRouter, Ollama,
+  any other): chat completions. The agent's model, else the provider's default; the key stays in
+  the daemon. An API check is a Usage row under the turn `task-check:<turn>`, so it stays out of the
+  turn's trace; the Claude Code check records none. Codex, Gemini CLI, Bedrock and Vertex get no check (their APIs need code the
+  daemon only has as a proxy), and neither does an agent without a model: `finish_task` with a
+  report ends the task there. A per-provider `judge_model` was skipped: it would need a migration.
+- **A card or a teammate holds the task.** A turn that ends without `finish_task` is not sent back
+  while it left an unanswered card of its own or a task it gave (`assign_task`) is still queued or
+  worked on: the operator's answer or the teammate's report starts the next turn, and turns on
+  agents' messages run the hook too. Work handed out with `send_message` holds nothing, so the task
+  note asks for `assign_task`.
+- **The task's agent decides its teammates' risky steps (2026-11-27).** Tim wanted a task to run
+  without him answering every teammate's card. A risky (never a critical) tool-call card of an
+  agent in the task agent's chain (`stop::chain`) also goes to the task agent as a note, and it
+  answers with `decide_approval` through the operator's answer path, recorded as `answered_by`.
+  The operator's card stays open, so the first answer wins (`409` after). The task agent never
+  decides its own steps, which would be Auto mode nobody switched on, nor any other kind of card.
+  This is narrower than Auto mode, which skips those cards entirely, but not by much: it can hand
+  its own step to a teammate and approve it there, and a teammate's command text reaches it. The
+  notes are kept on the task (`notes`) and dropped when the card is decided or the task ends.
+- **The task's agent rates a step before deciding it (2026-11-27).** Tim wanted it to judge a
+  teammate's step, not approve by reflex. `decide_approval` requires `risk` (low, medium, high)
+  and a one-sentence `reason`, its note explains the levels, and the daemon refuses to let it
+  approve a step it rated high: that stays with the operator. The rating is the agent's own
+  judgment, not a check; it shows on the answered card (`assessment`) so the operator can see
+  how it reasoned.
+- **A check that cannot run counts as not met** and uses up a continuation, so a broken check ends
+  in "gave up" rather than a false "achieved".
+- **State in the `goals` setting**, one entry per agent, so a task survives a restart without a
+  migration. The continuation is the operator's message (it starts a turn on every driver) and is
+  hidden in the chat behind a `goal` event, like reaction notes. Stop and Clear drop a waiting
+  continuation; Stop also ends the task while the agent is idle.
+- **Slash commands live in the app.** The daemon keeps the list (`commands` setting, empty at
+  first: `/task` is the only built-in) and the app expands it, so the daemon has no second message
+  path. `task` is reserved.
+- **Agent-made commands always need a card.** A command's prompt is later sent in the operator's
+  name, so `add_command` shows the full prompt and Auto mode never skips it; the card stays out of
+  Discord. A name taken while the card waits blocks Approve with `409` and leaves the card open.

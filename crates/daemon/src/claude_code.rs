@@ -370,6 +370,52 @@ pub async fn compact(state: &AppState, agent: AgentId) -> Result<String, Compact
     Ok(report["result"].as_str().unwrap_or_default().to_owned())
 }
 
+/// One answer from the host's `claude` on `model`: no tools, settings, MCP servers or session.
+/// The prompt goes on stdin, so it never shows in a process list.
+pub(crate) async fn ask(
+    state: &AppState,
+    model: &str,
+    prompt: &str,
+    timeout: Duration,
+) -> Result<String, String> {
+    let dir = tempfile::tempdir().map_err(|e| e.to_string())?;
+    let mut cmd = claude(state);
+    cmd.args([
+        "-p",
+        "--setting-sources=",
+        "--tools=",
+        "--strict-mcp-config",
+        "--no-session-persistence",
+        "--output-format=json",
+        &format!("--model={model}"),
+    ])
+    .current_dir(dir.path())
+    .stdin(Stdio::piped())
+    .stdout(Stdio::piped())
+    .stderr(Stdio::null())
+    .kill_on_drop(true);
+    let mut child = cmd
+        .spawn()
+        .map_err(|e| format!("cannot start claude: {e}"))?;
+    if let Some(mut stdin) = child.stdin.take() {
+        stdin
+            .write_all(prompt.as_bytes())
+            .await
+            .map_err(|e| e.to_string())?;
+    }
+    let out = tokio::time::timeout(timeout, child.wait_with_output())
+        .await
+        .map_err(|_| "Claude Code took too long".to_owned())?
+        .map_err(|e| e.to_string())?;
+    let report: Value =
+        serde_json::from_slice(&out.stdout).map_err(|_| "Claude Code gave no answer".to_owned())?;
+    let text = report["result"].as_str().unwrap_or_default().to_owned();
+    if report["is_error"] == true {
+        return Err(text);
+    }
+    Ok(text)
+}
+
 /// The seat's 5-hour and weekly use from `claude`'s own `/usage` report, which makes no model
 /// call. The report also names the account and its habits; only the two limit lines are kept.
 pub async fn plan_limits(state: &AppState) -> Result<PlanLimits, String> {
@@ -795,6 +841,8 @@ struct Run {
     provider_id: Option<Uuid>,
     turn: Option<String>,
     last_line: time::OffsetDateTime,
+    /// When the line before the next call's `message_start` came: the request went out then.
+    call_start: Option<time::OffsetDateTime>,
     call: Option<ModelCall>,
 }
 
@@ -812,11 +860,14 @@ impl Run {
             return;
         }
         self.flush_call().await;
+        if line["type"] == "stream_event" && line["event"]["type"] == "message_start" {
+            self.call_start.get_or_insert(self.last_line);
+        }
         if let Some(id) = id {
             self.call = Some(ModelCall {
                 id: id.to_owned(),
                 model: line["message"]["model"].as_str().map(str::to_owned),
-                started: self.last_line,
+                started: self.call_start.take().unwrap_or(self.last_line),
                 ended: now,
                 usage: line["message"]["usage"].clone(),
             });
@@ -986,6 +1037,7 @@ async fn start(
         provider_id: agent.provider_id,
         turn: state.hub.current_turn(agent.id),
         last_line: time::OffsetDateTime::now_utc(),
+        call_start: None,
         call: None,
     })
 }
@@ -1090,13 +1142,14 @@ async fn next(mut run: Run) -> Option<(Result<Bytes, std::io::Error>, Run)> {
     }
     while let Ok(Some(line)) = run.lines.next_line().await {
         let now = time::OffsetDateTime::now_utc();
-        run.last_line = now;
         let Ok(v) = serde_json::from_str::<Value>(&line) else {
+            run.last_line = now;
             continue;
         };
         run.saw_result |= v["type"] == "result";
         Context::read(&mut run.context, &v);
         run.track_call(&v, now).await;
+        run.last_line = now;
         // Only the turn goes back: the init line and hook output describe the host.
         if matches!(
             v["type"].as_str(),

@@ -7177,6 +7177,8 @@ env > "$here/env.log"
 for a in "$@"; do case "$a" in --mcp-config=*) cat "${a#--mcp-config=}" > "$here/mcp.log" ;; esac; done
 cat > "$here/prompt.log"
 echo '{"type":"system","subtype":"init","session_id":"s1","tools":[]}'
+sleep 0.3
+echo '{"type":"stream_event","event":{"type":"message_start"},"session_id":"s1"}'
 echo '{"type":"assistant","message":{"id":"msg_1","model":"claude-sonnet-4-5","content":[{"type":"text","text":"hello"}],"usage":{"input_tokens":1200,"cache_read_input_tokens":3000,"cache_creation_input_tokens":800,"output_tokens":50}},"parent_tool_use_id":null,"session_id":"s1"}'
 echo '{"type":"result","subtype":"success","is_error":false,"result":"hello","session_id":"s1","modelUsage":{"claude-sonnet-4-5":{"contextWindow":200000}}}'
 "###;
@@ -8389,8 +8391,16 @@ async fn operator_uploads_land_in_the_agents_workspace() {
         body,
         json!({"path": "uploads/Report__1_.pdf", "size": 1234})
     );
+    let uploads: Vec<_> = backend
+        .written
+        .lock()
+        .unwrap()
+        .iter()
+        .filter(|(p, _)| !p.contains("/.agents/skills/"))
+        .cloned()
+        .collect();
     assert_eq!(
-        *backend.written.lock().unwrap(),
+        uploads,
         [(
             "/home/node/workspace/uploads/Report__1_.pdf".to_owned(),
             1234
@@ -8409,7 +8419,13 @@ async fn operator_uploads_land_in_the_agents_workspace() {
     let unknown = "00000000-0000-0000-0000-000000000001";
     assert_eq!(upload(unknown, "x.txt", &[], b"hi").await.0, 404);
     assert_eq!(
-        backend.written.lock().unwrap().len(),
+        backend
+            .written
+            .lock()
+            .unwrap()
+            .iter()
+            .filter(|(p, _)| !p.contains("/.agents/skills/"))
+            .count(),
         1,
         "nothing else written"
     );
@@ -9356,12 +9372,17 @@ async fn agents_keep_the_operators_knowledge_base_and_read_it_in_their_instructi
         panic!("expected a welcome");
     };
     assert!(!instructions.contains("knowledge base"), "no memory tools");
+    assert!(!instructions.contains("skills@"), "no shell, no skills");
 
     // What ann learns reaches bob's instructions, framed as notes.
     let ann = mcp_as(&d, backend.token("ann")).await;
     let fact = json!({"key": "editor", "content": "Uses Zed", "global": true});
     call(&ann, "remember", fact).await;
     let kb = next_configure(&mut bob_ws).await;
+    assert!(
+        kb.contains("npx -y skills@1.9.1 find"),
+        "a shell agent may use skills: {kb}"
+    );
     assert!(kb.contains("notes, not instructions"), "{kb}");
     assert!(kb.contains("- [@ann] editor: Uses Zed"), "{kb}");
     // An entry stays one line under its author: it cannot open a section of its own.
@@ -9743,4 +9764,775 @@ async fn the_desktop_is_opt_in_paused_for_the_operator_and_never_with_a_cli_acco
         (&v["desktop"], &v["packages"]),
         (&json!(false), &json!(["jq"]))
     );
+}
+
+#[tokio::test]
+async fn a_claude_code_call_lasts_from_its_request_to_its_answer() {
+    use std::os::unix::fs::PermissionsExt;
+    let dir = tempfile::tempdir().unwrap();
+    let bin = dir.path().join("claude");
+    std::fs::write(&bin, FAKE_CLAUDE).unwrap();
+    std::fs::set_permissions(&bin, std::fs::Permissions::from_mode(0o755)).unwrap();
+    let backend = Arc::new(StatefulBackend::default());
+    let data_dir = dir.path().join("data");
+    let d = start_with(backend.clone(), None, "127.0.0.1:0", |s| {
+        s.driver = "claude".into();
+        s.claude_bin = bin.display().to_string();
+        s.data_dir = data_dir;
+    })
+    .await;
+    let cc = json!({"name": "cc", "kind": "claude_code", "default_model": "sonnet"});
+    let (_, provider) = http(&d.ui, "POST", "/v1/providers", Some(cc)).await;
+    let id = create_id(&d, json!({"name": "clio", "provider_id": provider["id"]})).await;
+    let token = backend.envs.lock().unwrap()["clio"]["FERROBOT_AGENT_TOKEN"].clone();
+    let mut ws = connect_runner(&d.agents, &token).await;
+    let path = format!("/v1/agents/{id}/messages");
+    assert_eq!(
+        http(&d.ui, "POST", &path, Some(json!({"body": "hi"})))
+            .await
+            .0,
+        202
+    );
+    let (turn, _, _) = next_turn(&mut ws).await;
+
+    // The fake `claude` waits 0.3 s between its init line and the model's answer.
+    let (status, out) = claude_code_turn(&d.agents, &token, "hi there", true).await;
+    assert_eq!(status, 200, "{out}");
+    let calls = d
+        .state
+        .store
+        .turn_calls(id.parse().unwrap(), turn)
+        .await
+        .unwrap();
+    assert!(
+        calls.len() == 1 && calls[0].latency_ms >= 250,
+        "{:?}",
+        calls.iter().map(|c| c.latency_ms).collect::<Vec<_>>()
+    );
+}
+
+#[tokio::test]
+async fn every_computer_starts_with_the_find_skills_skill() {
+    let backend = Arc::new(StatefulBackend::default());
+    let d = start(backend.clone(), None, "127.0.0.1:0").await;
+    create(&d, json!({"name": "ann", "tools": ["team"]})).await;
+    let written = backend.written.lock().unwrap().clone();
+    let skill = written
+        .iter()
+        .find(|(p, _)| p.ends_with("/.agents/skills/find-skills/SKILL.md"));
+    assert_eq!(skill.map(|(_, n)| *n), Some(5472), "{written:?}");
+    assert!(
+        written
+            .iter()
+            .any(|(p, _)| p.ends_with("/.agents/skills/find-skills/LICENSE")),
+        "its licence travels with it: {written:?}"
+    );
+}
+
+/// A chat-completions upstream answering with `answers` in order; keeps the request bodies.
+async fn check_upstream(answers: Vec<&'static str>) -> (String, Arc<Mutex<Vec<Value>>>) {
+    let seen = Arc::new(Mutex::new(Vec::new()));
+    let queue = Arc::new(Mutex::new(std::collections::VecDeque::from(answers)));
+    let record = seen.clone();
+    let app = axum::Router::new().route(
+        "/chat/completions",
+        axum::routing::post(move |axum::Json(body): axum::Json<Value>| {
+            let (record, queue) = (record.clone(), queue.clone());
+            async move {
+                record.lock().unwrap().push(body);
+                let answer = queue.lock().unwrap().pop_front().unwrap_or("no idea");
+                axum::Json(json!({
+                    "choices": [{ "message": { "role": "assistant", "content": answer } }],
+                    "usage": { "prompt_tokens": 120, "completion_tokens": 9 },
+                }))
+            }
+        }),
+    );
+    (serve(app).await, seen)
+}
+
+async fn goal_events(d: &Daemon, agent: &str) -> Vec<Value> {
+    events(d, agent)
+        .await
+        .into_iter()
+        .filter(|e| e["kind"] == "goal")
+        .map(|e| e["payload"].clone())
+        .collect()
+}
+
+#[tokio::test]
+async fn a_task_continues_until_finished_reported_and_checked() {
+    let backend = Arc::new(StatefulBackend::default());
+    let d = start(backend.clone(), None, "127.0.0.1:0").await;
+    let (base, seen) = check_upstream(vec![
+        r#"{"met": false, "reason": "two tests still fail"}"#,
+        "no idea",
+        "```json\n{\"met\": true, \"reason\": \"all pass\"}\n```",
+    ])
+    .await;
+    let (_, provider) = http(
+        &d.ui,
+        "POST",
+        "/v1/providers",
+        Some(json!({"name": "local", "kind": "openai_compatible", "base_url": base})),
+    )
+    .await;
+    let id = create_id(
+        &d,
+        json!({"name": "ada", "provider_id": provider["id"], "model": "small-1"}),
+    )
+    .await;
+    let agent: AgentId = id.parse().unwrap();
+    let mut ws = connect_runner(&d.agents, &backend.token("ada")).await;
+    let client = mcp_as(&d, backend.token("ada")).await;
+    let lists = |tools: Vec<rmcp::model::Tool>| tools.iter().any(|t| t.name == "finish_task");
+    assert!(
+        !lists(client.list_all_tools().await.unwrap()),
+        "no task yet"
+    );
+    let early = rmcp::model::CallToolRequestParams::new("finish_task")
+        .with_arguments(json!({"summary": "done"}).as_object().cloned().unwrap());
+    assert!(client.call_tool(early).await.is_err(), "nothing to finish");
+
+    let path = format!("/v1/agents/{id}/goal");
+    assert_eq!(http(&d.ui, "GET", &path, None).await.0, 404);
+    let (status, goal) = http(
+        &d.ui,
+        "PUT",
+        &path,
+        Some(json!({"goal": "make the tests pass", "max_continuations": 5})),
+    )
+    .await;
+    assert_eq!(status, 200, "{goal}");
+    assert_eq!(
+        (
+            goal["continuations"].as_u64(),
+            goal["max_continuations"].as_u64()
+        ),
+        (Some(0), Some(5))
+    );
+    assert!(lists(client.list_all_tools().await.unwrap()));
+    let (turn, message, body) = next_turn(&mut ws).await;
+    assert!(
+        body.starts_with("make the tests pass\n\n[ferrobot]") && body.contains("finish_task"),
+        "{body}"
+    );
+    assert!(
+        body.contains("Don't start the work yet") && body.contains("Approve the plan"),
+        "it asks, then plans with cards: {body}"
+    );
+    assert_eq!(
+        goal_events(&d, &id).await[0]["note_id"],
+        message,
+        "the chat shows the goal, not the note"
+    );
+
+    // No finish_task: sent back to work.
+    finish(&mut ws, turn, Some("Looking into it.")).await;
+    let (turn, message, body) = next_turn(&mut ws).await;
+    assert!(
+        body.starts_with("[ferrobot] Not done yet: make the tests pass")
+            && body.contains("next step of your plan"),
+        "{body}"
+    );
+    let continued = goal_events(&d, &id).await;
+    assert_eq!(
+        (
+            continued[1]["state"].as_str(),
+            continued[1]["note_id"].as_i64()
+        ),
+        (Some("continued"), Some(message))
+    );
+    assert_eq!(http(&d.ui, "GET", &path, None).await.1["continuations"], 1);
+
+    // finish_task without a report: asked to report.
+    call(&client, "finish_task", json!({"summary": "tests pass"})).await;
+    finish(&mut ws, turn, None).await;
+    let (turn, _, body) = next_turn(&mut ws).await;
+    assert!(body.contains("without a report"), "{body}");
+    assert!(seen.lock().unwrap().is_empty(), "no check without a report");
+
+    // Finished and reported, but the check finds it unmet.
+    call(&client, "finish_task", json!({"summary": "tests pass"})).await;
+    finish(&mut ws, turn, Some("All tests pass now.")).await;
+    let (turn, _, body) = next_turn(&mut ws).await;
+    assert!(body.contains("(two tests still fail)"), "{body}");
+    let request = seen.lock().unwrap()[0].clone();
+    assert_eq!(request["model"], "small-1", "the agent's own model checks");
+    let prompt = request["messages"][0]["content"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    assert!(
+        prompt.contains("make the tests pass") && prompt.contains("All tests pass now."),
+        "{prompt}"
+    );
+
+    // A check that cannot run counts as not met.
+    call(&client, "finish_task", json!({"summary": "tests pass"})).await;
+    finish(&mut ws, turn, Some("They pass.")).await;
+    let (turn, _, body) = next_turn(&mut ws).await;
+    assert!(body.contains("(the check could not run)"), "{body}");
+
+    // Met: the task ends as achieved.
+    call(
+        &client,
+        "finish_task",
+        json!({"summary": "fixed the last two tests"}),
+    )
+    .await;
+    finish(
+        &mut ws,
+        turn.clone(),
+        Some("Fixed the last two; all 12 pass."),
+    )
+    .await;
+    let done = eventually("achieved", Duration::from_secs(5), || async {
+        goal_events(&d, &id)
+            .await
+            .into_iter()
+            .find(|e| e["state"] == "achieved")
+    })
+    .await;
+    assert_eq!(done["note"], "fixed the last two tests");
+    assert_eq!(http(&d.ui, "GET", &path, None).await.0, 404);
+    quiet(&mut ws).await;
+    let checks = d
+        .state
+        .store
+        .turn_calls(agent, format!("task-check:{turn}"))
+        .await
+        .unwrap();
+    assert_eq!(checks.len(), 1, "the check is in Usage, marked by its turn");
+    assert_eq!(checks[0].model, "small-1");
+    assert!(!lists(client.list_all_tools().await.unwrap()));
+}
+
+#[tokio::test]
+async fn a_task_ends_at_its_limit_on_stop_and_when_cleared() {
+    let backend = Arc::new(StatefulBackend::default());
+    let d = start(backend.clone(), None, "127.0.0.1:0").await;
+    let id = create_id(&d, json!({"name": "bo"})).await;
+    let mut ws = connect_runner(&d.agents, &backend.token("bo")).await;
+    let path = format!("/v1/agents/{id}/goal");
+    let set = |max: u32| {
+        let (ui, path) = (d.ui.clone(), path.clone());
+        async move {
+            let body = json!({"goal": "tidy the docs", "max_continuations": max});
+            assert_eq!(http(&ui, "PUT", &path, Some(body)).await.0, 200);
+        }
+    };
+    for bad in [
+        json!({"goal": "  "}),
+        json!({"goal": "x", "max_continuations": 0}),
+    ] {
+        assert_eq!(http(&d.ui, "PUT", &path, Some(bad)).await.0, 400);
+    }
+    let unknown = "/v1/agents/00000000-0000-4000-8000-000000000000/goal";
+    assert_eq!(
+        http(&d.ui, "PUT", unknown, Some(json!({"goal": "x"})))
+            .await
+            .0,
+        404
+    );
+
+    // The limit: one continuation, then it gives up.
+    set(1).await;
+    let (turn, _, _) = next_turn(&mut ws).await;
+    finish(&mut ws, turn, Some("Started.")).await;
+    let (turn, _, _) = next_turn(&mut ws).await;
+    finish(&mut ws, turn, Some("Still going.")).await;
+    let gave_up = eventually("gave up", Duration::from_secs(5), || async {
+        goal_events(&d, &id)
+            .await
+            .into_iter()
+            .find(|e| e["state"] == "gave_up")
+    })
+    .await;
+    assert_eq!(gave_up["note"], "still not done after 1 continuations");
+    assert_eq!(http(&d.ui, "GET", &path, None).await.0, 404);
+    quiet(&mut ws).await;
+
+    // Stop ends it.
+    set(5).await;
+    let (turn, _, _) = next_turn(&mut ws).await;
+    let (status, _) = http(
+        &d.ui,
+        "POST",
+        &format!("/v1/agents/{id}/interrupt?chain=true"),
+        None,
+    )
+    .await;
+    assert_eq!(status, 200);
+    assert!(matches!(
+        next_frame(&mut ws).await,
+        DaemonFrame::Interrupt { .. }
+    ));
+    let done = RunnerFrame::TurnDone {
+        turn_id: turn,
+        outcome: ferrobot_core::protocol::TurnOutcome::Interrupted,
+        session_id: None,
+        result: None,
+        error: None,
+        steered: vec![],
+    };
+    send(&mut ws, &done).await;
+    let stopped: Vec<Value> = goal_events(&d, &id)
+        .await
+        .into_iter()
+        .filter(|e| e["state"] == "stopped")
+        .collect();
+    assert_eq!(stopped.len(), 1, "{stopped:?}");
+    assert_eq!(stopped[0]["note"], "stopped by the operator");
+    quiet(&mut ws).await;
+
+    // Clearing it drops the waiting continuation and lets the turn finish in peace.
+    set(5).await;
+    let (turn, _, _) = next_turn(&mut ws).await;
+    assert_eq!(http(&d.ui, "DELETE", &path, None).await.0, 204);
+    finish(&mut ws, turn, Some("Half done.")).await;
+    quiet(&mut ws).await;
+    let last = goal_events(&d, &id).await.pop().unwrap();
+    assert_eq!(
+        (last["state"].as_str(), last["note"].as_str()),
+        (Some("stopped"), Some("cleared by the operator"))
+    );
+    assert_eq!(
+        http(&d.ui, "DELETE", &path, None).await.0,
+        204,
+        "nothing to clear is fine"
+    );
+}
+
+#[tokio::test]
+async fn slash_commands_start_empty_keep_edits_and_survive_a_restart() {
+    let dir = tempfile::tempdir().unwrap();
+    let db = dir.path().join("ferrobot.db");
+    let backend = Arc::new(StatefulBackend::default());
+    let open = || ferrobot_store::Store::open(&db).unwrap();
+    let d = start_on(open(), backend.clone(), None, "127.0.0.1:0", |_| {}).await;
+    let (status, list) = http(&d.ui, "GET", "/v1/commands", None).await;
+    assert_eq!(status, 200);
+    assert_eq!(list, json!([]), "only the built-in /task");
+    let ok =
+        json!({"name": "review", "description": "Review a change", "prompt": "Review $ARGUMENTS"});
+    for bad in [
+        json!([{"name": "task", "description": "d", "prompt": "p"}]),
+        json!([{"name": "Review", "description": "d", "prompt": "p"}]),
+        json!([ok, ok]),
+        json!([{"name": "x", "description": "d", "prompt": "  "}]),
+        json!([{"name": "x", "description": "two\nlines", "prompt": "p"}]),
+        json!([{"name": "x", "description": "d", "prompt": "p".repeat(4001)}]),
+    ] {
+        let (status, body) = http(&d.ui, "PUT", "/v1/commands", Some(bad.clone())).await;
+        assert_eq!(status, 400, "{bad}: {body}");
+    }
+    let (status, saved) = http(&d.ui, "PUT", "/v1/commands", Some(json!([ok]))).await;
+    assert_eq!(status, 200, "{saved}");
+    assert_eq!(saved[0]["as_task"], false);
+    let id = create_id(&d, json!({"name": "ada"})).await;
+    let goal = json!({"goal": "ship the release"});
+    let path = format!("/v1/agents/{id}/goal");
+    assert_eq!(http(&d.ui, "PUT", &path, Some(goal)).await.0, 200);
+    drop(d);
+
+    let d = start_on(open(), backend, None, "127.0.0.1:0", |_| {}).await;
+    let (_, list) = http(&d.ui, "GET", "/v1/commands", None).await;
+    assert_eq!(list[0]["name"], "review");
+    let (status, goal) = http(&d.ui, "GET", &path, None).await;
+    assert_eq!(
+        (status, goal["goal"].as_str()),
+        (200, Some("ship the release"))
+    );
+}
+
+#[tokio::test]
+async fn agents_offer_commands_on_a_card_even_in_auto_mode() {
+    let backend = Arc::new(StatefulBackend::default());
+    let d = start(backend.clone(), None, "127.0.0.1:0").await;
+    let auto = json!({"auto_mode": true});
+    assert_eq!(http(&d.ui, "PUT", "/v1/settings", Some(auto)).await.0, 200);
+    let ada = create_id(&d, json!({"name": "ada"})).await;
+    create(&d, json!({"name": "cy", "tools": ["team"]})).await;
+    for (name, offers) in [("ada", true), ("cy", false)] {
+        let version = ferrobot_core::PROTOCOL_VERSION;
+        let mut ws = open_runner(&d.agents, &backend.token(name), version, false).await;
+        let DaemonFrame::Welcome { instructions, .. } = next_frame(&mut ws).await else {
+            panic!("expected a welcome");
+        };
+        assert_eq!(
+            instructions.contains("add_command"),
+            offers,
+            "{name}: {instructions}"
+        );
+    }
+
+    let client = mcp_as(&d, backend.token("ada")).await;
+    let offer = |name: &'static str| {
+        let prompt = format!("Write the weekly report for $ARGUMENTS.\n\nKeep it short. ({name})");
+        json!({"name": name, "description": "Sum up the week", "prompt": prompt, "as_task": true})
+    };
+    let commands = || async { http(&d.ui, "GET", "/v1/commands", None).await.1 };
+
+    // Declined: nothing is added, and the agent hears of it.
+    let pending = call(&client, "add_command", offer("weekly")).await;
+    assert_eq!(pending["status"], "pending", "a card even in Auto mode");
+    let qid = approval_card(&d, &ada, 0).await;
+    let card = events(&d, &ada)
+        .await
+        .into_iter()
+        .find(|e| e["id"] == qid)
+        .unwrap();
+    assert_eq!(card["payload"]["approval"]["kind"], "add_command");
+    let shown = card["payload"]["card"]["questions"][0]["prompt"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    assert!(
+        shown.contains("/weekly")
+            && shown.contains("Write the weekly report for $ARGUMENTS.\n\nKeep it short."),
+        "the full prompt: {shown}"
+    );
+    assert_eq!(commands().await, json!([]));
+    assert_eq!(decide(&d, &ada, qid, "decline").await.0, 202);
+    assert_eq!(commands().await, json!([]));
+    let told = mail(&d, &ada).await;
+    assert!(
+        told.iter()
+            .any(|m| m["body"] == "The operator declined your command /weekly."),
+        "{told:?}"
+    );
+
+    // Approved: added, with who offered it.
+    call(&client, "add_command", offer("weekly")).await;
+    let qid = approval_card(&d, &ada, qid).await;
+    assert_eq!(decide(&d, &ada, qid, "approve").await.0, 202);
+    let list = commands().await;
+    assert_eq!(list[0]["name"], "weekly");
+    assert_eq!(list[0]["added_by"], ada.as_str());
+    assert_eq!(list[0]["as_task"], true);
+
+    // A name in use is refused at once; one taken while the card waits blocks approval.
+    let taken = rmcp::model::CallToolRequestParams::new("add_command")
+        .with_arguments(offer("weekly").as_object().cloned().unwrap());
+    assert!(client.call_tool(taken).await.is_err());
+    call(&client, "add_command", offer("notes")).await;
+    let qid = approval_card(&d, &ada, qid).await;
+    let mut list = commands().await.as_array().unwrap().clone();
+    list.push(json!({"name": "notes", "description": "Mine", "prompt": "Take notes"}));
+    assert_eq!(
+        http(&d.ui, "PUT", "/v1/commands", Some(json!(list)))
+            .await
+            .0,
+        200
+    );
+    assert_eq!(decide(&d, &ada, qid, "approve").await.0, 409);
+    assert_eq!(
+        commands().await[1]["description"],
+        "Mine",
+        "the operator's stays"
+    );
+    assert_eq!(
+        decide(&d, &ada, qid, "decline").await.0,
+        202,
+        "the card stays open"
+    );
+}
+
+#[tokio::test]
+async fn a_task_waits_while_the_operator_has_a_card_to_answer() {
+    let backend = Arc::new(StatefulBackend::default());
+    let d = start(backend.clone(), None, "127.0.0.1:0").await;
+    let id = create_id(&d, json!({"name": "cleo"})).await;
+    let mut ws = connect_runner(&d.agents, &backend.token("cleo")).await;
+    let client = mcp_as(&d, backend.token("cleo")).await;
+    let goal = json!({"goal": "book the trip"});
+    let path = format!("/v1/agents/{id}/goal");
+    assert_eq!(http(&d.ui, "PUT", &path, Some(goal)).await.0, 200);
+    let (turn, _, _) = next_turn(&mut ws).await;
+    let card = json!({"questions": [{"prompt": "Window seat?", "kind": "text"}]});
+    let qid = call(&client, "ask_user", card).await["question_id"]
+        .as_i64()
+        .unwrap();
+    finish(&mut ws, turn, Some("I asked you about the seat.")).await;
+    quiet(&mut ws).await;
+    assert_eq!(http(&d.ui, "GET", &path, None).await.1["continuations"], 0);
+
+    let answer = json!({"answers": [{"question_id": "q1", "custom": "yes"}]});
+    let answer_path = format!("/v1/agents/{id}/questions/{qid}/answer");
+    assert_eq!(http(&d.ui, "POST", &answer_path, Some(answer)).await.0, 202);
+    let (turn, _, _) = next_turn(&mut ws).await;
+    finish(&mut ws, turn, Some("Noted, booking now.")).await;
+    let (_, _, body) = next_turn(&mut ws).await;
+    assert!(
+        body.starts_with("[ferrobot] Not done yet: book the trip"),
+        "{body}"
+    );
+}
+
+#[tokio::test]
+async fn a_stopped_task_stops_its_teammates_and_tells_them_why() {
+    use ferrobot_core::protocol::TurnOutcome::Interrupted;
+    let backend = Arc::new(StatefulBackend::default());
+    let d = start(backend.clone(), None, "127.0.0.1:0").await;
+    let lead = create_id(&d, json!({"name": "lead"})).await;
+    let dex = create_id(&d, json!({"name": "dex"})).await;
+    let mut ws = connect_runner(&d.agents, &backend.token("lead")).await;
+    let mut dex_ws = connect_runner(&d.agents, &backend.token("dex")).await;
+    let client = mcp_as(&d, backend.token("lead")).await;
+    let path = format!("/v1/agents/{lead}/goal");
+    let goal = json!({"goal": "ship the site"});
+    assert_eq!(http(&d.ui, "PUT", &path, Some(goal)).await.0, 200);
+    let (turn, _, _) = next_turn(&mut ws).await;
+    call(
+        &client,
+        "assign_task",
+        json!({"to": "dex", "task": "build the page"}),
+    )
+    .await;
+    finish(&mut ws, turn, Some("dex builds the page.")).await;
+    let (dex_turn, _, _) = next_turn(&mut dex_ws).await;
+
+    // Clearing the task stops dex's part of it; the lead was idle and stays so.
+    assert_eq!(http(&d.ui, "DELETE", &path, None).await.0, 204);
+    match next_frame(&mut dex_ws).await {
+        DaemonFrame::Interrupt { turn_id } => assert_eq!(turn_id, dex_turn),
+        other => panic!("expected dex's turn stopped, got {other:?}"),
+    }
+    answer_with(&mut dex_ws, dex_turn, "", Interrupted).await;
+    let told = goal_events(&d, &dex).await;
+    assert_eq!(told.len(), 1, "{told:?}");
+    assert_eq!(told[0]["state"], "stopped");
+    assert_eq!(
+        told[0]["note"],
+        "@lead's task stopped: cleared by the operator"
+    );
+    // dex's stopped part does not report back and start the lead again.
+    quiet(&mut ws).await;
+    quiet(&mut dex_ws).await;
+}
+
+#[tokio::test]
+async fn a_task_waits_for_its_teammates_and_moves_on_with_their_answers() {
+    let backend = Arc::new(StatefulBackend::default());
+    let d = start(backend.clone(), None, "127.0.0.1:0").await;
+    let lead = create_id(&d, json!({"name": "lead"})).await;
+    create(&d, json!({"name": "dex"})).await;
+    let mut ws = connect_runner(&d.agents, &backend.token("lead")).await;
+    let mut dex = connect_runner(&d.agents, &backend.token("dex")).await;
+    let client = mcp_as(&d, backend.token("lead")).await;
+    let path = format!("/v1/agents/{lead}/goal");
+    let goal = json!({"goal": "ship the site"});
+    assert_eq!(http(&d.ui, "PUT", &path, Some(goal)).await.0, 200);
+    let (turn, _, body) = next_turn(&mut ws).await;
+    assert!(
+        body.contains("assign_task") && body.contains("decide_approval"),
+        "{body}"
+    );
+    call(
+        &client,
+        "assign_task",
+        json!({"to": "dex", "task": "build the page"}),
+    )
+    .await;
+    finish(&mut ws, turn, Some("dex builds the page.")).await;
+    let (dex_turn, _, _) = next_turn(&mut dex).await;
+    quiet(&mut ws).await;
+    assert_eq!(
+        http(&d.ui, "GET", &path, None).await.1["continuations"],
+        0,
+        "no nudge while dex works"
+    );
+
+    finish(&mut dex, dex_turn, Some("The page is built.")).await;
+    let (turn, _, body) = next_turn(&mut ws).await;
+    assert!(body.contains("The page is built."), "{body}");
+    finish(&mut ws, turn, Some("Looks good so far.")).await;
+    let (_, _, body) = next_turn(&mut ws).await;
+    assert!(
+        body.starts_with("[ferrobot] Not done yet: ship the site"),
+        "the answer's turn moves the task on: {body}"
+    );
+}
+
+#[tokio::test]
+async fn the_lead_decides_only_its_teammates_risky_steps() {
+    let backend = Arc::new(StatefulBackend::default());
+    let d = start(backend.clone(), None, "127.0.0.1:0").await;
+    let lead = create_id(&d, json!({"name": "lead"})).await;
+    let dex = create_id(&d, json!({"name": "dex"})).await;
+    let eve = create_id(&d, json!({"name": "eve"})).await;
+    let mut ws = connect_runner(&d.agents, &backend.token("lead")).await;
+    let mut dex_ws = connect_runner(&d.agents, &backend.token("dex")).await;
+    let client = mcp_as(&d, backend.token("lead")).await;
+    let path = format!("/v1/agents/{lead}/goal");
+    let goal = json!({"goal": "ship the site"});
+    assert_eq!(http(&d.ui, "PUT", &path, Some(goal)).await.0, 200);
+    let (turn, _, _) = next_turn(&mut ws).await;
+    call(
+        &client,
+        "assign_task",
+        json!({"to": "dex", "task": "deploy it"}),
+    )
+    .await;
+    finish(&mut ws, turn, Some("dex deploys.")).await;
+    next_turn(&mut dex_ws).await;
+
+    let check = |name: &str, command: &'static str| {
+        let (agents, token) = (d.agents.clone(), backend.token(name));
+        tokio::spawn(async move { tool_check(&agents, &token, command).await })
+    };
+    let pushing = check("dex", "git push origin main");
+    let qid = approval_card(&d, &dex, 0).await;
+    let (turn, _, note) = next_turn(&mut ws).await;
+    assert!(
+        note.contains("dex") && note.contains(&format!("card {qid}")),
+        "{note}"
+    );
+    assert!(
+        note.contains("git push origin main"),
+        "the lead reads the step: {note}"
+    );
+    let line = events(&d, &lead)
+        .await
+        .into_iter()
+        .find(|e| e["kind"] == "goal" && e["payload"]["state"] == "approval")
+        .unwrap();
+    let why = line["payload"]["note"].as_str().unwrap();
+    assert!(
+        !why.is_empty() && !why.contains("git push"),
+        "only the reason: {why}"
+    );
+    assert!(note.contains("how risky"), "it rates first: {note}");
+    finish(&mut ws, turn, Some("Checking.")).await;
+
+    let rated = |card: i64, risk: &str, reason: &str| {
+        let args = json!({"card": card, "risk": risk, "reason": reason, "approve": true});
+        let params = rmcp::model::CallToolRequestParams::new("decide_approval")
+            .with_arguments(args.as_object().cloned().unwrap());
+        let call = client.call_tool(params);
+        async { format!("{:?}", call.await.unwrap_err()) }
+    };
+    let refused = |card: i64| rated(card, "low", "the task needs it");
+    let not_on_the_task = "no agent working on your task";
+    check("dex", "git push --force origin main");
+    let critical = approval_card(&d, &dex, qid).await;
+    assert!(refused(critical).await.contains("very risky"));
+    check("eve", "git push origin main");
+    let eve_card = approval_card(&d, &eve, 0).await;
+    assert!(refused(eve_card).await.contains(not_on_the_task));
+    check("lead", "git push origin main");
+    let own = approval_card(&d, &lead, 0).await;
+    assert!(refused(own).await.contains(not_on_the_task), "not its own");
+    let dex_client = mcp_as(&d, backend.token("dex")).await;
+    let card = json!({"questions": [{"prompt": "Which region?", "kind": "text"}]});
+    let question = call(&dex_client, "ask_user", card).await["question_id"]
+        .as_i64()
+        .unwrap();
+    assert!(refused(question).await.contains("only your operator"));
+    // A step it rates high stays with the operator, and every rating needs a reason.
+    assert!(
+        rated(qid, "high", "pushes to main")
+            .await
+            .contains("high risk")
+    );
+    assert!(rated(qid, "low", "  ").await.contains("give a reason"));
+
+    let decided = call(
+        &client,
+        "decide_approval",
+        json!({
+            "card": qid,
+            "risk": "medium",
+            "reason": "pushes the reviewed site to main, as the task asks",
+            "approve": true,
+        }),
+    )
+    .await;
+    assert_eq!(decided["note"], "Approved.");
+    assert_eq!(pushing.await.unwrap()["allow"], true);
+    let answered = events(&d, &dex)
+        .await
+        .into_iter()
+        .find(|e| e["kind"] == "question_answered" && e["payload"]["question"] == qid)
+        .unwrap();
+    assert_eq!(answered["payload"]["answered_by"], lead.as_str());
+    assert_eq!(
+        answered["payload"]["assessment"],
+        json!({"risk": "medium", "reason": "pushes the reviewed site to main, as the task asks"})
+    );
+    assert!(refused(qid).await.contains("already answered"));
+    assert_eq!(decide(&d, &dex, qid, "decline").await.0, 409);
+}
+
+#[tokio::test]
+async fn a_note_to_the_lead_goes_with_its_card_and_its_task() {
+    let backend = Arc::new(StatefulBackend::default());
+    let d = start(backend.clone(), None, "127.0.0.1:0").await;
+    let lead = create_id(&d, json!({"name": "lead"})).await;
+    let dex = create_id(&d, json!({"name": "dex"})).await;
+    let mut ws = connect_runner(&d.agents, &backend.token("lead")).await;
+    let mut dex_ws = connect_runner(&d.agents, &backend.token("dex")).await;
+    let client = mcp_as(&d, backend.token("lead")).await;
+    let path = format!("/v1/agents/{lead}/goal");
+    let goal = json!({"goal": "ship the site"});
+    assert_eq!(http(&d.ui, "PUT", &path, Some(goal)).await.0, 200);
+    let (turn, _, _) = next_turn(&mut ws).await;
+    call(
+        &client,
+        "assign_task",
+        json!({"to": "dex", "task": "deploy it"}),
+    )
+    .await;
+    next_turn(&mut dex_ws).await;
+    let check = |command: &'static str| {
+        let (agents, token) = (d.agents.clone(), backend.token("dex"));
+        tokio::spawn(async move { tool_check(&agents, &token, command).await })
+    };
+
+    // The operator answers first: the note queued for the busy lead goes.
+    let pushing = check("git push origin main");
+    let qid = approval_card(&d, &dex, 0).await;
+    assert_eq!(decide(&d, &dex, qid, "approve").await.0, 202);
+    assert_eq!(pushing.await.unwrap()["allow"], true);
+    finish(&mut ws, turn, Some("dex deploys.")).await;
+    quiet(&mut ws).await;
+
+    // Stop ends the task, and the note queued meanwhile goes with it.
+    let message = json!({"body": "how is it going?"});
+    let messages = format!("/v1/agents/{lead}/messages");
+    assert_eq!(http(&d.ui, "POST", &messages, Some(message)).await.0, 202);
+    let (turn, _, _) = next_turn(&mut ws).await;
+    check("git push origin dev");
+    approval_card(&d, &dex, qid).await;
+    let goal = eventually("the note", Duration::from_secs(5), || async {
+        let goal = http(&d.ui, "GET", &path, None).await.1;
+        (goal["notes"].as_array()?.len() == 1).then_some(goal)
+    })
+    .await;
+    let stop = format!("/v1/agents/{lead}/interrupt?chain=true");
+    assert_eq!(http(&d.ui, "POST", &stop, None).await.0, 200);
+    assert!(matches!(
+        next_frame(&mut ws).await,
+        DaemonFrame::Interrupt { .. }
+    ));
+    let done = RunnerFrame::TurnDone {
+        turn_id: turn,
+        outcome: ferrobot_core::protocol::TurnOutcome::Interrupted,
+        session_id: None,
+        result: None,
+        error: None,
+        steered: vec![],
+    };
+    send(&mut ws, &done).await;
+    quiet(&mut ws).await;
+    let note = goal["notes"][0].as_i64().unwrap();
+    let messages = http(&d.ui, "GET", &messages, None).await.1;
+    let note = messages
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|m| m["id"] == note)
+        .unwrap();
+    assert_eq!(note["status"], "delivered", "dropped: {note}");
 }

@@ -12,7 +12,7 @@ switch some off.
 | --- | --- |
 | Team | Message teammates, give them tasks, and call them without you |
 | Memory | Remember and recall notes |
-| Operator | Ask you questions, share files, react to your messages, bring teammates into calls, post to its Discord channel, read the guides |
+| Operator | Ask you questions, share files, react to your messages, bring teammates into calls, post to its Discord channel, read the guides, offer you slash commands |
 | Create agents | Ask to create new agents |
 | Add connectors | Ask you to add connectors |
 | Routines | Set up its own routines |
@@ -23,6 +23,12 @@ switch some off.
 
 - Shell, Files and Web aside, these are ferrobot's own tools. The daemon hides
   the ones outside the profile and refuses them if an agent calls them anyway.
+  `finish_task` is the exception: every agent has it while it works on a task
+  you gave it (see [[Getting Started|Getting-Started]]), and only then. Its
+  Team tool `decide_approval`, which answers its teammates' risky steps for that
+  task, is listed only then too. It rates each step low, medium or high with a
+  reason before deciding (the answered card shows it), and leaves high-risk
+  steps to you.
 - **Desktop** is never on by default, not even for agents that have every
   other group. It needs the desktop in Settings → Computers (see [[CLIs]]), and an
   agent with a CLI account cannot have it: commands typed into its desktop's
@@ -38,6 +44,29 @@ switch some off.
 
 Connectors are switched on per agent in the same list. See
 [[Connectors and OAuth|Connectors-and-OAuth]].
+
+## Skills
+
+Agents with the **Shell** tool can use skills from [skills.sh](https://skills.sh): folders
+with a `SKILL.md` (instructions) and often scripts, for things like a file format, a
+framework or a service's API. Their instructions tell them to look first
+(`npx -y skills@1.9.1 find <topic>`), install the one that fits into their home
+(`npx -y skills@1.9.1 add <owner/repo@skill> -g -y`, into `~/.agents/skills/<name>`),
+then read its `SKILL.md` and follow it. That works with every harness, also Claude Code on
+your computer, because the agent reads and runs the skill in its own computer.
+
+Every agent's computer starts with the **find-skills** skill in
+`~/.agents/skills/find-skills/`, which explains the search in detail. It comes from
+[vercel-labs/skills](https://github.com/vercel-labs/skills) (MIT, its licence next to it) and
+ships with ferrobot at a fixed version, so it needs no download and cannot change upstream.
+
+- Installing or updating a skill is a risky step: a card unless Auto mode is on. Finding,
+  listing and `use` (print a skill without installing it) are not.
+- A skill is someone else's instructions and scripts. Agents are told it never overrides
+  your instructions, and its commands go through the same checks as any other. Keys and
+  CLI tokens never sit in an agent's computer, so a skill cannot read them.
+- The CLI version is pinned in the instructions, so an upstream release cannot change
+  what agents run.
 
 ## Subagents
 
@@ -99,6 +128,10 @@ Without Auto mode, these requests show you a card first:
   not wait. A message tells it whether you approved.
 - **Add a connector** (`add_connector`): always a card, Auto mode or not. It
   never asks for a key: a token goes in Vault, where you type it yourself.
+- **Add a slash command** (`add_command`): always a card, Auto mode or not,
+  with the command's full prompt, since it is later sent in your name. The
+  agent does not wait; a message tells it whether you added it. The card
+  stays in the app, never in Discord.
 - **Give an agent more tools** (`set_agent_tools`): the card says which agent
   wants to give which of its agents more tools, and lists what is new. The
   agent does not wait; a message tells it whether you approved. The card stays

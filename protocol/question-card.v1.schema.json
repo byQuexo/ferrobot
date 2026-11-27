@@ -144,6 +144,41 @@
           "type": "object"
         },
         {
+          "description": "An agent offers the operator a slash command (`add_command` tool). Its prompt is later\nsent in the operator's name, so Auto mode never skips this card.",
+          "properties": {
+            "as_task": {
+              "type": "boolean"
+            },
+            "description": {
+              "type": "string"
+            },
+            "kind": {
+              "enum": [
+                "add_command"
+              ],
+              "type": "string"
+            },
+            "name": {
+              "type": "string"
+            },
+            "prompt": {
+              "type": "string"
+            },
+            "requester": {
+              "$ref": "#/$defs/AgentId"
+            }
+          },
+          "required": [
+            "name",
+            "description",
+            "prompt",
+            "as_task",
+            "requester",
+            "kind"
+          ],
+          "type": "object"
+        },
+        {
           "description": "An agent wants a routine of its own (`create_routine` tool): `prompt` reaches it on\n`schedule` (cron, the daemon's time zone).",
           "properties": {
             "kind": {
@@ -521,11 +556,33 @@
     "QuestionAnswered": {
       "description": "Payload of a `question_answered` event. A card is answered at most once.",
       "properties": {
+        "answered_by": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/AgentId",
+              "description": "The agent that answered: during the operator's task, its agent decides the risky steps\nof the agents working for it. Absent: the operator (or the timeout)."
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
         "answers": {
           "items": {
             "$ref": "#/$defs/QuestionAnswer"
           },
           "type": "array"
+        },
+        "assessment": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/RiskAssessment",
+              "description": "How risky that agent judged the step before deciding it. Absent when the operator\nanswered."
+            },
+            {
+              "type": "null"
+            }
+          ]
         },
         "message_id": {
           "description": "The user message that carried the answer to the agent; `null` for\napproval cards (the decision goes to the waiting tool call).",
@@ -620,6 +677,32 @@
         "secret"
       ],
       "type": "string"
+    },
+    "Risk": {
+      "description": "How risky a step is for the task at hand, in the judgment of the agent deciding it.",
+      "enum": [
+        "low",
+        "medium",
+        "high"
+      ],
+      "type": "string"
+    },
+    "RiskAssessment": {
+      "description": "An agent's rating of a teammate's risky step, given before it decides the card.",
+      "properties": {
+        "reason": {
+          "description": "Why, in a sentence.",
+          "type": "string"
+        },
+        "risk": {
+          "$ref": "#/$defs/Risk"
+        }
+      },
+      "required": [
+        "risk",
+        "reason"
+      ],
+      "type": "object"
     },
     "ToolGroup": {
       "description": "A group of tools an agent can have on or off. Shell, Files and Web are the model's built-in\ntools (enforced by the runner); the others are ferrobot's own MCP tools (enforced by the daemon).",

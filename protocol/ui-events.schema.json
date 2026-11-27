@@ -799,6 +799,25 @@
           "type": "object"
         },
         {
+          "description": "The agent's task with a goal was set, continued or ended; refetch it.",
+          "properties": {
+            "agent_id": {
+              "$ref": "#/$defs/AgentId"
+            },
+            "type": {
+              "enum": [
+                "goal_changed"
+              ],
+              "type": "string"
+            }
+          },
+          "required": [
+            "agent_id",
+            "type"
+          ],
+          "type": "object"
+        },
+        {
           "description": "Who is in the operator's voice call changed (empty: it ended). `room_id`: the call's room,\nonce a second agent joined. `hung_up`: the agent whose hang-up this is; its goodbye may\nstill be playing.",
           "properties": {
             "agents": {

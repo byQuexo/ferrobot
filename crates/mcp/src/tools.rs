@@ -1,6 +1,8 @@
 use std::borrow::Cow;
 
-use ferrobot_core::question::{QUESTION_CARD_VERSION, QuestionCard, QuestionEvent};
+use ferrobot_core::question::{
+    QUESTION_CARD_VERSION, QuestionCard, QuestionEvent, Risk, RiskAssessment,
+};
 use ferrobot_core::{
     Account, Agent, AgentId, AgentName, AvatarCharacter, Cli, ConnectorAuth, Install, MailMessage,
     Sender, ToolGroup, mention,
@@ -18,8 +20,8 @@ use serde::{Deserialize, Serialize};
 
 use crate::{
     AgentRequest, AgentRequestOutcome, AgentToolsOutcome, AgentToolsRequest, Caller,
-    ConnectorRequest, MAX_MEMORY_KEY_BYTES, MAX_MESSAGE_BYTES, McpState, RoutineRequest,
-    RoutineRequestOutcome,
+    CommandRequest, ConnectorRequest, MAX_MEMORY_KEY_BYTES, MAX_MESSAGE_BYTES, McpState,
+    RoutineRequest, RoutineRequestOutcome,
 };
 
 type ToolResult<T> = Result<Json<T>, ErrorData>;
@@ -294,6 +296,28 @@ pub struct CreateRoutineResult {
 }
 
 #[derive(Debug, Deserialize, JsonSchema)]
+pub struct AddCommandArgs {
+    /// What follows the `/`: 1-32 of `a-z`, `0-9` and `-`, starting with a letter, e.g.
+    /// `weekly-report`. Not `task`.
+    pub name: String,
+    /// One short line for the operator's command menu (1-100 characters).
+    pub description: String,
+    /// What the command sends in the operator's name, up to 4000 bytes. `$ARGUMENTS` becomes the
+    /// text typed after the command; without it, that text follows after a blank line.
+    pub prompt: String,
+    /// Send it as a task with a goal: the agent keeps working until it is done.
+    #[serde(default)]
+    pub as_task: bool,
+}
+
+#[derive(Debug, Serialize, JsonSchema)]
+pub struct AddCommandResult {
+    /// `pending`: waiting for the operator.
+    pub status: String,
+    pub note: String,
+}
+
+#[derive(Debug, Deserialize, JsonSchema)]
 pub struct AddConnectorArgs {
     /// 1-16 chars, lowercase `a-z0-9-`, starts with a letter; prefixes its tools (`github__...`).
     pub name: String,
@@ -380,6 +404,37 @@ pub struct SendToDiscordArgs {
 #[derive(Debug, Serialize, JsonSchema)]
 pub struct SentToDiscord {
     pub channel_id: String,
+}
+
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct FinishTaskArgs {
+    /// One line: what was done.
+    pub summary: String,
+}
+
+#[derive(Debug, Serialize, JsonSchema)]
+pub struct TaskFinished {
+    pub note: String,
+}
+
+#[derive(Debug, Serialize, JsonSchema)]
+pub struct Decided {
+    pub note: String,
+}
+
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct DecideApprovalArgs {
+    /// The card number from the note.
+    pub card: i64,
+    /// How risky the step is for the task, judged before deciding: `low` (reads or changes only
+    /// what the task is about), `medium` (could cause harm or cost, but the task needs it and it
+    /// can be undone) or `high` (could cause lasting harm, leak data or spend money). A `high`
+    /// step can only be declined; your operator approves those.
+    pub risk: Risk,
+    /// Why you rated it so, in one sentence; your operator sees it on the card.
+    pub reason: String,
+    /// `true` lets the step run, `false` refuses it.
+    pub approve: bool,
 }
 
 #[derive(Debug, Deserialize, JsonSchema)]
@@ -1101,6 +1156,36 @@ impl FerrobotTools {
     }
 
     #[tool(
+        description = "Offer your operator a slash command for their message box: typing \
+        `/name rest` sends `prompt` in their name, with `$ARGUMENTS` replaced by `rest`, to \
+        whichever agent's chat they are in. Use it when they ask for one or agree to your offer. \
+        They always see a card with the full prompt first; a message tells you whether they added \
+        it. Finish your turn after asking."
+    )]
+    async fn add_command(
+        &self,
+        Extension(parts): Extension<http::request::Parts>,
+        Parameters(args): Parameters<AddCommandArgs>,
+    ) -> ToolResult<AddCommandResult> {
+        let me = caller(&parts)?.0.id;
+        let request = CommandRequest {
+            name: args.name.trim().to_owned(),
+            description: args.description,
+            prompt: args.prompt,
+            as_task: args.as_task,
+        };
+        self.state
+            .notifier
+            .request_command(me, request)
+            .await
+            .map_err(invalid)?;
+        Ok(Json(AddCommandResult {
+            status: "pending".into(),
+            note: PENDING_NOTE.into(),
+        }))
+    }
+
+    #[tool(
         description = "Ask your operator to add a connector and give it to you: a remote MCP \
         server (`url`) or a local one started on their computer (`command`, e.g. an `npx` \
         server). They see a card with its name and URL or exact command; a local server always \
@@ -1232,6 +1317,60 @@ impl FerrobotTools {
             .await
             .map_err(invalid)?;
         Ok(Json(SentToDiscord { channel_id }))
+    }
+
+    #[tool(
+        description = "Say that the task your operator gave you is done, with a one-line \
+        summary. Call it only when the goal is reached, then end your turn with your report to \
+        your operator. Your work may be checked; if the goal is not met yet, you are sent back to it."
+    )]
+    async fn finish_task(
+        &self,
+        Extension(parts): Extension<http::request::Parts>,
+        Parameters(args): Parameters<FinishTaskArgs>,
+    ) -> ToolResult<TaskFinished> {
+        let me = caller(&parts)?.0.id;
+        let summary = args.summary.trim();
+        if summary.is_empty() || summary.chars().count() > 300 || summary.contains('\n') {
+            return Err(invalid("summary is one line of 1-300 characters"));
+        }
+        self.state
+            .notifier
+            .finish_goal(me, summary.to_owned())
+            .await
+            .map_err(invalid)?;
+        Ok(Json(TaskFinished {
+            note: "Noted. Now end your turn with your report to your operator.".into(),
+        }))
+    }
+
+    #[tool(
+        description = "During a task from your operator: rate how risky a teammate's step is \
+        for the task (low, medium or high, with a one-sentence reason), then approve or decline \
+        it, by the card number in the note you got. Approve only a low or medium step the task \
+        needs; high-risk and very risky steps and other cards stay with your operator."
+    )]
+    async fn decide_approval(
+        &self,
+        Extension(parts): Extension<http::request::Parts>,
+        Parameters(args): Parameters<DecideApprovalArgs>,
+    ) -> ToolResult<Decided> {
+        let me = caller(&parts)?.0.id;
+        let note = self
+            .state
+            .notifier
+            .decide_for_task(
+                me,
+                args.card,
+                args.approve,
+                RiskAssessment {
+                    risk: args.risk,
+                    reason: args.reason,
+                },
+            )
+            .await
+            .map_err(invalid)?;
+        Ok(Json(Decided { note }))
     }
 
     #[tool(
@@ -1520,10 +1659,10 @@ fn context_caller(context: &RequestContext<RoleServer>) -> Option<&Agent> {
 pub(crate) fn group_of(tool: &str) -> Option<ToolGroup> {
     Some(match tool {
         "list_agents" | "send_message" | "read_mailbox" | "assign_task" | "list_tasks"
-        | "call_agents" => ToolGroup::Team,
+        | "call_agents" | "decide_approval" => ToolGroup::Team,
         "remember" | "recall" | "forget" => ToolGroup::Memory,
         "ask_user" | "share_file" | "invite_to_call" | "hang_up" | "list_guides" | "read_guide"
-        | "react" | "send_to_discord" => ToolGroup::Operator,
+        | "react" | "send_to_discord" | "finish_task" | "add_command" => ToolGroup::Operator,
         "create_agent" | "set_agent_tools" => ToolGroup::CreateAgents,
         "add_connector" | "propose_cli" => ToolGroup::AddConnectors,
         "create_routine" => ToolGroup::Routines,
@@ -1533,7 +1672,8 @@ pub(crate) fn group_of(tool: &str) -> Option<ToolGroup> {
 }
 
 fn allowed(agent: &Agent, tool: &str) -> bool {
-    group_of(tool).is_some_and(|g| agent.tools.contains(&g))
+    // An operator's task can be finished whatever the profile; it is listed only during one.
+    tool == "finish_task" || group_of(tool).is_some_and(|g| agent.tools.contains(&g))
 }
 
 #[allow(
@@ -1557,6 +1697,9 @@ impl ServerHandler for FerrobotTools {
         tools.retain(|t| allowed(me, &t.name));
         if !self.state.notifier.has_discord(me.id).await {
             tools.retain(|t| t.name != "send_to_discord");
+        }
+        if !self.state.notifier.has_goal(me.id).await {
+            tools.retain(|t| t.name != "finish_task" && t.name != "decide_approval");
         }
         if !self.state.notifier.has_voice().await {
             tools.retain(|t| t.name != "call_agents");

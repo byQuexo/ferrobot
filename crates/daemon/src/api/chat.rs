@@ -281,6 +281,9 @@ pub(crate) async fn answer_question(
         Some(approval @ Approval::AddCli { .. }) => {
             crate::api::clis::answer_card(&state, id, qid, approval, req.answers).await?
         }
+        Some(approval @ Approval::AddCommand { .. }) => {
+            crate::api::commands::answer_card(&state, id, qid, approval, req.answers).await?
+        }
         Some(approval @ Approval::CreateRoutine { .. }) => {
             crate::api::routines::answer_card(&state, id, qid, approval, req.answers).await?
         }
@@ -290,22 +293,7 @@ pub(crate) async fn answer_question(
         Some(approval @ Approval::UseWithoutTools { .. }) => {
             crate::no_tools::answer_card(&state, id, qid, approval, req.answers).await?
         }
-        Some(_) => {
-            let answered = QuestionAnswered {
-                question: qid,
-                answers: req.answers,
-                message_id: None,
-                timed_out: false,
-            };
-            let waiting = crate::agents::decide(&state, qid, &answered.answers);
-            let answered = crate::agents::record_answer(&state, id, answered).await?;
-            if !waiting {
-                return Err(ApiError::Conflict(format!(
-                    "approval request {qid} is no longer pending"
-                )));
-            }
-            answered
-        }
+        Some(_) => crate::agents::answer_approval(&state, (id, qid), req.answers, None).await?,
         None => {
             let body = question.card.answer_text(&req.answers);
             let msg = state
@@ -317,6 +305,8 @@ pub(crate) async fn answer_question(
                 answers: req.answers,
                 message_id: Some(msg.id),
                 timed_out: false,
+                answered_by: None,
+                assessment: None,
             };
             let answered = crate::agents::record_answer(&state, id, answered).await?;
             state.message_arrived(id);
@@ -347,8 +337,8 @@ pub(crate) struct Interrupted {
     dropped: usize,
 }
 
-/// Aborts the agent's running turn, if any; with `chain`, the work it set off as well (Stop).
-/// Interrupted messages are not retried.
+/// Aborts the agent's running turn, if any; with `chain`, the work it set off as well and its
+/// task with a goal (Stop). Interrupted messages are not retried.
 #[utoipa::path(post, path = "/v1/agents/{id}/interrupt", tag = "chat",
     params(("id" = String, Path, description = "Agent id (UUID)"), InterruptQuery),
     responses((status = 200, body = Interrupted),
@@ -362,6 +352,8 @@ pub(crate) async fn interrupt(
     state.store.get_agent(id).await?;
     let turn_id = state.hub.current_turn(id);
     let (agents, dropped) = if q.chain {
+        let stopped = "stopped by the operator";
+        crate::goal::end(&state, id, crate::goal::End::Stopped, stopped).await;
         crate::stop::stop_chain(&state, id).await?
     } else {
         state.hub.interrupt(id);

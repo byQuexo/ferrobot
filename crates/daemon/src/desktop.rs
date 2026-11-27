@@ -367,4 +367,14 @@ mod tests {
         drop(second);
         assert!(!desktop.controlled(agent));
     }
+
+    /// `sh` in the computer stops at a CR (`unset: : bad variable name`), and a Windows checkout
+    /// gives one unless `.gitattributes` keeps the script LF.
+    #[test]
+    fn the_start_script_has_unix_line_endings() {
+        assert!(
+            !START.contains('\r'),
+            "desktop-start.sh has CRLF line endings"
+        );
+    }
 }

@@ -58,6 +58,54 @@ a loop between agents ends too. Your own queued messages, routines and
 webhooks stay; a stopped agent's task does not report back to an agent you
 stopped.
 
+### Tasks with a goal
+
+Type `/task` and a goal in an agent's message box, for example `/task make the
+tests pass`, and the agent keeps working until the goal is reached. It does not start right away: first it asks you what it needs to know and sends you a plan of numbered steps on a card to approve or change, then works through the plan one step at a time, saying which step it finished and which comes next. (An agent without the Operator tools, which cannot send cards, writes its plan into its reply.) Whenever a
+turn ends without the agent saying it is done (its `finish_task` tool), it is
+sent back to work. Once it says so and has reported to you, a quick check reads
+its last turn and either ends the task or sends it back with the reason:
+
+| Provider | Who checks |
+| --- | --- |
+| Claude Code | Haiku, through your own `claude` |
+| Anthropic, or no provider | The agent's model, through the Messages API |
+| OpenAI, Gemini, OpenRouter, Ollama, OpenAI-compatible | The agent's model, through chat completions |
+| Codex, Gemini CLI, Bedrock, Vertex | No check: the agent's word and its report end the task |
+
+The check runs in the daemon with the provider's key; API checks show up in
+**Usage**, Claude Code's do not. It needs a model: the agent's, the provider's
+default or the daemon's `--model`; without one there is no check. A check that
+cannot run counts as not done. A turn that ends with a card for you is not sent
+back: your answer starts the next one.
+
+The agent can share the work: it hands teammates their parts with `assign_task`,
+the task waits while they work, and each answer wakes the agent again. It tells
+teammates with a shell to look for a ready-made skill when a part needs one.
+While the task runs, the agent also decides its teammates' risky steps: each
+card still shows in the teammate's chat, where you can answer first, and goes to
+the agent as a note too; a card it decided says **Answered by @agent**. Very
+risky steps, its own steps and cards that are not about a step (new agents,
+connectors, CLIs, commands, questions) stay with you. It can still hand a step
+to a teammate and approve it there, so while a task runs, treat the agent as the
+approver of its team's risky steps. The header shows **Task · step N**
+while a task runs; its cross clears the task. **Stop**, a failed or interrupted
+turn and 20 trips back to work end it too. The chat shows each step: sent back,
+achieved, stopped or gave up.
+
+### Commands
+
+**Settings → Commands** keeps prompts you use often. Type `/` at the start of a
+message to pick one: `/name more text` sends the command's prompt with your text
+in place of `$ARGUMENTS` (without it, your text follows after a blank line).
+With **Run as a task**, the command starts a task with a goal instead. A `/word`
+that is no command goes out as you typed it.
+
+Agents with the Operator tools offer to turn a request you repeat into a
+command, and add one with `add_command` when you agree. You always get a card
+with the full prompt first, Auto mode or not, since the command speaks in your
+name; Settings → Commands shows which agent added it.
+
 ### Pins
 
 Keep important things one click away. Hover a reply or a shared file and

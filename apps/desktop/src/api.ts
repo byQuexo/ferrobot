@@ -66,6 +66,8 @@ export type Pin = Schemas["Pin"];
 export type PinKind = Schemas["PinKind"];
 export type FormerAgent = Schemas["FormerAgent"];
 export type Dashboard = Schemas["Dashboard"];
+export type TaskGoal = Schemas["TaskGoal"];
+export type SlashCommand = Schemas["Command"];
 export type DiscordSettings = Schemas["DiscordSettings"];
 export type DiscordView = Schemas["DiscordView"];
 export type ModelList = Schemas["ModelList"];
@@ -261,6 +263,18 @@ export class DaemonClient {
     this.#request("POST", `/v1/agents/${id}/context/measure`);
   /** Shrinks the agent's context to a summary (Claude Code agents). */
   compact = (id: string): Promise<void> => this.#request("POST", `/v1/agents/${id}/compact`);
+  /** `null`: the agent has no task. */
+  goal = (id: string): Promise<TaskGoal | null> =>
+    this.#request<TaskGoal>("GET", `/v1/agents/${id}/goal`).catch((e: unknown) => {
+      if (e instanceof ApiError && e.status === 404) return null;
+      throw e;
+    });
+  setGoal = (id: string, goal: string): Promise<TaskGoal> =>
+    this.#request("PUT", `/v1/agents/${id}/goal`, { goal });
+  clearGoal = (id: string): Promise<void> => this.#request("DELETE", `/v1/agents/${id}/goal`);
+  commands = (): Promise<SlashCommand[]> => this.#request("GET", "/v1/commands");
+  setCommands = (list: SlashCommand[]): Promise<SlashCommand[]> =>
+    this.#request("PUT", "/v1/commands", list);
   /** One of the agent's turns as a timeline. */
   trace = (id: string, turn: string): Promise<Trace> =>
     this.#request("GET", `/v1/agents/${id}/turns/${enc(turn)}/trace`);

@@ -144,7 +144,45 @@ pub(crate) async fn page(
     let filename = name.replace(['"', '\\', '\r', '\n'], "_");
     let disposition = HeaderValue::from_str(&format!("{disposition}; filename=\"{filename}\""))
         .unwrap_or_else(|_| HeaderValue::from_static("attachment"));
+    let bytes = if csp == PAGE_CSP {
+        thin_scrollbars(bytes)
+    } else {
+        bytes
+    };
     Ok(respond(content_type, disposition, csp, bytes))
+}
+
+/// Thin scrollbars for a page, as Windows draws classic ones with arrows in the app's frames.
+/// Least specific (`:where`), so the page's own rules win; a page that mentions scrollbars at all
+/// is left as it is, since a set `scrollbar-color` turns off its `::-webkit-scrollbar` styles.
+fn thin_scrollbars(page: Vec<u8>) -> Vec<u8> {
+    const STYLE: &[u8] = b"<style>:where(:root){scrollbar-width:thin;\
+        scrollbar-color:rgba(128,128,128,.5) transparent}</style>";
+    if page
+        .windows(b"scrollbar".len())
+        .any(|w| w.eq_ignore_ascii_case(b"scrollbar"))
+    {
+        return page;
+    }
+    // After a BOM and a doctype, which must come first.
+    let mut at = if page.starts_with(b"\xEF\xBB\xBF") {
+        3
+    } else {
+        0
+    };
+    let rest = &page[at..];
+    let start = rest.len() - rest.trim_ascii_start().len();
+    let doctype = rest[start..]
+        .get(..9)
+        .is_some_and(|d| d.eq_ignore_ascii_case(b"<!doctype"));
+    if doctype && let Some(end) = rest[start..].iter().position(|&b| b == b'>') {
+        at += start + end + 1;
+    }
+    let mut out = Vec::with_capacity(page.len() + STYLE.len());
+    out.extend_from_slice(&page[..at]);
+    out.extend_from_slice(STYLE);
+    out.extend_from_slice(&page[at..]);
+    out
 }
 
 fn respond(
@@ -243,7 +281,7 @@ pub(crate) async fn preview(
         "text/html; charset=utf-8",
         HeaderValue::from_static("inline"),
         PAGE_CSP,
-        html.as_bytes().to_vec(),
+        thin_scrollbars(html.as_bytes().to_vec()),
     ))
 }
 
@@ -382,6 +420,24 @@ fn free_name(name: &str, taken: &HashSet<&str>) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn pages_get_thin_scrollbars_after_their_doctype() {
+        let thin = |page: &str| String::from_utf8(thin_scrollbars(page.into())).unwrap();
+        let style = String::from_utf8(thin_scrollbars(Vec::new())).unwrap();
+        assert!(style.starts_with("<style>") && style.contains("scrollbar-width:thin"));
+        assert_eq!(
+            thin("\n<!DOCTYPE html><p>hi"),
+            format!("\n<!DOCTYPE html>{style}<p>hi")
+        );
+        assert_eq!(thin("<p>hi"), format!("{style}<p>hi"));
+        assert_eq!(
+            thin("\u{feff}<!doctype html>x"),
+            format!("\u{feff}<!doctype html>{style}x")
+        );
+        let own = "<style>::-webkit-scrollbar{width:4px}</style>";
+        assert_eq!(thin(own), own, "a page's own scrollbars stay");
+    }
 
     #[test]
     fn upload_names_are_safe_and_free() {

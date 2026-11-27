@@ -40,7 +40,7 @@ pub(crate) struct Call {
     provider_kind: String,
     pub model: String,
     /// The agent's turn when the call began, for its trace.
-    turn_id: Option<String>,
+    pub turn_id: Option<String>,
     /// The request's parts by size, for the context breakdown.
     sizes: Option<crate::context::Sizes>,
 }
@@ -116,6 +116,18 @@ impl Call {
         {
             self.model = m;
         }
+    }
+
+    /// Records a call the daemon made itself from its JSON answer; `openrouter`: believe its cost.
+    pub fn record_body(self, family: Family, v: &Value, openrouter: bool) {
+        let mut tokens = Tokens::default();
+        read(family, v, &mut tokens);
+        let cost = if openrouter { reported_cost(v) } else { None };
+        self.record(UsageStatus::Ok, tokens, cost);
+    }
+
+    pub fn record_failure(self) {
+        self.record(UsageStatus::Error, Tokens::default(), None);
     }
 
     /// Writes the row off the request path.

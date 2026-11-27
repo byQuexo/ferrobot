@@ -8,6 +8,7 @@ use std::future::Future;
 use std::pin::Pin;
 use std::sync::Arc;
 
+use ferrobot_core::question::RiskAssessment;
 use ferrobot_core::{AgentId, AvatarCharacter, MailMessage};
 use ferrobot_store::{Store, StoredEvent};
 
@@ -64,6 +65,15 @@ pub struct RoutineRequest {
     /// 5-field cron expression or alias, in the daemon's time zone.
     pub schedule: String,
     pub prompt: String,
+}
+
+/// An agent's slash command for the operator (`add_command` tool).
+#[derive(Debug, Clone)]
+pub struct CommandRequest {
+    pub name: String,
+    pub description: String,
+    pub prompt: String,
+    pub as_task: bool,
 }
 
 /// How a [`RoutineRequest`] ended for now.
@@ -224,6 +234,16 @@ pub trait MailboxNotifier: Send + Sync + 'static {
         let _ = (requester, request);
         Box::pin(async { Err("routines are not supported here".to_owned()) })
     }
+    /// Shows the operator a card for `requester`'s slash command, always, Auto mode or not.
+    /// `Ok` carries the card's id; `Err` a message for the agent.
+    fn request_command(
+        &self,
+        requester: AgentId,
+        request: CommandRequest,
+    ) -> BoxFuture<Result<i64, String>> {
+        let _ = (requester, request);
+        Box::pin(async { Err("commands are not supported here".to_owned()) })
+    }
     /// Changes the tools of an agent `requester` created: at once when that narrows them,
     /// else after the operator approves a card unless Auto mode is on. `Err` carries a message
     /// for the agent.
@@ -251,6 +271,29 @@ pub trait MailboxNotifier: Send + Sync + 'static {
     fn has_discord(&self, agent: AgentId) -> BoxFuture<bool> {
         let _ = agent;
         Box::pin(async { false })
+    }
+    /// Whether `agent` has a task with a goal from its operator; only then is `finish_task`
+    /// listed for it.
+    fn has_goal(&self, agent: AgentId) -> BoxFuture<bool> {
+        let _ = agent;
+        Box::pin(async { false })
+    }
+    /// `agent` says its task is done, in one line. `Err` carries a message for the agent.
+    fn finish_goal(&self, agent: AgentId, summary: String) -> BoxFuture<Result<(), String>> {
+        let _ = (agent, summary);
+        Box::pin(async { Err("there are no tasks here".to_owned()) })
+    }
+    /// `lead` decides card `card`, a risky step of an agent working on its task, after rating
+    /// it. `Ok` and `Err` carry a message for the lead.
+    fn decide_for_task(
+        &self,
+        lead: AgentId,
+        card: i64,
+        approve: bool,
+        assessment: RiskAssessment,
+    ) -> BoxFuture<Result<String, String>> {
+        let _ = (lead, card, approve, assessment);
+        Box::pin(async { Err("there are no tasks here".to_owned()) })
     }
     /// Posts `text` from `agent` to its bridged Discord channel (`channel`: which one, when it
     /// has several). `Ok` carries the channel id; `Err` a message for the agent.

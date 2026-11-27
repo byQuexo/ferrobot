@@ -84,8 +84,9 @@ Principles:
 - `crates/daemon/src/lib.rs` — routers (`ui_router`, `agent_router`).
 - `crates/daemon/src/api/` — `/v1` handlers (agents, chat, memory, routines, sandbox, ws).
 - `crates/daemon/src/agents.rs` — agent creation shared by API and `create_agent`,
-  approval flow, Auto mode, limit; `runner_instructions` adds the naming convention and, for
-  agents with the Memory group, the operator's knowledge base (global memory), re-sent on change;
+  approval flow, Auto mode, limit; `runner_instructions` adds the naming convention, for agents
+  with the Shell group the skills.sh note (`SKILLS_CLI`, pinned), and for agents with the Memory
+  group the operator's knowledge base (global memory), re-sent on change;
   `api/settings.rs` — daemon-wide settings (`auto_mode`).
 - `crates/daemon/src/state.rs` — `AppState`, `Settings`, `UiEvent`.
 - `crates/daemon/src/spec.rs` — OpenAPI + schema generation.
@@ -151,7 +152,9 @@ Principles:
   archives, `--storage-url` (default: the data dir; `s3://` for S3/R2).
 - `crates/daemon/src/update.rs` — `/v1/update` status; `update/source.rs` — a
   debug build pulls `main`, rebuilds and re-execs itself (debug builds only).
-- `crates/daemon/src/lifecycle.rs`, `supervisor.rs`, `scheduler.rs`, `runner_ws.rs`.
+- `crates/daemon/src/lifecycle.rs`, `supervisor.rs`, `scheduler.rs`, `runner_ws.rs`; `lifecycle.rs`
+  also writes the default skills (`crates/daemon/src/skills/`, find-skills, pinned) into each
+  computer's `~/.agents/skills`.
 - `crates/daemon/src/trace.rs` — a turn as a timeline (model calls from usage rows tagged
   with the turn, tool calls from its events, waits from the cards stamped with its
   `turn_id`, handoffs from its `handoff` events, which `enqueue` in `crates/mcp/src/tools.rs`
@@ -169,6 +172,14 @@ Principles:
   (👀, then ✅, or only the agent's emoji); an agent posts to its own bridged channels
   with `send_to_discord`; `discord/cards.rs` — cards in the channel (✅/❌, replies);
   `api/discord.rs` — `/v1/discord`. Settings in the `discord` setting.
+- `crates/daemon/src/goal.rs` — tasks with a goal (`/task`, the `goals` setting): the turn-end hook in
+  `runner_ws::settle` sends the agent back to work until `finish_task` and a report, then a check (Claude
+  Code: host `claude -p` with Haiku; Anthropic: Messages; OpenAI-compatible kinds: chat completions; none
+  for Codex, Gemini CLI, Bedrock, Vertex); a turn waiting on its card or on a task it gave is not sent
+  back; the task's agent decides its chain's risky steps (`ask_lead`, `decide`); `api/goal.rs` —
+  `/v1/agents/{id}/goal`.
+  `api/commands.rs` — the operator's slash commands (`commands` setting) and the
+  `add_command` card; the app expands them (`apps/desktop/src/lib/commands.ts`).
 - `crates/daemon/src/stop.rs` — the operator's Stop (`interrupt?chain=true`): the agent's turn,
   the turns of agents working on messages from that chain, and agent messages queued among them.
 - `crates/daemon/src/desktop.rs`, `api/desktop.rs` — the agent's desktop: its
@@ -364,6 +375,12 @@ daemon, `docker ps -a` must be empty of ferrobot containers.
   classifier reads the command line and is best effort, not a sandbox: a script the agent
   wrote is not read. Agents can't write the harnesses' own settings folders in their
   workspace (`.claude`, `.codex`, `.gemini`), which could start processes.
+  The one agent that answers a risky step's card is the agent of the operator's `/task`, and only for
+  agents working in its chain (`goal::decide`, `decide_approval`): never its own steps (though it
+  can hand one to a teammate), never critical ones, never any other kind of card, and the
+  operator's card stays open alongside; its notes go when the card is decided or the task ends.
+  It rates each step first (`risk` low/medium/high and a `reason`, kept as `assessment` on
+  `question_answered`), and a step it rates high it can only decline.
 - **`FERROBOT_MAX_AGENTS`** (default 10) applies to `POST /v1/agents` and to
   `create_agent` (both through `daemon::agents::create`).
 - Question cards are answered at most once (`409` after).
@@ -372,6 +389,9 @@ daemon, `docker ps -a` must be empty of ferrobot containers.
   command; Auto mode never skips that card. They start without a shell, with a
   cleared environment (`PATH`, `HOME`, user, locale, temp, and the connector's
   Vault token under `token_env`), so no model key or operator token reaches them.
+- **Agent-made slash commands always need the operator's card.** `add_command` shows the full
+  prompt (it is later sent in the operator's name); Auto mode never skips it and Discord never
+  answers it. The task check (`goal.rs`) calls providers from the daemon only, like the proxy.
 - **No card asks for a key.** An agent's `add_connector` card is
   Approve/Decline only; connector tokens are typed in Settings → Vault. Agent
   cards cannot carry `secret` fields (`ask_user` refuses them), the answer
@@ -408,6 +428,9 @@ daemon, `docker ps -a` must be empty of ferrobot containers.
   model calls likely miss Usage and traces.
 - OTLP export ran against Grafana's collector and Tempo (root span only;
   child spans only in a unit test), never against Phoenix or Langfuse.
+- The task check ran only against a fake chat-completions upstream; the Claude Code (Haiku) and
+  Anthropic Messages checks never ran, and whether Codex and ACP sessions see `finish_task`
+  appear mid-session (their tool lists may be cached) is untested.
 - The Obsidian vault memory ran only against a temp folder, never with
   Obsidian open; frontmatter with CRLF line endings is not parsed.
 

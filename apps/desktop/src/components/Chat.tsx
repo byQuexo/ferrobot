@@ -10,6 +10,7 @@ import {
   ChevronRight,
   CircleStop,
   Footprints,
+  Goal,
   Hash,
   MessagesSquare,
   Info,
@@ -37,7 +38,9 @@ import type {
   MailMessage,
   PinKind,
   Routine,
+  SlashCommand,
   StoredEvent,
+  TaskGoal,
   Upload,
   VoiceView,
 } from "../api.ts";
@@ -65,6 +68,7 @@ import {
   type Exchange,
   type TimelineItem,
 } from "../lib/timeline.ts";
+import { commandQuery, expandCommand, matchCommands } from "../lib/commands.ts";
 import { mentionQuery } from "../lib/mentions.ts";
 import { isPinned, pinLabel, togglePin } from "../lib/pins.ts";
 import { isMac, keyLabel, SHORTCUTS, useShortcuts } from "../lib/shortcuts.ts";
@@ -105,6 +109,8 @@ export function Chat(props: {
   const [messages, setMessages] = useState<MailMessage[]>([]);
   const [events, setEvents] = useState<StoredEvent[]>([]);
   const [routines, setRoutines] = useState<Routine[]>([]);
+  const [goal, setGoal] = useState<TaskGoal | null>(null);
+  const [commands, setCommands] = useState<SlashCommand[]>([]);
   const [live, setLive] = useState<Map<string, string>>(new Map());
   const [loaded, setLoaded] = useState(false);
   // Where the "New" divider goes, fixed when the chat opens: reading it zeroes `unread`.
@@ -126,11 +132,19 @@ export function Chat(props: {
     setEvents([]);
     setLive(new Map());
     setNewSince(null);
+    setGoal(null);
     const unread = agent.unread;
     const load = async (): Promise<void> => {
       const all = await client.allEvents(id);
-      const [msgs, rts] = await Promise.all([client.messages(id), client.routines(id)]);
+      const [msgs, rts, task, cmds] = await Promise.all([
+        client.messages(id),
+        client.routines(id),
+        client.goal(id),
+        client.commands(),
+      ]);
       if (cancelled) return;
+      setGoal(task);
+      setCommands(cmds);
       setMessages(msgs);
       setEvents(all);
       setRoutines(rts);
@@ -177,6 +191,9 @@ export function Chat(props: {
         }
         case "routines_changed":
           if (e.agent_id === id) void client.routines(id).then(setRoutines, () => undefined);
+          break;
+        case "goal_changed":
+          if (e.agent_id === id) void client.goal(id).then(setGoal, () => undefined);
           break;
         default:
           break;
@@ -294,6 +311,20 @@ export function Chat(props: {
             <h1>{agent.name}</h1>
             <TagChips tags={agent.tags} />
             <ModelChip agent={agent} />
+            {goal && (
+              <span class="tag-chip task-chip" title={goal.goal}>
+                <Goal size={12} />
+                Task · step {goal.continuations + 1}
+                <button
+                  type="button"
+                  aria-label="Clear the task"
+                  title="Clear the task"
+                  onClick={() => void run(() => client.clearGoal(id))}
+                >
+                  <X size={12} />
+                </button>
+              </span>
+            )}
           </div>
           <span class={`chat-sub p-${status.presence}`} title={problem?.reason}>
             <span class="dot" />
@@ -424,6 +455,8 @@ export function Chat(props: {
         }}
         extra={<ContextMeter agent={agent} />}
         upload={(file) => client.upload(id, file)}
+        commands={commands}
+        setTask={(text) => client.setGoal(id, text)}
       />
       {trace && (
         <TraceDialog
@@ -1113,6 +1146,10 @@ export function Composer(props: {
   upload?: (file: File) => Promise<Upload>;
   /** Agents `@` offers to name; without them typing `@` opens nothing. */
   mentions?: Agent[];
+  /** The operator's slash commands; with `setTask`, `/` at the start opens the command menu. */
+  commands?: SlashCommand[];
+  /** Gives the agent a task with a goal (`/task`, and commands that run as one). */
+  setTask?: (goal: string) => Promise<unknown>;
 }): JSX.Element {
   const { run } = useApp();
   const [text, setTextNow] = useState(() => drafts.get(props.chat) ?? "");
@@ -1124,6 +1161,18 @@ export function Composer(props: {
   const options = pick
     ? (props.mentions ?? []).filter((a) => a.name.toLowerCase().startsWith(pick.query)).slice(0, 8)
     : [];
+  const [cmd, setCmd] = useState<{ query: string; n: number } | null>(null);
+  const commandOptions = cmd ? matchCommands(props.commands ?? [], cmd.query) : [];
+  const chooseCommand = (c: SlashCommand): void => {
+    const el = ref.current;
+    if (!el) return;
+    const end = c.name.length + 2;
+    setText(`/${c.name} ${text.slice(el.selectionStart).trimStart()}`);
+    setCmd(null);
+    requestAnimationFrame(() => {
+      el.setSelectionRange(end, end);
+    });
+  };
   const choose = (agent: Agent): void => {
     const el = ref.current;
     if (!el || !pick) return;
@@ -1149,6 +1198,7 @@ export function Composer(props: {
     setFiles([]);
     setTextNow(drafts.get(props.chat) ?? "");
     setPick(null);
+    setCmd(null);
   }, [props.chat]);
   useEffect(() => {
     if (!canAttach) return;
@@ -1176,6 +1226,8 @@ export function Composer(props: {
     if (sending) return;
     setSending(true);
     const ok = await run(async () => {
+      const command = props.setTask ? expandCommand(body, props.commands ?? []) : null;
+      if (command?.asTask && !command.body) throw new Error(`Write a goal after /${command.name}`);
       const big = files.find((f) => f.size > MAX_UPLOAD);
       if (big) throw new Error(`${big.name} is larger than 25 MB`);
       const lines: string[] = [];
@@ -1186,7 +1238,9 @@ export function Composer(props: {
         if (image) previews.set(`${props.chat}/${done.path}`, URL.createObjectURL(file));
         lines.push(`Attached: ${done.path} (${image ? "image" : "file"}, ${fileSize(done.size)})`);
       }
-      return props.send([body, ...lines].filter(Boolean).join("\n"), now);
+      const out = [command ? command.body : body, ...lines].filter(Boolean).join("\n");
+      if (command?.asTask) return props.setTask?.(out);
+      return props.send(out, now);
     });
     setSending(false);
     if (ok) {
@@ -1204,6 +1258,24 @@ export function Composer(props: {
         void send();
       }}
     >
+      {cmd && commandOptions.length > 0 && (
+        <ul class="mention-pick" role="listbox" aria-label="Commands">
+          {commandOptions.map((c, i) => (
+            <li
+              key={c.name}
+              role="option"
+              aria-selected={i === cmd.n % commandOptions.length}
+              onMouseDown={(e) => {
+                e.preventDefault();
+                chooseCommand(c);
+              }}
+            >
+              <span class="command-name">/{c.name}</span>
+              <span class="muted">{c.description}</span>
+            </li>
+          ))}
+        </ul>
+      )}
       {pick && options.length > 0 && (
         <ul class="mention-pick" role="listbox" aria-label="Agents">
           {options.map((a, i) => (
@@ -1269,13 +1341,17 @@ export function Composer(props: {
         rows={1}
         value={text}
         placeholder={props.placeholder}
-        aria-expanded={options.length > 0}
+        aria-expanded={options.length > 0 || commandOptions.length > 0}
         onInput={(e) => {
           const { value, selectionStart } = e.currentTarget;
           setText(value);
           if (props.mentions) {
             const found = mentionQuery(value, selectionStart);
             setPick(found && { ...found, n: 0 });
+          }
+          if (props.setTask) {
+            const query = commandQuery(value, selectionStart);
+            setCmd(query === null ? null : { query, n: 0 });
           }
         }}
         onPaste={(e) => {
@@ -1287,6 +1363,17 @@ export function Composer(props: {
           attach(images);
         }}
         onKeyDown={(e) => {
+          const command = cmd && commandOptions[cmd.n % commandOptions.length];
+          if (cmd && command && !e.isComposing) {
+            const n = commandOptions.length;
+            const step = { ArrowDown: 1, ArrowUp: n - 1 }[e.key];
+            if (step !== undefined) setCmd({ ...cmd, n: (cmd.n + step) % n });
+            else if (e.key === "Enter" || e.key === "Tab") chooseCommand(command);
+            else if (e.key === "Escape") setCmd(null);
+            else return;
+            e.preventDefault();
+            return;
+          }
           const chosen = pick && options[pick.n % options.length];
           if (pick && chosen && !e.isComposing) {
             const step = { ArrowDown: 1, ArrowUp: options.length - 1 }[e.key];

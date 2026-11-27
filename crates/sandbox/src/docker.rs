@@ -68,8 +68,18 @@ fn cli_tag(owner: &str, base_id: &str, packages: &[String]) -> String {
 /// `base`); snapshot and archive containers keep their root filesystem. `ids`: (the image id it
 /// runs, the id `wanted` names now) when the names match, so a rebuilt image counts as new.
 fn stale(current: &str, wanted: Option<&str>, base: &str, ids: Option<(&str, &str)>) -> bool {
-    let built = current == base || current.starts_with(CLI_TAG_PREFIX);
+    // Any tag of the base: the app pins the runner to its own version, so an update changes it.
+    let built = repository(current) == repository(base) || current.starts_with(CLI_TAG_PREFIX);
     built && (current != wanted.unwrap_or(base) || ids.is_some_and(|(have, want)| have != want))
+}
+
+/// `ghcr.io/a/b` of `ghcr.io/a/b:tag`; a registry's port is not a tag.
+fn repository(image: &str) -> &str {
+    let image = image.split('@').next().unwrap_or(image);
+    match image.rfind(':') {
+        Some(i) if !image[i..].contains('/') => &image[..i],
+        _ => image,
+    }
 }
 
 /// Dockerfile installing validated `packages` as root, then back to the base image's user.
@@ -1186,7 +1196,8 @@ mod tests {
         for (current, wanted, expected) in [
             ("ferrobot-snapshot:x-1", Some(new), false),
             ("ferrobot-archive:ada", Some(new), false),
-            ("ferrobot-runner:0.1", Some(new), false),
+            ("ferrobot-runner:0.1", Some(new), true),
+            ("example/runner:1", Some(new), false),
             (base, Some(new), true),
             (old, Some(new), true),
             (old, None, true),
@@ -1210,6 +1221,34 @@ mod tests {
             Some(("sha256:same", "sha256:same"))
         ));
         assert!(!stale("ferrobot-snapshot:x-1", None, base, rebuilt));
+
+        // The app's runner is pinned to its version: an update leaves older tags behind.
+        let app = "ghcr.io/example/ferrobot-runner:0.1.11";
+        assert!(stale(
+            "ghcr.io/example/ferrobot-runner:0.1.9",
+            None,
+            app,
+            None
+        ));
+        assert!(stale(
+            "ghcr.io/example/ferrobot-runner:0.1.9",
+            Some(new),
+            app,
+            None
+        ));
+        assert!(!stale(app, None, app, None));
+        assert!(!stale(
+            "ghcr.io/example/ferrobot-snapshot:x",
+            None,
+            app,
+            None
+        ));
+        assert_eq!(
+            repository("localhost:5000/runner:dev"),
+            "localhost:5000/runner"
+        );
+        assert_eq!(repository("localhost:5000/runner"), "localhost:5000/runner");
+        assert_eq!(repository("runner@sha256:abc"), "runner");
     }
 
     #[test]

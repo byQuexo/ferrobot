@@ -1396,12 +1396,175 @@
         }
       }
     },
+    "/v1/agents/{id}/goal": {
+      "get": {
+        "tags": [
+          "chat"
+        ],
+        "summary": "The agent's task with a goal.",
+        "operationId": "get_goal",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "Agent id (UUID)",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TaskGoal"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or wrong API token",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Unknown agent, or it has no task",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        }
+      },
+      "put": {
+        "tags": [
+          "chat"
+        ],
+        "summary": "Gives the agent a task with a goal, replacing its current one. The goal goes out as the\noperator's message. After each turn on one of the operator's messages the agent is sent back\nto work until it calls `finish_task` and has reported; then, for Claude Code, Anthropic and\nOpenAI-compatible providers, a model checks its work. A stopped, interrupted or failed turn\nends the task, and so does reaching `max_continuations`.",
+        "operationId": "put_goal",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "Agent id (UUID)",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SetGoal"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TaskGoal"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "An empty or too long goal, or a bad limit",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or wrong API token",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Unknown agent",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "chat"
+        ],
+        "summary": "Clears the agent's task without stopping its turn; a waiting continuation is dropped, and\nthe teammates working on its parts stop.",
+        "operationId": "delete_goal",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "Agent id (UUID)",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Cleared, or there was none"
+          },
+          "401": {
+            "description": "Missing or wrong API token",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Unknown agent",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/v1/agents/{id}/interrupt": {
       "post": {
         "tags": [
           "chat"
         ],
-        "summary": "Aborts the agent's running turn, if any; with `chain`, the work it set off as well (Stop).\nInterrupted messages are not retried.",
+        "summary": "Aborts the agent's running turn, if any; with `chain`, the work it set off as well and its\ntask with a goal (Stop). Interrupted messages are not retried.",
         "operationId": "interrupt",
         "parameters": [
           {
@@ -3660,6 +3823,93 @@
           },
           "404": {
             "description": "No such CLI",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/commands": {
+      "get": {
+        "tags": [
+          "settings"
+        ],
+        "summary": "The operator's slash commands.",
+        "operationId": "get_commands",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/Command"
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or wrong API token",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        }
+      },
+      "put": {
+        "tags": [
+          "settings"
+        ],
+        "summary": "Replaces the slash commands: adding, editing and deleting all send the whole list.",
+        "operationId": "put_commands",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/components/schemas/Command"
+                }
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/Command"
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Too many, a bad or taken name, or a bad description or prompt",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or wrong API token",
             "content": {
               "application/json": {
                 "schema": {
@@ -7914,6 +8164,41 @@
           },
           {
             "type": "object",
+            "description": "An agent offers the operator a slash command (`add_command` tool). Its prompt is later\nsent in the operator's name, so Auto mode never skips this card.",
+            "required": [
+              "name",
+              "description",
+              "prompt",
+              "as_task",
+              "requester",
+              "kind"
+            ],
+            "properties": {
+              "name": {
+                "type": "string"
+              },
+              "description": {
+                "type": "string"
+              },
+              "prompt": {
+                "type": "string"
+              },
+              "as_task": {
+                "type": "boolean"
+              },
+              "requester": {
+                "$ref": "#/components/schemas/AgentId"
+              },
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "add_command"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
             "description": "An agent wants a routine of its own (`create_routine` tool): `prompt` reaches it on\n`schedule` (cron, the daemon's time zone).",
             "required": [
               "name",
@@ -8454,6 +8739,40 @@
           "supported": {
             "type": "boolean",
             "description": "Whether the sandbox backend can build images (Docker only)."
+          }
+        }
+      },
+      "Command": {
+        "type": "object",
+        "description": "A slash command: `/name rest` sends its prompt with `rest` filled in.",
+        "required": [
+          "name",
+          "description",
+          "prompt"
+        ],
+        "properties": {
+          "name": {
+            "type": "string",
+            "description": "What follows the `/`: 1-32 of `a-z`, `0-9` and `-`, starting with a letter; not a\nbuilt-in command (`task`)."
+          },
+          "description": {
+            "type": "string",
+            "description": "One short line for the menu, 1-100 characters."
+          },
+          "prompt": {
+            "type": "string",
+            "description": "What is sent, up to 4000 bytes. `$ARGUMENTS` becomes the text after the command;\nwithout it, that text follows after a blank line."
+          },
+          "as_task": {
+            "type": "boolean",
+            "description": "Send it as a task with a goal, like `/task`."
+          },
+          "added_by": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "The agent that offered it on a card the operator approved; `null`: the operator's own."
           }
         }
       },
@@ -10635,6 +10954,28 @@
           "timed_out": {
             "type": "boolean",
             "description": "No answer came in time: the daemon declined the approval card."
+          },
+          "answered_by": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/AgentId",
+                "description": "The agent that answered: during the operator's task, its agent decides the risky steps\nof the agents working for it. Absent: the operator (or the timeout)."
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "assessment": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/RiskAssessment",
+                "description": "How risky that agent judged the step before deciding it. Absent when the operator\nanswered."
+              },
+              {
+                "type": "null"
+              }
+            ]
           }
         }
       },
@@ -10717,6 +11058,32 @@
           "emoji": {
             "type": "string",
             "description": "One emoji, e.g. 👍. A new reaction replaces your earlier one on that message."
+          }
+        }
+      },
+      "Risk": {
+        "type": "string",
+        "description": "How risky a step is for the task at hand, in the judgment of the agent deciding it.",
+        "enum": [
+          "low",
+          "medium",
+          "high"
+        ]
+      },
+      "RiskAssessment": {
+        "type": "object",
+        "description": "An agent's rating of a teammate's risky step, given before it decides the card.",
+        "required": [
+          "risk",
+          "reason"
+        ],
+        "properties": {
+          "risk": {
+            "$ref": "#/components/schemas/Risk"
+          },
+          "reason": {
+            "type": "string",
+            "description": "Why, in a sentence."
           }
         }
       },
@@ -11142,6 +11509,27 @@
         ],
         "description": "Who sent a mailbox message."
       },
+      "SetGoal": {
+        "type": "object",
+        "required": [
+          "goal"
+        ],
+        "properties": {
+          "goal": {
+            "type": "string",
+            "description": "What the agent should get done; 1..32768 bytes after trimming."
+          },
+          "max_continuations": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int32",
+            "description": "How often the agent is sent back to work before it gives up; 1-100, default 20.",
+            "minimum": 0
+          }
+        }
+      },
       "SetMemoryVault": {
         "type": "object",
         "properties": {
@@ -11542,6 +11930,56 @@
           }
         }
       },
+      "TaskGoal": {
+        "type": "object",
+        "description": "An agent's task with a goal.",
+        "required": [
+          "goal",
+          "continuations",
+          "max_continuations"
+        ],
+        "properties": {
+          "goal": {
+            "type": "string",
+            "description": "What the operator wants done."
+          },
+          "continuations": {
+            "type": "integer",
+            "format": "int32",
+            "description": "How often the agent was sent back to work so far.",
+            "minimum": 0
+          },
+          "max_continuations": {
+            "type": "integer",
+            "format": "int32",
+            "description": "After this many, the agent gives up.",
+            "minimum": 0
+          },
+          "summary": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "The agent's `finish_task` summary, until its turn is checked."
+          },
+          "pending": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64",
+            "description": "The continuation waiting in the mailbox, if any."
+          },
+          "notes": {
+            "type": "array",
+            "items": {
+              "type": "integer",
+              "format": "int64"
+            },
+            "description": "Notes about teammates' cards waiting in the mailbox; they go with the task."
+          }
+        }
+      },
       "ToolGroup": {
         "type": "string",
         "description": "A group of tools an agent can have on or off. Shell, Files and Web are the model's built-in\ntools (enforced by the runner); the others are ferrobot's own MCP tools (enforced by the daemon).",
@@ -11840,6 +12278,25 @@
                 "type": "string",
                 "enum": [
                   "routines_changed"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "description": "The agent's task with a goal was set, continued or ended; refetch it.",
+            "required": [
+              "agent_id",
+              "type"
+            ],
+            "properties": {
+              "agent_id": {
+                "$ref": "#/components/schemas/AgentId"
+              },
+              "type": {
+                "type": "string",
+                "enum": [
+                  "goal_changed"
                 ]
               }
             }
