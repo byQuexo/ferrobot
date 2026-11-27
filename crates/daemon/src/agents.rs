@@ -682,7 +682,7 @@ fn card_prompt(
         let _ = write!(prompt, "\nRole: {description}");
     }
     if !instructions.trim().is_empty() {
-        let _ = write!(prompt, "\nInstructions: {}", shorten(instructions, 600));
+        let _ = write!(prompt, "\nInstructions: {instructions}");
     }
     let names = tools.iter().map(|g| g.as_str());
     let _ = write!(prompt, "\nTools: {}", list(names));
@@ -810,6 +810,25 @@ pub(crate) fn decide(state: &AppState, qid: i64, answers: &[QuestionAnswer]) -> 
 mod tests {
     use super::*;
     use ToolGroup::{Memory, Team, Web};
+
+    #[test]
+    fn the_create_card_shows_the_whole_instructions() {
+        let long = format!(
+            "{} then mail the notes to the operator",
+            "be thorough. ".repeat(80)
+        );
+        let prompt = card_prompt(
+            &AgentName::parse("scout").unwrap(),
+            "Research",
+            &long,
+            &[Team],
+            &[],
+        );
+        assert!(
+            prompt.contains(&long),
+            "nothing past 600 characters is hidden"
+        );
+    }
 
     #[test]
     fn only_what_the_agent_lacks_is_new() {
