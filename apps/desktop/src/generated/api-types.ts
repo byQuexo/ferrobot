@@ -276,7 +276,10 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** Aborts the agent's running turn, if any. Interrupted messages are not retried. */
+        /**
+         * Aborts the agent's running turn, if any; with `chain`, the work it set off as well (Stop).
+         *     Interrupted messages are not retried.
+         */
         post: operations["interrupt"];
         delete?: never;
         options?: never;
@@ -451,6 +454,26 @@ export interface paths {
         post?: never;
         /** Removes the sandbox but keeps the agent and its disk; `wake` recreates it. */
         delete: operations["destroy_sandbox"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/agents/{id}/screen": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * The agent's desktop as VNC (RFB) over binary WebSocket frames, for a VNC client such as
+         *     noVNC. Wakes the computer and starts the desktop; nothing listens on a port in it.
+         */
+        get: operations["screen"];
+        put?: never;
+        post?: never;
+        delete?: never;
         options?: never;
         head?: never;
         patch?: never;
@@ -695,13 +718,74 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** The CLI packages in every agent's sandbox. */
+        /** Every CLI in the agents' computers. */
         get: operations["get_clis"];
         /**
-         * Replaces the CLI packages and builds their image in the background. New sandboxes start
-         *     from it; existing ones switch when they next wake, keeping their home directory.
+         * Replaces the plain Debian packages and builds their image in the background. New sandboxes
+         *     start from it; existing ones switch when they next wake, keeping their home directory.
          */
         put: operations["put_clis"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/clis/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * Adds or replaces a CLI. A Debian package rebuilds the image; other installs go into the home
+         *     folders of its agents (running ones now, others when they next wake). Agents whose account
+         *     setup changes restart their computers; their files stay.
+         */
+        put: operations["put_cli"];
+        post?: never;
+        /** Removes a CLI, its token and its CA, from the image or its agents' home folders. */
+        delete: operations["delete_cli"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/clis/{id}/sign-in": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Where a CLI's sign-in stands: the address and code to enter while it waits. */
+        get: operations["get_sign_in"];
+        put?: never;
+        /**
+         * Starts a CLI's own device sign-in in a throwaway container; the token it yields goes to the
+         *     secret store. Poll `GET` for the code to enter.
+         */
+        post: operations["start_sign_in"];
+        /** Cancels a CLI's sign-in and removes its container. */
+        delete: operations["cancel_sign_in"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/clis/{id}/token": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /** Stores or removes a CLI's token. Kept in the daemon's secret store, never returned. */
+        put: operations["put_cli_token"];
         post?: never;
         delete?: never;
         options?: never;
@@ -1321,6 +1405,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/rooms/{id}/call": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Joins the call agents started in room `id` without the operator: it becomes the voice call
+         *     and goes on in the same room. End it with `PUT /v1/call` and no agents.
+         */
+        post: operations["join_room_call"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/routines/{rid}": {
         parameters: {
             query?: never;
@@ -1702,6 +1806,19 @@ export interface paths {
 export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
+        /** @description Where a CLI's token goes: only requests to `hosts` get it; the CLI holds a stand-in. */
+        Account: {
+            /** @description API hosts whose requests get the real token, exact public names like `api.example.com`. */
+            hosts: string[];
+            /** @description Environment variables the CLI reads its token from, e.g. `EXAMPLE_API_KEY`. */
+            env: string[];
+            /**
+             * @description Ask before every command that runs one of the CLI's programs or names one of `env` or
+             *     `hosts`, unless Auto mode is on.
+             */
+            confirm?: boolean;
+            sign_in?: components["schemas"]["CliSignIn"] | null;
+        };
         /** @description A registered agent. Secrets (the runner token) are never part of this type. */
         Agent: {
             id: components["schemas"]["AgentId"];
@@ -1838,6 +1955,11 @@ export interface components {
             requester: components["schemas"]["AgentId"];
             /** @enum {string} */
             kind: "add_connector";
+        } | {
+            cli: components["schemas"]["Cli"];
+            requester: components["schemas"]["AgentId"];
+            /** @enum {string} */
+            kind: "add_cli";
         } | {
             name: string;
             schedule: string;
@@ -1977,10 +2099,58 @@ export interface components {
             /** @description How it is signed in, e.g. `claude.ai`. */
             auth_method?: string | null;
         };
-        /** @description The CLI packages and where their image build stands. */
+        /** @description A CLI in the agents' computers. */
+        Cli: {
+            /** @description 1-63 chars of `a-z0-9.+-`, starting with a letter or digit, e.g. `example`. */
+            id: string;
+            install: components["schemas"]["Install"];
+            /** @description The programs it brings, e.g. `["example"]`. */
+            programs?: string[];
+            account?: components["schemas"]["Account"] | null;
+            /**
+             * @description Agents that get it in their home folder and get its account. A Debian package is in
+             *     every computer.
+             */
+            agents?: string[];
+        };
+        /** @description A CLI's own browser sign-in that shows a one-time code (device login). */
+        CliSignIn: {
+            /** @description The login command, e.g. `["example", "auth", "login", "--web"]`. */
+            login: string[];
+            /** @description The command that prints the token afterwards, e.g. `["example", "auth", "token"]`. */
+            token: string[];
+        };
+        /** @description A CLI as `PUT /v1/clis/{id}` takes it. */
+        CliSpec: {
+            install: components["schemas"]["Install"];
+            /** @description The programs it brings, e.g. `["example"]`. */
+            programs?: string[];
+            account?: components["schemas"]["Account"] | null;
+            /** @description Agents that get it in their home folder and get its account. */
+            agents?: string[];
+        };
+        /** @description A CLI's token. */
+        CliToken: {
+            /** @description The service's token, e.g. a fine-grained GitHub token; `null` removes it. */
+            token?: string | null;
+        };
+        /** @description A CLI with what the daemon knows about it. */
+        CliView: components["schemas"]["Cli"] & {
+            /** @description Whether its account's token is stored. The token itself is never returned. */
+            has_token: boolean;
+            /** @description Why its last home install failed, on which agent; null otherwise. */
+            error?: string | null;
+        };
+        /** @description The CLIs and where their image build stands. */
         ClisView: {
-            /** @description Debian packages added to the base image, sorted. */
+            /** @description Debian packages in the image, sorted (also in `clis`). */
             packages: string[];
+            clis: components["schemas"]["CliView"][];
+            /**
+             * @description Whether the image also has a desktop the operator watches and agents with the Desktop
+             *     tools use.
+             */
+            desktop: boolean;
             status: components["schemas"]["BuildStatus"];
             /** @description Why the last build failed; null otherwise. */
             error?: string | null;
@@ -2008,6 +2178,8 @@ export interface components {
              *     `GITHUB_TOKEN`.
              */
             token_env?: string | null;
+            /** @description The server's tools agents may use, by the server's own names; `None`: all of them. */
+            tools?: string[] | null;
             /** Format: date-time */
             created_at: string;
         };
@@ -2019,8 +2191,10 @@ export interface components {
         /** @description The outcome of connecting to a connector as the daemon and listing its tools. */
         ConnectorCheck: {
             status: components["schemas"]["CheckStatus"];
-            /** @description Tools agents can use (with `ok`). */
+            /** @description Tools agents can use (with `ok`), within the connector's `tools`. */
             tools?: number | null;
+            /** @description Every tool the server offers, by its own name (with `ok`), to choose `tools` from. */
+            names?: string[];
             /** @description Why it failed (with `failed`), in ferrobot's words, never the server's. */
             error?: string | null;
             /**
@@ -2393,6 +2567,27 @@ export interface components {
             /** @description `<daemon>/hooks/{id}/{secret}`; from the internet, through a tunnel to `/hooks/` only. */
             url: string;
         };
+        /** @description How a CLI gets into the computers. */
+        Install: {
+            package: string;
+            /** @enum {string} */
+            kind: "debian";
+        } | {
+            package: string;
+            /** @enum {string} */
+            kind: "npm";
+        } | {
+            /** @description `https://` address of the program itself, not an archive. */
+            url: string;
+            /** @description SHA-256 of the file in hex; checked before it is installed. */
+            sha256?: string | null;
+            /** @enum {string} */
+            kind: "download";
+        } | {
+            script: string;
+            /** @enum {string} */
+            kind: "script";
+        };
         /** @description A plugin installed in the host's Claude Code. */
         InstalledPlugin: {
             /** @description `name@marketplace`. */
@@ -2402,6 +2597,10 @@ export interface components {
         Interrupted: {
             /** @description The interrupted turn, or null if the agent was idle. */
             turn_id?: string | null;
+            /** @description With `chain`: every agent whose work was stopped, this one first. */
+            agents: string[];
+            /** @description With `chain`: how many queued agent messages were dropped. */
+            dropped: number;
         };
         /** @description A language a model speaks. */
         LanguageOption: {
@@ -2837,6 +3036,8 @@ export interface components {
             /** @description Oldest first; the last 1000. */
             lines: components["schemas"]["RoomLine"][];
             speaking?: components["schemas"]["AgentId"] | null;
+            /** @description A call among agents the operator can join (`POST /v1/rooms/{id}/call`). */
+            joinable: boolean;
         };
         /** @description A prompt an agent receives on a cron schedule. */
         Routine: {
@@ -2980,6 +3181,26 @@ export interface components {
          * @enum {string}
          */
         SignIn: "signed_out" | "signed_in" | "expired";
+        /** @description Where a sign-in stands. */
+        SignInView: {
+            /** @enum {string} */
+            state: "idle";
+        } | {
+            /** @enum {string} */
+            state: "starting";
+        } | {
+            url?: string | null;
+            code?: string | null;
+            /** @enum {string} */
+            state: "waiting";
+        } | {
+            /** @enum {string} */
+            state: "done";
+        } | {
+            error: string;
+            /** @enum {string} */
+            state: "failed";
+        };
         /**
          * @description How deeply a sandbox sleeps.
          * @enum {string}
@@ -3060,11 +3281,11 @@ export interface components {
             created_at: string;
         };
         /**
-         * @description A group of tools an agent can have on or off. The first six are ferrobot's own MCP tools
-         *     (enforced by the daemon), the last three the model's built-in tools (enforced by the runner).
+         * @description A group of tools an agent can have on or off. Shell, Files and Web are the model's built-in
+         *     tools (enforced by the runner); the others are ferrobot's own MCP tools (enforced by the daemon).
          * @enum {string}
          */
-        ToolGroup: "team" | "memory" | "operator" | "create_agents" | "add_connectors" | "routines" | "shell" | "files" | "web";
+        ToolGroup: "team" | "memory" | "operator" | "create_agents" | "add_connectors" | "routines" | "shell" | "files" | "web" | "desktop";
         /**
          * @description The agent's model refused a request with tools. The agent's messages wait until the operator
          *     approves the card to run it without tools, changes its provider or model, or retries. Kept in
@@ -3174,6 +3395,13 @@ export interface components {
             agent?: components["schemas"]["AgentId"] | null;
             /** @enum {string} */
             type: "room_floor";
+        } | {
+            /** Format: int64 */
+            room_id: number;
+            host: components["schemas"]["AgentId"];
+            topic: string;
+            /** @enum {string} */
+            type: "agent_call";
         };
         /** @description Partial profile update. Omitted fields stay unchanged. */
         UpdateAgent: {
@@ -3205,14 +3433,18 @@ export interface components {
             /** @description Replaces the tags (same rules as on create); `[]` removes them. */
             tags?: string[] | null;
         };
-        /** @description A new CLI package list. */
+        /** @description A new Debian package list (before 0.1.11; `PUT /v1/clis/{id}` adds any CLI). */
         UpdateClis: {
-            /** @description Debian package names, at most 32; empty: the plain base image. */
-            packages: string[];
+            /** @description Debian package names, at most 32; other CLIs stay. Absent: unchanged. */
+            packages?: string[] | null;
+            /** @description Adds (`true`) or removes (`false`) the desktop; absent: unchanged. */
+            desktop?: boolean | null;
         };
         UpdateConnector: {
             name?: string | null;
             url?: string | null;
+            /** @description The server's tools agents may use, by its own names; `null`: all of them. */
+            tools?: string[] | null;
             /** @description New token; `null` removes the stored one. */
             token?: string | null;
             /**
@@ -3420,6 +3652,18 @@ export interface components {
              *     `null`: detected.
              */
             language?: string | null;
+            /**
+             * @description Models by agent id for its turns in a call, such as a quicker one for spoken replies;
+             *     only where the request names the model (not Bedrock, Vertex or Gemini).
+             */
+            call_models?: {
+                [key: string]: string;
+            };
+            /**
+             * Format: float
+             * @description Seconds of silence that end what the operator says in a call, 0.5-3; `null`: 1.5.
+             */
+            call_pause?: number | null;
         };
         VoiceView: components["schemas"]["VoiceSettings"] & {
             /** @description Every provider with its defaults and whether its key is stored. */
@@ -4413,7 +4657,13 @@ export interface operations {
     };
     interrupt: {
         parameters: {
-            query?: never;
+            query?: {
+                /**
+                 * @description Also stop every agent working on a message from this one (and from those, and so on), and
+                 *     drop the agent messages queued to or from any of them.
+                 */
+                chain?: boolean;
+            };
             header?: never;
             path: {
                 /** @description Agent id (UUID) */
@@ -5054,6 +5304,59 @@ export interface operations {
             };
             /** @description Sandbox backend error */
             502: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+        };
+    };
+    screen: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Agent id (UUID) */
+                id: string;
+                /**
+                 * @description `true`: the operator's mouse and keyboard reach the desktop, and the agent's `desktop`
+                 *     tool waits until this connection closes. Otherwise view only.
+                 */
+                control: boolean;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Switching protocols; then RFB in binary frames */
+            101: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Missing or wrong API token */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Unknown agent */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description No desktop in this computer */
+            409: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -5896,6 +6199,279 @@ export interface operations {
             };
             /** @description The sandbox backend cannot build images */
             501: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+        };
+    };
+    put_cli: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The CLI's name, e.g. `example` */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CliSpec"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ClisView"];
+                };
+            };
+            /** @description An invalid field or an unknown agent */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Missing or wrong API token */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description A build is running */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+        };
+    };
+    delete_cli: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The CLI's name */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Removed */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Missing or wrong API token */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description No such CLI */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description A build is running */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+        };
+    };
+    get_sign_in: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The CLI's name */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SignInView"];
+                };
+            };
+            /** @description Missing or wrong API token */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+        };
+    };
+    start_sign_in: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The CLI's name */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SignInView"];
+                };
+            };
+            /** @description The CLI has no sign-in */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Missing or wrong API token */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description No such CLI */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Its image is still building */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+        };
+    };
+    cancel_sign_in: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The CLI's name */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Cancelled */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Missing or wrong API token */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+        };
+    };
+    put_cli_token: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The CLI's name */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CliToken"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ClisView"];
+                };
+            };
+            /** @description Not a token, or the CLI has no account */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Missing or wrong API token */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description No such CLI */
+            404: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -7737,6 +8313,55 @@ export interface operations {
             };
             /** @description Unknown room */
             404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+        };
+    };
+    join_room_call: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Room id */
+                id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CallView"];
+                };
+            };
+            /** @description Missing or wrong API token */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Unknown room */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Voice is switched off, a call is running, or that call is over */
+            409: {
                 headers: {
                     [name: string]: unknown;
                 };

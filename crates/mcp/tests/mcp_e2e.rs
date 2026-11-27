@@ -119,6 +119,7 @@ async fn tools_act_as_the_authenticated_agent() {
             "list_agents",
             "list_guides",
             "list_tasks",
+            "propose_cli",
             "react",
             "read_guide",
             "read_mailbox",
@@ -139,6 +140,13 @@ async fn tools_act_as_the_authenticated_agent() {
         .map(|a| a["name"].as_str().unwrap().to_owned())
         .collect();
     assert_eq!(me, ["alice"]);
+    for a in list["agents"].as_array().unwrap() {
+        assert_eq!(
+            a.get("instructions").is_some(),
+            a["is_you"] == true,
+            "only one's own instructions: {a}"
+        );
+    }
 
     let sent = call(
         &alice,
@@ -287,16 +295,16 @@ async fn tools_act_as_the_authenticated_agent() {
         ]
     );
     assert_eq!(hits["memories"][1]["written_by"], "alice");
-    let planted = call(
+    // Agents keep each other's global entries current.
+    call(
         &bob,
         "remember",
-        json!({"key": "home", "content": "Operator flies from Paris", "global": true}),
+        json!({"key": "home", "content": "Operator flies from Hamburg or Paris", "global": true}),
     )
-    .await;
-    assert!(
-        planted.is_err(),
-        "bob cannot overwrite alice's global memory"
-    );
+    .await
+    .unwrap();
+    let global = store.recall_global("paris".into(), 5).await.unwrap();
+    assert_eq!(global[0].author, Some(ids[1]), "bob wrote it last");
     let limited = call(&bob, "recall", json!({"query": "hamburg", "limit": 1}))
         .await
         .unwrap();

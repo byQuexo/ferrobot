@@ -1,4 +1,5 @@
 import type { Agent, Presence } from "../api.ts";
+import { mentionsAsText } from "./mentions.ts";
 
 export function presenceLabel(p: Presence): string {
   switch (p) {
@@ -19,6 +20,12 @@ export function credentialLabel(kind: "missing" | "rejected"): string {
   return kind === "missing" ? "Key missing" : "Key rejected";
 }
 
+export const errorText = (err: unknown): string =>
+  err instanceof Error ? err.message : String(err);
+
+export const plural = (n: number, word: string): string =>
+  `${String(n)} ${word}${n === 1 ? "" : "s"}`;
+
 export const TOOLS_UNSUPPORTED = "Model can't use tools";
 
 /** The agent's status dot and label: a model credential or tools problem outranks presence. */
@@ -37,7 +44,7 @@ export function toolsSummary(on: number, total: number, connectors: number): str
   const tools =
     on >= total ? "All tools" : on === 0 ? "No tools" : `${String(on)} of ${String(total)} tools`;
   if (!connectors) return tools;
-  return `${tools} + ${String(connectors)} ${connectors === 1 ? "connector" : "connectors"}`;
+  return `${tools} + ${plural(connectors, "connector")}`;
 }
 
 /** "just now", "5 min ago", "3 h ago", "2 d ago"; future times as "in 5 min". */
@@ -89,6 +96,7 @@ export function rowLine(
     "presence" | "credential_error" | "tools_unsupported" | "waiting" | "last_reply" | "description"
   >,
   now: number = Date.now(),
+  nameOf: (id: string) => string | undefined = () => undefined,
 ): { text: string; tone: "bad" | "wait" | ""; time: string } {
   if (a.credential_error || a.tools_unsupported || a.presence === "error")
     return { text: statusOf(a).label, tone: "bad", time: "" };
@@ -101,7 +109,7 @@ export function rowLine(
   if (a.last_reply?.text) {
     const time = relativeTime(a.last_reply.at, now).replace(/ ago$/, "");
     // A preview, not Markdown: drop heading, emphasis, quote and code marks.
-    const text = a.last_reply.text
+    const text = mentionsAsText(a.last_reply.text, nameOf)
       .replace(/[#*`>]+/g, "")
       .replace(/\s+/g, " ")
       .trim();
@@ -112,7 +120,7 @@ export function rowLine(
 
 /** A finished run of tool calls in the chat, e.g. "3 steps · 40 s". */
 export function stepsLabel(count: number, seconds: number): string {
-  const steps = `${String(count)} ${count === 1 ? "step" : "steps"}`;
+  const steps = plural(count, "step");
   return seconds >= 1 ? `${steps} · ${duration(Math.round(seconds))}` : steps;
 }
 
@@ -135,6 +143,17 @@ export function computerSummary(
 }
 
 /** What a running tool call is doing, in a few words, for the chat. */
+function desktopLabel(action: string): string {
+  const labels: Record<string, string> = {
+    screenshot: "Looking at its screen",
+    type: "Typing on its screen",
+    key: "Pressing keys on its screen",
+    scroll: "Scrolling on its screen",
+    move: "Moving the pointer on its screen",
+  };
+  return labels[action] ?? "Clicking on its screen";
+}
+
 export function stepLabel(
   name: string,
   input: unknown,
@@ -160,6 +179,7 @@ export function stepLabel(
       remember: "Taking notes",
       recall: "Looking through notes",
       forget: "Tidying up notes",
+      desktop: desktopLabel(str("action")),
     };
     return labels[tool] ?? `Using ${tool}`;
   }
@@ -169,8 +189,12 @@ export function stepLabel(
   if (said) return short(said.charAt(0).toUpperCase() + said.slice(1));
   switch (tool) {
     case "Bash":
-    case "bash":
-      return "Working on its computer";
+    case "bash": {
+      const command = str("command").trim().split("\n")[0] ?? "";
+      return command ? `Running ${short(command)}` : "Working on its computer";
+    }
+    case "desktop":
+      return desktopLabel(str("action"));
     case "Read":
     case "read_file":
       return `Reading ${file(str("file_path") || str("path"))}`;
@@ -207,4 +231,13 @@ export function linkLabel(url: string): string {
   const keys = params.slice(0, 2).map((p) => p.replace(/=.*/s, "=…"));
   const query = keys.length ? `?${keys.join("&")}${params.length > 2 ? "&…" : ""}` : "";
   return `${host}${path}${query}${hash === undefined ? "" : "#…"}`;
+}
+
+/** What a Stop ended beyond the agent's own turn; empty when nothing else. */
+export function stopSummary(agents: number, dropped: number): string {
+  const parts = [
+    agents > 1 ? `${String(agents)} agents stopped` : "",
+    dropped > 0 ? `${plural(dropped, "queued message")} dropped` : "",
+  ].filter(Boolean);
+  return parts.join(", ");
 }

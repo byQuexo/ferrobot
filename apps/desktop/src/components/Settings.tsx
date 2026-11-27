@@ -14,7 +14,7 @@ import {
   Plug,
   RefreshCw,
   Stethoscope,
-  Terminal,
+  Monitor,
   Waypoints,
   Webhook,
   X,
@@ -114,9 +114,9 @@ export const SECTIONS: [SettingsSection, string, string, typeof KeyRound, string
   ],
   [
     "clis",
-    "CLIs",
-    "Command-line tools in every agent’s computer, built into one shared image.",
-    Terminal,
+    "Computers",
+    "What every agent’s computer has: a desktop and command-line tools, with accounts whose tokens stay in the daemon.",
+    Monitor,
   ],
   [
     "vault",

@@ -130,9 +130,7 @@ const MAX_EMOJI_BYTES: usize = 32;
 pub fn is_reaction(emoji: &str) -> bool {
     !emoji.is_empty()
         && emoji.len() <= MAX_EMOJI_BYTES
-        && !emoji
-            .chars()
-            .any(|c| c.is_ascii_alphanumeric() || c.is_whitespace())
+        && !emoji.chars().any(|c| c.is_ascii() || c.is_whitespace())
 }
 
 #[cfg(test)]
@@ -171,7 +169,16 @@ mod tests {
         for ok in ["👍", "❤️", "👨‍👩‍👧", "🇩🇪"] {
             assert!(is_reaction(ok), "{ok}");
         }
-        for bad in ["", "ok", "👍 👍", "1️⃣", &"👍".repeat(9)] {
+        for bad in [
+            "",
+            "ok",
+            "👍 👍",
+            "1️⃣",
+            &"👍".repeat(9),
+            "..?",
+            "👍/..",
+            "#",
+        ] {
             assert!(!is_reaction(bad), "{bad}");
         }
     }

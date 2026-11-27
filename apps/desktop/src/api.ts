@@ -19,6 +19,12 @@ export type MemoryEntry = Schemas["MemoryEntry"];
 export type Routine = Schemas["RoutineView"];
 export type RoutineRun = Schemas["RoutineRun"];
 export type SandboxInfo = Schemas["SandboxInfo"];
+export type ExecOutput = Schemas["ExecOutput"];
+export type Interrupted = Schemas["Interrupted"];
+export type Cli = Schemas["Cli"];
+export type CliSpec = Schemas["CliSpec"];
+export type CliView = Schemas["CliView"];
+export type SignInView = Schemas["SignInView"];
 export type Snapshot = Schemas["SnapshotRecord"];
 export type CreateAgent = Schemas["CreateAgent"];
 export type UpdateAgent = Schemas["UpdateAgent"];
@@ -44,13 +50,11 @@ export type DeviceCode = Schemas["DeviceCode"];
 export type LoginStatus = Schemas["LoginStatus"];
 export type ClaudeCodeStatus = Schemas["ClaudeCodeStatus"];
 export type ClaudeCodeSettings = Schemas["ClaudeCodeSettings"];
-export type Hook = Schemas["Hook"];
 export type HookEvent = Schemas["HookEvent"];
 export type InstalledPlugin = Schemas["InstalledPlugin"];
 export type OtelSettings = Schemas["OtelSettings"];
 export type OtelView = Schemas["OtelView"];
 export type WebhooksView = Schemas["WebhooksView"];
-export type IncomingWebhook = Schemas["IncomingWebhook"];
 export type IncomingWebhookCreated = Schemas["IncomingWebhookCreated"];
 export type NewIncomingWebhook = Schemas["NewIncomingWebhook"];
 export type OutgoingWebhookView = Schemas["OutgoingWebhookView"];
@@ -85,7 +89,6 @@ export type DiagnosticsLog = Schemas["DiagnosticsLog"];
 export type ClisView = Schemas["ClisView"];
 export type CallView = Schemas["CallView"];
 export type Room = Schemas["Room"];
-export type RoomLine = Schemas["RoomLine"];
 export type RoomTranscript = Schemas["RoomTranscript"];
 export type UsageGroupBy = "day" | "agent" | "provider" | "model";
 
@@ -160,7 +163,7 @@ export class DaemonClient {
   url(path: string): string {
     if (!this.#token) return `${this.base}${path}`;
     const sep = path.includes("?") ? "&" : "?";
-    return `${this.base}${path}${sep}access_token=${encodeURIComponent(this.#token)}`;
+    return `${this.base}${path}${sep}access_token=${enc(this.#token)}`;
   }
 
   health = (): Promise<Health> => this.#request("GET", "/v1/health");
@@ -233,7 +236,7 @@ export class DaemonClient {
   upload = (id: string, file: File): Promise<Upload> =>
     this.#request(
       "POST",
-      `/v1/agents/${id}/uploads?name=${encodeURIComponent(file.name)}`,
+      `/v1/agents/${id}/uploads?name=${enc(file.name)}`,
       file,
       "application/octet-stream",
     );
@@ -245,7 +248,9 @@ export class DaemonClient {
     this.#request("GET", `/v1/agents/${agent}/files/${String(file)}`);
   /** A ```html block from the chat, served by the daemon as a sandboxed page. */
   preview = (html: string): Promise<PreviewLink> => this.#request("POST", "/v1/previews", { html });
-  interrupt = (id: string): Promise<unknown> => this.#request("POST", `/v1/agents/${id}/interrupt`);
+  /** Stops the agent's turn; with `chain`, also the work it handed out (Stop). */
+  interrupt = (id: string, chain = false): Promise<Interrupted> =>
+    this.#request("POST", `/v1/agents/${id}/interrupt${chain ? "?chain=true" : ""}`);
   retry = (id: string): Promise<Agent> => this.#request("POST", `/v1/agents/${id}/retry`);
   /** The agent's next turn starts a fresh model session; the chat stays. */
   newSession = (id: string): Promise<void> => this.#request("POST", `/v1/agents/${id}/new-session`);
@@ -255,7 +260,7 @@ export class DaemonClient {
   compact = (id: string): Promise<void> => this.#request("POST", `/v1/agents/${id}/compact`);
   /** One of the agent's turns as a timeline. */
   trace = (id: string, turn: string): Promise<Trace> =>
-    this.#request("GET", `/v1/agents/${id}/turns/${encodeURIComponent(turn)}/trace`);
+    this.#request("GET", `/v1/agents/${id}/turns/${enc(turn)}/trace`);
   answerQuestion = (
     id: string,
     question: number,
@@ -294,6 +299,9 @@ export class DaemonClient {
     this.#request("POST", `/v1/agents/${id}/snapshots/${String(sid)}/restore`);
   deleteSnapshot = (id: string, sid: number): Promise<void> =>
     this.#request("DELETE", `/v1/agents/${id}/snapshots/${String(sid)}`);
+  /** Runs `cmd` (argv, no shell) in the agent's computer, waking it if it sleeps. */
+  exec = (id: string, cmd: string[], workdir?: string): Promise<ExecOutput> =>
+    this.#request("POST", `/v1/agents/${id}/exec`, { cmd, workdir });
 
   voice = (): Promise<VoiceView> => this.#request("GET", "/v1/voice");
   updateVoice = (req: UpdateVoice): Promise<VoiceView> => this.#request("PUT", "/v1/voice", req);
@@ -341,6 +349,9 @@ export class DaemonClient {
   /** Calls every member of a group; the group is the call's room. */
   callGroup = (id: number): Promise<CallView> =>
     this.#request("POST", `/v1/groups/${String(id)}/call`);
+  /** Joins a call agents started without the operator; it becomes the voice call. */
+  joinRoom = (id: number): Promise<CallView> =>
+    this.#request("POST", `/v1/rooms/${String(id)}/call`);
 
   /** `to` null means until now; `daily` adds each group's `days`. */
   usage = (
@@ -360,9 +371,12 @@ export class DaemonClient {
   /** 5-hour and weekly plan use of Claude Code and ChatGPT-signed-in Codex providers. */
   limits = (): Promise<ProviderLimits[]> => this.#request("GET", "/v1/limits");
   clis = (): Promise<ClisView> => this.#request("GET", "/v1/clis");
-  /** Saves the packages and starts building their image. */
-  updateClis = (packages: string[]): Promise<ClisView> =>
-    this.#request("PUT", "/v1/clis", { packages });
+  /** Saves the plain packages and/or the desktop and starts building their image. */
+  updateClis = (update: { packages?: string[]; desktop?: boolean }): Promise<ClisView> =>
+    this.#request("PUT", "/v1/clis", update);
+  /** The agent's desktop as VNC over a WebSocket; `control`: mouse and keyboard reach it. */
+  screenUrl = (id: string, control: boolean): string =>
+    this.url(`/v1/agents/${id}/screen${control ? "?control=true" : ""}`).replace(/^http/, "ws");
   settings = (): Promise<GeneralSettings> => this.#request("GET", "/v1/settings");
   updateSettings = (s: GeneralSettings): Promise<GeneralSettings> =>
     this.#request("PUT", "/v1/settings", s);
@@ -372,6 +386,17 @@ export class DaemonClient {
     this.#request("PUT", "/v1/discord", s);
   setDiscordToken = (token: string | null): Promise<DiscordView> =>
     this.#request("PUT", "/v1/discord/token", { token });
+  /** Adds or replaces a CLI; a Debian package rebuilds the image. */
+  putCli = (id: string, spec: CliSpec): Promise<ClisView> =>
+    this.#request("PUT", `/v1/clis/${enc(id)}`, spec);
+  deleteCli = (id: string): Promise<void> => this.#request("DELETE", `/v1/clis/${enc(id)}`);
+  setCliToken = (id: string, token: string | null): Promise<ClisView> =>
+    this.#request("PUT", `/v1/clis/${enc(id)}/token`, { token });
+  startSignIn = (id: string): Promise<SignInView> =>
+    this.#request("POST", `/v1/clis/${enc(id)}/sign-in`);
+  signIn = (id: string): Promise<SignInView> => this.#request("GET", `/v1/clis/${enc(id)}/sign-in`);
+  cancelSignIn = (id: string): Promise<void> =>
+    this.#request("DELETE", `/v1/clis/${enc(id)}/sign-in`);
   dashboards = (): Promise<Dashboard[]> => this.#request("GET", "/v1/dashboards");
   setDashboards = (list: Dashboard[]): Promise<Dashboard[]> =>
     this.#request("PUT", "/v1/dashboards", list);

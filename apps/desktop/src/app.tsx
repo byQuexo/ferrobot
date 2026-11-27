@@ -1,5 +1,6 @@
 import type { JSX } from "preact";
 import { useCallback, useEffect, useMemo, useRef, useState } from "preact/hooks";
+import { errorText } from "./lib/format.ts";
 import { loadOrder, orderAgents, pickSelection } from "./lib/order.ts";
 import { Bot, KeyRound, Plus, WifiOff } from "lucide-preact";
 
@@ -23,7 +24,7 @@ import { Settings, ShortcutList, type SettingsSection } from "./components/Setti
 import { Chat } from "./components/Chat.tsx";
 import { ConversationView, type Pair } from "./components/Conversations.tsx";
 import { InfoPanel, type InfoTab } from "./components/InfoPanel.tsx";
-import { RoomView } from "./components/Rooms.tsx";
+import { AgentCallNotice, RoomView } from "./components/Rooms.tsx";
 import { Sidebar } from "./components/Sidebar.tsx";
 import { Usage } from "./components/Usage.tsx";
 import { Welcome } from "./components/Welcome.tsx";
@@ -143,7 +144,7 @@ export function App(): JSX.Element {
       try {
         return await action();
       } catch (err) {
-        toast(err instanceof Error ? err.message : String(err));
+        toast(errorText(err));
         return undefined;
       }
     },
@@ -223,6 +224,19 @@ export function App(): JSX.Element {
     [client],
   );
   const [callState, setCallState] = useState<CallState | null>(null);
+  const [agentCall, setAgentCall] = useState<{ room: number; host: string; topic: string } | null>(
+    null,
+  );
+  useEffect(
+    () =>
+      listen((e) => {
+        if (e.type === "agent_call")
+          setAgentCall({ room: e.room_id, host: e.host, topic: e.topic });
+        else if (e.type === "room" && e.room.ended_at)
+          setAgentCall((c) => (c?.room === e.room.id ? null : c));
+      }),
+    [listen],
+  );
   useEffect(() => {
     const off = [
       call.subscribe(() => {
@@ -238,33 +252,27 @@ export function App(): JSX.Element {
     };
   }, [call]);
 
-  const openAgent = useCallback((id: string) => {
+  const closeMain = (): void => {
     setPair(null);
     setRoom(null);
     setSettings(null);
     setUsage(false);
     setBoard(null);
+  };
+  const openAgent = useCallback((id: string) => {
+    closeMain();
     setSelected(id);
   }, []);
   const openConversation = useCallback((a: string, b: string) => {
-    setSettings(null);
-    setUsage(false);
-    setRoom(null);
-    setBoard(null);
+    closeMain();
     setPair(a < b ? [a, b] : [b, a]);
   }, []);
   const openRoom = useCallback((id: number) => {
-    setSettings(null);
-    setUsage(false);
-    setPair(null);
-    setBoard(null);
+    closeMain();
     setRoom(id);
   }, []);
   const openDashboard = useCallback((index: number) => {
-    setSettings(null);
-    setUsage(false);
-    setPair(null);
-    setRoom(null);
+    closeMain();
     setBoard(index);
   }, []);
   const closeRoom = useCallback(() => {
@@ -598,6 +606,23 @@ export function App(): JSX.Element {
         >
           <ShortcutList />
         </Dialog>
+      )}
+      {agentCall && (
+        <AgentCallNotice
+          host={agents.get(agentCall.host)?.name ?? "An agent"}
+          topic={agentCall.topic}
+          onJoin={() => {
+            void call.start(agentCall.host, agentCall.room, true);
+            setAgentCall(null);
+          }}
+          onOpen={() => {
+            openRoom(agentCall.room);
+            setAgentCall(null);
+          }}
+          onDismiss={() => {
+            setAgentCall(null);
+          }}
+        />
       )}
       <div class="toasts" role="status" aria-live="polite">
         {toasts.map((t) => (

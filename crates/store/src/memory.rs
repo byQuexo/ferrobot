@@ -44,10 +44,10 @@ fn from_row(row: &Row<'_>) -> Result<MemoryEntry, StoreError> {
     })
 }
 
-/// A global memory `by` an agent may not change: someone else wrote it.
+/// A global memory `by` an agent may not change: the operator wrote it.
 fn not_yours(key: &str) -> StoreError {
     StoreError::Conflict {
-        entity: "global memory written by someone else",
+        entity: "global memory written by the operator",
         key: key.to_owned(),
     }
 }
@@ -141,7 +141,7 @@ impl Store {
     }
 
     /// [`Store::remember`] for the global memory, written `by` an agent
-    /// (`None`: the operator). Agents may only overwrite their own entries.
+    /// (`None`: the operator). Agents may overwrite any agent's entry, never the operator's.
     pub async fn remember_global(
         &self,
         key: String,
@@ -151,8 +151,8 @@ impl Store {
         self.with(move |c| {
             if let Some(v) = vault::vault(c)? {
                 let dir = vault::folder(c, &v, None)?;
-                let mine = |n: &vault::Note| by.is_none() || n.entry.author == by;
-                if vault::find(&dir, &key).is_some_and(|n| !mine(&n)) {
+                let editable = |n: &vault::Note| by.is_none() || n.entry.author.is_some();
+                if vault::find(&dir, &key).is_some_and(|n| !editable(&n)) {
                     return Err(not_yours(&key));
                 }
                 let name: Option<String> = match by {
@@ -177,7 +177,7 @@ impl Store {
                  ON CONFLICT (key) DO UPDATE SET content = excluded.content,
                                                  updated_at = excluded.updated_at,
                                                  author = excluded.author
-                 WHERE ?4 IS NULL OR global_memories.author = ?4",
+                 WHERE ?4 IS NULL OR global_memories.author IS NOT NULL",
                 params![key, content, ts, by],
             )?;
             if changed == 0 {
@@ -189,7 +189,7 @@ impl Store {
     }
 
     /// [`Store::forget`] for the global memory, `by` an agent (`None`: the
-    /// operator). Agents may only delete their own entries.
+    /// operator). Agents may delete any agent's entry, never the operator's.
     pub async fn forget_global(
         &self,
         key: String,
@@ -199,13 +199,13 @@ impl Store {
             if let Some(v) = vault::vault(c)? {
                 return match vault::find(&vault::folder(c, &v, None)?, &key) {
                     None => Ok(false),
-                    Some(n) if by.is_some() && n.entry.author != by => Err(not_yours(&key)),
+                    Some(n) if by.is_some() && n.entry.author.is_none() => Err(not_yours(&key)),
                     Some(n) => remove(&n),
                 };
             }
             let by = by.map(|a| a.to_string());
             let deleted = c.execute(
-                "DELETE FROM global_memories WHERE key = ?1 AND (?2 IS NULL OR author = ?2)",
+                "DELETE FROM global_memories WHERE key = ?1 AND (?2 IS NULL OR author IS NOT NULL)",
                 params![key, by],
             )?;
             if deleted == 0 {
@@ -235,32 +235,24 @@ impl Store {
             if let Some(v) = vault::vault(c)? {
                 return Ok(vault::search(&vault::folder(c, &v, None)?, &query, limit));
             }
-            recall_global_sql(c, &query, limit)
+            match fts_query(&query) {
+                Some(q) => collect(
+                    c,
+                    "SELECT m.key, m.content, m.updated_at, m.author FROM global_memories_fts f
+                     JOIN global_memories m ON m.id = f.rowid
+                     WHERE global_memories_fts MATCH ?1
+                     ORDER BY bm25(global_memories_fts) LIMIT ?2",
+                    params![q, limit],
+                ),
+                None => collect(
+                    c,
+                    "SELECT key, content, updated_at, author FROM global_memories
+                     ORDER BY updated_at DESC LIMIT ?1",
+                    params![limit],
+                ),
+            }
         })
         .await
-    }
-}
-
-fn recall_global_sql(
-    c: &rusqlite::Connection,
-    query: &str,
-    limit: u32,
-) -> Result<Vec<MemoryEntry>, StoreError> {
-    match fts_query(query) {
-        Some(q) => collect(
-            c,
-            "SELECT m.key, m.content, m.updated_at, m.author FROM global_memories_fts f
-                 JOIN global_memories m ON m.id = f.rowid
-                 WHERE global_memories_fts MATCH ?1
-                 ORDER BY bm25(global_memories_fts) LIMIT ?2",
-            params![q, limit],
-        ),
-        None => collect(
-            c,
-            "SELECT key, content, updated_at, author FROM global_memories
-                 ORDER BY updated_at DESC LIMIT ?1",
-            params![limit],
-        ),
     }
 }
 
@@ -270,12 +262,8 @@ fn collect(
     params: impl rusqlite::Params,
 ) -> Result<Vec<MemoryEntry>, StoreError> {
     let mut stmt = c.prepare(sql)?;
-    let mut rows = stmt.query(params)?;
-    let mut out = Vec::new();
-    while let Some(row) = rows.next()? {
-        out.push(from_row(row)?);
-    }
-    Ok(out)
+    let rows = stmt.query_map(params, |r| Ok(from_row(r)))?;
+    rows.map(|r| r?).collect()
 }
 
 #[cfg(test)]
@@ -368,7 +356,7 @@ mod tests {
             store.recall_global(String::new(), 5).await.unwrap().len(),
             1
         );
-        // Agents cannot touch the operator's entries, only their own.
+        // Agents cannot touch the operator's entries; they keep each other's current.
         assert!(matches!(
             store
                 .remember_global("home".into(), "planted".into(), Some(a))
@@ -388,11 +376,14 @@ mod tests {
             .remember_global("team".into(), "alice again".into(), Some(a))
             .await
             .unwrap();
-        assert!(store.forget_global("team".into(), Some(b)).await.is_err());
+        store
+            .remember_global("team".into(), "bob fixed alice's note".into(), Some(b))
+            .await
+            .unwrap();
         let team = store.recall_global("alice".into(), 5).await.unwrap();
         assert_eq!(
             (team[0].content.as_str(), team[0].author),
-            ("alice again", Some(a))
+            ("bob fixed alice's note", Some(b))
         );
         assert!(store.forget_global("team".into(), Some(a)).await.unwrap());
         assert_eq!(

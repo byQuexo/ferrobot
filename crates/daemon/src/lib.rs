@@ -11,12 +11,15 @@ pub mod clis;
 pub mod codex;
 pub mod connectors;
 pub mod credentials;
+pub mod desktop;
 pub mod discord;
+pub mod egress;
 pub mod error;
 pub mod files;
 pub mod hub;
 pub mod lifecycle;
 pub mod limits;
+pub mod logins;
 pub mod logs;
 pub mod models;
 pub mod no_tools;
@@ -27,8 +30,10 @@ pub mod proxy;
 pub mod runner_ws;
 pub mod scheduler;
 pub mod secrets;
+pub mod signin;
 pub mod spec;
 pub mod state;
+pub mod stop;
 pub mod storage;
 pub mod supervisor;
 pub mod tasks;
@@ -45,6 +50,11 @@ use axum::http::{HeaderValue, Method, header};
 use tower_http::cors::CorsLayer;
 
 pub use state::{AppState, Settings, UiEvent};
+
+/// A poisoned lock only means another task panicked mid-update of plain data; keep serving.
+pub(crate) fn lock<T>(m: &std::sync::Mutex<T>) -> std::sync::MutexGuard<'_, T> {
+    m.lock().unwrap_or_else(std::sync::PoisonError::into_inner)
+}
 
 /// Router for the operator-facing UI API.
 pub fn ui_router(state: AppState) -> Router {
@@ -85,6 +95,10 @@ pub fn agent_router(state: AppState) -> Router {
         .merge(runner_ws::router().with_state(state.clone()))
         .merge(proxy::router().with_state(state.clone()))
         .merge(claude_code::router().with_state(state.clone()))
-        .merge(tool_check::router().with_state(state))
+        .merge(tool_check::router().with_state(state.clone()))
         .nest("/mcp", mcp)
+        .layer(axum::middleware::from_fn_with_state(
+            state,
+            egress::intercept,
+        ))
 }

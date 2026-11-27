@@ -4,7 +4,7 @@ use std::collections::hash_map::Entry;
 use std::collections::{HashMap, HashSet};
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex, MutexGuard};
-use std::time::Instant;
+use std::time::{Duration, Instant};
 
 use ferrobot_core::AgentId;
 use ferrobot_core::protocol::DaemonFrame;
@@ -46,15 +46,24 @@ struct Inner {
     credentials: HashMap<AgentId, CredentialError>,
     /// Agents whose model refused tools; their turns wait too.
     no_tools: HashMap<AgentId, ToolsUnsupported>,
+    /// When the operator last stopped each agent's chain of work.
+    stopped: HashMap<AgentId, Instant>,
+}
+
+/// How long after a Stop a stopped delegate's task report is left out.
+const STOPPED_FOR: Duration = Duration::from_secs(60);
+
+fn insert_new<V>(map: &mut HashMap<AgentId, V>, agent: AgentId, value: V) -> bool {
+    let Entry::Vacant(e) = map.entry(agent) else {
+        return false;
+    };
+    e.insert(value);
+    true
 }
 
 impl Hub {
     fn lock(&self) -> MutexGuard<'_, Inner> {
-        // A poisoned lock only means another task panicked mid-update of a
-        // plain map; the data is still consistent enough to keep serving.
-        self.inner
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner)
+        crate::lock(&self.inner)
     }
 
     /// The wake-up signal for an agent's dispatch loop.
@@ -108,13 +117,7 @@ impl Hub {
 
     /// Records the agent's credential problem unless one is already known; true if it is new.
     pub fn set_credential_error(&self, agent: AgentId, error: CredentialError) -> bool {
-        match self.lock().credentials.entry(agent) {
-            Entry::Occupied(_) => false,
-            Entry::Vacant(e) => {
-                e.insert(error);
-                true
-            }
-        }
+        insert_new(&mut self.lock().credentials, agent, error)
     }
 
     /// Forgets the agent's credential problem; true if there was one.
@@ -128,13 +131,7 @@ impl Hub {
 
     /// Records that the agent's model refused tools unless already known; true if it is new.
     pub fn set_tools_unsupported(&self, agent: AgentId, problem: ToolsUnsupported) -> bool {
-        match self.lock().no_tools.entry(agent) {
-            Entry::Occupied(_) => false,
-            Entry::Vacant(e) => {
-                e.insert(problem);
-                true
-            }
-        }
+        insert_new(&mut self.lock().no_tools, agent, problem)
     }
 
     /// Forgets that the agent's model refused tools; true if it had.
@@ -182,9 +179,10 @@ impl Hub {
             .is_some_and(|c| c.current_turn.is_some())
     }
 
-    /// Lock that serializes wake/stop/restore/delete for one agent.
-    pub fn lifecycle_lock(&self, agent: AgentId) -> Arc<tokio::sync::Mutex<()>> {
-        Arc::clone(self.lock().lifecycle.entry(agent).or_default())
+    /// Serializes wake/stop/restore/delete for one agent while the guard lives.
+    pub async fn lifecycle_lock(&self, agent: AgentId) -> tokio::sync::OwnedMutexGuard<()> {
+        let lock = Arc::clone(self.lock().lifecycle.entry(agent).or_default());
+        lock.lock_owned().await
     }
 
     /// Records activity (resets the idle timer).
@@ -262,6 +260,23 @@ impl Hub {
                 turn_id: turn.to_owned(),
             });
         }
+    }
+
+    /// The operator stopped these agents' work.
+    pub fn mark_stopped(&self, agents: &[AgentId]) {
+        let mut inner = self.lock();
+        inner.stopped.retain(|_, at| at.elapsed() < STOPPED_FOR);
+        for agent in agents {
+            inner.stopped.insert(*agent, Instant::now());
+        }
+    }
+
+    /// Whether the operator stopped `agent`'s work within the last minute.
+    pub fn recently_stopped(&self, agent: AgentId) -> bool {
+        self.lock()
+            .stopped
+            .get(&agent)
+            .is_some_and(|at| at.elapsed() < STOPPED_FOR)
     }
 
     pub fn forget(&self, agent: AgentId) {

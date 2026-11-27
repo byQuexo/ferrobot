@@ -6,7 +6,7 @@ use axum::http::StatusCode;
 use ferrobot_core::question::{
     Approval, QuestionAnswer, QuestionAnswered, QuestionEvent, approves,
 };
-use ferrobot_core::{AgentId, MailMessage, Sender};
+use ferrobot_core::{AgentId, MailMessage};
 use ferrobot_mcp::{RoutineRequest, RoutineRequestOutcome};
 use ferrobot_store::{NewRoutine, Routine, RoutineRun, RunTrigger};
 use serde::{Deserialize, Serialize};
@@ -184,11 +184,7 @@ pub(crate) async fn request(
             req.name
         )));
     }
-    // Unreadable settings fail closed: the operator gets the card.
-    if crate::api::settings::load(state)
-        .await
-        .is_ok_and(|s| s.auto_mode)
-    {
+    if crate::api::settings::auto_mode(state).await {
         let routine = add(
             state,
             requester,
@@ -207,8 +203,7 @@ pub(crate) async fn request(
     let who = state.store.get_agent(requester).await?.name;
     let prompt = format!(
         "Add the routine \"{}\" for {who}?\nWhen: {when} ({timezone})\nMessage: {}",
-        req.name,
-        crate::agents::shorten(&req.prompt, 600)
+        req.name, req.prompt
     );
     let card = QuestionEvent::approval(
         format!("{who} wants a routine"),
@@ -221,14 +216,8 @@ pub(crate) async fn request(
         },
     )
     .in_turn(state.hub.current_turn(requester));
-    let payload = serde_json::to_value(&card).map_err(|e| ApiError::Internal(e.to_string()))?;
     let chat = crate::agents::chat_of(state, requester).await?;
-    let event = state
-        .store
-        .append_event(chat, None, "question".into(), payload)
-        .await?;
-    let question_id = event.id;
-    state.publish(UiEvent::Event { event });
+    let question_id = crate::agents::post_card(state, chat, &card).await?;
     Ok(RoutineRequestOutcome::Pending { question_id })
 }
 
@@ -267,22 +256,14 @@ pub(crate) async fn answer_card(
     } else {
         format!("The operator declined your routine \"{name}\".")
     };
-    let msg = state
-        .store
-        .enqueue_message(Sender::User, *requester, note, None)
-        .await?;
-    state.message_arrived(*requester);
-    let message_id = Some(msg.id);
-    state.publish(UiEvent::Message { message: msg });
+    let msg = crate::agents::tell(state, *requester, note).await?;
     let answered = QuestionAnswered {
         question: qid,
         answers,
-        message_id,
+        message_id: Some(msg.id),
         timed_out: false,
     };
-    let payload = serde_json::to_value(&answered).map_err(|e| ApiError::Internal(e.to_string()))?;
-    state.record(chat, None, "question_answered", payload).await;
-    Ok(answered)
+    crate::agents::record_answer(state, chat, answered).await
 }
 
 /// Partial update; omitted fields stay unchanged.

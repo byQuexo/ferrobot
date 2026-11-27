@@ -52,6 +52,13 @@ Click the phone button in an agent's chat (**Start a voice call**).
   while you hold **Hold to talk** or Space (outside text fields). Words count
   once you let go and pause briefly; **Mute** still wins. This computer
   remembers the choice.
+- **Pause that ends your turn** (**Settings → Voice → Calls**, ElevenLabs):
+  how long you can stop talking before agents answer, 0.5 to 3 seconds
+  (default 1.5). It applies from the next call.
+- **Model in calls** (the chat's sliders button): a quicker model this agent
+  uses only while it is in a call, such as a small model for spoken replies.
+  It applies where the request names the model, so not to Bedrock, Vertex or
+  Gemini agents.
 - Longer work: the agent says so and does it after the call, in its chat.
 - An agent cannot show question cards during a call; it asks out loud.
 
@@ -67,6 +74,21 @@ second agent joins, the call becomes a room:
 - After four agent lines in a row the room waits for you.
 - Rooms are listed under **Calls** in the sidebar with their transcript. Room
   lines stay out of the agents' chats.
+
+## Calls among agents
+
+An agent can call one to three teammates without you (`call_agents`, in the
+Team tool group) to talk something through together. They talk by the room
+rules above, in writing, with the call-among-agents note. Agents get the tool
+only while voice is on with a key, because without voice you could not join.
+
+- A pop-up says who started the call and what about, with **Join** and
+  **Open**. Joining makes it your voice call in the same room; the agent that
+  called hosts it. The room's header has **Join** too while the call runs.
+- It ends by itself once nobody has anything to add, after at most twelve
+  agent lines in a row, or when the agent that called hangs up.
+- The room is listed under **Calls** with its transcript; its lines stay out of
+  the agents' chats.
 
 ## Group chats
 

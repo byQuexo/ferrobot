@@ -1,15 +1,16 @@
-//! One turn as a timeline: its model calls and tool calls with their times, built from the
-//! turn's events and the proxy's usage rows, plus the cards it waited on and the messages it
-//! handed to other agents. The same spans feed the trace view.
+//! One turn as a timeline: model and tool calls from its events and the proxy's usage rows, plus
+//! the cards it waited on and the messages it handed to other agents.
 
 use std::collections::HashMap;
 
 use ferrobot_core::question::{QuestionAnswered, approves};
-use ferrobot_core::{AgentId, Sender};
+use ferrobot_core::{Agent, AgentId, Sender};
 use ferrobot_store::{Store, StoreError, StoredEvent, TurnCall};
 use serde::Serialize;
 use time::OffsetDateTime;
 use utoipa::ToSchema;
+
+use crate::AppState;
 
 /// Largest tool input a trace carries, so the view can label the step.
 const MAX_INPUT_BYTES: usize = 4096;
@@ -245,6 +246,22 @@ fn streamed(e: &StoredEvent) -> Span {
     s
 }
 
+/// The trace of `agent`'s turn `turn` (`None` when it has no events) and the turn's events.
+pub async fn for_turn(
+    state: &AppState,
+    agent: &Agent,
+    turn: &str,
+) -> Result<(Option<Trace>, Vec<StoredEvent>), StoreError> {
+    let events = state.store.turn_events(agent.id, turn.to_owned()).await?;
+    let calls = state.store.turn_calls(agent.id, turn.to_owned()).await?;
+    // Claude Code turns before its calls were recorded have none.
+    let models_tracked = !crate::agents::on_claude_code(state, agent).await
+        || !calls.is_empty()
+        || events.iter().any(|e| e.kind == "model_call");
+    let links = links(&state.store, turn, &events).await?;
+    Ok((build(turn, &events, &calls, models_tracked, &links), events))
+}
+
 /// The trace of `turn` from its events and proxied calls; `None` when it has no events.
 pub fn build(
     turn: &str,
@@ -268,13 +285,16 @@ pub fn build(
     let mut open: Vec<(Option<String>, usize)> = Vec::new();
     for e in events {
         let p = &e.payload;
+        let tool = || {
+            span(
+                SpanKind::Tool,
+                text(&p["name"]).unwrap_or_default(),
+                e.created_at,
+            )
+        };
         match e.kind.as_str() {
             "tool_use" => {
-                let mut s = span(
-                    SpanKind::Tool,
-                    text(&p["name"]).unwrap_or_default(),
-                    e.created_at,
-                );
+                let mut s = tool();
                 s.input = Some(p["input"].clone())
                     .filter(|i| !i.is_null() && i.to_string().len() <= MAX_INPUT_BYTES);
                 open.push((text(&p["id"]), trace.spans.len()));
@@ -293,11 +313,7 @@ pub fn build(
                 }
             }
             "tool_denied" => {
-                let mut s = span(
-                    SpanKind::Tool,
-                    text(&p["name"]).unwrap_or_default(),
-                    e.created_at,
-                );
+                let mut s = tool();
                 s.ended_at = Some(e.created_at);
                 s.error = Some(format!(
                     "denied: {}",

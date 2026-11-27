@@ -601,7 +601,7 @@
       "type": "object"
     },
     "ToolGroup": {
-      "description": "A group of tools an agent can have on or off. The first six are ferrobot's own MCP tools\n(enforced by the daemon), the last three the model's built-in tools (enforced by the runner).",
+      "description": "A group of tools an agent can have on or off. Shell, Files and Web are the model's built-in\ntools (enforced by the runner); the others are ferrobot's own MCP tools (enforced by the daemon).",
       "enum": [
         "team",
         "memory",
@@ -611,7 +611,8 @@
         "routines",
         "shell",
         "files",
-        "web"
+        "web",
+        "desktop"
       ],
       "type": "string"
     },
@@ -920,6 +921,34 @@
           },
           "required": [
             "room_id",
+            "type"
+          ],
+          "type": "object"
+        },
+        {
+          "description": "An agent called teammates without the operator (`call_agents`); the operator may join\nwith `POST /v1/rooms/{id}/call`.",
+          "properties": {
+            "host": {
+              "$ref": "#/$defs/AgentId"
+            },
+            "room_id": {
+              "format": "int64",
+              "type": "integer"
+            },
+            "topic": {
+              "type": "string"
+            },
+            "type": {
+              "enum": [
+                "agent_call"
+              ],
+              "type": "string"
+            }
+          },
+          "required": [
+            "room_id",
+            "host",
+            "topic",
             "type"
           ],
           "type": "object"

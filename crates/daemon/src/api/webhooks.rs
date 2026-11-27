@@ -68,10 +68,7 @@ pub(crate) struct NewOutgoingWebhook {
 
 fn hook_name(raw: &str) -> Result<String, ApiError> {
     let name = raw.trim();
-    if name.is_empty()
-        || name.chars().count() > MAX_NAME_CHARS
-        || name.chars().any(char::is_control)
-    {
+    if !super::is_printable(name, MAX_NAME_CHARS) {
         return Err(ApiError::BadRequest(format!(
             "name must be 1-{MAX_NAME_CHARS} printable characters"
         )));
@@ -201,13 +198,7 @@ pub(crate) async fn create_outgoing(
     if events.is_empty() {
         return Err(ApiError::BadRequest("pick at least one event".into()));
     }
-    let mut agents = Vec::new();
-    for agent in req.agents {
-        if !agents.contains(&agent) {
-            state.store.get_agent(agent).await?;
-            agents.push(agent);
-        }
-    }
+    let agents = super::known_agents(&state, req.agents).await?;
     let _edit = state.webhooks.edit.lock().await;
     let mut stored = webhooks::load(&state).await?;
     let hook = OutgoingWebhook {

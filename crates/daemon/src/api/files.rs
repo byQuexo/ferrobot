@@ -17,7 +17,6 @@ use super::{ApiResult, parse_id};
 use crate::error::{ApiError, ErrorBody};
 use crate::{AppState, files, lifecycle};
 
-/// Largest file shown as text.
 const MAX_PREVIEW_BYTES: usize = 2 * 1024 * 1024;
 
 pub(super) fn router() -> Router<AppState> {
@@ -258,7 +257,6 @@ const PAGE_CSP: &str = "sandbox allow-scripts; default-src 'none'; \
 /// Downloads: nothing runs even if a browser renders them.
 const SANDBOX: &str = "sandbox; default-src 'none'";
 
-/// Largest file the operator can upload into an agent's workspace.
 const MAX_UPLOAD_BYTES: usize = 25 * 1024 * 1024;
 
 /// The upload route's body limit: above [`MAX_UPLOAD_BYTES`], so a file just over it gets the

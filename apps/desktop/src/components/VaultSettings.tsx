@@ -2,8 +2,10 @@ import type { JSX } from "preact";
 import { useEffect, useRef, useState } from "preact/hooks";
 import { KeyRound, Trash2 } from "lucide-preact";
 
-import type { Connector, Provider, VoiceView } from "../api.ts";
+import type { CliView, Connector, Provider, VoiceView } from "../api.ts";
 import { useApp } from "../context.ts";
+import { knownCli } from "../lib/clis.ts";
+import { errorText } from "../lib/format.ts";
 import { KIND_LABELS, KIND_LINKS, LinkOut, needsKey } from "./ProvidersSettings.tsx";
 import { Button, IconButton } from "./ui.tsx";
 import { VOICE_LABELS } from "./VoiceSettings.tsx";
@@ -20,7 +22,6 @@ interface Entry {
 
 /** Every stored key in one place. Values go to the daemon’s keychain and never come back. */
 export function VaultSettings(props: {
-  /** Show only the model provider keys. */
   providersOnly?: boolean;
   /** Called with the providers after every load or change. */
   onProviders?: (providers: Provider[]) => void;
@@ -31,6 +32,7 @@ export function VaultSettings(props: {
   const [providers, setProviders] = useState<Provider[]>([]);
   const [connectors, setConnectors] = useState<Connector[]>([]);
   const [voice, setVoice] = useState<VoiceView | null>(null);
+  const [clis, setClis] = useState<CliView[]>([]);
   const [editing, setEditing] = useState<string | null>(props.focus ?? null);
   const focusPending = useRef(props.focus !== undefined);
   const [value, setValue] = useState("");
@@ -40,17 +42,19 @@ export function VaultSettings(props: {
     setBusy(true);
     try {
       await action();
-      const [p, c, v] = await Promise.all([
+      const [p, c, v, l] = await Promise.all([
         client.listProviders(),
         client.listConnectors(),
         client.voice(),
+        client.clis(),
       ]);
       setProviders(p);
       props.onProviders?.(p);
       setConnectors(c);
       setVoice(v);
+      setClis(l.clis);
     } catch (err) {
-      toast(err instanceof Error ? err.message : String(err));
+      toast(errorText(err));
     } finally {
       setBusy(false);
     }
@@ -96,6 +100,23 @@ export function VaultSettings(props: {
             ]
           : []),
       ]),
+    ],
+    [
+      "CLIs",
+      clis.flatMap((c) =>
+        c.account
+          ? [
+              {
+                id: `login:${c.id}`,
+                name: c.id,
+                what: `Token for ${c.account.hosts.join(", ")}`,
+                stored: c.has_token,
+                keyUrl: knownCli(c.id)?.keyUrl,
+                save: (v: string | null) => client.setCliToken(c.id, v),
+              },
+            ]
+          : [],
+      ),
     ],
     [
       "Voice",

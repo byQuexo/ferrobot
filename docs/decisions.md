@@ -168,8 +168,12 @@ the code and this file together.
   about two weeks old rather than the newest one.
 - **Codex approvals: `on-request`.** 0.166 refuses `untrusted`. With
   `danger-full-access` Codex rarely asks, so the runner's `decide()` guard
-  rails mostly do not apply to Codex's own commands; the container stays the
-  boundary. Requests Codex does send are still answered with `decide()`.
+  rails and the daemon's tool check mostly do not apply to Codex's own
+  commands; the container stays the boundary. Requests Codex does send are
+  still answered with `decide()`. Because a force-push or publish would get no
+  card, a Codex agent never gets a CLI account (0.1.11 security review), and
+  the provider's hint says Codex runs most commands without asking. Routing
+  Codex's shell through the gated `bash` MCP tool, as Claude Code does, is open.
 
 ## L4: ACP driver
 
@@ -227,13 +231,55 @@ the code and this file together.
   than a nullable `memories.agent_id`, which would need a table rebuild.
   `remember`/`forget` take `global: true`; `recall` searches both scopes,
   alternating hits so neither crowds out the other, and marks global ones.
-- **Agents may write global memory, but only change their own entries.**
-  That is what makes it useful (one agent learns where the operator flies
-  from, all know). Each entry records its author (v10; `NULL` = the
-  operator); agents cannot overwrite or delete entries of other agents or of
-  the operator, `recall` says who wrote each one, and the Global memory dialog
-  shows it. Remaining risk: a hijacked agent can still add new entries every
-  agent reads; `recall` calls them notes, not instructions.
+- **Agents may write global memory and change each other's entries, never the
+  operator's.** That is what makes it useful (one agent learns where the
+  operator flies from, all know). Each entry records its author (v10; `NULL` =
+  the operator); agents cannot overwrite or delete the operator's entries,
+  `recall` says who wrote each one, and the Global memory dialog shows it.
+  Until 0.1.11 an agent could only change its own entries; Tim asked for
+  agents that keep the operator's knowledge base current on their own
+  (2026-11-26), which needs refreshing and removing what another agent wrote.
+- **The knowledge base is in every memory agent's instructions.** The daemon
+  appends the rule to keep it current and the newest 50 global entries (300
+  characters each) to the instructions of agents with the Memory group, and
+  re-sends them (`Configure`) on every change, so no runner change was needed.
+  Remaining risk, larger than before: a hijacked agent can write an entry that
+  now reaches every memory agent's system prompt, not only a `recall` result.
+  The block calls the entries notes, not instructions, that never override
+  theirs; the operator sees and edits them in Settings → Global memory.
+
+## Desktop (roadmap item 4, 0.1.11)
+
+- **An option of the CLIs image, not a second image.** Settings → CLIs → Desktop adds Xvfb,
+  Openbox, tint2, lxterminal, Thunar, the Arc-Dark GTK theme, Inter, JetBrains Mono, a small CJK
+  font, xwallpaper, x11vnc, socat, xdotool, scrot and procps to the shared image (Chromium is
+  already in the runner image for PDFs), about 170 MB. The programs start on demand
+  (`desktop-start.sh`, idempotent), since a stopped computer loses them.
+- **Its look is written at the first start, from files only.** Openbox (our own dark theme and
+  title buttons), a tint2 dock and lxterminal are configured by plain files, so no D-Bus or
+  xfconf runs; the wallpaper and two icons are drawn there by a short Node script, so neither
+  the image nor the repo carries picture files. A first, icewm-based look was replaced in the
+  same release (Tim: too plain); it cost about 50 MB less. Debian's `chromium` wrapper ignores
+  flags from the environment, so `~/.local/bin/chromium` passes `--no-sandbox` and the rest.
+- **VNC over a streaming exec, no port.** Each screen connection runs x11vnc in inetd mode; its
+  inetd mode writes to stdin, so socat gives it a socketpair, and `DISPLAY` carries the display
+  because socat reads `:` as a separator. x11vnc ignores socat's SIGTERM at the end, so the
+  wrapper kills it by its own log name. `-unixsock` would avoid that but needs a patched
+  libvncserver. Watching connections get `-viewonly`, enforced by the server.
+- **Control belongs to a connection.** `?control=true` opens a non-view-only server and holds
+  `Desktop::take` until the WebSocket closes, so a closed window never leaves the agent paused;
+  the agent's `desktop` tool returns "your operator is using your desktop" instead of waiting.
+- **Agent actions run in the daemon** (xdotool, scrot through exec), so the runner image is
+  unchanged; a screenshot is an MCP image result. Whether a driver passes it to the model is the
+  driver's business (not checked per driver yet).
+- **Opt-in and never with a CLI account.** `ToolGroup::defaults()` leaves Desktop out, so NULL
+  tools (every default group) never include it. Typing into the desktop's terminal skips
+  `tool_check`, and with a login's token swap that could push or publish without a card, so the
+  daemon refuses the pair in both directions. Tim decides at review whether to relax this.
+- **noVNC 1.7.0** (`@novnc/novnc`, MPL-2.0, ESM, no dependencies; approved by Tim) draws the
+  screen in the UI. The bundler drops its license headers, so its notices (MPL-2.0, and the MIT
+  and BSD-style terms of the pako and DES code it bundles) are in
+  `apps/desktop/public/THIRD-PARTY-NOTICES.txt`, which the app bundle and the repo carry.
 
 ## Connectors
 
@@ -1490,3 +1536,138 @@ slop, so polish mode: palette, accent, logo, layout and features stay.
   Delivery is one background POST per hook with a 10 s timeout and no retry.
   Discord gets `allowed_mentions: {parse: []}` so agent text cannot ping
   `@everyone`.
+
+## CLI logins through a token-swapping proxy (2026-11-26)
+
+- **The proxy sits on the agent listener.** `CONNECT` is intercepted before
+  routing (`egress::intercept`), so it is reachable exactly like `/model` and
+  authenticates with the same agent token (proxy password, Basic). No new port.
+- **Logins are generic, set up by the operator.** First built for GitHub only;
+  before 0.1.11 shipped, Tim asked for any CLI that reads a token from a
+  variable. A login is a name, its API hosts, its token variables, its programs,
+  ask-first and its agents, in the `logins` setting; GitHub is a preset in the
+  app. Agents cannot set up logins.
+- **Swap only what was decided by the daemon, in request headers only.** The
+  swap happens for the authenticated agent, a login lent to it and one of that
+  login's hosts, and only where a request header carries that login's exact
+  stand-in (`ferrobot-stand-in-<id>`, also inside `Basic` credentials, so git
+  works). Never in the URL: a redirect or error page could hand it back.
+  Response headers that repeat the token get the stand-in back. Redirects are
+  passed back, never followed. Remaining risk: a service that echoes the token
+  in a response body would show it to the agent.
+- **The token goes only to public addresses.** A login's hosts are checked when
+  saved (lowercase DNS names, no IP literal, no `localhost`, `.local`,
+  `.internal`, `.lan`, `.home`) and resolved once per tunnel, every address
+  public, with the client pinned to the checked address.
+- **One name-constrained CA per login.** `rcgen` makes it (key and certificate
+  in the secret store, `login:<id>:ca`); its permitted subtrees are the login's
+  hosts, so even a leaked or misused CA vouches for no other site. Changed
+  hosts make a new CA, and those agents restart anyway. One shared CA would
+  have restarted every login agent whenever any login changed. Leaf
+  certificates are made per host in memory and remade when their CA changes.
+- **A login's variables never replace the sandbox's own.** Names the sandbox
+  sets (proxy, certificate bundle, `PATH`, `HOME`...), `FERROBOT_…` and
+  `GIT_CONFIG_…` are refused when saved, and provisioning only adds a login's
+  variables where nothing is set. One host or variable belongs to one login.
+- **Ask-first is a command-line heuristic.** It turns a safe shell command that
+  runs one of the login's programs, or names one of its variables or hosts,
+  into a risky one (a card unless Auto mode is on). A script the agent wrote can
+  still reach the login; the boundary is the token never entering the sandbox.
+- **Plain tunnels refuse private targets.** Port 443 only; a host that resolves
+  to any loopback, private, link-local, CGNAT or unique-local address is
+  refused, and the tunnel connects to the address it checked. Without this a
+  sandbox could reach the operator API on loopback through the daemon.
+- **Environment only for agents with a login.** `HTTPS_PROXY`, the stand-ins,
+  git's credential helper for a login with `github.com` (`GIT_CONFIG_COUNT`, git
+  2.31+) and the CA bundle (`SSL_CERT_FILE`, `GIT_SSL_CAINFO`, `CURL_CA_BUNDLE`,
+  `REQUESTS_CA_BUNDLE`, `NODE_EXTRA_CA_CERTS`) are set at provisioning; changing
+  a login's hosts, variables or agents recreates those computers (home kept),
+  as a model switch does.
+- **Dependencies.** `rcgen` 0.14.10 (`ring` backend, already in the tree) brings
+  `rcgen` and `yasna`; the lockfile also lists `x509-parser` and its parsers for
+  an optional `rcgen` feature that is not built. `tokio-rustls`, `hyper`,
+  `hyper-util` and `http-body-util` were already in the tree.
+
+## Add CLI (2026-11-26)
+
+- **One list of CLIs, one dialog.** Tim asked for "CLI → Add CLI" instead of a login set up
+  in one place and a token in another. A CLI (`ferrobot_core::Cli`) is its install, its programs,
+  an optional account and its agents, all in the `clis` setting; the earlier `logins` setting and
+  `/v1/logins` never shipped and are gone. `logins::all` derives today's logins from CLIs with an
+  account, so the proxy, the sandbox environment and the ask-first check did not change.
+  The package list of before is read once into Debian CLIs, and `PUT /v1/clis {packages}` keeps
+  working (additive API).
+- **Debian into the image, everything else into homes (Tim's option D).** A new CLI in the image
+  means a build and a restart for every agent, which Tim did not want for every tool. npm,
+  download and script installs go into `~/.local` of the picked agents (`PATH` puts
+  `~/.local/bin` first, set at provisioning; every agent is recreated anyway when the runner image
+  changes), once per agent: a marker file per CLI holds the install it ran, so a change reinstalls
+  and a removal can uninstall (npm, download; a script's files stay). It runs on provisioning, on
+  a change for running agents, and on the next wake for the others (a pending set, filled again
+  at startup) rather than on every wake. Root exec does not exist, so no symlinks into `/usr`.
+- **The CLI's own device sign-in, in a throwaway sandbox.** Reading a CLI's token from its config
+  needs knowing where each CLI keeps it; its token command (`gh auth token`) does not. The login
+  runs in the background with output to a file (`gh` 2.23 prints its code without a TTY), the daemon
+  polls it for the address and code, then runs the token command and stores the result. The
+  sandbox (`signin.<id>`, a name no agent can have; `sleep infinity` instead of the runner) has no
+  agent token, no proxy and no mounts, is removed afterwards or on cancel, and leftovers are
+  removed at startup. Remaining risk, told to Tim: the CLI, and whatever its install ran, sees the
+  token during its own sign-in, as when run on the operator's computer. Device sign-ins only;
+  callback-to-localhost sign-ins would need a forwarded port.
+- **Agents propose, the operator installs.** `propose_cli` (Add connectors group) shows the exact
+  install, "no checksum" for a download without one, and the token hosts; approving adds the CLI
+  for the proposer without a token. Auto mode never skips it, because the card decides what runs in
+  the computers and where a token would go.
+- **CLI images per daemon.** The image sweep removed every `ferrobot-runner:clis-*` image on the
+  engine, so a second daemon (a test copy) could remove the operator's image. Tags now carry the
+  daemon's data dir hash (`clis-<owner>-<hash>`) and the sweep only removes its own; images from
+  before are no longer swept.
+
+
+## Security review before 0.1.11 (2026-11-27)
+
+A review of the release before it shipped changed these decisions:
+
+- **Proposed CLIs carry no sign-in commands.** They run in the container where the real token is
+  made and were not on the card, so an agent could have chosen commands that send the token out.
+  An agent proposes the install, programs, hosts and variables (asking first by default); the
+  operator adds sign-in commands in Edit, and the sign-in dialog shows them before it starts.
+- **A late CLI card adds nothing.** Approving re-reads the CLIs and refuses (409) when a CLI of that
+  name exists by then, so it can never take over the operator's CLI and its token.
+- **The token is swapped only in credential headers** (`authorization` including Basic,
+  `x-api-key`, `private-token`, `x-auth-token`). Any header was a way to get it back from a service
+  that repeats a header such as `User-Agent` in its answer. Response headers are still scrubbed
+  everywhere; a response body that echoes a credential header stays the known remaining risk.
+- **No CLI account for Codex agents.** Codex runs its shell itself, so its commands never reach
+  `tool_check`; with a token behind the proxy that would let critical steps run without a card.
+  Same mechanism as the Desktop refusal, checked both when lending an account and when switching
+  an agent's provider.
+- **Home programs last on `PATH`.** Prepending `~/.local/bin` let a program an agent once planted
+  stand in for the runner's `node` after its Shell was taken away, or for the screen's `x11vnc`.
+  The daemon also calls the desktop's programs by full path, and the desktop script sets a
+  system-only `PATH` (the dock starts the Chromium wrapper by its full path).
+- **The knowledge base shows authors and one line per entry.** Agents' entries now reach every
+  memory agent's instructions, so each says who wrote it, control characters fold to spaces (an
+  entry cannot open a section of its own), keys must be one line, and all of the operator's
+  entries come first, outside the limit of 50 agent entries.
+- **The tool check reads words, not spellings.** Connector tool names split at separators and
+  where lower case turns upper (`CREATE_REFUND`, `createRefund`), and plurals match their stem.
+  Tools that run arbitrary input (SQL, HTTP, GraphQL) are Risky. git and gh skip option values
+  (`-C dir`, `-R o/r`) to find the subcommand; `gh api` takes its method from every spelling and
+  POST from fields. Still best effort: it reads the command line, never a script the agent wrote.
+- **Cards show everything they approve or refuse to exist.** A shell command over 4,000
+  characters gets no card at all (refused) rather than a cut one; card text with line breaks,
+  bidi or invisible characters in a connector's command, URL or reason is refused.
+- **Agents reach the host's localhost on Docker Desktop.** Checked: a container reached
+  `host.docker.internal:7878` (`/v1/health` 200, `/v1/agents` 401). Every UI route but health,
+  the OAuth callback and signed artifacts needs the operator token, so the risk is other local
+  services without auth (model servers, dev databases, debug ports) and the LAN. Not fixed now:
+  a real fix is an internal network whose only route out is the agent listener; the wiki tells
+  operators not to run unauthenticated services on this computer while agents run.
+- **Harness settings folders are off limits.** Gemini trusts the workspace
+  (`GEMINI_CLI_TRUST_WORKSPACE`) and Claude and Codex read project settings, all of which can start
+  processes; the runner refuses writes under `.claude`, `.codex` and `.gemini` for every driver
+  instead of dropping the trust flag, which was not verified to keep Gemini working.
+- **Vault notes follow the agent, not its name.** A deleted agent's folder moves to
+  `ferrobot/.archived/<name>-<id>` (Obsidian hides dot folders); creating a name archives any
+  folder left under it, and a rename archives the target first instead of merging.

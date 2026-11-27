@@ -1,5 +1,5 @@
 use std::collections::HashMap;
-use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
+use std::sync::{Arc, Mutex, MutexGuard};
 use std::time::Duration;
 
 use ferrobot_core::{AgentId, MailMessage};
@@ -68,6 +68,8 @@ pub struct Settings {
     pub voice_upstream: Option<String>,
     /// Discord's REST API, for the Discord bridge (another one in tests).
     pub discord_api: String,
+    /// Base URL for every CLI-login host instead of the real one (tests).
+    pub login_upstream: Option<String>,
     /// Directory with the database and the API token file.
     pub data_dir: std::path::PathBuf,
     /// What `--storage-url` names, for diagnostics: `local` or its scheme (`s3`, ...).
@@ -109,6 +111,7 @@ impl std::fmt::Debug for Settings {
             storage,
             voice_upstream,
             discord_api,
+            login_upstream,
             data_dir,
             storage_kind,
             log,
@@ -143,6 +146,7 @@ impl std::fmt::Debug for Settings {
             .field("storage", storage)
             .field("voice_upstream", voice_upstream)
             .field("discord_api", discord_api)
+            .field("login_upstream", login_upstream)
             .field("data_dir", data_dir)
             .field("storage_kind", storage_kind)
             .field("log", log);
@@ -184,6 +188,7 @@ impl Settings {
             storage: Arc::new(object_store::memory::InMemory::new()),
             voice_upstream: None,
             discord_api: "https://discord.com/api/v10".into(),
+            login_upstream: None,
             data_dir: std::path::PathBuf::new(),
             storage_kind: "memory".into(),
             log: crate::logs::LogRing::default(),
@@ -237,6 +242,13 @@ pub enum UiEvent {
         room_id: i64,
         agent: Option<AgentId>,
     },
+    /// An agent called teammates without the operator (`call_agents`); the operator may join
+    /// with `POST /v1/rooms/{id}/call`.
+    AgentCall {
+        room_id: i64,
+        host: AgentId,
+        topic: String,
+    },
 }
 
 /// Shared daemon state. Cheap to clone.
@@ -286,6 +298,10 @@ pub struct AppState {
     pub webhooks: Arc<crate::webhooks::Webhooks>,
     /// The Discord bridge's channels and the replies it owes.
     pub discord: Arc<crate::discord::Discord>,
+    /// The CLI-login proxy's CA and certificates.
+    pub egress: Arc<crate::egress::Egress>,
+    /// Who holds the operator's control of each agent's desktop.
+    pub desktop: Arc<crate::desktop::Desktop>,
     /// When this daemon started.
     pub started: std::time::Instant,
 }
@@ -326,14 +342,14 @@ impl AppState {
             clis: Arc::default(),
             webhooks: Arc::default(),
             discord: Arc::default(),
+            egress: Arc::default(),
+            desktop: Arc::default(),
             started: std::time::Instant::now(),
         }
     }
 
     pub(crate) fn approvals_lock(&self) -> MutexGuard<'_, HashMap<i64, oneshot::Sender<bool>>> {
-        self.approvals
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
+        crate::lock(&self.approvals)
     }
 
     /// Broadcasts to UI clients; having no subscribers is fine.
@@ -463,7 +479,7 @@ impl ferrobot_mcp::MailboxNotifier for AppState {
     }
 
     fn global_memory_changed(&self) {
-        self.publish(UiEvent::GlobalMemoryChanged);
+        crate::agents::global_memory_changed(self);
     }
 
     fn event_recorded(&self, event: &StoredEvent) {
@@ -478,6 +494,19 @@ impl ferrobot_mcp::MailboxNotifier for AppState {
 
     fn current_turn(&self, agent: AgentId) -> Option<String> {
         self.hub.current_turn(agent)
+    }
+
+    fn request_cli(
+        &self,
+        requester: AgentId,
+        request: ferrobot_mcp::CliRequest,
+    ) -> ferrobot_mcp::BoxFuture<Result<i64, String>> {
+        let state = self.clone();
+        Box::pin(async move {
+            crate::api::clis::request_card(&state, requester, request)
+                .await
+                .map_err(|e| e.to_string())
+        })
     }
 
     fn request_connector(
@@ -542,6 +571,36 @@ impl ferrobot_mcp::MailboxNotifier for AppState {
         })
     }
 
+    fn desktop(
+        &self,
+        agent: AgentId,
+        action: ferrobot_mcp::DesktopAction,
+    ) -> ferrobot_mcp::BoxFuture<Result<rmcp::model::CallToolResult, String>> {
+        let state = self.clone();
+        Box::pin(async move { crate::desktop::act(&state, agent, action).await })
+    }
+
+    fn has_voice(&self) -> ferrobot_mcp::BoxFuture<bool> {
+        let state = self.clone();
+        Box::pin(async move { crate::api::voice::is_ready(&state).await })
+    }
+
+    fn call_agents(
+        &self,
+        host: AgentId,
+        guests: Vec<AgentId>,
+        topic: String,
+    ) -> ferrobot_mcp::BoxFuture<Result<i64, String>> {
+        let state = self.clone();
+        Box::pin(async move {
+            // Without voice the operator could not join, so it would only be a group chat.
+            if !crate::api::voice::is_ready(&state).await {
+                return Err("calls need voice set up in Settings → Voice".into());
+            }
+            Ok(state.call_agents(host, guests, &topic).await?.id)
+        })
+    }
+
     fn invite_to_call(
         &self,
         host: AgentId,
@@ -598,7 +657,10 @@ impl ferrobot_mcp::MailboxNotifier for AppState {
             {
                 return result;
             }
-            let call = crate::tool_check::Call::Connector(&name);
+            let call = crate::tool_check::Call::Connector {
+                name: &name,
+                args: arguments.as_ref(),
+            };
             if let Err(why) = crate::tool_check::gate(&state, agent, call).await {
                 return Ok(rmcp::model::CallToolResult::error(vec![
                     rmcp::model::ContentBlock::text(why),

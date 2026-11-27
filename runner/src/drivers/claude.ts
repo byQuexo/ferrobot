@@ -11,13 +11,13 @@ import {
   type SDKUserMessage,
 } from "@anthropic-ai/claude-agent-sdk";
 
-import { log } from "../log.ts";
+import { errorMessage, log } from "../log.ts";
 import { CLAUDE_SUBAGENT_TOOLS, CLAUDE_TOOLS, decide, offGroups } from "../permissions.ts";
 import type { SteerFrame, TurnEvent } from "../protocol.ts";
 import type { ToolGate } from "../gate.ts";
 import type { SessionStore } from "../session.ts";
 import type { ModelDriver, TurnContext, TurnResult } from "./types.ts";
-import { TurnAbortedError } from "./types.ts";
+import { throwIfAborted } from "./types.ts";
 
 /** Tool output beyond this many characters is cut before it goes on the wire. */
 export const MAX_TOOL_OUTPUT = 4000;
@@ -292,14 +292,14 @@ export class ClaudeDriver implements ModelDriver {
     const onAbort = (): void => {
       abortController.abort();
     };
-    if (aborted(ctx.signal)) throw new TurnAbortedError("interrupted");
+    throwIfAborted(ctx.signal);
     ctx.signal.addEventListener("abort", onAbort, { once: true });
 
     const off = offGroups(ctx.tools);
     const canUseTool: CanUseTool = async (toolName, input) => {
       let verdict = decide(toolName, input, home, off);
       const command = input["command"];
-      if (verdict.allow && toolName === "Bash" && this.#opts.gate)
+      if (verdict.allow && CLAUDE_TOOLS.shell.includes(toolName) && this.#opts.gate)
         verdict = await this.#opts.gate.shell(typeof command === "string" ? command : "");
       if (verdict.allow) return { behavior: "allow", updatedInput: input };
       emit({ kind: "tool_denied", name: toolName, reason: verdict.reason });
@@ -358,27 +358,22 @@ export class ClaudeDriver implements ModelDriver {
         }
       }
     } catch (err) {
-      if (aborted(ctx.signal)) throw new TurnAbortedError("interrupted");
+      throwIfAborted(ctx.signal);
       if (resume && emitted === 0 && !(err instanceof ResumeFailedError)) {
-        throw new ResumeFailedError(err instanceof Error ? err.message : String(err));
+        throw new ResumeFailedError(errorMessage(err));
       }
       throw err;
     } finally {
       inbox.end();
       ctx.signal.removeEventListener("abort", onAbort);
     }
-    if (aborted(ctx.signal)) throw new TurnAbortedError("interrupted");
+    throwIfAborted(ctx.signal);
     return { result, sessionId };
   }
 
   async close(): Promise<void> {
     // query() instances end with their turn; nothing long-lived to close.
   }
-}
-
-/** Reads the live flag (a function call, so control-flow narrowing does not stick). */
-export function aborted(signal: AbortSignal): boolean {
-  return signal.aborted;
 }
 
 class ResumeFailedError extends Error {

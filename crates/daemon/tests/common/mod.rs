@@ -10,10 +10,13 @@
 use std::sync::Arc;
 use std::time::Duration;
 
+use ferrobot_core::protocol::{DaemonFrame, RunnerFrame};
 use ferrobot_daemon::{AppState, Settings, agent_router, ui_router};
 use ferrobot_sandbox::SandboxBackend;
 use ferrobot_store::Store;
+use futures_util::{SinkExt, StreamExt};
 use serde_json::Value;
+use tokio_tungstenite::tungstenite::Message;
 
 /// Operator token the harness configures and sends on `/v1` requests.
 pub const TEST_TOKEN: &str = "test-operator-token-0123456789";
@@ -86,33 +89,10 @@ pub async fn start_on(
 
 /// Tiny HTTP/1.1 JSON client (keeps the test dependency tree small).
 pub async fn http(addr: &str, method: &str, path: &str, body: Option<Value>) -> (u16, Value) {
-    use tokio::io::{AsyncReadExt, AsyncWriteExt};
-    let mut s = tokio::net::TcpStream::connect(addr).await.unwrap();
     let body = body.map(|b| b.to_string()).unwrap_or_default();
-    let auth = if path.starts_with("/v1/") {
-        format!("Authorization: Bearer {TEST_TOKEN}\r\n")
-    } else {
-        String::new()
-    };
-    let req = format!(
-        "{method} {path} HTTP/1.1\r\nHost: {addr}\r\n{auth}Content-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",
-        body.len()
-    );
-    s.write_all(req.as_bytes()).await.unwrap();
-    let mut buf = Vec::new();
-    s.read_to_end(&mut buf).await.unwrap();
-    let text = String::from_utf8_lossy(&buf).into_owned();
-    let status = text.split_whitespace().nth(1).unwrap().parse().unwrap();
-    let (_, raw) = text.split_once("\r\n\r\n").unwrap_or_default();
-    let raw = if text
-        .to_ascii_lowercase()
-        .contains("transfer-encoding: chunked")
-    {
-        dechunk(raw)
-    } else {
-        raw.to_owned()
-    };
-    let value = serde_json::from_str(&raw).unwrap_or(Value::Null);
+    let headers = [("Content-Type", "application/json")];
+    let (status, _, raw) = http_raw(addr, method, path, &headers, body.as_bytes()).await;
+    let value = serde_json::from_slice(&raw).unwrap_or(Value::Null);
     if path.starts_with("/v1/") {
         assert_conforms(method, path, status, &value);
     }
@@ -231,19 +211,6 @@ pub fn assert_conforms(method: &str, path: &str, status: u16, body: &Value) {
     );
 }
 
-fn dechunk(mut raw: &str) -> String {
-    let mut out = String::new();
-    while let Some((size, rest)) = raw.split_once("\r\n") {
-        let n = usize::from_str_radix(size.trim(), 16).unwrap_or(0);
-        if n == 0 {
-            break;
-        }
-        out.push_str(&rest[..n]);
-        raw = &rest[n + 2..];
-    }
-    out
-}
-
 /// Polls `f` until it returns `Some` or the timeout elapses.
 pub async fn eventually<T, F, Fut>(what: &str, timeout: Duration, mut f: F) -> T
 where
@@ -261,6 +228,28 @@ where
         );
         tokio::time::sleep(Duration::from_millis(100)).await;
     }
+}
+
+pub type Ws =
+    tokio_tungstenite::WebSocketStream<tokio_tungstenite::MaybeTlsStream<tokio::net::TcpStream>>;
+
+pub async fn next_frame(ws: &mut Ws) -> DaemonFrame {
+    loop {
+        let msg = tokio::time::timeout(Duration::from_secs(10), ws.next())
+            .await
+            .expect("frame in time")
+            .expect("stream open")
+            .expect("ws ok");
+        if let Message::Text(t) = msg {
+            return serde_json::from_str(&t).expect("daemon frame");
+        }
+    }
+}
+
+pub async fn send(ws: &mut Ws, frame: &RunnerFrame) {
+    ws.send(Message::text(serde_json::to_string(frame).unwrap()))
+        .await
+        .unwrap();
 }
 
 /// An agent's events, oldest first.

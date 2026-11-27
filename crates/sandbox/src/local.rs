@@ -12,7 +12,7 @@ use tokio::sync::Mutex;
 
 use crate::{
     ExecOutput, ExecRequest, SandboxBackend, SandboxError, SandboxHandle, SandboxPath, SandboxSpec,
-    SandboxState, SnapshotRef, capture,
+    SandboxState, SnapshotRef, removed,
 };
 
 const KIND: &str = "local";
@@ -51,22 +51,7 @@ impl LocalProcessBackend {
     }
 
     fn dir(&self, handle: &SandboxHandle) -> Result<PathBuf, SandboxError> {
-        if handle.backend != KIND {
-            return Err(SandboxError::WrongBackend {
-                expected: KIND,
-                actual: handle.backend.clone(),
-            });
-        }
-        // Handle ids are agent names; refuse anything that could escape `root`.
-        if handle.id.is_empty()
-            || !handle
-                .id
-                .chars()
-                .all(|c| c.is_ascii_alphanumeric() || c == '-')
-        {
-            return Err(SandboxError::NotFound(handle.id.clone()));
-        }
-        Ok(self.config.root.join(&handle.id))
+        Ok(self.config.root.join(handle.dir_name(KIND)?))
     }
 
     fn host_path(
@@ -79,17 +64,23 @@ impl LocalProcessBackend {
 
     fn spawn(&self, dir: &Path, env: &[(String, String)]) -> Result<Child, SandboxError> {
         let home = dir.join("home");
-        let mut cmd = Command::new(&self.config.runner_cmd[0]);
+        let mut cmd = command(&self.config.runner_cmd[0], &home);
         cmd.args(&self.config.runner_cmd[1..])
             .current_dir(&home)
-            .env_clear()
-            .env("PATH", std::env::var_os("PATH").unwrap_or_default())
-            .env("HOME", &home)
             .envs(env.iter().map(|(k, v)| (k.as_str(), v.as_str())))
-            .stdin(Stdio::null())
             .kill_on_drop(true);
         Ok(cmd.spawn()?)
     }
+}
+
+/// `program` with a cleared environment: only `PATH` and `HOME` come from outside.
+fn command(program: &str, home: &Path) -> Command {
+    let mut cmd = Command::new(program);
+    cmd.env_clear()
+        .env("PATH", std::env::var_os("PATH").unwrap_or_default())
+        .env("HOME", home)
+        .stdin(Stdio::null());
+    cmd
 }
 
 fn copy_dir(from: &Path, to: &Path) -> std::io::Result<()> {
@@ -151,24 +142,17 @@ impl SandboxBackend for LocalProcessBackend {
             Some(w) => dir.join(SandboxPath::parse(w)?.relative()),
             None => dir.join("home"),
         };
-        let out = Command::new(program)
+        let out = command(program, &dir.join("home"))
             .args(args)
             .current_dir(cwd)
-            .env_clear()
-            .env("PATH", std::env::var_os("PATH").unwrap_or_default())
-            .env("HOME", dir.join("home"))
             .envs(&req.env)
-            .stdin(Stdio::null())
             .output()
             .await?;
-        let (stdout, t1) = capture(&out.stdout);
-        let (stderr, t2) = capture(&out.stderr);
-        Ok(ExecOutput {
-            exit_code: out.status.code().map_or(-1, i64::from),
-            stdout,
-            stderr,
-            truncated: t1 || t2,
-        })
+        Ok(ExecOutput::captured(
+            out.status.code().map_or(-1, i64::from),
+            &out.stdout,
+            &out.stderr,
+        ))
     }
 
     async fn read_file(
@@ -253,11 +237,7 @@ impl SandboxBackend for LocalProcessBackend {
         self.stop(sandbox).await?;
         self.procs.lock().await.remove(&sandbox.id);
         if purge_disk {
-            match tokio::fs::remove_dir_all(self.dir(sandbox)?).await {
-                Ok(()) => {}
-                Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
-                Err(e) => return Err(e.into()),
-            }
+            removed(tokio::fs::remove_dir_all(self.dir(sandbox)?).await)?;
         }
         Ok(())
     }
@@ -300,6 +280,7 @@ mod tests {
             env: BTreeMap::from([("FOO".into(), "bar".into())]),
             labels: BTreeMap::new(),
             image: None,
+            command: None,
         }
     }
 

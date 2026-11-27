@@ -121,7 +121,7 @@ pub(crate) async fn put_global_memory(
 ) -> Result<StatusCode, ApiError> {
     let key = check(&req)?.to_owned();
     state.store.remember_global(key, req.content, None).await?;
-    state.publish(UiEvent::GlobalMemoryChanged);
+    crate::agents::global_memory_changed(&state);
     Ok(StatusCode::NO_CONTENT)
 }
 
@@ -137,7 +137,7 @@ pub(crate) async fn delete_global_memory(
     if !state.store.forget_global(key.clone(), None).await? {
         return Err(ApiError::NotFound(format!("memory {key:?} not found")));
     }
-    state.publish(UiEvent::GlobalMemoryChanged);
+    crate::agents::global_memory_changed(&state);
     Ok(StatusCode::NO_CONTENT)
 }
 
@@ -203,6 +203,6 @@ pub(crate) async fn put_memory_vault(
         }
     };
     let copied = state.store.set_memory_vault(path.clone()).await?;
-    state.publish(UiEvent::GlobalMemoryChanged);
+    crate::agents::global_memory_changed(&state);
     Ok(Json(vault_view(path, Some(copied))))
 }

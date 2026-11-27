@@ -15,14 +15,13 @@ import {
   type CallState,
   type Line,
 } from "./call.ts";
+import { errorText } from "./format.ts";
 import { Speaker, speakable, startLive, type LiveSession } from "./voice.ts";
 
 /** How long the window waits for the last words once the daemon ended the call. */
 const GOODBYE_MS = 20_000;
 /** The microphone stays open this long after push-to-talk is let go: audio goes out in chunks. */
 const RELEASE_MS = 300;
-
-const message = (err: unknown): string => (err instanceof Error ? err.message : String(err));
 
 export class CallSession {
   state: CallState | null = null;
@@ -63,7 +62,7 @@ export class CallSession {
     this.#toast = toast;
     this.#nameOf = nameOf;
     this.#speaker = new Speaker(client.speechUrl, (err) => {
-      toast(message(err));
+      toast(errorText(err));
     });
     this.#speaker.setVolume(this.volume);
     this.#speaker.onSpeaking = (agent) => {
@@ -81,9 +80,9 @@ export class CallSession {
     };
   }
 
-  /** Starts a call with `agent`, or with every member of `group`; hands-free listening needs
-   * ElevenLabs. */
-  async start(agent: string, group?: number): Promise<void> {
+  /** Starts a call with `agent`, or with every member of `group` (with `join`: the call agents
+   * started in room `group`); hands-free listening needs ElevenLabs. */
+  async start(agent: string, group?: number, join = false): Promise<void> {
     if (this.state) return;
     const round = ++this.#round;
     try {
@@ -95,7 +94,9 @@ export class CallSession {
       }
       const view = await (group === undefined
         ? this.#client.setCall([agent])
-        : this.#client.callGroup(group));
+        : join
+          ? this.#client.joinRoom(group)
+          : this.#client.callGroup(group));
       if (round !== this.#round) return;
       this.#set({
         agents: view.agents,
@@ -222,7 +223,7 @@ export class CallSession {
   }
 
   readonly #fail = (err: unknown): void => {
-    this.#toast(message(err));
+    this.#toast(errorText(err));
   };
 
   /** The daemon ended the call: only the goodbye of the agent that hung up (`keep`) is heard. */

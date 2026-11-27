@@ -2,10 +2,11 @@
 //! (headless CI only: a plaintext file), never in SQLite, a sandbox, a log or an event.
 
 use std::collections::BTreeMap;
-use std::path::PathBuf;
-use std::sync::{Arc, Mutex, PoisonError};
+use std::path::{Path, PathBuf};
+use std::sync::{Arc, Mutex};
 
 use crate::error::ApiError;
+use crate::lock;
 
 const SERVICE: &str = "ferrobot";
 
@@ -128,12 +129,12 @@ impl SecretStore {
     /// Runs `f` on the blocking pool (keychains block), serialised for the file store.
     async fn run<T: Send + 'static>(
         &self,
-        f: impl FnOnce(&Self) -> Result<T, Box<dyn std::error::Error + Send + Sync>> + Send + 'static,
+        f: impl FnOnce(&Self) -> StoreResult<T> + Send + 'static,
     ) -> Result<T, ApiError> {
         let store = self.clone();
         tokio::task::spawn_blocking(move || {
             let _guard = match &store {
-                Self::File(_, gate) => Some(gate.lock().unwrap_or_else(PoisonError::into_inner)),
+                Self::File(_, gate) => Some(lock(gate)),
                 _ => None,
             };
             f(&store)
@@ -144,13 +145,9 @@ impl SecretStore {
     }
 }
 
-fn lock<T>(m: &Mutex<T>) -> std::sync::MutexGuard<'_, T> {
-    m.lock().unwrap_or_else(PoisonError::into_inner)
-}
+type StoreResult<T> = Result<T, Box<dyn std::error::Error + Send + Sync>>;
 
-type FileResult<T> = Result<T, Box<dyn std::error::Error + Send + Sync>>;
-
-fn read_file(path: &PathBuf) -> FileResult<BTreeMap<String, String>> {
+fn read_file(path: &PathBuf) -> StoreResult<BTreeMap<String, String>> {
     match std::fs::read(path) {
         Ok(bytes) => Ok(serde_json::from_slice(&bytes)?),
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(BTreeMap::new()),
@@ -158,18 +155,23 @@ fn read_file(path: &PathBuf) -> FileResult<BTreeMap<String, String>> {
     }
 }
 
-fn write_file(path: &PathBuf, all: &BTreeMap<String, String>) -> FileResult<()> {
+/// Creates a new file only its owner can read (mode 0600); fails if `path` exists.
+pub(crate) fn create_private(path: &Path) -> std::io::Result<std::fs::File> {
+    let mut options = std::fs::OpenOptions::new();
+    options.write(true).create_new(true);
+    #[cfg(unix)]
+    std::os::unix::fs::OpenOptionsExt::mode(&mut options, 0o600);
+    options.open(path)
+}
+
+fn write_file(path: &PathBuf, all: &BTreeMap<String, String>) -> StoreResult<()> {
     let tmp = path.with_extension("tmp");
     // A planted tmp file (or symlink) would keep its own mode; start fresh.
     match std::fs::remove_file(&tmp) {
         Err(e) if e.kind() != std::io::ErrorKind::NotFound => return Err(e.into()),
         _ => {}
     }
-    let mut options = std::fs::OpenOptions::new();
-    options.write(true).create_new(true);
-    #[cfg(unix)]
-    std::os::unix::fs::OpenOptionsExt::mode(&mut options, 0o600);
-    std::io::Write::write_all(&mut options.open(&tmp)?, &serde_json::to_vec(all)?)?;
+    std::io::Write::write_all(&mut create_private(&tmp)?, &serde_json::to_vec(all)?)?;
     std::fs::rename(tmp, path)?;
     Ok(())
 }

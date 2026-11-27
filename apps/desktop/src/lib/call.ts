@@ -56,11 +56,8 @@ export function firstClause(text: string): { clause: string; rest: string } | nu
   return m?.[1] ? { clause: m[1].trim(), rest: text.slice(m[0].length) } : null;
 }
 
-/**
- * Splits streamed text into whole sentences and the unfinished rest. A sentence
- * ends at `.`, `!`, `?` or `…` followed by whitespace, or at a line break; never
- * inside a code block.
- */
+/** Whole sentences and the unfinished rest: a sentence ends at `.`, `!`, `?` or `…` before
+ * whitespace, or at a line break; never inside a code block. */
 export function splitSentences(text: string): { done: string[]; rest: string } {
   const done: string[] = [];
   let start = 0;
@@ -80,11 +77,8 @@ export const isPass = (text: string): boolean => /^\(?pass\)?[.!]?$/i.test(text.
 
 const words = (s: string): string[] => s.toLowerCase().match(/[\p{L}\p{N}']+/gu) ?? [];
 
-/**
- * Whether the microphone heard the operator, not the agents' own voices coming back.
- * While an agent speaks (`busy`), it takes two words to interrupt; `recent` is what
- * was spoken in the last moments, and words that mostly repeat it are echo.
- */
+/** Whether the microphone heard the operator, not the agents' echo: while one speaks (`busy`) it
+ * takes two words, and words that mostly repeat `recent` (just spoken) are echo. */
 export function operatorSaid(heard: string, busy: boolean, recent: string): boolean {
   const said = words(heard);
   if (said.length === 0 || (busy && said.length < 2)) return false;
@@ -296,11 +290,8 @@ export function callChanged(
   return { ...state, agents, host, room };
 }
 
-/**
- * Whether a turn is part of the call, judged when it starts (its `message_in`, with the room it
- * came from): in a room only the room's turns, so members' own chats stay silent; without one
- * the host's turns.
- */
+/** Whether a turn is part of the call, judged by its `message_in`'s room: in a room only the
+ * room's turns, so members' own chats stay silent; without one the host's turns. */
 export function callTurn(state: CallState, agent: string, room: number | null): boolean {
   return state.room !== null ? room === state.room : room === null && agent === state.host;
 }
@@ -339,7 +330,7 @@ export const meterDots = (rms: number): number =>
   Math.min(METER_DOTS, Math.round(Math.sqrt(Math.max(0, rms)) * METER_DOTS * 2));
 
 /** Speeds the call bar steps through (ElevenLabs takes 0.7-1.2). */
-export const CALL_SPEEDS = [0.7, 0.8, 0.9, 1, 1.1, 1.2] as const;
+const CALL_SPEEDS = [0.7, 0.8, 0.9, 1, 1.1, 1.2] as const;
 
 /** The next speed up from `speed` (`null`: normal), back to the slowest after the fastest. */
 export const nextSpeed = (speed: number | null): number =>

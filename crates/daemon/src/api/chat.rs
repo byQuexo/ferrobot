@@ -5,7 +5,7 @@ use axum::http::StatusCode;
 use axum::routing::{get, post};
 use axum::{Json, Router};
 use ferrobot_core::question::{Approval, QuestionAnswer, QuestionAnswered, QuestionEvent};
-use ferrobot_core::{MailMessage, ProviderKind, Sender};
+use ferrobot_core::{MailMessage, Sender};
 use ferrobot_store::StoredEvent;
 use serde::{Deserialize, Serialize};
 use utoipa::{IntoParams, ToSchema};
@@ -67,14 +67,7 @@ pub(crate) async fn post_message(
     if body.is_empty() || body.len() > MAX_TEXT_BYTES {
         return Err(ApiError::BadRequest("body must be 1..32768 bytes".into()));
     }
-    let msg = state
-        .store
-        .enqueue_message(Sender::User, id, body, None)
-        .await?;
-    state.message_arrived(id);
-    state.publish(UiEvent::Message {
-        message: msg.clone(),
-    });
+    let msg = crate::agents::tell(&state, id, body).await?;
     if req.now && state.hub.turn_holds_messages(id) {
         state.hub.interrupt(id);
     }
@@ -279,87 +272,105 @@ pub(crate) async fn answer_question(
             "question {qid} is already answered"
         )));
     }
-    if let Some(approval @ Approval::AddConnector { .. }) = &question.approval {
-        let answered = crate::api::connectors::answer_card(
-            &state,
-            id,
-            qid,
-            &question.card,
-            approval,
-            req.answers,
-        )
-        .await?;
-        return Ok((StatusCode::ACCEPTED, Json(answered)));
-    }
-    if let Some(approval @ Approval::CreateRoutine { .. }) = &question.approval {
-        let answered =
-            crate::api::routines::answer_card(&state, id, qid, approval, req.answers).await?;
-        return Ok((StatusCode::ACCEPTED, Json(answered)));
-    }
-    if let Some(approval @ Approval::SetAgentTools { .. }) = &question.approval {
-        let answered =
-            crate::agents::answer_tools_card(&state, id, qid, approval, req.answers).await?;
-        return Ok((StatusCode::ACCEPTED, Json(answered)));
-    }
-    if let Some(approval @ Approval::UseWithoutTools { .. }) = &question.approval {
-        let answered = crate::no_tools::answer_card(&state, id, qid, approval, req.answers).await?;
-        return Ok((StatusCode::ACCEPTED, Json(answered)));
-    }
-    if question.approval.is_some() {
-        let answered = QuestionAnswered {
-            question: qid,
-            answers: req.answers,
-            message_id: None,
-            timed_out: false,
-        };
-        let waiting = crate::agents::decide(&state, qid, &answered.answers);
-        let payload =
-            serde_json::to_value(&answered).map_err(|e| ApiError::Internal(e.to_string()))?;
-        state.record(id, None, "question_answered", payload).await;
-        if !waiting {
-            return Err(ApiError::Conflict(format!(
-                "approval request {qid} is no longer pending"
-            )));
+    let answered = match &question.approval {
+        Some(approval @ Approval::AddConnector { .. }) => {
+            let card = &question.card;
+            crate::api::connectors::answer_card(&state, id, qid, card, approval, req.answers)
+                .await?
         }
-        return Ok((StatusCode::ACCEPTED, Json(answered)));
-    }
-    let body = question.card.answer_text(&req.answers);
-    let msg = state
-        .store
-        .enqueue_message(Sender::User, id, body, None)
-        .await?;
-    let answered = QuestionAnswered {
-        question: qid,
-        answers: req.answers,
-        message_id: Some(msg.id),
-        timed_out: false,
+        Some(approval @ Approval::AddCli { .. }) => {
+            crate::api::clis::answer_card(&state, id, qid, approval, req.answers).await?
+        }
+        Some(approval @ Approval::CreateRoutine { .. }) => {
+            crate::api::routines::answer_card(&state, id, qid, approval, req.answers).await?
+        }
+        Some(approval @ Approval::SetAgentTools { .. }) => {
+            crate::agents::answer_tools_card(&state, id, qid, approval, req.answers).await?
+        }
+        Some(approval @ Approval::UseWithoutTools { .. }) => {
+            crate::no_tools::answer_card(&state, id, qid, approval, req.answers).await?
+        }
+        Some(_) => {
+            let answered = QuestionAnswered {
+                question: qid,
+                answers: req.answers,
+                message_id: None,
+                timed_out: false,
+            };
+            let waiting = crate::agents::decide(&state, qid, &answered.answers);
+            let answered = crate::agents::record_answer(&state, id, answered).await?;
+            if !waiting {
+                return Err(ApiError::Conflict(format!(
+                    "approval request {qid} is no longer pending"
+                )));
+            }
+            answered
+        }
+        None => {
+            let body = question.card.answer_text(&req.answers);
+            let msg = state
+                .store
+                .enqueue_message(Sender::User, id, body, None)
+                .await?;
+            let answered = QuestionAnswered {
+                question: qid,
+                answers: req.answers,
+                message_id: Some(msg.id),
+                timed_out: false,
+            };
+            let answered = crate::agents::record_answer(&state, id, answered).await?;
+            state.message_arrived(id);
+            state.publish(UiEvent::Message { message: msg });
+            answered
+        }
     };
-    let payload = serde_json::to_value(&answered).map_err(|e| ApiError::Internal(e.to_string()))?;
-    state.record(id, None, "question_answered", payload).await;
-    state.message_arrived(id);
-    state.publish(UiEvent::Message { message: msg });
     Ok((StatusCode::ACCEPTED, Json(answered)))
+}
+
+#[derive(Debug, Deserialize, IntoParams)]
+#[into_params(parameter_in = Query)]
+pub(crate) struct InterruptQuery {
+    /// Also stop every agent working on a message from this one (and from those, and so on), and
+    /// drop the agent messages queued to or from any of them.
+    #[serde(default)]
+    chain: bool,
 }
 
 #[derive(Debug, Serialize, ToSchema)]
 pub(crate) struct Interrupted {
     /// The interrupted turn, or null if the agent was idle.
     turn_id: Option<String>,
+    /// With `chain`: every agent whose work was stopped, this one first.
+    #[schema(value_type = Vec<String>)]
+    agents: Vec<ferrobot_core::AgentId>,
+    /// With `chain`: how many queued agent messages were dropped.
+    dropped: usize,
 }
 
-/// Aborts the agent's running turn, if any. Interrupted messages are not retried.
+/// Aborts the agent's running turn, if any; with `chain`, the work it set off as well (Stop).
+/// Interrupted messages are not retried.
 #[utoipa::path(post, path = "/v1/agents/{id}/interrupt", tag = "chat",
-    params(("id" = String, Path, description = "Agent id (UUID)")),
+    params(("id" = String, Path, description = "Agent id (UUID)"), InterruptQuery),
     responses((status = 200, body = Interrupted),
         (status = 404, description = "Unknown agent", body = ErrorBody)))]
 pub(crate) async fn interrupt(
     State(state): State<AppState>,
     Path(id): Path<String>,
+    Query(q): Query<InterruptQuery>,
 ) -> ApiResult<Interrupted> {
     let id = parse_id(&id)?;
     state.store.get_agent(id).await?;
+    let turn_id = state.hub.current_turn(id);
+    let (agents, dropped) = if q.chain {
+        crate::stop::stop_chain(&state, id).await?
+    } else {
+        state.hub.interrupt(id);
+        (Vec::new(), 0)
+    };
     Ok(Json(Interrupted {
-        turn_id: state.hub.interrupt(id),
+        turn_id,
+        agents,
+        dropped,
     }))
 }
 
@@ -377,15 +388,7 @@ pub(crate) async fn compact(
     Path(id): Path<String>,
 ) -> Result<StatusCode, ApiError> {
     let agent = state.store.get_agent(parse_id(&id)?).await?;
-    let claude_code = match agent.provider_id {
-        Some(p) => state
-            .store
-            .get_provider(p)
-            .await
-            .is_ok_and(|p| p.kind == ProviderKind::ClaudeCode),
-        None => false,
-    };
-    if !claude_code {
+    if !crate::agents::on_claude_code(&state, &agent).await {
         return Err(ApiError::BadRequest(
             "compacting works for Claude Code agents for now".into(),
         ));
@@ -414,21 +417,8 @@ pub(crate) async fn turn_trace(
     Path((id, turn)): Path<(String, String)>,
 ) -> ApiResult<crate::trace::Trace> {
     let agent = state.store.get_agent(parse_id(&id)?).await?;
-    let events = state.store.turn_events(agent.id, turn.clone()).await?;
-    let calls = state.store.turn_calls(agent.id, turn.clone()).await?;
-    let claude_code = match agent.provider_id {
-        Some(p) => state
-            .store
-            .get_provider(p)
-            .await
-            .is_ok_and(|p| p.kind == ProviderKind::ClaudeCode),
-        None => false,
-    };
-    // Claude Code turns before its calls were recorded have none.
-    let models_tracked =
-        !claude_code || !calls.is_empty() || events.iter().any(|e| e.kind == "model_call");
-    let links = crate::trace::links(&state.store, &turn, &events).await?;
-    crate::trace::build(&turn, &events, &calls, models_tracked, &links)
+    let (trace, _) = crate::trace::for_turn(&state, &agent, &turn).await?;
+    trace
         .map(Json)
         .ok_or_else(|| ApiError::NotFound("turn not found".into()))
 }

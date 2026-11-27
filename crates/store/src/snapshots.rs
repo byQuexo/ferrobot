@@ -80,12 +80,8 @@ impl Store {
             let mut stmt = c.prepare(&format!(
                 "SELECT {COLUMNS} FROM snapshots WHERE agent_id = ?1 ORDER BY id DESC"
             ))?;
-            let mut rows = stmt.query([agent.to_string()])?;
-            let mut out = Vec::new();
-            while let Some(row) = rows.next()? {
-                out.push(from_row(row)?);
-            }
-            Ok(out)
+            let rows = stmt.query_map([agent.to_string()], |r| Ok(from_row(r)))?;
+            rows.map(|r| r?).collect()
         })
         .await
     }
@@ -98,10 +94,7 @@ impl Store {
                 |r| Ok(from_row(r)),
             )
             .optional()?
-            .ok_or_else(|| StoreError::NotFound {
-                entity: "snapshot",
-                key: id.to_string(),
-            })?
+            .ok_or_else(|| StoreError::not_found("snapshot", id))?
         })
         .await
     }

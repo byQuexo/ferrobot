@@ -1,15 +1,9 @@
-//! The operator's voice call with agents. With one agent it happens in that agent's chat; once a
-//! second agent joins it moves into a room. There every line (the operator's words or an agent's
-//! reply) is due for every other member, and they take it one at a time: the floor goes host
-//! first, then in join order, and each speaks or `(pass)`es having heard the one before. At most
-//! [`MAX_AGENT_LINES`] agent lines in a row make others due; then the room waits for the operator.
-//! Chats and rooms show only the words; the call note and what an agent missed go to its model.
-//! A group chat is a named room that talks by the same rules outside a call, with the group note;
-//! calling the group makes its room the call's.
+//! The operator's voice call (in one agent's chat, or a room once a second agent joins) and group
+//! chats, rooms where every line is due for every other member, who take the floor one at a time.
 
 use std::collections::{HashMap, VecDeque};
 
-use ferrobot_core::mention::{Segment, segments};
+use ferrobot_core::mention::{Segment, segments, token};
 use ferrobot_core::protocol::TurnOutcome;
 use ferrobot_core::{AgentId, MailMessage, Sender};
 use ferrobot_store::Room;
@@ -22,6 +16,13 @@ use crate::{AppState, UiEvent};
 pub const MAX_CALL_AGENTS: usize = 4;
 /// Agent lines in a row that make the others due before the room waits for the operator.
 const MAX_AGENT_LINES: usize = 4;
+/// The same in a call among agents, which ends once nobody is due.
+const MAX_AGENTS_ONLY_LINES: usize = 12;
+/// Leads every turn in a call among agents.
+const AGENTS_NOTE: &str = "(Call among agents: the operator is not in it but may join. Every \
+    agent in it reads every line. Reply in a few short sentences when you are asked or add \
+    something new, otherwise reply exactly (pass); never repeat what was said. Talk to the others \
+    in your reply, not with send_message. The call ends when nobody adds anything.)\n\n";
 /// What an agent replies when it has nothing to add; never a line (nor spoken by the UI).
 const PASS: &str = "(pass)";
 /// Leads every call message, so agents talk like on the phone.
@@ -81,6 +82,8 @@ pub struct Call {
     room: Option<i64>,
     /// A group chat outside a call: the group note instead of the call's.
     group: bool,
+    /// A call agents started without the operator (`call_agents`), until the operator joins.
+    among_agents: bool,
     /// The voice settings' language code when the call started, named in the note.
     language: Option<String>,
     /// Room lines each member has not heard yet.
@@ -137,13 +140,26 @@ fn named(text: &str, members: &[AgentId]) -> Vec<AgentId> {
 
 fn line_of(agent: AgentId, text: &str) -> String {
     let text: String = text.chars().take(MAX_LINE_CHARS).collect();
-    format!("<@{agent}>: {text}")
+    format!("{}: {text}", token(agent))
+}
+
+fn unique(agents: impl IntoIterator<Item = AgentId>) -> Vec<AgentId> {
+    let mut out = Vec::new();
+    for agent in agents {
+        if !out.contains(&agent) {
+            out.push(agent);
+        }
+    }
+    out
 }
 
 impl Call {
     fn note(&self, agent: AgentId) -> String {
         if self.group {
             return GROUP_NOTE.to_owned();
+        }
+        if self.among_agents {
+            return AGENTS_NOTE.to_owned();
         }
         let note = match &self.language {
             Some(code) => CALL_NOTE.replacen(LANGUAGE, &format!("{LANGUAGE} ({code})"), 1),
@@ -192,7 +208,12 @@ impl Call {
         self.hear(Some(agent), &line_of(agent, text));
         self.last = Some((Sender::Agent(agent), text.to_owned()));
         self.agent_lines += 1;
-        if self.agent_lines > MAX_AGENT_LINES {
+        let most = if self.among_agents {
+            MAX_AGENTS_ONLY_LINES
+        } else {
+            MAX_AGENT_LINES
+        };
+        if self.agent_lines > most {
             return;
         }
         let candidates = if self.directed {
@@ -242,6 +263,35 @@ impl Call {
         self.floor
             .as_ref()
             .is_some_and(|f| f.turn.as_deref() == Some(turn))
+    }
+
+    /// `host` opened with `topic`: the others hear it, and `host`'s running turn `turn` speaks
+    /// first while the floor is free.
+    fn announce(&mut self, host: AgentId, topic: &str, turn: Option<String>) {
+        self.hear(Some(host), &line_of(host, topic));
+        self.last = Some((Sender::Agent(host), topic.to_owned()));
+        if self.floor.is_none()
+            && let Some(turn) = turn
+        {
+            self.floor = Some(Floor {
+                agent: host,
+                turn: Some(turn),
+                said: None,
+            });
+        }
+    }
+
+    /// Who stays when `agent` hangs up: nobody if it is the host, else everyone else.
+    fn without(&self, agent: AgentId) -> Vec<AgentId> {
+        if self.agents.first() == Some(&agent) {
+            Vec::new()
+        } else {
+            self.agents
+                .iter()
+                .copied()
+                .filter(|a| *a != agent)
+                .collect()
+        }
     }
 
     /// Keeps who is due and what is unheard for `agents` only.
@@ -316,14 +366,21 @@ impl AppState {
         self.rooms().await.call.agents.contains(&agent)
     }
 
+    /// The model the operator picked for `agent`'s turns in a call, while it is in one.
+    pub async fn call_model(&self, agent: AgentId) -> Option<String> {
+        if !self.in_call(agent).await {
+            return None;
+        }
+        crate::api::voice::load(self)
+            .await
+            .ok()?
+            .call_models
+            .remove(&agent)
+    }
+
     /// Replaces who is in the call; empty ends it.
     pub async fn set_call(&self, wanted: Vec<AgentId>) -> Result<(), String> {
-        let mut agents = Vec::new();
-        for agent in wanted {
-            if !agents.contains(&agent) {
-                agents.push(agent);
-            }
-        }
+        let agents = unique(wanted);
         if agents.len() > MAX_CALL_AGENTS {
             return Err(format!("a call has at most {MAX_CALL_AGENTS} agents"));
         }
@@ -345,6 +402,121 @@ impl AppState {
         rooms.call = call;
         self.apply(&mut rooms.call, group.members.clone(), None)
             .await
+    }
+
+    /// `host` calls `guests` without the operator: a new room where they talk by the room rules,
+    /// the topic its first line, the guests due after `host`'s running turn. It ends once nobody
+    /// is due; the operator may join it meanwhile.
+    pub async fn call_agents(
+        &self,
+        host: AgentId,
+        guests: Vec<AgentId>,
+        topic: &str,
+    ) -> Result<Room, String> {
+        let mut rooms = self.rooms().await;
+        let agents = unique(std::iter::once(host).chain(guests));
+        if agents.len() < 2 {
+            return Err("call at least one other agent".into());
+        }
+        if agents.len() > MAX_CALL_AGENTS {
+            return Err(format!("a call has at most {MAX_CALL_AGENTS} agents"));
+        }
+        let busy = |a: &AgentId| {
+            rooms.call.agents.contains(a)
+                || rooms
+                    .groups
+                    .values()
+                    .any(|t| t.among_agents && t.agents.contains(a))
+        };
+        if busy(&host) {
+            return Err("you are already in a call".into());
+        }
+        if agents.iter().any(busy) {
+            return Err("an agent you called is already in a call".into());
+        }
+        let room = self
+            .store
+            .create_room(agents.clone())
+            .await
+            .map_err(|e| format!("the call room could not be saved: {e}"))?;
+        self.publish(UiEvent::Room { room: room.clone() });
+        self.add_line(room.id, Sender::Agent(host), topic, None)
+            .await;
+        let mut talk = Call {
+            order: agents[1..].iter().copied().collect(),
+            agents,
+            room: Some(room.id),
+            among_agents: true,
+            agent_lines: 1,
+            ..Call::default()
+        };
+        talk.announce(host, topic, self.hub.current_turn(host));
+        self.hand_on(&mut talk).await;
+        rooms.groups.insert(room.id, talk);
+        self.publish(UiEvent::AgentCall {
+            room_id: room.id,
+            host,
+            topic: topic.to_owned(),
+        });
+        Ok(room)
+    }
+
+    /// Whether room `room` is a call among agents the operator can join.
+    pub async fn among_agents(&self, room: i64) -> bool {
+        self.rooms()
+            .await
+            .groups
+            .get(&room)
+            .is_some_and(|t| t.among_agents)
+    }
+
+    /// The operator joins the call among agents in room `room`: it becomes the voice call and goes
+    /// on in the same room. Err: a call is running, or that call is over.
+    pub async fn join_agent_call(&self, room: i64) -> Result<(), String> {
+        let mut rooms = self.rooms().await;
+        if !rooms.call.agents.is_empty() {
+            return Err("end the current call first".into());
+        }
+        if !rooms.groups.get(&room).is_some_and(|t| t.among_agents) {
+            return Err("that call among agents is over".into());
+        }
+        let mut call = rooms.groups.remove(&room).unwrap_or_default();
+        call.among_agents = false;
+        // A new call to `apply`, which loads its language.
+        let agents = std::mem::take(&mut call.agents);
+        rooms.call = call;
+        self.apply(&mut rooms.call, agents, None).await
+    }
+
+    /// Ends call among agents `talk` in room `id`: its running turn is cut off and the room ends.
+    async fn end_agent_call(&self, talk: &Call, id: i64) {
+        self.silence(talk, id).await;
+        match self.store.end_room(id).await {
+            Ok(room) => self.publish(UiEvent::Room { room }),
+            Err(e) => tracing::warn!(error = %e, "call room not ended"),
+        }
+    }
+
+    /// `agent`'s hang-ups in calls among agents take effect (the host's ends the call, a guest
+    /// leaves), a free floor goes to the next agent due, and calls with one agent or nobody due
+    /// end.
+    async fn settle_agent_calls(&self, groups: &mut HashMap<i64, Call>, agent: Option<AgentId>) {
+        let mut ended = Vec::new();
+        for (&id, talk) in groups.iter_mut().filter(|(_, t)| t.among_agents) {
+            if let Some(agent) = agent.filter(|a| talk.leaving.contains(a)) {
+                talk.set_agents(talk.without(agent));
+            }
+            if talk.agents.len() >= 2 && talk.floor.is_none() {
+                self.hand_on(talk).await;
+            }
+            if talk.agents.len() < 2 || talk.floor.is_none() {
+                self.end_agent_call(talk, id).await;
+                ended.push(id);
+            }
+        }
+        for id in ended {
+            groups.remove(&id);
+        }
     }
 
     /// The operator's words to group `group`: a line there, and the next member due gets the
@@ -526,14 +698,20 @@ impl AppState {
     /// `agent` hangs up when its turn ends: the host (the agent the operator called) ends the
     /// call, an invited agent leaves. `Ok(true)` for the host.
     pub async fn hang_up(&self, agent: AgentId) -> Result<bool, String> {
-        let call = &mut self.rooms().await.call;
-        if !call.agents.contains(&agent) {
-            return Err("you are not in a voice call".into());
+        let mut rooms = self.rooms().await;
+        let Rooms { call, groups } = &mut *rooms;
+        let talk = if call.agents.contains(&agent) {
+            call
+        } else {
+            groups
+                .values_mut()
+                .find(|t| t.among_agents && t.agents.contains(&agent))
+                .ok_or_else(|| "you are not in a call".to_owned())?
+        };
+        if !talk.leaving.contains(&agent) {
+            talk.leaving.push(agent);
         }
-        if !call.leaving.contains(&agent) {
-            call.leaving.push(agent);
-        }
-        Ok(call.agents.first() == Some(&agent))
+        Ok(talk.agents.first() == Some(&agent))
     }
 
     /// What `agent`'s model gets for `msg` in turn `turn`: a call or group message with its note
@@ -556,6 +734,7 @@ impl AppState {
         let prompt = talk.start_turn(agent, turn);
         if prompt.is_none() {
             self.hand_on(talk).await;
+            self.settle_agent_calls(groups, None).await;
         }
         prompt
     }
@@ -578,19 +757,14 @@ impl AppState {
         let Rooms { call, groups } = &mut *rooms;
         if let Some(group) = groups.values_mut().find(|g| g.holds(turn)) {
             self.turn_said(group, turn, outcome).await;
-            self.hand_on(group).await;
+            if !group.among_agents {
+                self.hand_on(group).await;
+            }
         }
+        self.settle_agent_calls(groups, Some(agent)).await;
         self.turn_said(call, turn, outcome).await;
         if call.leaving.contains(&agent) {
-            let rest = if call.agents.first() == Some(&agent) {
-                Vec::new()
-            } else {
-                call.agents
-                    .iter()
-                    .copied()
-                    .filter(|a| *a != agent)
-                    .collect()
-            };
+            let rest = call.without(agent);
             // Fewer agents than before always fit.
             let _ = self.apply(call, rest, Some(agent)).await;
         }
@@ -636,21 +810,10 @@ impl AppState {
         call.heard
             .entry(guest)
             .or_default()
-            .push_back(format!("<@{host}>{INVITED}"));
-        call.hear(Some(host), &line_of(host, topic));
-        call.last = Some((Sender::Agent(host), topic.to_owned()));
+            .push_back(format!("{}{INVITED}", token(host)));
         call.order.retain(|a| *a != guest);
         call.order.push_front(guest);
-        // The host's announcement in the turn that invited comes first.
-        if call.floor.is_none()
-            && let Some(turn) = self.hub.current_turn(host)
-        {
-            call.floor = Some(Floor {
-                agent: host,
-                turn: Some(turn),
-                said: None,
-            });
-        }
+        call.announce(host, topic, self.hub.current_turn(host));
         self.hand_on(call).await;
         Ok(())
     }

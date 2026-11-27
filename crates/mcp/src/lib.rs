@@ -14,9 +14,6 @@ use ferrobot_store::{Store, StoredEvent};
 pub use auth::{Caller, router};
 pub use tools::FerrobotTools;
 
-/// MCP server name as seen by clients. Claude exposes tools as `mcp__<name>__<tool>`.
-pub const SERVER_NAME: &str = "ferrobot";
-
 /// Upper bound for one message body (bytes).
 pub const MAX_MESSAGE_BYTES: usize = 32 * 1024;
 
@@ -37,6 +34,14 @@ pub struct AgentRequest {
     pub tools: Option<Vec<ferrobot_core::ToolGroup>>,
     /// Names of the requester's connectors to give it; `None`: all of them.
     pub connectors: Option<Vec<String>>,
+}
+
+/// An agent's request for a CLI in its computer (`propose_cli` tool).
+#[derive(Debug, Clone)]
+pub struct CliRequest {
+    pub cli: ferrobot_core::Cli,
+    /// Why the agent wants it, shown on the card.
+    pub reason: String,
 }
 
 /// An agent's request to add a connector (`add_connector` tool).
@@ -96,6 +101,37 @@ pub struct SharedFile {
     pub id: i64,
     pub name: String,
     pub size: u64,
+}
+
+/// One step on an agent's desktop (`desktop` tool); coordinates are screen pixels.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum DesktopAction {
+    Screenshot,
+    /// `button`: 1 left, 2 middle, 3 right.
+    Click {
+        x: u32,
+        y: u32,
+        button: u8,
+        double: bool,
+    },
+    Move {
+        x: u32,
+        y: u32,
+    },
+    Type {
+        text: String,
+    },
+    /// xdotool key names and chords, e.g. `ctrl+l`, `Return`.
+    Key {
+        keys: Vec<String>,
+    },
+    /// `button`: 4 up, 5 down, 6 left, 7 right.
+    Scroll {
+        x: u32,
+        y: u32,
+        button: u8,
+        amount: u32,
+    },
 }
 
 /// How a [`AgentRequest`] ended.
@@ -168,6 +204,16 @@ pub trait MailboxNotifier: Send + Sync + 'static {
         let _ = (requester, request);
         Box::pin(async { Err("adding connectors is not supported here".to_owned()) })
     }
+    /// Shows the operator a card to add a CLI for `requester`; returns the card's event id at once.
+    /// Auto mode never skips it. `Err` carries a message for the agent.
+    fn request_cli(
+        &self,
+        requester: AgentId,
+        request: CliRequest,
+    ) -> BoxFuture<Result<i64, String>> {
+        let _ = (requester, request);
+        Box::pin(async { Err("adding CLIs is not supported here".to_owned()) })
+    }
     /// Creates a routine for `requester`, or shows the operator a card for it unless Auto mode
     /// is on. `Err` carries a message for the agent.
     fn request_routine(
@@ -216,6 +262,31 @@ pub trait MailboxNotifier: Send + Sync + 'static {
     ) -> BoxFuture<Result<String, String>> {
         let _ = (agent, text, channel);
         Box::pin(async { Err("Discord is not supported here".to_owned()) })
+    }
+    /// Runs `action` on `agent`'s desktop; a screenshot comes back as an image. `Err` carries a
+    /// message for the agent.
+    fn desktop(
+        &self,
+        agent: AgentId,
+        action: DesktopAction,
+    ) -> BoxFuture<Result<rmcp::model::CallToolResult, String>> {
+        let _ = (agent, action);
+        Box::pin(async { Err("there is no desktop here".to_owned()) })
+    }
+    /// Whether voice is on and has a key; only then is `call_agents` listed.
+    fn has_voice(&self) -> BoxFuture<bool> {
+        Box::pin(async { false })
+    }
+    /// `host` calls `guests` without the operator; `Ok` carries the call's room id, `Err` a
+    /// message for the agent.
+    fn call_agents(
+        &self,
+        host: AgentId,
+        guests: Vec<AgentId>,
+        topic: String,
+    ) -> BoxFuture<Result<i64, String>> {
+        let _ = (host, guests, topic);
+        Box::pin(async { Err("calls are not supported here".to_owned()) })
     }
     /// Brings `guest` into the operator's voice call that `host` is in
     /// and sends it `topic`. `Err` carries a message for the agent.

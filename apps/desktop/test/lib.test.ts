@@ -10,13 +10,24 @@ import {
 } from "../src/api.ts";
 import { ACCENTS, DEFAULT_APPEARANCE, readAppearance } from "../src/lib/appearance.ts";
 import { hash } from "../src/lib/avatar.ts";
+import {
+  consoleCommand,
+  joinPath,
+  parentOf,
+  parseConsole,
+  parseListing,
+  shortPath,
+  treeRows,
+} from "../src/lib/computer.ts";
 import { characterOf, deriveCharacter, moodOf, rerollCharacter } from "../src/lib/character.ts";
+import { accountLabel, installLabel, knownCli, specOf, splitList } from "../src/lib/clis.ts";
 import {
   computerSummary,
   linkLabel,
   relativeTime,
   rowLine,
   statusOf,
+  stopSummary,
   stepLabel,
   stepsLabel,
   toolLabel,
@@ -227,7 +238,16 @@ describe("format", () => {
     const nameOf = (id: string): string | undefined => (id === "b-1" ? "bob" : undefined);
     assert.equal(stepLabel("mcp__ferrobot__send_message", { to: "b-1" }, nameOf), "Messaging @bob");
     assert.equal(stepLabel("mcp__ferrobot__github__create_issue", {}, nameOf), "Using github");
-    assert.equal(stepLabel("Bash", { command: "ls -la" }, nameOf), "Working on its computer");
+    assert.equal(stepLabel("Bash", { command: "ls -la" }, nameOf), "Running ls -la");
+    assert.equal(stepLabel("bash", { command: "" }, nameOf), "Working on its computer");
+    assert.equal(
+      stepLabel("mcp__ferrobot__desktop", { action: "screenshot" }, nameOf),
+      "Looking at its screen",
+    );
+    assert.equal(
+      stepLabel("mcp__ferrobot__desktop", { action: "double_click" }, nameOf),
+      "Clicking on its screen",
+    );
     assert.equal(
       stepLabel("bash", { command: "curl x", description: "checking flight prices" }, nameOf),
       "Checking flight prices",
@@ -911,6 +931,13 @@ describe("ui polish", () => {
       last_reply: { text: "# AI news: **Nvidia** `x`", at: "2026-11-23T11:55:00Z" },
     };
     assert.equal(rowLine(md, now).text, "AI news: Nvidia x");
+    const id = "3356aa5f-b061-49c4-bc00-000000000001";
+    const mention = {
+      ...agent,
+      last_reply: { text: `ask <@${id}> > why`, at: "2026-11-23T11:55:00Z" },
+    };
+    const names = (x: string) => (x === id ? "triage" : undefined);
+    assert.equal(rowLine(mention, now, names).text, "ask @triage why");
     assert.equal(rowLine({ ...replied, waiting: 2 }, now).text, "2 questions for you");
     assert.equal(rowLine({ ...replied, waiting: 2, presence: "error" }, now).tone, "bad");
   });
@@ -928,10 +955,7 @@ describe("ui polish", () => {
     );
     assert.equal(computerSummary("paused", { idle_s: 999 }), "Paused · resumes quickly");
     const none = (): undefined => undefined;
-    assert.equal(
-      stepLabel("mcp__ferrobot__bash", { command: "ls" }, none),
-      "Working on its computer",
-    );
+    assert.equal(stepLabel("mcp__ferrobot__bash", { command: "ls" }, none), "Running ls");
     assert.equal(stepLabel("mcp__ferrobot__remember", {}, none), "Taking notes");
   });
 
@@ -2546,5 +2570,109 @@ describe("splitDiscord", () => {
       text: "see (via Discord, from x) above",
       discord: null,
     });
+  });
+});
+
+describe("clis", () => {
+  it("reads lists, describes installs and turns a CLI back into what PUT takes", () => {
+    assert.deepEqual(splitList(" api.example.com,\nb.example.com  api.example.com "), [
+      "api.example.com",
+      "b.example.com",
+    ]);
+    assert.deepEqual(splitList(""), []);
+    assert.equal(knownCli("gh")?.spec.account?.sign_in?.token.join(" "), "gh auth token");
+    const download = { install: { kind: "download" as const, url: "https://example.com/x" } };
+    assert.equal(installLabel(download), "Download from example.com, no checksum");
+    const cli = {
+      id: "example",
+      install: { kind: "npm" as const, package: "example-cli" },
+      account: { hosts: ["api.example.com"], env: ["EXAMPLE_API_KEY"] },
+      has_token: false,
+    };
+    assert.equal(accountLabel(cli), "Needs a token");
+    assert.equal(accountLabel({ ...cli, account: null }), "");
+    assert.deepEqual(specOf(cli), {
+      install: { kind: "npm", package: "example-cli" },
+      programs: [],
+      account: { hosts: ["api.example.com"], env: ["EXAMPLE_API_KEY"] },
+      agents: [],
+    });
+  });
+});
+
+describe("computer tools", () => {
+  it("lists folders first, then files by name", () => {
+    const out = "f\t12\tb.txt\0d\t4096\tsrc\0f\t3\ta\ttab.txt\0d\t4096\t.cache\0";
+    assert.deepEqual(parseListing(out), [
+      { name: ".cache", dir: true, size: 4096 },
+      { name: "src", dir: true, size: 4096 },
+      { name: "a\ttab.txt", dir: false, size: 3 },
+      { name: "b.txt", dir: false, size: 12 },
+    ]);
+    assert.deepEqual(parseListing(""), []);
+  });
+
+  it("walks paths and shortens the home folder", () => {
+    assert.equal(joinPath("/", "etc"), "/etc");
+    assert.equal(joinPath("/home/node", "src"), "/home/node/src");
+    assert.equal(parentOf("/home/node/src"), "/home/node");
+    assert.equal(parentOf("/etc"), "/");
+    assert.equal(shortPath("/home/node"), "~");
+    assert.equal(shortPath("/home/node/src"), "~/src");
+    assert.equal(shortPath("/home/nodejs"), "/home/nodejs");
+  });
+
+  it("shows an expanded folder's entries right below it, indented", () => {
+    const dir = (name: string) => ({ name, dir: true, size: 4096 });
+    const file = (name: string) => ({ name, dir: false, size: 1 });
+    const listings = new Map([
+      ["/r", [dir("a"), dir("b"), file("c")]],
+      ["/r/a", [file("x")]],
+      ["/r/b", { error: "Permission denied" }],
+    ]);
+    const shown = (expanded: string[]) =>
+      treeRows("/r", listings, new Set(expanded), 2).map((r) =>
+        "note" in r ? `${r.depth}:${r.note}` : `${r.depth}:${r.entry.name}${r.open ? "/" : ""}`,
+      );
+    assert.deepEqual(shown([]), ["0:a", "0:b", "0:1 more not shown"]);
+    assert.deepEqual(shown(["/r/a", "/r/b"]), [
+      "0:a/",
+      "1:x",
+      "0:b/",
+      "1:Permission denied",
+      "0:1 more not shown",
+    ]);
+    assert.deepEqual(
+      shown(["/r/a/x"]),
+      ["0:a", "0:b", "0:1 more not shown"],
+      "only expanded parents show",
+    );
+    assert.deepEqual(
+      treeRows("/gone", listings, new Set(), 2).map((r) => "note" in r && r.note),
+      ["Loading…"],
+    );
+  });
+
+  it("keeps the directory a command ends in", () => {
+    const cmd = consoleCommand("cd src && ls");
+    assert.deepEqual(cmd.slice(0, 4), ["timeout", "60", "bash", "-c"]);
+    assert.ok(cmd[4]?.startsWith("cd src && ls\n"));
+    const out = {
+      exit_code: 0,
+      stdout: "a\nb\n\u001e/home/node/src",
+      stderr: "",
+      truncated: false,
+    };
+    assert.deepEqual(parseConsole(out), { stdout: "a\nb\n", cwd: "/home/node/src" });
+    const cut = { exit_code: 0, stdout: "lots", stderr: "", truncated: true };
+    assert.deepEqual(parseConsole(cut), { stdout: "lots", cwd: null });
+  });
+});
+
+describe("stop", () => {
+  it("says what else a Stop ended", () => {
+    assert.equal(stopSummary(1, 0), "");
+    assert.equal(stopSummary(3, 1), "3 agents stopped, 1 queued message dropped");
+    assert.equal(stopSummary(1, 2), "2 queued messages dropped");
   });
 });

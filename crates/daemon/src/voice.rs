@@ -24,6 +24,9 @@ pub const LIVE_STT_MODEL: &str = "scribe_v3_live";
 const LIVE_MAX_SECONDS: u32 = 600;
 /// Speaking speeds `ElevenLabs` offers (its own UI range).
 pub const SPEEDS: std::ops::RangeInclusive<f32> = 0.7..=1.2;
+/// Seconds of silence that end what the operator says in a call.
+pub const CALL_PAUSES: std::ops::RangeInclusive<f32> = 0.5..=3.0;
+const CALL_PAUSE: f32 = 1.5;
 
 /// A speech and transcription provider.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
@@ -105,6 +108,14 @@ pub struct VoiceSettings {
     /// `null`: detected.
     #[serde(default)]
     pub language: Option<String>,
+    /// Models by agent id for its turns in a call, such as a quicker one for spoken replies;
+    /// only where the request names the model (not Bedrock, Vertex or Gemini).
+    #[serde(default)]
+    #[schema(value_type = BTreeMap<String, String>)]
+    pub call_models: BTreeMap<AgentId, String>,
+    /// Seconds of silence that end what the operator says in a call, 0.5-3; `null`: 1.5.
+    #[serde(default)]
+    pub call_pause: Option<f32>,
 }
 
 fn on() -> bool {
@@ -122,6 +133,8 @@ impl Default for VoiceSettings {
             agent_voices: BTreeMap::new(),
             speed: None,
             language: None,
+            call_models: BTreeMap::new(),
+            call_pause: None,
         }
     }
 }
@@ -131,12 +144,16 @@ impl VoiceSettings {
         if self.speed.is_some_and(|s| !SPEEDS.contains(&s)) {
             return Err("speed must be 0.7-1.2".into());
         }
+        if self.call_pause.is_some_and(|p| !CALL_PAUSES.contains(&p)) {
+            return Err("call_pause must be 0.5-3 seconds".into());
+        }
         if let Some(lang) = &self.language
             && (!(2..=3).contains(&lang.len()) || !lang.chars().all(|c| c.is_ascii_lowercase()))
         {
             return Err("language is a 2-3 letter code such as de or fil".into());
         }
-        for model in [&self.tts_model, &self.stt_model].into_iter().flatten() {
+        let models = [&self.tts_model, &self.stt_model].into_iter().flatten();
+        for model in models.chain(self.call_models.values()) {
             if model.len() > 200 || model.chars().any(char::is_control) {
                 return Err("models must be at most 200 printable characters".into());
             }
@@ -447,6 +464,7 @@ pub fn live_url(
     sample_rate: u32,
     language: Option<&str>,
     keyterms: &[String],
+    pause: Option<f32>,
 ) -> Result<String, String> {
     if !LIVE_RATES.contains(&sample_rate) {
         return Err(format!("sample_rate must be one of {LIVE_RATES:?}"));
@@ -465,9 +483,10 @@ pub fn live_url(
             .append_pair("audio_format", &format!("pcm_{sample_rate}"));
         match mode {
             LiveMode::Dictation => q.append_pair("commit_strategy", "manual"),
-            LiveMode::Call => q
-                .append_pair("commit_strategy", "vad")
-                .append_pair("vad_silence_threshold_secs", "1.5"),
+            LiveMode::Call => q.append_pair("commit_strategy", "vad").append_pair(
+                "vad_silence_threshold_secs",
+                &pause.unwrap_or(CALL_PAUSE).to_string(),
+            ),
         };
         if let Some(lang) = language {
             q.append_pair("language_code", lang);
@@ -699,6 +718,18 @@ mod tests {
         }
         let old: VoiceSettings = serde_json::from_str(r#"{"provider":"elevenlabs"}"#).unwrap();
         assert!(old.enabled, "settings saved before the switch stay on");
+        for (pause, ok) in [
+            (Some(0.5), true),
+            (Some(3.0), true),
+            (Some(0.2), false),
+            (Some(f32::NAN), false),
+        ] {
+            let settings = VoiceSettings {
+                call_pause: pause,
+                ..VoiceSettings::default()
+            };
+            assert_eq!(settings.validate().is_ok(), ok, "{pause:?}");
+        }
     }
 
     #[test]
@@ -710,6 +741,7 @@ mod tests {
             16000,
             Some("de"),
             &keyterms(["builder", "team-lead", "a-very-long-agent-name-here"]),
+            None,
         )
         .unwrap();
         let u = url::Url::parse(&url).unwrap();
@@ -743,13 +775,24 @@ mod tests {
             48000,
             None,
             &[],
+            Some(0.8),
         )
         .unwrap();
         assert!(
             dictation.starts_with("ws://127.0.0.1:9/")
                 && dictation.contains("commit_strategy=manual")
         );
-        assert!(live_url("https://x", "t", LiveMode::Call, 11025, None, &[]).is_err());
+        assert!(live_url("https://x", "t", LiveMode::Call, 11025, None, &[], None).is_err());
+        let quick = live_url(
+            "https://x",
+            "t",
+            LiveMode::Call,
+            16000,
+            None,
+            &[],
+            Some(0.75),
+        );
+        assert!(quick.unwrap().contains("vad_silence_threshold_secs=0.75"));
         let r = live_token(&reqwest::Client::new(), "https://api.elevenlabs.io/", "xi")
             .build()
             .unwrap();

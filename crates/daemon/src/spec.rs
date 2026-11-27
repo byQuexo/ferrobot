@@ -83,6 +83,7 @@ pub const QUESTION_CARD_FILE: &str = "question-card.v1.schema.json";
         api::sandbox::wake,
         api::sandbox::destroy_sandbox,
         api::sandbox::exec,
+        api::desktop::screen,
         api::sandbox::list_snapshots,
         api::sandbox::create_snapshot,
         api::sandbox::restore_snapshot,
@@ -124,6 +125,7 @@ pub const QUESTION_CARD_FILE: &str = "question-card.v1.schema.json";
         api::voice::post_call_message,
         api::voice::list_rooms,
         api::voice::get_room,
+        api::voice::join_room_call,
         api::groups::list_groups,
         api::groups::create_group,
         api::groups::update_group,
@@ -139,6 +141,12 @@ pub const QUESTION_CARD_FILE: &str = "question-card.v1.schema.json";
         api::pins::put_pins,
         api::dashboards::get_dashboards,
         api::dashboards::put_dashboards,
+        api::clis::put_cli,
+        api::clis::delete_cli,
+        api::clis::put_cli_token,
+        api::clis::start_sign_in,
+        api::clis::get_sign_in,
+        api::clis::cancel_sign_in,
         api::discord::get_discord,
         api::discord::put_discord,
         api::discord::put_discord_token,
@@ -219,7 +227,6 @@ impl utoipa::Modify for SecurityAddon {
                  (WebSocket upgrades, images).",
             ))),
         );
-        // Every authenticated operation can answer 401.
         let unauthorized = utoipa::openapi::ResponseBuilder::new()
             .description("Missing or wrong API token")
             .content(

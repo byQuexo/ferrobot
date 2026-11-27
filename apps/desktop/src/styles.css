@@ -1,7 +1,3 @@
-/* ferrobot desktop: calm neutrals, one cool accent, soft depth.
-   Fonts: open-licensed sans stack (Inter / Geist when installed, else the system UI font).
-   Type 12/13/14/16/20 at 400/500 (600 only for bold in content), spacing on a 4px grid. */
-
 :root {
   --font: "Inter Variable", Inter, Geist, ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, "Noto Sans", sans-serif;
   --mono: "Geist Mono", ui-monospace, "SF Mono", "Cascadia Code", "JetBrains Mono", Menlo, Consolas, monospace;
@@ -44,8 +40,6 @@
   --series-5: #e87ba4;
   --shadow: 0 1px 2px rgba(16, 24, 40, 0.04), 0 4px 14px rgba(16, 24, 40, 0.05);
   --shadow-lg: 0 20px 50px rgba(16, 24, 40, 0.18);
-  --avatar-l: 56%;
-  --avatar-s: 52%;
   color-scheme: light;
 }
 
@@ -82,8 +76,6 @@
   --series-5: #d55181;
   --shadow: 0 1px 2px rgba(0, 0, 0, 0.3), 0 6px 18px rgba(0, 0, 0, 0.22);
   --shadow-lg: 0 24px 60px rgba(0, 0, 0, 0.55);
-  --avatar-l: 50%;
-  --avatar-s: 46%;
   color-scheme: dark;
 }
 
@@ -162,7 +154,7 @@ b, strong { font-weight: 600; }
 .icon-btn.tone-accent:hover:not(:disabled) { background: var(--accent); color: var(--accent-text); }
 .icon-btn.tone-danger:hover:not(:disabled) { background: var(--err-soft); color: var(--err); }
 
-input:not([type="checkbox"]), textarea, select {
+input:not([type="checkbox"], [type="radio"]), textarea, select {
   width: 100%; border: 1px solid var(--border-strong); background: var(--surface);
   border-radius: var(--radius-sm); padding: 8px 12px; line-height: 18px; outline: none;
   transition: border-color 0.15s, box-shadow 0.15s;
@@ -222,20 +214,16 @@ textarea { resize: vertical; min-height: 40px; line-height: 1.5; }
 .char-eyes, .char-look, .char-figure { transform-box: view-box; transform-origin: 24px 30px; }
 .char-eyes { animation: char-blink 5s var(--blink-delay, 0s) infinite; }
 @keyframes char-blink { 0%, 93%, 100% { transform: scaleY(1); } 95.5% { transform: scaleY(0.08); } }
-/* thinking: eyes drift up to the side, head tilts slowly */
 .m-thinking .char-look { transform: translate(1.6px, -2px); }
 .m-thinking .char-figure { animation: char-tilt 3.2s ease-in-out infinite; }
 @keyframes char-tilt { 50% { transform: rotate(-5deg); } }
-/* working: small hop, eyes scan */
 .m-working .char-figure { animation: char-hop 0.9s ease-in-out infinite; }
 .m-working .char-look { animation: char-scan 2.4s ease-in-out infinite; }
 @keyframes char-hop { 50% { transform: translateY(-1.6px); } }
 @keyframes char-scan { 0%, 100% { transform: translateX(-1.6px); } 50% { transform: translateX(1.6px); } }
-/* sleeping: eyes closed, slow breathing, muted color */
 .m-sleeping .char-figure { animation: char-breathe 4s ease-in-out infinite; filter: saturate(0.55); }
 @keyframes char-breathe { 50% { transform: scale(1.03); } }
 
-/* Something is wrong: a small shiver now and then, eyes down. */
 .m-trouble .char-figure { animation: char-shiver 2.8s ease-in-out infinite; filter: saturate(0.7); }
 .m-trouble .char-look { transform: translateY(1.6px); }
 .m-trouble .char-cheek { fill: var(--err); opacity: 0.55; }
@@ -245,7 +233,6 @@ textarea { resize: vertical; min-height: 40px; line-height: 1.5; }
   88% { transform: translateX(0.9px) rotate(3deg); }
   92% { transform: translateX(-0.5px) rotate(-1.5deg); }
 }
-/* A question card waits for the operator: a light bob, looking up at them. */
 .m-waiting .char-figure { animation: char-bob 1.6s ease-in-out infinite; }
 .m-waiting .char-look { transform: translateY(-2.2px); }
 @keyframes char-bob { 50% { transform: translateY(-2.2px); } }
@@ -253,7 +240,6 @@ textarea { resize: vertical; min-height: 40px; line-height: 1.5; }
   position: absolute; right: -1px; bottom: -1px; width: 28%; height: 28%; min-width: 10px; min-height: 10px;
   border-radius: 50%; border: 2px solid var(--sidebar); background: var(--sleep);
 }
-/* The presence dot is the signature: agents, and key or sign-in state in Settings. */
 .dot { display: inline-block; width: 8px; height: 8px; flex: none; border-radius: 50%; background: var(--sleep); }
 .p-awake .dot, .dot.p-awake, .presence-dot.p-awake { background: var(--ok); }
 .p-working .dot, .dot.p-working, .presence-dot.p-working { background: var(--accent); animation: pulse 1.4s ease-in-out infinite; }
@@ -351,13 +337,8 @@ textarea { resize: vertical; min-height: 40px; line-height: 1.5; }
 
 .bubble { max-width: min(560px, 78%); padding: 8px 12px; border-radius: var(--bubble-radius, 16px); position: relative; overflow-wrap: anywhere; }
 .bubble-user { background: var(--user-bubble); color: var(--user-text); border-bottom-right-radius: 4px; }
-/* Agent replies: plain text next to the avatar, no bubble. */
 .bubble-agent { flex: 1; max-width: 640px; padding: 0; border-radius: 0; background: none; }
-.agent-msg-head { display: flex; align-items: baseline; gap: 8px; margin: 1px 0 2px; }
 .bubble-agent > .meta { display: block; margin-top: 2px; }
-.agent-msg-head strong { font-size: 14px; font-weight: 500; }
-.agent-msg-head .meta { display: inline; margin: 0; }
-/* In read-only threads the second agent's messages sit on the right in a soft bubble. */
 .row-peer .bubble-agent { flex: 0 1 auto; max-width: min(560px, 78%); padding: 8px 12px; border-radius: 16px; border-top-right-radius: 4px; background: var(--surface-2); }
 .bubble-agent.streaming .rich > :last-child::after {
   content: ""; display: inline-block; width: 8px; height: 16px; margin-left: 4px; vertical-align: -3px;
@@ -427,7 +408,6 @@ textarea { resize: vertical; min-height: 40px; line-height: 1.5; }
 .pin-toggle { position: absolute; top: 8px; right: 8px; display: grid; place-items: center; width: 24px; height: 24px; border: none; border-radius: 6px; background: transparent; color: var(--muted); opacity: 0; cursor: pointer; }
 .agent-row-wrap:hover .pin-toggle, .pin-toggle:focus-visible { opacity: 1; }
 .pin-toggle:hover { background: var(--surface-2); }
-.file-frame { display: block; width: 100%; height: 72vh; border: 1px solid var(--border); border-radius: 8px; background: #fff; }
 .rich table { border-collapse: collapse; font-size: 13px; }
 .rich th, .rich td { border: 1px solid var(--border); padding: 4px 8px; text-align: left; vertical-align: top; }
 .rich th { background: var(--surface-2); font-weight: 500; }
@@ -564,7 +544,7 @@ textarea { resize: vertical; min-height: 40px; line-height: 1.5; }
 .machine.p-working { color: var(--accent); }
 .machine.p-sleeping { color: var(--sleep); }
 .machine.p-error { color: var(--err); }
-.machine strong { color: var(--text); }
+.machine strong, .machine .dialog { color: var(--text); }
 
 .inline-form { display: flex; gap: 8px; align-items: center; margin-bottom: 8px; }
 .inline-form .search { margin: 0; }
@@ -654,6 +634,11 @@ textarea { resize: vertical; min-height: 40px; line-height: 1.5; }
 .toasts { position: fixed; bottom: 16px; left: 50%; transform: translateX(-50%); display: flex; flex-direction: column; gap: 8px; z-index: 20; }
 .toast { padding: 8px 16px; border-radius: 10px; background: var(--text); color: var(--bg); box-shadow: var(--shadow-lg); font-size: 13px; animation: rise 0.2s var(--ease); max-width: 480px; }
 .toast-error { background: var(--err); color: #fff; }
+.agent-call-note { position: fixed; right: 16px; bottom: 16px; z-index: 30; display: flex; align-items: center; gap: 8px; width: min(380px, calc(100vw - 32px)); padding: 10px 12px; border: 1px solid var(--border); border-radius: var(--radius); background: var(--surface); box-shadow: var(--shadow-lg); animation: rise 0.2s var(--ease); }
+.agent-call-note > svg { flex: none; color: var(--accent); }
+.agent-call-note .grow { display: flex; flex-direction: column; }
+.login-head { display: flex; align-items: center; gap: 8px; min-width: 0; }
+.scope-list { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 4px 12px; max-height: 240px; overflow: auto; }
 
 @media (max-width: 1080px) {
   .shell.with-info { --sidebar-w: 240px; --info-w: 300px; }
@@ -712,7 +697,7 @@ textarea { resize: vertical; min-height: 40px; line-height: 1.5; }
 .qcard-title { font-weight: 500; color: var(--text-2); }
 .qcard-step { font-variant-numeric: tabular-nums; }
 .qcard-done { display: inline-flex; align-items: center; gap: 4px; color: var(--ok); font-weight: 500; }
-.qcard-prompt { display: flex; align-items: flex-start; gap: 8px; margin: 0; font-size: 14px; line-height: 24px; font-weight: 500; white-space: pre-line; overflow-wrap: anywhere; }
+.qcard-prompt { display: flex; align-items: flex-start; gap: 8px; margin: 0; font-size: 14px; line-height: 24px; font-weight: 500; white-space: pre-line; overflow-wrap: anywhere; unicode-bidi: isolate; max-height: 50vh; overflow-y: auto; }
 .qcard-secret { display: flex; flex-direction: column; gap: 4px; font-size: 13px; font-weight: 500; }
 .qcard-prompt svg { flex: none; margin-top: 4px; color: var(--accent); }
 .qcard-choices { display: flex; flex-direction: column; gap: 8px; }
@@ -750,7 +735,6 @@ textarea { resize: vertical; min-height: 40px; line-height: 1.5; }
 .settings-head h2 { margin: 0 0 4px; font-size: 20px; line-height: 32px; font-weight: 500; }
 .settings-head p { margin: 0; }
 .settings-section + .settings-section { margin-top: 24px; padding-top: 24px; border-top: 1px solid var(--border); }
-.settings-actions { margin-top: 24px; }
 @media (max-width: 720px) { .settings { grid-template-columns: 1fr; } .settings-nav { flex-direction: row; flex-wrap: wrap; border-right: none; border-bottom: 1px solid var(--border); } }
 
 /* ---------- usage ---------- */
@@ -845,7 +829,6 @@ textarea { resize: vertical; min-height: 40px; line-height: 1.5; }
 .steps-line:hover, .turn-failed:hover { background: var(--surface-2); color: var(--text-2); }
 .turn-failed { color: var(--warn); }
 
-/* New items rise in; what was there when the chat opened does not. */
 .enter, .settled { display: contents; }
 .enter > * { animation: rise 0.28s var(--ease) both; }
 
@@ -855,6 +838,43 @@ textarea { resize: vertical; min-height: 40px; line-height: 1.5; }
 .computer-details { margin-top: 8px; }
 .computer-details summary { cursor: pointer; font-size: 12px; color: var(--muted); }
 .computer-details[open] summary { color: var(--text-2); }
+.files-bar { display: flex; align-items: center; gap: 4px; margin-bottom: 4px; }
+.files li { padding: 4px 0; }
+.file-row { display: flex; align-items: center; gap: 8px; width: 100%; padding: 2px 0; border: none; background: none; color: inherit; font: inherit; text-align: left; cursor: pointer; }
+.file-row:hover .grow { color: var(--accent); }
+.file-text { margin: 0; max-height: 70vh; overflow: auto; font: 12px/1.5 var(--mono); white-space: pre-wrap; overflow-wrap: anywhere; }
+.console-out { max-height: 320px; overflow: auto; margin-bottom: 8px; padding: 8px; border-radius: var(--radius-sm); background: var(--surface-2); font: 12px/1.5 var(--mono); }
+.console-out pre { margin: 0; font: inherit; white-space: pre-wrap; overflow-wrap: anywhere; }
+.console-run + .console-run { margin-top: 8px; }
+.console-err { color: var(--err); }
+.console-in { display: flex; align-items: center; gap: 8px; }
+.console-in input { flex: 1; min-width: 0; }
+.screen-thumb { position: relative; flex: none; display: grid; place-items: center; width: 120px; height: 75px; padding: 0; overflow: hidden; border: 1px solid var(--border); border-radius: 10px; background: #0e1016; color: var(--muted); box-shadow: 0 1px 3px rgba(0, 0, 0, 0.25); }
+button.screen-thumb { cursor: zoom-in; transition: border-color 0.15s, box-shadow 0.15s; }
+button.screen-thumb:hover { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); }
+button.screen-thumb .screen-canvas { pointer-events: none; }
+.screen-thumb.idle { opacity: 0.6; display: flex; flex-direction: column; justify-content: center; gap: 4px; padding: 0 8px; }
+.thumb-note { font-size: 11px; line-height: 1.25; text-align: center; }
+button.screen-thumb.idle { cursor: pointer; }
+/* Absolute, so noVNC measures the box and not the 1280-pixel canvas inside it. */
+.screen-live { position: absolute; inset: 0; }
+.screen-canvas { width: 100%; height: 100%; }
+.screen-lost { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 8px; background: color-mix(in srgb, var(--surface) 85%, transparent); }
+/* The full view is dark in both themes: the desktop sits letterboxed on it. */
+.screen-full { position: fixed; inset: 0; z-index: 60; background: #0b0c10; color: #e6e7ec; }
+.screen-stage { position: absolute; inset: 52px 24px 80px; }
+.screen-stage canvas { border-radius: 10px; box-shadow: 0 24px 64px rgba(0, 0, 0, 0.55); }
+.screen-title { position: absolute; top: 16px; left: 24px; right: 72px; display: flex; align-items: center; gap: 8px; min-width: 0; font-size: 14px; font-weight: 500; color: #a9acb8; }
+.screen-title svg { flex: none; }
+.screen-close { position: absolute; top: 8px; right: 12px; }
+.screen-close .icon-btn { color: #a9acb8; }
+.screen-close .icon-btn:hover { background: rgba(255, 255, 255, 0.08); color: #ffffff; }
+.screen-pill { position: absolute; left: 50%; bottom: 18px; transform: translateX(-50%); display: flex; align-items: center; gap: 12px; padding: 5px 5px 5px 14px; border: 1px solid rgba(255, 255, 255, 0.09); border-radius: 999px; background: rgba(28, 30, 37, 0.92); box-shadow: 0 10px 32px rgba(0, 0, 0, 0.5); white-space: nowrap; }
+.screen-pill.on { border-color: color-mix(in srgb, var(--accent) 65%, transparent); }
+.screen-note { position: absolute; left: 50%; bottom: 66px; transform: translateX(-50%); margin: 0; font-size: 12px; color: #a9acb8; white-space: nowrap; }
+.screen-mode { display: flex; align-items: center; gap: 6px; font-size: 13px; color: #a9acb8; }
+.screen-pill.on .screen-mode { color: #e6e7ec; }
+.screen-pill.on .screen-mode svg { color: var(--accent); }
 
 /* Appearance (Settings → Appearance) and keyboard shortcuts. Defaults keep the tokens above. */
 :root { --chat-bg: var(--bg); --chat-zoom: 1; }
@@ -910,7 +930,6 @@ textarea { resize: vertical; min-height: 40px; line-height: 1.5; }
 .shell > .chat, .chat-head { background: var(--chat-bg); }
 .chat-head .pair-avatars .avatar + .avatar { box-shadow: 0 0 0 2px var(--chat-bg); }
 :root[data-bubbles="solid"] .bubble-user { background: var(--accent); color: var(--accent-text); }
-/* Inside an accent bubble, links, code and the time take the bubble's text colour. */
 :root[data-bubbles="solid"] .bubble-user > * {
   --accent: var(--accent-text);
   --accent-soft: color-mix(in srgb, var(--accent-text) 18%, transparent);
@@ -1312,11 +1331,8 @@ input.slider:is(:focus-visible, :active)::-moz-range-thumb { box-shadow: 0 0 0 1
 .hook-add > .hook-command-input { flex-basis: 260px; }
 
 /* Settings → Webhooks */
-.webhook-new { display: flex; flex-direction: column; align-items: flex-start; gap: 8px; margin-top: 12px; padding: 12px 16px; border-radius: 12px; background: var(--surface-2); }
-.webhook-new .code-block { align-self: stretch; margin: 0; background: var(--surface); }
 .webhook-url { display: flex; align-items: center; gap: 8px; align-self: stretch; }
 .webhook-url code { flex: 1; min-width: 0; overflow-wrap: anywhere; font-size: 12px; }
-.webhook-add { margin-top: 12px; }
 
 /* Settings → Global memory: the Obsidian vault */
 .memory-vault { margin-bottom: 20px; }

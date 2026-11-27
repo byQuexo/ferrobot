@@ -79,6 +79,7 @@ fn every_routed_path_is_documented() {
         "/v1/agents/{id}/stop",
         "/v1/agents/{id}/wake",
         "/v1/agents/{id}/exec",
+        "/v1/agents/{id}/screen",
         "/v1/agents/{id}/snapshots",
         "/v1/agents/{id}/snapshots/{sid}",
         "/v1/agents/{id}/snapshots/{sid}/restore",
@@ -105,6 +106,7 @@ fn every_routed_path_is_documented() {
         "/v1/call/messages",
         "/v1/rooms",
         "/v1/rooms/{id}",
+        "/v1/rooms/{id}/call",
         "/v1/groups",
         "/v1/groups/{id}",
         "/v1/groups/{id}/messages",
@@ -117,6 +119,9 @@ fn every_routed_path_is_documented() {
         "/v1/diagnostics",
         "/v1/diagnostics/log",
         "/v1/clis",
+        "/v1/clis/{id}/sign-in",
+        "/v1/clis/{id}",
+        "/v1/clis/{id}/token",
         "/v1/claude-code",
         "/v1/claude-code/settings",
         "/v1/claude-code/plugins",
@@ -140,7 +145,7 @@ fn every_routed_path_is_documented() {
     }
     assert_eq!(
         documented.len(),
-        89,
+        94,
         "undocumented extra paths: {documented:?}"
     );
 }

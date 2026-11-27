@@ -1,37 +1,25 @@
 // An ACP (Agent Client Protocol) agent in the sandbox; for now Gemini CLI (`gemini --acp`).
 // Its model traffic goes through the daemon's proxy: GEMINI_API_KEY is this agent's token.
-import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
+import type { ChildProcessWithoutNullStreams } from "node:child_process";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
-import { createInterface } from "node:readline";
 import { setTimeout as sleep } from "node:timers/promises";
 
 import type { ToolGate } from "../gate.ts";
 import { errorMessage, log } from "../log.ts";
 import { decide, offGroups, type BuiltinGroup, type Decision } from "../permissions.ts";
 import type { TurnEvent } from "../protocol.ts";
-import { aborted, clip, systemAppend, toolResultText, turnPrompt } from "./claude.ts";
+import { clip, systemAppend, toolResultText, turnPrompt } from "./claude.ts";
+import { RpcProcess, spawnAgent, type Params } from "./rpc-process.ts";
 import type { ModelDriver, TurnContext, TurnResult } from "./types.ts";
-import { TurnAbortedError } from "./types.ts";
+import { TurnAbortedError, throwIfAborted, whenAborted } from "./types.ts";
 
 const ACP_VERSION = 1;
 const GEMINI_AUTH = "gemini-api-key";
-const CANCEL_TIMEOUT_MS = 10_000;
 // shortcut: Gemini 0.67 replays a loaded session after answering session/load, so we wait for the
 // replay to go quiet; drop this once Gemini replays before it answers, as the spec says.
 const REPLAY_QUIET_MS = 200;
 const REPLAY_MAX_MS = 5_000;
-const STDERR_TAIL = 2000;
-
-type Params = Record<string, unknown>;
-
-interface RpcMessage {
-  id?: string | number;
-  method?: string;
-  params?: Params;
-  result?: unknown;
-  error?: { code?: number; message?: string };
-}
 
 interface InitializeResult {
   protocolVersion?: unknown;
@@ -198,130 +186,18 @@ function review(
   }
 }
 
-/** The agent process: JSON-RPC 2.0, one message per line on stdio. */
-class Connection {
-  readonly #child: ChildProcessWithoutNullStreams;
-  readonly #pending = new Map<
-    string | number,
-    { resolve: (result: unknown) => void; reject: (err: Error) => void }
-  >();
-  #nextId = 0;
-  #stderr = "";
-  #exit: Error | null = null;
+class Connection extends RpcProcess {
   /** When the last session/update arrived (epoch ms). */
   lastUpdate = 0;
   onUpdate: (params: Params) => void = () => {};
-  /** The result to send back, or undefined for requests the runner does not handle. */
-  onRequest: (method: string, params: Params) => unknown = () => undefined;
-
-  static async start(
-    bin: string,
-    args: string[],
-    cwd: string,
-    env: NodeJS.ProcessEnv,
-  ): Promise<Connection> {
-    const child = spawn(bin, args, { cwd, env, stdio: "pipe" });
-    await new Promise<void>((resolve, reject) => {
-      child.once("spawn", resolve);
-      child.once("error", reject);
-    });
-    return new Connection(child);
-  }
 
   constructor(child: ChildProcessWithoutNullStreams) {
-    this.#child = child;
-    const gone = (reason: string): void => {
-      if (this.#exit) return;
-      const stderr = this.#stderr.trim();
-      this.#exit = new Error(stderr ? `${reason}: ${stderr}` : reason);
-      for (const pending of this.#pending.values()) pending.reject(this.#exit);
-      this.#pending.clear();
-    };
-    // EPIPE once the process is gone; the close handler reports that.
-    child.stdin.on("error", () => {});
-    child.on("error", (err) => {
-      gone(`gemini failed: ${err.message}`);
-    });
-    child.on("close", (code, signal) => {
-      gone(`gemini exited with ${code === null ? (signal ?? "a signal") : `code ${String(code)}`}`);
-    });
-    child.stderr.setEncoding("utf8").on("data", (text: string) => {
-      process.stderr.write(text);
-      this.#stderr = (this.#stderr + text).slice(-STDERR_TAIL);
-    });
-    createInterface({ input: child.stdout }).on("line", (line) => {
-      this.#receive(line);
-    });
-  }
-
-  get alive(): boolean {
-    return this.#exit === null;
-  }
-
-  request(method: string, params: Params): Promise<unknown> {
-    if (this.#exit) return Promise.reject(this.#exit);
-    const id = ++this.#nextId;
-    return new Promise((resolve, reject) => {
-      this.#pending.set(id, { resolve, reject });
-      this.#send({ id, method, params });
-    });
-  }
-
-  notify(method: string, params: Params): void {
-    this.#send({ method, params });
-  }
-
-  kill(): void {
-    this.#child.kill();
-  }
-
-  /** Answers a request from the agent; the handler may wait (e.g. for the operator's card). */
-  async #answer(id: string | number, method: string, params: Params): Promise<void> {
-    let result: unknown;
-    try {
-      result = await this.onRequest(method, params);
-    } catch (err) {
-      log.warn("acp: could not handle a request", { method, error: errorMessage(err) });
-    }
-    this.#send(
-      result === undefined
-        ? { id, error: { code: -32601, message: `ferrobot does not handle ${method}` } }
-        : { id, result },
-    );
-  }
-
-  #send(message: RpcMessage): void {
-    this.#child.stdin.write(`${JSON.stringify({ jsonrpc: "2.0", ...message })}\n`);
-  }
-
-  #receive(line: string): void {
-    let parsed: unknown;
-    try {
-      parsed = JSON.parse(line);
-    } catch {
-      parsed = null;
-    }
-    if (typeof parsed !== "object" || parsed === null) {
-      log.warn("acp: ignoring a line that is not a JSON object", { line: line.slice(0, 200) });
-      return;
-    }
-    const msg = parsed as RpcMessage;
-    const params = msg.params ?? {};
-    if (msg.id !== undefined && msg.method !== undefined) {
-      void this.#answer(msg.id, msg.method, params);
-    } else if (msg.method === "session/update") {
+    super(child, { name: "gemini", process: "gemini", log: "acp", jsonrpc: true });
+    this.onNotification = (method, params) => {
+      if (method !== "session/update") return;
       this.lastUpdate = Date.now();
-      try {
-        this.onUpdate(params);
-      } catch (err) {
-        log.warn("acp: could not handle a session update", { error: errorMessage(err) });
-      }
-    } else if (msg.id !== undefined && msg.method === undefined) {
-      const pending = this.#pending.get(msg.id);
-      this.#pending.delete(msg.id);
-      if (msg.error) pending?.reject(new Error(msg.error.message ?? "gemini request failed"));
-      else pending?.resolve(msg.result);
-    }
+      this.onUpdate(params);
+    };
   }
 }
 
@@ -346,10 +222,10 @@ export class AcpDriver implements ModelDriver {
   }
 
   async runTurn(ctx: TurnContext): Promise<TurnResult> {
-    if (aborted(ctx.signal)) throw new TurnAbortedError("interrupted");
+    throwIfAborted(ctx.signal);
     const conn = await this.#start(offGroups(ctx.tools));
     const session = await this.#openSession(conn, ctx.sessionId);
-    if (aborted(ctx.signal)) throw new TurnAbortedError("interrupted");
+    throwIfAborted(ctx.signal);
     return { result: await this.#turn(conn, session, ctx), sessionId: session.id };
   }
 
@@ -374,25 +250,19 @@ export class AcpDriver implements ModelDriver {
     const { bin, model, workspaceDir, homeDir } = this.#opts;
     // GOOGLE_GEMINI_BASE_URL alone would make Gemini pick its "gateway" auth, which headless mode rejects.
     await writeGeminiSettings(homeDir, off);
-    let conn: Connection;
-    try {
-      conn = await Connection.start(bin, ["--acp", "--model", model], workspaceDir, {
+    const conn = new Connection(
+      await spawnAgent("gemini", bin, ["--acp", "--model", model], workspaceDir, {
         ...process.env,
         HOME: homeDir,
         GEMINI_CLI_TRUST_WORKSPACE: "true",
-      });
-    } catch (err) {
-      throw new Error(
-        `gemini is not installed in this sandbox image (${bin}: ${errorMessage(err)})`,
-        { cause: err },
-      );
-    }
+      }),
+    );
     try {
       const init = (await conn.request("initialize", {
         protocolVersion: ACP_VERSION,
         // No fs/terminal: the agent uses its own tools inside the sandbox.
         clientCapabilities: { fs: { readTextFile: false, writeTextFile: false }, terminal: false },
-        clientInfo: { name: "ferrobot", version: "0.1.10" },
+        clientInfo: { name: "ferrobot", version: "0.1.11" },
       })) as InitializeResult | null;
       if (init?.protocolVersion !== ACP_VERSION) {
         throw new Error(
@@ -484,16 +354,7 @@ export class AcpDriver implements ModelDriver {
       }
       message = "";
     };
-    const stopped = new Promise<"aborted">((resolve) => {
-      if (aborted(signal)) resolve("aborted");
-      signal.addEventListener(
-        "abort",
-        () => {
-          resolve("aborted");
-        },
-        { once: true },
-      );
-    });
+    const stopped = whenAborted(signal);
 
     conn.onUpdate = (params) => {
       if (params["sessionId"] !== session.id) return;
@@ -552,12 +413,7 @@ export class AcpDriver implements ModelDriver {
       const end = await Promise.race([prompt, stopped]);
       if (end === "aborted") {
         conn.notify("session/cancel", { sessionId: session.id });
-        const settled = await Promise.race([
-          Promise.allSettled([prompt]),
-          sleep(CANCEL_TIMEOUT_MS, "timeout", { ref: false }),
-        ]);
-        // An agent that ignores the cancel is wedged; the next turn starts a fresh one.
-        if (settled === "timeout") conn.kill();
+        await conn.settleOrKill(prompt);
         throw new TurnAbortedError("interrupted");
       }
       flush();

@@ -38,6 +38,13 @@ reqwest = { workspace = true, features = ["stream"] }
 rmcp = { workspace = true, features = ["client", "transport-streamable-http-client-reqwest", "auth", "transport-async-rw"] }
 # Already in the tree via rustls: HMAC for share links, AES-GCM for archives.
 ring = "0.17"
+# The local CA and leaf certificates of the CLI-login proxy (approved 2026-11-26).
+rcgen = { version = "0.14.10", default-features = false, features = ["crypto", "ring"] }
+# Already in the tree via reqwest: TLS and HTTP/1 on the CLI-login proxy's side of the tunnel.
+tokio-rustls = { version = "0.26", default-features = false, features = ["aws_lc_rs", "tls12"] }
+hyper = { workspace = true, features = ["http1", "server", "client"] }
+hyper-util = { workspace = true, features = ["tokio"] }
+http-body-util.workspace = true
 # Same version rmcp uses; for RFC 7009 token revocation on sign-out.
 oauth2 = { version = "5.0", default-features = false }
 sha2.workspace = true

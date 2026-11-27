@@ -1,34 +1,20 @@
 // Codex (`codex app-server`) in the sandbox; its model traffic goes through the daemon's proxy.
-import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
 import { mkdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
-import { createInterface } from "node:readline";
-import { setTimeout as sleep } from "node:timers/promises";
 
 import { errorMessage, log } from "../log.ts";
 import type { ToolGate } from "../gate.ts";
 import { decide, offGroups, type BuiltinGroup, type Decision } from "../permissions.ts";
 import type { TurnEvent } from "../protocol.ts";
-import { aborted, clip, systemAppend, toolResultText, turnPrompt } from "./claude.ts";
+import { clip, systemAppend, toolResultText, turnPrompt } from "./claude.ts";
+import { RpcProcess, spawnAgent, type Params } from "./rpc-process.ts";
 import type { ModelDriver, TurnContext, TurnResult } from "./types.ts";
-import { TurnAbortedError } from "./types.ts";
+import { TurnAbortedError, throwIfAborted, whenAborted } from "./types.ts";
 
 const PROVIDER = "ferrobot";
 const TOKEN_ENV = "FERROBOT_AGENT_TOKEN";
 // create_agent waits for the operator's decision (FERROBOT_APPROVAL_TIMEOUT, 300 s by default).
 const MCP_TOOL_TIMEOUT_SEC = 600;
-const INTERRUPT_TIMEOUT_MS = 10_000;
-const STDERR_TAIL = 2000;
-
-type Params = Record<string, unknown>;
-
-interface RpcMessage {
-  id?: string | number;
-  method?: string;
-  params?: Params;
-  result?: unknown;
-  error?: { code?: number; message?: string };
-}
 
 interface FileUpdate {
   path: string;
@@ -208,141 +194,10 @@ function threadIdOf(result: unknown): string {
   return id;
 }
 
-/** One `codex app-server` process: JSON-RPC without the "jsonrpc" field, one message per line. */
-class AppServer {
-  readonly #child: ChildProcessWithoutNullStreams;
-  readonly #pending = new Map<
-    string | number,
-    { resolve: (result: unknown) => void; reject: (err: Error) => void }
-  >();
-  #nextId = 0;
-  #stderr = "";
-  #exit: Error | null = null;
-  readonly closed: Promise<Error>;
-  onNotification: (method: string, params: Params) => void = () => {};
-  /** The result to send back, or undefined for requests the runner does not handle. */
-  onRequest: (method: string, params: Params) => unknown = () => undefined;
-
-  static async start(bin: string, cwd: string, env: NodeJS.ProcessEnv): Promise<AppServer> {
-    const child = spawn(bin, ["app-server"], { cwd, env, stdio: "pipe" });
-    await new Promise<void>((resolve, reject) => {
-      child.once("spawn", resolve);
-      child.once("error", reject);
-    });
-    return new AppServer(child);
-  }
-
-  constructor(child: ChildProcessWithoutNullStreams) {
-    this.#child = child;
-    let close: (err: Error) => void = () => {};
-    this.closed = new Promise((resolve) => {
-      close = resolve;
-    });
-    const gone = (reason: string): void => {
-      if (this.#exit) return;
-      const stderr = this.#stderr.trim();
-      this.#exit = new Error(stderr ? `${reason}: ${stderr}` : reason);
-      for (const pending of this.#pending.values()) pending.reject(this.#exit);
-      this.#pending.clear();
-      close(this.#exit);
-    };
-    // EPIPE once the process is gone; the close handler reports that.
-    child.stdin.on("error", () => {});
-    child.on("error", (err) => {
-      gone(`codex app-server failed: ${err.message}`);
-    });
-    child.on("close", (code, signal) => {
-      gone(
-        `codex app-server exited with ${code === null ? (signal ?? "a signal") : `code ${String(code)}`}`,
-      );
-    });
-    child.stderr.setEncoding("utf8").on("data", (text: string) => {
-      process.stderr.write(text);
-      this.#stderr = (this.#stderr + text).slice(-STDERR_TAIL);
-    });
-    createInterface({ input: child.stdout }).on("line", (line) => {
-      this.#receive(line);
-    });
-  }
-
-  get alive(): boolean {
-    return this.#exit === null;
-  }
-
-  request(method: string, params: Params): Promise<unknown> {
-    if (this.#exit) return Promise.reject(this.#exit);
-    const id = ++this.#nextId;
-    return new Promise((resolve, reject) => {
-      this.#pending.set(id, { resolve, reject });
-      this.#send({ id, method, params });
-    });
-  }
-
-  notify(method: string): void {
-    this.#send({ method });
-  }
-
-  kill(): void {
-    this.#child.kill();
-  }
-
-  /** Answers a request from Codex; the handler may wait (e.g. for the operator's card). */
-  async #answer(id: string | number, method: string, params: Params): Promise<void> {
-    let result: unknown;
-    try {
-      result = await this.onRequest(method, params);
-    } catch (err) {
-      log.warn("codex: could not handle a request", { method, error: errorMessage(err) });
-    }
-    // Codex waits for every answer, so an unhandled request gets an error, never silence.
-    this.#send(
-      result === undefined
-        ? { id, error: { code: -32601, message: `ferrobot does not handle ${method}` } }
-        : { id, result },
-    );
-  }
-
-  #send(message: RpcMessage): void {
-    this.#child.stdin.write(`${JSON.stringify(message)}\n`);
-  }
-
-  #receive(line: string): void {
-    let parsed: unknown;
-    try {
-      parsed = JSON.parse(line);
-    } catch {
-      parsed = null;
-    }
-    if (typeof parsed !== "object" || parsed === null) {
-      log.warn("codex: ignoring a line that is not a JSON object", { line: line.slice(0, 200) });
-      return;
-    }
-    const msg = parsed as RpcMessage;
-    const params = msg.params ?? {};
-    if (msg.id !== undefined && msg.method !== undefined) {
-      void this.#answer(msg.id, msg.method, params);
-    } else if (msg.method !== undefined) {
-      try {
-        this.onNotification(msg.method, params);
-      } catch (err) {
-        log.warn("codex: could not handle a notification", {
-          method: msg.method,
-          error: errorMessage(err),
-        });
-      }
-    } else if (msg.id !== undefined) {
-      const pending = this.#pending.get(msg.id);
-      this.#pending.delete(msg.id);
-      if (msg.error) pending?.reject(new Error(msg.error.message ?? "codex request failed"));
-      else pending?.resolve(msg.result);
-    }
-  }
-}
-
 export class CodexDriver implements ModelDriver {
   readonly name = "codex";
   readonly #opts: CodexDriverOptions;
-  #server: AppServer | null = null;
+  #server: RpcProcess | null = null;
   #thread: { id: string; instructions: string } | null = null;
   #stale = false;
   /** The off groups the running app-server's config was written for. */
@@ -353,10 +208,10 @@ export class CodexDriver implements ModelDriver {
   }
 
   async runTurn(ctx: TurnContext): Promise<TurnResult> {
-    if (aborted(ctx.signal)) throw new TurnAbortedError("interrupted");
+    throwIfAborted(ctx.signal);
     const server = await this.#start(offGroups(ctx.tools));
     const threadId = await this.#openThread(server, ctx);
-    if (aborted(ctx.signal)) throw new TurnAbortedError("interrupted");
+    throwIfAborted(ctx.signal);
     return { result: await this.#turn(server, threadId, ctx), sessionId: threadId };
   }
 
@@ -370,7 +225,7 @@ export class CodexDriver implements ModelDriver {
     this.#stale = true;
   }
 
-  async #start(off: ReadonlySet<BuiltinGroup>): Promise<AppServer> {
+  async #start(off: ReadonlySet<BuiltinGroup>): Promise<RpcProcess> {
     const key = [...off].sort().join(",");
     if (this.#server?.alive && !this.#stale && this.#off === key) return this.#server;
     // A fresh app-server reads its tools and the MCP tools anew; the thread resumes by id.
@@ -381,23 +236,16 @@ export class CodexDriver implements ModelDriver {
     const home = join(this.#opts.stateDir, "codex");
     await mkdir(home, { recursive: true, mode: 0o700 });
     await writeFile(join(home, "config.toml"), codexConfigToml(this.#opts, off), { mode: 0o600 });
-    let server: AppServer;
-    try {
-      server = await AppServer.start(this.#opts.bin, this.#opts.workspaceDir, {
+    const server = new RpcProcess(
+      await spawnAgent("codex", this.#opts.bin, ["app-server"], this.#opts.workspaceDir, {
         ...process.env,
         CODEX_HOME: home,
         [TOKEN_ENV]: this.#opts.token,
-      });
-    } catch (err) {
-      throw new Error(
-        `codex is not installed in this sandbox image (${this.#opts.bin}: ${errorMessage(err)})`,
-        {
-          cause: err,
-        },
-      );
-    }
+      }),
+      { name: "codex", process: "codex app-server", log: "codex", jsonrpc: false },
+    );
     try {
-      await server.request("initialize", { clientInfo: { name: "ferrobot", version: "0.1.10" } });
+      await server.request("initialize", { clientInfo: { name: "ferrobot", version: "0.1.11" } });
       server.notify("initialized");
     } catch (err) {
       server.kill();
@@ -407,7 +255,7 @@ export class CodexDriver implements ModelDriver {
     return server;
   }
 
-  async #openThread(server: AppServer, ctx: TurnContext): Promise<string> {
+  async #openThread(server: RpcProcess, ctx: TurnContext): Promise<string> {
     const instructions = systemAppend(ctx.agentName, ctx.instructions);
     const wanted = ctx.sessionId;
     if (wanted && this.#thread?.id === wanted && this.#thread.instructions === instructions)
@@ -437,7 +285,7 @@ export class CodexDriver implements ModelDriver {
     return id;
   }
 
-  async #turn(server: AppServer, threadId: string, ctx: TurnContext): Promise<string | null> {
+  async #turn(server: RpcProcess, threadId: string, ctx: TurnContext): Promise<string | null> {
     const { emit, signal } = ctx;
     const home = this.#opts.workspaceDir;
     const filesByItem = new Map<string, string[]>();
@@ -448,16 +296,7 @@ export class CodexDriver implements ModelDriver {
     const finished = new Promise<Parameters<typeof finish>[0]>((resolve) => {
       finish = resolve;
     });
-    const stopped = new Promise<"aborted">((resolve) => {
-      if (aborted(signal)) resolve("aborted");
-      signal.addEventListener(
-        "abort",
-        () => {
-          resolve("aborted");
-        },
-        { once: true },
-      );
-    });
+    const stopped = whenAborted(signal);
 
     // Anything of another turn (e.g. the tail of an interrupted one) is dropped.
     const ours = (params: Params): boolean =>
@@ -513,25 +352,16 @@ export class CodexDriver implements ModelDriver {
       turnId ??= turnOf((started ?? {}) as Params);
       const end = await Promise.race([finished, server.closed, stopped]);
       if (end === "aborted") {
-        await interrupt(server, { threadId, turnId });
+        await server.settleOrKill(server.request("turn/interrupt", { threadId, turnId }));
         throw new TurnAbortedError("interrupted");
       }
       if (end instanceof Error) throw end;
       if (end.status === "completed") return lastText;
-      if (aborted(signal)) throw new TurnAbortedError("interrupted");
+      throwIfAborted(signal);
       throw new Error(end.error?.message ?? lastError ?? `codex turn ended as ${end.status}`);
     } finally {
       server.onNotification = () => {};
       server.onRequest = () => undefined;
     }
   }
-}
-
-async function interrupt(server: AppServer, params: Params): Promise<void> {
-  const answer = await Promise.race([
-    Promise.allSettled([server.request("turn/interrupt", params)]),
-    sleep(INTERRUPT_TIMEOUT_MS, "timeout", { ref: false }),
-  ]);
-  // A Codex that ignores the interrupt is wedged; the next turn starts a fresh one.
-  if (answer === "timeout") server.kill();
 }

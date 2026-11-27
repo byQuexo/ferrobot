@@ -6,6 +6,48 @@ All notable changes are listed here. The format follows
 
 ## [Unreleased]
 
+## [0.1.11] - 2026-11-27
+
+### Added
+
+- **A desktop in every agent's computer** (Settings → Computers → Desktop, or **Set up a desktop** on an agent's Computer card): a dark desktop with a dock, Chromium, a terminal and a file manager, about 170 MB more image. The Computer tab shows it live; it is view only until you press **Use it myself**, and **Hand back** returns it. Agents with the new **Desktop** tool group (off by default, even for agents with every other group) take screenshots, click, type, press keys and scroll. While you use it, their tool tells them to wait. An agent cannot have both a CLI account and the Desktop tool. New dependency: `@novnc/novnc`. The desktop goes straight to the internet, never through a CLI account's token proxy.
+- **Files and a console in the Computer tab.** Browse the agent's computer as a tree from its home folder (folders open and close in place, files open read-only), and run commands in it, one at a time and up to 60 s each, without asking the agent. Programs that need a full terminal, like vim, do not work there.
+- **A quicker model in calls.** Each agent can have a model it uses only while it is in a call (the chat's sliders button → **Model in calls**), so spoken replies come sooner. Bedrock, Vertex and Gemini agents keep their model.
+- **Calls among agents.** An agent can call one to three teammates without you (`call_agents`, Team tool group) to talk something through. Only while voice is on with a key, since you could not join otherwise. A pop-up lets you join; joining makes it your voice call in the same room. It ends once nobody has anything to add, after at most twelve agent lines in a row.
+- **Add CLI.** Settings → Computers → **Add CLI** puts any command-line tool into the agents' computers: a Debian package (in every computer's image, as before), an npm package, a download link (with an optional SHA-256 check) or an install script, the last three only in the home folders of the agents you pick, without a rebuild or a restart for anyone else. A CLI can have an account: paste its API key in the same dialog, or **Sign in with the CLI** for CLIs with a device sign-in (GitHub's `gh` is ready-made): it runs in a throwaway computer, shows you the one-time code, and the token goes to the vault. Inside the agents' computers there is only a stand-in; the daemon swaps in the real token only for the CLI's API hosts, through a local, name-constrained CA per CLI. An account can ask before every command that uses it. Agents can propose a CLI (`propose_cli`): the card shows the exact install and where the token would go, and Auto mode never skips it. `PUT /v1/clis` with a package list keeps working. New dependency: `rcgen`.
+- **Only some of a connector's tools.** Settings → Connectors → a connector's list button: agents get only the tools you tick, for example GitHub's read tools; the daemon refuses the rest. Database migration v23: this daemon's data cannot be opened by an older one.
+- **Stop ends a chain of work.** **Stop**, now in the message box where Send is while an agent works (formerly Stop turn in the header), also stops every agent working on something the agent handed out, and drops the messages agents queued for each other there, so a loop between agents ends. `POST /v1/agents/{id}/interrupt?chain=true`.
+- **Pause that ends your turn** in Settings → Voice → Calls: how long you can stop talking before agents answer, 0.5 to 3 seconds instead of a fixed 1.5.
+- **Agents keep a knowledge base about you.** Agents with the Memory tool save what they learn about you in the global memory on their own (preferences, projects, people, tools, decisions), update what changed and remove what is out of date. Every such agent reads the newest 50 entries in its instructions. Agents can now change each other's global entries, never yours.
+- The ideas list has Flows, taken off the roadmap for now, and a Twilio connector so an agent can call your phone.
+
+### Fixed
+
+- In Add a custom connector, the choice between a remote and a local server showed each radio button far from its text.
+- The agent list showed mentions in a reply preview as an id instead of the agent's name.
+
+### Security
+
+From a security review of this release and of the whole repository, before it shipped:
+
+- An agent's proposed CLI never carries sign-in commands: they run where the real token is made, so only you set them. The card shows the programs, the token variables and that every command asks first; the sign-in dialog shows the commands before it starts.
+- Approving a CLI card after you set up a CLI of the same name is refused instead of replacing yours and its token.
+- The stand-in is swapped for the real token only in credential headers (`Authorization`, `X-Api-Key`, `Private-Token`, `X-Auth-Token`), so a service that repeats another header cannot hand the token back.
+- Codex agents get no CLI account: Codex runs commands itself, past the checks on risky steps.
+- `~/.local/bin` comes last on `PATH`, and the daemon calls the desktop's programs by full path, so a program an agent leaves in its home cannot stand in for the runner or the screen.
+- Knowledge base entries in agents' instructions show who wrote them and stay on one line; your own entries are always included.
+- A late tools card cannot give an agent with a CLI account the Desktop tools; snapshots no longer keep the agent token inside the proxy address.
+- **Risky steps are harder to slip past.** Connector tools in any spelling (`CREATE_REFUNDS`, `createRefund`) are judged by their words, plurals included; tools that run whatever their arguments say (SQL, HTTP, GraphQL) ask first. `git -C dir push -uf`, `gh -R o/r …`, `gh api --method=DELETE` and implicit POSTs are read correctly; deleting anything with `gh` and deleting remote branches always ask; `bash -c`, `eval` and `python -c` ask.
+- **Cards show what they approve.** Shell cards show the whole command and every reason (a command over 4,000 characters is refused, never cut); connector cards show the call's arguments; routine cards show the whole message. Agent-creation cards show the whole instructions. An `add_connector` card refuses line breaks and invisible or bidi characters in its command, URL or reason, and URLs with a user name (`https://good.example@evil.example`); it names the host.
+- **Every shell tool is checked.** Claude's `Monitor` and `PowerShell` go through the same checks as `Bash`. Agents cannot write their harnesses' settings folders (`.claude`, `.codex`, `.gemini`) in the workspace, which could start processes with Shell off. The Codex provider says it runs most commands without asking.
+- **Claude Code (your own login):** its `read_file`/`write_file` only reach the agent's home; a prompt starting with an invisible character before `/` or `!` is refused, and `@` paths hidden behind U+0085 are defused; the host's own init and hook lines no longer reach the sandbox.
+- **OAuth without an own app:** the authorize, token and registration endpoints must be on the issuer's address, and a remote connector's metadata cannot point at this computer.
+- **Discord and Slack:** an agent's reaction is one emoji and stays one URL segment; Slack webhooks escape `<!channel>` and links in agents' text.
+- **Privacy between agents:** `list_agents` shows only one's own instructions; aliases are no longer learned from tool results; a deleted agent's vault notes are archived, so an agent given its name later starts empty.
+- **App window:** the operator token goes only into the app's own top window, and a frame's navigation never opens the browser by itself.
+- **Release workflow:** actions pinned to commits, and the checkout does not keep the git token on disk.
+- **Known limit, documented:** on Docker Desktop, agents can reach services on this computer's `localhost` (see Sandbox backends).
+
 ## [0.1.10] - 2026-11-26
 
 ### Added
@@ -442,7 +484,8 @@ First public release.
   allowlist per API family, no redirects, header allowlists both ways, agent
   tokens blanked in committed images.
 
-[Unreleased]: https://github.com/byQuexo/ferrobot/compare/v0.1.10...HEAD
+[Unreleased]: https://github.com/byQuexo/ferrobot/compare/v0.1.11...HEAD
+[0.1.11]: https://github.com/byQuexo/ferrobot/compare/v0.1.10...v0.1.11
 [0.1.10]: https://github.com/byQuexo/ferrobot/compare/v0.1.9...v0.1.10
 [0.1.9]: https://github.com/byQuexo/ferrobot/compare/v0.1.8...v0.1.9
 [0.1.8]: https://github.com/byQuexo/ferrobot/compare/v0.1.7...v0.1.8

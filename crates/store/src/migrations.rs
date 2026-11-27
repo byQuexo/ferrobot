@@ -295,6 +295,10 @@ const MIGRATIONS: &[&str] = &[
     ALTER TABLE connectors ADD COLUMN command TEXT;
     ALTER TABLE connectors ADD COLUMN token_env TEXT;
     ",
+    // v23: the connector's tools agents may use (JSON array of the server's names); NULL = all
+    r"
+    ALTER TABLE connectors ADD COLUMN tools TEXT;
+    ",
 ];
 
 pub(crate) fn run(conn: &mut Connection) -> Result<(), StoreError> {
@@ -602,6 +606,25 @@ mod tests {
             })
             .unwrap();
         assert_eq!((command, env), (None, None));
+    }
+
+    #[test]
+    fn v23_connectors_keep_every_tool() {
+        let mut conn = Connection::open_in_memory().unwrap();
+        for sql in &MIGRATIONS[..22] {
+            conn.execute_batch(sql).unwrap();
+        }
+        conn.pragma_update(None, "user_version", 22).unwrap();
+        conn.execute_batch(
+            "INSERT INTO connectors (id, name, url, created_at)
+             VALUES ('c', 'gh', 'https://x', '2026-01-01T00:00:00Z');",
+        )
+        .unwrap();
+        run(&mut conn).unwrap();
+        let tools: Option<String> = conn
+            .query_row("SELECT tools FROM connectors", [], |r| r.get(0))
+            .unwrap();
+        assert_eq!(tools, None);
     }
 
     #[test]

@@ -10,16 +10,16 @@ use std::fmt::Write as _;
 use ferrobot_core::question::{
     Approval, QuestionAnswer, QuestionAnswered, QuestionCard, QuestionEvent, approves, take_secret,
 };
-use ferrobot_core::{AgentId, Connector, ConnectorAuth, Sender};
+use ferrobot_core::{AgentId, Connector, ConnectorAuth};
 use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;
 use uuid::Uuid;
 
 use super::agents::explicit;
+use super::providers::has_secret;
 use super::{ApiResult, parse_id};
 use crate::connectors::{ConnectorCheck, check, check_soon, secret_key};
 use crate::error::{ApiError, ErrorBody};
-use crate::state::UiEvent;
 use crate::{AppState, oauth};
 
 #[derive(Debug, Serialize, ToSchema)]
@@ -48,12 +48,7 @@ pub(crate) struct ConnectorView {
 }
 
 async fn view(state: &AppState, connector: Connector) -> Result<ConnectorView, ApiError> {
-    let has_token = state
-        .settings
-        .secrets
-        .get(&secret_key(connector.id))
-        .await?
-        .is_some();
+    let has_token = has_secret(state, &secret_key(connector.id)).await?;
     let sign_in = oauth::sign_in(state, connector.id).await;
     let client = oauth::client_config(state, connector.id)
         .await
@@ -73,8 +68,15 @@ async fn view(state: &AppState, connector: Connector) -> Result<ConnectorView, A
     })
 }
 
+/// Characters that can make a card show something other than what runs: controls, line breaks,
+/// bidi overrides and invisible format characters.
+fn deceptive(c: char) -> bool {
+    c.is_control()
+        || matches!(c, '\u{061c}' | '\u{200b}'..='\u{200f}' | '\u{2028}'..='\u{202e}' | '\u{2060}'..='\u{2069}' | '\u{feff}')
+}
+
 fn printable(value: &str, what: &str, max: usize) -> Result<(), ApiError> {
-    if value.is_empty() || value.len() > max || value.chars().any(char::is_control) {
+    if value.is_empty() || value.len() > max || value.chars().any(deceptive) {
         return Err(ApiError::BadRequest(format!(
             "{what} must be 1-{max} printable characters"
         )));
@@ -228,6 +230,7 @@ pub(crate) async fn create_connector(
         url: req.url.trim().to_owned(),
         command: req.command,
         token_env: req.token_env.map(|e| e.trim().to_owned()),
+        tools: None,
         created_at: time::OffsetDateTime::now_utc(),
     };
     connector.validate().map_err(ApiError::BadRequest)?;
@@ -280,6 +283,30 @@ fn shown_command(argv: &[String]) -> String {
         .join(" ")
 }
 
+/// The card shows the command and URL exactly as they run: no hidden lines or bidi tricks, and no
+/// `https://good.example@evil.example` that shows one host and reaches another.
+fn shown_as_is(connector: &Connector) -> Result<(), ApiError> {
+    if connector
+        .command
+        .iter()
+        .flatten()
+        .chain([&connector.url])
+        .any(|a| a.chars().any(deceptive))
+    {
+        return Err(ApiError::BadRequest(
+            "the command and URL cannot contain line breaks or invisible characters".into(),
+        ));
+    }
+    if connector.command.is_none() {
+        let parsed = reqwest::Url::parse(&connector.url)
+            .map_err(|_| ApiError::BadRequest("url is not a valid URL".into()))?;
+        if !parsed.username().is_empty() || parsed.password().is_some() {
+            return Err(ApiError::BadRequest("url cannot carry a user name".into()));
+        }
+    }
+    Ok(())
+}
+
 /// Shows the operator a card to add the connector an agent asked for, in the chat they use for
 /// it. Nothing exists until they approve; Auto mode does not skip it. No card asks for a key: a
 /// token goes in under Settings → Vault.
@@ -294,9 +321,11 @@ pub(crate) async fn request_card(
         url: request.url,
         command: request.command,
         token_env: request.token_env,
+        tools: None,
         created_at: time::OffsetDateTime::now_utc(),
     };
     connector.validate().map_err(ApiError::BadRequest)?;
+    shown_as_is(&connector)?;
     if state
         .store
         .list_connectors()
@@ -321,22 +350,24 @@ pub(crate) async fn request_card(
         ..
     } = connector;
     // A local server runs code on this computer: the card shows exactly what will run.
-    let (mut prompt, host) = match &command {
-        Some(argv) => (
+    let (mut prompt, host) = if let Some(argv) = &command {
+        (
             format!(
                 "Add the local MCP server \"{name}\" and give it to {who}?\nIt runs on this \
                  computer, outside the agents' sandboxes, as: {}",
                 shown_command(argv)
             ),
             "the local server".to_owned(),
-        ),
-        None => (
-            format!("Add the connector \"{name}\" and give it to {who}?\nURL: {url}"),
-            reqwest::Url::parse(&url)
-                .ok()
-                .and_then(|u| u.host_str().map(str::to_owned))
-                .ok_or_else(|| ApiError::BadRequest("url needs a host".into()))?,
-        ),
+        )
+    } else {
+        let host = reqwest::Url::parse(&url)
+            .ok()
+            .and_then(|u| u.host_str().map(str::to_owned))
+            .ok_or_else(|| ApiError::BadRequest("url needs a host".into()))?;
+        (
+            format!("Add the connector \"{name}\" and give it to {who}?\nURL: {url}\nHost: {host}"),
+            host,
+        )
     };
     if let Some(env) = &token_env {
         let _ = write!(
@@ -373,15 +404,8 @@ pub(crate) async fn request_card(
         },
     )
     .in_turn(state.hub.current_turn(requester));
-    let payload = serde_json::to_value(&card).map_err(|e| ApiError::Internal(e.to_string()))?;
     let chat = crate::agents::chat_of(state, requester).await?;
-    let event = state
-        .store
-        .append_event(chat, None, "question".into(), payload)
-        .await?;
-    let qid = event.id;
-    state.publish(UiEvent::Event { event });
-    Ok(qid)
+    crate::agents::post_card(state, chat, &card).await
 }
 
 /// The operator's answer to an add-connector card: approved, the connector is created and given to
@@ -414,6 +438,7 @@ pub(crate) async fn answer_card(
             url: url.clone(),
             command: command.clone(),
             token_env: token_env.clone(),
+            tools: None,
             created_at: time::OffsetDateTime::now_utc(),
         };
         connector.validate().map_err(ApiError::BadRequest)?;
@@ -450,14 +475,7 @@ pub(crate) async fn answer_card(
         format!("The operator declined adding the connector \"{name}\".")
     };
     let message_id = if state.store.get_agent(*requester).await.is_ok() {
-        let msg = state
-            .store
-            .enqueue_message(Sender::User, *requester, note, None)
-            .await?;
-        state.message_arrived(*requester);
-        let id = msg.id;
-        state.publish(UiEvent::Message { message: msg });
-        Some(id)
+        Some(crate::agents::tell(state, *requester, note).await?.id)
     } else {
         None
     };
@@ -467,9 +485,7 @@ pub(crate) async fn answer_card(
         message_id,
         timed_out: false,
     };
-    let payload = serde_json::to_value(&answered).map_err(|e| ApiError::Internal(e.to_string()))?;
-    state.record(chat, None, "question_answered", payload).await;
-    Ok(answered)
+    crate::agents::record_answer(state, chat, answered).await
 }
 
 #[derive(Debug, Deserialize, ToSchema)]
@@ -480,6 +496,10 @@ pub(crate) async fn answer_card(
 pub(crate) struct UpdateConnector {
     name: Option<String>,
     url: Option<String>,
+    /// The server's tools agents may use, by its own names; `null`: all of them.
+    #[serde(default, deserialize_with = "explicit")]
+    #[schema(value_type = Option<Vec<String>>)]
+    tools: Option<Option<Vec<String>>>,
     /// New token; `null` removes the stored one.
     #[serde(default, deserialize_with = "explicit")]
     #[schema(value_type = Option<String>)]
@@ -523,6 +543,9 @@ pub(crate) async fn update_connector(
     if let Some(url) = req.url {
         url.trim().clone_into(&mut c.url);
     }
+    if let Some(tools) = req.tools {
+        c.tools = tools;
+    }
     c.validate().map_err(ApiError::BadRequest)?;
     let token = req.token.map(clean_token).transpose()?;
     let old_client = oauth::client_config(&state, id)
@@ -560,10 +583,8 @@ pub(crate) async fn update_connector(
     if moved {
         oauth::forget_tokens(&state, id).await?;
     }
-    match token {
-        Some(Some(token)) => state.settings.secrets.set(&secret_key(id), &token).await?,
-        Some(None) => state.settings.secrets.delete(&secret_key(id)).await?,
-        None => {}
+    if let Some(token) = token {
+        super::providers::set_secret(&state, &secret_key(id), token).await?;
     }
     state.connectors.evict_connector(id).await;
     check(&state, &c).await;
@@ -653,13 +674,7 @@ pub(crate) async fn start_oauth(
     Path(id): Path<String>,
 ) -> ApiResult<OAuthStart> {
     let c = state.store.get_connector(parse_cid(&id)?).await?;
-    if state
-        .settings
-        .secrets
-        .get(&secret_key(c.id))
-        .await?
-        .is_some()
-    {
+    if has_secret(&state, &secret_key(c.id)).await? {
         return Err(ApiError::BadRequest(format!(
             "{} uses a token; remove it to sign in with OAuth",
             c.name

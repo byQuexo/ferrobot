@@ -64,6 +64,7 @@ async fn container_lifecycle() {
         env: agent_env("test-token-lifecycle"),
         labels: BTreeMap::new(),
         image: None,
+        command: None,
     };
     let h = backend.create(&spec).await.expect("create");
     // create is idempotent
@@ -201,6 +202,7 @@ async fn archive_moves_the_sandbox_into_the_store_and_back() {
         env: agent_env("test-token-archive"),
         labels: BTreeMap::new(),
         image: None,
+        command: None,
     };
     let h = backend.create(&spec).await.expect("create");
     let note = SandboxPath::parse("/home/node/kept.txt").unwrap();
@@ -278,13 +280,14 @@ async fn archive_moves_the_sandbox_into_the_store_and_back() {
 async fn prefetch_downloads_a_missing_image() {
     let image = "hello-world:latest";
     let docker = bollard::Docker::connect_with_local_defaults().unwrap();
-    let _ = docker
-        .remove_image(
+    let remove = || {
+        docker.remove_image(
             image,
             None::<bollard::query_parameters::RemoveImageOptions>,
             None,
         )
-        .await;
+    };
+    let _ = remove().await;
     let backend = DockerBackend::connect(DockerConfig {
         image: image.into(),
         name_prefix: "ferrobot-test-".into(),
@@ -298,11 +301,5 @@ async fn prefetch_downloads_a_missing_image() {
     .await
     .expect("prefetch finishes");
     assert!(docker.inspect_image(image).await.is_ok(), "{image} pulled");
-    let _ = docker
-        .remove_image(
-            image,
-            None::<bollard::query_parameters::RemoveImageOptions>,
-            None,
-        )
-        .await;
+    let _ = remove().await;
 }

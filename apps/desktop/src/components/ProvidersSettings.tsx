@@ -5,6 +5,7 @@ import { LogIn, Plus, Trash2 } from "lucide-preact";
 import type { ClaudeCodeStatus, DeviceCode, LoginStatus, Provider, ProviderKind } from "../api.ts";
 import { useApp } from "../context.ts";
 import { CLAUDE_CODE_NOTICE, claudeCodeState } from "../lib/claude-code.ts";
+import { errorText } from "../lib/format.ts";
 import { ModelPicker } from "./ModelPicker.tsx";
 import { Button, IconButton } from "./ui.tsx";
 
@@ -27,7 +28,8 @@ const KIND_HINTS: Partial<Record<ProviderKind, string>> = {
   vertex: "Uses the gcloud login on the daemon’s computer; no key needed.",
   ollama: "Talks to Ollama on the daemon’s computer (127.0.0.1:11434).",
   openai_compatible: "Any server with an OpenAI-style /chat/completions endpoint.",
-  codex: "Runs OpenAI’s Codex harness. Add an API key in Vault, or sign in with ChatGPT.",
+  codex:
+    "Runs OpenAI’s Codex harness. Add an API key in Vault, or sign in with ChatGPT. Codex runs most of its shell commands without asking you first.",
   gemini_cli: "Runs Google’s Gemini CLI harness (over ACP) with a Gemini API key.",
   claude_code: `Runs your own claude CLI on the daemon’s computer, off the model proxy. ${CLAUDE_CODE_NOTICE}`,
 };
@@ -128,7 +130,7 @@ export function ChatgptLogin(props: {
     try {
       setCode(await client.startChatgptLogin(id));
     } catch (err) {
-      toast(err instanceof Error ? err.message : String(err));
+      toast(errorText(err));
     }
   };
 
@@ -138,11 +140,8 @@ export function ChatgptLogin(props: {
     <div class="provider-login">
       {code && status?.state === "pending" ? (
         <span class="small">
-          Open{" "}
-          <a href={code.verification_url} target="_blank" rel="noreferrer">
-            {code.verification_url}
-          </a>{" "}
-          and enter <b class="mono">{code.user_code}</b>
+          Open <LinkOut label={code.verification_url} url={code.verification_url} /> and enter{" "}
+          <b class="mono">{code.user_code}</b>
         </span>
       ) : (
         <Button small onClick={() => void start()}>
@@ -262,7 +261,7 @@ export function ProvidersSettings(props: {
       setProviders(list);
       props.onChange?.(list);
     } catch (err) {
-      toast(err instanceof Error ? err.message : String(err));
+      toast(errorText(err));
     } finally {
       setBusy(false);
     }

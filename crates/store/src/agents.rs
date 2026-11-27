@@ -1,10 +1,11 @@
 use std::collections::HashMap;
 
 use ferrobot_core::{Agent, AgentId, AgentName, AgentStatus, AvatarCharacter, ToolGroup};
-use rusqlite::{OptionalExtension, Row, params};
+use rusqlite::{Connection, OptionalExtension, Params, Row, params};
 use sha2::{Digest, Sha256};
 
-use crate::util::{fmt_ts, is_unique_violation, now, parse_ts};
+use crate::events::insert_event;
+use crate::util::{conflict_or, fmt_ts, is_unique_violation, now, parse_ts};
 use crate::{Store, StoreError};
 
 /// Input for registering an agent.
@@ -66,7 +67,7 @@ fn from_row(row: &Row<'_>) -> Result<Agent, StoreError> {
         tags: tags
             .and_then(|t| serde_json::from_str(&t).ok())
             .unwrap_or_default(),
-        tools: tools.map_or_else(ToolGroup::all, |t| parse_tools(&t)),
+        tools: tools.map_or_else(ToolGroup::defaults, |t| parse_tools(&t)),
         provider_id: provider_id
             .map(|id| uuid::Uuid::parse_str(&id))
             .transpose()
@@ -105,10 +106,11 @@ fn parse_tools(json: &str) -> Vec<ToolGroup> {
     ToolGroup::normalize(groups)
 }
 
-/// `tools` as stored: NULL for every group, so groups added later reach those agents too.
+/// `tools` as stored: NULL for the default profile, so default groups added later reach those
+/// agents too (opt-in ones like Desktop never do).
 fn tools_column(tools: Vec<ToolGroup>) -> Result<Option<String>, StoreError> {
     let tools = ToolGroup::normalize(tools);
-    if tools == ToolGroup::all() {
+    if tools == ToolGroup::defaults() {
         return Ok(None);
     }
     serde_json::to_string(&tools)
@@ -120,10 +122,17 @@ fn tools_column(tools: Vec<ToolGroup>) -> Result<Option<String>, StoreError> {
 const OPERATOR: &str = "operator";
 
 fn not_found(key: &impl std::fmt::Display) -> StoreError {
-    StoreError::NotFound {
-        entity: "agent",
-        key: key.to_string(),
-    }
+    StoreError::not_found("agent", key)
+}
+
+fn find(c: &Connection, filter: &str, params: impl Params) -> Result<Option<Agent>, StoreError> {
+    c.query_row(
+        &format!("SELECT {COLUMNS} FROM agents WHERE {filter}"),
+        params,
+        |row| Ok(from_row(row)),
+    )
+    .optional()?
+    .transpose()
 }
 
 impl Store {
@@ -145,7 +154,7 @@ impl Store {
             sandbox_id: None,
             session_id: None,
             pinned: false,
-            tools: ToolGroup::all(),
+            tools: ToolGroup::defaults(),
             tags: Vec::new(),
             created_at: now(),
         };
@@ -177,21 +186,14 @@ impl Store {
                         .map_or_else(|| OPERATOR.to_owned(), |id| id.to_string()),
                 ],
             )
-            .map_err(|e| {
-                if is_unique_violation(&e) {
-                    StoreError::Conflict {
-                        entity: "agent",
-                        key: row.name.to_string(),
-                    }
-                } else {
-                    e.into()
-                }
-            })?;
+            .map_err(|e| conflict_or(e, "agent", row.name.as_str()))?;
             // A new agent takes over a name another agent had before a rename.
             c.execute(
                 "DELETE FROM agent_aliases WHERE name = ?1",
                 [row.name.as_str()],
             )?;
+            // ...but never the notes an earlier agent of that name left in the vault.
+            crate::vault::archive_folder(c, row.name.as_str(), "before")?;
             Ok(row)
         })
         .await
@@ -200,43 +202,27 @@ impl Store {
     pub async fn list_agents(&self) -> Result<Vec<Agent>, StoreError> {
         self.with(|c| {
             let mut stmt = c.prepare(&format!("SELECT {COLUMNS} FROM agents ORDER BY name"))?;
-            let mut rows = stmt.query([])?;
-            let mut out = Vec::new();
-            while let Some(row) = rows.next()? {
-                out.push(from_row(row)?);
-            }
-            Ok(out)
+            let rows = stmt.query_map([], |r| Ok(from_row(r)))?;
+            rows.map(|r| r?).collect()
         })
         .await
     }
 
     pub async fn get_agent(&self, id: AgentId) -> Result<Agent, StoreError> {
-        self.with(move |c| {
-            c.query_row(
-                &format!("SELECT {COLUMNS} FROM agents WHERE id = ?1"),
-                [id.to_string()],
-                |row| Ok(from_row(row)),
-            )
-            .optional()?
-            .ok_or_else(|| not_found(&id))?
-        })
-        .await
+        self.with(move |c| find(c, "id = ?1", [id.to_string()])?.ok_or_else(|| not_found(&id)))
+            .await
     }
 
     /// The agent with this name, or that had it before a rename (a current name wins).
     pub async fn get_agent_by_name(&self, name: AgentName) -> Result<Agent, StoreError> {
         self.with(move |c| {
-            c.query_row(
-                &format!(
-                    "SELECT {COLUMNS} FROM agents
-                     WHERE name = ?1 OR id = (SELECT agent_id FROM agent_aliases WHERE name = ?1)
-                     ORDER BY name = ?1 DESC LIMIT 1"
-                ),
+            find(
+                c,
+                "name = ?1 OR id = (SELECT agent_id FROM agent_aliases WHERE name = ?1)
+                 ORDER BY name = ?1 DESC LIMIT 1",
                 [name.as_str()],
-                |row| Ok(from_row(row)),
-            )
-            .optional()?
-            .ok_or_else(|| not_found(&name))?
+            )?
+            .ok_or_else(|| not_found(&name))
         })
         .await
     }
@@ -244,16 +230,7 @@ impl Store {
     /// Resolves a runner token to its agent. Returns `None` for unknown tokens.
     pub async fn agent_by_token(&self, token: &str) -> Result<Option<Agent>, StoreError> {
         let hash = hash_token(token);
-        self.with(move |c| {
-            c.query_row(
-                &format!("SELECT {COLUMNS} FROM agents WHERE token_hash = ?1"),
-                [hash],
-                |row| Ok(from_row(row)),
-            )
-            .optional()?
-            .transpose()
-        })
-        .await
+        self.with(move |c| find(c, "token_hash = ?1", [hash])).await
     }
 
     /// Stores the hash of a freshly issued runner token (rotates the old one).
@@ -324,6 +301,13 @@ impl Store {
                      updated_at = excluded.updated_at",
                 params![id, at],
             )?;
+            let name: Option<String> = c
+                .query_row("SELECT name FROM agents WHERE id = ?1", [&id], |r| r.get(0))
+                .optional()?;
+            if let Some(name) = name {
+                // Best effort: the delete goes on; creating that name again archives it then.
+                let _ = crate::vault::archive_folder(c, &name, &id);
+            }
             c.execute("DELETE FROM agents WHERE id = ?1", [id])
         })
         .await
@@ -365,10 +349,9 @@ impl Store {
         .await
     }
 
-    /// Old names of agents renamed before renames were recorded, read from history: the
-    /// sender name of each message an agent sent and the name each `create_agent` result
-    /// gave. Each becomes an alias plus a `renamed` event, so agents hear of it on their next
-    /// turn. Names another agent holds now are skipped. Returns how many were found.
+    /// Aliases old names history shows for agents renamed before renames were recorded, plus a
+    /// `renamed` event each so agents hear of it; names held now are skipped. Returns how many.
+    /// Only messages count: tool results come from the runner, which could claim any name.
     pub async fn backfill_aliases(&self) -> Result<usize, StoreError> {
         self.with(|c| {
             let mut stmt = c.prepare(
@@ -376,11 +359,6 @@ impl Store {
                      SELECT json_extract(payload, '$.from'), json_extract(payload, '$.sender.id')
                      FROM events WHERE kind = 'message_in'
                        AND json_extract(payload, '$.sender.kind') = 'agent'
-                     UNION
-                     SELECT json_extract(json_extract(payload, '$.output'), '$.name'),
-                            json_extract(json_extract(payload, '$.output'), '$.agent_id')
-                     FROM events WHERE kind = 'tool_result'
-                       AND json_valid(json_extract(payload, '$.output'))
                  )
                  SELECT DISTINCT s.name, a.id, a.name FROM seen s JOIN agents a ON a.id = s.agent_id
                  WHERE s.name IS NOT NULL AND s.name <> a.name
@@ -404,11 +382,7 @@ impl Store {
                     continue;
                 }
                 let payload = serde_json::json!({ "from": old, "to": now_name }).to_string();
-                tx.execute(
-                    "INSERT INTO events (agent_id, turn_id, kind, payload, created_at)
-                     VALUES (?1, NULL, 'renamed', ?2, ?3)",
-                    params![id, payload, fmt_ts(now())],
-                )?;
+                insert_event(&tx, &id, None, "renamed", &payload)?;
                 added += 1;
             }
             tx.commit()?;
@@ -505,7 +479,7 @@ impl Store {
                     [&old, &id],
                 )?;
                 // Best effort: a failed move leaves the notes under the old name, not lost.
-                let _ = crate::vault::rename_folder(c, &old, &new);
+                let _ = crate::vault::rename_folder(c, &old, &new, &id);
             }
             Ok(changed)
         })
@@ -832,7 +806,7 @@ mod tests {
     async fn tools_roundtrip_and_every_group_stays_null() {
         let store = Store::open_in_memory().unwrap();
         let a = store.create_agent(new("alice")).await.unwrap();
-        assert_eq!(a.tools, ToolGroup::all());
+        assert_eq!(a.tools, ToolGroup::defaults());
         let set = |tools: Vec<ToolGroup>| AgentPatch {
             tools: Some(tools),
             ..AgentPatch::default()
@@ -842,7 +816,7 @@ mod tests {
         let tools = store.get_agent(a.id).await.unwrap().tools;
         assert_eq!(tools, [ToolGroup::Team, ToolGroup::Shell]);
         store
-            .update_agent_profile(a.id, set(ToolGroup::all()))
+            .update_agent_profile(a.id, set(ToolGroup::defaults()))
             .await
             .unwrap();
         let stored: Option<String> = store
@@ -945,7 +919,7 @@ mod tests {
             (
                 "tool_result",
                 serde_json::json!({
-                    "output": format!(r#"{{"agent_id":"{mailer}","name":"courier"}}"#)
+                    "output": format!(r#"{{"agent_id":"{mailer}","name":"forged"}}"#)
                 }),
             ),
         ] {
@@ -958,7 +932,7 @@ mod tests {
         assert_eq!(
             store.agent_aliases().await.unwrap(),
             [("courier".to_owned(), mailer)],
-            "a name another agent holds now is not an alias"
+            "a name another agent holds now is not an alias, nor one a tool result claims"
         );
         let found = store
             .get_agent_by_name(AgentName::parse("courier").unwrap())

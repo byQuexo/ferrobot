@@ -1,13 +1,11 @@
-//! The opt-in Claude Code driver: the daemon host's own, unmodified `claude` CLI, signed in with
-//! the user's own Claude account through Anthropic's flow. ferrobot never reads, stores or relays
-//! that login; `claude` runs on the host with its built-in tools off and reaches the agent's
-//! sandbox only through the MCP tools below.
+//! The opt-in Claude Code driver: the host's own, unmodified `claude`, whose login ferrobot never
+//! reads, stores or relays. Its built-in tools are off; it reaches the sandbox only through MCP.
 
 use std::collections::HashSet;
 use std::ffi::OsStr;
 use std::path::{Path, PathBuf};
 use std::process::Stdio;
-use std::sync::{Arc, LazyLock, Mutex, PoisonError};
+use std::sync::{Arc, LazyLock, Mutex};
 use std::time::Duration;
 
 use axum::Json;
@@ -44,9 +42,8 @@ pub struct ClaudeCodeStatus {
     pub auth_method: Option<String>,
 }
 
-/// Variables the daemon may hold that would move `claude` off the user's own login (keys,
-/// tokens, another provider), make it think it runs inside another Claude Code, or hand the
-/// daemon's own secrets (operator token, storage keys) to hooks and plugins.
+/// Variables that would move `claude` off the user's own login, make it think it runs inside
+/// another Claude Code, or hand the daemon's secrets to hooks and plugins.
 fn foreign(key: &OsStr) -> bool {
     let key = key.to_string_lossy();
     ["ANTHROPIC_", "CLAUDE_CODE_", "FERROBOT_", "AWS_"]
@@ -184,9 +181,7 @@ pub async fn save_settings(
     state: &AppState,
     settings: &ClaudeCodeSettings,
 ) -> Result<(), crate::error::ApiError> {
-    let raw = serde_json::to_string(settings)
-        .map_err(|e| crate::error::ApiError::Internal(e.to_string()))?;
-    Ok(state.store.put_setting(SETTING, raw).await?)
+    crate::api::settings::save_json(state, SETTING, settings).await
 }
 
 /// The plugins installed in the host's Claude Code, from `claude plugin list`.
@@ -333,14 +328,11 @@ pub async fn compact(state: &AppState, agent: AgentId) -> Result<String, Compact
         .ok_or(CompactError::NotNow(
             "there is no conversation to compact yet",
         ))?;
+    let in_turn = || CompactError::NotNow("the agent is in a turn; try again when it is done");
     if state.hub.is_working(agent) {
-        return Err(CompactError::NotNow(
-            "the agent is in a turn; try again when it is done",
-        ));
+        return Err(in_turn());
     }
-    let _busy = Busy::take(agent).ok_or(CompactError::NotNow(
-        "the agent is in a turn; try again when it is done",
-    ))?;
+    let _busy = Busy::take(agent).ok_or_else(in_turn)?;
     let mut cmd = claude(state);
     cmd.args([
         "-p",
@@ -512,16 +504,14 @@ struct Busy(AgentId);
 
 impl Busy {
     fn take(agent: AgentId) -> Option<Self> {
-        let mut busy = BUSY.lock().unwrap_or_else(PoisonError::into_inner);
-        busy.insert(agent).then_some(Self(agent))
+        // Lazily: a `Busy` built for nothing would lock `BUSY` again in its `drop`.
+        crate::lock(&BUSY).insert(agent).then(|| Self(agent))
     }
 }
 
 impl Drop for Busy {
     fn drop(&mut self) {
-        BUSY.lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .remove(&self.0);
+        crate::lock(&BUSY).remove(&self.0);
     }
 }
 
@@ -684,10 +674,7 @@ async fn turn(
         Ok(None) => return refuse(StatusCode::UNAUTHORIZED, "unknown agent token"),
         Err(e) => return refuse(StatusCode::INTERNAL_SERVER_ERROR, &e.to_string()),
     };
-    let provider = match agent.provider_id {
-        Some(id) => state.store.get_provider(id).await.ok(),
-        None => None,
-    };
+    let provider = crate::agents::provider_of(&state, &agent).await;
     let Some(provider) = provider.filter(|p| p.kind == ProviderKind::ClaudeCode) else {
         return refuse(
             StatusCode::FORBIDDEN,
@@ -700,7 +687,11 @@ async fn turn(
             "a Claude Code turn is already running",
         );
     };
-    let model = agent.model.clone().or(provider.default_model);
+    let model = state
+        .call_model(agent.id)
+        .await
+        .or_else(|| agent.model.clone())
+        .or(provider.default_model);
     if model.as_deref().is_some_and(|m| !valid_model(m)) {
         return refuse(StatusCode::BAD_REQUEST, "invalid model name");
     }
@@ -847,11 +838,16 @@ fn write_turn_files(
     Ok(dir)
 }
 
-/// `claude` acts on prompt text before the model sees it: it attaches files named as `@path`
-/// (also outside its folder) and runs a leading `/command`. Those come from the sandbox or from
-/// other agents' messages, so a path after `@` gets a space and a leading `/` or `!` is refused.
+/// `claude` attaches any `@path` and runs a leading `/command` before the model sees the prompt,
+/// which comes from the sandbox or other agents: `@` paths get a space, a leading `/` or `!` fails.
 fn defuse(prompt: &str) -> Result<String, ()> {
-    if matches!(prompt.trim_start().chars().next(), Some('/' | '!')) {
+    let invisible = |c: char| {
+        c.is_whitespace() || matches!(c, '\u{feff}' | '\u{200b}'..='\u{200f}' | '\u{2060}')
+    };
+    if matches!(
+        prompt.trim_start_matches(invisible).chars().next(),
+        Some('/' | '!')
+    ) {
         return Err(());
     }
     let mut out = String::with_capacity(prompt.len());
@@ -859,7 +855,11 @@ fn defuse(prompt: &str) -> Result<String, ()> {
     while let Some(at) = rest.find('@') {
         out.push_str(&rest[..=at]);
         rest = &rest[at + 1..];
-        let token = rest.split(char::is_whitespace).next().unwrap_or_default();
+        // Split only where every reader splits: `claude` keeps U+0085 inside a token.
+        let token = rest
+            .split(|c: char| c.is_ascii_whitespace())
+            .next()
+            .unwrap_or_default();
         // A trailing colon or comma is punctuation (`@bob:`), not part of a path.
         let inner =
             token.trim_end_matches([',', '.', ';', ':', '!', '?', ')', ']', '}', '"', '\'']);
@@ -875,15 +875,22 @@ async fn next(mut run: Run) -> Option<(Result<Bytes, std::io::Error>, Run)> {
     if run.done {
         return None;
     }
-    if let Ok(Some(line)) = run.lines.next_line().await {
+    while let Ok(Some(line)) = run.lines.next_line().await {
         let now = time::OffsetDateTime::now_utc();
-        if let Ok(v) = serde_json::from_str::<Value>(&line) {
-            run.saw_result |= v["type"] == "result";
-            Context::read(&mut run.context, &v);
-            run.track_call(&v, now).await;
-        }
         run.last_line = now;
-        return Some((Ok(Bytes::from(line + "\n")), run));
+        let Ok(v) = serde_json::from_str::<Value>(&line) else {
+            continue;
+        };
+        run.saw_result |= v["type"] == "result";
+        Context::read(&mut run.context, &v);
+        run.track_call(&v, now).await;
+        // Only the turn goes back: the init line and hook output describe the host.
+        if matches!(
+            v["type"].as_str(),
+            Some("assistant" | "user" | "stream_event" | "result")
+        ) {
+            return Some((Ok(Bytes::from(line + "\n")), run));
+        }
     }
     run.done = true;
     run.flush_call().await;
@@ -966,10 +973,9 @@ fn computer_names(kind: Option<ProviderKind>, groups: &[ToolGroup]) -> Vec<&'sta
 
 async fn agent_and_kind(state: &AppState, agent: AgentId) -> Option<(Agent, Option<ProviderKind>)> {
     let agent = state.store.get_agent(agent).await.ok()?;
-    let kind = match agent.provider_id {
-        Some(id) => state.store.get_provider(id).await.ok().map(|p| p.kind),
-        None => None,
-    };
+    let kind = crate::agents::provider_of(state, &agent)
+        .await
+        .map(|p| p.kind);
     Some((agent, kind))
 }
 
@@ -1031,13 +1037,20 @@ async fn run_computer(
 ) -> Result<CallToolResult, String> {
     let handle = crate::lifecycle::handle_of(agent).ok_or("your computer is not running")?;
     let backend = &state.backend;
-    let workspace = format!("{}/workspace", backend.home().trim_end_matches('/'));
+    let home = backend.home().trim_end_matches('/').to_owned();
+    let workspace = format!("{home}/workspace");
     let resolve = |p: &str| {
         let full = if p.starts_with('/') {
             p.to_owned()
         } else {
             format!("{workspace}/{p}")
         };
+        // Files go through the engine as root, so nothing outside the agent's own home.
+        if !full.starts_with(&format!("{home}/")) {
+            return Err(format!(
+                "only files in your home folder ({home}) can be read or written"
+            ));
+        }
         SandboxPath::parse(&full).map_err(|e| e.to_string())
     };
     let text = match name {
@@ -1101,6 +1114,15 @@ async fn run_computer(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_second_turn_for_a_busy_agent_is_refused_without_locking_up() {
+        let agent = AgentId::new();
+        let first = Busy::take(agent).expect("free");
+        assert!(Busy::take(agent).is_none(), "already busy");
+        drop(first);
+        assert!(Busy::take(agent).is_some(), "free again");
+    }
 
     #[test]
     fn context_is_the_newest_calls_tokens_with_the_window_claude_names() {
@@ -1277,6 +1299,12 @@ Last 24h · 1485 requests · 11 sessions
             "mentions and emails stay as they are"
         );
         assert!(defuse("/cost").is_err() && defuse("  !touch x").is_err());
+        assert!(defuse("\u{feff}/cost").is_err() && defuse("\u{200b} !x").is_err());
+        let hidden = defuse("see @x\u{85}/../../etc/hosts").unwrap();
+        assert!(
+            hidden.contains("@ x"),
+            "a path hidden behind U+0085 is defused: {hidden}"
+        );
     }
 
     #[test]

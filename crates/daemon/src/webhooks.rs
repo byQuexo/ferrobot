@@ -19,6 +19,7 @@ use time::OffsetDateTime;
 use utoipa::ToSchema;
 
 use crate::AppState;
+use crate::api::settings::{load_json, save_json};
 use crate::error::{ApiError, ErrorBody};
 use crate::otel::ExportStatus;
 
@@ -145,17 +146,11 @@ impl Webhooks {
 }
 
 pub(crate) async fn load(state: &AppState) -> Result<Stored, ApiError> {
-    match state.store.get_setting(SETTING).await? {
-        Some(raw) => {
-            serde_json::from_str(&raw).map_err(|e| ApiError::Internal(format!("webhooks: {e}")))
-        }
-        None => Ok(Stored::default()),
-    }
+    load_json(state, SETTING, "webhooks").await
 }
 
 pub(crate) async fn save(state: &AppState, stored: &Stored) -> Result<(), ApiError> {
-    let raw = serde_json::to_string(stored).map_err(|e| ApiError::Internal(e.to_string()))?;
-    Ok(state.store.put_setting(SETTING, raw).await?)
+    save_json(state, SETTING, stored).await
 }
 
 /// The URL of incoming webhook `id` with its secret.
@@ -191,7 +186,7 @@ fn frame(name: &str, payload: &str) -> String {
     body
 }
 
-fn truncate(text: &mut String, max_bytes: usize) {
+pub(crate) fn truncate(text: &mut String, max_bytes: usize) {
     if text.len() > max_bytes {
         let mut end = max_bytes;
         while !text.is_char_boundary(end) {
@@ -357,7 +352,13 @@ fn payload(format: WebhookFormat, n: &Notice) -> Value {
                 .collect::<String>(),
             "allowed_mentions": { "parse": [] },
         }),
-        WebhookFormat::Slack => json!({ "text": format!("*{}*{below}", n.title) }),
+        // Escaped as Slack asks, so `<!channel>` or `<https://x|y>` in an agent's text pings nobody.
+        WebhookFormat::Slack => json!({
+            "text": format!("*{}*{below}", n.title)
+                .replace('&', "&amp;")
+                .replace('<', "&lt;")
+                .replace('>', "&gt;")
+        }),
     }
 }
 
@@ -416,6 +417,14 @@ mod tests {
                 .starts_with("*ada replied*\n")
         );
         assert_eq!(payload(WebhookFormat::Json, &notice)["event"], "reply");
+        let ping = Notice {
+            text: Some("<!channel> see <https://x.example|here> & go".into()),
+            ..notice
+        };
+        assert_eq!(
+            payload(WebhookFormat::Slack, &ping)["text"],
+            "*ada replied*\n&lt;!channel&gt; see &lt;https://x.example|here&gt; &amp; go"
+        );
     }
 
     #[test]

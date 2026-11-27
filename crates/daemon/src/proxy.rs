@@ -184,12 +184,7 @@ pub(crate) fn agent_token(headers: &HeaderMap) -> Option<&str> {
         .get("x-api-key")
         .or_else(|| headers.get("x-goog-api-key"))
         .and_then(|v| v.to_str().ok())
-        .or_else(|| {
-            headers
-                .get(header::AUTHORIZATION)
-                .and_then(|v| v.to_str().ok())
-                .and_then(|v| v.strip_prefix("Bearer "))
-        })
+        .or_else(|| crate::auth::bearer(headers))
 }
 
 fn error(status: StatusCode, message: &str) -> Response {
@@ -230,6 +225,20 @@ fn openrouter_extras(
     match route.api {
         Api::ChatCompletions => (upstream, with_openrouter_cache(body)),
         _ => (upstream, body),
+    }
+}
+
+/// The request with `model` in place of the one it names.
+fn with_model(body: axum::body::Bytes, model: &str) -> axum::body::Bytes {
+    let Ok(mut json) = serde_json::from_slice::<serde_json::Value>(&body) else {
+        return body;
+    };
+    match json.as_object_mut() {
+        Some(obj) if obj.contains_key("model") => {
+            obj.insert("model".into(), model.into());
+            serde_json::to_vec(&json).map_or(body, axum::body::Bytes::from)
+        }
+        _ => body,
     }
 }
 
@@ -318,7 +327,6 @@ async fn route(state: &AppState, provider: Option<Provider>, path: &str) -> Resu
         return daemon_route(state, path);
     };
     let id = provider.id;
-    let unavailable = unconfigured;
     if provider.kind == ProviderKind::Anthropic && !path.starts_with("v1/") {
         return Err(Failure::new(
             StatusCode::NOT_FOUND,
@@ -335,11 +343,11 @@ async fn route(state: &AppState, provider: Option<Provider>, path: &str) -> Resu
         provider.upstream()
     };
     let upstream = upstream
-        .ok_or_else(|| unavailable(format!("provider {} has no upstream", provider.name)))?;
+        .ok_or_else(|| unconfigured(format!("provider {} has no upstream", provider.name)))?;
     let api = match provider.kind {
         ProviderKind::ClaudeCode => {
             let name = &provider.name;
-            return Err(unavailable(format!(
+            return Err(unconfigured(format!(
                 "provider {name} runs on the host's claude CLI"
             )));
         }
@@ -520,7 +528,7 @@ async fn forward(
     }
 
     let (parts, body) = request.into_parts();
-    let Ok(body) = axum::body::to_bytes(body, MAX_REQUEST_BYTES).await else {
+    let Ok(mut body) = axum::body::to_bytes(body, MAX_REQUEST_BYTES).await else {
         return refuse(
             call,
             StatusCode::PAYLOAD_TOO_LARGE,
@@ -533,6 +541,9 @@ async fn forward(
     }
     let family = generation(&route.api, &path);
     if family.is_some() && body_names_model(&route.api) {
+        if let Some(model) = state.call_model(agent.id).await {
+            body = with_model(body, &model);
+        }
         call.model_from_body(&body);
     }
     // Only the chat completions driver can drop every tool; the other harnesses keep their own.
@@ -541,12 +552,7 @@ async fn forward(
         url.push('?');
         url.push_str(q);
     }
-    let mut upstream = state.http.request(parts.method.clone(), &url);
-    for (name, value) in &parts.headers {
-        if listed(name.as_str(), FORWARD_REQUEST, FORWARD_REQUEST_PREFIXES) {
-            upstream = upstream.header(name, value);
-        }
-    }
+    let upstream = upstream_request(&state.http, &parts, &url);
     let (upstream, body) = openrouter_extras(upstream, &route, agent.id, body);
     let upstream = with_credential(upstream, &route).body(body);
 
@@ -572,6 +578,21 @@ async fn forward(
 }
 
 /// The agent gets the error body and shows why; Diagnostics gets the status.
+/// The request to `url` with the SDK headers it needs from the agent's, and no others.
+fn upstream_request(
+    http: &reqwest::Client,
+    parts: &axum::http::request::Parts,
+    url: &str,
+) -> reqwest::RequestBuilder {
+    let mut upstream = http.request(parts.method.clone(), url);
+    for (name, value) in &parts.headers {
+        if listed(name.as_str(), FORWARD_REQUEST, FORWARD_REQUEST_PREFIXES) {
+            upstream = upstream.header(name, value);
+        }
+    }
+    upstream
+}
+
 fn warned(agent: &str, path: &str, response: reqwest::Response) -> reqwest::Response {
     let status = response.status();
     if !status.is_success() {

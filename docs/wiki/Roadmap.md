@@ -23,7 +23,11 @@ In rough order. Nothing here has a date.
    screenshots in the chat's step trail, and a live view in the Computer tab.
    Like every other tool it stays inside the sandbox, goes through the tool
    groups (a new `computer` group, off by default) and the risky-step
-   classifier, and works with any model that accepts images.
+   classifier, and works with any model that accepts images. **Done** in
+   0.1.11: the desktop as an option of the
+   CLIs image, a live view in the Computer tab that you can take over, and the
+   `desktop` tool group (off by default, never together with a CLI account).
+   Open: screenshots in the chat's step trail, and checking typed commands.
 5. **Traces.** A trace view behind each reply's steps line: one timeline of
    the turn's model calls, tool calls, approval waits and the work it handed
    to other agents, with duration, counts and errors. The same traces go out
@@ -52,7 +56,9 @@ In rough order. Nothing here has a date.
    from a webhook, and signed outgoing payloads.
 7. **The agent's computer in the app.** A file browser and a terminal in the
    agent's details panel (Computer tab), so you can look around and fix
-   things in its sandbox without asking the agent.
+   things in its sandbox without asking the agent. **Done** in 0.1.11: a
+   file browser (read-only) and a console that runs one command at a time,
+   up to 60 s each; full-screen programs like vim need a real terminal.
 8. **Logins for CLIs, finer connector scopes.** CLIs that need a login
    (`gh` and `git push` first, then `vercel` and `stripe`), without the token
    ever entering a sandbox. You sign in on your computer: the daemon runs the
@@ -67,26 +73,26 @@ In rough order. Nothing here has a date.
    trusts (new crate `rcgen`). Not possible for CLIs that sign each request
    with the key (AWS, Google Cloud) or pin their certificates. Per-tool
    scopes inside a connector (for example read-only GitHub tools), finer than
-   today's switches per tool group.
+   today's switches per tool group. **Done** in 0.1.11: tools per
+   connector, and **Add CLI**: Debian packages, npm packages, downloads and
+   scripts (the last three per agent, without a rebuild), accounts for any CLI
+   that reads a token from a variable (API key, or the CLI's own device sign-in
+   in a throwaway computer; `gh` ready-made), an optional card before each
+   command, and CLIs proposed by agents. Open: sign-ins that call back to
+   `localhost`, and more ready-made CLIs.
 9. **Faster, more natural calls.** Reasoning switched off or a fast model used
    only in calls, a setting for the pause that ends your turn, and calls
-   among agents without you, with a pop-up to join.
+   among agents without you, with a pop-up to join. **Done** in 0.1.11:
+   a model per agent for calls, the pause setting, and calls among agents
+   (`call_agents`) with a pop-up to join. Reasoning settings per call: open.
 10. **Development builds.** A stable signature for development builds, so
     macOS stops asking for keychain access after every rebuild.
-11. **Flows.** Configurable flows: a series of steps (an agent's turn, a
-    message to another agent, a card that waits for you, a condition, a post to
-    an outgoing webhook) that you set up once in the app. A flow starts from a
-    trigger (an incoming webhook, a schedule, a Discord message, an event such
-    as a finished task) or from an agent through a tool, and every run shows as
-    a trace. Steps run with the tools and limits of the agents they use, risky
-    steps keep their cards, and a flow an agent creates needs your approval
-    unless Auto mode is on. This also covers starting work from a webhook (6).
-12. **Run in the cloud.** ferrobot on a server around the clock, reachable
+11. **Run in the cloud.** ferrobot on a server around the clock, reachable
     from anywhere: a sealed secret store for hosts without a keychain, the
     daemon serving the web UI, a server package, then a guest channel through
     the runner and sandbox backends for AWS Lambda MicroVMs and Firecracker on
     EC2. Plan: [docs/plans/cloud.md](../blob/main/docs/plans/cloud.md).
-13. **Later.** Moving warm agents to cold sleep under memory pressure (F4d), a
+12. **Later.** Moving warm agents to cold sleep under memory pressure (F4d), a
     native macOS app on the same `/v1` API, and optional self-hosted
     S3-compatible storage. New ideas go on [[Ideas]] first.
 
@@ -156,6 +162,7 @@ tested against fakes on a machine without KVM.
 | v0.1.8 | done | Dashboards, webhooks and a Discord bridge, trace waits and handoffs, deleted agents named in mentions, Auto mode keeps a card for the riskiest steps. |
 | v0.1.9 | done | Pins per chat, a redesigned Webhooks page, an agent's webhooks in its details, Discord reactions and a Discord chip in the chat. |
 | v0.1.10 | done | Cards answered from Discord, agents posting to Discord on their own, emoji-only replies, more Appearance settings, a faster first wake and smaller updates. |
+| v0.1.11 | done | A desktop for each agent that you can watch and take over, files and a console in the Computer tab, a quicker model in calls, calls among agents, Stop for a chain of work, Add CLI with accounts, per-tool connector scopes, agents keeping a knowledge base about you, and fixes from a security review. |
 
 Ideas beyond this list are on [[Ideas]].
 

@@ -13,7 +13,7 @@ use tokio::io::{AsyncBufReadExt, AsyncReadExt, AsyncWriteExt, BufReader};
 #[cfg(unix)]
 use tokio::net::UnixStream;
 
-use crate::{ExecOutput, ExecRequest, SandboxError, capture};
+use crate::{ExecOutput, ExecRequest, SandboxError};
 
 /// Guest vsock port the agent listens on (`scripts/firecracker/ferrobot-init`).
 pub const GUEST_PORT: u32 = 52;
@@ -77,14 +77,11 @@ pub(super) async fn exec(
 ) -> Result<ExecOutput, SandboxError> {
     let request = json!({"op": "exec", "cmd": req.cmd, "cwd": req.workdir, "env": req.env});
     let answer = call(uds, name, &request).await?;
-    let (stdout, t1) = capture(&decode(&answer, "stdout")?);
-    let (stderr, t2) = capture(&decode(&answer, "stderr")?);
-    Ok(ExecOutput {
-        exit_code: answer["exit_code"].as_i64().unwrap_or(-1),
-        stdout,
-        stderr,
-        truncated: t1 || t2,
-    })
+    Ok(ExecOutput::captured(
+        answer["exit_code"].as_i64().unwrap_or(-1),
+        &decode(&answer, "stdout")?,
+        &decode(&answer, "stderr")?,
+    ))
 }
 
 pub(super) async fn read_file(uds: &Path, name: &str, path: &str) -> Result<Vec<u8>, SandboxError> {

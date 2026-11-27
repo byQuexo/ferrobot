@@ -5,6 +5,7 @@ import { Trash2 } from "lucide-preact";
 import type { DaemonClient, UpdateVoice, VoiceCatalog, VoiceProvider, VoiceView } from "../api.ts";
 import { useApp } from "../context.ts";
 import { speedLabel, volumeLabel } from "../lib/call.ts";
+import { errorText } from "../lib/format.ts";
 import { withSaved } from "../lib/models.ts";
 import { hasVoiceKey, pickProvider, switchProvider } from "../lib/voice.ts";
 import { PrefRow } from "./AppearanceSettings.tsx";
@@ -38,9 +39,13 @@ const COMMON_LANGUAGES: [string, string][] = [
   ["zh", "Chinese"],
 ];
 
-/** The fields of `PUT /v1/voice` from what the daemon reported, with `changes` applied. */
-export function voiceUpdate(view: VoiceView, changes: Partial<UpdateVoice>): UpdateVoice {
-  return {
+/** Applies `changes` to the daemon's current voice settings; the update replaces all of them. */
+export async function patchVoice(
+  client: DaemonClient,
+  changes: Partial<UpdateVoice>,
+): Promise<VoiceView> {
+  const view = await client.voice();
+  return client.updateVoice({
     enabled: view.enabled,
     provider: view.provider ?? null,
     tts_model: view.tts_model ?? null,
@@ -49,16 +54,10 @@ export function voiceUpdate(view: VoiceView, changes: Partial<UpdateVoice>): Upd
     agent_voices: view.agent_voices ?? {},
     speed: view.speed ?? null,
     language: view.language ?? null,
+    call_models: view.call_models ?? {},
+    call_pause: view.call_pause ?? null,
     ...changes,
-  };
-}
-
-/** Applies `changes` to the daemon's current voice settings; the update replaces all of them. */
-export async function patchVoice(
-  client: DaemonClient,
-  changes: Partial<UpdateVoice>,
-): Promise<VoiceView> {
-  return client.updateVoice(voiceUpdate(await client.voice(), changes));
+  });
 }
 
 /** Languages the chosen speech model speaks, else a common list. */
@@ -72,7 +71,12 @@ export function languagesOf(
   return listed?.length ? listed.map((l) => [l.code, l.name || l.code]) : COMMON_LANGUAGES;
 }
 
-const message = (err: unknown): string => (err instanceof Error ? err.message : String(err));
+/** The account's voices as picker options, each with the languages it speaks. */
+export const voiceOptions = (catalog: VoiceCatalog | null): [string, string][] =>
+  catalog?.voices.map((v) => [
+    v.voice_id,
+    `${v.name}${v.languages.length ? ` · ${v.languages.join(", ")}` : ""}`,
+  ]) ?? [];
 
 /** The speech provider's key: pasted here, kept in the daemon's keychain, never shown again. */
 function KeyRow(props: {
@@ -209,7 +213,7 @@ export function VoiceSettings(): JSX.Element {
   };
   useEffect(() => {
     client.voice().then(show, (err: unknown) => {
-      toast(message(err));
+      toast(errorText(err));
     });
   }, []);
   // The call bar changes these too.
@@ -231,7 +235,7 @@ export function VoiceSettings(): JSX.Element {
     }
     client.voiceCatalog().then(setCatalog, (err: unknown) => {
       setCatalog(null);
-      setCatalogError(message(err));
+      setCatalogError(errorText(err));
     });
   }, [ready, keySaves]);
 
@@ -244,7 +248,7 @@ export function VoiceSettings(): JSX.Element {
       try {
         setSaved(await patchVoice(client, changes));
       } catch (err) {
-        toast(message(err));
+        toast(errorText(err));
         await client.voice().then(show, () => undefined);
       }
     });
@@ -275,17 +279,15 @@ export function VoiceSettings(): JSX.Element {
       toast(key ? "Key saved" : "Key removed", "info");
       return true;
     } catch (err) {
-      toast(message(err));
+      toast(errorText(err));
       return false;
     }
   };
 
   const elevenlabs = view.provider === "elevenlabs";
-  const voices: [string, string][] =
-    catalog?.voices.map((v) => [
-      v.voice_id,
-      `${v.name}${v.languages.length ? ` · ${v.languages.join(", ")}` : ""}`,
-    ]) ?? [];
+  const pause = view.call_pause ?? 1.5;
+  const pauseLabel = `${String(pause)} s`;
+  const voices = voiceOptions(catalog);
   const models: [string, string][] =
     catalog?.tts_models.map((m) => [m.model_id, m.name || m.model_id]) ?? [];
   const voiceHint = !elevenlabs
@@ -475,6 +477,28 @@ export function VoiceSettings(): JSX.Element {
 
           <h3 class="pref-head">Calls</h3>
           <ul class="pref-list">
+            {elevenlabs && (
+              <PrefRow
+                title="Pause that ends your turn"
+                hint="How long you can stop talking before agents answer. From the next call."
+              >
+                <span class="pref-slider">
+                  <Slider
+                    label="Pause that ends your turn"
+                    text={pauseLabel}
+                    min={0.5}
+                    max={3}
+                    step={0.25}
+                    value={pause}
+                    onInput={(call_pause) => {
+                      setView((v) => v && { ...v, call_pause });
+                    }}
+                    onChange={(p) => void save({ call_pause: p === 1.5 ? null : p })}
+                  />
+                  <output aria-hidden="true">{pauseLabel}</output>
+                </span>
+              </PrefRow>
+            )}
             {elevenlabs && (
               <PrefRow
                 title="Push to talk"

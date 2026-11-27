@@ -1,5 +1,44 @@
 {
   "$defs": {
+    "Account": {
+      "description": "Where a CLI's token goes: only requests to `hosts` get it; the CLI holds a stand-in.",
+      "properties": {
+        "confirm": {
+          "description": "Ask before every command that runs one of the CLI's programs or names one of `env` or\n`hosts`, unless Auto mode is on.",
+          "type": "boolean"
+        },
+        "env": {
+          "description": "Environment variables the CLI reads its token from, e.g. `EXAMPLE_API_KEY`.",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "hosts": {
+          "description": "API hosts whose requests get the real token, exact public names like `api.example.com`.",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "sign_in": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/CliSignIn",
+              "description": "The CLI's own device sign-in; without it the operator pastes a token."
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "hosts",
+        "env"
+      ],
+      "type": "object"
+    },
     "AgentId": {
       "description": "Stable, opaque identifier of an agent.",
       "format": "uuid",
@@ -76,6 +115,29 @@
             "name",
             "url",
             "auth",
+            "requester",
+            "kind"
+          ],
+          "type": "object"
+        },
+        {
+          "description": "An agent wants a CLI in its computer (`propose_cli` tool). Approving adds it for that\nagent; a token, if it needs one, goes in under Settings, never on a card.",
+          "properties": {
+            "cli": {
+              "$ref": "#/$defs/Cli"
+            },
+            "kind": {
+              "enum": [
+                "add_cli"
+              ],
+              "type": "string"
+            },
+            "requester": {
+              "$ref": "#/$defs/AgentId"
+            }
+          },
+          "required": [
+            "cli",
             "requester",
             "kind"
           ],
@@ -235,6 +297,71 @@
       ],
       "type": "object"
     },
+    "Cli": {
+      "description": "A CLI in the agents' computers.",
+      "properties": {
+        "account": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/Account"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "agents": {
+          "description": "Agents that get it in their home folder and get its account. A Debian package is in\nevery computer.",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "id": {
+          "description": "1-63 chars of `a-z0-9.+-`, starting with a letter or digit, e.g. `example`.",
+          "type": "string"
+        },
+        "install": {
+          "$ref": "#/$defs/Install"
+        },
+        "programs": {
+          "description": "The programs it brings, e.g. `[\"example\"]`.",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "id",
+        "install"
+      ],
+      "type": "object"
+    },
+    "CliSignIn": {
+      "description": "A CLI's own browser sign-in that shows a one-time code (device login).",
+      "properties": {
+        "login": {
+          "description": "The login command, e.g. `[\"example\", \"auth\", \"login\", \"--web\"]`.",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "token": {
+          "description": "The command that prints the token afterwards, e.g. `[\"example\", \"auth\", \"token\"]`.",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "login",
+        "token"
+      ],
+      "type": "object"
+    },
     "ConnectorAuth": {
       "description": "How a connector an agent proposes signs in (`add_connector` tool).",
       "enum": [
@@ -243,6 +370,95 @@
         "none"
       ],
       "type": "string"
+    },
+    "Install": {
+      "description": "How a CLI gets into the computers.",
+      "oneOf": [
+        {
+          "description": "A Debian package in the image every computer starts from.",
+          "properties": {
+            "kind": {
+              "enum": [
+                "debian"
+              ],
+              "type": "string"
+            },
+            "package": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "package",
+            "kind"
+          ],
+          "type": "object"
+        },
+        {
+          "description": "An npm package, installed into the home folder of each of its agents.",
+          "properties": {
+            "kind": {
+              "enum": [
+                "npm"
+              ],
+              "type": "string"
+            },
+            "package": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "package",
+            "kind"
+          ],
+          "type": "object"
+        },
+        {
+          "description": "A program downloaded into the home folder of each of its agents, as its first program.",
+          "properties": {
+            "kind": {
+              "enum": [
+                "download"
+              ],
+              "type": "string"
+            },
+            "sha256": {
+              "description": "SHA-256 of the file in hex; checked before it is installed.",
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "url": {
+              "description": "`https://` address of the program itself, not an archive.",
+              "type": "string"
+            }
+          },
+          "required": [
+            "url",
+            "kind"
+          ],
+          "type": "object"
+        },
+        {
+          "description": "A shell script run in the home folder of each of its agents, as the agent's user, with\n`PREFIX=~/.local`; it should put the CLI in `~/.local/bin`.",
+          "properties": {
+            "kind": {
+              "enum": [
+                "script"
+              ],
+              "type": "string"
+            },
+            "script": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "script",
+            "kind"
+          ],
+          "type": "object"
+        }
+      ]
     },
     "Question": {
       "description": "One question on a card.",
@@ -406,7 +622,7 @@
       "type": "string"
     },
     "ToolGroup": {
-      "description": "A group of tools an agent can have on or off. The first six are ferrobot's own MCP tools\n(enforced by the daemon), the last three the model's built-in tools (enforced by the runner).",
+      "description": "A group of tools an agent can have on or off. Shell, Files and Web are the model's built-in\ntools (enforced by the runner); the others are ferrobot's own MCP tools (enforced by the daemon).",
       "enum": [
         "team",
         "memory",
@@ -416,7 +632,8 @@
         "routines",
         "shell",
         "files",
-        "web"
+        "web",
+        "desktop"
       ],
       "type": "string"
     }

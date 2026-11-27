@@ -2,7 +2,7 @@ Two ways in: download the desktop app, or build from source.
 
 ## A. Desktop download
 
-Desktop builds come from the repository's Releases page: v0.1.10 has a
+Desktop builds come from the repository's Releases page: v0.1.11 has a
 universal `.dmg` for macOS and an `.exe` installer for Windows (x64).
 
 1. **Install Docker Desktop** and start it. Every agent runs in a container,
@@ -19,7 +19,7 @@ universal `.dmg` for macOS and an `.exe` installer for Windows (x64).
    (its key goes in **Settings → Vault**) and create an agent with
    **New agent**. See [[Model providers and keys|Providers]].
 4. **Wait for the first start.** As soon as Docker runs, the daemon
-   downloads the runner image (`ghcr.io/byquexo/ferrobot-runner:0.1.10`,
+   downloads the runner image (`ghcr.io/byquexo/ferrobot-runner:0.1.11`,
    about 2 GB) from the GitHub Container Registry in the background; an agent
    that starts before it is done waits for it. Later agents start from the
    cached image, and an update downloads only the parts that changed.
@@ -48,6 +48,15 @@ wiki.
 How the app looks (theme, accent color, bubbles, chat background, a pattern
 behind the chat, text size, font, corners, density, chat width and motion) is
 under **Settings → Appearance**, with a preview at the top.
+
+### Stop
+
+While an agent works, the Send button in its message box turns into **Stop**. It stops the agent and
+every agent working on something it handed out (a task, a message, and so on
+down the line), and drops the messages agents queued for each other there, so
+a loop between agents ends too. Your own queued messages, routines and
+webhooks stay; a stopped agent's task does not report back to an agent you
+stopped.
 
 ### Pins
 

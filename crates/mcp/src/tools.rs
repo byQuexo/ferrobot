@@ -1,7 +1,9 @@
+use std::borrow::Cow;
+
 use ferrobot_core::question::{QUESTION_CARD_VERSION, QuestionCard, QuestionEvent};
 use ferrobot_core::{
-    Agent, AgentId, AgentName, AvatarCharacter, ConnectorAuth, MailMessage, Sender, ToolGroup,
-    mention,
+    Account, Agent, AgentId, AgentName, AvatarCharacter, Cli, ConnectorAuth, Install, MailMessage,
+    Sender, ToolGroup, mention,
 };
 use ferrobot_store::StoreError;
 use rmcp::handler::server::tool::{Extension, ToolCallContext};
@@ -41,10 +43,24 @@ fn caller(parts: &http::request::Parts) -> Result<&Caller, ErrorData> {
         .ok_or_else(|| ErrorData::invalid_request("unauthenticated", None))
 }
 
+fn invalid(message: impl Into<Cow<'static, str>>) -> ErrorData {
+    ErrorData::invalid_params(message, None)
+}
+
+fn name_in(agents: &[Agent], id: AgentId) -> Option<String> {
+    agents
+        .iter()
+        .find(|a| a.id == id)
+        .map(|a| a.name.to_string())
+}
+
+const PENDING_NOTE: &str =
+    "Shown to the operator. A message tells you whether they approved it; finish your turn now.";
+
 fn store_err(e: StoreError) -> ErrorData {
     match e {
         StoreError::NotFound { .. } | StoreError::Conflict { .. } | StoreError::Core(_) => {
-            ErrorData::invalid_params(e.to_string(), None)
+            invalid(e.to_string())
         }
         other => {
             tracing::error!(error = %other, "store failure in MCP tool");
@@ -61,7 +77,9 @@ pub struct AgentInfo {
     pub status: String,
     /// One-line description.
     pub description: String,
-    pub instructions: String,
+    /// Your own instructions; other agents' stay private.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub instructions: Option<String>,
     /// True for the calling agent itself.
     pub is_you: bool,
 }
@@ -300,6 +318,34 @@ pub struct AddConnectorArgs {
 }
 
 #[derive(Debug, Deserialize, JsonSchema)]
+pub struct ProposedAccount {
+    /// API hosts whose requests get the token, exact public names like `api.example.com`.
+    pub hosts: Vec<String>,
+    /// Environment variables the CLI reads its token from, e.g. `EXAMPLE_API_KEY`.
+    pub env: Vec<String>,
+}
+
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct ProposeCliArgs {
+    /// 1-63 chars of `a-z0-9.+-`, e.g. `example`; also names its account.
+    pub name: String,
+    /// How it gets in: a Debian package (in every computer's image), an npm package, a download
+    /// of the program itself (give `sha256` when the project publishes one) or a shell script
+    /// that puts it in `~/.local/bin`.
+    pub install: Install,
+    /// The programs it brings, e.g. `["example"]`; a download needs one.
+    #[serde(default)]
+    pub programs: Vec<String>,
+    /// Only if it needs a token: the API hosts that get it and the variables the CLI reads it
+    /// from. The operator adds the token; you never see it.
+    #[serde(default)]
+    pub account: Option<ProposedAccount>,
+    /// One line on what you need it for, shown on the card.
+    #[serde(default)]
+    pub reason: String,
+}
+
+#[derive(Debug, Deserialize, JsonSchema)]
 pub struct ShareFileArgs {
     /// The file on your computer: relative to your workspace (`plan.md`),
     /// below your home (`~/out/report.html`) or absolute.
@@ -347,6 +393,140 @@ pub struct InviteToCallArgs {
 #[derive(Debug, Serialize, JsonSchema)]
 pub struct InviteToCallResult {
     pub note: String,
+}
+
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct CallAgentsArgs {
+    /// The teammates to call: one to three ids or `@name`s.
+    pub agents: Vec<String>,
+    /// What to talk through and what you want from them; the call's first line.
+    pub topic: String,
+}
+
+#[derive(Debug, Serialize, JsonSchema)]
+pub struct CallAgentsResult {
+    /// The call's room; the operator sees it under Calls.
+    pub room_id: i64,
+    pub note: String,
+}
+
+#[derive(Debug, Clone, Copy, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum DesktopStep {
+    Screenshot,
+    Click,
+    DoubleClick,
+    RightClick,
+    Move,
+    Type,
+    Key,
+    Scroll,
+}
+
+#[derive(Debug, Clone, Copy, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum ScrollDirection {
+    Up,
+    Down,
+    Left,
+    Right,
+}
+
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct DesktopArgs {
+    /// What to do: `screenshot` shows the screen; `click`, `double_click`, `right_click`,
+    /// `move` and `scroll` act at `x`,`y`; `type` types `text`; `key` presses `keys`.
+    pub action: DesktopStep,
+    /// Pixels from the screen's left edge, as in the screenshot.
+    pub x: Option<u32>,
+    /// Pixels from the screen's top edge.
+    pub y: Option<u32>,
+    /// `type`: the text, up to 2000 characters.
+    pub text: Option<String>,
+    /// `key`: keys or chords separated by spaces, e.g. `ctrl+l` or `Return`.
+    pub keys: Option<String>,
+    /// `scroll`: which way.
+    pub direction: Option<ScrollDirection>,
+    /// `scroll`: wheel steps, 1-20 (default 3).
+    pub amount: Option<u32>,
+}
+
+const MAX_DESKTOP_TEXT: usize = 2000;
+
+fn desktop_action(args: DesktopArgs) -> Result<crate::DesktopAction, String> {
+    use crate::DesktopAction as A;
+    let at = || match (args.x, args.y) {
+        (Some(x), Some(y)) => Ok((x, y)),
+        _ => Err("give x and y".to_owned()),
+    };
+    Ok(match args.action {
+        DesktopStep::Screenshot => A::Screenshot,
+        DesktopStep::Move => {
+            let (x, y) = at()?;
+            A::Move { x, y }
+        }
+        step @ (DesktopStep::Click | DesktopStep::DoubleClick | DesktopStep::RightClick) => {
+            let (x, y) = at()?;
+            let button = if matches!(step, DesktopStep::RightClick) {
+                3
+            } else {
+                1
+            };
+            A::Click {
+                x,
+                y,
+                button,
+                double: matches!(step, DesktopStep::DoubleClick),
+            }
+        }
+        DesktopStep::Type => {
+            let text = args.text.filter(|t| !t.is_empty()).ok_or("give text")?;
+            if text.chars().count() > MAX_DESKTOP_TEXT {
+                return Err(format!(
+                    "type at most {MAX_DESKTOP_TEXT} characters at once"
+                ));
+            }
+            A::Type { text }
+        }
+        DesktopStep::Key => {
+            let keys: Vec<String> = args
+                .keys
+                .unwrap_or_default()
+                .split_whitespace()
+                .map(str::to_owned)
+                .collect();
+            let name_ok = |k: &String| {
+                k.len() <= 40
+                    && k.bytes()
+                        .all(|b| b.is_ascii_alphanumeric() || b == b'_' || b == b'+')
+            };
+            if keys.is_empty() || keys.len() > 20 || !keys.iter().all(name_ok) {
+                return Err(
+                    "give keys like `ctrl+l` or `Return`, up to 20, separated by spaces".into(),
+                );
+            }
+            A::Key { keys }
+        }
+        DesktopStep::Scroll => {
+            let (x, y) = at()?;
+            let amount = args.amount.unwrap_or(3);
+            if !(1..=20).contains(&amount) {
+                return Err("scroll 1 to 20 steps".into());
+            }
+            let button = match args.direction.ok_or("give a direction")? {
+                ScrollDirection::Up => 4,
+                ScrollDirection::Down => 5,
+                ScrollDirection::Left => 6,
+                ScrollDirection::Right => 7,
+            };
+            A::Scroll {
+                x,
+                y,
+                button,
+                amount,
+            }
+        }
+    })
 }
 
 #[derive(Debug, Deserialize, JsonSchema)]
@@ -463,13 +643,10 @@ fn card_text(card: &QuestionCard) -> String {
 fn check_body(body: &str) -> Result<&str, ErrorData> {
     let body = body.trim();
     if body.is_empty() {
-        return Err(ErrorData::invalid_params("body must not be empty", None));
+        return Err(invalid("body must not be empty"));
     }
     if body.len() > MAX_MESSAGE_BYTES {
-        return Err(ErrorData::invalid_params(
-            format!("body exceeds {MAX_MESSAGE_BYTES} bytes"),
-            None,
-        ));
+        return Err(invalid(format!("body exceeds {MAX_MESSAGE_BYTES} bytes")));
     }
     Ok(body)
 }
@@ -535,8 +712,7 @@ impl FerrobotTools {
         if let Ok(id) = to.parse::<AgentId>() {
             store.get_agent(id).await
         } else {
-            let name =
-                AgentName::parse(to).map_err(|e| ErrorData::invalid_params(e.to_string(), None))?;
+            let name = AgentName::parse(to).map_err(|e| invalid(e.to_string()))?;
             store.get_agent_by_name(name).await
         }
         .map_err(store_err)
@@ -546,10 +722,7 @@ impl FerrobotTools {
     async fn recipient(&self, me: AgentId, to: &str) -> Result<Agent, ErrorData> {
         let recipient = self.agent(to).await?;
         if recipient.id == me {
-            return Err(ErrorData::invalid_params(
-                "cannot send a message to yourself",
-                None,
-            ));
+            return Err(invalid("cannot send a message to yourself"));
         }
         Ok(recipient)
     }
@@ -594,10 +767,10 @@ impl FerrobotTools {
     )]
     async fn read_guide(&self, Parameters(args): Parameters<ReadGuideArgs>) -> ToolResult<Guide> {
         let (page, title, markdown) = find_guide(&args.page).ok_or_else(|| {
-            ErrorData::invalid_params(
-                format!("no guide named {}; list_guides shows the pages", args.page),
-                None,
-            )
+            invalid(format!(
+                "no guide named {}; list_guides shows the pages",
+                args.page
+            ))
         })?;
         Ok(Json(Guide {
             page: (*page).to_owned(),
@@ -622,7 +795,7 @@ impl FerrobotTools {
                     name: a.name.to_string(),
                     status: a.status.as_str().to_owned(),
                     description: a.description,
-                    instructions: a.instructions,
+                    instructions: (a.id == me).then_some(a.instructions),
                 })
                 .collect(),
         }))
@@ -645,10 +818,7 @@ impl FerrobotTools {
         if let Some(reply_to) = args.reply_to {
             let original = store.get_message(reply_to).await.map_err(store_err)?;
             if original.recipient != me.id && original.sender != Sender::Agent(me.id) {
-                return Err(ErrorData::invalid_params(
-                    "reply_to must be a message you received or sent",
-                    None,
-                ));
+                return Err(invalid("reply_to must be a message you received or sent"));
             }
         }
         let msg = self
@@ -703,12 +873,8 @@ impl FerrobotTools {
         let store = &self.state.store;
         let tasks = store.tasks(me, 50).await.map_err(store_err)?;
         let agents = store.list_agents().await.map_err(store_err)?;
-        let name_of = |id: AgentId| {
-            agents
-                .iter()
-                .find(|a| a.id == id)
-                .map_or_else(|| "a deleted agent".to_owned(), |a| a.name.to_string())
-        };
+        let name_of =
+            |id: AgentId| name_in(&agents, id).unwrap_or_else(|| "a deleted agent".to_owned());
         let mut list = TaskList {
             given: Vec::new(),
             received: Vec::new(),
@@ -753,13 +919,11 @@ impl FerrobotTools {
     ) -> ToolResult<AskUserResult> {
         let me = caller(&parts)?.0.id;
         if self.state.notifier.in_call(me).await {
-            return Err(ErrorData::invalid_params(
+            return Err(invalid(
                 "You're in a voice call with the operator: ask out loud in your reply.",
-                None,
             ));
         }
-        card.normalize()
-            .map_err(|e| ErrorData::invalid_params(e, None))?;
+        card.normalize().map_err(invalid)?;
         let store = &self.state.store;
         let creator = store.get_agent(me).await.map_err(store_err)?.created_by;
         // The operator talks to the creator; it decides what reaches them.
@@ -827,7 +991,7 @@ impl FerrobotTools {
             .notifier
             .request_agent(me, request.clone())
             .await
-            .map_err(|e| ErrorData::invalid_params(e, None))?;
+            .map_err(invalid)?;
         Ok(Json(match outcome {
             AgentRequestOutcome::Created { id, name } => {
                 let note = match &task {
@@ -884,7 +1048,7 @@ impl FerrobotTools {
             .notifier
             .set_agent_tools(me, request)
             .await
-            .map_err(|e| ErrorData::invalid_params(e, None))?;
+            .map_err(invalid)?;
         Ok(Json(match outcome {
             AgentToolsOutcome::Applied => SetAgentToolsResult {
                 status: "applied".into(),
@@ -892,9 +1056,7 @@ impl FerrobotTools {
             },
             AgentToolsOutcome::Pending { .. } => SetAgentToolsResult {
                 status: "pending".into(),
-                note: "Shown to the operator. A message tells you whether they approved it; \
-                       finish your turn now."
-                    .into(),
+                note: PENDING_NOTE.into(),
             },
         }))
     }
@@ -923,7 +1085,7 @@ impl FerrobotTools {
             .notifier
             .request_routine(me, request)
             .await
-            .map_err(|e| ErrorData::invalid_params(e, None))?;
+            .map_err(invalid)?;
         Ok(Json(match outcome {
             RoutineRequestOutcome::Created { id, when } => CreateRoutineResult {
                 status: "created".into(),
@@ -933,9 +1095,7 @@ impl FerrobotTools {
             RoutineRequestOutcome::Pending { .. } => CreateRoutineResult {
                 status: "pending".into(),
                 routine_id: None,
-                note: "Shown to the operator. A message tells you whether they approved it; \
-                       finish your turn now."
-                    .into(),
+                note: PENDING_NOTE.into(),
             },
         }))
     }
@@ -969,12 +1129,55 @@ impl FerrobotTools {
             .notifier
             .request_connector(me, request)
             .await
-            .map_err(|e| ErrorData::invalid_params(e, None))?;
+            .map_err(invalid)?;
         Ok(Json(AskUserResult {
             question_id,
             note: "Shown to the operator. A message tells you when they add or decline it; \
                    finish your turn now."
                 .into(),
+        }))
+    }
+
+    #[tool(
+        description = "Ask your operator to add a CLI to your computer, e.g. one a task needs that \
+        you cannot install yourself, or one that needs a token. Find out from its docs how it \
+        installs and, if it needs a token, which API hosts use it and which environment variables \
+        it reads it from. They see a card with the exact install and hosts. A token goes in under \
+        Settings: you never see it, so never ask for keys or tokens. Tools that need no token you \
+        can also install yourself into ~/.local. Does not wait: a message tells you when it was \
+        added or declined. Finish your turn after asking."
+    )]
+    async fn propose_cli(
+        &self,
+        Extension(parts): Extension<http::request::Parts>,
+        Parameters(args): Parameters<ProposeCliArgs>,
+    ) -> ToolResult<AskUserResult> {
+        let me = caller(&parts)?.0.id;
+        let request = crate::CliRequest {
+            cli: Cli {
+                id: args.name.trim().to_owned(),
+                install: args.install,
+                programs: args.programs,
+                // Sign-in commands and ask-first stay the operator's to set; asking first by default.
+                account: args.account.map(|a| Account {
+                    hosts: a.hosts,
+                    env: a.env,
+                    confirm: true,
+                    sign_in: None,
+                }),
+                agents: vec![me],
+            },
+            reason: args.reason.trim().to_owned(),
+        };
+        let question_id = self
+            .state
+            .notifier
+            .request_cli(me, request)
+            .await
+            .map_err(invalid)?;
+        Ok(Json(AskUserResult {
+            question_id,
+            note: PENDING_NOTE.into(),
         }))
     }
 
@@ -995,7 +1198,7 @@ impl FerrobotTools {
             .notifier
             .share_file(me, args.path)
             .await
-            .map_err(|e| ErrorData::invalid_params(e, None))?;
+            .map_err(invalid)?;
         Ok(Json(ShareFileResult {
             file_id: shared.id,
             note: format!(
@@ -1020,14 +1223,14 @@ impl FerrobotTools {
         let me = caller(&parts)?.0.id;
         let text = args.text.trim();
         if text.is_empty() {
-            return Err(ErrorData::invalid_params("text is empty", None));
+            return Err(invalid("text is empty"));
         }
         let channel_id = self
             .state
             .notifier
             .send_to_discord(me, text.to_owned(), args.channel_id)
             .await
-            .map_err(|e| ErrorData::invalid_params(e, None))?;
+            .map_err(invalid)?;
         Ok(Json(SentToDiscord { channel_id }))
     }
 
@@ -1044,10 +1247,7 @@ impl FerrobotTools {
         let me = caller(&parts)?.0.id;
         let emoji = args.emoji.trim();
         if !ferrobot_core::is_reaction(emoji) {
-            return Err(ErrorData::invalid_params(
-                "emoji must be one emoji, like 👍",
-                None,
-            ));
+            return Err(invalid("emoji must be one emoji, like 👍"));
         }
         let store = &self.state.store;
         let theirs = store
@@ -1056,13 +1256,10 @@ impl FerrobotTools {
             .ok()
             .filter(|m| m.sender == Sender::User && m.recipient == me && m.room_id.is_none());
         if theirs.is_none() {
-            return Err(ErrorData::invalid_params(
-                format!(
-                    "message #{} is not one your operator sent you in your chat",
-                    args.message_id
-                ),
-                None,
-            ));
+            return Err(invalid(format!(
+                "message #{} is not one your operator sent you in your chat",
+                args.message_id
+            )));
         }
         let payload = serde_json::json!({ "message_id": args.message_id, "emoji": emoji });
         let event = store
@@ -1083,12 +1280,7 @@ impl FerrobotTools {
         Extension(parts): Extension<http::request::Parts>,
     ) -> ToolResult<HangUpResult> {
         let me = caller(&parts)?.0.id;
-        let ends_call = self
-            .state
-            .notifier
-            .hang_up(me)
-            .await
-            .map_err(|e| ErrorData::invalid_params(e, None))?;
+        let ends_call = self.state.notifier.hang_up(me).await.map_err(invalid)?;
         let note = if ends_call {
             "The call ends for everyone when your turn ends."
         } else {
@@ -1118,13 +1310,71 @@ impl FerrobotTools {
             .notifier
             .invite_to_call(me, guest.id, topic.to_owned())
             .await
-            .map_err(|e| ErrorData::invalid_params(e, None))?;
+            .map_err(invalid)?;
         Ok(Json(InviteToCallResult {
             note: format!(
                 "@{} joins the call and hears your topic now; what they say reaches you in the call.",
                 guest.name
             ),
         }))
+    }
+
+    #[tool(
+        description = "Start a call with one to three teammates, without the operator, to talk \
+        something through together: everyone in it reads every line and they take turns. Your \
+        topic is the first line; the others answer after this turn, and their lines reach you in \
+        the call, where you reply in your turns. The operator may join. It ends when nobody adds \
+        anything, or when you hang_up."
+    )]
+    async fn call_agents(
+        &self,
+        Extension(parts): Extension<http::request::Parts>,
+        Parameters(args): Parameters<CallAgentsArgs>,
+    ) -> ToolResult<CallAgentsResult> {
+        let me = caller(&parts)?.0.id;
+        let topic = check_body(&args.topic)?;
+        if args.agents.is_empty() || args.agents.len() > 3 {
+            return Err(ErrorData::invalid_params(
+                "call one to three teammates",
+                None,
+            ));
+        }
+        let mut guests = Vec::new();
+        for agent in &args.agents {
+            guests.push(self.agent(agent).await?.id);
+        }
+        let room_id = self
+            .state
+            .notifier
+            .call_agents(me, guests, topic.to_owned())
+            .await
+            .map_err(|e| ErrorData::invalid_params(e, None))?;
+        Ok(Json(CallAgentsResult {
+            room_id,
+            note: "They hear your topic after this turn. Finish this turn briefly; the call goes \
+                   on in your next turns."
+                .into(),
+        }))
+    }
+
+    #[tool(
+        description = "Use your desktop: a screen with a browser, a terminal and a file manager \
+        in your computer. Take a screenshot first and act at the pixel positions you see in it: \
+        click, double_click, right_click, move, scroll, type text or press keys. Take another \
+        screenshot to check what happened. If your operator is using the desktop, wait and try \
+        again later."
+    )]
+    async fn desktop(
+        &self,
+        Extension(parts): Extension<http::request::Parts>,
+        Parameters(args): Parameters<DesktopArgs>,
+    ) -> Result<rmcp::model::CallToolResult, ErrorData> {
+        let me = caller(&parts)?.0.id;
+        let action = desktop_action(args).map_err(|e| ErrorData::invalid_params(e, None))?;
+        Ok(match self.state.notifier.desktop(me, action).await {
+            Ok(result) => result,
+            Err(e) => rmcp::model::CallToolResult::error(vec![rmcp::model::ContentBlock::text(e)]),
+        })
     }
 
     #[tool(description = "Read the most recent messages addressed to you (newest last).")]
@@ -1140,10 +1390,7 @@ impl FerrobotTools {
         let agents = store.list_agents().await.map_err(store_err)?;
         let name_of = |s: &Sender| match s {
             Sender::User => "user".to_owned(),
-            Sender::Agent(id) => agents
-                .iter()
-                .find(|a| a.id == *id)
-                .map_or_else(|| format!("agent:{id}"), |a| a.name.to_string()),
+            Sender::Agent(id) => name_in(&agents, *id).unwrap_or_else(|| format!("agent:{id}")),
             Sender::Routine(id) => format!("routine:{id}"),
             Sender::Webhook(id) => format!("webhook:{id}"),
         };
@@ -1153,12 +1400,7 @@ impl FerrobotTools {
                 .map(|m| MailboxEntry {
                     id: m.id,
                     from: name_of(&m.sender),
-                    body: mention::render(&m.body, |id| {
-                        agents
-                            .iter()
-                            .find(|a| a.id == id)
-                            .map(|a| a.name.to_string())
-                    }),
+                    body: mention::render(&m.body, |id| name_in(&agents, id)),
                     reply_to: m.reply_to,
                     status: m.status.as_str().to_owned(),
                     created_at: m.created_at.to_string(),
@@ -1169,8 +1411,8 @@ impl FerrobotTools {
 
     #[tool(
         description = "Store a long-term memory under a key (overwrites an existing key). \
-        `global: true` stores it in the global memory all agents share; you can only overwrite \
-        global memories you wrote."
+        `global: true` stores it in the global memory all agents share (your operator's \
+        knowledge base); you can change any agent's entry there, but not your operator's."
     )]
     async fn remember(
         &self,
@@ -1179,14 +1421,13 @@ impl FerrobotTools {
     ) -> ToolResult<Ack> {
         let me = caller(&parts)?.0.id;
         let key = args.key.trim();
-        if key.is_empty() || key.len() > MAX_MEMORY_KEY_BYTES {
-            return Err(ErrorData::invalid_params(
-                format!("key must be 1-{MAX_MEMORY_KEY_BYTES} bytes"),
-                None,
-            ));
+        if key.is_empty() || key.len() > MAX_MEMORY_KEY_BYTES || key.chars().any(char::is_control) {
+            return Err(invalid(format!(
+                "key must be 1-{MAX_MEMORY_KEY_BYTES} bytes on one line"
+            )));
         }
         if args.content.len() > MAX_MESSAGE_BYTES {
-            return Err(ErrorData::invalid_params("content too large", None));
+            return Err(invalid("content too large"));
         }
         let store = &self.state.store;
         if args.global == Some(true) {
@@ -1220,10 +1461,7 @@ impl FerrobotTools {
         let agents = store.list_agents().await.map_err(store_err)?;
         let author = |id: Option<AgentId>| match id {
             None => "operator".to_owned(),
-            Some(id) => agents
-                .iter()
-                .find(|a| a.id == id)
-                .map_or_else(|| "a deleted agent".to_owned(), |a| a.name.to_string()),
+            Some(id) => name_in(&agents, id).unwrap_or_else(|| "a deleted agent".to_owned()),
         };
         let item = |global: bool| {
             move |m: ferrobot_store::MemoryEntry| MemoryItem {
@@ -1281,15 +1519,15 @@ fn context_caller(context: &RequestContext<RoleServer>) -> Option<&Agent> {
 /// The group of one of ferrobot's own tools; `None` (never offered) for a tool without one.
 pub(crate) fn group_of(tool: &str) -> Option<ToolGroup> {
     Some(match tool {
-        "list_agents" | "send_message" | "read_mailbox" | "assign_task" | "list_tasks" => {
-            ToolGroup::Team
-        }
+        "list_agents" | "send_message" | "read_mailbox" | "assign_task" | "list_tasks"
+        | "call_agents" => ToolGroup::Team,
         "remember" | "recall" | "forget" => ToolGroup::Memory,
         "ask_user" | "share_file" | "invite_to_call" | "hang_up" | "list_guides" | "read_guide"
         | "react" | "send_to_discord" => ToolGroup::Operator,
         "create_agent" | "set_agent_tools" => ToolGroup::CreateAgents,
-        "add_connector" => ToolGroup::AddConnectors,
+        "add_connector" | "propose_cli" => ToolGroup::AddConnectors,
         "create_routine" => ToolGroup::Routines,
+        "desktop" => ToolGroup::Desktop,
         _ => return None,
     })
 }
@@ -1320,6 +1558,9 @@ impl ServerHandler for FerrobotTools {
         if !self.state.notifier.has_discord(me.id).await {
             tools.retain(|t| t.name != "send_to_discord");
         }
+        if !self.state.notifier.has_voice().await {
+            tools.retain(|t| t.name != "call_agents");
+        }
         tools.extend(self.state.notifier.connector_tools(me.id).await);
         Ok(ListToolsResult::with_all_items(tools))
     }
@@ -1335,10 +1576,7 @@ impl ServerHandler for FerrobotTools {
         if router.has_route(&request.name) {
             // A model can call a tool by name without it being listed.
             if !allowed(me, &request.name) {
-                return Err(ErrorData::invalid_params(
-                    format!("{} is turned off for you", request.name),
-                    None,
-                ));
+                return Err(invalid(format!("{} is turned off for you", request.name)));
             }
             return router
                 .call(ToolCallContext::new(self, request, context))
@@ -1349,13 +1587,51 @@ impl ServerHandler for FerrobotTools {
             .call_connector_tool(me.id, request.name.into_owned(), request.arguments)
             .await
             .map(Into::into)
-            .map_err(|e| ErrorData::invalid_params(e, None))
+            .map_err(invalid)
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn desktop_steps_need_their_arguments() {
+        use crate::DesktopAction as A;
+        let args = |v: serde_json::Value| desktop_action(serde_json::from_value(v).unwrap());
+        assert_eq!(
+            args(serde_json::json!({"action": "double_click", "x": 5, "y": 7})),
+            Ok(A::Click {
+                x: 5,
+                y: 7,
+                button: 1,
+                double: true
+            })
+        );
+        assert_eq!(
+            args(serde_json::json!({"action": "scroll", "x": 1, "y": 2, "direction": "down"})),
+            Ok(A::Scroll {
+                x: 1,
+                y: 2,
+                button: 5,
+                amount: 3
+            })
+        );
+        assert_eq!(
+            args(serde_json::json!({"action": "key", "keys": "ctrl+l Return"})),
+            Ok(A::Key {
+                keys: vec!["ctrl+l".into(), "Return".into()]
+            })
+        );
+        for bad in [
+            serde_json::json!({"action": "click", "x": 5}),
+            serde_json::json!({"action": "type"}),
+            serde_json::json!({"action": "key", "keys": "--clearmodifiers"}),
+            serde_json::json!({"action": "scroll", "x": 1, "y": 1, "direction": "up", "amount": 99}),
+        ] {
+            assert!(args(bad.clone()).is_err(), "{bad}");
+        }
+    }
 
     #[test]
     fn guides_are_found_by_page_in_any_case() {

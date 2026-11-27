@@ -151,14 +151,14 @@ fn open_external(url: &tauri::Url) {
         return;
     }
     let mut opener = if cfg!(target_os = "macos") {
-        std::process::Command::new("open")
+        Command::new("open")
     } else if cfg!(windows) {
         // explorer.exe opens File Explorer instead of the browser for long query URLs (OAuth).
-        let mut c = std::process::Command::new("rundll32");
+        let mut c = Command::new("rundll32");
         c.arg("url.dll,FileProtocolHandler");
         c
     } else {
-        std::process::Command::new("xdg-open")
+        Command::new("xdg-open")
     };
     match opener.arg(url.as_str()).spawn() {
         Ok(mut child) => {
@@ -225,18 +225,18 @@ fn main() {
             let token = token(&data_dir)
                 .map(|t| format!("window.__FERROBOT_TOKEN__ = \"{t}\";"))
                 .unwrap_or_default();
+            // Some webviews run this in every frame: only the app's own top window gets the token.
             let script = format!(
-                "window.__FERROBOT_SHELL__ = {{ updater: {updater}, ownDaemon: {own_daemon} }};{token}"
+                "if (window === window.top && (location.protocol === \"tauri:\" \
+                 || location.hostname === \"tauri.localhost\" \
+                 || (location.hostname === \"localhost\" && location.port === \"1420\"))) {{ \
+                 window.__FERROBOT_SHELL__ = {{ updater: {updater}, ownDaemon: {own_daemon} }};{token} }}"
             );
             tauri::WebviewWindowBuilder::from_config(app.handle(), &config)?
                 .initialization_script(&script)
-                .on_navigation(|url| {
-                    if is_app(url) {
-                        return true;
-                    }
-                    open_external(url);
-                    false
-                })
+                // A frame can navigate without a click; links the operator opens go through
+                // `on_new_window` (target=_blank, window.open), so nothing is opened from here.
+                .on_navigation(is_app)
                 .on_new_window(|url, _| {
                     open_external(&url);
                     tauri::webview::NewWindowResponse::Deny

@@ -2,7 +2,7 @@
 //! and Codex (`ChatGPT`) have used. Read from the CLIs themselves, never the account details.
 
 use std::collections::HashMap;
-use std::sync::{Mutex, PoisonError};
+use std::sync::Mutex;
 use std::time::{Duration, Instant};
 
 use ferrobot_core::ProviderKind;
@@ -91,7 +91,7 @@ async fn chatgpt(state: &AppState, provider: Uuid) -> Result<bool, ApiError> {
 }
 
 async fn read(state: &AppState, source: Option<Uuid>) -> Result<PlanLimits, String> {
-    let cache = || state.limits.lock().unwrap_or_else(PoisonError::into_inner);
+    let cache = || crate::lock(&state.limits);
     if let Some((at, read)) = cache().get(&source)
         && at.elapsed() < CACHE_TTL
     {

@@ -3,7 +3,7 @@ import { useState } from "preact/hooks";
 import { ArrowDownLeft, ArrowUpRight, ChevronRight } from "lucide-preact";
 
 import { useApp } from "../context.ts";
-import { clockTime } from "../lib/format.ts";
+import { clockTime, plural } from "../lib/format.ts";
 import { exchangeRows, type Exchange, type ExchangeRow } from "../lib/timeline.ts";
 import { Avatar } from "./Avatar.tsx";
 import { RichText } from "./RichText.tsx";
@@ -38,9 +38,7 @@ export function MailGroup(props: { item: Exchange }): JSX.Element {
             setOpen(!open);
           }}
         >
-          <span>
-            {rows.length} {rows.length === 1 ? "message" : "messages"} with
-          </span>
+          <span>{plural(rows.length, "message")} with</span>
           <Faces ids={props.item.peers} />
           <strong>{props.item.peers.length} agents</strong>
           <ChevronRight size={16} class="chev" />

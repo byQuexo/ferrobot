@@ -1,11 +1,10 @@
-//! Sends each finished turn's trace to the operator's OTLP/HTTP endpoint (Phoenix, Langfuse or
-//! any OpenTelemetry backend), encoded as protobuf by hand: Phoenix accepts nothing else, and
-//! the few messages needed do not warrant the OpenTelemetry SDK.
+//! Sends each finished turn's trace to the operator's OTLP/HTTP endpoint as hand-encoded protobuf:
+//! Phoenix accepts nothing else, and the few messages needed do not warrant the OpenTelemetry SDK.
 
-use std::sync::{LazyLock, Mutex, PoisonError};
+use std::sync::{LazyLock, Mutex};
 use std::time::Duration;
 
-use ferrobot_core::{AgentId, ProviderKind};
+use ferrobot_core::AgentId;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use time::OffsetDateTime;
@@ -51,20 +50,15 @@ pub struct ExportStatus {
 static LAST: LazyLock<Mutex<Option<ExportStatus>>> = LazyLock::new(Mutex::default);
 
 pub fn last_export() -> Option<ExportStatus> {
-    LAST.lock().unwrap_or_else(PoisonError::into_inner).clone()
+    crate::lock(&LAST).clone()
 }
 
 pub async fn load(state: &AppState) -> Result<OtelSettings, ApiError> {
-    match state.store.get_setting(SETTING).await? {
-        Some(raw) => serde_json::from_str(&raw)
-            .map_err(|e| ApiError::Internal(format!("trace export settings: {e}"))),
-        None => Ok(OtelSettings::default()),
-    }
+    crate::api::settings::load_json(state, SETTING, "trace export settings").await
 }
 
 pub async fn save(state: &AppState, settings: &OtelSettings) -> Result<(), ApiError> {
-    let raw = serde_json::to_string(settings).map_err(|e| ApiError::Internal(e.to_string()))?;
-    Ok(state.store.put_setting(SETTING, raw).await?)
+    crate::api::settings::save_json(state, SETTING, settings).await
 }
 
 /// Trims and checks the settings.
@@ -116,7 +110,7 @@ pub fn turn_done(state: &AppState, agent: AgentId, turn: String) {
         if let Some(e) = &error {
             tracing::warn!(%turn, error = %e, "trace export failed");
         }
-        *LAST.lock().unwrap_or_else(PoisonError::into_inner) = Some(ExportStatus {
+        *crate::lock(&LAST) = Some(ExportStatus {
             at: OffsetDateTime::now_utc(),
             error,
         });
@@ -134,30 +128,10 @@ async fn export(
         .get_agent(agent)
         .await
         .map_err(|e| e.to_string())?;
-    let events = state
-        .store
-        .turn_events(agent.id, turn.to_owned())
+    let (trace, events) = crate::trace::for_turn(state, &agent, turn)
         .await
         .map_err(|e| e.to_string())?;
-    let calls = state
-        .store
-        .turn_calls(agent.id, turn.to_owned())
-        .await
-        .map_err(|e| e.to_string())?;
-    let claude_code = match agent.provider_id {
-        Some(p) => state
-            .store
-            .get_provider(p)
-            .await
-            .is_ok_and(|p| p.kind == ProviderKind::ClaudeCode),
-        None => false,
-    };
-    let models_tracked =
-        !claude_code || !calls.is_empty() || events.iter().any(|e| e.kind == "model_call");
-    let links = crate::trace::links(&state.store, turn, &events)
-        .await
-        .map_err(|e| e.to_string())?;
-    let Some(trace) = crate::trace::build(turn, &events, &calls, models_tracked, &links) else {
+    let Some(trace) = trace else {
         return Ok(());
     };
     let output = events

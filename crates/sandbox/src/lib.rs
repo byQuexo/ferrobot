@@ -24,8 +24,22 @@ pub use sprites::{SpritesBackend, SpritesConfig};
 /// Upper bound for captured exec output per stream.
 pub const MAX_EXEC_OUTPUT: usize = 1024 * 1024;
 
-/// Most Debian packages [`SandboxBackend::build_image`] installs.
-pub const MAX_PACKAGES: usize = 32;
+/// Most Debian packages [`SandboxBackend::build_image`] installs: the operator's CLIs plus the
+/// desktop's.
+pub const MAX_PACKAGES: usize = 48;
+
+/// A running command's stdout as a stream and its stdin as a writer
+/// ([`SandboxBackend::exec_stream`]).
+pub struct ExecStream {
+    pub output: futures_util::stream::BoxStream<'static, Result<bytes::Bytes, SandboxError>>,
+    pub input: std::pin::Pin<Box<dyn tokio::io::AsyncWrite + Send>>,
+}
+
+impl std::fmt::Debug for ExecStream {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("ExecStream").finish_non_exhaustive()
+    }
+}
 
 /// Validates Debian package names (policy 5.6.7: lower case letters, digits, `+`, `-`, `.`,
 /// alphanumeric first, at least two characters) and returns them sorted and deduplicated.
@@ -65,6 +79,8 @@ pub struct SandboxSpec {
     pub labels: BTreeMap<String, String>,
     /// Image from [`SandboxBackend::build_image`]; `None`: the backend's default image.
     pub image: Option<String>,
+    /// Runs instead of the runner, e.g. to keep a helper container idle (Docker only).
+    pub command: Option<Vec<String>>,
 }
 
 /// Reference to an existing sandbox. Persisted by the daemon.
@@ -74,6 +90,30 @@ pub struct SandboxHandle {
     pub backend: String,
     /// Backend-specific id (container id, sprite name, directory name).
     pub id: String,
+}
+
+impl SandboxHandle {
+    /// The id, if the handle belongs to backend `kind`.
+    pub(crate) fn id_for(&self, kind: &'static str) -> Result<&str, SandboxError> {
+        if self.backend == kind {
+            Ok(&self.id)
+        } else {
+            Err(SandboxError::WrongBackend {
+                expected: kind,
+                actual: self.backend.clone(),
+            })
+        }
+    }
+
+    /// [`Self::id_for`] for backends whose ids are directory names.
+    pub(crate) fn dir_name(&self, kind: &'static str) -> Result<&str, SandboxError> {
+        let id = self.id_for(kind)?;
+        // Refuse anything that could escape the backend's directory.
+        if id.is_empty() || !id.chars().all(|c| c.is_ascii_alphanumeric() || c == '-') {
+            return Err(SandboxError::NotFound(id.to_owned()));
+        }
+        Ok(id)
+    }
 }
 
 /// A sandbox's state as its backend reports it.
@@ -132,6 +172,20 @@ pub struct ExecOutput {
     pub stderr: String,
     /// True if output was cut at [`MAX_EXEC_OUTPUT`].
     pub truncated: bool,
+}
+
+impl ExecOutput {
+    /// Cuts each stream at [`MAX_EXEC_OUTPUT`] and decodes it lossily.
+    pub(crate) fn captured(exit_code: i64, stdout: &[u8], stderr: &[u8]) -> Self {
+        let cut =
+            |b: &[u8]| String::from_utf8_lossy(&b[..b.len().min(MAX_EXEC_OUTPUT)]).into_owned();
+        Self {
+            exit_code,
+            stdout: cut(stdout),
+            stderr: cut(stderr),
+            truncated: stdout.len().max(stderr.len()) > MAX_EXEC_OUTPUT,
+        }
+    }
 }
 
 /// A snapshot a backend took.
@@ -210,6 +264,20 @@ pub trait SandboxBackend: Send + Sync + std::fmt::Debug {
         sandbox: &SandboxHandle,
         req: &ExecRequest,
     ) -> Result<ExecOutput, SandboxError>;
+
+    /// Starts `cmd` with its stdin and stdout piped to the caller, e.g. a VNC session; stderr
+    /// is dropped. It runs until it exits or the input is closed.
+    async fn exec_stream(
+        &self,
+        sandbox: &SandboxHandle,
+        cmd: Vec<String>,
+    ) -> Result<ExecStream, SandboxError> {
+        let _ = (sandbox, cmd);
+        Err(SandboxError::NotImplemented {
+            backend: self.kind(),
+            operation: "streaming exec",
+        })
+    }
 
     /// Reads a file of at most [`MAX_FILE_BYTES`] ([`SandboxError::TooLarge`]).
     async fn read_file(
@@ -298,15 +366,12 @@ pub trait SandboxBackend: Send + Sync + std::fmt::Debug {
     async fn state(&self, sandbox: &SandboxHandle) -> Result<SandboxState, SandboxError>;
 }
 
-/// Truncates captured bytes to [`MAX_EXEC_OUTPUT`] and decodes lossily.
-pub(crate) fn capture(bytes: &[u8]) -> (String, bool) {
-    let truncated = bytes.len() > MAX_EXEC_OUTPUT;
-    let slice = if truncated {
-        &bytes[..MAX_EXEC_OUTPUT]
-    } else {
-        bytes
-    };
-    (String::from_utf8_lossy(slice).into_owned(), truncated)
+/// `Ok` also when there was nothing to remove.
+pub(crate) fn removed(result: std::io::Result<()>) -> Result<(), SandboxError> {
+    match result {
+        Err(e) if e.kind() != std::io::ErrorKind::NotFound => Err(e.into()),
+        _ => Ok(()),
+    }
 }
 
 #[cfg(test)]

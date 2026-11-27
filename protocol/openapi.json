@@ -10,7 +10,7 @@
       "name": "MIT OR Apache-2.0",
       "identifier": "MIT OR Apache-2.0"
     },
-    "version": "0.1.10"
+    "version": "0.1.11"
   },
   "servers": [
     {
@@ -1318,7 +1318,7 @@
         "tags": [
           "chat"
         ],
-        "summary": "Aborts the agent's running turn, if any. Interrupted messages are not retried.",
+        "summary": "Aborts the agent's running turn, if any; with `chain`, the work it set off as well (Stop).\nInterrupted messages are not retried.",
         "operationId": "interrupt",
         "parameters": [
           {
@@ -1328,6 +1328,15 @@
             "required": true,
             "schema": {
               "type": "string"
+            }
+          },
+          {
+            "name": "chain",
+            "in": "query",
+            "description": "Also stop every agent working on a message from this one (and from those, and so on), and\ndrop the agent messages queued to or from any of them.",
+            "required": false,
+            "schema": {
+              "type": "boolean"
             }
           }
         ],
@@ -2146,6 +2155,70 @@
           },
           "502": {
             "description": "Sandbox backend error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/agents/{id}/screen": {
+      "get": {
+        "tags": [
+          "sandbox"
+        ],
+        "summary": "The agent's desktop as VNC (RFB) over binary WebSocket frames, for a VNC client such as\nnoVNC. Wakes the computer and starts the desktop; nothing listens on a port in it.",
+        "operationId": "screen",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "Agent id (UUID)",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "control",
+            "in": "path",
+            "description": "`true`: the operator's mouse and keyboard reach the desktop, and the agent's `desktop`\ntool waits until this connection closes. Otherwise view only.",
+            "required": true,
+            "schema": {
+              "type": "boolean"
+            }
+          }
+        ],
+        "responses": {
+          "101": {
+            "description": "Switching protocols; then RFB in binary frames"
+          },
+          "401": {
+            "description": "Missing or wrong API token",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Unknown agent",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "No desktop in this computer",
             "content": {
               "application/json": {
                 "schema": {
@@ -3084,7 +3157,7 @@
         "tags": [
           "clis"
         ],
-        "summary": "The CLI packages in every agent's sandbox.",
+        "summary": "Every CLI in the agents' computers.",
         "operationId": "get_clis",
         "responses": {
           "200": {
@@ -3112,7 +3185,7 @@
         "tags": [
           "clis"
         ],
-        "summary": "Replaces the CLI packages and builds their image in the background. New sandboxes start\nfrom it; existing ones switch when they next wake, keeping their home directory.",
+        "summary": "Replaces the plain Debian packages and builds their image in the background. New sandboxes\nstart from it; existing ones switch when they next wake, keeping their home directory.",
         "operationId": "put_clis",
         "requestBody": {
           "content": {
@@ -3166,6 +3239,344 @@
           },
           "501": {
             "description": "The sandbox backend cannot build images",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/clis/{id}": {
+      "put": {
+        "tags": [
+          "clis"
+        ],
+        "summary": "Adds or replaces a CLI. A Debian package rebuilds the image; other installs go into the home\nfolders of its agents (running ones now, others when they next wake). Agents whose account\nsetup changes restart their computers; their files stay.",
+        "operationId": "put_cli",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "The CLI's name, e.g. `example`",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CliSpec"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ClisView"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "An invalid field or an unknown agent",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or wrong API token",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "A build is running",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "clis"
+        ],
+        "summary": "Removes a CLI, its token and its CA, from the image or its agents' home folders.",
+        "operationId": "delete_cli",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "The CLI's name",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Removed"
+          },
+          "401": {
+            "description": "Missing or wrong API token",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No such CLI",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "A build is running",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/clis/{id}/sign-in": {
+      "get": {
+        "tags": [
+          "clis"
+        ],
+        "summary": "Where a CLI's sign-in stands: the address and code to enter while it waits.",
+        "operationId": "get_sign_in",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "The CLI's name",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SignInView"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or wrong API token",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "clis"
+        ],
+        "summary": "Starts a CLI's own device sign-in in a throwaway container; the token it yields goes to the\nsecret store. Poll `GET` for the code to enter.",
+        "operationId": "start_sign_in",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "The CLI's name",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SignInView"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The CLI has no sign-in",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or wrong API token",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No such CLI",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Its image is still building",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "clis"
+        ],
+        "summary": "Cancels a CLI's sign-in and removes its container.",
+        "operationId": "cancel_sign_in",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "The CLI's name",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Cancelled"
+          },
+          "401": {
+            "description": "Missing or wrong API token",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/clis/{id}/token": {
+      "put": {
+        "tags": [
+          "clis"
+        ],
+        "summary": "Stores or removes a CLI's token. Kept in the daemon's secret store, never returned.",
+        "operationId": "put_cli_token",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "The CLI's name",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CliToken"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ClisView"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Not a token, or the CLI has no account",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or wrong API token",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No such CLI",
             "content": {
               "application/json": {
                 "schema": {
@@ -5448,6 +5859,68 @@
         }
       }
     },
+    "/v1/rooms/{id}/call": {
+      "post": {
+        "tags": [
+          "voice"
+        ],
+        "summary": "Joins the call agents started in room `id` without the operator: it becomes the voice call\nand goes on in the same room. End it with `PUT /v1/call` and no agents.",
+        "operationId": "join_room_call",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "Room id",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CallView"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or wrong API token",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Unknown room",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Voice is switched off, a call is running, or that call is over",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/v1/routines/{rid}": {
       "delete": {
         "tags": [
@@ -6896,6 +7369,45 @@
   },
   "components": {
     "schemas": {
+      "Account": {
+        "type": "object",
+        "description": "Where a CLI's token goes: only requests to `hosts` get it; the CLI holds a stand-in.",
+        "required": [
+          "hosts",
+          "env"
+        ],
+        "properties": {
+          "hosts": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "API hosts whose requests get the real token, exact public names like `api.example.com`."
+          },
+          "env": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Environment variables the CLI reads its token from, e.g. `EXAMPLE_API_KEY`."
+          },
+          "confirm": {
+            "type": "boolean",
+            "description": "Ask before every command that runs one of the CLI's programs or names one of `env` or\n`hosts`, unless Auto mode is on."
+          },
+          "sign_in": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/CliSignIn",
+                "description": "The CLI's own device sign-in; without it the operator pastes a token."
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        }
+      },
       "Agent": {
         "type": "object",
         "description": "A registered agent. Secrets (the runner token) are never part of this type.",
@@ -7261,6 +7773,29 @@
           },
           {
             "type": "object",
+            "description": "An agent wants a CLI in its computer (`propose_cli` tool). Approving adds it for that\nagent; a token, if it needs one, goes in under Settings, never on a card.",
+            "required": [
+              "cli",
+              "requester",
+              "kind"
+            ],
+            "properties": {
+              "cli": {
+                "$ref": "#/components/schemas/Cli"
+              },
+              "requester": {
+                "$ref": "#/components/schemas/AgentId"
+              },
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "add_cli"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
             "description": "An agent wants a routine of its own (`create_routine` tool): `prompt` reaches it on\n`schedule` (cron, the daemon's time zone).",
             "required": [
               "name",
@@ -7619,11 +8154,154 @@
           }
         }
       },
+      "Cli": {
+        "type": "object",
+        "description": "A CLI in the agents' computers.",
+        "required": [
+          "id",
+          "install"
+        ],
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "1-63 chars of `a-z0-9.+-`, starting with a letter or digit, e.g. `example`."
+          },
+          "install": {
+            "$ref": "#/components/schemas/Install"
+          },
+          "programs": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "The programs it brings, e.g. `[\"example\"]`."
+          },
+          "account": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/Account"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "agents": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Agents that get it in their home folder and get its account. A Debian package is in\nevery computer."
+          }
+        }
+      },
+      "CliSignIn": {
+        "type": "object",
+        "description": "A CLI's own browser sign-in that shows a one-time code (device login).",
+        "required": [
+          "login",
+          "token"
+        ],
+        "properties": {
+          "login": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "The login command, e.g. `[\"example\", \"auth\", \"login\", \"--web\"]`."
+          },
+          "token": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "The command that prints the token afterwards, e.g. `[\"example\", \"auth\", \"token\"]`."
+          }
+        }
+      },
+      "CliSpec": {
+        "type": "object",
+        "description": "A CLI as `PUT /v1/clis/{id}` takes it.",
+        "required": [
+          "install"
+        ],
+        "properties": {
+          "install": {
+            "$ref": "#/components/schemas/Install"
+          },
+          "programs": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "The programs it brings, e.g. `[\"example\"]`."
+          },
+          "account": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/Account"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "agents": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Agents that get it in their home folder and get its account."
+          }
+        }
+      },
+      "CliToken": {
+        "type": "object",
+        "description": "A CLI's token.",
+        "properties": {
+          "token": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "The service's token, e.g. a fine-grained GitHub token; `null` removes it."
+          }
+        }
+      },
+      "CliView": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/Cli"
+          },
+          {
+            "type": "object",
+            "required": [
+              "has_token"
+            ],
+            "properties": {
+              "has_token": {
+                "type": "boolean",
+                "description": "Whether its account's token is stored. The token itself is never returned."
+              },
+              "error": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "description": "Why its last home install failed, on which agent; null otherwise."
+              }
+            }
+          }
+        ],
+        "description": "A CLI with what the daemon knows about it."
+      },
       "ClisView": {
         "type": "object",
-        "description": "The CLI packages and where their image build stands.",
+        "description": "The CLIs and where their image build stands.",
         "required": [
           "packages",
+          "clis",
+          "desktop",
           "status",
           "supported"
         ],
@@ -7633,7 +8311,17 @@
             "items": {
               "type": "string"
             },
-            "description": "Debian packages added to the base image, sorted."
+            "description": "Debian packages in the image, sorted (also in `clis`)."
+          },
+          "clis": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/CliView"
+            }
+          },
+          "desktop": {
+            "type": "boolean",
+            "description": "Whether the image also has a desktop the operator watches and agents with the Desktop\ntools use."
           },
           "status": {
             "$ref": "#/components/schemas/BuildStatus"
@@ -7690,6 +8378,16 @@
             ],
             "description": "The environment variable a local server gets the connector's Vault token in, e.g.\n`GITHUB_TOKEN`."
           },
+          "tools": {
+            "type": [
+              "array",
+              "null"
+            ],
+            "items": {
+              "type": "string"
+            },
+            "description": "The server's tools agents may use, by the server's own names; `None`: all of them."
+          },
           "created_at": {
             "type": "string",
             "format": "date-time"
@@ -7721,8 +8419,15 @@
               "integer",
               "null"
             ],
-            "description": "Tools agents can use (with `ok`).",
+            "description": "Tools agents can use (with `ok`), within the connector's `tools`.",
             "minimum": 0
+          },
+          "names": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Every tool the server offers, by its own name (with `ok`), to choose `tools` from."
           },
           "error": {
             "type": [
@@ -8622,6 +9327,95 @@
         ],
         "description": "An incoming webhook with its URL. The URL holds the secret and is shown only this once."
       },
+      "Install": {
+        "oneOf": [
+          {
+            "type": "object",
+            "description": "A Debian package in the image every computer starts from.",
+            "required": [
+              "package",
+              "kind"
+            ],
+            "properties": {
+              "package": {
+                "type": "string"
+              },
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "debian"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "description": "An npm package, installed into the home folder of each of its agents.",
+            "required": [
+              "package",
+              "kind"
+            ],
+            "properties": {
+              "package": {
+                "type": "string"
+              },
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "npm"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "description": "A program downloaded into the home folder of each of its agents, as its first program.",
+            "required": [
+              "url",
+              "kind"
+            ],
+            "properties": {
+              "url": {
+                "type": "string",
+                "description": "`https://` address of the program itself, not an archive."
+              },
+              "sha256": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "description": "SHA-256 of the file in hex; checked before it is installed."
+              },
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "download"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "description": "A shell script run in the home folder of each of its agents, as the agent's user, with\n`PREFIX=~/.local`; it should put the CLI in `~/.local/bin`.",
+            "required": [
+              "script",
+              "kind"
+            ],
+            "properties": {
+              "script": {
+                "type": "string"
+              },
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "script"
+                ]
+              }
+            }
+          }
+        ],
+        "description": "How a CLI gets into the computers."
+      },
       "InstalledPlugin": {
         "type": "object",
         "description": "A plugin installed in the host's Claude Code.",
@@ -8643,6 +9437,10 @@
       },
       "Interrupted": {
         "type": "object",
+        "required": [
+          "agents",
+          "dropped"
+        ],
         "properties": {
           "turn_id": {
             "type": [
@@ -8650,6 +9448,18 @@
               "null"
             ],
             "description": "The interrupted turn, or null if the agent was idle."
+          },
+          "agents": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "With `chain`: every agent whose work was stopped, this one first."
+          },
+          "dropped": {
+            "type": "integer",
+            "description": "With `chain`: how many queued agent messages were dropped.",
+            "minimum": 0
           }
         }
       },
@@ -9804,7 +10614,8 @@
           {
             "type": "object",
             "required": [
-              "lines"
+              "lines",
+              "joinable"
             ],
             "properties": {
               "lines": {
@@ -9824,6 +10635,10 @@
                     "type": "null"
                   }
                 ]
+              },
+              "joinable": {
+                "type": "boolean",
+                "description": "A call among agents the operator can join (`POST /v1/rooms/{id}/call`)."
               }
             }
           }
@@ -10212,6 +11027,100 @@
           "expired"
         ]
       },
+      "SignInView": {
+        "oneOf": [
+          {
+            "type": "object",
+            "required": [
+              "state"
+            ],
+            "properties": {
+              "state": {
+                "type": "string",
+                "enum": [
+                  "idle"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "description": "Installing the CLI and starting its login.",
+            "required": [
+              "state"
+            ],
+            "properties": {
+              "state": {
+                "type": "string",
+                "enum": [
+                  "starting"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "description": "The CLI waits for the operator: open `url` and enter `code`.",
+            "required": [
+              "state"
+            ],
+            "properties": {
+              "url": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "code": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "state": {
+                "type": "string",
+                "enum": [
+                  "waiting"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "description": "The token is in the secret store.",
+            "required": [
+              "state"
+            ],
+            "properties": {
+              "state": {
+                "type": "string",
+                "enum": [
+                  "done"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "error",
+              "state"
+            ],
+            "properties": {
+              "error": {
+                "type": "string"
+              },
+              "state": {
+                "type": "string",
+                "enum": [
+                  "failed"
+                ]
+              }
+            }
+          }
+        ],
+        "description": "Where a sign-in stands."
+      },
       "SleepLevel": {
         "type": "string",
         "description": "How deeply a sandbox sleeps.",
@@ -10440,7 +11349,7 @@
       },
       "ToolGroup": {
         "type": "string",
-        "description": "A group of tools an agent can have on or off. The first six are ferrobot's own MCP tools\n(enforced by the daemon), the last three the model's built-in tools (enforced by the runner).",
+        "description": "A group of tools an agent can have on or off. Shell, Files and Web are the model's built-in\ntools (enforced by the runner); the others are ferrobot's own MCP tools (enforced by the daemon).",
         "enum": [
           "team",
           "memory",
@@ -10450,7 +11359,8 @@
           "routines",
           "shell",
           "files",
-          "web"
+          "web",
+          "desktop"
         ]
       },
       "ToolsUnsupported": {
@@ -10865,6 +11775,34 @@
                 ]
               }
             }
+          },
+          {
+            "type": "object",
+            "description": "An agent called teammates without the operator (`call_agents`); the operator may join\nwith `POST /v1/rooms/{id}/call`.",
+            "required": [
+              "room_id",
+              "host",
+              "topic",
+              "type"
+            ],
+            "properties": {
+              "room_id": {
+                "type": "integer",
+                "format": "int64"
+              },
+              "host": {
+                "$ref": "#/components/schemas/AgentId"
+              },
+              "topic": {
+                "type": "string"
+              },
+              "type": {
+                "type": "string",
+                "enum": [
+                  "agent_call"
+                ]
+              }
+            }
           }
         ],
         "description": "Pushed to every UI WebSocket client."
@@ -10951,17 +11889,24 @@
       },
       "UpdateClis": {
         "type": "object",
-        "description": "A new CLI package list.",
-        "required": [
-          "packages"
-        ],
+        "description": "A new Debian package list (before 0.1.11; `PUT /v1/clis/{id}` adds any CLI).",
         "properties": {
           "packages": {
-            "type": "array",
+            "type": [
+              "array",
+              "null"
+            ],
             "items": {
               "type": "string"
             },
-            "description": "Debian package names, at most 32; empty: the plain base image."
+            "description": "Debian package names, at most 32; other CLIs stay. Absent: unchanged."
+          },
+          "desktop": {
+            "type": [
+              "boolean",
+              "null"
+            ],
+            "description": "Adds (`true`) or removes (`false`) the desktop; absent: unchanged."
           }
         }
       },
@@ -10979,6 +11924,16 @@
               "string",
               "null"
             ]
+          },
+          "tools": {
+            "type": [
+              "array",
+              "null"
+            ],
+            "items": {
+              "type": "string"
+            },
+            "description": "The server's tools agents may use, by its own names; `null`: all of them."
           },
           "token": {
             "type": [
@@ -11540,6 +12495,24 @@
               "null"
             ],
             "description": "Language of speech and dictation, ISO 639-1 or 639-3 (`de`, `fil`);\n`null`: detected."
+          },
+          "call_models": {
+            "type": "object",
+            "description": "Models by agent id for its turns in a call, such as a quicker one for spoken replies;\nonly where the request names the model (not Bedrock, Vertex or Gemini).",
+            "additionalProperties": {
+              "type": "string"
+            },
+            "propertyNames": {
+              "type": "string"
+            }
+          },
+          "call_pause": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "format": "float",
+            "description": "Seconds of silence that end what the operator says in a call, 0.5-3; `null`: 1.5."
           }
         }
       },

@@ -43,7 +43,16 @@ import type {
 } from "../api.ts";
 import { useApp } from "../context.ts";
 import { isPass } from "../lib/call.ts";
-import { clockTime, statusOf, stepLabel, stepsLabel, toolLabel } from "../lib/format.ts";
+import {
+  clockTime,
+  errorText,
+  plural,
+  statusOf,
+  stepLabel,
+  stepsLabel,
+  stopSummary,
+  toolLabel,
+} from "../lib/format.ts";
 import {
   buildTimeline,
   firstNewKey,
@@ -72,7 +81,7 @@ import { MailGroup } from "./MailGroup.tsx";
 import { QuestionCardView } from "./QuestionCard.tsx";
 import { RichText, type ChatFiles } from "./RichText.tsx";
 import { TraceDialog } from "./Trace.tsx";
-import { Button, IconButton } from "./ui.tsx";
+import { IconButton } from "./ui.tsx";
 import { VoiceQuick } from "./VoiceQuick.tsx";
 import { VOICE_LABELS } from "./VoiceSettings.tsx";
 
@@ -259,6 +268,15 @@ export function Chat(props: {
           void run(() => client.interrupt(id));
         }
       : undefined;
+  const stop = working
+    ? (): void => {
+        void run(async () => {
+          const stopped = await client.interrupt(id, true);
+          const summary = stopSummary(stopped.agents.length, stopped.dropped);
+          if (summary) toast(summary, "info");
+        });
+      }
+    : undefined;
   useShortcuts((shortcut) => {
     // In the message box the box handles it, with what was typed.
     if (shortcut === "send-now" && !(document.activeElement instanceof HTMLTextAreaElement))
@@ -294,11 +312,6 @@ export function Chat(props: {
         </div>
         <span class="spacer" />
         <ChatPins agent={id} />
-        {working && (
-          <Button variant="secondary" small onClick={() => void run(() => client.interrupt(id))}>
-            <CircleStop size={16} /> Stop turn
-          </Button>
-        )}
         {voiceEnabled && (
           <span class="voice-tools">
             <VoiceQuick agent={agent} view={voiceView} onView={setVoiceView} />
@@ -404,6 +417,7 @@ export function Chat(props: {
         }
         send={send}
         sendNow={sendNow}
+        onStop={stop}
         voice={voiceEnabled ? voiceView : null}
         onTalk={() => {
           call.quiet();
@@ -555,7 +569,6 @@ function ExchangeHint(props: { item: Exchange; agent: Agent }): JSX.Element {
   const { agents, openConversation } = useApp();
   const [open, setOpen] = useState(false);
   const peer = agents.get(item.peerId);
-  const n = item.messages.length;
   return (
     <>
       <div class={`row row-center exchange${open ? " open" : ""}`}>
@@ -567,9 +580,7 @@ function ExchangeHint(props: { item: Exchange; agent: Agent }): JSX.Element {
             setOpen(!open);
           }}
         >
-          <span>
-            {n} {n === 1 ? "message" : "messages"} with
-          </span>
+          <span>{plural(item.messages.length, "message")} with</span>
           {peer && <Avatar agent={peer} size={18} />}
           <strong>{peer?.name ?? item.peerName}</strong>
           <ChevronRight size={16} class="chev" />
@@ -614,7 +625,6 @@ function Item(props: {
   onActivities?: () => void;
   /** Stops the running turn so queued messages go next; unset when nothing is queued. */
   sendNow?: (() => void) | undefined;
-  /** Opens a turn's trace. */
   onTrace?: (turn: string) => void;
   /** On a turn's last reply: its steps, shown in the footer. */
   footSteps?: { count: number; seconds: number } | undefined;
@@ -1025,7 +1035,7 @@ function MicButton(props: {
       setRecording(true);
       limit.current = setTimeout(() => void finish(), 120_000);
     } catch (err) {
-      toast(err instanceof Error ? err.message : String(err));
+      toast(errorText(err));
     }
   };
   const active = (): boolean => session.current !== null || rec.current !== null;
@@ -1079,12 +1089,12 @@ function MicButton(props: {
 
 const MAX_UPLOAD = 25 * 1024 * 1024;
 
-/** The message box of a chat or call room (`chat` is its id). */
 const SEND_NOW = SHORTCUTS.find((s) => s.id === "send-now");
 
 /** Unsent text per chat, so it survives switching to Settings or another chat (not a restart). */
 const drafts = new Map<string, string>();
 
+/** The message box of a chat or call room (`chat` is its id). */
 export function Composer(props: {
   chat: string;
   placeholder: string;
@@ -1092,6 +1102,8 @@ export function Composer(props: {
   send: (body: string, now?: boolean) => Promise<unknown>;
   /** Pushes what is already queued; unset when nothing is. */
   sendNow?: (() => void) | undefined;
+  /** Takes Send's place while the box is empty; unset when nothing runs. */
+  onStop?: (() => void) | undefined;
   /** `null`: voice is off, no microphone. */
   voice: VoiceView | null;
   onTalk: () => void;
@@ -1182,6 +1194,7 @@ export function Composer(props: {
       setFiles([]);
     }
   };
+  const empty = !text.trim() && files.length === 0;
 
   return (
     <form
@@ -1305,15 +1318,27 @@ export function Composer(props: {
           onTalk={props.onTalk}
         />
       )}
-      <button
-        type="submit"
-        class="send"
-        disabled={(!text.trim() && files.length === 0) || sending}
-        aria-label="Send"
-        title="Send (Enter)"
-      >
-        <SendHorizontal size={18} />
-      </button>
+      {props.onStop && empty ? (
+        <button
+          type="button"
+          class="send"
+          aria-label="Stop"
+          title="Stop this turn and the work it handed out"
+          onClick={props.onStop}
+        >
+          <Square size={14} fill="currentColor" />
+        </button>
+      ) : (
+        <button
+          type="submit"
+          class="send"
+          disabled={empty || sending}
+          aria-label="Send"
+          title="Send (Enter)"
+        >
+          <SendHorizontal size={18} />
+        </button>
+      )}
     </form>
   );
 }

@@ -7,7 +7,7 @@ use serde::Serialize;
 use time::OffsetDateTime;
 
 use crate::mailbox::insert_message;
-use crate::util::{fmt_ts, is_unique_violation, now, parse_ts};
+use crate::util::{conflict_or, fmt_ts, is_fk_violation, now, parse_ts};
 use crate::{Store, StoreError};
 
 /// A prompt an agent receives on a cron schedule.
@@ -107,10 +107,7 @@ fn from_row(row: &Row<'_>) -> Result<Routine, StoreError> {
 }
 
 fn not_found(id: i64) -> StoreError {
-    StoreError::NotFound {
-        entity: "routine",
-        key: id.to_string(),
-    }
+    StoreError::not_found("routine", id)
 }
 
 fn get(c: &rusqlite::Connection, id: i64) -> Result<Routine, StoreError> {
@@ -121,19 +118,6 @@ fn get(c: &rusqlite::Connection, id: i64) -> Result<Routine, StoreError> {
     )
     .optional()?
     .ok_or_else(|| not_found(id))?
-}
-
-fn conflict(name: &str) -> impl FnOnce(rusqlite::Error) -> StoreError + '_ {
-    move |e| {
-        if is_unique_violation(&e) {
-            StoreError::Conflict {
-                entity: "routine",
-                key: name.to_owned(),
-            }
-        } else {
-            e.into()
-        }
-    }
 }
 
 impl Store {
@@ -159,16 +143,12 @@ impl Store {
                     ts
                 ],
             )
-            .map_err(|e| match e {
-                rusqlite::Error::SqliteFailure(f, _)
-                    if f.extended_code == rusqlite::ffi::SQLITE_CONSTRAINT_FOREIGNKEY =>
-                {
-                    StoreError::NotFound {
-                        entity: "agent",
-                        key: agent.to_string(),
-                    }
+            .map_err(|e| {
+                if is_fk_violation(&e) {
+                    StoreError::not_found("agent", agent)
+                } else {
+                    conflict_or(e, "routine", &new.name)
                 }
-                other => conflict(&new.name)(other),
             })?;
             get(c, c.last_insert_rowid())
         })
@@ -198,7 +178,7 @@ impl Store {
                         fmt_ts(now())
                     ],
                 )
-                .map_err(conflict(&routine.name))?;
+                .map_err(|e| conflict_or(e, "routine", &routine.name))?;
             if changed == 0 {
                 return Err(not_found(routine.id));
             }
@@ -250,12 +230,8 @@ impl Store {
     ) -> Result<Vec<Routine>, StoreError> {
         self.with(move |c| {
             let mut stmt = c.prepare(&format!("SELECT {COLUMNS} FROM routines {clause}"))?;
-            let mut rows = stmt.query(rusqlite::params_from_iter(args))?;
-            let mut out = Vec::new();
-            while let Some(row) = rows.next()? {
-                out.push(from_row(row)?);
-            }
-            Ok(out)
+            let rows = stmt.query_map(rusqlite::params_from_iter(args), |r| Ok(from_row(r)))?;
+            rows.map(|r| r?).collect()
         })
         .await
     }
@@ -286,7 +262,6 @@ impl Store {
                  VALUES (?1, ?2, ?3, ?4)",
                 params![id, msg.id, trigger.as_str(), ts],
             )?;
-            // A manual run does not move the schedule.
             if trigger == RunTrigger::Schedule {
                 tx.execute(
                     "UPDATE routines SET last_run_at = ?2, next_run_at = ?3 WHERE id = ?1",

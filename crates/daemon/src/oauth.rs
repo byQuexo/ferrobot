@@ -2,7 +2,7 @@
 //! RFC 7009 revocation). The daemon is the client; tokens never reach a sandbox.
 
 use std::collections::HashMap;
-use std::sync::{Arc, PoisonError};
+use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use async_trait::async_trait;
@@ -47,6 +47,19 @@ struct Registration {
     client_secret: String,
 }
 
+/// The JSON value kept under `key`.
+async fn secret_json<T: serde::de::DeserializeOwned>(
+    secrets: &SecretStore,
+    key: &str,
+) -> Result<Option<T>, String> {
+    match secrets.get(key).await.map_err(|e| e.to_string())? {
+        Some(json) => serde_json::from_str(&json)
+            .map(Some)
+            .map_err(|e| e.to_string()),
+        None => Ok(None),
+    }
+}
+
 /// The secret of `client_id`: the own app's, else the one a server issued
 /// when it registered that client.
 async fn secret_for(
@@ -58,22 +71,17 @@ async fn secret_for(
     if config.client_id.as_deref() == Some(client_id) {
         return Ok(config.client_secret.clone());
     }
-    let Some(json) = state
-        .settings
-        .secrets
-        .get(&registration_key(id))
-        .await
-        .map_err(|e| e.to_string())?
-    else {
-        return Ok(None);
-    };
-    let reg: Registration = serde_json::from_str(&json).map_err(|e| e.to_string())?;
-    Ok((reg.client_id == client_id).then_some(reg.client_secret))
+    let reg: Option<Registration> =
+        secret_json(&state.settings.secrets, &registration_key(id)).await?;
+    Ok(reg
+        .filter(|r| r.client_id == client_id)
+        .map(|r| r.client_secret))
 }
 
 async fn stored_credentials(state: &AppState, id: Uuid) -> Option<StoredCredentials> {
-    let json = state.settings.secrets.get(&secret_key(id)).await.ok()??;
-    serde_json::from_str(&json).ok()
+    secret_json(&state.settings.secrets, &secret_key(id))
+        .await
+        .ok()?
 }
 
 /// Forgets the connector's tokens, registration and open sign-ins.
@@ -116,16 +124,9 @@ impl std::fmt::Debug for ClientConfig {
 
 /// The connector's own OAuth app, if the operator set one.
 pub async fn client_config(state: &AppState, id: Uuid) -> Result<ClientConfig, String> {
-    match state
-        .settings
-        .secrets
-        .get(&client_key(id))
-        .await
-        .map_err(|e| e.to_string())?
-    {
-        Some(json) => serde_json::from_str(&json).map_err(|e| e.to_string()),
-        None => Ok(ClientConfig::default()),
-    }
+    Ok(secret_json(&state.settings.secrets, &client_key(id))
+        .await?
+        .unwrap_or_default())
 }
 
 /// Stores the connector's own OAuth app (or removes it when empty).
@@ -157,10 +158,9 @@ fn store_err(e: impl std::fmt::Display) -> AuthError {
 #[async_trait]
 impl CredentialStore for Keychain {
     async fn load(&self) -> Result<Option<StoredCredentials>, AuthError> {
-        match self.secrets.get(&self.key).await.map_err(store_err)? {
-            Some(json) => serde_json::from_str(&json).map(Some).map_err(store_err),
-            None => Ok(None),
-        }
+        secret_json(&self.secrets, &self.key)
+            .await
+            .map_err(store_err)
     }
 
     async fn save(&self, credentials: StoredCredentials) -> Result<(), AuthError> {
@@ -213,10 +213,9 @@ pub enum SignIn {
 
 /// Where the connector stands with OAuth.
 pub async fn sign_in(state: &AppState, id: Uuid) -> SignIn {
-    let Ok(Some(json)) = state.settings.secrets.get(&secret_key(id)).await else {
-        return SignIn::SignedOut;
-    };
-    let Ok(value) = serde_json::from_str::<serde_json::Value>(&json) else {
+    let Ok(Some(value)) =
+        secret_json::<serde_json::Value>(&state.settings.secrets, &secret_key(id)).await
+    else {
         return SignIn::SignedOut;
     };
     if value["expired"] == true {
@@ -259,8 +258,7 @@ impl std::fmt::Debug for OAuth {
 
 impl OAuth {
     fn refresh_lock(&self, connector: Uuid) -> Arc<tokio::sync::Mutex<()>> {
-        let mut locks = self.refresh.lock().unwrap_or_else(PoisonError::into_inner);
-        Arc::clone(locks.entry(connector).or_default())
+        Arc::clone(crate::lock(&self.refresh).entry(connector).or_default())
     }
 
     /// Cancels the connector's open sign-ins (deleted, signed out, URL changed).
@@ -331,6 +329,45 @@ fn check_issuer(config: &ClientConfig, metadata: &AuthorizationMetadata) -> Resu
     }
 }
 
+/// Without an own app, the code and verifier go wherever the metadata says: every endpoint must
+/// sit on the issuer's own origin, and only a connector on this computer may name this computer.
+fn check_endpoints(
+    c: &Connector,
+    config: &ClientConfig,
+    metadata: &AuthorizationMetadata,
+) -> Result<(), String> {
+    let endpoints = [
+        Some(metadata.authorization_endpoint.as_str()),
+        Some(metadata.token_endpoint.as_str()),
+        metadata.registration_endpoint.as_deref(),
+    ];
+    let endpoints = endpoints.into_iter().flatten();
+    if !is_loopback(&c.url) && endpoints.clone().any(is_loopback) {
+        return Err(format!(
+            "{}'s OAuth metadata points at this computer",
+            c.name
+        ));
+    }
+    if config.client_id.is_some() {
+        return Ok(());
+    }
+    let origin = |u: &str| url::Url::parse(u).ok().map(|u| u.origin());
+    let issuer = metadata.issuer.as_deref().and_then(origin);
+    match issuer {
+        Some(issuer)
+            if endpoints
+                .clone()
+                .all(|e| origin(e).as_ref() == Some(&issuer)) =>
+        {
+            Ok(())
+        }
+        _ => Err(format!(
+            "{}'s OAuth endpoints are not on its issuer's address; add an own OAuth app instead",
+            c.name
+        )),
+    }
+}
+
 /// Where the browser comes back after signing in (register this with the
 /// provider when using an own OAuth app).
 pub fn redirect_uri(state: &AppState) -> String {
@@ -374,6 +411,7 @@ pub async fn start(state: &AppState, c: &Connector) -> Result<String, String> {
     let mut manager = manager(state, c).await.map_err(fail)?;
     let metadata = discover(&mut manager).await.map_err(fail)?;
     check_issuer(&config, &metadata)?;
+    check_endpoints(c, &config, &metadata)?;
     let started = fingerprint(state, c.id)
         .await
         .ok_or("the connector is gone")?;
@@ -594,16 +632,11 @@ async fn checked_addr(url: &url::Url, local_ok: bool) -> Result<std::net::Socket
 }
 
 async fn revoke(state: &AppState, c: &Connector) -> Result<(), String> {
-    let Some(json) = state
-        .settings
-        .secrets
-        .get(&secret_key(c.id))
-        .await
-        .map_err(|e| e.to_string())?
+    let Some(stored) =
+        secret_json::<StoredCredentials>(&state.settings.secrets, &secret_key(c.id)).await?
     else {
         return Ok(());
     };
-    let stored: StoredCredentials = serde_json::from_str(&json).map_err(|e| e.to_string())?;
     let Some(tokens) = stored.token_response else {
         return Ok(());
     };
@@ -739,6 +772,52 @@ mod tests {
         assert!(check_issuer(&app(Some(google)), &meta(None)).is_err());
         assert!(check_issuer(&app(None), &meta(Some(google))).is_err());
         assert!(check_issuer(&ClientConfig::default(), &meta(Some("https://any"))).is_ok());
+    }
+
+    #[test]
+    fn registered_clients_keep_every_endpoint_on_the_issuer() {
+        let meta = |token: &str| -> AuthorizationMetadata {
+            serde_json::from_value(serde_json::json!({
+                "issuer": "https://id.example.com",
+                "authorization_endpoint": "https://id.example.com/authorize",
+                "token_endpoint": token,
+                "registration_endpoint": "https://id.example.com/register",
+            }))
+            .unwrap()
+        };
+        let connector = |url: &str| Connector {
+            id: Uuid::nil(),
+            name: "x".into(),
+            url: url.into(),
+            command: None,
+            token_env: None,
+            tools: None,
+            created_at: time::OffsetDateTime::UNIX_EPOCH,
+        };
+        let remote = connector("https://mcp.example.com/mcp");
+        let dynamic = ClientConfig::default();
+        let own = ClientConfig {
+            client_id: Some("app".into()),
+            ..ClientConfig::default()
+        };
+        let ok = meta("https://id.example.com/token");
+        assert!(check_endpoints(&remote, &dynamic, &ok).is_ok());
+        let stolen = meta("https://evil.example/token");
+        assert!(
+            check_endpoints(&remote, &dynamic, &stolen).is_err(),
+            "code and verifier elsewhere"
+        );
+        assert!(
+            check_endpoints(&remote, &own, &stolen).is_ok(),
+            "an own app is checked by issuer"
+        );
+        let local = meta("http://127.0.0.1:9/token");
+        assert!(
+            check_endpoints(&remote, &own, &local).is_err(),
+            "never this computer"
+        );
+        let local_server = connector("http://localhost:8080/mcp");
+        assert!(check_endpoints(&local_server, &own, &local).is_ok());
     }
 
     #[test]

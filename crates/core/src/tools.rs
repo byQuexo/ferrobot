@@ -3,14 +3,14 @@
 
 use serde::{Deserialize, Serialize};
 
-/// A group of tools an agent can have on or off. The first six are ferrobot's own MCP tools
-/// (enforced by the daemon), the last three the model's built-in tools (enforced by the runner).
+/// A group of tools an agent can have on or off. Shell, Files and Web are the model's built-in
+/// tools (enforced by the runner); the others are ferrobot's own MCP tools (enforced by the daemon).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(utoipa::ToSchema))]
 #[cfg_attr(feature = "mcp", derive(schemars::JsonSchema))]
 #[serde(rename_all = "snake_case")]
 pub enum ToolGroup {
-    /// `list_agents`, `send_message`, `read_mailbox`, `assign_task`, `list_tasks`.
+    /// `list_agents`, `send_message`, `read_mailbox`, `assign_task`, `list_tasks`, `call_agents`.
     Team,
     /// `remember`, `recall`, `forget`.
     Memory,
@@ -28,10 +28,13 @@ pub enum ToolGroup {
     Files,
     /// The model's own web tools (fetch, search).
     Web,
+    /// `desktop`: screenshots, clicks and typing on the agent's desktop. Opt-in: not in
+    /// [`ToolGroup::defaults`].
+    Desktop,
 }
 
 impl ToolGroup {
-    pub const ALL: [Self; 9] = [
+    pub const ALL: [Self; 10] = [
         Self::Team,
         Self::Memory,
         Self::Operator,
@@ -41,11 +44,15 @@ impl ToolGroup {
         Self::Shell,
         Self::Files,
         Self::Web,
+        Self::Desktop,
     ];
 
-    /// Every group: the profile of an agent nobody narrowed.
-    pub fn all() -> Vec<Self> {
-        Self::ALL.to_vec()
+    /// The profile of an agent nobody narrowed: every group but the opt-in Desktop.
+    pub fn defaults() -> Vec<Self> {
+        Self::ALL
+            .into_iter()
+            .filter(|g| *g != Self::Desktop)
+            .collect()
     }
 
     /// Built into the model's harness, so the runner has to turn it off.
@@ -64,6 +71,7 @@ impl ToolGroup {
             Self::Shell => "shell",
             Self::Files => "files",
             Self::Web => "web",
+            Self::Desktop => "desktop",
         }
     }
 
@@ -92,7 +100,9 @@ mod tests {
         }
         assert_eq!(
             ToolGroup::normalize(ToolGroup::ALL.to_vec()),
-            ToolGroup::all()
+            ToolGroup::ALL.to_vec()
         );
+        assert!(!ToolGroup::defaults().contains(&ToolGroup::Desktop));
+        assert_eq!(ToolGroup::defaults().len(), ToolGroup::ALL.len() - 1);
     }
 }

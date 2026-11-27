@@ -16,7 +16,6 @@ use crate::error::{ApiError, ErrorBody};
 use crate::views::{self, AgentView};
 use crate::{AppState, lifecycle};
 
-/// Largest accepted avatar image.
 const MAX_AVATAR_BYTES: usize = 512 * 1024;
 const AVATAR_TYPES: &[&str] = &["image/png", "image/jpeg", "image/webp", "image/gif"];
 
@@ -118,6 +117,10 @@ pub(crate) async fn get_agent(
 
 /// Partial profile update. Omitted fields stay unchanged.
 #[derive(Debug, Deserialize, ToSchema)]
+#[allow(
+    clippy::option_option,
+    reason = "omitted vs. explicit null in a PATCH body"
+)]
 pub(crate) struct UpdateAgent {
     /// New name (same rules as on create). The agent keeps its id, sandbox,
     /// disk, memory and history.
@@ -129,27 +132,15 @@ pub(crate) struct UpdateAgent {
     /// New character avatar look; `null` goes back to the one derived from the id.
     #[serde(default, deserialize_with = "explicit")]
     #[schema(value_type = Option<AvatarCharacter>)]
-    #[allow(
-        clippy::option_option,
-        reason = "omitted vs. explicit null in a PATCH body"
-    )]
     character: Option<Option<AvatarCharacter>>,
     /// New model provider; `null` goes back to the daemon's default. Changing
     /// provider or model restarts the agent's computer (its disk is kept).
     #[serde(default, deserialize_with = "explicit")]
     #[schema(value_type = Option<uuid::Uuid>)]
-    #[allow(
-        clippy::option_option,
-        reason = "omitted vs. explicit null in a PATCH body"
-    )]
     provider_id: Option<Option<uuid::Uuid>>,
     /// New model id; `null` goes back to the provider's default model.
     #[serde(default, deserialize_with = "explicit")]
     #[schema(value_type = Option<String>)]
-    #[allow(
-        clippy::option_option,
-        reason = "omitted vs. explicit null in a PATCH body"
-    )]
     model: Option<Option<String>>,
     /// Pin to the top of the agent list (or unpin).
     pinned: Option<bool>,
@@ -184,6 +175,9 @@ pub(crate) async fn update_agent(
     }
     check_character(req.character.flatten().as_ref())?;
     let tags = req.tags.map(check_tags).transpose()?;
+    if let Some(tools) = &req.tools {
+        crate::desktop::check_tools(&state, id, tools).await?;
+    }
     let reconfigure = name.is_some() || req.instructions.is_some() || req.tools.is_some();
     let old_name = match &name {
         Some(_) => Some(state.store.get_agent(id).await?.name),
@@ -194,6 +188,7 @@ pub(crate) async fn update_agent(
     let (provider_id, model) = if model_change {
         let current = state.store.get_agent(id).await?;
         let provider_id = req.provider_id.unwrap_or(current.provider_id);
+        crate::desktop::check_provider(&state, id, provider_id).await?;
         let model = req.model.clone().unwrap_or(current.model);
         let model = agents::check_model(&state, provider_id, model.as_deref()).await?;
         (Some(provider_id), Some(model))

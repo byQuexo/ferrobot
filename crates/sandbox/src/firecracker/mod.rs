@@ -18,7 +18,7 @@ use tokio::sync::Mutex;
 use self::client::{Action, Client, Request, VmState};
 use crate::{
     ExecOutput, ExecRequest, SandboxBackend, SandboxError, SandboxHandle, SandboxPath, SandboxSpec,
-    SandboxState, SleepLevel, SnapshotRef,
+    SandboxState, SleepLevel, SnapshotRef, removed,
 };
 
 const KIND: &str = "firecracker";
@@ -258,25 +258,6 @@ impl FirecrackerBackend {
             })
     }
 
-    fn name(handle: &SandboxHandle) -> Result<&str, SandboxError> {
-        if handle.backend != KIND {
-            return Err(SandboxError::WrongBackend {
-                expected: KIND,
-                actual: handle.backend.clone(),
-            });
-        }
-        // Names become directory names; refuse anything that could escape `state_dir`.
-        if handle.id.is_empty()
-            || !handle
-                .id
-                .chars()
-                .all(|c| c.is_ascii_alphanumeric() || c == '-')
-        {
-            return Err(SandboxError::NotFound(handle.id.clone()));
-        }
-        Ok(&handle.id)
-    }
-
     fn vsock(&self, name: &str) -> PathBuf {
         self.config.state_dir.join(name).join(VSOCK)
     }
@@ -321,10 +302,7 @@ impl FirecrackerBackend {
         create_home_disk(&vm.dir.join(HOME_DISK), self.config.home_disk_mib)?;
         ensure_tap(&vm.tap, &self.config.bridge).await?;
         let socket = vm.dir.join(SOCKET);
-        match std::fs::remove_file(&socket) {
-            Err(e) if e.kind() != std::io::ErrorKind::NotFound => return Err(e.into()),
-            _ => {}
-        }
+        removed(std::fs::remove_file(&socket))?;
         let log = std::fs::OpenOptions::new()
             .create(true)
             .append(true)
@@ -374,7 +352,7 @@ impl SandboxBackend for FirecrackerBackend {
             backend: KIND.into(),
             id: spec.name.clone(),
         };
-        let name = Self::name(&handle)?;
+        let name = handle.dir_name(KIND)?;
         self.check_kvm()?;
         self.slots
             .lock()
@@ -399,7 +377,7 @@ impl SandboxBackend for FirecrackerBackend {
         sandbox: &SandboxHandle,
         req: &ExecRequest,
     ) -> Result<ExecOutput, SandboxError> {
-        let name = Self::name(sandbox)?;
+        let name = sandbox.dir_name(KIND)?;
         guest::exec(&self.vsock(name), name, req).await
     }
 
@@ -408,7 +386,7 @@ impl SandboxBackend for FirecrackerBackend {
         sandbox: &SandboxHandle,
         path: &SandboxPath,
     ) -> Result<Vec<u8>, SandboxError> {
-        let name = Self::name(sandbox)?;
+        let name = sandbox.dir_name(KIND)?;
         guest::read_file(&self.vsock(name), name, &path.to_string()).await
     }
 
@@ -418,7 +396,7 @@ impl SandboxBackend for FirecrackerBackend {
         path: &SandboxPath,
         contents: &[u8],
     ) -> Result<(), SandboxError> {
-        let name = Self::name(sandbox)?;
+        let name = sandbox.dir_name(KIND)?;
         guest::write_file(&self.vsock(name), name, &path.to_string(), contents).await
     }
 
@@ -435,7 +413,7 @@ impl SandboxBackend for FirecrackerBackend {
     }
 
     async fn wake(&self, sandbox: &SandboxHandle) -> Result<(), SandboxError> {
-        let name = Self::name(sandbox)?;
+        let name = sandbox.dir_name(KIND)?;
         match self.state(sandbox).await? {
             SandboxState::Running => Ok(()),
             SandboxState::Paused => {
@@ -460,7 +438,7 @@ impl SandboxBackend for FirecrackerBackend {
         sandbox: &SandboxHandle,
         level: SleepLevel,
     ) -> Result<SleepLevel, SandboxError> {
-        let name = Self::name(sandbox)?;
+        let name = sandbox.dir_name(KIND)?;
         if level == SleepLevel::Warm {
             return match self.state(sandbox).await? {
                 SandboxState::Running => {
@@ -480,7 +458,7 @@ impl SandboxBackend for FirecrackerBackend {
 
     // TODO(kvm): untested against a real guest (docs/launch/issues/firecracker-on-kvm.md)
     async fn stop(&self, sandbox: &SandboxHandle) -> Result<(), SandboxError> {
-        let name = Self::name(sandbox)?;
+        let name = sandbox.dir_name(KIND)?;
         let client = self.client(name);
         match self.state(sandbox).await? {
             SandboxState::Stopped | SandboxState::Missing => return Ok(()),
@@ -490,36 +468,29 @@ impl SandboxBackend for FirecrackerBackend {
             }
             SandboxState::Running => {}
         }
-        let child = if cfg!(target_arch = "x86_64") {
+        let mut stopped = false;
+        if cfg!(target_arch = "x86_64") {
             client
                 .send(&Request::action(Action::SendCtrlAltDel))
                 .await?;
             let deadline = tokio::time::Instant::now() + STOP_TIMEOUT;
-            let mut stopped = false;
             while !stopped && tokio::time::Instant::now() < deadline {
                 tokio::time::sleep(Duration::from_millis(100)).await;
                 stopped = self.state(sandbox).await? == SandboxState::Stopped;
             }
-            let child = self
-                .slots
-                .lock()
-                .await
-                .get_mut(name)
-                .and_then(|s| s.child.take());
-            if stopped {
-                if let Some(mut child) = child {
-                    child.wait().await?;
-                }
-                return Ok(());
+        }
+        let child = self
+            .slots
+            .lock()
+            .await
+            .get_mut(name)
+            .and_then(|s| s.child.take());
+        if stopped {
+            if let Some(mut child) = child {
+                child.wait().await?;
             }
-            child
-        } else {
-            self.slots
-                .lock()
-                .await
-                .get_mut(name)
-                .and_then(|s| s.child.take())
-        };
+            return Ok(());
+        }
         match child {
             Some(mut child) => Ok(child.kill().await?),
             None => Err(SandboxError::Other(format!(
@@ -529,7 +500,7 @@ impl SandboxBackend for FirecrackerBackend {
     }
 
     async fn destroy(&self, sandbox: &SandboxHandle, purge_disk: bool) -> Result<(), SandboxError> {
-        let name = Self::name(sandbox)?;
+        let name = sandbox.dir_name(KIND)?;
         self.stop(sandbox).await?;
         self.slots.lock().await.remove(name);
         let dir = self.config.state_dir.join(name);
@@ -541,16 +512,13 @@ impl SandboxBackend for FirecrackerBackend {
             }
         }
         if purge_disk {
-            match tokio::fs::remove_dir_all(&dir).await {
-                Err(e) if e.kind() != std::io::ErrorKind::NotFound => return Err(e.into()),
-                _ => {}
-            }
+            removed(tokio::fs::remove_dir_all(&dir).await)?;
         }
         Ok(())
     }
 
     async fn state(&self, sandbox: &SandboxHandle) -> Result<SandboxState, SandboxError> {
-        let name = Self::name(sandbox)?;
+        let name = sandbox.dir_name(KIND)?;
         if !self.config.state_dir.join(name).exists() {
             return Ok(SandboxState::Missing);
         }
@@ -728,6 +696,7 @@ mod tests {
             env: BTreeMap::new(),
             labels: BTreeMap::new(),
             image: None,
+            command: None,
         };
         let err = b.create(&spec).await.unwrap_err().to_string();
         assert!(err.contains("needs read/write access to"), "{err}");

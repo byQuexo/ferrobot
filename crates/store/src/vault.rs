@@ -1,6 +1,5 @@
-//! Memories as Markdown notes in an Obsidian vault: `<vault>/ferrobot/<agent>/<key>.md` and
-//! `<vault>/ferrobot/Global memory/<key>.md`, so the operator reads and edits them in Obsidian.
-//! The setting `memory_vault` turns it on; the `memories` tables then stay untouched.
+//! Memories as Markdown notes in an Obsidian vault (`<vault>/ferrobot/<agent>/<key>.md`), on
+//! while the setting `memory_vault` is set; the `memories` tables then stay untouched.
 
 use std::path::{Path, PathBuf};
 use std::time::SystemTime;
@@ -10,6 +9,7 @@ use rusqlite::{Connection, OptionalExtension};
 use time::OffsetDateTime;
 
 use crate::memory::MemoryEntry;
+use crate::settings;
 use crate::{Store, StoreError};
 
 pub(crate) const SETTING: &str = "memory_vault";
@@ -23,14 +23,8 @@ fn io(e: &std::io::Error) -> StoreError {
 
 /// The vault folder, when memories live there.
 pub(crate) fn vault(c: &Connection) -> Result<Option<PathBuf>, StoreError> {
-    let raw: Option<String> = c
-        .query_row(
-            "SELECT value FROM settings WHERE key = ?1",
-            [SETTING],
-            |r| r.get(0),
-        )
-        .optional()?;
-    raw.map(|r| serde_json::from_str::<Option<PathBuf>>(&r).map_err(StoreError::corrupt))
+    settings::get(c, SETTING)?
+        .map(|r| serde_json::from_str::<Option<PathBuf>>(&r).map_err(StoreError::corrupt))
         .transpose()
         .map(Option::flatten)
 }
@@ -50,10 +44,7 @@ pub(crate) fn folder(
                 |r| r.get(0),
             )
             .optional()?
-            .ok_or_else(|| StoreError::NotFound {
-                entity: "agent",
-                key: id.to_string(),
-            })?,
+            .ok_or_else(|| StoreError::not_found("agent", id))?,
     };
     Ok(vault.join(ROOT).join(name))
 }
@@ -71,8 +62,18 @@ fn file_stem(key: &str) -> String {
         })
         .collect();
     let safe = safe.trim_matches([' ', '-']);
+    let reserved = |s: &str| {
+        let s = s.to_ascii_lowercase();
+        matches!(s.as_str(), "con" | "prn" | "aux" | "nul")
+            || (s.len() == 4
+                && (s.starts_with("com") || s.starts_with("lpt"))
+                && s.as_bytes()[3].is_ascii_digit())
+    };
     if safe.is_empty() {
         "memory".to_owned()
+    } else if reserved(safe) {
+        // Windows device names cannot be files.
+        format!("{safe}-note")
     } else {
         safe.chars().take(100).collect()
     }
@@ -220,15 +221,43 @@ pub(crate) fn search(dir: &Path, query: &str, limit: u32) -> Vec<MemoryEntry> {
         .collect()
 }
 
-/// Keeps a renamed agent's notes: its folder follows the new name unless that one exists.
-pub(crate) fn rename_folder(c: &Connection, old: &str, new: &str) -> Result<(), StoreError> {
+/// Keeps a renamed agent's notes: its folder follows the new name. A folder already there
+/// belonged to an agent gone before, so it is archived first, never merged.
+pub(crate) fn rename_folder(
+    c: &Connection,
+    old: &str,
+    new: &str,
+    id: &str,
+) -> Result<(), StoreError> {
     if let Some(v) = vault(c)? {
         let (from, to) = (v.join(ROOT).join(old), v.join(ROOT).join(new));
-        if from.is_dir() && !to.exists() {
+        if from.is_dir() {
+            archive_folder(c, new, id)?;
             std::fs::rename(from, to).map_err(|e| io(&e))?;
         }
     }
     Ok(())
+}
+
+/// Moves the notes folder under `name` to `.archived` (Obsidian hides dot folders), so an agent
+/// that gets this name later starts with no one else's notes. `id` keeps archives apart.
+pub(crate) fn archive_folder(c: &Connection, name: &str, id: &str) -> Result<(), StoreError> {
+    let Some(v) = vault(c)? else {
+        return Ok(());
+    };
+    let from = v.join(ROOT).join(name);
+    if !from.is_dir() {
+        return Ok(());
+    }
+    let shelf = v.join(ROOT).join(".archived");
+    std::fs::create_dir_all(&shelf).map_err(|e| io(&e))?;
+    let mut to = shelf.join(format!("{name}-{id}"));
+    let mut n = 1;
+    while to.exists() {
+        n += 1;
+        to = shelf.join(format!("{name}-{id}-{n}"));
+    }
+    std::fs::rename(from, to).map_err(|e| io(&e))
 }
 
 /// A stored memory to copy: key, content, author id, author name, owning agent.
@@ -246,9 +275,8 @@ impl Store {
         self.with(|c| vault(c)).await
     }
 
-    /// Moves memories to `vault` (or back to the built-in memory with `None`). Memories already
-    /// stored are copied into the vault without replacing notes that hold the same key; the
-    /// built-in memory keeps its copy. Returns how many notes were written.
+    /// Moves memories to `vault` (`None`: back to the built-in memory), copying stored ones in
+    /// without replacing notes of the same key; returns how many notes were written.
     pub async fn set_memory_vault(&self, vault: Option<PathBuf>) -> Result<usize, StoreError> {
         self.with(move |c| {
             let mut copied = 0;
@@ -284,12 +312,7 @@ impl Store {
                 }
             }
             let value = serde_json::to_string(&vault).map_err(StoreError::corrupt)?;
-            c.execute(
-                "INSERT INTO settings (key, value, updated_at) VALUES (?1, ?2, ?3)
-                 ON CONFLICT (key) DO UPDATE SET value = excluded.value,
-                                                 updated_at = excluded.updated_at",
-                rusqlite::params![SETTING, value, crate::util::fmt_ts(crate::util::now())],
-            )?;
+            settings::put(c, SETTING, &value)?;
             Ok(copied)
         })
         .await
@@ -307,6 +330,9 @@ mod tests {
         assert_eq!(file_stem(".hidden"), "hidden");
         assert_eq!(file_stem("a/b\\c:d"), "a-b-c-d");
         assert_eq!(file_stem("..."), "memory");
+        assert_eq!(file_stem("CON"), "CON-note");
+        assert_eq!(file_stem("com7"), "com7-note");
+        assert_eq!(file_stem("console"), "console");
     }
 
     #[test]
@@ -391,6 +417,15 @@ mod tests {
             "deploy"
         );
         assert_eq!(store.recall(bob, String::new(), 10).await.unwrap(), []);
+        // Agents keep each other's notes current, never the operator's.
+        store
+            .remember_global("team".into(), "Ship daily, bob agrees".into(), Some(bob))
+            .await
+            .unwrap();
+        store
+            .remember_global("team".into(), "Ship daily, test first".into(), None)
+            .await
+            .unwrap();
         assert!(matches!(
             store
                 .remember_global("team".into(), "mine".into(), Some(bob))
@@ -401,10 +436,6 @@ mod tests {
             store.forget_global("team".into(), Some(bob)).await,
             Err(StoreError::Conflict { .. })
         ));
-        store
-            .remember_global("team".into(), "Ship daily, test first".into(), None)
-            .await
-            .unwrap();
         let global = store.recall_global("test".into(), 10).await.unwrap();
         assert_eq!(
             (global[0].content.as_str(), global[0].author),
@@ -422,6 +453,27 @@ mod tests {
         );
         assert!(store.forget(ada, "deploy".into()).await.unwrap());
         assert!(!root.join("ada-two/deploy.md").exists());
+
+        // A deleted agent's notes are archived, so a newcomer with its name starts empty.
+        store
+            .remember(bob, "secret".into(), "bob's own note".into())
+            .await
+            .unwrap();
+        store.delete_agent(bob).await.unwrap();
+        assert!(!root.join("bob").exists(), "archived");
+        let new_bob = store
+            .create_agent(NewAgent {
+                created_by: None,
+                name: AgentName::parse("bob").unwrap(),
+                description: String::new(),
+                instructions: String::new(),
+            })
+            .await
+            .unwrap();
+        assert_eq!(
+            store.recall(new_bob.id, String::new(), 10).await.unwrap(),
+            []
+        );
 
         store.set_memory_vault(None).await.unwrap();
         let back = store.recall(ada, String::new(), 10).await.unwrap();

@@ -18,10 +18,6 @@ impl AgentId {
     pub fn new() -> Self {
         Self(Uuid::new_v4())
     }
-
-    pub fn as_uuid(&self) -> Uuid {
-        self.0
-    }
 }
 
 impl Default for AgentId {
@@ -242,7 +238,7 @@ pub struct Agent {
     #[serde(default)]
     pub pinned: bool,
     /// Tool groups the agent may use; its connectors are its assignment.
-    #[serde(default = "crate::ToolGroup::all")]
+    #[serde(default = "crate::ToolGroup::defaults")]
     pub tools: Vec<crate::ToolGroup>,
     /// The operator's labels for the agent, in order.
     #[serde(default)]

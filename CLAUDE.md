@@ -23,6 +23,20 @@ a versioned HTTP/WebSocket API (`/v1`).
   visibility (github.com/byQuexo/ferrobot) unless asked.
 - Never fabricate test results; say what was not run.
 
+## Public repo (hard)
+
+The repo is public. Everything committed (code, tests, fixtures, presets, docs,
+commit messages, PR bodies, release notes, screenshots) follows these rules:
+
+- No employer, customer or other company names except the services ferrobot
+  integrates with by design (GitHub, Discord, model and voice providers), and
+  only where the feature needs them.
+- No people's names other than the author, and no private details: emails,
+  internal hostnames or URLs, ticket links, tokens, real chat or log contents.
+- Examples use neutral names: `example.com`, `api.example.com`,
+  `EXAMPLE_API_KEY`, a program called `example`, agent names like `scout`.
+- Before committing, read the diff for names that do not belong there.
+
 ## Architecture
 
 ```
@@ -70,7 +84,9 @@ Principles:
 - `crates/daemon/src/lib.rs` — routers (`ui_router`, `agent_router`).
 - `crates/daemon/src/api/` — `/v1` handlers (agents, chat, memory, routines, sandbox, ws).
 - `crates/daemon/src/agents.rs` — agent creation shared by API and `create_agent`,
-  approval flow, Auto mode, limit; `api/settings.rs` — daemon-wide settings (`auto_mode`).
+  approval flow, Auto mode, limit; `runner_instructions` adds the naming convention and, for
+  agents with the Memory group, the operator's knowledge base (global memory), re-sent on change;
+  `api/settings.rs` — daemon-wide settings (`auto_mode`).
 - `crates/daemon/src/state.rs` — `AppState`, `Settings`, `UiEvent`.
 - `crates/daemon/src/spec.rs` — OpenAPI + schema generation.
 - `crates/daemon/src/proxy.rs` — model proxy; `auth.rs` — operator token.
@@ -98,9 +114,16 @@ Principles:
   agents through `/mcp` (tokens in the keychain, never in a sandbox), and the
   `add_connector` approval card (Approve/Decline; tokens go in Settings → Vault);
   `oauth.rs` — their OAuth sign-in (rmcp's client, loopback callback).
-- `crates/daemon/src/clis.rs`, `api/clis.rs` — CLIs: keyless Debian packages
-  built into one shared sandbox image (Docker, `build_image` in
-  `crates/sandbox`); `lifecycle::wake` recreates outdated sandboxes, home kept.
+- `crates/daemon/src/clis.rs`, `api/clis.rs` — CLIs (`ferrobot_core::Cli`, the `clis` setting):
+  Debian packages in one shared sandbox image (Docker, `build_image` in `crates/sandbox`, tags per
+  daemon); npm, download and script installs into the picked agents' homes (`~/.local`, first on
+  `PATH`; a marker per CLI under `~/.ferrobot/clis`), run on provision, on change and after a
+  pending wake; `lifecycle::wake` recreates outdated sandboxes, home kept; `propose_cli` cards.
+- `crates/daemon/src/logins.rs`, `egress.rs` — the token side of CLIs with an account (each token
+  in the secret store as `login:<id>`): their agents' sandboxes get a stand-in, `HTTPS_PROXY` to
+  the agent listener and a CA bundle; `egress.rs` is the proxy. `signin.rs` — a CLI's own device
+  sign-in in a throwaway sandbox (`signin.<id>`, no agent token, removed after; token read with
+  its token command straight into the secret store).
 - `crates/daemon/src/voice.rs`, `api/voice.rs` — voice: speech and
   transcription for the operator's chat via ElevenLabs or OpenRouter (keys
   in the keychain as `voice:<provider>`); `call.rs` — the operator's voice
@@ -110,7 +133,10 @@ Principles:
   most; room messages carry `room_id` and stay out of chats; the call note goes
   to the model at hand-off, the host also gets the host note; `hang_up` takes
   effect when the agent's turn ends, and the call's end cuts off the room turn
-  holding the floor and drops queued ones; `ask_user` is refused in a call);
+  holding the floor and drops queued ones; `ask_user` is refused in a call;
+  `call_agents` starts a call among agents without the operator, which ends once
+  nobody is due (12 agent lines in a row at most) and which the operator can join;
+  listed and allowed only while voice is ready, `api::voice::is_ready`);
   `apps/desktop/src/lib/voice.ts` — playback and recording in the UI;
   `lib/call-session.ts` — the call in the UI (outlives the chat),
   `lib/call.ts` — its sentence, barge-in and call-event rules.
@@ -139,6 +165,13 @@ Principles:
   (👀, then ✅, or only the agent's emoji); an agent posts to its own bridged channels
   with `send_to_discord`; `discord/cards.rs` — cards in the channel (✅/❌, replies);
   `api/discord.rs` — `/v1/discord`. Settings in the `discord` setting.
+- `crates/daemon/src/stop.rs` — the operator's Stop (`interrupt?chain=true`): the agent's turn,
+  the turns of agents working on messages from that chain, and agent messages queued among them.
+- `crates/daemon/src/desktop.rs`, `api/desktop.rs` — the agent's desktop: its
+  packages ride on the CLIs image (`clis.rs`, `desktop` flag), started on demand; the operator's
+  view is `/v1/agents/{id}/screen` (x11vnc in inetd mode behind socat over a streaming exec, no
+  port; `?control=true` takes it over and pauses the agent's `desktop` tool); agents act through
+  the opt-in Desktop group (xdotool, scrot). UI: `apps/desktop/src/components/Desktop.tsx` (noVNC).
 - `crates/daemon/src/tasks.rs` — tracked tasks: automatic report and reminder;
   `crates/store/src/tasks.rs` — task state from `task` events and the mailbox.
 - `crates/mcp/src/tools.rs` — MCP tools; `crates/mcp/src/lib.rs` — `MailboxNotifier`.
@@ -231,7 +264,7 @@ daemon, `docker ps -a` must be empty of ferrobot containers.
 ## Migrations
 
 - `crates/store/src/migrations.rs`, tracked with `PRAGMA user_version`.
-- Forward-only, numbered v1..v22 (v7: `providers`, `agents.provider_id`/`model`; v8:
+- Forward-only, numbered v1..v23 (v7: `providers`, `agents.provider_id`/`model`; v8:
   `global_memories`; v9: `connectors`, `agent_connectors`; v10:
   `global_memories.author`; v11: `agents.pinned`; v12: `settings`, JSON by
   key, e.g. `voice`; v13: `usage`, one row per proxied model call; v14:
@@ -242,7 +275,7 @@ daemon, `docker ps -a` must be empty of ferrobot containers.
   `rooms.name`, NULL = a call room, else a group chat; v20: `usage.turn_id`,
   `usage.at_ms`, index `usage_turn`; v21: `agent_aliases`, old names of
   renamed agents; v22: `connectors.command`, `connectors.token_env`, NULL = a
-  remote server). Append a new entry
+  remote server; v23: `connectors.tools`, NULL = every tool). Append a new entry
   with a `// vN: ...` comment; **never edit or reorder existing ones**.
 - Every migration gets a test (upgrade an old DB, check defaults of existing
   rows). New columns on existing tables need a default.
@@ -279,6 +312,32 @@ daemon, `docker ps -a` must be empty of ferrobot containers.
   sandbox, event, log or API response. Cards answered from Discord take only allowed
   users' reactions or replies and go through the app's answer route; cards with a secret
   field or several questions, `add_connector` and very risky steps stay app-only.
+- **CLI accounts keep their token in the daemon.** Only the operator sets up CLIs and accounts;
+  an agent's `propose_cli` is an Approve/Decline card that shows the exact install and token
+  hosts, never skipped in Auto mode, and never carries a token or sign-in commands (those are
+  the operator's; approving after a CLI of that name was set up is refused). A CLI's sign-in runs in a
+  throwaway sandbox with no agent token and is removed afterwards; its token goes from the token
+  command's output straight to the secret store, never to a log, event or response. Agents with an
+  account get a stand-in and send HTTPS through `CONNECT` on the agent
+  listener (`egress.rs`, agent token as proxy password); only for the account's hosts (public names,
+  checked when saved and resolved to public addresses when used) does the daemon end TLS (leaf
+  certificates from that CLI's own CA, name-constrained to its hosts, key in the secret store),
+  swap its exact stand-in for the real token in the credential request headers only
+  (`authorization`, `x-api-key`, `private-token`, `x-auth-token`; never the URL), put the
+  stand-in back where a response header echoes the token, and forward without following redirects.
+  An account's variables never replace the sandbox's own (proxy, CA, `FERROBOT_*`, `PATH`...), and
+  `~/.local/bin` comes last on `PATH`, so nothing in an agent's home stands in for system
+  programs; the daemon calls the desktop's programs by full path. Other
+  public hosts get a plain tunnel, port 443 only; private, loopback and link-local addresses are
+  refused. Never log `Authorization` or `Proxy-Authorization`.
+- **The Desktop group is opt-in and never meets a CLI account.** It is not in
+  `ToolGroup::defaults()` (NULL tools), so no agent gets it unless it is switched on; an agent
+  never has both the Desktop group and a CLI account (`desktop::check_tools` on tool changes, the
+  same check in `put_cli` on account agents), because commands typed into its desktop's terminal
+  skip `tool_check`. For the same reason a Codex agent (its own shell skips the gate) never has a
+  CLI account (`desktop::check_provider` on provider changes, `check_account_agents` in `put_cli`).
+  The screen route stays inside the `/v1` auth layer, and nothing in a sandbox listens on a port
+  for it.
 - **Per-agent tokens** on `/runner/ws`, `/mcp`, `/model`, `/host/claude-code/turn`. An agent can only act
   as itself (MCP tools read the caller from the token). Only hashes are stored.
 - **`create_agent` needs operator approval unless Auto mode is on**: an
@@ -294,8 +353,13 @@ daemon, `docker ps -a` must be empty of ferrobot containers.
   the caller's own; narrowing applies at once, anything new needs a card unless Auto mode is on.
 - **Risky steps need a card unless Auto mode is on; critical ones (money or deleting
   through a connector, force-pushing, publishing) always do; dangerous ones are always
-  refused** (`tool_check.rs`). The runner asks before every shell command and
-  fails closed when the check can't answer.
+  refused** (`tool_check.rs`). The runner asks before every shell command of every shell
+  tool (Claude's `Bash`, `Monitor`, `PowerShell`; Gemini's and the OpenAI driver's shell) and
+  fails closed when the check can't answer. Exception: Codex runs most of its own commands
+  without asking (`danger-full-access`), so a Codex agent never gets a CLI account. The
+  classifier reads the command line and is best effort, not a sandbox: a script the agent
+  wrote is not read. Agents can't write the harnesses' own settings folders in their
+  workspace (`.claude`, `.codex`, `.gemini`), which could start processes.
 - **`FERROBOT_MAX_AGENTS`** (default 10) applies to `POST /v1/agents` and to
   `create_agent` (both through `daemon::agents::create`).
 - Question cards are answered at most once (`409` after).

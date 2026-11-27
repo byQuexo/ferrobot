@@ -23,6 +23,9 @@ pub struct Connector {
     /// `GITHUB_TOKEN`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub token_env: Option<String>,
+    /// The server's tools agents may use, by the server's own names; `None`: all of them.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub tools: Option<Vec<String>>,
     #[serde(with = "time::serde::rfc3339")]
     #[cfg_attr(feature = "schema", schema(value_type = String, format = DateTime))]
     pub created_at: OffsetDateTime,
@@ -46,6 +49,8 @@ pub enum ConnectorAuth {
 pub const MAX_CONNECTOR_NAME: usize = 16;
 /// Most arguments a local server's command takes, and the longest one.
 const MAX_ARGS: usize = 32;
+/// Tools one connector may be limited to.
+const MAX_TOOLS: usize = 500;
 const MAX_ARG_BYTES: usize = 1024;
 
 impl Connector {
@@ -74,6 +79,21 @@ impl Connector {
                     "token_env must be an environment variable name like GITHUB_TOKEN".into(),
                 );
             }
+        }
+        let tool_ok = |t: &String| {
+            !t.is_empty()
+                && t.len() <= 128
+                && t.bytes()
+                    .all(|b| b.is_ascii_alphanumeric() || b == b'_' || b == b'-')
+        };
+        if self
+            .tools
+            .as_ref()
+            .is_some_and(|t| t.len() > MAX_TOOLS || !t.iter().all(tool_ok))
+        {
+            return Err(format!(
+                "tools are at most {MAX_TOOLS} tool names of letters, digits, _ and -"
+            ));
         }
         if let Some(argv) = &self.command {
             let program_ok = argv.first().is_some_and(|p| {
@@ -116,6 +136,7 @@ mod tests {
             url: url.into(),
             command: None,
             token_env: None,
+            tools: None,
             created_at: OffsetDateTime::UNIX_EPOCH,
         };
         assert!(
@@ -128,6 +149,12 @@ mod tests {
             assert!(c(bad, "https://x").validate().is_err(), "{bad}");
         }
         assert!(c("ok", "ftp://x").validate().is_err());
+        let scoped = |tools: Vec<&str>| Connector {
+            tools: Some(tools.into_iter().map(Into::into).collect()),
+            ..c("gh", "https://x")
+        };
+        assert!(scoped(vec!["list_issues", "get-pr"]).validate().is_ok());
+        assert!(scoped(vec!["bad name"]).validate().is_err());
 
         let local = |argv: &[&str], env: Option<&str>| Connector {
             command: Some(argv.iter().map(|a| (*a).to_owned()).collect()),

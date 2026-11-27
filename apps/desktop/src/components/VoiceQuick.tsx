@@ -2,12 +2,14 @@ import type { JSX } from "preact";
 import { useEffect, useRef, useState } from "preact/hooks";
 import { Play, SlidersHorizontal } from "lucide-preact";
 
-import type { Agent, UpdateVoice, VoiceCatalog, VoiceView } from "../api.ts";
+import type { Agent, Provider, UpdateVoice, VoiceCatalog, VoiceView } from "../api.ts";
 import { useApp } from "../context.ts";
 import { speedLabel } from "../lib/call.ts";
+import { errorText } from "../lib/format.ts";
 import { withSaved } from "../lib/models.ts";
+import { ModelPicker } from "./ModelPicker.tsx";
 import { IconButton, Slider, useDismiss } from "./ui.tsx";
-import { languagesOf, patchVoice } from "./VoiceSettings.tsx";
+import { languagesOf, patchVoice, voiceOptions } from "./VoiceSettings.tsx";
 
 /** The chat header's sliders button and its popover: this agent's voice, language and speed,
  * saved right away. */
@@ -21,6 +23,7 @@ export function VoiceQuick(props: {
   const [catalog, setCatalog] = useState<VoiceCatalog | null>(null);
   const [speed, setSpeed] = useState<number | null>(null);
   const [testing, setTesting] = useState(false);
+  const [providers, setProviders] = useState<Provider[]>([]);
   const wrap = useRef<HTMLSpanElement>(null);
   const saving = useRef(Promise.resolve());
   const { view } = props;
@@ -36,6 +39,7 @@ export function VoiceQuick(props: {
     setSpeed(null);
     wrap.current?.querySelector<HTMLElement>(".voice-quick select, .voice-quick input")?.focus();
     if (elevenlabs) client.voiceCatalog().then(setCatalog, () => undefined);
+    client.listProviders().then(setProviders, () => undefined);
   }, [open]);
 
   const save = (changes: Partial<UpdateVoice>): void => {
@@ -43,7 +47,7 @@ export function VoiceQuick(props: {
       try {
         props.onView(await patchVoice(client, changes));
       } catch (err) {
-        toast(err instanceof Error ? err.message : String(err));
+        toast(errorText(err));
       }
     });
   };
@@ -59,18 +63,17 @@ export function VoiceQuick(props: {
       };
       await audio.play();
     } catch (err) {
-      toast(err instanceof Error ? err.message : String(err));
+      toast(errorText(err));
     } finally {
       setTesting(false);
     }
   };
 
   const mine = view?.agent_voices?.[id] ?? "";
-  const voices: [string, string][] =
-    catalog?.voices.map((v) => [
-      v.voice_id,
-      `${v.name}${v.languages.length ? ` · ${v.languages.join(", ")}` : ""}`,
-    ]) ?? [];
+  const callModel = view?.call_models?.[id] ?? "";
+  const provider = providers.find((p) => p.id === props.agent.provider_id);
+  const others = (byAgent: Record<string, string> | undefined): Record<string, string> =>
+    Object.fromEntries(Object.entries(byAgent ?? {}).filter(([agent]) => agent !== id));
   const shownSpeed = speed ?? view?.speed ?? 1;
   return (
     <span class="voice-quick-wrap" ref={wrap}>
@@ -98,14 +101,12 @@ export function VoiceQuick(props: {
                 value={mine}
                 onChange={(e) => {
                   const v = e.currentTarget.value;
-                  const rest = Object.fromEntries(
-                    Object.entries(view.agent_voices ?? {}).filter(([agent]) => agent !== id),
-                  );
+                  const rest = others(view.agent_voices);
                   save({ agent_voices: v ? { ...rest, [id]: v } : rest });
                 }}
               >
                 <option value="">Default voice</option>
-                {withSaved(voices, mine).map(([v, label]) => (
+                {withSaved(voiceOptions(catalog), mine).map(([v, label]) => (
                   <option key={v} value={v}>
                     {label}
                   </option>
@@ -150,6 +151,20 @@ export function VoiceQuick(props: {
               />
             </div>
           )}
+          <label class="pop-field">
+            Model in calls
+            <ModelPicker
+              lazy
+              provider={props.agent.provider_id ?? undefined}
+              kind={provider?.kind ?? "anthropic"}
+              value={callModel}
+              placeholder="Same as in chat"
+              onChange={(m) => {
+                const rest = others(view.call_models);
+                save({ call_models: m.trim() ? { ...rest, [id]: m.trim() } : rest });
+              }}
+            />
+          </label>
         </div>
       )}
     </span>
