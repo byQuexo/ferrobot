@@ -9671,3 +9671,273 @@ async fn every_computer_starts_with_the_find_skills_skill() {
         "its licence travels with it: {written:?}"
     );
 }
+
+/// A chat-completions upstream answering with `answers` in order; keeps the request bodies.
+async fn check_upstream(answers: Vec<&'static str>) -> (String, Arc<Mutex<Vec<Value>>>) {
+    let seen = Arc::new(Mutex::new(Vec::new()));
+    let queue = Arc::new(Mutex::new(std::collections::VecDeque::from(answers)));
+    let record = seen.clone();
+    let app = axum::Router::new().route(
+        "/chat/completions",
+        axum::routing::post(move |axum::Json(body): axum::Json<Value>| {
+            let (record, queue) = (record.clone(), queue.clone());
+            async move {
+                record.lock().unwrap().push(body);
+                let answer = queue.lock().unwrap().pop_front().unwrap_or("no idea");
+                axum::Json(json!({
+                    "choices": [{ "message": { "role": "assistant", "content": answer } }],
+                    "usage": { "prompt_tokens": 120, "completion_tokens": 9 },
+                }))
+            }
+        }),
+    );
+    (serve(app).await, seen)
+}
+
+async fn goal_events(d: &Daemon, agent: &str) -> Vec<Value> {
+    events(d, agent)
+        .await
+        .into_iter()
+        .filter(|e| e["kind"] == "goal")
+        .map(|e| e["payload"].clone())
+        .collect()
+}
+
+#[tokio::test]
+async fn a_task_continues_until_finished_reported_and_checked() {
+    let backend = Arc::new(StatefulBackend::default());
+    let d = start(backend.clone(), None, "127.0.0.1:0").await;
+    let (base, seen) = check_upstream(vec![
+        r#"{"met": false, "reason": "two tests still fail"}"#,
+        "no idea",
+        "```json\n{\"met\": true, \"reason\": \"all pass\"}\n```",
+    ])
+    .await;
+    let (_, provider) = http(
+        &d.ui,
+        "POST",
+        "/v1/providers",
+        Some(json!({"name": "local", "kind": "openai_compatible", "base_url": base})),
+    )
+    .await;
+    let id = create_id(
+        &d,
+        json!({"name": "ada", "provider_id": provider["id"], "model": "small-1"}),
+    )
+    .await;
+    let agent: AgentId = id.parse().unwrap();
+    let mut ws = connect_runner(&d.agents, &backend.token("ada")).await;
+    let client = mcp_as(&d, backend.token("ada")).await;
+    let lists = |tools: Vec<rmcp::model::Tool>| tools.iter().any(|t| t.name == "finish_task");
+    assert!(
+        !lists(client.list_all_tools().await.unwrap()),
+        "no task yet"
+    );
+    let early = rmcp::model::CallToolRequestParams::new("finish_task")
+        .with_arguments(json!({"summary": "done"}).as_object().cloned().unwrap());
+    assert!(client.call_tool(early).await.is_err(), "nothing to finish");
+
+    let path = format!("/v1/agents/{id}/goal");
+    assert_eq!(http(&d.ui, "GET", &path, None).await.0, 404);
+    let (status, goal) = http(
+        &d.ui,
+        "PUT",
+        &path,
+        Some(json!({"goal": "make the tests pass", "max_continuations": 5})),
+    )
+    .await;
+    assert_eq!(status, 200, "{goal}");
+    assert_eq!(
+        (
+            goal["continuations"].as_u64(),
+            goal["max_continuations"].as_u64()
+        ),
+        (Some(0), Some(5))
+    );
+    assert!(lists(client.list_all_tools().await.unwrap()));
+    let (turn, message, body) = next_turn(&mut ws).await;
+    assert!(
+        body.starts_with("make the tests pass\n\n[ferrobot]") && body.contains("finish_task"),
+        "{body}"
+    );
+    assert_eq!(
+        goal_events(&d, &id).await[0]["note_id"],
+        message,
+        "the chat shows the goal, not the note"
+    );
+
+    // No finish_task: sent back to work.
+    finish(&mut ws, turn, Some("Looking into it.")).await;
+    let (turn, message, body) = next_turn(&mut ws).await;
+    assert!(
+        body.starts_with("[ferrobot] Not done yet: make the tests pass"),
+        "{body}"
+    );
+    let continued = goal_events(&d, &id).await;
+    assert_eq!(
+        (
+            continued[1]["state"].as_str(),
+            continued[1]["note_id"].as_i64()
+        ),
+        (Some("continued"), Some(message))
+    );
+    assert_eq!(http(&d.ui, "GET", &path, None).await.1["continuations"], 1);
+
+    // finish_task without a report: asked to report.
+    call(&client, "finish_task", json!({"summary": "tests pass"})).await;
+    finish(&mut ws, turn, None).await;
+    let (turn, _, body) = next_turn(&mut ws).await;
+    assert!(body.contains("without a report"), "{body}");
+    assert!(seen.lock().unwrap().is_empty(), "no check without a report");
+
+    // Finished and reported, but the check finds it unmet.
+    call(&client, "finish_task", json!({"summary": "tests pass"})).await;
+    finish(&mut ws, turn, Some("All tests pass now.")).await;
+    let (turn, _, body) = next_turn(&mut ws).await;
+    assert!(body.contains("(two tests still fail)"), "{body}");
+    let request = seen.lock().unwrap()[0].clone();
+    assert_eq!(request["model"], "small-1", "the agent's own model checks");
+    let prompt = request["messages"][0]["content"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    assert!(
+        prompt.contains("make the tests pass") && prompt.contains("All tests pass now."),
+        "{prompt}"
+    );
+
+    // A check that cannot run counts as not met.
+    call(&client, "finish_task", json!({"summary": "tests pass"})).await;
+    finish(&mut ws, turn, Some("They pass.")).await;
+    let (turn, _, body) = next_turn(&mut ws).await;
+    assert!(body.contains("(the check could not run)"), "{body}");
+
+    // Met: the task ends as achieved.
+    call(
+        &client,
+        "finish_task",
+        json!({"summary": "fixed the last two tests"}),
+    )
+    .await;
+    finish(
+        &mut ws,
+        turn.clone(),
+        Some("Fixed the last two; all 12 pass."),
+    )
+    .await;
+    let done = eventually("achieved", Duration::from_secs(5), || async {
+        goal_events(&d, &id)
+            .await
+            .into_iter()
+            .find(|e| e["state"] == "achieved")
+    })
+    .await;
+    assert_eq!(done["note"], "fixed the last two tests");
+    assert_eq!(http(&d.ui, "GET", &path, None).await.0, 404);
+    quiet(&mut ws).await;
+    let checks = d
+        .state
+        .store
+        .turn_calls(agent, format!("task-check:{turn}"))
+        .await
+        .unwrap();
+    assert_eq!(checks.len(), 1, "the check is in Usage, marked by its turn");
+    assert_eq!(checks[0].model, "small-1");
+    assert!(!lists(client.list_all_tools().await.unwrap()));
+}
+
+#[tokio::test]
+async fn a_task_ends_at_its_limit_on_stop_and_when_cleared() {
+    let backend = Arc::new(StatefulBackend::default());
+    let d = start(backend.clone(), None, "127.0.0.1:0").await;
+    let id = create_id(&d, json!({"name": "bo"})).await;
+    let mut ws = connect_runner(&d.agents, &backend.token("bo")).await;
+    let path = format!("/v1/agents/{id}/goal");
+    let set = |max: u32| {
+        let (ui, path) = (d.ui.clone(), path.clone());
+        async move {
+            let body = json!({"goal": "tidy the docs", "max_continuations": max});
+            assert_eq!(http(&ui, "PUT", &path, Some(body)).await.0, 200);
+        }
+    };
+    for bad in [
+        json!({"goal": "  "}),
+        json!({"goal": "x", "max_continuations": 0}),
+    ] {
+        assert_eq!(http(&d.ui, "PUT", &path, Some(bad)).await.0, 400);
+    }
+    let unknown = "/v1/agents/00000000-0000-4000-8000-000000000000/goal";
+    assert_eq!(
+        http(&d.ui, "PUT", unknown, Some(json!({"goal": "x"})))
+            .await
+            .0,
+        404
+    );
+
+    // The limit: one continuation, then it gives up.
+    set(1).await;
+    let (turn, _, _) = next_turn(&mut ws).await;
+    finish(&mut ws, turn, Some("Started.")).await;
+    let (turn, _, _) = next_turn(&mut ws).await;
+    finish(&mut ws, turn, Some("Still going.")).await;
+    let gave_up = eventually("gave up", Duration::from_secs(5), || async {
+        goal_events(&d, &id)
+            .await
+            .into_iter()
+            .find(|e| e["state"] == "gave_up")
+    })
+    .await;
+    assert_eq!(gave_up["note"], "still not done after 1 continuations");
+    assert_eq!(http(&d.ui, "GET", &path, None).await.0, 404);
+    quiet(&mut ws).await;
+
+    // Stop ends it.
+    set(5).await;
+    let (turn, _, _) = next_turn(&mut ws).await;
+    let (status, _) = http(
+        &d.ui,
+        "POST",
+        &format!("/v1/agents/{id}/interrupt?chain=true"),
+        None,
+    )
+    .await;
+    assert_eq!(status, 200);
+    assert!(matches!(
+        next_frame(&mut ws).await,
+        DaemonFrame::Interrupt { .. }
+    ));
+    let done = RunnerFrame::TurnDone {
+        turn_id: turn,
+        outcome: ferrobot_core::protocol::TurnOutcome::Interrupted,
+        session_id: None,
+        result: None,
+        error: None,
+        steered: vec![],
+    };
+    send(&mut ws, &done).await;
+    let stopped: Vec<Value> = goal_events(&d, &id)
+        .await
+        .into_iter()
+        .filter(|e| e["state"] == "stopped")
+        .collect();
+    assert_eq!(stopped.len(), 1, "{stopped:?}");
+    assert_eq!(stopped[0]["note"], "stopped by the operator");
+    quiet(&mut ws).await;
+
+    // Clearing it drops the waiting continuation and lets the turn finish in peace.
+    set(5).await;
+    let (turn, _, _) = next_turn(&mut ws).await;
+    assert_eq!(http(&d.ui, "DELETE", &path, None).await.0, 204);
+    finish(&mut ws, turn, Some("Half done.")).await;
+    quiet(&mut ws).await;
+    let last = goal_events(&d, &id).await.pop().unwrap();
+    assert_eq!(
+        (last["state"].as_str(), last["note"].as_str()),
+        (Some("stopped"), Some("cleared by the operator"))
+    );
+    assert_eq!(
+        http(&d.ui, "DELETE", &path, None).await.0,
+        204,
+        "nothing to clear is fine"
+    );
+}
