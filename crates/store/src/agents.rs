@@ -192,6 +192,8 @@ impl Store {
                 "DELETE FROM agent_aliases WHERE name = ?1",
                 [row.name.as_str()],
             )?;
+            // ...but never the notes an earlier agent of that name left in the vault.
+            crate::vault::archive_folder(c, row.name.as_str(), "before")?;
             Ok(row)
         })
         .await
@@ -299,6 +301,13 @@ impl Store {
                      updated_at = excluded.updated_at",
                 params![id, at],
             )?;
+            let name: Option<String> = c
+                .query_row("SELECT name FROM agents WHERE id = ?1", [&id], |r| r.get(0))
+                .optional()?;
+            if let Some(name) = name {
+                // Best effort: the delete goes on; creating that name again archives it then.
+                let _ = crate::vault::archive_folder(c, &name, &id);
+            }
             c.execute("DELETE FROM agents WHERE id = ?1", [id])
         })
         .await
@@ -342,6 +351,7 @@ impl Store {
 
     /// Aliases old names history shows for agents renamed before renames were recorded, plus a
     /// `renamed` event each so agents hear of it; names held now are skipped. Returns how many.
+    /// Only messages count: tool results come from the runner, which could claim any name.
     pub async fn backfill_aliases(&self) -> Result<usize, StoreError> {
         self.with(|c| {
             let mut stmt = c.prepare(
@@ -349,11 +359,6 @@ impl Store {
                      SELECT json_extract(payload, '$.from'), json_extract(payload, '$.sender.id')
                      FROM events WHERE kind = 'message_in'
                        AND json_extract(payload, '$.sender.kind') = 'agent'
-                     UNION
-                     SELECT json_extract(json_extract(payload, '$.output'), '$.name'),
-                            json_extract(json_extract(payload, '$.output'), '$.agent_id')
-                     FROM events WHERE kind = 'tool_result'
-                       AND json_valid(json_extract(payload, '$.output'))
                  )
                  SELECT DISTINCT s.name, a.id, a.name FROM seen s JOIN agents a ON a.id = s.agent_id
                  WHERE s.name IS NOT NULL AND s.name <> a.name
@@ -474,7 +479,7 @@ impl Store {
                     [&old, &id],
                 )?;
                 // Best effort: a failed move leaves the notes under the old name, not lost.
-                let _ = crate::vault::rename_folder(c, &old, &new);
+                let _ = crate::vault::rename_folder(c, &old, &new, &id);
             }
             Ok(changed)
         })
@@ -914,7 +919,7 @@ mod tests {
             (
                 "tool_result",
                 serde_json::json!({
-                    "output": format!(r#"{{"agent_id":"{mailer}","name":"courier"}}"#)
+                    "output": format!(r#"{{"agent_id":"{mailer}","name":"forged"}}"#)
                 }),
             ),
         ] {
@@ -927,7 +932,7 @@ mod tests {
         assert_eq!(
             store.agent_aliases().await.unwrap(),
             [("courier".to_owned(), mailer)],
-            "a name another agent holds now is not an alias"
+            "a name another agent holds now is not an alias, nor one a tool result claims"
         );
         let found = store
             .get_agent_by_name(AgentName::parse("courier").unwrap())
