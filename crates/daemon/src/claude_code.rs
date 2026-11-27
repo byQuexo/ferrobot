@@ -366,6 +366,7 @@ pub async fn compact(state: &AppState, agent: AgentId) -> Result<String, Compact
     }
     // The ring would show the old size until the next turn reports the new one.
     let _ = tokio::fs::remove_file(dir.join("context.json")).await;
+    let _ = tokio::fs::remove_file(dir.join(PARTS_FILE)).await;
     Ok(report["result"].as_str().unwrap_or_default().to_owned())
 }
 
@@ -479,6 +480,39 @@ fn turn_args(
     args
 }
 
+/// `claude`'s own `/context` report on the agent's session, with the turn's MCP config, system
+/// prompt, plugins and model, so it counts what the turn had. A local command: no model call.
+/// `--no-session-persistence` keeps the report out of the transcript the model reads, and the
+/// measurement runs no hooks.
+fn context_args(
+    files: &Path,
+    session: Uuid,
+    model: Option<&str>,
+    extensions: &Extensions,
+) -> Vec<String> {
+    let mut args: Vec<String> = turn_args(files, &Session::Resume(session), model, extensions)
+        .into_iter()
+        .filter(|a| {
+            !a.starts_with("--output-format")
+                && !a.starts_with("--settings=")
+                && !matches!(a.as_str(), "--verbose" | "--include-partial-messages")
+        })
+        .collect();
+    args.push(format!(
+        "--settings={}",
+        files.join("measure.json").display()
+    ));
+    args.extend(
+        [
+            "--no-session-persistence",
+            "--output-format=json",
+            "/context",
+        ]
+        .map(str::to_owned),
+    );
+    args
+}
+
 #[derive(Debug, Deserialize)]
 struct TurnRequest {
     prompt: String,
@@ -566,10 +600,70 @@ impl Context {
 
 /// The agent's context as its newest Claude Code turn left it.
 pub async fn context(state: &AppState, agent: AgentId) -> Option<Context> {
-    let raw = tokio::fs::read(agent_dir(state, agent).join("context.json"))
+    read_context(&agent_dir(state, agent)).await
+}
+
+async fn read_context(dir: &Path) -> Option<Context> {
+    let raw = tokio::fs::read(dir.join("context.json")).await.ok()?;
+    serde_json::from_slice(&raw).ok()
+}
+
+/// Where the newest turn's `/context` breakdown is kept, beside `context.json`.
+const PARTS_FILE: &str = "context-parts.json";
+/// How long `claude` may take for `/context` (it starts and connects to MCP, no model call).
+const MEASURE_TIMEOUT: Duration = Duration::from_secs(60);
+
+/// A `/context` breakdown and the turn's context it belongs to.
+#[derive(Debug, Serialize, Deserialize)]
+struct Parts {
+    #[serde(with = "time::serde::rfc3339")]
+    at: time::OffsetDateTime,
+    breakdown: crate::context::Breakdown,
+}
+
+/// The breakdown `claude` reported after the turn that left `context`; `None` until it is in,
+/// or when a newer turn has not been measured yet.
+pub async fn breakdown(
+    state: &AppState,
+    agent: AgentId,
+    context: &Context,
+) -> Option<crate::context::Breakdown> {
+    let raw = tokio::fs::read(agent_dir(state, agent).join(PARTS_FILE))
         .await
         .ok()?;
-    serde_json::from_slice(&raw).ok()
+    let parts: Parts = serde_json::from_slice(&raw).ok()?;
+    (parts.at == context.at).then_some(parts.breakdown)
+}
+
+/// Runs `/context` after a turn while its files still exist (the MCP config holds the agent's
+/// token, which the daemon keeps only as a hash) and saves the breakdown for `at`'s context.
+async fn measure(
+    state: AppState,
+    dir: PathBuf,
+    config: tempfile::TempDir,
+    args: Vec<String>,
+    at: time::OffsetDateTime,
+) {
+    let mut cmd = claude(&state);
+    cmd.args(&args).current_dir(&dir);
+    let report = match tokio::time::timeout(MEASURE_TIMEOUT, cmd.output()).await {
+        Ok(Ok(out)) => serde_json::from_slice::<Value>(&out.stdout).ok(),
+        _ => None,
+    };
+    drop(config);
+    let breakdown = report
+        .filter(|r| r["is_error"] != true)
+        .and_then(|r| crate::context::parse_report(r["result"].as_str().unwrap_or_default()));
+    let Some(breakdown) = breakdown else {
+        tracing::debug!(dir = %dir.display(), "no /context report from claude");
+        return;
+    };
+    // A newer turn may have finished meanwhile; its own measurement wins.
+    if read_context(&dir).await.is_some_and(|c| c.at == at)
+        && let Ok(raw) = serde_json::to_vec(&Parts { at, breakdown })
+    {
+        let _ = tokio::fs::write(dir.join(PARTS_FILE), raw).await;
+    }
 }
 
 /// The model call whose reply is streaming: `claude`'s assistant lines carry its message id.
@@ -587,7 +681,11 @@ struct Run {
     lines: Lines<BufReader<ChildStdout>>,
     child: Child,
     stderr: tokio::task::JoinHandle<String>,
-    _config: tempfile::TempDir,
+    /// The turn's private files; taken by the `/context` measurement at the end.
+    config: Option<tempfile::TempDir>,
+    /// `claude`'s arguments for that measurement.
+    measure_args: Vec<String>,
+    dir: PathBuf,
     _busy: Busy,
     /// Where a new session's id is kept once its first turn succeeded.
     remember: Option<(PathBuf, Uuid)>,
@@ -738,13 +836,14 @@ async fn start(
         Some(id) if !req.new_session => Session::Resume(id),
         _ => Session::New(Uuid::new_v4()),
     };
-    let remember = match session {
-        Session::New(id) => Some((session_file, id)),
-        Session::Resume(_) => None,
+    let (remember, session_id) = match session {
+        Session::New(id) => (Some((session_file, id)), id),
+        Session::Resume(id) => (None, id),
     };
     let (settings, extensions) = extensions(state).await?;
     let config = write_turn_files(&state.settings.agent_url, token, &req.system, &settings)
         .map_err(|e| e.to_string())?;
+    let measure_args = context_args(config.path(), session_id, model, &extensions);
     let mut cmd = claude(state);
     cmd.args(turn_args(config.path(), &session, model, &extensions))
         .current_dir(&dir)
@@ -776,7 +875,9 @@ async fn start(
         lines: BufReader::new(stdout).lines(),
         child,
         stderr,
-        _config: config,
+        config: Some(config),
+        measure_args,
+        dir,
         _busy: busy,
         remember,
         saw_result: false,
@@ -826,6 +927,11 @@ fn write_turn_files(
         ("mcp.json", config.to_string()),
         ("system.md", system.to_owned()),
         ("settings.json", settings.to_string()),
+        // For the `/context` measurement after the turn: no hook runs for it.
+        (
+            "measure.json",
+            json!({ "disableAllHooks": true }).to_string(),
+        ),
     ] {
         let path = dir.path().join(name);
         std::fs::write(&path, text)?;
@@ -894,8 +1000,9 @@ async fn next(mut run: Run) -> Option<(Result<Bytes, std::io::Error>, Run)> {
     }
     run.done = true;
     run.flush_call().await;
-    if let Some(context) = run.context.take()
-        && let Ok(raw) = serde_json::to_vec(&context)
+    let context = run.context.take();
+    if let Some(context) = &context
+        && let Ok(raw) = serde_json::to_vec(context)
     {
         let _ = tokio::fs::write(&run.context_file, raw).await;
     }
@@ -904,6 +1011,16 @@ async fn next(mut run: Run) -> Option<(Result<Bytes, std::io::Error>, Run)> {
     if status.as_ref().is_ok_and(std::process::ExitStatus::success) {
         if let Some((file, id)) = run.remember.take() {
             let _ = tokio::fs::write(file, id.to_string()).await;
+        }
+        // Off the turn's path: the runner's turn ends now, the breakdown comes a moment later.
+        if let (Some(context), Some(config)) = (context, run.config.take()) {
+            tokio::spawn(measure(
+                run.state.clone(),
+                run.dir.clone(),
+                config,
+                std::mem::take(&mut run.measure_args),
+                context.at,
+            ));
         }
         return None;
     }
@@ -1150,6 +1267,46 @@ mod tests {
         assert_eq!(
             (c.tokens, c.model.as_deref(), c.window),
             (212, Some("m1"), Some(200_000))
+        );
+    }
+
+    #[test]
+    fn context_is_measured_on_the_turns_setup_without_touching_the_session() {
+        let id = Uuid::new_v4();
+        let files = Path::new("/tmp/x");
+        let extensions = Extensions {
+            plugins: vec![PathBuf::from("/plugins/fmt")],
+            subagents: true,
+        };
+        let args = context_args(files, id, Some("sonnet"), &extensions);
+        let file = |name: &str| files.join(name).display().to_string();
+        for want in [
+            "-p".to_owned(),
+            "--tools=Task".into(),
+            "--strict-mcp-config".into(),
+            "--setting-sources=".into(),
+            "--model=sonnet".into(),
+            format!("--resume={id}"),
+            format!("--mcp-config={}", file("mcp.json")),
+            format!("--append-system-prompt-file={}", file("system.md")),
+            format!("--settings={}", file("measure.json")),
+            "--plugin-dir=/plugins/fmt".into(),
+            "--no-session-persistence".into(),
+            "--output-format=json".into(),
+        ] {
+            assert!(args.contains(&want), "{want} missing: {args:?}");
+        }
+        assert_eq!(args.last().map(String::as_str), Some("/context"));
+        assert!(
+            !args.iter().any(|a| a == "--verbose"
+                || a.contains("stream-json")
+                || *a == format!("--settings={}", file("settings.json"))),
+            "no stream, no hooks: {args:?}"
+        );
+        let dir = write_turn_files("http://127.0.0.1:7879", "t", "s", &settings_file(&[])).unwrap();
+        assert_eq!(
+            std::fs::read_to_string(dir.path().join("measure.json")).unwrap(),
+            r#"{"disableAllHooks":true}"#
         );
     }
 

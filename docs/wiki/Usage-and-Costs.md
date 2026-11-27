@@ -88,6 +88,26 @@ stays. **Compact now** (Claude Code agents) has the daemon run `claude`'s own
 `/compact` on the agent's session, so its model keeps a summary instead of
 the whole history; it never runs from message text.
 
+The popover also shows what fills the context, as a stacked bar and a row per
+part (system prompt, system tools, MCP tools, messages, free space), with the
+largest MCP tools under **MCP tools**. The total stays the exact count; the
+parts are estimates:
+
+- **Claude Code agents**: after each turn the daemon runs `claude`'s own
+  `/context` on the agent's session with the turn's MCP config, system prompt,
+  plugins and model. It is a local command (no model call), runs no hooks and
+  keeps the report out of the session (`--no-session-persistence`). The parts
+  are Claude Code's own, rounded (`2.5k`), and include its memory files,
+  skills, custom agents, deferred tools and autocompact buffer when there are
+  any. They show a moment after the turn ends.
+- **Agents behind the model proxy** (Claude, OpenAI-compatible, Codex, Gemini
+  CLI): the proxy measures the size of the newest request's system prompt, tool
+  definitions and messages (images at a flat size, never their text) and splits
+  the API's reported input tokens by them. Tools named `mcp__ferrobot__…` are
+  MCP tools, the rest system tools. The sizes are kept in memory only, so after
+  a daemon restart the breakdown comes back with the next call. Calls whose API
+  reports no tokens (Bedrock streaming) have none.
+
 ## API
 
 All routes need the operator token; the shapes are in `protocol/openapi.json`.
@@ -102,4 +122,6 @@ All routes need the operator token; the shapes are in `protocol/openapi.json`.
   provider, `five_hour` and `weekly` (`used_percent`, `resets`: Claude Code's
   own words or an RFC 3339 time for Codex), or an `error`.
 - `GET /v1/agents/{id}/context` returns `tracked`, `tokens`, `window`, `model`
-  and `at` for the context meter.
+  and `at` for the context meter, and `parts` (`kind`, `label`, `tokens`,
+  `deferred`), `tools` (MCP tools by size) and `source` (`claude_code` or
+  `request_size`; `null` when not measured) for its breakdown.

@@ -546,6 +546,7 @@ async fn forward(
         }
         call.model_from_body(&body);
     }
+    call.measure(family, &body);
     // Only the chat completions driver can drop every tool; the other harnesses keep their own.
     let sends_tools = family == Some(Family::ChatCompletions) && no_tools::sends_tools(&body);
     if let Some(q) = parts.uri.query() {

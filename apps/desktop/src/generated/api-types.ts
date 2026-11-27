@@ -179,7 +179,12 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** How full the agent's context is. */
+        /**
+         * How full the agent's context is and what fills it.
+         * @description The parts (system prompt, tools, messages, free space) come from `claude`'s own `/context`
+         *     after each turn for Claude Code agents, and are estimated from the newest request for agents
+         *     behind the model proxy.
+         */
         get: operations["get_context"];
         put?: never;
         post?: never;
@@ -1891,6 +1896,14 @@ export interface components {
             at?: string | null;
             /** @description Whether `POST /v1/agents/{id}/compact` works for this agent (Claude Code agents). */
             compact: boolean;
+            /**
+             * @description What fills the context, in the order measured; empty when not measured (see `source`).
+             *     Parts are estimates; `tokens` is exact.
+             */
+            parts: components["schemas"]["ContextPart"][];
+            /** @description The MCP tools (ferrobot's and connectors') in `parts`, largest first. */
+            tools: components["schemas"]["ContextTool"][];
+            source?: components["schemas"]["ContextSource"] | null;
         };
         /**
          * Format: uuid
@@ -2223,6 +2236,33 @@ export interface components {
             /** @description Register this redirect URI with the provider for an own OAuth app. */
             redirect_uri: string;
             check?: components["schemas"]["ConnectorCheck"] | null;
+        };
+        /** @description One part of the context. */
+        ContextPart: {
+            kind: components["schemas"]["ContextPartKind"];
+            /** @description The part's name as measured, e.g. `MCP tools (deferred)`. */
+            label: string;
+            /** Format: int64 */
+            tokens: number;
+            /** @description Tools the model sees only by name until it looks one up: listed, but not in the window. */
+            deferred: boolean;
+        };
+        /**
+         * @description What a part of the context holds.
+         * @enum {string}
+         */
+        ContextPartKind: "system_prompt" | "system_tools" | "mcp_tools" | "custom_agents" | "memory_files" | "skills" | "messages" | "autocompact_buffer" | "free_space" | "other";
+        /**
+         * @description How the parts were measured. Both are estimates; the total beside them is exact.
+         * @enum {string}
+         */
+        ContextSource: "claude_code" | "request_size";
+        /** @description One MCP tool's definition and its size. */
+        ContextTool: {
+            /** @description Tool name without the `mcp__ferrobot__` prefix. */
+            name: string;
+            /** Format: int64 */
+            tokens: number;
         };
         /** @description Messages two agents exchanged. */
         Conversation: {

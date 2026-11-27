@@ -6,6 +6,10 @@ All notable changes are listed here. The format follows
 
 ## [Unreleased]
 
+### Added
+
+- **What fills an agent's context.** The context ring's popover now splits the context into its parts, like Claude Code's own `/context`: system prompt, system tools, MCP tools (with the largest ones by name), messages and free space, as a stacked bar and a row per part. Claude Code agents get Claude Code's own numbers (memory files, skills, deferred tools and the autocompact buffer included): after each turn the daemon runs `claude`'s `/context` on the agent's session, a local command with no model call that leaves the session as it was. For agents behind the model proxy the parts are estimated from the size of the newest request, split by the input tokens the API reported; only sizes and tool names are kept, in memory. `GET /v1/agents/{id}/context` has new `parts`, `tools` and `source` fields.
+
 ## [0.1.11] - 2026-11-27
 
 ### Added

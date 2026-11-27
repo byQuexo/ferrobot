@@ -10,6 +10,7 @@ pub mod claude_code;
 pub mod clis;
 pub mod codex;
 pub mod connectors;
+pub mod context;
 pub mod credentials;
 pub mod desktop;
 pub mod discord;

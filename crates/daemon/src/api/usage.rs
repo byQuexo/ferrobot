@@ -15,6 +15,7 @@ use utoipa::{IntoParams, ToSchema};
 
 use super::{ApiResult, parse_id};
 use crate::AppState;
+use crate::context::{Breakdown, ContextPart, ContextSource, ContextTool};
 use crate::error::{ApiError, ErrorBody};
 use crate::limits::ProviderLimits;
 use crate::pricing::{self, Price, PriceEntry, Prices};
@@ -389,9 +390,31 @@ pub(crate) struct AgentContext {
     at: Option<OffsetDateTime>,
     /// Whether `POST /v1/agents/{id}/compact` works for this agent (Claude Code agents).
     compact: bool,
+    /// What fills the context, in the order measured; empty when not measured (see `source`).
+    /// Parts are estimates; `tokens` is exact.
+    parts: Vec<ContextPart>,
+    /// The MCP tools (ferrobot's and connectors') in `parts`, largest first.
+    tools: Vec<ContextTool>,
+    /// How `parts` were measured; `null` when there are none: before the first turn, right after
+    /// a Claude Code turn until `claude` has reported, after a daemon restart for agents behind
+    /// the proxy, and for calls whose API reports no tokens (Bedrock streaming).
+    source: Option<ContextSource>,
 }
 
-/// How full the agent's context is.
+impl AgentContext {
+    fn with(mut self, breakdown: Option<Breakdown>) -> Self {
+        if let Some(b) = breakdown {
+            (self.parts, self.tools, self.source) = (b.parts, b.tools, Some(b.source));
+        }
+        self
+    }
+}
+
+/// How full the agent's context is and what fills it.
+///
+/// The parts (system prompt, tools, messages, free space) come from `claude`'s own `/context`
+/// after each turn for Claude Code agents, and are estimated from the newest request for agents
+/// behind the model proxy.
 #[utoipa::path(get, path = "/v1/agents/{id}/context", tag = "usage",
     params(("id" = String, Path, description = "Agent id (UUID)")),
     responses((status = 200, body = AgentContext),
@@ -413,33 +436,52 @@ pub(crate) async fn get_context(
         let saved = crate::claude_code::context(&state, agent.id)
             .await
             .filter(|_| fresh);
+        let breakdown = match &saved {
+            Some(c) => crate::claude_code::breakdown(&state, agent.id, c).await,
+            None => None,
+        };
         let model = saved.as_ref().and_then(|c| c.model.clone()).or(configured);
-        return Ok(Json(AgentContext {
-            tracked: true,
-            tokens: saved.as_ref().map(|c| c.tokens),
-            window: saved
-                .as_ref()
-                .and_then(|c| c.window)
-                .or_else(|| model.as_deref().and_then(context_window)),
-            model,
-            at: saved.map(|c| c.at),
-            compact: true,
-        }));
+        return Ok(Json(
+            AgentContext {
+                tracked: true,
+                tokens: saved.as_ref().map(|c| c.tokens),
+                window: saved
+                    .as_ref()
+                    .and_then(|c| c.window)
+                    .or_else(|| model.as_deref().and_then(context_window)),
+                model,
+                at: saved.map(|c| c.at),
+                compact: true,
+                parts: Vec::new(),
+                tools: Vec::new(),
+                source: None,
+            }
+            .with(breakdown),
+        ));
     }
     // shortcut: an agent on its provider's default can show a side call on a smaller model; name the driver's main model here if that misleads.
     let usage = state
         .store
         .context_usage(agent.id, configured.clone())
         .await?;
+    let breakdown = usage
+        .as_ref()
+        .and_then(|u| crate::context::of_call(agent.id, &u.model, u.tokens));
     let model = usage.as_ref().map(|u| u.model.clone()).or(configured);
-    Ok(Json(AgentContext {
-        tracked: true,
-        tokens: usage.as_ref().map(|u| u.tokens),
-        window: model.as_deref().and_then(context_window),
-        model,
-        at: usage.map(|u| u.at),
-        compact: false,
-    }))
+    Ok(Json(
+        AgentContext {
+            tracked: true,
+            tokens: usage.as_ref().map(|u| u.tokens),
+            window: model.as_deref().and_then(context_window),
+            model,
+            at: usage.map(|u| u.at),
+            compact: false,
+            parts: Vec::new(),
+            tools: Vec::new(),
+            source: None,
+        }
+        .with(breakdown),
+    ))
 }
 
 /// Context window in tokens of a model id as providers write it (with `anthropic.`, `models/` or

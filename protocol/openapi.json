@@ -977,7 +977,8 @@
         "tags": [
           "usage"
         ],
-        "summary": "How full the agent's context is.",
+        "summary": "How full the agent's context is and what fills it.",
+        "description": "The parts (system prompt, tools, messages, free space) come from `claude`'s own `/context`\nafter each turn for Claude Code agents, and are estimated from the newest request for agents\nbehind the model proxy.",
         "operationId": "get_context",
         "parameters": [
           {
@@ -7536,7 +7537,9 @@
         "description": "How full an agent's context is, read from its newest model call.",
         "required": [
           "tracked",
-          "compact"
+          "compact",
+          "parts",
+          "tools"
         ],
         "properties": {
           "tracked": {
@@ -7577,6 +7580,31 @@
           "compact": {
             "type": "boolean",
             "description": "Whether `POST /v1/agents/{id}/compact` works for this agent (Claude Code agents)."
+          },
+          "parts": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ContextPart"
+            },
+            "description": "What fills the context, in the order measured; empty when not measured (see `source`).\nParts are estimates; `tokens` is exact."
+          },
+          "tools": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ContextTool"
+            },
+            "description": "The MCP tools (ferrobot's and connectors') in `parts`, largest first."
+          },
+          "source": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/ContextSource",
+                "description": "How `parts` were measured; `null` when there are none: before the first turn, right after\na Claude Code turn until `claude` has reported, after a daemon restart for agents behind\nthe proxy, and for calls whose API reports no tokens (Bedrock streaming)."
+              },
+              {
+                "type": "null"
+              }
+            ]
           }
         }
       },
@@ -8513,6 +8541,75 @@
             }
           }
         ]
+      },
+      "ContextPart": {
+        "type": "object",
+        "description": "One part of the context.",
+        "required": [
+          "kind",
+          "label",
+          "tokens",
+          "deferred"
+        ],
+        "properties": {
+          "kind": {
+            "$ref": "#/components/schemas/ContextPartKind"
+          },
+          "label": {
+            "type": "string",
+            "description": "The part's name as measured, e.g. `MCP tools (deferred)`."
+          },
+          "tokens": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "deferred": {
+            "type": "boolean",
+            "description": "Tools the model sees only by name until it looks one up: listed, but not in the window."
+          }
+        }
+      },
+      "ContextPartKind": {
+        "type": "string",
+        "description": "What a part of the context holds.",
+        "enum": [
+          "system_prompt",
+          "system_tools",
+          "mcp_tools",
+          "custom_agents",
+          "memory_files",
+          "skills",
+          "messages",
+          "autocompact_buffer",
+          "free_space",
+          "other"
+        ]
+      },
+      "ContextSource": {
+        "type": "string",
+        "description": "How the parts were measured. Both are estimates; the total beside them is exact.",
+        "enum": [
+          "claude_code",
+          "request_size"
+        ]
+      },
+      "ContextTool": {
+        "type": "object",
+        "description": "One MCP tool's definition and its size.",
+        "required": [
+          "name",
+          "tokens"
+        ],
+        "properties": {
+          "name": {
+            "type": "string",
+            "description": "Tool name without the `mcp__ferrobot__` prefix."
+          },
+          "tokens": {
+            "type": "integer",
+            "format": "int64"
+          }
+        }
       },
       "Conversation": {
         "type": "object",
