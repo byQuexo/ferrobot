@@ -101,6 +101,7 @@ fn in_discord(card: &QuestionEvent) -> Option<Question> {
         Some(
             Approval::AddConnector { .. }
                 | Approval::AddCli { .. }
+                | Approval::AddCommand { .. }
                 | Approval::ToolCall { critical: true, .. },
         )
     ) {

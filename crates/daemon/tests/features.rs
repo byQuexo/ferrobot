@@ -9941,3 +9941,154 @@ async fn a_task_ends_at_its_limit_on_stop_and_when_cleared() {
         "nothing to clear is fine"
     );
 }
+
+#[tokio::test]
+async fn slash_commands_start_with_goal_keep_edits_and_survive_a_restart() {
+    let dir = tempfile::tempdir().unwrap();
+    let db = dir.path().join("ferrobot.db");
+    let backend = Arc::new(StatefulBackend::default());
+    let open = || ferrobot_store::Store::open(&db).unwrap();
+    let d = start_on(open(), backend.clone(), None, "127.0.0.1:0", |_| {}).await;
+    let (status, list) = http(&d.ui, "GET", "/v1/commands", None).await;
+    assert_eq!(status, 200);
+    assert_eq!(
+        list,
+        json!([{
+            "name": "goal",
+            "description": "Keep working until this is reached, checked after every turn",
+            "prompt": "$ARGUMENTS",
+            "as_task": true,
+            "added_by": null,
+        }]),
+        "the example a new daemon starts with"
+    );
+    let ok =
+        json!({"name": "review", "description": "Review a change", "prompt": "Review $ARGUMENTS"});
+    for bad in [
+        json!([{"name": "task", "description": "d", "prompt": "p"}]),
+        json!([{"name": "Review", "description": "d", "prompt": "p"}]),
+        json!([ok, ok]),
+        json!([{"name": "x", "description": "d", "prompt": "  "}]),
+        json!([{"name": "x", "description": "two\nlines", "prompt": "p"}]),
+        json!([{"name": "x", "description": "d", "prompt": "p".repeat(4001)}]),
+    ] {
+        let (status, body) = http(&d.ui, "PUT", "/v1/commands", Some(bad.clone())).await;
+        assert_eq!(status, 400, "{bad}: {body}");
+    }
+    let (status, saved) = http(&d.ui, "PUT", "/v1/commands", Some(json!([ok]))).await;
+    assert_eq!(status, 200, "{saved}");
+    assert_eq!(saved[0]["as_task"], false);
+    let (status, saved) = http(&d.ui, "PUT", "/v1/commands", Some(json!([]))).await;
+    assert_eq!((status, saved), (200, json!([])));
+    let id = create_id(&d, json!({"name": "ada"})).await;
+    let goal = json!({"goal": "ship the release"});
+    let path = format!("/v1/agents/{id}/goal");
+    assert_eq!(http(&d.ui, "PUT", &path, Some(goal)).await.0, 200);
+    drop(d);
+
+    let d = start_on(open(), backend, None, "127.0.0.1:0", |_| {}).await;
+    let (_, list) = http(&d.ui, "GET", "/v1/commands", None).await;
+    assert_eq!(list, json!([]), "a deleted example stays deleted");
+    let (status, goal) = http(&d.ui, "GET", &path, None).await;
+    assert_eq!(
+        (status, goal["goal"].as_str()),
+        (200, Some("ship the release"))
+    );
+}
+
+#[tokio::test]
+async fn agents_offer_commands_on_a_card_even_in_auto_mode() {
+    let backend = Arc::new(StatefulBackend::default());
+    let d = start(backend.clone(), None, "127.0.0.1:0").await;
+    let auto = json!({"auto_mode": true});
+    assert_eq!(http(&d.ui, "PUT", "/v1/settings", Some(auto)).await.0, 200);
+    let ada = create_id(&d, json!({"name": "ada"})).await;
+    create(&d, json!({"name": "cy", "tools": ["team"]})).await;
+    for (name, offers) in [("ada", true), ("cy", false)] {
+        let version = ferrobot_core::PROTOCOL_VERSION;
+        let mut ws = open_runner(&d.agents, &backend.token(name), version, false).await;
+        let DaemonFrame::Welcome { instructions, .. } = next_frame(&mut ws).await else {
+            panic!("expected a welcome");
+        };
+        assert_eq!(
+            instructions.contains("add_command"),
+            offers,
+            "{name}: {instructions}"
+        );
+    }
+
+    let client = mcp_as(&d, backend.token("ada")).await;
+    let offer = |name: &'static str| {
+        let prompt = format!("Write the weekly report for $ARGUMENTS.\n\nKeep it short. ({name})");
+        json!({"name": name, "description": "Sum up the week", "prompt": prompt, "as_task": true})
+    };
+    let commands = || async { http(&d.ui, "GET", "/v1/commands", None).await.1 };
+
+    // Declined: nothing is added, and the agent hears of it.
+    let pending = call(&client, "add_command", offer("weekly")).await;
+    assert_eq!(pending["status"], "pending", "a card even in Auto mode");
+    let qid = approval_card(&d, &ada, 0).await;
+    let card = events(&d, &ada)
+        .await
+        .into_iter()
+        .find(|e| e["id"] == qid)
+        .unwrap();
+    assert_eq!(card["payload"]["approval"]["kind"], "add_command");
+    let shown = card["payload"]["card"]["questions"][0]["prompt"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    assert!(
+        shown.contains("/weekly")
+            && shown.contains("Write the weekly report for $ARGUMENTS.\n\nKeep it short."),
+        "the full prompt: {shown}"
+    );
+    assert_eq!(
+        commands().await.as_array().unwrap().len(),
+        1,
+        "only /goal so far"
+    );
+    assert_eq!(decide(&d, &ada, qid, "decline").await.0, 202);
+    assert_eq!(commands().await.as_array().unwrap().len(), 1);
+    let told = mail(&d, &ada).await;
+    assert!(
+        told.iter()
+            .any(|m| m["body"] == "The operator declined your command /weekly."),
+        "{told:?}"
+    );
+
+    // Approved: added, with who offered it.
+    call(&client, "add_command", offer("weekly")).await;
+    let qid = approval_card(&d, &ada, qid).await;
+    assert_eq!(decide(&d, &ada, qid, "approve").await.0, 202);
+    let list = commands().await;
+    assert_eq!(list[1]["name"], "weekly");
+    assert_eq!(list[1]["added_by"], ada.as_str());
+    assert_eq!(list[1]["as_task"], true);
+
+    // A name in use is refused at once; one taken while the card waits blocks approval.
+    let taken = rmcp::model::CallToolRequestParams::new("add_command")
+        .with_arguments(offer("goal").as_object().cloned().unwrap());
+    assert!(client.call_tool(taken).await.is_err());
+    call(&client, "add_command", offer("notes")).await;
+    let qid = approval_card(&d, &ada, qid).await;
+    let mut list = commands().await.as_array().unwrap().clone();
+    list.push(json!({"name": "notes", "description": "Mine", "prompt": "Take notes"}));
+    assert_eq!(
+        http(&d.ui, "PUT", "/v1/commands", Some(json!(list)))
+            .await
+            .0,
+        200
+    );
+    assert_eq!(decide(&d, &ada, qid, "approve").await.0, 409);
+    assert_eq!(
+        commands().await[2]["description"],
+        "Mine",
+        "the operator's stays"
+    );
+    assert_eq!(
+        decide(&d, &ada, qid, "decline").await.0,
+        202,
+        "the card stays open"
+    );
+}

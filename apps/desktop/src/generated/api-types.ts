@@ -2005,6 +2005,14 @@ export interface components {
             kind: "add_cli";
         } | {
             name: string;
+            description: string;
+            prompt: string;
+            as_task: boolean;
+            requester: components["schemas"]["AgentId"];
+            /** @enum {string} */
+            kind: "add_command";
+        } | {
+            name: string;
             schedule: string;
             prompt: string;
             requester: components["schemas"]["AgentId"];
@@ -2216,6 +2224,8 @@ export interface components {
             prompt: string;
             /** @description Send it as a task with a goal, like `/task`. */
             as_task?: boolean;
+            /** @description The agent that offered it on a card the operator approved; `null`: the operator's own. */
+            added_by?: string | null;
         };
         /** @description A remote MCP server whose tools assigned agents can use. */
         Connector: {

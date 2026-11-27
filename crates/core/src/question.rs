@@ -119,6 +119,15 @@ pub enum Approval {
     /// An agent wants a CLI in its computer (`propose_cli` tool). Approving adds it for that
     /// agent; a token, if it needs one, goes in under Settings, never on a card.
     AddCli { cli: crate::Cli, requester: AgentId },
+    /// An agent offers the operator a slash command (`add_command` tool). Its prompt is later
+    /// sent in the operator's name, so Auto mode never skips this card.
+    AddCommand {
+        name: String,
+        description: String,
+        prompt: String,
+        as_task: bool,
+        requester: AgentId,
+    },
     /// An agent wants a routine of its own (`create_routine` tool): `prompt` reaches it on
     /// `schedule` (cron, the daemon's time zone).
     CreateRoutine {

@@ -8046,6 +8046,41 @@
           },
           {
             "type": "object",
+            "description": "An agent offers the operator a slash command (`add_command` tool). Its prompt is later\nsent in the operator's name, so Auto mode never skips this card.",
+            "required": [
+              "name",
+              "description",
+              "prompt",
+              "as_task",
+              "requester",
+              "kind"
+            ],
+            "properties": {
+              "name": {
+                "type": "string"
+              },
+              "description": {
+                "type": "string"
+              },
+              "prompt": {
+                "type": "string"
+              },
+              "as_task": {
+                "type": "boolean"
+              },
+              "requester": {
+                "$ref": "#/components/schemas/AgentId"
+              },
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "add_command"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
             "description": "An agent wants a routine of its own (`create_routine` tool): `prompt` reaches it on\n`schedule` (cron, the daemon's time zone).",
             "required": [
               "name",
@@ -8613,6 +8648,13 @@
           "as_task": {
             "type": "boolean",
             "description": "Send it as a task with a goal, like `/task`."
+          },
+          "added_by": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "The agent that offered it on a card the operator approved; `null`: the operator's own."
           }
         }
       },

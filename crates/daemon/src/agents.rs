@@ -360,6 +360,12 @@ const KNOWLEDGE_SHOWN: usize = 50;
 const KNOWLEDGE_READ: u32 = 1000;
 const KNOWLEDGE_ENTRY_CHARS: usize = 300;
 /// Pinned, so an upstream release cannot change what agents run.
+const COMMANDS_NOTE: &str = "Your operator can keep reusable prompts as slash commands in their \
+message box. When they ask for the same kind of thing again, or a request would make a handy \
+reusable prompt, offer to turn it into one, e.g. \"This sounds like a good case for a command: \
+shall I add /weekly-report for you?\" If they agree or ask for one, use add_command; they approve \
+it on a card.";
+
 pub(crate) const SKILLS_CLI: &str = "npx -y skills@1.9.1";
 /// For agents with a shell: skills from skills.sh, installed in their home and followed by hand,
 /// so every harness can use them.
@@ -405,6 +411,9 @@ pub(crate) async fn runner_instructions(state: &AppState, agent: &Agent) -> Stri
     }
     if agent.tools.contains(&ToolGroup::Shell) {
         parts.push(skills_note());
+    }
+    if agent.tools.contains(&ToolGroup::Operator) {
+        parts.push(COMMANDS_NOTE.to_owned());
     }
     if agent.tools.contains(&ToolGroup::Memory) {
         parts.push(knowledge_base(state).await);

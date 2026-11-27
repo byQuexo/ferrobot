@@ -18,8 +18,8 @@ use serde::{Deserialize, Serialize};
 
 use crate::{
     AgentRequest, AgentRequestOutcome, AgentToolsOutcome, AgentToolsRequest, Caller,
-    ConnectorRequest, MAX_MEMORY_KEY_BYTES, MAX_MESSAGE_BYTES, McpState, RoutineRequest,
-    RoutineRequestOutcome,
+    CommandRequest, ConnectorRequest, MAX_MEMORY_KEY_BYTES, MAX_MESSAGE_BYTES, McpState,
+    RoutineRequest, RoutineRequestOutcome,
 };
 
 type ToolResult<T> = Result<Json<T>, ErrorData>;
@@ -290,6 +290,28 @@ pub struct CreateRoutineResult {
     /// Id of the routine, when created.
     pub routine_id: Option<i64>,
     /// What happened, in words.
+    pub note: String,
+}
+
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct AddCommandArgs {
+    /// What follows the `/`: 1-32 of `a-z`, `0-9` and `-`, starting with a letter, e.g.
+    /// `weekly-report`. Not `task`.
+    pub name: String,
+    /// One short line for the operator's command menu (1-100 characters).
+    pub description: String,
+    /// What the command sends in the operator's name, up to 4000 bytes. `$ARGUMENTS` becomes the
+    /// text typed after the command; without it, that text follows after a blank line.
+    pub prompt: String,
+    /// Send it as a task with a goal: the agent keeps working until it is done.
+    #[serde(default)]
+    pub as_task: bool,
+}
+
+#[derive(Debug, Serialize, JsonSchema)]
+pub struct AddCommandResult {
+    /// `pending`: waiting for the operator.
+    pub status: String,
     pub note: String,
 }
 
@@ -1112,6 +1134,36 @@ impl FerrobotTools {
     }
 
     #[tool(
+        description = "Offer your operator a slash command for their message box: typing \
+        `/name rest` sends `prompt` in their name, with `$ARGUMENTS` replaced by `rest`, to \
+        whichever agent's chat they are in. Use it when they ask for one or agree to your offer. \
+        They always see a card with the full prompt first; a message tells you whether they added \
+        it. Finish your turn after asking."
+    )]
+    async fn add_command(
+        &self,
+        Extension(parts): Extension<http::request::Parts>,
+        Parameters(args): Parameters<AddCommandArgs>,
+    ) -> ToolResult<AddCommandResult> {
+        let me = caller(&parts)?.0.id;
+        let request = CommandRequest {
+            name: args.name.trim().to_owned(),
+            description: args.description,
+            prompt: args.prompt,
+            as_task: args.as_task,
+        };
+        self.state
+            .notifier
+            .request_command(me, request)
+            .await
+            .map_err(invalid)?;
+        Ok(Json(AddCommandResult {
+            status: "pending".into(),
+            note: PENDING_NOTE.into(),
+        }))
+    }
+
+    #[tool(
         description = "Ask your operator to add a connector and give it to you: a remote MCP \
         server (`url`) or a local one started on their computer (`command`, e.g. an `npx` \
         server). They see a card with its name and URL or exact command; a local server always \
@@ -1559,7 +1611,7 @@ pub(crate) fn group_of(tool: &str) -> Option<ToolGroup> {
         | "call_agents" => ToolGroup::Team,
         "remember" | "recall" | "forget" => ToolGroup::Memory,
         "ask_user" | "share_file" | "invite_to_call" | "hang_up" | "list_guides" | "read_guide"
-        | "react" | "send_to_discord" | "finish_task" => ToolGroup::Operator,
+        | "react" | "send_to_discord" | "finish_task" | "add_command" => ToolGroup::Operator,
         "create_agent" | "set_agent_tools" => ToolGroup::CreateAgents,
         "add_connector" | "propose_cli" => ToolGroup::AddConnectors,
         "create_routine" => ToolGroup::Routines,
