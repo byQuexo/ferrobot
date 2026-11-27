@@ -132,7 +132,26 @@ const SYSTEM_TEXT: Record<string, (p: Payload) => string> = {
   new_session: () => "New chat: the agent starts fresh from here",
   compacted: () => "Compacted the conversation: the agent keeps a summary of what came before",
   renamed: (p) => `Renamed from @${str(p["from"])} to @${str(p["to"])}`,
+  goal: goalText,
 };
+
+/** A task's progress as a chat line; its start shows as the operator's message instead. */
+function goalText(p: Payload): string {
+  const note = str(p["note"]) || str(p["reason"]);
+  const why = note ? `: ${note}` : "";
+  switch (p["state"]) {
+    case "continued":
+      return `Task not done yet, back to work (step ${String(Number(p["step"]) + 1)})${why}`;
+    case "achieved":
+      return `Task achieved${why}`;
+    case "stopped":
+      return `Task stopped${why}`;
+    case "gave_up":
+      return `Task gave up${why}`;
+    default:
+      return "";
+  }
+}
 
 /** An agent's chat without its call room messages and the turns they started; cards and files
  * have no turn and stay. `roomTurn`: the newest turn is one of them. */
@@ -185,6 +204,8 @@ export function buildTimeline(
   // The operator's shows on the agent's message; the note that told the agent stays hidden.
   const mine = new Map<number, string>();
   const notes = new Set<number>();
+  // A task's message shows its goal without the instructions; its continuations stay hidden.
+  const goals = new Map<number, string>();
   for (const e of events) {
     const p = e.payload as Payload;
     if (e.kind === "question_answered") {
@@ -195,6 +216,9 @@ export function buildTimeline(
     } else if (e.kind === "user_reaction" && typeof p["event_id"] === "number") {
       mine.set(p["event_id"], str(p["emoji"]));
       if (typeof p["note_id"] === "number") notes.add(p["note_id"]);
+    } else if (e.kind === "goal" && typeof p["note_id"] === "number") {
+      if (p["state"] === "set") goals.set(p["note_id"], str(p["goal"]));
+      else notes.add(p["note_id"]);
     }
   }
   const answerMessages = new Set([...answers.values()].map((a) => a.message_id));
@@ -229,7 +253,7 @@ export function buildTimeline(
     if (m.recipient === agentId) {
       if (m.sender.kind === "user") {
         const error = m.status === "failed" ? failures.get(m.id) : undefined;
-        const { text: body, discord } = splitDiscord(m.body);
+        const { text: body, discord } = splitDiscord(goals.get(m.id) ?? m.body);
         const { text, files } = splitAttachments(body);
         const reaction = reactions.get(m.id) ?? null;
         push({
