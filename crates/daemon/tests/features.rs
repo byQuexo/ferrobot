@@ -4193,7 +4193,15 @@ async fn html_blocks_from_the_chat_open_as_sandboxed_pages() {
     let no_token = [("Authorization", "")];
     let (status, headers, body) = http_raw(&d.ui, "GET", &url, &no_token, b"").await;
     assert_eq!(status, 200);
-    assert_eq!(String::from_utf8_lossy(&body), html);
+    let body = String::from_utf8_lossy(&body);
+    assert!(
+        body.starts_with("<style>:where(:root){scrollbar-width:thin"),
+        "{body}"
+    );
+    assert!(
+        body.ends_with(&html),
+        "the page follows the scrollbar style: {body}"
+    );
     let csp = headers
         .iter()
         .find(|(k, _)| k.eq_ignore_ascii_case("content-security-policy"))
@@ -4276,9 +4284,11 @@ async fn agents_share_files_that_open_from_storage() {
     let no_token = [("Authorization", "")];
     let (status, headers, body) = http_raw(&d.ui, "GET", &url, &no_token, b"").await;
     assert_eq!(status, 200);
-    assert_eq!(
-        String::from_utf8_lossy(&body),
-        "content of /home/node/out/report.html"
+    let body = String::from_utf8_lossy(&body);
+    assert!(body.contains("scrollbar-width:thin"), "{body}");
+    assert!(
+        body.ends_with("content of /home/node/out/report.html"),
+        "{body}"
     );
     let csp = headers
         .iter()

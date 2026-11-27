@@ -192,6 +192,8 @@ async fn stop_teammates(state: &AppState, lead: AgentId, goal: &str, note: &str)
         .await
         .map_or_else(|_| "its agent".to_owned(), |a| format!("@{}", a.name));
     let why = format!("{name}'s task stopped: {note}");
+    // The lead counts as stopped too, so a teammate's stopped part does not report back to it.
+    state.hub.mark_stopped(&[lead]);
     if let Err(e) = crate::stop::stop_agents(state, team, &open, &why).await {
         tracing::warn!(error = %e, %lead, "cannot stop the task's teammates");
     }
