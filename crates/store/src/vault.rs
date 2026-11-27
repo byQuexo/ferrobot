@@ -62,8 +62,18 @@ fn file_stem(key: &str) -> String {
         })
         .collect();
     let safe = safe.trim_matches([' ', '-']);
+    let reserved = |s: &str| {
+        let s = s.to_ascii_lowercase();
+        matches!(s.as_str(), "con" | "prn" | "aux" | "nul")
+            || (s.len() == 4
+                && (s.starts_with("com") || s.starts_with("lpt"))
+                && s.as_bytes()[3].is_ascii_digit())
+    };
     if safe.is_empty() {
         "memory".to_owned()
+    } else if reserved(safe) {
+        // Windows device names cannot be files.
+        format!("{safe}-note")
     } else {
         safe.chars().take(100).collect()
     }
@@ -211,15 +221,43 @@ pub(crate) fn search(dir: &Path, query: &str, limit: u32) -> Vec<MemoryEntry> {
         .collect()
 }
 
-/// Keeps a renamed agent's notes: its folder follows the new name unless that one exists.
-pub(crate) fn rename_folder(c: &Connection, old: &str, new: &str) -> Result<(), StoreError> {
+/// Keeps a renamed agent's notes: its folder follows the new name. A folder already there
+/// belonged to an agent gone before, so it is archived first, never merged.
+pub(crate) fn rename_folder(
+    c: &Connection,
+    old: &str,
+    new: &str,
+    id: &str,
+) -> Result<(), StoreError> {
     if let Some(v) = vault(c)? {
         let (from, to) = (v.join(ROOT).join(old), v.join(ROOT).join(new));
-        if from.is_dir() && !to.exists() {
+        if from.is_dir() {
+            archive_folder(c, new, id)?;
             std::fs::rename(from, to).map_err(|e| io(&e))?;
         }
     }
     Ok(())
+}
+
+/// Moves the notes folder under `name` to `.archived` (Obsidian hides dot folders), so an agent
+/// that gets this name later starts with no one else's notes. `id` keeps archives apart.
+pub(crate) fn archive_folder(c: &Connection, name: &str, id: &str) -> Result<(), StoreError> {
+    let Some(v) = vault(c)? else {
+        return Ok(());
+    };
+    let from = v.join(ROOT).join(name);
+    if !from.is_dir() {
+        return Ok(());
+    }
+    let shelf = v.join(ROOT).join(".archived");
+    std::fs::create_dir_all(&shelf).map_err(|e| io(&e))?;
+    let mut to = shelf.join(format!("{name}-{id}"));
+    let mut n = 1;
+    while to.exists() {
+        n += 1;
+        to = shelf.join(format!("{name}-{id}-{n}"));
+    }
+    std::fs::rename(from, to).map_err(|e| io(&e))
 }
 
 /// A stored memory to copy: key, content, author id, author name, owning agent.
@@ -292,6 +330,9 @@ mod tests {
         assert_eq!(file_stem(".hidden"), "hidden");
         assert_eq!(file_stem("a/b\\c:d"), "a-b-c-d");
         assert_eq!(file_stem("..."), "memory");
+        assert_eq!(file_stem("CON"), "CON-note");
+        assert_eq!(file_stem("com7"), "com7-note");
+        assert_eq!(file_stem("console"), "console");
     }
 
     #[test]
@@ -412,6 +453,27 @@ mod tests {
         );
         assert!(store.forget(ada, "deploy".into()).await.unwrap());
         assert!(!root.join("ada-two/deploy.md").exists());
+
+        // A deleted agent's notes are archived, so a newcomer with its name starts empty.
+        store
+            .remember(bob, "secret".into(), "bob's own note".into())
+            .await
+            .unwrap();
+        store.delete_agent(bob).await.unwrap();
+        assert!(!root.join("bob").exists(), "archived");
+        let new_bob = store
+            .create_agent(NewAgent {
+                created_by: None,
+                name: AgentName::parse("bob").unwrap(),
+                description: String::new(),
+                instructions: String::new(),
+            })
+            .await
+            .unwrap();
+        assert_eq!(
+            store.recall(new_bob.id, String::new(), 10).await.unwrap(),
+            []
+        );
 
         store.set_memory_vault(None).await.unwrap();
         let back = store.recall(ada, String::new(), 10).await.unwrap();

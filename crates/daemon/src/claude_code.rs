@@ -841,7 +841,13 @@ fn write_turn_files(
 /// `claude` attaches any `@path` and runs a leading `/command` before the model sees the prompt,
 /// which comes from the sandbox or other agents: `@` paths get a space, a leading `/` or `!` fails.
 fn defuse(prompt: &str) -> Result<String, ()> {
-    if matches!(prompt.trim_start().chars().next(), Some('/' | '!')) {
+    let invisible = |c: char| {
+        c.is_whitespace() || matches!(c, '\u{feff}' | '\u{200b}'..='\u{200f}' | '\u{2060}')
+    };
+    if matches!(
+        prompt.trim_start_matches(invisible).chars().next(),
+        Some('/' | '!')
+    ) {
         return Err(());
     }
     let mut out = String::with_capacity(prompt.len());
@@ -849,7 +855,11 @@ fn defuse(prompt: &str) -> Result<String, ()> {
     while let Some(at) = rest.find('@') {
         out.push_str(&rest[..=at]);
         rest = &rest[at + 1..];
-        let token = rest.split(char::is_whitespace).next().unwrap_or_default();
+        // Split only where every reader splits: `claude` keeps U+0085 inside a token.
+        let token = rest
+            .split(|c: char| c.is_ascii_whitespace())
+            .next()
+            .unwrap_or_default();
         // A trailing colon or comma is punctuation (`@bob:`), not part of a path.
         let inner =
             token.trim_end_matches([',', '.', ';', ':', '!', '?', ')', ']', '}', '"', '\'']);
@@ -865,15 +875,22 @@ async fn next(mut run: Run) -> Option<(Result<Bytes, std::io::Error>, Run)> {
     if run.done {
         return None;
     }
-    if let Ok(Some(line)) = run.lines.next_line().await {
+    while let Ok(Some(line)) = run.lines.next_line().await {
         let now = time::OffsetDateTime::now_utc();
-        if let Ok(v) = serde_json::from_str::<Value>(&line) {
-            run.saw_result |= v["type"] == "result";
-            Context::read(&mut run.context, &v);
-            run.track_call(&v, now).await;
-        }
         run.last_line = now;
-        return Some((Ok(Bytes::from(line + "\n")), run));
+        let Ok(v) = serde_json::from_str::<Value>(&line) else {
+            continue;
+        };
+        run.saw_result |= v["type"] == "result";
+        Context::read(&mut run.context, &v);
+        run.track_call(&v, now).await;
+        // Only the turn goes back: the init line and hook output describe the host.
+        if matches!(
+            v["type"].as_str(),
+            Some("assistant" | "user" | "stream_event" | "result")
+        ) {
+            return Some((Ok(Bytes::from(line + "\n")), run));
+        }
     }
     run.done = true;
     run.flush_call().await;
@@ -1020,13 +1037,20 @@ async fn run_computer(
 ) -> Result<CallToolResult, String> {
     let handle = crate::lifecycle::handle_of(agent).ok_or("your computer is not running")?;
     let backend = &state.backend;
-    let workspace = format!("{}/workspace", backend.home().trim_end_matches('/'));
+    let home = backend.home().trim_end_matches('/').to_owned();
+    let workspace = format!("{home}/workspace");
     let resolve = |p: &str| {
         let full = if p.starts_with('/') {
             p.to_owned()
         } else {
             format!("{workspace}/{p}")
         };
+        // Files go through the engine as root, so nothing outside the agent's own home.
+        if !full.starts_with(&format!("{home}/")) {
+            return Err(format!(
+                "only files in your home folder ({home}) can be read or written"
+            ));
+        }
         SandboxPath::parse(&full).map_err(|e| e.to_string())
     };
     let text = match name {
@@ -1275,6 +1299,12 @@ Last 24h · 1485 requests · 11 sessions
             "mentions and emails stay as they are"
         );
         assert!(defuse("/cost").is_err() && defuse("  !touch x").is_err());
+        assert!(defuse("\u{feff}/cost").is_err() && defuse("\u{200b} !x").is_err());
+        let hidden = defuse("see @x\u{85}/../../etc/hosts").unwrap();
+        assert!(
+            hidden.contains("@ x"),
+            "a path hidden behind U+0085 is defused: {hidden}"
+        );
     }
 
     #[test]

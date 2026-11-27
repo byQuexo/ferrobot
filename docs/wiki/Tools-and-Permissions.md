@@ -120,21 +120,34 @@ driver) and every connector tool it calls, before it happens:
 - **Risky** steps get a card unless Auto mode is on: deleting a folder
   (`rm -r`), `git push`, `git reset --hard`, `git clean -f`, sending data with
   `curl`/`wget` (POST, `-d`, uploads), `ssh`/`scp`/remote `rsync`, `sudo`,
-  killing processes, sending mail, and connector tools whose names act on the
-  outside world (send, post, create, update and similar; reading, listing and
-  searching stay safe). The card says what the step does and why it asks.
+  killing processes, sending mail, a command line the check cannot read
+  (`bash -c`, `eval`, `python -c`, `node -e`), `gh pr merge` and `gh api`
+  calls that change something, connector tools whose names act on the outside
+  world (send, post, create, update and similar) and connector tools that run
+  whatever their arguments say (SQL, HTTP requests, GraphQL; reading, listing
+  and searching stay safe). The card shows the whole command, or the
+  connector call's arguments, and every reason it asks.
 - **Critical** steps always get a card, even in Auto mode: connector tools
-  that move money (pay, payment, payout, transfer, refund, charge) or delete
-  or cancel something (delete, remove, trash, cancel, destroy, purge),
-  force-pushing (`git push --force`, `-f`, `+branch`) and publishing a package
-  (`npm`/`cargo`/`pnpm`/`yarn`/`twine`/`gem publish`). The card says "a very
-  risky step".
+  that move money (pay, payment, payout, transfer, refund, charge, invoice) or
+  delete or cancel something (delete, remove, trash, cancel, destroy, purge,
+  drop), in any spelling (`createRefund`, `CREATE_REFUNDS`), force-pushing
+  (`git push --force`, `-f`, `-uf`, `+branch`, also after `git -C dir`),
+  deleting remote branches, deleting anything with `gh` and publishing a
+  package (`npm`/`cargo`/`pnpm`/`yarn`/`twine`/`gem publish`) or a release.
+  The card says "a very risky step".
 - **Dangerous** steps are always refused, Auto mode or not: deleting `/` or
   the home folder, formatting a disk, writing to a raw device, piping a
   download into a shell, a fork bomb.
 
 The classifier is plain rules, so it is fast, free and predictable, and it
-misses clever variations. The sandbox stays the real boundary.
+misses clever variations: it reads the command line, not a script the agent
+wrote and then runs. A command too long to check on a card (over 4,000
+characters) is refused. Codex agents run most of their own commands without
+asking, so they never get a CLI account. The sandbox stays the real boundary.
+
+Agents also cannot write their harnesses' own settings folders in the
+workspace (`.claude`, `.codex`, `.gemini`), which could start processes
+with Shell turned off.
 
 ## Auto mode
 

@@ -329,6 +329,45 @@ fn check_issuer(config: &ClientConfig, metadata: &AuthorizationMetadata) -> Resu
     }
 }
 
+/// Without an own app, the code and verifier go wherever the metadata says: every endpoint must
+/// sit on the issuer's own origin, and only a connector on this computer may name this computer.
+fn check_endpoints(
+    c: &Connector,
+    config: &ClientConfig,
+    metadata: &AuthorizationMetadata,
+) -> Result<(), String> {
+    let endpoints = [
+        Some(metadata.authorization_endpoint.as_str()),
+        Some(metadata.token_endpoint.as_str()),
+        metadata.registration_endpoint.as_deref(),
+    ];
+    let endpoints = endpoints.into_iter().flatten();
+    if !is_loopback(&c.url) && endpoints.clone().any(is_loopback) {
+        return Err(format!(
+            "{}'s OAuth metadata points at this computer",
+            c.name
+        ));
+    }
+    if config.client_id.is_some() {
+        return Ok(());
+    }
+    let origin = |u: &str| url::Url::parse(u).ok().map(|u| u.origin());
+    let issuer = metadata.issuer.as_deref().and_then(origin);
+    match issuer {
+        Some(issuer)
+            if endpoints
+                .clone()
+                .all(|e| origin(e).as_ref() == Some(&issuer)) =>
+        {
+            Ok(())
+        }
+        _ => Err(format!(
+            "{}'s OAuth endpoints are not on its issuer's address; add an own OAuth app instead",
+            c.name
+        )),
+    }
+}
+
 /// Where the browser comes back after signing in (register this with the
 /// provider when using an own OAuth app).
 pub fn redirect_uri(state: &AppState) -> String {
@@ -372,6 +411,7 @@ pub async fn start(state: &AppState, c: &Connector) -> Result<String, String> {
     let mut manager = manager(state, c).await.map_err(fail)?;
     let metadata = discover(&mut manager).await.map_err(fail)?;
     check_issuer(&config, &metadata)?;
+    check_endpoints(c, &config, &metadata)?;
     let started = fingerprint(state, c.id)
         .await
         .ok_or("the connector is gone")?;
@@ -732,6 +772,52 @@ mod tests {
         assert!(check_issuer(&app(Some(google)), &meta(None)).is_err());
         assert!(check_issuer(&app(None), &meta(Some(google))).is_err());
         assert!(check_issuer(&ClientConfig::default(), &meta(Some("https://any"))).is_ok());
+    }
+
+    #[test]
+    fn registered_clients_keep_every_endpoint_on_the_issuer() {
+        let meta = |token: &str| -> AuthorizationMetadata {
+            serde_json::from_value(serde_json::json!({
+                "issuer": "https://id.example.com",
+                "authorization_endpoint": "https://id.example.com/authorize",
+                "token_endpoint": token,
+                "registration_endpoint": "https://id.example.com/register",
+            }))
+            .unwrap()
+        };
+        let connector = |url: &str| Connector {
+            id: Uuid::nil(),
+            name: "x".into(),
+            url: url.into(),
+            command: None,
+            token_env: None,
+            tools: None,
+            created_at: time::OffsetDateTime::UNIX_EPOCH,
+        };
+        let remote = connector("https://mcp.example.com/mcp");
+        let dynamic = ClientConfig::default();
+        let own = ClientConfig {
+            client_id: Some("app".into()),
+            ..ClientConfig::default()
+        };
+        let ok = meta("https://id.example.com/token");
+        assert!(check_endpoints(&remote, &dynamic, &ok).is_ok());
+        let stolen = meta("https://evil.example/token");
+        assert!(
+            check_endpoints(&remote, &dynamic, &stolen).is_err(),
+            "code and verifier elsewhere"
+        );
+        assert!(
+            check_endpoints(&remote, &own, &stolen).is_ok(),
+            "an own app is checked by issuer"
+        );
+        let local = meta("http://127.0.0.1:9/token");
+        assert!(
+            check_endpoints(&remote, &own, &local).is_err(),
+            "never this computer"
+        );
+        let local_server = connector("http://localhost:8080/mcp");
+        assert!(check_endpoints(&local_server, &own, &local).is_ok());
     }
 
     #[test]

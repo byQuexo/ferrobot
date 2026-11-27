@@ -140,6 +140,13 @@ async fn tools_act_as_the_authenticated_agent() {
         .map(|a| a["name"].as_str().unwrap().to_owned())
         .collect();
     assert_eq!(me, ["alice"]);
+    for a in list["agents"].as_array().unwrap() {
+        assert_eq!(
+            a.get("instructions").is_some(),
+            a["is_you"] == true,
+            "only one's own instructions: {a}"
+        );
+    }
 
     let sent = call(
         &alice,

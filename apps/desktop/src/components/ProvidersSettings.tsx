@@ -28,7 +28,8 @@ const KIND_HINTS: Partial<Record<ProviderKind, string>> = {
   vertex: "Uses the gcloud login on the daemon’s computer; no key needed.",
   ollama: "Talks to Ollama on the daemon’s computer (127.0.0.1:11434).",
   openai_compatible: "Any server with an OpenAI-style /chat/completions endpoint.",
-  codex: "Runs OpenAI’s Codex harness. Add an API key in Vault, or sign in with ChatGPT.",
+  codex:
+    "Runs OpenAI’s Codex harness. Add an API key in Vault, or sign in with ChatGPT. Codex runs most of its shell commands without asking you first.",
   gemini_cli: "Runs Google’s Gemini CLI harness (over ACP) with a Gemini API key.",
   claude_code: `Runs your own claude CLI on the daemon’s computer, off the model proxy. ${CLAUDE_CODE_NOTICE}`,
 };

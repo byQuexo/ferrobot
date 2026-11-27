@@ -37,33 +37,66 @@ impl Verdict {
 #[derive(Debug, Clone, Copy)]
 pub enum Call<'a> {
     Shell(&'a str),
-    /// A connector tool, named `<connector>__<tool>`.
-    Connector(&'a str),
+    /// A connector tool, named `<connector>__<tool>`, and the arguments the card shows.
+    Connector {
+        name: &'a str,
+        args: Option<&'a serde_json::Map<String, serde_json::Value>>,
+    },
 }
+
+/// Longest command a card shows in full; a longer one is refused rather than cut.
+const MAX_SHOWN: usize = 4000;
+/// How much of a connector call's arguments a card shows.
+const ARGS_SHOWN: usize = 2000;
 
 pub fn classify(call: Call<'_>) -> Verdict {
     match call {
-        Call::Shell(command) => shell(command),
-        Call::Connector(name) => connector(name),
+        Call::Shell(command) => worst(&shell(command)),
+        Call::Connector { name, .. } => connector(name),
     }
 }
 
-fn shell(command: &str) -> Verdict {
+fn worst(verdicts: &[Verdict]) -> Verdict {
+    verdicts
+        .iter()
+        .copied()
+        .max_by_key(|v| v.rank())
+        .unwrap_or(Verdict::Safe)
+}
+
+/// One verdict per segment of the command line.
+fn shell(command: &str) -> Vec<Verdict> {
     if command.contains(":(){") || command.contains(":() {") {
-        return Verdict::Dangerous("a fork bomb");
+        return vec![Verdict::Dangerous("a fork bomb")];
     }
     let segments: Vec<Vec<&str>> = command
         .split(['\n', ';', '&', '|'])
         .map(|s| s.split_whitespace().collect())
         .collect();
-    let mut worst = Verdict::Safe;
-    for (n, words) in segments.iter().enumerate() {
-        let verdict = segment(words, segments.get(n + 1));
-        if verdict.rank() > worst.rank() {
-            worst = verdict;
+    segments
+        .iter()
+        .enumerate()
+        .map(|(n, words)| segment(words, segments.get(n + 1)))
+        .collect()
+}
+
+/// Every reason the command was flagged, each once, so the card names them all.
+fn reasons(verdicts: &[Verdict]) -> String {
+    let mut out: Vec<&str> = Vec::new();
+    for v in verdicts {
+        let why = verdict_reason(*v);
+        if !why.is_empty() && !out.contains(&why) {
+            out.push(why);
         }
     }
-    worst
+    out.join("; ")
+}
+
+fn verdict_reason(verdict: Verdict) -> &'static str {
+    match verdict {
+        Verdict::Safe => "",
+        Verdict::Risky(why) | Verdict::Critical(why) | Verdict::Dangerous(why) => why,
+    }
 }
 
 fn segment(words: &[&str], next: Option<&Vec<&str>>) -> Verdict {
@@ -110,6 +143,19 @@ fn segment(words: &[&str], next: Option<&Vec<&str>>) -> Verdict {
             Verdict::Dangerous("writing to a raw device")
         }
         "curl" | "wget" if piped_to_shell => Verdict::Dangerous("running a downloaded script"),
+        "sh" | "bash" | "zsh" | "dash" | "ksh" | "fish"
+            if args.iter().any(|a| short_cluster(a, 'c')) =>
+        {
+            Verdict::Risky("runs a command line the check cannot read")
+        }
+        "eval" => Verdict::Risky("runs a command line the check cannot read"),
+        "python" | "python3" | "node" | "perl" | "ruby" | "php" | "deno" | "bun"
+            if args
+                .iter()
+                .any(|a| matches!(*a, "-c" | "-e" | "-r" | "--eval" | "eval")) =>
+        {
+            Verdict::Risky("runs code the check cannot read")
+        }
         "curl" | "wget" if sends_data(args) => Verdict::Risky("sends data to another server"),
         "git" => git(args),
         "gh" => gh(args),
@@ -150,19 +196,46 @@ fn sends_data(args: &[&str]) -> bool {
         .any(|w| matches!(w[0], "-X" | "--request") && method(w[1]))
 }
 
+/// A short-option cluster such as `-uf` that contains `flag`.
+fn short_cluster(arg: &str, flag: char) -> bool {
+    arg.starts_with('-') && !arg.starts_with("--") && arg.contains(flag)
+}
+
+/// The first word that is not an option, skipping the values of options in `with_value`, and
+/// its position.
+fn subcommand<'a>(args: &[&'a str], with_value: &[&str]) -> Option<(&'a str, usize)> {
+    let mut i = 0;
+    while let Some(&a) = args.get(i) {
+        if with_value.contains(&a) {
+            i += 2;
+        } else if a.starts_with('-') {
+            i += 1;
+        } else {
+            return Some((a, i));
+        }
+    }
+    None
+}
+
 fn git(args: &[&str]) -> Verdict {
-    let sub = args
-        .iter()
-        .find(|a| !a.starts_with('-'))
-        .copied()
-        .unwrap_or_default();
+    let Some((sub, at)) = subcommand(args, &["-C", "-c", "--git-dir", "--work-tree"]) else {
+        return Verdict::Safe;
+    };
+    let rest = &args[at + 1..];
     match sub {
         "push"
-            if args
-                .iter()
-                .any(|a| *a == "-f" || a.starts_with("--force") || a.starts_with('+')) =>
+            if rest.iter().any(|a| {
+                short_cluster(a, 'f') || a.starts_with("--force") || a.starts_with('+')
+            }) =>
         {
             Verdict::Critical("force-pushes over what is on the remote")
+        }
+        "push"
+            if rest.iter().any(|a| {
+                matches!(*a, "--delete" | "--mirror") || short_cluster(a, 'd') || a.starts_with(':')
+            }) =>
+        {
+            Verdict::Critical("deletes branches on the remote")
         }
         "push" => Verdict::Risky("pushes code"),
         "reset" if args.contains(&"--hard") => Verdict::Risky("throws away changes"),
@@ -173,28 +246,81 @@ fn git(args: &[&str]) -> Verdict {
     }
 }
 
-/// GitHub's CLI: merging asks, deleting a repository and publishing a release ask even in Auto mode.
+/// `gh` options that take a value, so the value is not read as a subcommand.
+const GH_VALUES: [&str; 16] = [
+    "-R",
+    "--repo",
+    "-X",
+    "--method",
+    "-f",
+    "-F",
+    "--field",
+    "--raw-field",
+    "-H",
+    "--header",
+    "--input",
+    "-q",
+    "--jq",
+    "-t",
+    "--template",
+    "--hostname",
+];
+
+/// GitHub's CLI: merging asks; deleting anything and publishing a release ask even in Auto mode.
 fn gh(args: &[&str]) -> Verdict {
-    let words: Vec<&str> = args
-        .iter()
-        .copied()
-        .filter(|a| !a.starts_with('-'))
-        .collect();
+    let mut words = Vec::new();
+    let mut rest = args;
+    while let Some((word, at)) = subcommand(rest, &GH_VALUES) {
+        words.push(word);
+        rest = &rest[at + 1..];
+    }
     match words.as_slice() {
         ["repo", "delete", ..] => Verdict::Critical("deletes a GitHub repository"),
+        [_, "delete", ..] => Verdict::Critical("deletes something on GitHub"),
         ["release", "create" | "upload", ..] => Verdict::Critical("publishes a release"),
         ["pr", "merge", ..] => Verdict::Risky("merges a pull request"),
-        ["api", ..] if args.iter().any(|a| matches!(*a, "-X" | "--method")) => {
-            Verdict::Risky("changes something on GitHub")
-        }
+        ["api", ..] => match gh_method(args).as_deref() {
+            Some("DELETE") => Verdict::Critical("deletes something on GitHub"),
+            Some("GET") | None => Verdict::Safe,
+            Some(_) => Verdict::Risky("changes something on GitHub"),
+        },
         _ => Verdict::Safe,
     }
 }
 
+/// The HTTP method of `gh api`: `-X`/`--method` in any spelling, else POST when it sends fields.
+fn gh_method(args: &[&str]) -> Option<String> {
+    let explicit = args.iter().enumerate().find_map(|(i, a)| {
+        let value = match *a {
+            "-X" | "--method" => args.get(i + 1).copied(),
+            _ => a
+                .strip_prefix("--method=")
+                .or_else(|| a.strip_prefix("-X").filter(|m| !m.is_empty())),
+        };
+        value.map(str::to_ascii_uppercase)
+    });
+    let sends = args.iter().any(|a| {
+        matches!(*a, "-f" | "-F" | "--field" | "--raw-field" | "--input")
+            || ["--field=", "--raw-field=", "--input="]
+                .iter()
+                .any(|p| a.starts_with(p))
+    });
+    explicit.or_else(|| sends.then(|| "POST".to_owned()))
+}
+
 /// Words in a connector tool's name that move money.
-const MONEY: [&str; 6] = ["pay", "payment", "payout", "transfer", "refund", "charge"];
+const MONEY: [&str; 8] = [
+    "pay", "payment", "payout", "transfer", "refund", "charge", "invoice", "withdraw",
+];
 /// Words in a connector tool's name that delete or cancel something for good.
-const DESTROY: [&str; 6] = ["delete", "remove", "trash", "cancel", "destroy", "purge"];
+const DESTROY: [&str; 8] = [
+    "delete", "remove", "trash", "cancel", "destroy", "purge", "drop", "truncate",
+];
+/// Words of tools that run whatever their arguments say (SQL, HTTP, GraphQL, code).
+const DISPATCH: [&str; 11] = [
+    "execute", "exec", "sql", "query", "request", "graphql", "run", "invoke", "eval", "command",
+    "script",
+];
 
 /// Verbs in a connector tool's name that act on the outside world.
 const ACTS: [&str; 26] = [
@@ -203,29 +329,65 @@ const ACTS: [&str; 26] = [
     "approve", "upload", "edit", "set", "add", "assign", "trash",
 ];
 
-fn connector(name: &str) -> Verdict {
-    let tool = name.split_once("__").map_or(name, |(_, t)| t);
-    // `send_email`, `sendEmail` and `messages.send` all split into words.
+/// The lower-case words of a tool name: `send_email`, `sendEmail`, `SEND_EMAIL` and
+/// `messages.send` all split, at separators and where lower case turns upper.
+fn name_words(tool: &str) -> Vec<String> {
     let mut spaced = String::new();
+    let mut prev_lower = false;
     for c in tool.chars() {
-        if c.is_uppercase() {
+        if c.is_uppercase() && prev_lower {
             spaced.push(' ');
         }
-        spaced.push(if c.is_alphanumeric() {
-            c.to_ascii_lowercase()
-        } else {
-            ' '
-        });
+        prev_lower = c.is_lowercase() || c.is_ascii_digit();
+        spaced.push(if c.is_alphanumeric() { c } else { ' ' });
     }
-    let words: Vec<&str> = spaced.split_whitespace().collect();
-    if words.iter().any(|w| MONEY.contains(w)) {
+    spaced
+        .to_lowercase()
+        .split_whitespace()
+        .map(str::to_owned)
+        .collect()
+}
+
+/// Whether a word is one of `stems`, also in the plural (`refunds`, `charges`).
+fn has_stem(words: &[String], stems: &[&str]) -> bool {
+    words.iter().any(|w| {
+        stems.contains(&w.as_str())
+            || [w.strip_suffix('s'), w.strip_suffix("es")]
+                .into_iter()
+                .flatten()
+                .any(|s| stems.contains(&s))
+    })
+}
+
+fn connector(name: &str) -> Verdict {
+    let words = name_words(name.split_once("__").map_or(name, |(_, t)| t));
+    if has_stem(&words, &MONEY) {
         Verdict::Critical("moves money in a connected service")
-    } else if words.iter().any(|w| DESTROY.contains(w)) {
+    } else if has_stem(&words, &DESTROY) {
         Verdict::Critical("deletes or cancels something in a connected service")
-    } else if words.iter().any(|w| ACTS.contains(w)) {
+    } else if has_stem(&words, &ACTS) {
         Verdict::Risky("acts in a connected service")
+    } else if has_stem(&words, &DISPATCH) {
+        Verdict::Risky("runs whatever its arguments say in a connected service")
     } else {
         Verdict::Safe
+    }
+}
+
+/// What the card shows of a connector call: its name and arguments, cut visibly when long.
+fn connector_detail(
+    name: &str,
+    args: Option<&serde_json::Map<String, serde_json::Value>>,
+) -> String {
+    let Some(args) = args.filter(|a| !a.is_empty()) else {
+        return name.to_owned();
+    };
+    let json = serde_json::to_string_pretty(args).unwrap_or_default();
+    if json.chars().count() > ARGS_SHOWN {
+        let cut: String = json.chars().take(ARGS_SHOWN).collect();
+        format!("{name}\n{cut}…")
+    } else {
+        format!("{name}\n{json}")
     }
 }
 
@@ -240,11 +402,33 @@ pub async fn gate(state: &AppState, agent: AgentId, call: Call<'_>) -> Result<()
         }
         (verdict, _) => verdict,
     };
-    let (reason, critical) = match verdict {
+    let critical = match verdict {
         Verdict::Safe => return Ok(()),
         Verdict::Dangerous(why) => return Err(format!("blocked: {why}")),
-        Verdict::Risky(why) => (why, false),
-        Verdict::Critical(why) => (why, true),
+        Verdict::Risky(_) => false,
+        Verdict::Critical(_) => true,
+    };
+    let (tool, detail, reason) = match call {
+        Call::Shell(command) => {
+            let length = command.chars().count();
+            if length > MAX_SHOWN {
+                return Err(format!(
+                    "this command is too long for the operator to check ({length} characters); run it in shorter parts"
+                ));
+            }
+            let flagged = reasons(&shell(command));
+            let reason = if flagged.is_empty() {
+                verdict_reason(verdict).to_owned()
+            } else {
+                flagged
+            };
+            ("shell".to_owned(), command.to_owned(), reason)
+        }
+        Call::Connector { name, args } => (
+            name.to_owned(),
+            connector_detail(name, args),
+            verdict_reason(verdict).to_owned(),
+        ),
     };
     // Unreadable settings fail closed: the operator gets the card.
     if !critical
@@ -254,11 +438,6 @@ pub async fn gate(state: &AppState, agent: AgentId, call: Call<'_>) -> Result<()
     {
         return Ok(());
     }
-    let (tool, detail) = match call {
-        Call::Shell(command) => ("shell".to_owned(), command),
-        Call::Connector(name) => (name.to_owned(), name),
-    };
-    let detail: String = detail.chars().take(400).collect();
     let name = state
         .store
         .get_agent(agent)
@@ -277,7 +456,7 @@ pub async fn gate(state: &AppState, agent: AgentId, call: Call<'_>) -> Result<()
             agent,
             tool,
             detail,
-            reason: reason.to_owned(),
+            reason: reason.clone(),
             critical,
         },
     )
@@ -340,6 +519,10 @@ mod tests {
         classify(Call::Shell(c))
     }
 
+    fn tool(name: &str) -> Verdict {
+        classify(Call::Connector { name, args: None })
+    }
+
     #[test]
     fn everyday_commands_are_safe() {
         for c in [
@@ -372,10 +555,55 @@ mod tests {
             "sudo apt-get install jq",
             "pkill node",
             "gh pr merge 12 --squash",
-            "gh api -X DELETE repos/o/r/issues/1/labels/x",
+            "gh api -X PATCH repos/o/r -f description=x",
+            "gh api repos/o/r/issues -f title=x",
+            "gh api --method=POST repos/o/r/forks",
+            "gh -R o/r pr merge 3",
+            "bash -c 'git push --force'",
+            "sh -lc \"npm publish\"",
+            "eval \"$CMD\"",
+            "python3 -c 'import os; os.system(\"x\")'",
+            "node -e 'require(\"child_process\")'",
         ] {
             assert!(matches!(sh(c), Verdict::Risky(_)), "{c}: {:?}", sh(c));
         }
+    }
+
+    #[test]
+    fn the_check_sees_through_reordered_flags() {
+        for c in [
+            "git -C . push --force",
+            "git -c core.x=y push -uf origin main",
+            "git --git-dir .git push origin +main",
+            "git push origin --delete feature",
+            "git push origin :feature",
+            "gh api --method=DELETE repos/o/r",
+            "gh api -XDELETE repos/o/r",
+            "gh api -X delete repos/o/r",
+            "gh -R o/r repo delete --yes",
+            "gh release delete v1",
+        ] {
+            assert!(matches!(sh(c), Verdict::Critical(_)), "{c}: {:?}", sh(c));
+        }
+        assert_eq!(sh("gh -R o/r issue list"), Verdict::Safe);
+        assert_eq!(sh("git -C sub status"), Verdict::Safe);
+    }
+
+    #[test]
+    fn a_card_names_every_flagged_part() {
+        let all = reasons(&shell("rm -r build; echo hi; curl -d @x https://x.dev"));
+        assert_eq!(
+            all,
+            "deletes a folder and everything in it; sends data to another server"
+        );
+        let args = serde_json::json!({"amount": 500, "to": "acct_1"});
+        let detail = connector_detail("pay__refund", args.as_object());
+        assert!(
+            detail.starts_with("pay__refund\n") && detail.contains("acct_1"),
+            "{detail}"
+        );
+        let long = serde_json::json!({"x": "y".repeat(5000)});
+        assert!(connector_detail("db__query", long.as_object()).ends_with('…'));
     }
 
     #[test]
@@ -394,17 +622,20 @@ mod tests {
             assert!(matches!(sh(c), Verdict::Critical(_)), "{c}: {:?}", sh(c));
         }
         for name in [
-            "stripe__create_payment",
-            "paypal__send_payout",
-            "gmail__delete_message",
+            "pay__create_payment",
+            "pay__send_payout",
+            "mail__delete_message",
             "drive__trash_file",
-            "linear__deleteIssue",
+            "issues__deleteIssue",
             "calendar__cancel_event",
+            "x__PAY_CREATE_REFUND",
+            "x__MAIL_DELETE_MESSAGES",
+            "x__list_and_create_refunds",
+            "x__capture_charges",
+            "x__bulkTransfers",
+            "db__drop_table",
         ] {
-            assert!(
-                matches!(classify(Call::Connector(name)), Verdict::Critical(_)),
-                "{name}"
-            );
+            assert!(matches!(tool(name), Verdict::Critical(_)), "{name}");
         }
         assert!(
             matches!(sh("npm publish; rm -rf /"), Verdict::Dangerous(_)),
@@ -431,21 +662,25 @@ mod tests {
     #[test]
     fn connector_tools_that_act_are_risky() {
         for name in [
-            "gmail__send_email",
-            "linear__createIssue",
-            "slack__chat.postMessage",
+            "mail__send_email",
+            "issues__createIssue",
+            "chat__chat.postMessage",
+            "mail__MAIL_SEND_EMAIL",
+            "db__execute_sql",
+            "api__api_request",
+            "x__graphql",
+            "x__runCommand",
         ] {
-            assert!(
-                matches!(classify(Call::Connector(name)), Verdict::Risky(_)),
-                "{name}"
-            );
+            assert!(matches!(tool(name), Verdict::Risky(_)), "{name}");
         }
         for name in [
-            "gmail__search_threads",
-            "linear__listIssues",
-            "notion__fetch",
+            "mail__search_threads",
+            "issues__listIssues",
+            "notes__fetch",
+            "x__get_address",
+            "x__GET_SETTINGS",
         ] {
-            assert_eq!(classify(Call::Connector(name)), Verdict::Safe, "{name}");
+            assert_eq!(tool(name), Verdict::Safe, "{name}");
         }
     }
 }

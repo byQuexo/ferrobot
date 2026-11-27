@@ -77,7 +77,9 @@ pub struct AgentInfo {
     pub status: String,
     /// One-line description.
     pub description: String,
-    pub instructions: String,
+    /// Your own instructions; other agents' stay private.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub instructions: Option<String>,
     /// True for the calling agent itself.
     pub is_you: bool,
 }
@@ -793,7 +795,7 @@ impl FerrobotTools {
                     name: a.name.to_string(),
                     status: a.status.as_str().to_owned(),
                     description: a.description,
-                    instructions: a.instructions,
+                    instructions: (a.id == me).then_some(a.instructions),
                 })
                 .collect(),
         }))

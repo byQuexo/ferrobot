@@ -352,7 +352,13 @@ fn payload(format: WebhookFormat, n: &Notice) -> Value {
                 .collect::<String>(),
             "allowed_mentions": { "parse": [] },
         }),
-        WebhookFormat::Slack => json!({ "text": format!("*{}*{below}", n.title) }),
+        // Escaped as Slack asks, so `<!channel>` or `<https://x|y>` in an agent's text pings nobody.
+        WebhookFormat::Slack => json!({
+            "text": format!("*{}*{below}", n.title)
+                .replace('&', "&amp;")
+                .replace('<', "&lt;")
+                .replace('>', "&gt;")
+        }),
     }
 }
 
@@ -411,6 +417,14 @@ mod tests {
                 .starts_with("*ada replied*\n")
         );
         assert_eq!(payload(WebhookFormat::Json, &notice)["event"], "reply");
+        let ping = Notice {
+            text: Some("<!channel> see <https://x.example|here> & go".into()),
+            ..notice
+        };
+        assert_eq!(
+            payload(WebhookFormat::Slack, &ping)["text"],
+            "*ada replied*\n&lt;!channel&gt; see &lt;https://x.example|here&gt; &amp; go"
+        );
     }
 
     #[test]

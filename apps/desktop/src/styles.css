@@ -697,7 +697,7 @@ textarea { resize: vertical; min-height: 40px; line-height: 1.5; }
 .qcard-title { font-weight: 500; color: var(--text-2); }
 .qcard-step { font-variant-numeric: tabular-nums; }
 .qcard-done { display: inline-flex; align-items: center; gap: 4px; color: var(--ok); font-weight: 500; }
-.qcard-prompt { display: flex; align-items: flex-start; gap: 8px; margin: 0; font-size: 14px; line-height: 24px; font-weight: 500; white-space: pre-line; overflow-wrap: anywhere; }
+.qcard-prompt { display: flex; align-items: flex-start; gap: 8px; margin: 0; font-size: 14px; line-height: 24px; font-weight: 500; white-space: pre-line; overflow-wrap: anywhere; unicode-bidi: isolate; max-height: 50vh; overflow-y: auto; }
 .qcard-secret { display: flex; flex-direction: column; gap: 4px; font-size: 13px; font-weight: 500; }
 .qcard-prompt svg { flex: none; margin-top: 4px; color: var(--accent); }
 .qcard-choices { display: flex; flex-direction: column; gap: 8px; }

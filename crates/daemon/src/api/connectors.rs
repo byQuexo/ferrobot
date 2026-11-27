@@ -68,8 +68,15 @@ async fn view(state: &AppState, connector: Connector) -> Result<ConnectorView, A
     })
 }
 
+/// Characters that can make a card show something other than what runs: controls, line breaks,
+/// bidi overrides and invisible format characters.
+fn deceptive(c: char) -> bool {
+    c.is_control()
+        || matches!(c, '\u{061c}' | '\u{200b}'..='\u{200f}' | '\u{2028}'..='\u{202e}' | '\u{2060}'..='\u{2069}' | '\u{feff}')
+}
+
 fn printable(value: &str, what: &str, max: usize) -> Result<(), ApiError> {
-    if value.is_empty() || value.len() > max || value.chars().any(char::is_control) {
+    if value.is_empty() || value.len() > max || value.chars().any(deceptive) {
         return Err(ApiError::BadRequest(format!(
             "{what} must be 1-{max} printable characters"
         )));
@@ -276,6 +283,30 @@ fn shown_command(argv: &[String]) -> String {
         .join(" ")
 }
 
+/// The card shows the command and URL exactly as they run: no hidden lines or bidi tricks, and no
+/// `https://good.example@evil.example` that shows one host and reaches another.
+fn shown_as_is(connector: &Connector) -> Result<(), ApiError> {
+    if connector
+        .command
+        .iter()
+        .flatten()
+        .chain([&connector.url])
+        .any(|a| a.chars().any(deceptive))
+    {
+        return Err(ApiError::BadRequest(
+            "the command and URL cannot contain line breaks or invisible characters".into(),
+        ));
+    }
+    if connector.command.is_none() {
+        let parsed = reqwest::Url::parse(&connector.url)
+            .map_err(|_| ApiError::BadRequest("url is not a valid URL".into()))?;
+        if !parsed.username().is_empty() || parsed.password().is_some() {
+            return Err(ApiError::BadRequest("url cannot carry a user name".into()));
+        }
+    }
+    Ok(())
+}
+
 /// Shows the operator a card to add the connector an agent asked for, in the chat they use for
 /// it. Nothing exists until they approve; Auto mode does not skip it. No card asks for a key: a
 /// token goes in under Settings → Vault.
@@ -294,6 +325,7 @@ pub(crate) async fn request_card(
         created_at: time::OffsetDateTime::now_utc(),
     };
     connector.validate().map_err(ApiError::BadRequest)?;
+    shown_as_is(&connector)?;
     if state
         .store
         .list_connectors()
@@ -318,22 +350,24 @@ pub(crate) async fn request_card(
         ..
     } = connector;
     // A local server runs code on this computer: the card shows exactly what will run.
-    let (mut prompt, host) = match &command {
-        Some(argv) => (
+    let (mut prompt, host) = if let Some(argv) = &command {
+        (
             format!(
                 "Add the local MCP server \"{name}\" and give it to {who}?\nIt runs on this \
                  computer, outside the agents' sandboxes, as: {}",
                 shown_command(argv)
             ),
             "the local server".to_owned(),
-        ),
-        None => (
-            format!("Add the connector \"{name}\" and give it to {who}?\nURL: {url}"),
-            reqwest::Url::parse(&url)
-                .ok()
-                .and_then(|u| u.host_str().map(str::to_owned))
-                .ok_or_else(|| ApiError::BadRequest("url needs a host".into()))?,
-        ),
+        )
+    } else {
+        let host = reqwest::Url::parse(&url)
+            .ok()
+            .and_then(|u| u.host_str().map(str::to_owned))
+            .ok_or_else(|| ApiError::BadRequest("url needs a host".into()))?;
+        (
+            format!("Add the connector \"{name}\" and give it to {who}?\nURL: {url}\nHost: {host}"),
+            host,
+        )
     };
     if let Some(env) = &token_env {
         let _ = write!(
