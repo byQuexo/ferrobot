@@ -126,6 +126,10 @@ pub(crate) async fn set_profile(
     tools: Option<Vec<ToolGroup>>,
     connectors: Option<Vec<uuid::Uuid>>,
 ) -> Result<(), ApiError> {
+    // A card answered late: the agent may have got a CLI account since it was posted.
+    if let Some(tools) = &tools {
+        crate::desktop::check_tools(state, id, tools).await?;
+    }
     // Connectors first: one deleted since the card fails here, before the tools change.
     if let Some(ids) = connectors {
         state.store.set_agent_connectors(id, ids).await?;

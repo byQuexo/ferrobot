@@ -188,6 +188,7 @@ pub(crate) async fn update_agent(
     let (provider_id, model) = if model_change {
         let current = state.store.get_agent(id).await?;
         let provider_id = req.provider_id.unwrap_or(current.provider_id);
+        crate::desktop::check_provider(&state, id, provider_id).await?;
         let model = req.model.clone().unwrap_or(current.model);
         let model = agents::check_model(&state, provider_id, model.as_deref()).await?;
         (Some(provider_id), Some(model))

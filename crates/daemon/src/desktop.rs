@@ -1,5 +1,5 @@
 //! The agent's desktop: an X server with a window manager, Chromium, a terminal and a file
-//! manager in its computer. The packages come with the CLIs image (`clis.rs`, Settings → CLIs →
+//! manager in its computer. The packages come with the CLIs image (`clis.rs`, Settings → Computers →
 //! Desktop); the programs start on demand, since a stopped computer loses them. The operator
 //! watches through `/v1/agents/{id}/screen` (VNC over a streaming exec, no port is opened);
 //! agents with the Desktop group act through the `desktop` tool (xdotool and scrot).
@@ -50,6 +50,9 @@ const START: &str = include_str!("desktop-start.sh");
 /// Why an agent never has both a CLI account and the Desktop group.
 const ACCOUNT_CONFLICT: &str = "an agent cannot have both a CLI account and the Desktop tools, \
 because commands typed into its desktop's terminal skip the checks on risky steps";
+/// Why a Codex agent never has a CLI account: Codex runs its own shell, which skips those checks.
+const CODEX_CONFLICT: &str = "a Codex agent cannot have a CLI account, because Codex runs \
+commands itself and they skip the checks on risky steps";
 
 async fn has_any_account(state: &AppState, agent: AgentId) -> bool {
     !crate::logins::of_agent(state, agent).await.is_empty()
@@ -69,7 +72,7 @@ pub(crate) async fn check_tools(
     Ok(())
 }
 
-/// Refuses a CLI account for agents that have the Desktop group.
+/// Refuses a CLI account for agents that have the Desktop group or run on Codex.
 pub(crate) async fn check_account_agents(
     state: &AppState,
     agents: &[AgentId],
@@ -82,8 +85,37 @@ pub(crate) async fn check_account_agents(
                 agent.name
             )));
         }
+        if runs_on_codex(state, agent.provider_id).await {
+            return Err(ApiError::BadRequest(format!(
+                "{} runs on Codex; {CODEX_CONFLICT}",
+                agent.name
+            )));
+        }
     }
     Ok(())
+}
+
+/// Refuses moving an agent with a CLI account onto a Codex provider.
+pub(crate) async fn check_provider(
+    state: &AppState,
+    agent: AgentId,
+    provider: Option<uuid::Uuid>,
+) -> Result<(), ApiError> {
+    if runs_on_codex(state, provider).await && has_any_account(state, agent).await {
+        return Err(ApiError::BadRequest(format!(
+            "remove its CLI account first: {CODEX_CONFLICT}"
+        )));
+    }
+    Ok(())
+}
+
+async fn runs_on_codex(state: &AppState, provider: Option<uuid::Uuid>) -> bool {
+    let Some(id) = provider else { return false };
+    state
+        .store
+        .get_provider(id)
+        .await
+        .is_ok_and(|p| p.kind == ferrobot_core::ProviderKind::Codex)
 }
 
 /// Who holds the operator's control of each desktop: open screen connections in control mode.
@@ -144,7 +176,7 @@ pub(crate) async fn start(state: &AppState, agent: AgentId) -> Result<SandboxHan
     match out.exit_code {
         0 => Ok(handle),
         NO_DESKTOP => Err(ApiError::Conflict(
-            "this computer has no desktop yet: turn it on in Settings → CLIs, then restart the \
+            "this computer has no desktop yet: turn it on in Settings → Computers, then restart the \
              computer"
                 .into(),
         )),
