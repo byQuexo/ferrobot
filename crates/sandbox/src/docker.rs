@@ -37,13 +37,20 @@ const TOKEN_VAR: &str = "FERROBOT_AGENT_TOKEN";
 /// Tag prefix of images from `build_image`; the sweep never touches any other image.
 const CLI_TAG_PREFIX: &str = "ferrobot-runner:clis-";
 /// Packages arrive as `"$@"`, never as part of the script.
+/// Debian's `chromium` launcher reads `/etc/chromium.d`, so every way of starting it (dock, shell,
+/// agent) gets the flags a container needs.
 const INSTALL: &str = "export DEBIAN_FRONTEND=noninteractive && apt-get update \
-    && apt-get install -y --no-install-recommends \"$@\" && rm -rf /var/lib/apt/lists/*";
+    && apt-get install -y --no-install-recommends \"$@\" && rm -rf /var/lib/apt/lists/* \
+    && if [ -d /etc/chromium.d ]; then printf '%s\\n' 'export CHROMIUM_FLAGS=\"$CHROMIUM_FLAGS \
+    --no-sandbox --disable-dev-shm-usage --disable-gpu --no-first-run --no-default-browser-check \
+    --password-store=basic --force-dark-mode --test-type\"' > /etc/chromium.d/ferrobot; fi";
 
 /// Deterministic tag for `packages` (sorted) on the base image `base_id`, per daemon (`owner`), so
 /// one daemon's sweep never removes another's image.
 fn cli_tag(owner: &str, base_id: &str, packages: &[String]) -> String {
     let mut ctx = ring::digest::Context::new(&ring::digest::SHA256);
+    // A changed recipe makes a new image, not a stale hit.
+    ctx.update(INSTALL.as_bytes());
     ctx.update(base_id.as_bytes());
     for p in packages {
         ctx.update(b"\n");
@@ -1150,6 +1157,7 @@ mod tests {
         let argv: Vec<String> =
             serde_json::from_str(lines[2].strip_prefix("RUN ").unwrap()).unwrap();
         assert_eq!(argv[..4], ["sh", "-c", INSTALL, "sh"]);
+        assert!(INSTALL.contains("/etc/chromium.d/ferrobot") && INSTALL.contains("--no-sandbox"));
         assert_eq!(argv[4..], packages);
         assert!(dockerfile("sha256:ab12", "node\nRUN id", &packages).is_err());
         assert!(dockerfile("x y", "node", &packages).is_err());
