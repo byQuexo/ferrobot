@@ -871,6 +871,7 @@ button.screen-thumb.idle { cursor: pointer; }
 .screen-close .icon-btn:hover { background: rgba(255, 255, 255, 0.08); color: #ffffff; }
 .screen-pill { position: absolute; left: 50%; bottom: 18px; transform: translateX(-50%); display: flex; align-items: center; gap: 12px; padding: 5px 5px 5px 14px; border: 1px solid rgba(255, 255, 255, 0.09); border-radius: 999px; background: rgba(28, 30, 37, 0.92); box-shadow: 0 10px 32px rgba(0, 0, 0, 0.5); white-space: nowrap; }
 .screen-pill.on { border-color: color-mix(in srgb, var(--accent) 65%, transparent); }
+.screen-note { position: absolute; left: 50%; bottom: 66px; transform: translateX(-50%); margin: 0; font-size: 12px; color: #a9acb8; white-space: nowrap; }
 .screen-mode { display: flex; align-items: center; gap: 6px; font-size: 13px; color: #a9acb8; }
 .screen-pill.on .screen-mode { color: #e6e7ec; }
 .screen-pill.on .screen-mode svg { color: var(--accent); }

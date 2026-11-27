@@ -109,9 +109,11 @@ async fn fresh_spec(state: &AppState, agent: &Agent) -> Result<SandboxSpec, ApiE
     let logins = crate::logins::of_agent(state, agent.id).await;
     let home = state.backend.home();
     if state.backend.supports_image_builds() {
+        // Last, so a program an agent drops in its home never stands in for the runner's `node`
+        // or the daemon's own tools; home CLIs still run by name.
         env.insert(
             "PATH".to_owned(),
-            format!("{home}/.local/bin:{}", crate::clis::DEFAULT_PATH),
+            format!("{}:{home}/.local/bin", crate::clis::DEFAULT_PATH),
         );
     }
     // A login never replaces what the sandbox already set.

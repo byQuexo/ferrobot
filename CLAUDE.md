@@ -314,24 +314,30 @@ daemon, `docker ps -a` must be empty of ferrobot containers.
   field or several questions, `add_connector` and very risky steps stay app-only.
 - **CLI accounts keep their token in the daemon.** Only the operator sets up CLIs and accounts;
   an agent's `propose_cli` is an Approve/Decline card that shows the exact install and token
-  hosts, never skipped in Auto mode, and never carries a token. A CLI's sign-in runs in a
+  hosts, never skipped in Auto mode, and never carries a token or sign-in commands (those are
+  the operator's; approving after a CLI of that name was set up is refused). A CLI's sign-in runs in a
   throwaway sandbox with no agent token and is removed afterwards; its token goes from the token
   command's output straight to the secret store, never to a log, event or response. Agents with an
   account get a stand-in and send HTTPS through `CONNECT` on the agent
   listener (`egress.rs`, agent token as proxy password); only for the account's hosts (public names,
   checked when saved and resolved to public addresses when used) does the daemon end TLS (leaf
   certificates from that CLI's own CA, name-constrained to its hosts, key in the secret store),
-  swap its exact stand-in for the real token in request headers only (never the URL), put the
+  swap its exact stand-in for the real token in the credential request headers only
+  (`authorization`, `x-api-key`, `private-token`, `x-auth-token`; never the URL), put the
   stand-in back where a response header echoes the token, and forward without following redirects.
-  An account's variables never replace the sandbox's own (proxy, CA, `FERROBOT_*`, `PATH`...). Other
+  An account's variables never replace the sandbox's own (proxy, CA, `FERROBOT_*`, `PATH`...), and
+  `~/.local/bin` comes last on `PATH`, so nothing in an agent's home stands in for system
+  programs; the daemon calls the desktop's programs by full path. Other
   public hosts get a plain tunnel, port 443 only; private, loopback and link-local addresses are
   refused. Never log `Authorization` or `Proxy-Authorization`.
 - **The Desktop group is opt-in and never meets a CLI account.** It is not in
   `ToolGroup::defaults()` (NULL tools), so no agent gets it unless it is switched on; an agent
   never has both the Desktop group and a CLI account (`desktop::check_tools` on tool changes, the
   same check in `put_cli` on account agents), because commands typed into its desktop's terminal
-  skip `tool_check`. The screen route stays inside the `/v1` auth layer, and nothing in a sandbox
-  listens on a port for it.
+  skip `tool_check`. For the same reason a Codex agent (its own shell skips the gate) never has a
+  CLI account (`desktop::check_provider` on provider changes, `check_account_agents` in `put_cli`).
+  The screen route stays inside the `/v1` auth layer, and nothing in a sandbox listens on a port
+  for it.
 - **Per-agent tokens** on `/runner/ws`, `/mcp`, `/model`, `/host/claude-code/turn`. An agent can only act
   as itself (MCP tools read the caller from the token). Only hashes are stored.
 - **`create_agent` needs operator approval unless Auto mode is on**: an

@@ -85,6 +85,11 @@ function FullScreen(props: { agent: string; name: string; onClose: () => void })
           <X size={16} />
         </IconButton>
       </span>
+      {control && (
+        <p class="screen-note">
+          Don't type passwords or keys here: {props.name}'s other tools can still see this screen.
+        </p>
+      )}
       <div class={`screen-pill${control ? " on" : ""}`}>
         <span class="screen-mode">
           {control ? (
@@ -140,7 +145,7 @@ export function DesktopPreview(props: {
       const clis = await client.clis();
       if (!clis.desktop) return "off";
       if (clis.status === "building") return "building";
-      const out = await client.exec(props.agent, ["sh", "-c", "command -v Xvfb"]);
+      const out = await client.exec(props.agent, ["/usr/bin/test", "-x", "/usr/bin/Xvfb"]);
       return out.exit_code === 0 ? "ready" : "restart";
     };
     check().then(

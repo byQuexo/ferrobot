@@ -1,10 +1,11 @@
+# System programs only: nothing an agent drops in its home stands in for them.
+export PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
 command -v openbox >/dev/null || exit 3
 export DISPLAY=:1 XCURSOR_THEME=Adwaita
-export PATH="$HOME/.local/bin:$PATH"
 look="$HOME/.ferrobot/desktop"
 # Zombies of a crashed run must not count as running.
 alive() { pgrep -r R,S,D -x "$1" >/dev/null; }
-if [ ! -f "$look/look-2" ]; then
+if [ ! -f "$look/look-3" ]; then
   mkdir -p "$look" "$HOME/.config/openbox" "$HOME/.config/tint2" "$HOME/.config/lxterminal" \
     "$HOME/.config/gtk-3.0" "$HOME/.themes/Ferrobot/openbox-3"
   sed -e 's|<name>Clearlooks</name>|<name>Ferrobot</name>|' \
@@ -119,7 +120,7 @@ launcher_icon_theme = Adwaita
 launcher_icon_theme_override = 0
 startup_notifications = 0
 launcher_tooltip = 1
-launcher_item_app = /usr/share/applications/chromium.desktop
+launcher_item_app = @HOME@/.local/share/applications/ferrobot-browser.desktop
 launcher_item_app = /usr/share/applications/lxterminal.desktop
 launcher_item_app = /usr/share/applications/thunar.desktop
 time1_format = %H:%M
@@ -173,6 +174,11 @@ EOF
   printf '#!/bin/sh\nexec /usr/bin/chromium --no-sandbox --disable-dev-shm-usage --disable-gpu --no-first-run --no-default-browser-check --password-store=basic --force-dark-mode --test-type "$@"\n' \
     >"$HOME/.local/bin/chromium"
   chmod +x "$HOME/.local/bin/chromium"
+  # The dock starts the wrapper by its full path: the system's chromium comes first on PATH.
+  mkdir -p "$HOME/.local/share/applications"
+  printf '[Desktop Entry]\nType=Application\nName=Chromium\nIcon=chromium\nExec=%s %%U\n' \
+    "$HOME/.local/bin/chromium" >"$HOME/.local/share/applications/ferrobot-browser.desktop"
+  sed -i "s|@HOME@|$HOME|" "$HOME/.config/tint2/tint2rc"
   printf 'vte-terminal { padding: 10px 12px; }\n' >"$HOME/.config/gtk-3.0/gtk.css"
   printf '[Settings]\ngtk-theme-name=Arc-Dark\ngtk-icon-theme-name=Adwaita\ngtk-font-name=Inter 10\ngtk-cursor-theme-name=Adwaita\ngtk-application-prefer-dark-theme=1\n' \
     >"$HOME/.config/gtk-3.0/settings.ini"
@@ -251,7 +257,7 @@ EOF
     >"$HOME/.themes/Ferrobot/openbox-3/max.xbm"
   printf '#define max_toggled_width 9\n#define max_toggled_height 9\nstatic unsigned char max_toggled_bits[] = {\n 0xfc,0x01,0x04,0x01,0x7f,0x01,0x41,0x01,0x41,0x01,0xc1,0x01,0x41,0x00,0x41,0x00,0x7f,0x00};\n' \
     >"$HOME/.themes/Ferrobot/openbox-3/max_toggled.xbm"
-  touch "$look/look-2"
+  touch "$look/look-3"
 fi
 if ! alive Xvfb; then
   rm -f /tmp/.X1-lock /tmp/.X11-unix/X1

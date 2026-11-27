@@ -157,6 +157,7 @@ export function ClisSettings(): JSX.Element | null {
       {signing && (
         <SignInDialog
           id={signing}
+          commands={view.clis.find((c) => c.id === signing)?.account?.sign_in ?? null}
           building={building}
           onClose={() => {
             setSigning(null);
@@ -531,7 +532,13 @@ function CliDialog(props: {
 }
 
 /** A CLI's own sign-in: its one-time code, then the token goes to the vault. */
-function SignInDialog(props: { id: string; building: boolean; onClose: () => void }): JSX.Element {
+function SignInDialog(props: {
+  id: string;
+  /** Shown before it starts: they run where the real token is made. */
+  commands: { login: string[]; token: string[] } | null;
+  building: boolean;
+  onClose: () => void;
+}): JSX.Element {
   const { client, run } = useApp();
   const [state, setState] = useState<SignInView>({ state: "idle" });
   const active = state.state === "starting" || state.state === "waiting";
@@ -575,6 +582,12 @@ function SignInDialog(props: { id: string; building: boolean; onClose: () => voi
             {props.building
               ? "Waiting for the image build to finish first."
               : `Runs ${props.id}'s own sign-in in a throwaway computer. You approve it in your browser; the token goes to the vault and never to an agent.`}
+          </p>
+        )}
+        {state.state === "idle" && props.commands && (
+          <p class="muted small">
+            It runs <code>{props.commands.login.join(" ")}</code>, then reads the token with{" "}
+            <code>{props.commands.token.join(" ")}</code>.
           </p>
         )}
         {state.state === "starting" && <p>Installing {props.id} and starting its sign-in…</p>}

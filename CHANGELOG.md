@@ -26,6 +26,18 @@ All notable changes are listed here. The format follows
 - In Add a custom connector, the choice between a remote and a local server showed each radio button far from its text.
 - The agent list showed mentions in a reply preview as an id instead of the agent's name.
 
+### Security
+
+From a review of this release before it shipped:
+
+- An agent's proposed CLI never carries sign-in commands: they run where the real token is made, so only you set them. The card shows the programs, the token variables and that every command asks first; the sign-in dialog shows the commands before it starts.
+- Approving a CLI card after you set up a CLI of the same name is refused instead of replacing yours and its token.
+- The stand-in is swapped for the real token only in credential headers (`Authorization`, `X-Api-Key`, `Private-Token`, `X-Auth-Token`), so a service that repeats another header cannot hand the token back.
+- Codex agents get no CLI account: Codex runs commands itself, past the checks on risky steps.
+- `~/.local/bin` comes last on `PATH`, and the daemon calls the desktop's programs by full path, so a program an agent leaves in its home cannot stand in for the runner or the screen.
+- Knowledge base entries in agents' instructions show who wrote them and stay on one line; your own entries are always included.
+- A late tools card cannot give an agent with a CLI account the Desktop tools; snapshots no longer keep the agent token inside the proxy address.
+
 ## [0.1.10] - 2026-11-26
 
 ### Added
