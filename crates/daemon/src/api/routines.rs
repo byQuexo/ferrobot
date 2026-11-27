@@ -203,8 +203,7 @@ pub(crate) async fn request(
     let who = state.store.get_agent(requester).await?.name;
     let prompt = format!(
         "Add the routine \"{}\" for {who}?\nWhen: {when} ({timezone})\nMessage: {}",
-        req.name,
-        crate::agents::shorten(&req.prompt, 600)
+        req.name, req.prompt
     );
     let card = QuestionEvent::approval(
         format!("{who} wants a routine"),

@@ -6613,6 +6613,18 @@ async fn agents_get_connectors_through_a_card_whose_token_they_never_see() {
     let request = CallToolRequestParams::new("add_connector")
         .with_arguments(taken.as_object().cloned().unwrap());
     assert!(as_ann.call_tool(request).await.is_err());
+    // A card cannot show one thing and add another.
+    for hidden in [
+        json!({"name": "hid", "url": "https://good.example\n\n\n@evil.example/mcp", "auth": "none"}),
+        json!({"name": "hid", "url": "https://good.example@evil.example/mcp", "auth": "none"}),
+        json!({"name": "hid", "command": ["npx", "-y", "\u{202e}revres-tseb"], "auth": "none"}),
+        json!({"name": "hid", "url": url, "auth": "none", "reason": "ok\u{2066}x"}),
+    ] {
+        let request = CallToolRequestParams::new("add_connector")
+            .with_arguments(hidden.as_object().cloned().unwrap());
+        let refused = format!("{:?}", as_ann.call_tool(request).await);
+        assert!(!refused.contains("question_id"), "{hidden}: {refused}");
+    }
 
     // Declined: nothing is created and ann hears so.
     let args = json!({"name": "docs", "url": url, "auth": "none"});

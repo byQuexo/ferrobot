@@ -68,8 +68,15 @@ async fn view(state: &AppState, connector: Connector) -> Result<ConnectorView, A
     })
 }
 
+/// Characters that can make a card show something other than what runs: controls, line breaks,
+/// bidi overrides and invisible format characters.
+fn deceptive(c: char) -> bool {
+    c.is_control()
+        || matches!(c, '\u{061c}' | '\u{200b}'..='\u{200f}' | '\u{2028}'..='\u{202e}' | '\u{2060}'..='\u{2069}' | '\u{feff}')
+}
+
 fn printable(value: &str, what: &str, max: usize) -> Result<(), ApiError> {
-    if value.is_empty() || value.len() > max || value.chars().any(char::is_control) {
+    if value.is_empty() || value.len() > max || value.chars().any(deceptive) {
         return Err(ApiError::BadRequest(format!(
             "{what} must be 1-{max} printable characters"
         )));
@@ -294,6 +301,25 @@ pub(crate) async fn request_card(
         created_at: time::OffsetDateTime::now_utc(),
     };
     connector.validate().map_err(ApiError::BadRequest)?;
+    if connector
+        .command
+        .iter()
+        .flatten()
+        .chain([&connector.url])
+        .any(|a| a.chars().any(deceptive))
+    {
+        return Err(ApiError::BadRequest(
+            "the command and URL cannot contain line breaks or invisible characters".into(),
+        ));
+    }
+    if connector.command.is_none() {
+        let parsed = reqwest::Url::parse(&connector.url)
+            .map_err(|_| ApiError::BadRequest("url is not a valid URL".into()))?;
+        // `https://good.example@evil.example` would show one host and reach another.
+        if !parsed.username().is_empty() || parsed.password().is_some() {
+            return Err(ApiError::BadRequest("url cannot carry a user name".into()));
+        }
+    }
     if state
         .store
         .list_connectors()
@@ -327,13 +353,18 @@ pub(crate) async fn request_card(
             ),
             "the local server".to_owned(),
         ),
-        None => (
-            format!("Add the connector \"{name}\" and give it to {who}?\nURL: {url}"),
-            reqwest::Url::parse(&url)
+        None => {
+            let host = reqwest::Url::parse(&url)
                 .ok()
                 .and_then(|u| u.host_str().map(str::to_owned))
-                .ok_or_else(|| ApiError::BadRequest("url needs a host".into()))?,
-        ),
+                .ok_or_else(|| ApiError::BadRequest("url needs a host".into()))?;
+            (
+                format!(
+                    "Add the connector \"{name}\" and give it to {who}?\nURL: {url}\nHost: {host}"
+                ),
+                host,
+            )
+        }
     };
     if let Some(env) = &token_env {
         let _ = write!(
