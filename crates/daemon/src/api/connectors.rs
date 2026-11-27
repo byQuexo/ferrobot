@@ -283,6 +283,30 @@ fn shown_command(argv: &[String]) -> String {
         .join(" ")
 }
 
+/// The card shows the command and URL exactly as they run: no hidden lines or bidi tricks, and no
+/// `https://good.example@evil.example` that shows one host and reaches another.
+fn shown_as_is(connector: &Connector) -> Result<(), ApiError> {
+    if connector
+        .command
+        .iter()
+        .flatten()
+        .chain([&connector.url])
+        .any(|a| a.chars().any(deceptive))
+    {
+        return Err(ApiError::BadRequest(
+            "the command and URL cannot contain line breaks or invisible characters".into(),
+        ));
+    }
+    if connector.command.is_none() {
+        let parsed = reqwest::Url::parse(&connector.url)
+            .map_err(|_| ApiError::BadRequest("url is not a valid URL".into()))?;
+        if !parsed.username().is_empty() || parsed.password().is_some() {
+            return Err(ApiError::BadRequest("url cannot carry a user name".into()));
+        }
+    }
+    Ok(())
+}
+
 /// Shows the operator a card to add the connector an agent asked for, in the chat they use for
 /// it. Nothing exists until they approve; Auto mode does not skip it. No card asks for a key: a
 /// token goes in under Settings → Vault.
@@ -301,25 +325,7 @@ pub(crate) async fn request_card(
         created_at: time::OffsetDateTime::now_utc(),
     };
     connector.validate().map_err(ApiError::BadRequest)?;
-    if connector
-        .command
-        .iter()
-        .flatten()
-        .chain([&connector.url])
-        .any(|a| a.chars().any(deceptive))
-    {
-        return Err(ApiError::BadRequest(
-            "the command and URL cannot contain line breaks or invisible characters".into(),
-        ));
-    }
-    if connector.command.is_none() {
-        let parsed = reqwest::Url::parse(&connector.url)
-            .map_err(|_| ApiError::BadRequest("url is not a valid URL".into()))?;
-        // `https://good.example@evil.example` would show one host and reach another.
-        if !parsed.username().is_empty() || parsed.password().is_some() {
-            return Err(ApiError::BadRequest("url cannot carry a user name".into()));
-        }
-    }
+    shown_as_is(&connector)?;
     if state
         .store
         .list_connectors()
@@ -344,27 +350,24 @@ pub(crate) async fn request_card(
         ..
     } = connector;
     // A local server runs code on this computer: the card shows exactly what will run.
-    let (mut prompt, host) = match &command {
-        Some(argv) => (
+    let (mut prompt, host) = if let Some(argv) = &command {
+        (
             format!(
                 "Add the local MCP server \"{name}\" and give it to {who}?\nIt runs on this \
                  computer, outside the agents' sandboxes, as: {}",
                 shown_command(argv)
             ),
             "the local server".to_owned(),
-        ),
-        None => {
-            let host = reqwest::Url::parse(&url)
-                .ok()
-                .and_then(|u| u.host_str().map(str::to_owned))
-                .ok_or_else(|| ApiError::BadRequest("url needs a host".into()))?;
-            (
-                format!(
-                    "Add the connector \"{name}\" and give it to {who}?\nURL: {url}\nHost: {host}"
-                ),
-                host,
-            )
-        }
+        )
+    } else {
+        let host = reqwest::Url::parse(&url)
+            .ok()
+            .and_then(|u| u.host_str().map(str::to_owned))
+            .ok_or_else(|| ApiError::BadRequest("url needs a host".into()))?;
+        (
+            format!("Add the connector \"{name}\" and give it to {who}?\nURL: {url}\nHost: {host}"),
+            host,
+        )
     };
     if let Some(env) = &token_env {
         let _ = write!(

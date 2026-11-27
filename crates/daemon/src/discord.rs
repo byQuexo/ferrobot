@@ -530,7 +530,10 @@ async fn react(
     add: bool,
 ) -> Result<(), String> {
     // Percent-encoded byte by byte, so the emoji stays one path segment whatever it holds.
-    let emoji: String = emoji.bytes().map(|b| format!("%{b:02X}")).collect();
+    let emoji = emoji.bytes().fold(String::new(), |mut s, b| {
+        let _ = std::fmt::Write::write_fmt(&mut s, format_args!("%{b:02X}"));
+        s
+    });
     let path = format!("/channels/{channel}/messages/{message}/reactions/{emoji}/@me");
     let method = if add { Method::PUT } else { Method::DELETE };
     let status = match request(state, method, token, &path)
