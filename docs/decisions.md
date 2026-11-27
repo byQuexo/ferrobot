@@ -168,8 +168,12 @@ the code and this file together.
   about two weeks old rather than the newest one.
 - **Codex approvals: `on-request`.** 0.166 refuses `untrusted`. With
   `danger-full-access` Codex rarely asks, so the runner's `decide()` guard
-  rails mostly do not apply to Codex's own commands; the container stays the
-  boundary. Requests Codex does send are still answered with `decide()`.
+  rails and the daemon's tool check mostly do not apply to Codex's own
+  commands; the container stays the boundary. Requests Codex does send are
+  still answered with `decide()`. Because a force-push or publish would get no
+  card, a Codex agent never gets a CLI account (0.1.11 security review), and
+  the provider's hint says Codex runs most commands without asking. Routing
+  Codex's shell through the gated `bash` MCP tool, as Claude Code does, is open.
 
 ## L4: ACP driver
 

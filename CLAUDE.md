@@ -347,8 +347,13 @@ daemon, `docker ps -a` must be empty of ferrobot containers.
   the caller's own; narrowing applies at once, anything new needs a card unless Auto mode is on.
 - **Risky steps need a card unless Auto mode is on; critical ones (money or deleting
   through a connector, force-pushing, publishing) always do; dangerous ones are always
-  refused** (`tool_check.rs`). The runner asks before every shell command and
-  fails closed when the check can't answer.
+  refused** (`tool_check.rs`). The runner asks before every shell command of every shell
+  tool (Claude's `Bash`, `Monitor`, `PowerShell`; Gemini's and the OpenAI driver's shell) and
+  fails closed when the check can't answer. Exception: Codex runs most of its own commands
+  without asking (`danger-full-access`), so a Codex agent never gets a CLI account. The
+  classifier reads the command line and is best effort, not a sandbox: a script the agent
+  wrote is not read. Agents can't write the harnesses' own settings folders in their
+  workspace (`.claude`, `.codex`, `.gemini`), which could start processes.
 - **`FERROBOT_MAX_AGENTS`** (default 10) applies to `POST /v1/agents` and to
   `create_agent` (both through `daemon::agents::create`).
 - Question cards are answered at most once (`409` after).
