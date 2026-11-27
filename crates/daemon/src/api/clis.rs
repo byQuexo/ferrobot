@@ -307,7 +307,11 @@ pub(crate) async fn request_card(
     requester: AgentId,
     request: ferrobot_mcp::CliRequest,
 ) -> Result<i64, ApiError> {
-    let cli = request.cli;
+    let mut cli = request.cli;
+    // An agent never picks the commands that run next to the real token at sign-in.
+    if let Some(account) = &mut cli.account {
+        account.sign_in = None;
+    }
     let all = clis::all(state).await;
     if all.iter().any(|c| c.id == cli.id) {
         return Err(ApiError::Conflict(format!(
@@ -342,12 +346,21 @@ pub(crate) async fn request_card(
             let _ = write!(prompt, "Runs this script in {who}'s home folder:\n{script}");
         }
     }
+    if !cli.programs.is_empty() {
+        let _ = write!(prompt, "\nPrograms: {}.", cli.programs.join(", "));
+    }
     if let Some(account) = &cli.account {
         let _ = write!(
             prompt,
-            "\nIts token goes only to {}; add it or sign in under Settings → CLIs after adding \
-             it. {who} never sees it.",
-            account.hosts.join(", ")
+            "\nIts token goes only to {}, read from {}; add it under Settings → Computers after \
+             adding it. {who} never sees it.{}",
+            account.hosts.join(", "),
+            account.env.join(", "),
+            if account.confirm {
+                " Every command that uses it asks first."
+            } else {
+                ""
+            }
         );
     }
     if !request.reason.is_empty() {
@@ -375,11 +388,23 @@ pub(crate) async fn answer_card(
         return Err(ApiError::Internal("not an add-CLI card".into()));
     };
     let note = if approves(&answers) {
+        // Approved later than asked: a CLI set up meanwhile keeps its name, setup and token.
+        if clis::load(state).await?.clis.iter().any(|c| c.id == cli.id) {
+            return Err(ApiError::Conflict(format!(
+                "a CLI named {} was set up after this card; this card can no longer add it",
+                cli.id
+            )));
+        }
+        state
+            .settings
+            .secrets
+            .delete(&crate::logins::secret_key(&cli.id))
+            .await?;
         clis::put(state, cli.clone()).await?;
         if cli.account.is_some() {
             format!(
-                "The operator added the CLI \"{}\". Its account works once they add its token or \
-                 sign in under Settings; never ask for it.",
+                "The operator added the CLI \"{}\". Its account works once they add its token \
+                 under Settings; never ask for it.",
                 cli.id
             )
         } else {

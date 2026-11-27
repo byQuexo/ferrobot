@@ -316,6 +316,14 @@ pub struct AddConnectorArgs {
 }
 
 #[derive(Debug, Deserialize, JsonSchema)]
+pub struct ProposedAccount {
+    /// API hosts whose requests get the token, exact public names like `api.example.com`.
+    pub hosts: Vec<String>,
+    /// Environment variables the CLI reads its token from, e.g. `EXAMPLE_API_KEY`.
+    pub env: Vec<String>,
+}
+
+#[derive(Debug, Deserialize, JsonSchema)]
 pub struct ProposeCliArgs {
     /// 1-63 chars of `a-z0-9.+-`, e.g. `example`; also names its account.
     pub name: String,
@@ -326,11 +334,10 @@ pub struct ProposeCliArgs {
     /// The programs it brings, e.g. `["example"]`; a download needs one.
     #[serde(default)]
     pub programs: Vec<String>,
-    /// Only if it needs a token: the API hosts that get it, the variables the CLI reads it from
-    /// and, if the CLI has a sign-in that shows a one-time code, its login and token commands.
-    /// The operator adds the token or signs in; you never see it.
+    /// Only if it needs a token: the API hosts that get it and the variables the CLI reads it
+    /// from. The operator adds the token; you never see it.
     #[serde(default)]
-    pub account: Option<Account>,
+    pub account: Option<ProposedAccount>,
     /// One line on what you need it for, shown on the card.
     #[serde(default)]
     pub reason: String,
@@ -1149,7 +1156,13 @@ impl FerrobotTools {
                 id: args.name.trim().to_owned(),
                 install: args.install,
                 programs: args.programs,
-                account: args.account,
+                // Sign-in commands and ask-first stay the operator's to set; asking first by default.
+                account: args.account.map(|a| Account {
+                    hosts: a.hosts,
+                    env: a.env,
+                    confirm: true,
+                    sign_in: None,
+                }),
                 agents: vec![me],
             },
             reason: args.reason.trim().to_owned(),
