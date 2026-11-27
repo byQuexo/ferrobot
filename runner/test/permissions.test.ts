@@ -45,11 +45,23 @@ describe("permission policy", () => {
     }
   });
 
+  it("checks every shell tool, not only Bash", () => {
+    for (const tool of ["Monitor", "PowerShell"]) {
+      assert.equal(decide(tool, { command: "rm -rf /" }, home).allow, false, tool);
+      assert.equal(decide(tool, { command: "tail -f log" }, home).allow, true, tool);
+      assert.equal(decide(tool, {}, home).allow, false, `${tool} without a command`);
+    }
+  });
+
   it("keeps file tools inside the workspace", () => {
     assert.equal(decide("Write", { file_path: "notes.md" }, home).allow, true);
     assert.equal(decide("Read", { file_path: `${home}/a/b.txt` }, home).allow, true);
     assert.equal(decide("Read", { file_path: "/etc/passwd" }, home).allow, false);
     assert.equal(decide("Edit", { file_path: "../../.ssh/id_rsa" }, home).allow, false);
+    for (const file_path of [".gemini/settings.json", "app/.claude/settings.json", ".codex/x"]) {
+      assert.equal(decide("Write", { file_path }, home).allow, false, file_path);
+      assert.equal(decide("Read", { file_path }, home).allow, true, file_path);
+    }
   });
 
   it("refuses tools of turned-off groups and sub-agents while one is off", () => {

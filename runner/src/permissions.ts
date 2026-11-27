@@ -59,6 +59,16 @@ function isInside(root: string, target: string): boolean {
   return rel === "" || (!rel.startsWith("..") && !isAbsolute(rel));
 }
 
+/** Settings folders that harnesses load from the workspace and that can start processes
+ * (hooks, MCP servers), which would get around a turned-off Shell. */
+const HARNESS_SETTINGS = new Set([".gemini", ".codex", ".claude"]);
+
+function inHarnessSettings(root: string, target: string): boolean {
+  return relative(resolve(root), resolve(root, target))
+    .split(/[\\/]/)
+    .some((part) => HARNESS_SETTINGS.has(part));
+}
+
 function stringField(input: Record<string, unknown>, key: string): string | undefined {
   const value = input[key];
   return typeof value === "string" ? value : undefined;
@@ -81,8 +91,10 @@ export function decide(
     return { allow: false, reason: "blocked: sub-agents are off while a built-in tool is off" };
   }
 
-  if (toolName === "Bash") {
-    const command = stringField(input, "command") ?? "";
+  if (group === "shell") {
+    const command = stringField(input, "command");
+    // Every shell tool goes through the same checks; one whose command can't be read doesn't run.
+    if (command === undefined) return { allow: false, reason: "blocked: no command to check" };
     for (const rule of DESTRUCTIVE_SHELL) {
       if (rule.pattern.test(command)) return { allow: false, reason: `blocked: ${rule.reason}` };
     }
@@ -93,6 +105,9 @@ export function decide(
     const path = stringField(input, "file_path") ?? stringField(input, "notebook_path");
     if (path !== undefined && !isInside(home, path)) {
       return { allow: false, reason: `blocked: ${toolName} outside ${home}` };
+    }
+    if (path !== undefined && toolName !== "Read" && inHarnessSettings(home, path)) {
+      return { allow: false, reason: `blocked: ${toolName} of a harness's own settings` };
     }
     return { allow: true };
   }

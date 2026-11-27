@@ -299,7 +299,7 @@ export class ClaudeDriver implements ModelDriver {
     const canUseTool: CanUseTool = async (toolName, input) => {
       let verdict = decide(toolName, input, home, off);
       const command = input["command"];
-      if (verdict.allow && toolName === "Bash" && this.#opts.gate)
+      if (verdict.allow && CLAUDE_TOOLS.shell.includes(toolName) && this.#opts.gate)
         verdict = await this.#opts.gate.shell(typeof command === "string" ? command : "");
       if (verdict.allow) return { behavior: "allow", updatedInput: input };
       emit({ kind: "tool_denied", name: toolName, reason: verdict.reason });
