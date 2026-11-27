@@ -1687,3 +1687,8 @@ A review of the release before it shipped changed these decisions:
   and CLI tokens are not in the sandbox, and its commands meet the same checks.
 - **Only agents with Shell** get the note: without a shell they could not run the CLI or a
   skill's scripts.
+- **find-skills ships with ferrobot.** Tim wanted every agent to start with it. It is one MIT
+  `SKILL.md` (vercel-labs/skills at e7fd0e9), vendored under `crates/daemon/src/skills/` with its
+  licence and written into `~/.agents/skills/find-skills/` when a computer is made or wakes without
+  this version (marker `.ferrobot-defaults`). Vendoring instead of `npx skills add` at provision:
+  no network at provision, no upstream change reaching agents unseen.

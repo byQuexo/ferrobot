@@ -148,7 +148,9 @@ Principles:
   archives, `--storage-url` (default: the data dir; `s3://` for S3/R2).
 - `crates/daemon/src/update.rs` — `/v1/update` status; `update/source.rs` — a
   debug build pulls `main`, rebuilds and re-execs itself (debug builds only).
-- `crates/daemon/src/lifecycle.rs`, `supervisor.rs`, `scheduler.rs`, `runner_ws.rs`.
+- `crates/daemon/src/lifecycle.rs`, `supervisor.rs`, `scheduler.rs`, `runner_ws.rs`; `lifecycle.rs`
+  also writes the default skills (`crates/daemon/src/skills/`, find-skills, pinned) into each
+  computer's `~/.agents/skills`.
 - `crates/daemon/src/trace.rs` — a turn as a timeline (model calls from usage rows tagged
   with the turn, tool calls from its events, waits from the cards stamped with its
   `turn_id`, handoffs from its `handoff` events, which `enqueue` in `crates/mcp/src/tools.rs`

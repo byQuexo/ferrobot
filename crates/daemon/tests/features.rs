@@ -9639,3 +9639,21 @@ async fn a_claude_code_call_lasts_from_its_request_to_its_answer() {
         calls.iter().map(|c| c.latency_ms).collect::<Vec<_>>()
     );
 }
+
+#[tokio::test]
+async fn every_computer_starts_with_the_find_skills_skill() {
+    let backend = Arc::new(StatefulBackend::default());
+    let d = start(backend.clone(), None, "127.0.0.1:0").await;
+    create(&d, json!({"name": "ann", "tools": ["team"]})).await;
+    let written = backend.written.lock().unwrap().clone();
+    let skill = written
+        .iter()
+        .find(|(p, _)| p.ends_with("/.agents/skills/find-skills/SKILL.md"));
+    assert_eq!(skill.map(|(_, n)| *n), Some(5472), "{written:?}");
+    assert!(
+        written
+            .iter()
+            .any(|(p, _)| p.ends_with("/.agents/skills/find-skills/LICENSE")),
+        "its licence travels with it: {written:?}"
+    );
+}

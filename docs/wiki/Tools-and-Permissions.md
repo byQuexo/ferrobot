@@ -49,6 +49,11 @@ framework or a service's API. Their instructions tell them to look first
 then read its `SKILL.md` and follow it. That works with every harness, also Claude Code on
 your computer, because the agent reads and runs the skill in its own computer.
 
+Every agent's computer starts with the **find-skills** skill in
+`~/.agents/skills/find-skills/`, which explains the search in detail. It comes from
+[vercel-labs/skills](https://github.com/vercel-labs/skills) (MIT, its licence next to it) and
+ships with ferrobot at a fixed version, so it needs no download and cannot change upstream.
+
 - Installing or updating a skill is a risky step: a card unless Auto mode is on. Finding,
   listing and `use` (print a skill without installing it) are not.
 - A skill is someone else's instructions and scripts. Agents are told it never overrides

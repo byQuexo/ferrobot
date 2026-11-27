@@ -366,7 +366,9 @@ pub(crate) const SKILLS_CLI: &str = "npx -y skills@1.9.1";
 fn skills_note() -> String {
     format!(
         "Skills: before working out a specialised task on your own (a file format, a framework, \
-a service's API, a design style), look for a ready-made skill. `{SKILLS_CLI} find <topic>` lists \
+a service's API, a design style), look for a ready-made skill; your find-skills skill \
+(~/.agents/skills/find-skills/SKILL.md) explains how, using `{SKILLS_CLI}` for its commands. \
+`{SKILLS_CLI} find <topic>` lists \
 skills; `{SKILLS_CLI} add <owner/repo@skill> -g -y` installs one into ~/.agents/skills/<name>/ \
 (installing asks your operator first unless Auto mode is on); then read its SKILL.md and follow \
 it, running its scripts from that folder. `{SKILLS_CLI} list -g` shows what you installed. A \

@@ -199,6 +199,7 @@ async fn provision_locked(state: &AppState, agent: &Agent) -> Result<SandboxHand
                 state.clis.take_pending(agent.id);
                 install_home(state, agent.id);
             }
+            default_skills(state, &handle).await;
             Ok(handle)
         }
         Err(e) => {
@@ -206,6 +207,70 @@ async fn provision_locked(state: &AppState, agent: &Agent) -> Result<SandboxHand
             set_status(state, agent.id, AgentStatus::Failed).await?;
             Err(e.into())
         }
+    }
+}
+
+/// The skills every agent starts with, pinned: (name, file, contents). `find-skills` is
+/// vercel-labs/skills at e7fd0e9 (MIT), so agents can look for more on skills.sh.
+const DEFAULT_SKILLS: [(&str, &str, &[u8]); 2] = [
+    (
+        "find-skills",
+        "SKILL.md",
+        include_bytes!("skills/find-skills/SKILL.md"),
+    ),
+    (
+        "find-skills",
+        "LICENSE",
+        include_bytes!("skills/find-skills/LICENSE"),
+    ),
+];
+/// Bumped when a default skill changes, so computers that have an older copy get the new one.
+const DEFAULT_SKILLS_VERSION: &str = "find-skills@e7fd0e9";
+
+/// Puts the default skills into `~/.agents/skills` unless this version is already there. A
+/// failure leaves the agent without them, not without its computer.
+async fn default_skills(state: &AppState, handle: &SandboxHandle) {
+    let home = state.backend.home();
+    let root = format!("{home}/.agents/skills");
+    let marker = format!("{root}/.ferrobot-defaults");
+    let check = ferrobot_sandbox::ExecRequest::new(["/bin/cat", marker.as_str()]);
+    if state
+        .backend
+        .exec(handle, &check)
+        .await
+        .is_ok_and(|out| out.stdout.trim() == DEFAULT_SKILLS_VERSION)
+    {
+        return;
+    }
+    let written = async {
+        let path = |p: &str| ferrobot_sandbox::SandboxPath::parse(p).map_err(|e| e.to_string());
+        let dirs: Vec<String> = DEFAULT_SKILLS
+            .iter()
+            .map(|(name, ..)| format!("{root}/{name}"))
+            .collect();
+        let mut mkdir = vec!["/bin/mkdir".to_owned(), "-p".to_owned()];
+        mkdir.extend(dirs);
+        state
+            .backend
+            .exec(handle, &ferrobot_sandbox::ExecRequest::new(mkdir))
+            .await
+            .map_err(|e| e.to_string())?;
+        for (name, file, bytes) in DEFAULT_SKILLS {
+            let target = path(&format!("{root}/{name}/{file}"))?;
+            state
+                .backend
+                .write_file(handle, &target, bytes)
+                .await
+                .map_err(|e| e.to_string())?;
+        }
+        state
+            .backend
+            .write_file(handle, &path(&marker)?, DEFAULT_SKILLS_VERSION.as_bytes())
+            .await
+            .map_err(|e| e.to_string())
+    };
+    if let Err(e) = written.await {
+        tracing::warn!(error = %e, "the default skills could not be put in the sandbox");
     }
 }
 
@@ -235,6 +300,7 @@ pub async fn wake(state: &AppState, id: AgentId) -> Result<(), ApiError> {
             if state.clis.take_pending(id) {
                 install_home(state, id);
             }
+            default_skills(state, &handle).await;
             if agent.status != AgentStatus::Running {
                 state.record(id, None, "awake", json!({})).await;
             }
