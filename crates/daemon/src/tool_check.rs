@@ -489,7 +489,7 @@ pub async fn gate(state: &AppState, agent: AgentId, call: Call<'_>) -> Result<()
         None
     } else {
         let step = &card.card.questions[0].prompt;
-        crate::goal::ask_lead(state, (agent, name.as_str()), qid, step).await
+        crate::goal::ask_lead(state, (agent, name.as_str()), qid, (step, &reason)).await
     };
     let decision = crate::agents::wait_card(state, agent, qid, rx).await;
     if let Some(note) = note {

@@ -148,6 +148,35 @@ async fn end_locked(state: &AppState, agent: AgentId, how: End, note: &str) {
     let event = json!({ "state": how.as_str(), "goal": goal.goal, "note": note });
     state.record(agent, None, "goal", event).await;
     state.publish(UiEvent::GoalChanged { agent_id: agent });
+    if how != End::Achieved {
+        stop_teammates(state, agent, &goal.goal, note).await;
+    }
+}
+
+/// A task that ends without being achieved takes its teammates' work along: the turns of the
+/// agents working on its agent's messages (and so on) stop, the agent messages queued between
+/// them drop, and each teammate's chat says why. The task's agent keeps its own turn.
+async fn stop_teammates(state: &AppState, lead: AgentId, goal: &str, note: &str) {
+    let Ok(open) = state.store.open_messages().await else {
+        return;
+    };
+    let chain = crate::stop::chain(lead, &open);
+    let Some(team) = chain.get(1..).filter(|t| !t.is_empty()) else {
+        return;
+    };
+    let name = state
+        .store
+        .get_agent(lead)
+        .await
+        .map_or_else(|_| "its agent".to_owned(), |a| format!("@{}", a.name));
+    let why = format!("{name}'s task stopped: {note}");
+    if let Err(e) = crate::stop::stop_agents(state, team, &open, &why).await {
+        tracing::warn!(error = %e, %lead, "cannot stop the task's teammates");
+    }
+    for &member in team {
+        let event = json!({ "state": "stopped", "goal": goal, "note": why });
+        state.record(member, None, "goal", event).await;
+    }
 }
 
 async fn drop_pending(state: &AppState, goal: &TaskGoal) {
@@ -323,12 +352,14 @@ async fn continue_with(state: &AppState, agent: AgentId, text: &str, reason: Opt
 }
 
 /// Lets the lead of the task `agent` works for decide its risky step on card `qid` as well;
-/// the operator's card stays open. Returns the note, for [`drop_note`].
+/// the operator's card stays open. The lead reads the whole `step`; the task's line in the chat
+/// shows only `why` it is risky, since the step can be a long script. Returns the note, for
+/// [`drop_note`].
 pub(crate) async fn ask_lead(
     state: &AppState,
     (agent, name): (AgentId, &str),
     qid: i64,
-    step: &str,
+    (step, why): (&str, &str),
 ) -> Option<i64> {
     let _lock = LOCK.lock().await;
     let mut goals = load(state).await.ok()?;
@@ -360,7 +391,7 @@ pub(crate) async fn ask_lead(
     if let Err(e) = save_json(state, SETTING, &goals).await {
         tracing::error!(error = %e, %lead, "cannot save the task");
     }
-    let event = json!({ "state": "approval", "by": name, "note": step, "note_id": id });
+    let event = json!({ "state": "approval", "by": name, "note": why, "note_id": id });
     // Before the message is published, so the chat hides it from the start.
     state.record(lead, None, "goal", event).await;
     state.message_arrived(lead);

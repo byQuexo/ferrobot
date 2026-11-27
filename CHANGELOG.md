@@ -18,6 +18,9 @@ All notable changes are listed here. The format follows
 
 - Model calls of agents on Claude Code (your own login) showed 0.0 s in traces: they now last from the request to the answer.
 - Computers created by an older version of the app kept its runner after an update, so they never got the desktop and "Restart to get the desktop" came back after every restart. They now move to the current runner on their next wake, files kept.
+- The desktop never started on Windows ("The connection to the desktop ended"): a Windows checkout gave its start script CRLF line endings, which the daemon builds in. `.gitattributes` now keeps scripts LF.
+- A stopped task left its teammates working: clearing it, Stop, a failed turn or giving up now also stops the teammates working on its parts, and their chats say the task stopped.
+- A risky step passed to a task showed the whole command in the task's chat line; the line now gives the reason, and the full step stays on the card.
 
 ## [0.1.11] - 2026-11-27
 

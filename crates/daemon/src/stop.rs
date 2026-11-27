@@ -14,23 +14,32 @@ pub(crate) async fn stop_chain(
 ) -> Result<(Vec<AgentId>, usize), ApiError> {
     let open = state.store.open_messages().await?;
     let chain = chain(agent, &open);
-    state.hub.mark_stopped(&chain);
-    for agent in &chain {
+    let dropped = stop_agents(state, &chain, &open, "stopped by the operator").await?;
+    Ok((chain, dropped))
+}
+
+/// Stops the turns of `agents` and drops the agent messages queued to or from any of them
+/// (`open`: the open messages); returns how many were dropped.
+pub(crate) async fn stop_agents(
+    state: &AppState,
+    agents: &[AgentId],
+    open: &[MailMessage],
+    why: &str,
+) -> Result<usize, ApiError> {
+    state.hub.mark_stopped(agents);
+    for agent in agents {
         state.hub.interrupt(*agent);
     }
     let queued = open
         .iter()
-        .filter(|m| m.status == MailStatus::Pending && between(m, &chain))
+        .filter(|m| m.status == MailStatus::Pending && between(m, agents))
         .map(|m| m.id)
         .collect();
-    let dropped = state
-        .store
-        .drop_messages(queued, "stopped by the operator".into())
-        .await?;
+    let dropped = state.store.drop_messages(queued, why.into()).await?;
     for id in &dropped {
         state.publish_message(*id).await;
     }
-    Ok((chain, dropped.len()))
+    Ok(dropped.len())
 }
 
 fn from_agent(m: &MailMessage) -> Option<AgentId> {

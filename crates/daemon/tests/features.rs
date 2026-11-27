@@ -10109,6 +10109,48 @@ async fn a_task_waits_while_the_operator_has_a_card_to_answer() {
 }
 
 #[tokio::test]
+async fn a_stopped_task_stops_its_teammates_and_tells_them_why() {
+    use ferrobot_core::protocol::TurnOutcome::Interrupted;
+    let backend = Arc::new(StatefulBackend::default());
+    let d = start(backend.clone(), None, "127.0.0.1:0").await;
+    let lead = create_id(&d, json!({"name": "lead"})).await;
+    let dex = create_id(&d, json!({"name": "dex"})).await;
+    let mut ws = connect_runner(&d.agents, &backend.token("lead")).await;
+    let mut dex_ws = connect_runner(&d.agents, &backend.token("dex")).await;
+    let client = mcp_as(&d, backend.token("lead")).await;
+    let path = format!("/v1/agents/{lead}/goal");
+    let goal = json!({"goal": "ship the site"});
+    assert_eq!(http(&d.ui, "PUT", &path, Some(goal)).await.0, 200);
+    let (turn, _, _) = next_turn(&mut ws).await;
+    call(
+        &client,
+        "assign_task",
+        json!({"to": "dex", "task": "build the page"}),
+    )
+    .await;
+    finish(&mut ws, turn, Some("dex builds the page.")).await;
+    let (dex_turn, _, _) = next_turn(&mut dex_ws).await;
+
+    // Clearing the task stops dex's part of it; the lead was idle and stays so.
+    assert_eq!(http(&d.ui, "DELETE", &path, None).await.0, 204);
+    match next_frame(&mut dex_ws).await {
+        DaemonFrame::Interrupt { turn_id } => assert_eq!(turn_id, dex_turn),
+        other => panic!("expected dex's turn stopped, got {other:?}"),
+    }
+    answer_with(&mut dex_ws, dex_turn, "", Interrupted).await;
+    let told = goal_events(&d, &dex).await;
+    assert_eq!(told.len(), 1, "{told:?}");
+    assert_eq!(told[0]["state"], "stopped");
+    assert_eq!(
+        told[0]["note"],
+        "@lead's task stopped: cleared by the operator"
+    );
+    // dex's stopped part does not report back and start the lead again.
+    quiet(&mut ws).await;
+    quiet(&mut dex_ws).await;
+}
+
+#[tokio::test]
 async fn a_task_waits_for_its_teammates_and_moves_on_with_their_answers() {
     let backend = Arc::new(StatefulBackend::default());
     let d = start(backend.clone(), None, "127.0.0.1:0").await;
@@ -10184,6 +10226,20 @@ async fn the_lead_decides_only_its_teammates_risky_steps() {
     assert!(
         note.contains("dex") && note.contains(&format!("card {qid}")),
         "{note}"
+    );
+    assert!(
+        note.contains("git push origin main"),
+        "the lead reads the step: {note}"
+    );
+    let line = events(&d, &lead)
+        .await
+        .into_iter()
+        .find(|e| e["kind"] == "goal" && e["payload"]["state"] == "approval")
+        .unwrap();
+    let why = line["payload"]["note"].as_str().unwrap();
+    assert!(
+        !why.is_empty() && !why.contains("git push"),
+        "only the reason: {why}"
     );
     finish(&mut ws, turn, Some("Checking.")).await;
 

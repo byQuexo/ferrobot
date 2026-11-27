@@ -285,7 +285,10 @@ export interface paths {
          */
         put: operations["put_goal"];
         post?: never;
-        /** Clears the agent's task without stopping its turn; a waiting continuation is dropped. */
+        /**
+         * Clears the agent's task without stopping its turn; a waiting continuation is dropped, and
+         *     the teammates working on its parts stop.
+         */
         delete: operations["delete_goal"];
         options?: never;
         head?: never;

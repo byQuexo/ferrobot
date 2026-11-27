@@ -68,7 +68,8 @@ pub(crate) async fn put_goal(
     ))
 }
 
-/// Clears the agent's task without stopping its turn; a waiting continuation is dropped.
+/// Clears the agent's task without stopping its turn; a waiting continuation is dropped, and
+/// the teammates working on its parts stop.
 #[utoipa::path(delete, path = "/v1/agents/{id}/goal", tag = "chat",
     params(("id" = String, Path, description = "Agent id (UUID)")),
     responses((status = 204, description = "Cleared, or there was none"),

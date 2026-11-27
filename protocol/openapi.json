@@ -1436,7 +1436,7 @@
         "tags": [
           "chat"
         ],
-        "summary": "Clears the agent's task without stopping its turn; a waiting continuation is dropped.",
+        "summary": "Clears the agent's task without stopping its turn; a waiting continuation is dropped, and\nthe teammates working on its parts stop.",
         "operationId": "delete_goal",
         "parameters": [
           {
