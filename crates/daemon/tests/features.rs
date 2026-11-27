@@ -9955,8 +9955,8 @@ async fn slash_commands_start_with_goal_keep_edits_and_survive_a_restart() {
         list,
         json!([{
             "name": "goal",
-            "description": "Keep working until this is reached, checked after every turn",
-            "prompt": "$ARGUMENTS",
+            "description": "A task with house rules: small steps, checked results, a report on what was checked",
+            "prompt": "$ARGUMENTS\n\nWork in small steps. Before you call finish_task, check the result yourself (run it, test it), and say in your report what you checked.",
             "as_task": true,
             "added_by": null,
         }]),

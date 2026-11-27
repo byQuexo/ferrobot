@@ -49,8 +49,8 @@ pub(crate) struct Command {
 fn seed() -> Vec<Command> {
     vec![Command {
         name: "goal".into(),
-        description: "Keep working until this is reached, checked after every turn".into(),
-        prompt: "$ARGUMENTS".into(),
+        description: "A task with house rules: small steps, checked results, a report on what was checked".into(),
+        prompt: "$ARGUMENTS\n\nWork in small steps. Before you call finish_task, check the result yourself (run it, test it), and say in your report what you checked.".into(),
         as_task: true,
         added_by: None,
     }]

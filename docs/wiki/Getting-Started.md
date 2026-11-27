@@ -88,9 +88,10 @@ achieved, stopped or gave up.
 **Settings → Commands** keeps prompts you use often. Type `/` at the start of a
 message to pick one: `/name more text` sends the command's prompt with your text
 in place of `$ARGUMENTS` (without it, your text follows after a blank line).
-With **Run as a task**, the command starts a task with a goal instead, like the
-`/goal` example a new ferrobot starts with. A `/word` that is no command goes
-out as you typed it.
+With **Run as a task**, the command starts a task with a goal instead. The `/goal`
+example a new ferrobot starts with is such a task with house rules: work in small
+steps, check the result before finishing and say what was checked. A `/word` that
+is no command goes out as you typed it.
 
 Agents with the Operator tools offer to turn a request you repeat into a
 command, and add one with `add_command` when you agree. You always get a card
