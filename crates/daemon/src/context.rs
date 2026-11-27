@@ -70,6 +70,17 @@ pub enum ContextSource {
     RequestSize,
 }
 
+/// What a measurement could not count.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum ContextLeftOut {
+    /// The agent's MCP tools: measured on request, outside a turn, `claude` cannot reach them
+    /// (the agent's token exists only during a turn).
+    McpTools,
+    /// ferrobot's instructions in the system prompt: none were kept from the agent's turns yet.
+    Instructions,
+}
+
 /// A context split into parts.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Breakdown {
@@ -77,6 +88,9 @@ pub struct Breakdown {
     pub parts: Vec<ContextPart>,
     /// MCP tools, largest first.
     pub tools: Vec<ContextTool>,
+    /// What this measurement could not count; empty when it counted everything.
+    #[serde(default)]
+    pub left_out: Vec<ContextLeftOut>,
 }
 
 // --- Claude Code: `claude -p --output-format=json /context` ---
@@ -213,6 +227,7 @@ pub fn parse_report(report: &str) -> Option<Breakdown> {
         source: ContextSource::ClaudeCode,
         parts,
         tools,
+        left_out: Vec::new(),
     })
 }
 
@@ -381,6 +396,7 @@ pub(crate) fn estimate(sizes: &Sizes, tokens: i64) -> Breakdown {
         source: ContextSource::RequestSize,
         parts,
         tools,
+        left_out: Vec::new(),
     }
 }
 

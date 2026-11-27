@@ -68,6 +68,10 @@ pub fn router() -> Router<AppState> {
         .merge(chat::router())
         .route("/v1/agents/{id}/context", get(usage::get_context))
         .route(
+            "/v1/agents/{id}/context/measure",
+            post(usage::measure_context),
+        )
+        .route(
             "/v1/agents/{id}/memory",
             get(memory::list_memory).post(memory::put_memory),
         )

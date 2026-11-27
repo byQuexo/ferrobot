@@ -6148,6 +6148,9 @@ async fn a_proxied_calls_context_splits_by_the_requests_parts() {
     assert_eq!(sum, 1212, "the parts add up to the total: {ctx}");
     assert_eq!(ctx["tools"][0]["name"], "send_message");
     assert!(!ctx.to_string().contains(secret), "sizes only, never text");
+    assert_eq!(ctx["left_out"], json!([]));
+    let (status, _) = http(&d.ui, "POST", &format!("{path}/measure"), None).await;
+    assert_eq!(status, 400, "measured at every call, no request needed");
 }
 
 #[tokio::test]
@@ -7240,6 +7243,13 @@ async fn claude_code_agents_use_the_hosts_own_cli_and_nothing_enters_the_sandbox
         (&json!(true), &Value::Null, &json!("sonnet")),
         "no turn yet: {ctx}"
     );
+    assert_eq!(
+        http(&d.ui, "POST", &format!("{context}/measure"), None)
+            .await
+            .0,
+        409,
+        "nothing to measure yet"
+    );
     let compact = format!("/v1/agents/{}/compact", clio["id"].as_str().unwrap());
     assert_eq!(
         http(&d.ui, "POST", &compact, None).await.0,
@@ -7349,6 +7359,41 @@ async fn claude_code_agents_use_the_hosts_own_cli_and_nothing_enters_the_sandbox
     assert!(
         log("context-mcp.log").contains(&format!("Bearer {token}")),
         "the turn's own MCP config, so its tools are counted"
+    );
+    assert_eq!(ctx["left_out"], json!([]));
+    // On request, a full breakdown from the turn stays: claude does not run again.
+    let measure = format!("{context}/measure");
+    let runs = log("context-args.log").lines().count();
+    let (status, ctx) = http(&d.ui, "POST", &measure, None).await;
+    assert_eq!((status, &ctx["left_out"]), (200, &json!([])), "{ctx}");
+    assert_eq!(log("context-args.log").lines().count(), runs);
+    // A turn without one (e.g. on an older daemon): measured outside the turn, with no MCP
+    // server (no token) and the turn's instructions kept.
+    let clio_dir = data.join("claude-code").join(clio["id"].as_str().unwrap());
+    std::fs::remove_file(clio_dir.join("context-parts.json")).unwrap();
+    let (status, ctx) = http(&d.ui, "POST", &measure, None).await;
+    assert_eq!(status, 200, "{ctx}");
+    assert_eq!(
+        (&ctx["source"], &ctx["left_out"]),
+        (&json!("claude_code"), &json!(["mcp_tools"]))
+    );
+    assert_eq!(ctx["tokens"], 5000);
+    assert!(
+        !log("context-mcp.log").contains("Bearer"),
+        "no agent token outside a turn: {}",
+        log("context-mcp.log")
+    );
+    let measured = log("context-args.log");
+    let last = measured.lines().last().unwrap();
+    assert!(
+        last.contains(&format!("--resume={session}")) && last.contains("--no-session-persistence"),
+        "{last}"
+    );
+    let (_, ctx) = http(&d.ui, "GET", &context, None).await;
+    assert_eq!(
+        ctx["left_out"],
+        json!(["mcp_tools"]),
+        "kept until the next turn"
     );
     // Compacting runs claude's own /compact on that session, with no tools, on the daemon's word.
     assert_eq!(http(&d.ui, "POST", &compact, None).await.0, 204);

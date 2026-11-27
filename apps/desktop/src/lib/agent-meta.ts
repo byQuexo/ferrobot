@@ -67,6 +67,8 @@ export interface ContextBreakdown {
   rows: ContextRow[];
   tools: { name: string; tokens: number }[];
   note: string;
+  /** Whether "Measure now" can fill it in (Claude Code agents without a breakdown yet). */
+  measurable: boolean;
 }
 
 const SLOTS: Record<ContextPart["kind"], string> = {
@@ -94,8 +96,9 @@ export function contextBreakdown(ctx: AgentContext | null): ContextBreakdown | n
       rows: [],
       tools: [],
       note: ctx.compact
-        ? "The breakdown comes from Claude Code a moment after each turn."
+        ? "The breakdown comes from Claude Code a moment after each turn, or measure it now."
         : "The breakdown comes with the agent’s next model call through ferrobot.",
+      measurable: ctx.compact,
     };
   }
   const window = ctx.window;
@@ -117,12 +120,13 @@ export function contextBreakdown(ctx: AgentContext | null): ContextBreakdown | n
       deferred: false,
     });
   }
-  return {
-    rows,
-    tools: ctx.tools,
-    note:
-      ctx.source === "claude_code"
-        ? "Parts as Claude Code’s /context counts them, rounded."
-        : "Parts estimated from the size of the newest request; the total is exact.",
-  };
+  const leftOut = ctx.left_out
+    .map((l) => (l === "mcp_tools" ? "MCP tools" : "ferrobot’s instructions"))
+    .join(" and ");
+  let note =
+    ctx.source === "claude_code"
+      ? "Parts as Claude Code’s /context counts them, rounded."
+      : "Parts estimated from the size of the newest request; the total is exact.";
+  if (leftOut) note += ` Measured outside a turn, without ${leftOut}; the next turn counts them.`;
+  return { rows, tools: ctx.tools, note, measurable: false };
 }

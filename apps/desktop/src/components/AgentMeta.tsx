@@ -1,6 +1,6 @@
 import type { JSX } from "preact";
 import { useEffect, useRef, useState } from "preact/hooks";
-import { ChevronDown, MessageSquarePlus, Minimize2, Wrench } from "lucide-preact";
+import { ChevronDown, Gauge, MessageSquarePlus, Minimize2, Wrench } from "lucide-preact";
 
 import type { Agent, AgentContext, Provider } from "../api.ts";
 import { useApp } from "../context.ts";
@@ -133,6 +133,7 @@ export function ContextMeter(props: { agent: Agent }): JSX.Element {
   const pop = usePopover();
   const [ctx, setCtx] = useState<AgentContext | null>(null);
   const [compacting, setCompacting] = useState(false);
+  const [measuring, setMeasuring] = useState(false);
   useEffect(() => {
     let live = true;
     const load = (): void => {
@@ -219,6 +220,23 @@ export function ContextMeter(props: { agent: Agent }): JSX.Element {
           )}
           <span class="muted small">{meter.detail}</span>
           {breakdown && <span class="hint">{breakdown.note}</span>}
+          {breakdown?.measurable && (
+            <Button
+              small
+              disabled={measuring}
+              onClick={() =>
+                void (async () => {
+                  setMeasuring(true);
+                  await run(async () => {
+                    setCtx(await client.measureContext(id));
+                  });
+                  setMeasuring(false);
+                })()
+              }
+            >
+              <Gauge size={16} /> {measuring ? "Measuring…" : "Measure now"}
+            </Button>
+          )}
           {ctx?.compact && (
             <>
               <Button

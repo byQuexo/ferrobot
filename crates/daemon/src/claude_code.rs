@@ -308,7 +308,7 @@ fn login_of(auth_status: &str) -> (bool, Option<String>) {
 /// How long `claude` may take to compact a session (it is a model call).
 const COMPACT_TIMEOUT: Duration = Duration::from_secs(180);
 
-/// Why a session could not be compacted.
+/// Why a session could not be compacted or measured.
 #[derive(Debug)]
 pub enum CompactError {
     /// No session yet, or the agent is in a turn.
@@ -644,26 +644,120 @@ async fn measure(
     args: Vec<String>,
     at: time::OffsetDateTime,
 ) {
-    let mut cmd = claude(&state);
-    cmd.args(&args).current_dir(&dir);
-    let report = match tokio::time::timeout(MEASURE_TIMEOUT, cmd.output()).await {
-        Ok(Ok(out)) => serde_json::from_slice::<Value>(&out.stdout).ok(),
-        _ => None,
-    };
+    let breakdown = run_context(&state, &dir, &args).await;
     drop(config);
-    let breakdown = report
-        .filter(|r| r["is_error"] != true)
-        .and_then(|r| crate::context::parse_report(r["result"].as_str().unwrap_or_default()));
-    let Some(breakdown) = breakdown else {
+    if let Some(breakdown) = breakdown {
+        save_parts(&dir, at, &breakdown).await;
+    } else {
         tracing::debug!(dir = %dir.display(), "no /context report from claude");
-        return;
-    };
-    // A newer turn may have finished meanwhile; its own measurement wins.
-    if read_context(&dir).await.is_some_and(|c| c.at == at)
-        && let Ok(raw) = serde_json::to_vec(&Parts { at, breakdown })
+    }
+}
+
+/// Runs `claude` with `/context` arguments and reads its report.
+async fn run_context(
+    state: &AppState,
+    dir: &Path,
+    args: &[String],
+) -> Option<crate::context::Breakdown> {
+    let mut cmd = claude(state);
+    cmd.args(args).current_dir(dir);
+    let out = tokio::time::timeout(MEASURE_TIMEOUT, cmd.output())
+        .await
+        .ok()?
+        .ok()?;
+    let report: Value = serde_json::from_slice(&out.stdout).ok()?;
+    if report["is_error"] == true {
+        return None;
+    }
+    crate::context::parse_report(report["result"].as_str().unwrap_or_default())
+}
+
+/// Keeps `breakdown` for the turn that left the context of `at`, unless a newer turn has
+/// finished meanwhile (its own measurement wins).
+async fn save_parts(dir: &Path, at: time::OffsetDateTime, breakdown: &crate::context::Breakdown) {
+    if read_context(dir).await.is_some_and(|c| c.at == at)
+        && let Ok(raw) = serde_json::to_vec(&Parts {
+            at,
+            breakdown: breakdown.clone(),
+        })
     {
         let _ = tokio::fs::write(dir.join(PARTS_FILE), raw).await;
     }
+}
+
+/// The newest turn's ferrobot instructions, kept beside the session for measuring on request.
+const SYSTEM_FILE: &str = "system.md";
+
+/// Files for a `/context` run outside a turn: no MCP server (the agent's token exists only
+/// during a turn), the newest turn's instructions if kept, and no hooks.
+fn on_request_files(instructions: &str) -> std::io::Result<tempfile::TempDir> {
+    let dir = tempfile::Builder::new()
+        .prefix("ferrobot-claude-")
+        .tempdir()?;
+    for (name, text) in [
+        ("mcp.json", json!({ "mcpServers": {} }).to_string()),
+        ("system.md", instructions.to_owned()),
+        (
+            "measure.json",
+            json!({ "disableAllHooks": true }).to_string(),
+        ),
+    ] {
+        write_private(&dir.path().join(name), &text)?;
+    }
+    Ok(dir)
+}
+
+/// Measures the agent's context now with `claude`'s own `/context`, without its MCP tools,
+/// which only a turn can reach. On the operator's word; a local command, no model call. The
+/// breakdown is kept for the agent's newest turn and returned; a full one from that turn stays.
+pub async fn measure_now(
+    state: &AppState,
+    agent: &Agent,
+    model: Option<&str>,
+) -> Result<crate::context::Breakdown, CompactError> {
+    let dir = agent_dir(state, agent.id);
+    let session: Uuid = tokio::fs::read_to_string(dir.join("session"))
+        .await
+        .ok()
+        .and_then(|s| s.trim().parse().ok())
+        .ok_or(CompactError::NotNow(
+            "there is no conversation to measure yet",
+        ))?;
+    let context = read_context(&dir)
+        .await
+        .ok_or(CompactError::NotNow("there is no turn to measure yet"))?;
+    // The turn's own measurement counted everything: keep it.
+    if let Some(full) = breakdown(state, agent.id, &context)
+        .await
+        .filter(|b| b.left_out.is_empty())
+    {
+        return Ok(full);
+    }
+    if state.hub.is_working(agent.id) {
+        return Err(CompactError::NotNow(
+            "the agent is in a turn; its breakdown comes when the turn ends",
+        ));
+    }
+    let model = model.filter(|m| valid_model(m));
+    let failed = |why: &str| CompactError::Failed(why.to_owned());
+    let (_, extensions) = extensions(state).await.map_err(|e| failed(&e))?;
+    let kept = tokio::fs::read_to_string(dir.join(SYSTEM_FILE)).await.ok();
+    let files = on_request_files(kept.as_deref().unwrap_or_default())
+        .map_err(|e| failed(&e.to_string()))?;
+    let args = context_args(files.path(), session, model, &extensions);
+    let mut breakdown = run_context(state, &dir, &args)
+        .await
+        .ok_or_else(|| failed("Claude Code gave no /context report"))?;
+    breakdown
+        .left_out
+        .push(crate::context::ContextLeftOut::McpTools);
+    if kept.is_none() {
+        breakdown
+            .left_out
+            .push(crate::context::ContextLeftOut::Instructions);
+    }
+    save_parts(&dir, context.at, &breakdown).await;
+    Ok(breakdown)
 }
 
 /// The model call whose reply is streaming: `claude`'s assistant lines carry its message id.
@@ -843,6 +937,8 @@ async fn start(
     let (settings, extensions) = extensions(state).await?;
     let config = write_turn_files(&state.settings.agent_url, token, &req.system, &settings)
         .map_err(|e| e.to_string())?;
+    // For measuring on request later; the instructions hold no token.
+    let _ = write_private(&dir.join(SYSTEM_FILE), &req.system);
     let measure_args = context_args(config.path(), session_id, model, &extensions);
     let mut cmd = claude(state);
     cmd.args(turn_args(config.path(), &session, model, &extensions))
@@ -905,6 +1001,17 @@ fn agent_dir(state: &AppState, agent: AgentId) -> PathBuf {
 /// Drops a deleted agent's working directory and session id; `claude` keeps its own transcripts.
 pub async fn forget(state: &AppState, agent: AgentId) {
     let _ = tokio::fs::remove_dir_all(agent_dir(state, agent)).await;
+}
+
+/// Writes a file only the daemon's user can read.
+fn write_private(path: &Path, text: &str) -> std::io::Result<()> {
+    std::fs::write(path, text)?;
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt as _;
+        std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o600))?;
+    }
+    Ok(())
 }
 
 /// The agent's own token for the daemon's MCP server, its system prompt and the operator's
@@ -1308,6 +1415,16 @@ mod tests {
             std::fs::read_to_string(dir.path().join("measure.json")).unwrap(),
             r#"{"disableAllHooks":true}"#
         );
+    }
+
+    #[test]
+    fn measuring_on_request_reaches_no_mcp_server_and_runs_no_hook() {
+        let files = on_request_files("you are scout").unwrap();
+        let read = |name: &str| std::fs::read_to_string(files.path().join(name)).unwrap();
+        assert_eq!(read("mcp.json"), r#"{"mcpServers":{}}"#);
+        assert_eq!(read("system.md"), "you are scout");
+        assert_eq!(read("measure.json"), r#"{"disableAllHooks":true}"#);
+        assert!(!files.path().join("settings.json").exists());
     }
 
     #[test]

@@ -2295,6 +2295,7 @@ describe("agent meta", () => {
       compact: false,
       parts: [],
       tools: [],
+      left_out: [],
     };
     assert.deepEqual(contextMeter(ctx), {
       percent: 25,
@@ -2305,7 +2306,7 @@ describe("agent meta", () => {
     assert.equal(contextMeter({ ...ctx, tokens: null }).percent, 0);
     assert.equal(contextMeter({ ...ctx, window: null }).percent, null);
     assert.equal(
-      contextMeter({ tracked: false, compact: false, parts: [], tools: [] }).title,
+      contextMeter({ tracked: false, compact: false, parts: [], tools: [], left_out: [] }).title,
       "Context not tracked",
     );
   });
@@ -2324,6 +2325,7 @@ describe("agent meta", () => {
       compact: false,
       parts: [part("system_prompt", 20_000), part("mcp_tools", 5_000), part("messages", 75_000)],
       tools: [{ name: "send_message", tokens: 5_000 }],
+      left_out: [],
       source: "request_size" as const,
     };
     const b = contextBreakdown(ctx);
@@ -2366,13 +2368,18 @@ describe("agent meta", () => {
       ],
     );
     assert.match(claude.note, /Claude Code/);
+    assert.equal(claude.measurable, false);
 
-    // No parts yet: say where they come from; before any call, nothing.
-    assert.match(
-      contextBreakdown({ ...ctx, compact: true, parts: [], source: null })?.note ?? "",
-      /after each turn/,
-    );
-    assert.deepEqual(contextBreakdown({ ...ctx, parts: [], source: null })?.rows, []);
+    // Measured on request: say what it left out.
+    const partial = contextBreakdown({ ...ctx, source: "claude_code", left_out: ["mcp_tools"] });
+    assert.match(partial?.note ?? "", /without MCP tools; the next turn counts them/);
+
+    // No parts yet: say where they come from; Claude Code can measure now.
+    const none = contextBreakdown({ ...ctx, compact: true, parts: [], source: null });
+    assert.match(none?.note ?? "", /after each turn/);
+    assert.equal(none?.measurable, true);
+    const proxied = contextBreakdown({ ...ctx, parts: [], source: null });
+    assert.deepEqual([proxied?.rows, proxied?.measurable], [[], false]);
     assert.equal(contextBreakdown({ ...ctx, tokens: null }), null);
     assert.equal(contextBreakdown(null), null);
   });

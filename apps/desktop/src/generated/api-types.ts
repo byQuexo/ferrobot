@@ -194,6 +194,30 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/agents/{id}/context/measure": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Measures a Claude Code agent's context now, with `claude`'s own `/context` (no model call),
+         *     and returns it as `GET /v1/agents/{id}/context` does.
+         * @description For agents whose newest turn has no breakdown yet, e.g. one that ran on an older daemon.
+         *     Outside a turn `claude` cannot reach the agent's MCP tools, so they are left out
+         *     (`left_out`); every turn's own measurement counts them again. Agents behind the model proxy
+         *     are measured at every model call and need no request.
+         */
+        post: operations["measure_context"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/agents/{id}/events": {
         parameters: {
             query?: never;
@@ -1904,6 +1928,11 @@ export interface components {
             /** @description The MCP tools (ferrobot's and connectors') in `parts`, largest first. */
             tools: components["schemas"]["ContextTool"][];
             source?: components["schemas"]["ContextSource"] | null;
+            /**
+             * @description What the measurement could not count, e.g. the MCP tools of a Claude Code breakdown
+             *     measured on request (`POST /v1/agents/{id}/context/measure`).
+             */
+            left_out: components["schemas"]["ContextLeftOut"][];
         };
         /**
          * Format: uuid
@@ -2237,6 +2266,11 @@ export interface components {
             redirect_uri: string;
             check?: components["schemas"]["ConnectorCheck"] | null;
         };
+        /**
+         * @description What a measurement could not count.
+         * @enum {string}
+         */
+        ContextLeftOut: "mcp_tools" | "instructions";
         /** @description One part of the context. */
         ContextPart: {
             kind: components["schemas"]["ContextPartKind"];
@@ -4477,6 +4511,73 @@ export interface operations {
             };
             /** @description Unknown agent */
             404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+        };
+    };
+    measure_context: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Agent id (UUID) */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AgentContext"];
+                };
+            };
+            /** @description Not a Claude Code agent */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Missing or wrong API token */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Unknown agent */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description No turn to measure yet, or the agent is in a turn */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Claude Code gave no report */
+            502: {
                 headers: {
                     [name: string]: unknown;
                 };

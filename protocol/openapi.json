@@ -1024,6 +1024,88 @@
         }
       }
     },
+    "/v1/agents/{id}/context/measure": {
+      "post": {
+        "tags": [
+          "usage"
+        ],
+        "summary": "Measures a Claude Code agent's context now, with `claude`'s own `/context` (no model call),\nand returns it as `GET /v1/agents/{id}/context` does.",
+        "description": "For agents whose newest turn has no breakdown yet, e.g. one that ran on an older daemon.\nOutside a turn `claude` cannot reach the agent's MCP tools, so they are left out\n(`left_out`); every turn's own measurement counts them again. Agents behind the model proxy\nare measured at every model call and need no request.",
+        "operationId": "measure_context",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "Agent id (UUID)",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AgentContext"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Not a Claude Code agent",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or wrong API token",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Unknown agent",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "No turn to measure yet, or the agent is in a turn",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "Claude Code gave no report",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/v1/agents/{id}/events": {
       "get": {
         "tags": [
@@ -7539,7 +7621,8 @@
           "tracked",
           "compact",
           "parts",
-          "tools"
+          "tools",
+          "left_out"
         ],
         "properties": {
           "tracked": {
@@ -7605,6 +7688,13 @@
                 "type": "null"
               }
             ]
+          },
+          "left_out": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ContextLeftOut"
+            },
+            "description": "What the measurement could not count, e.g. the MCP tools of a Claude Code breakdown\nmeasured on request (`POST /v1/agents/{id}/context/measure`)."
           }
         }
       },
@@ -8540,6 +8630,14 @@
               }
             }
           }
+        ]
+      },
+      "ContextLeftOut": {
+        "type": "string",
+        "description": "What a measurement could not count.",
+        "enum": [
+          "mcp_tools",
+          "instructions"
         ]
       },
       "ContextPart": {

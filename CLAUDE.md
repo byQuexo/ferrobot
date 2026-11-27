@@ -95,7 +95,8 @@ Principles:
   `api/usage.rs` — `/v1/usage`, `/v1/limits`, `/v1/agents/{id}/context`; `limits.rs` — plan limits
   of the host's Claude Code and Codex sign-ins (60 s cache); `context.rs` — what fills an agent's
   context: Claude Code's own `/context` report (taken by `claude_code.rs` after each turn with the
-  turn's files, no hooks, `--no-session-persistence`) or, for proxied calls, the request's system
+  turn's files, no hooks, `--no-session-persistence`; on request without MCP tools,
+  `measure_now`) or, for proxied calls, the request's system
   prompt, tools and messages by size, scaled to the reported input tokens (sizes only, in memory).
 - `crates/daemon/src/api/providers.rs`, `secrets.rs` — model providers and
   their keychain-stored keys; `crates/core/src/provider.rs` — provider kinds.

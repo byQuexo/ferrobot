@@ -256,6 +256,9 @@ export class DaemonClient {
   newSession = (id: string): Promise<void> => this.#request("POST", `/v1/agents/${id}/new-session`);
   agentContext = (id: string): Promise<AgentContext> =>
     this.#request("GET", `/v1/agents/${id}/context`);
+  /** Measures a Claude Code agent's context now, without its MCP tools. */
+  measureContext = (id: string): Promise<AgentContext> =>
+    this.#request("POST", `/v1/agents/${id}/context/measure`);
   /** Shrinks the agent's context to a summary (Claude Code agents). */
   compact = (id: string): Promise<void> => this.#request("POST", `/v1/agents/${id}/compact`);
   /** One of the agent's turns as a timeline. */

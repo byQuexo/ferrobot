@@ -99,7 +99,11 @@ parts are estimates:
   keeps the report out of the session (`--no-session-persistence`). The parts
   are Claude Code's own, rounded (`2.5k`), and include its memory files,
   skills, custom agents, deferred tools and autocompact buffer when there are
-  any. They show a moment after the turn ends.
+  any. They show a moment after the turn ends. **Measure now** in the popover
+  fills in a turn without a breakdown (one that ran on an older daemon, or
+  whose measurement failed): the same `/context`, run on request without the
+  agent's MCP tools, which only a turn can reach (its token exists only then).
+  The popover says what was left out; the next turn counts everything again.
 - **Agents behind the model proxy** (Claude, OpenAI-compatible, Codex, Gemini
   CLI): the proxy measures the size of the newest request's system prompt, tool
   definitions and messages (images at a flat size, never their text) and splits
@@ -124,4 +128,7 @@ All routes need the operator token; the shapes are in `protocol/openapi.json`.
 - `GET /v1/agents/{id}/context` returns `tracked`, `tokens`, `window`, `model`
   and `at` for the context meter, and `parts` (`kind`, `label`, `tokens`,
   `deferred`), `tools` (MCP tools by size) and `source` (`claude_code` or
-  `request_size`; `null` when not measured) for its breakdown.
+  `request_size`; `null` when not measured) and `left_out` for its breakdown.
+- `POST /v1/agents/{id}/context/measure` (Claude Code agents) measures now,
+  without the MCP tools, and returns the same; a full breakdown from the
+  newest turn is kept and returned as it is.

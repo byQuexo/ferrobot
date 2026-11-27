@@ -15,7 +15,7 @@ use utoipa::{IntoParams, ToSchema};
 
 use super::{ApiResult, parse_id};
 use crate::AppState;
-use crate::context::{Breakdown, ContextPart, ContextSource, ContextTool};
+use crate::context::{Breakdown, ContextLeftOut, ContextPart, ContextSource, ContextTool};
 use crate::error::{ApiError, ErrorBody};
 use crate::limits::ProviderLimits;
 use crate::pricing::{self, Price, PriceEntry, Prices};
@@ -399,12 +399,16 @@ pub(crate) struct AgentContext {
     /// a Claude Code turn until `claude` has reported, after a daemon restart for agents behind
     /// the proxy, and for calls whose API reports no tokens (Bedrock streaming).
     source: Option<ContextSource>,
+    /// What the measurement could not count, e.g. the MCP tools of a Claude Code breakdown
+    /// measured on request (`POST /v1/agents/{id}/context/measure`).
+    left_out: Vec<ContextLeftOut>,
 }
 
 impl AgentContext {
     fn with(mut self, breakdown: Option<Breakdown>) -> Self {
         if let Some(b) = breakdown {
-            (self.parts, self.tools, self.source) = (b.parts, b.tools, Some(b.source));
+            (self.parts, self.tools, self.source, self.left_out) =
+                (b.parts, b.tools, Some(b.source), b.left_out);
         }
         self
     }
@@ -455,6 +459,7 @@ pub(crate) async fn get_context(
                 parts: Vec::new(),
                 tools: Vec::new(),
                 source: None,
+                left_out: Vec::new(),
             }
             .with(breakdown),
         ));
@@ -479,9 +484,43 @@ pub(crate) async fn get_context(
             parts: Vec::new(),
             tools: Vec::new(),
             source: None,
+            left_out: Vec::new(),
         }
         .with(breakdown),
     ))
+}
+
+/// Measures a Claude Code agent's context now, with `claude`'s own `/context` (no model call),
+/// and returns it as `GET /v1/agents/{id}/context` does.
+///
+/// For agents whose newest turn has no breakdown yet, e.g. one that ran on an older daemon.
+/// Outside a turn `claude` cannot reach the agent's MCP tools, so they are left out
+/// (`left_out`); every turn's own measurement counts them again. Agents behind the model proxy
+/// are measured at every model call and need no request.
+#[utoipa::path(post, path = "/v1/agents/{id}/context/measure", tag = "usage",
+    params(("id" = String, Path, description = "Agent id (UUID)")),
+    responses((status = 200, body = AgentContext),
+        (status = 400, description = "Not a Claude Code agent", body = ErrorBody),
+        (status = 404, description = "Unknown agent", body = ErrorBody),
+        (status = 409, description = "No turn to measure yet, or the agent is in a turn", body = ErrorBody),
+        (status = 502, description = "Claude Code gave no report", body = ErrorBody)))]
+pub(crate) async fn measure_context(
+    State(state): State<AppState>,
+    Path(id): Path<String>,
+) -> ApiResult<AgentContext> {
+    let agent = state.store.get_agent(parse_id(&id)?).await?;
+    let provider = crate::agents::provider_of(&state, &agent).await;
+    let Some(provider) = provider.filter(|p| p.kind == ProviderKind::ClaudeCode) else {
+        return Err(bad(
+            "measuring on request is for Claude Code agents; the others are measured at every model call",
+        ));
+    };
+    let model = agent.model.clone().or(provider.default_model);
+    match crate::claude_code::measure_now(&state, &agent, model.as_deref()).await {
+        Ok(_) => get_context(State(state), Path(id)).await,
+        Err(crate::claude_code::CompactError::NotNow(why)) => Err(ApiError::Conflict(why.into())),
+        Err(crate::claude_code::CompactError::Failed(why)) => Err(ApiError::Upstream(why)),
+    }
 }
 
 /// Context window in tokens of a model id as providers write it (with `anthropic.`, `models/` or
