@@ -86,7 +86,7 @@ fn dockerfile(base_id: &str, user: &str, packages: &[String]) -> Result<String, 
 }
 
 /// `ENV` change blanking every variable that holds the agent token: a committed image keeps the
-/// container env, and the token also travels as e.g. `ANTHROPIC_API_KEY`.
+/// container env, and the token also travels as e.g. `ANTHROPIC_API_KEY` or inside `HTTPS_PROXY`.
 fn blank_token_env(env: &[String]) -> String {
     let token = env
         .iter()
@@ -96,7 +96,7 @@ fn blank_token_env(env: &[String]) -> String {
     names.extend(
         env.iter()
             .filter_map(|kv| kv.split_once('='))
-            .filter(|(name, value)| *name != TOKEN_VAR && Some(*value) == token)
+            .filter(|(name, value)| *name != TOKEN_VAR && token.is_some_and(|t| value.contains(t)))
             .map(|(name, _)| name),
     );
     let pairs: Vec<String> = names.iter().map(|n| format!("{n}=")).collect();
@@ -1124,13 +1124,15 @@ mod tests {
             "ANTHROPIC_API_KEY=tok",
             "GEMINI_API_KEY=tok",
             "AWS_BEARER_TOKEN_BEDROCK=tok",
+            "HTTPS_PROXY=http://ferrobot:tok@host:7879",
             "FERROBOT_DRIVER=mock",
             "PATH=/usr/bin",
         ]
         .map(String::from);
         assert_eq!(
             super::blank_token_env(&env),
-            "ENV FERROBOT_AGENT_TOKEN= ANTHROPIC_API_KEY= GEMINI_API_KEY= AWS_BEARER_TOKEN_BEDROCK="
+            "ENV FERROBOT_AGENT_TOKEN= ANTHROPIC_API_KEY= GEMINI_API_KEY= AWS_BEARER_TOKEN_BEDROCK= \
+             HTTPS_PROXY="
         );
         assert_eq!(
             super::blank_token_env(&["FERROBOT_AGENT_TOKEN=".into(), "X=".into()]),
