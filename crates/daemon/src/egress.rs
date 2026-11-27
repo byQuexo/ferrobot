@@ -471,7 +471,12 @@ async fn forward(
 
 /// Request headers that carry the real token. Only these: a service that repeats some other
 /// header the agent sets (an error quoting `User-Agent`) would hand the token back.
-const CREDENTIAL_HEADERS: [&str; 4] = ["authorization", "x-api-key", "private-token", "x-auth-token"];
+const CREDENTIAL_HEADERS: [&str; 4] = [
+    "authorization",
+    "x-api-key",
+    "private-token",
+    "x-auth-token",
+];
 
 /// [`replace_in`] for the credential headers only.
 fn swap_credentials(headers: &mut HeaderMap, from: &str, to: &str) {
@@ -592,7 +597,10 @@ mod tests {
         swap_credentials(&mut headers, stand_in, "real");
         assert_eq!(headers["authorization"], "Bearer real");
         assert_eq!(headers["x-api-key"], "real");
-        assert_eq!(headers["user-agent"], stand_in, "a header a service may echo back");
+        assert_eq!(
+            headers["user-agent"], stand_in,
+            "a header a service may echo back"
+        );
         assert_eq!(headers["accept"], format!("{stand_in}/json").as_str());
     }
 

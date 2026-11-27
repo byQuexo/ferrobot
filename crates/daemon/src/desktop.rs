@@ -336,7 +336,15 @@ mod tests {
         };
         assert_eq!(
             xdotool(&click).unwrap(),
-            ["/usr/bin/xdotool", "mousemove", "--sync", "10", "20", "click", "3"]
+            [
+                "/usr/bin/xdotool",
+                "mousemove",
+                "--sync",
+                "10",
+                "20",
+                "click",
+                "3"
+            ]
         );
         let typed = DesktopAction::Type {
             text: "-rf ~".into(),
