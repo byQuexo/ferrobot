@@ -1,5 +1,8 @@
 # System programs only: nothing an agent drops in its home stands in for them.
 export PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+# The desktop never goes through a CLI account's token proxy: its terminal skips the step checks.
+unset HTTPS_PROXY https_proxy HTTP_PROXY http_proxy NO_PROXY no_proxy SSL_CERT_FILE GIT_SSL_CAINFO \
+  CURL_CA_BUNDLE REQUESTS_CA_BUNDLE NODE_EXTRA_CA_CERTS
 command -v openbox >/dev/null || exit 3
 export DISPLAY=:1 XCURSOR_THEME=Adwaita
 look="$HOME/.ferrobot/desktop"
