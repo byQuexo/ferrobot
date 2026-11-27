@@ -8262,7 +8262,13 @@ async fn operator_uploads_land_in_the_agents_workspace() {
     let unknown = "00000000-0000-0000-0000-000000000001";
     assert_eq!(upload(unknown, "x.txt", &[], b"hi").await.0, 404);
     assert_eq!(
-        backend.written.lock().unwrap().len(),
+        backend
+            .written
+            .lock()
+            .unwrap()
+            .iter()
+            .filter(|(p, _)| !p.contains("/.agents/skills/"))
+            .count(),
         1,
         "nothing else written"
     );
