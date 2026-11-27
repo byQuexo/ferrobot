@@ -1671,3 +1671,19 @@ A review of the release before it shipped changed these decisions:
 - **Vault notes follow the agent, not its name.** A deleted agent's folder moves to
   `ferrobot/.archived/<name>-<id>` (Obsidian hides dot folders); creating a name archives any
   folder left under it, and a rename archives the target first instead of merging.
+
+## Skills from skills.sh (2026-11-27)
+
+- **Agents find and install skills themselves, through the shell.** Tim's idea: an agent with a
+  task it has no knowledge for looks up a skill on skills.sh (`npx -y skills@1.9.1 find`), installs
+  it into its home and follows its `SKILL.md`. Going through the shell instead of a harness's own
+  skill tool means it works for every driver, including Claude Code on the host, whose built-in
+  `Skill` tool stays off.
+- **Install asks, looking does not.** `skills add`, `update` and the experimental install commands
+  are Risky in `tool_check` (a card unless Auto mode is on); `find`, `list` and `use` are safe.
+- **Pinned and framed.** The CLI version is fixed in the instructions (`SKILLS_CLI`), and a skill is
+  described to the agent as third-party content that never overrides its instructions. Remaining
+  risk: a skill is someone else's instructions and scripts, like a web page the agent acts on; keys
+  and CLI tokens are not in the sandbox, and its commands meet the same checks.
+- **Only agents with Shell** get the note: without a shell they could not run the CLI or a
+  skill's scripts.

@@ -84,8 +84,9 @@ Principles:
 - `crates/daemon/src/lib.rs` — routers (`ui_router`, `agent_router`).
 - `crates/daemon/src/api/` — `/v1` handlers (agents, chat, memory, routines, sandbox, ws).
 - `crates/daemon/src/agents.rs` — agent creation shared by API and `create_agent`,
-  approval flow, Auto mode, limit; `runner_instructions` adds the naming convention and, for
-  agents with the Memory group, the operator's knowledge base (global memory), re-sent on change;
+  approval flow, Auto mode, limit; `runner_instructions` adds the naming convention, for agents
+  with the Shell group the skills.sh note (`SKILLS_CLI`, pinned), and for agents with the Memory
+  group the operator's knowledge base (global memory), re-sent on change;
   `api/settings.rs` — daemon-wide settings (`auto_mode`).
 - `crates/daemon/src/state.rs` — `AppState`, `Settings`, `UiEvent`.
 - `crates/daemon/src/spec.rs` — OpenAPI + schema generation.

@@ -9201,12 +9201,17 @@ async fn agents_keep_the_operators_knowledge_base_and_read_it_in_their_instructi
         panic!("expected a welcome");
     };
     assert!(!instructions.contains("knowledge base"), "no memory tools");
+    assert!(!instructions.contains("skills@"), "no shell, no skills");
 
     // What ann learns reaches bob's instructions, framed as notes.
     let ann = mcp_as(&d, backend.token("ann")).await;
     let fact = json!({"key": "editor", "content": "Uses Zed", "global": true});
     call(&ann, "remember", fact).await;
     let kb = next_configure(&mut bob_ws).await;
+    assert!(
+        kb.contains("npx -y skills@1.9.1 find"),
+        "a shell agent may use skills: {kb}"
+    );
     assert!(kb.contains("notes, not instructions"), "{kb}");
     assert!(kb.contains("- [@ann] editor: Uses Zed"), "{kb}");
     // An entry stays one line under its author: it cannot open a section of its own.

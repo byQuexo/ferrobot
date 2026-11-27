@@ -162,6 +162,9 @@ fn segment(words: &[&str], next: Option<&Vec<&str>>) -> Verdict {
         "npm" | "pnpm" | "yarn" | "cargo" | "twine" | "gem" if args.contains(&"publish") => {
             Verdict::Critical("publishes a package")
         }
+        "npx" | "bunx" | "skills" if installs_skill(cmd, args) => {
+            Verdict::Risky("installs a skill from the internet")
+        }
         "ssh" | "scp" | "sftp" => Verdict::Risky("reaches another machine"),
         "rsync" if args.iter().any(|a| a.contains(':')) => {
             Verdict::Risky("reaches another machine")
@@ -175,6 +178,24 @@ fn segment(words: &[&str], next: Option<&Vec<&str>>) -> Verdict {
         Verdict::Safe if root => Verdict::Risky("runs as root"),
         v => v,
     }
+}
+
+/// `skills add` or `update`, run directly or through `npx skills@…`.
+fn installs_skill(cmd: &str, args: &[&str]) -> bool {
+    let mut words = args.iter().filter(|a| !a.starts_with('-'));
+    if cmd != "skills"
+        && !words
+            .next()
+            .is_some_and(|w| *w == "skills" || w.starts_with("skills@"))
+    {
+        return false;
+    }
+    words.next().is_some_and(|sub| {
+        matches!(
+            *sub,
+            "add" | "update" | "experimental_install" | "experimental_sync"
+        )
+    })
 }
 
 fn sends_data(args: &[&str]) -> bool {
@@ -521,6 +542,27 @@ mod tests {
 
     fn tool(name: &str) -> Verdict {
         classify(Call::Connector { name, args: None })
+    }
+
+    #[test]
+    fn installing_a_skill_asks_first_and_looking_does_not() {
+        for c in [
+            "npx -y skills@1.9.1 add anthropics/skills@pdf -g -y",
+            "npx skills add owner/repo --skill x",
+            "cd ~ && npx -y skills@1.9.1 update",
+            "skills add owner/repo@x -g",
+        ] {
+            assert!(matches!(sh(c), Verdict::Risky(_)), "{c}");
+        }
+        for c in [
+            "npx -y skills@1.9.1 find pdf",
+            "npx -y skills@1.9.1 list -g",
+            "npx -y skills@1.9.1 use owner/repo@x",
+            "npx create-vite@latest app",
+            "npx prettier --write add.ts",
+        ] {
+            assert_eq!(sh(c), Verdict::Safe, "{c}");
+        }
     }
 
     #[test]

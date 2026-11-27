@@ -39,6 +39,24 @@ switch some off.
 Connectors are switched on per agent in the same list. See
 [[Connectors and OAuth|Connectors-and-OAuth]].
 
+## Skills
+
+Agents with the **Shell** tool can use skills from [skills.sh](https://skills.sh): folders
+with a `SKILL.md` (instructions) and often scripts, for things like a file format, a
+framework or a service's API. Their instructions tell them to look first
+(`npx -y skills@1.9.1 find <topic>`), install the one that fits into their home
+(`npx -y skills@1.9.1 add <owner/repo@skill> -g -y`, into `~/.agents/skills/<name>`),
+then read its `SKILL.md` and follow it. That works with every harness, also Claude Code on
+your computer, because the agent reads and runs the skill in its own computer.
+
+- Installing or updating a skill is a risky step: a card unless Auto mode is on. Finding,
+  listing and `use` (print a skill without installing it) are not.
+- A skill is someone else's instructions and scripts. Agents are told it never overrides
+  your instructions, and its commands go through the same checks as any other. Keys and
+  CLI tokens never sit in an agent's computer, so a skill cannot read them.
+- The CLI version is pinned in the instructions, so an upstream release cannot change
+  what agents run.
+
 ## Subagents
 
 An agent can split work into parallel parts without a new teammate. Claude

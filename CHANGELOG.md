@@ -6,6 +6,10 @@ All notable changes are listed here. The format follows
 
 ## [Unreleased]
 
+### Added
+
+- **Skills from skills.sh.** Agents with the Shell tool know they can look for a ready-made skill for a specialised task (`npx -y skills@1.9.1 find <topic>`), install it into their home (`~/.agents/skills/<name>`) and follow its `SKILL.md`, with every harness, Claude Code on your Mac included. Installing or updating a skill asks first unless Auto mode is on; finding and listing don't. A skill is treated as third-party content, and its commands go through the same checks.
+
 ### Fixed
 
 - Model calls of agents on Claude Code (your own login) showed 0.0 s in traces: they now last from the request to the answer.
