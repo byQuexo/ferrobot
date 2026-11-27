@@ -1692,3 +1692,31 @@ A review of the release before it shipped changed these decisions:
   licence and written into `~/.agents/skills/find-skills/` when a computer is made or wakes without
   this version (marker `.ferrobot-defaults`). Vendoring instead of `npx skills add` at provision:
   no network at provision, no upstream change reaching agents unseen.
+
+## Tasks with a goal and slash commands (2026-11-27)
+
+- **The agent says when it is done, and a model checks.** Tim wanted `/task` to work like a goal
+  that holds across turns, for every provider. The daemon's turn-end hook (`runner_ws::settle`)
+  sends the agent back to work until it calls `finish_task` and ends a turn with a report; then a
+  check reads the goal, the summary, the turn's steps and the report and answers `{met, reason}`.
+  Hooks inside one harness would have covered Claude only.
+- **The check uses what the agent already uses.** Claude Code: Haiku through the host's own
+  `claude -p` (no tools, settings, MCP servers or session; the prompt on stdin). Anthropic and the
+  daemon's own key: the Messages API. OpenAI-compatible kinds (OpenAI, Gemini, OpenRouter, Ollama,
+  any other): chat completions. The agent's model, else the provider's default; the key stays in
+  the daemon. The call is a Usage row under the turn `task-check:<turn>`, so it stays out of the
+  turn's trace. Codex, Gemini CLI, Bedrock and Vertex get no check (their APIs need code the
+  daemon only has as a proxy), and neither does an agent without a model: `finish_task` with a
+  report ends the task there. A per-provider `judge_model` was skipped: it would need a migration.
+- **A check that cannot run counts as not met** and uses up a continuation, so a broken check ends
+  in "gave up" rather than a false "achieved".
+- **State in the `goals` setting**, one entry per agent, so a task survives a restart without a
+  migration. The continuation is the operator's message (it starts a turn on every driver) and is
+  hidden in the chat behind a `goal` event, like reaction notes. Stop and Clear drop a waiting
+  continuation; Stop also ends the task while the agent is idle.
+- **Slash commands live in the app.** The daemon keeps the list (`commands` setting, seeded with
+  `/goal` only while the setting does not exist, so a deletion sticks) and the app expands it, so
+  the daemon has no second message path. `task` is reserved.
+- **Agent-made commands always need a card.** A command's prompt is later sent in the operator's
+  name, so `add_command` shows the full prompt and Auto mode never skips it; the card stays out of
+  Discord. A name taken while the card waits blocks Approve with `409` and leaves the card open.

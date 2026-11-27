@@ -12,7 +12,7 @@ switch some off.
 | --- | --- |
 | Team | Message teammates, give them tasks, and call them without you |
 | Memory | Remember and recall notes |
-| Operator | Ask you questions, share files, react to your messages, bring teammates into calls, post to its Discord channel, read the guides |
+| Operator | Ask you questions, share files, react to your messages, bring teammates into calls, post to its Discord channel, read the guides, offer you slash commands |
 | Create agents | Ask to create new agents |
 | Add connectors | Ask you to add connectors |
 | Routines | Set up its own routines |
@@ -23,6 +23,8 @@ switch some off.
 
 - Shell, Files and Web aside, these are ferrobot's own tools. The daemon hides
   the ones outside the profile and refuses them if an agent calls them anyway.
+  `finish_task` is the exception: every agent has it while it works on a task
+  you gave it (see [[Getting Started|Getting-Started]]), and only then.
 - **Desktop** is never on by default, not even for agents that have every
   other group. It needs the desktop in Settings → Computers (see [[CLIs]]), and an
   agent with a CLI account cannot have it: commands typed into its desktop's
@@ -122,6 +124,10 @@ Without Auto mode, these requests show you a card first:
   not wait. A message tells it whether you approved.
 - **Add a connector** (`add_connector`): always a card, Auto mode or not. It
   never asks for a key: a token goes in Vault, where you type it yourself.
+- **Add a slash command** (`add_command`): always a card, Auto mode or not,
+  with the command's full prompt, since it is later sent in your name. The
+  agent does not wait; a message tells it whether you added it. The card
+  stays in the app, never in Discord.
 - **Give an agent more tools** (`set_agent_tools`): the card says which agent
   wants to give which of its agents more tools, and lists what is new. The
   agent does not wait; a message tells it whether you approved. The card stays

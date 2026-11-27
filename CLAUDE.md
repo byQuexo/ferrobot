@@ -168,6 +168,12 @@ Principles:
   (👀, then ✅, or only the agent's emoji); an agent posts to its own bridged channels
   with `send_to_discord`; `discord/cards.rs` — cards in the channel (✅/❌, replies);
   `api/discord.rs` — `/v1/discord`. Settings in the `discord` setting.
+- `crates/daemon/src/goal.rs` — tasks with a goal (`/task`, the `goals` setting): the turn-end hook in
+  `runner_ws::settle` sends the agent back to work until `finish_task` and a report, then a check (Claude
+  Code: host `claude -p` with Haiku; Anthropic: Messages; OpenAI-compatible kinds: chat completions; none
+  for Codex, Gemini CLI, Bedrock, Vertex); `api/goal.rs` — `/v1/agents/{id}/goal`.
+  `api/commands.rs` — the operator's slash commands (`commands` setting, `/goal` seed) and the
+  `add_command` card; the app expands them (`apps/desktop/src/lib/commands.ts`).
 - `crates/daemon/src/stop.rs` — the operator's Stop (`interrupt?chain=true`): the agent's turn,
   the turns of agents working on messages from that chain, and agent messages queued among them.
 - `crates/daemon/src/desktop.rs`, `api/desktop.rs` — the agent's desktop: its
@@ -371,6 +377,9 @@ daemon, `docker ps -a` must be empty of ferrobot containers.
   command; Auto mode never skips that card. They start without a shell, with a
   cleared environment (`PATH`, `HOME`, user, locale, temp, and the connector's
   Vault token under `token_env`), so no model key or operator token reaches them.
+- **Agent-made slash commands always need the operator's card.** `add_command` shows the full
+  prompt (it is later sent in the operator's name); Auto mode never skips it and Discord never
+  answers it. The task check (`goal.rs`) calls providers from the daemon only, like the proxy.
 - **No card asks for a key.** An agent's `add_connector` card is
   Approve/Decline only; connector tokens are typed in Settings → Vault. Agent
   cards cannot carry `secret` fields (`ask_user` refuses them), the answer
@@ -407,6 +416,9 @@ daemon, `docker ps -a` must be empty of ferrobot containers.
   model calls likely miss Usage and traces.
 - OTLP export ran against Grafana's collector and Tempo (root span only;
   child spans only in a unit test), never against Phoenix or Langfuse.
+- The task check ran only against a fake chat-completions upstream; the Claude Code (Haiku) and
+  Anthropic Messages checks never ran, and whether Codex and ACP sessions see `finish_task`
+  appear mid-session (their tool lists may be cached) is untested.
 - The Obsidian vault memory ran only against a temp folder, never with
   Obsidian open; frontmatter with CRLF line endings is not parsed.
 

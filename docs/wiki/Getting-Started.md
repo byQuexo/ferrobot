@@ -58,6 +58,41 @@ a loop between agents ends too. Your own queued messages, routines and
 webhooks stay; a stopped agent's task does not report back to an agent you
 stopped.
 
+### Tasks with a goal
+
+Type `/task` and a goal in an agent's message box, for example `/task make the
+tests pass`, and the agent keeps working until the goal is reached. Whenever a
+turn ends without the agent saying it is done (its `finish_task` tool), it is
+sent back to work. Once it says so and has reported to you, a quick check reads
+its last turn and either ends the task or sends it back with the reason:
+
+| Provider | Who checks |
+| --- | --- |
+| Claude Code | Haiku, through your own `claude` |
+| Anthropic, or no provider | The agent's model, through the Messages API |
+| OpenAI, Gemini, OpenRouter, Ollama, OpenAI-compatible | The agent's model, through chat completions |
+| Codex, Gemini CLI, Bedrock, Vertex | No check: the agent's word and its report end the task |
+
+The check runs in the daemon with the provider's key and shows up in
+**Usage**; a check that cannot run counts as not done. The header shows
+**Task · step N** while a task runs; its cross clears the task. **Stop**, a
+failed turn and 20 trips back to work end it too. The chat shows each step:
+sent back, achieved, stopped or gave up.
+
+### Commands
+
+**Settings → Commands** keeps prompts you use often. Type `/` at the start of a
+message to pick one: `/name more text` sends the command's prompt with your text
+in place of `$ARGUMENTS` (without it, your text follows after a blank line).
+With **Run as a task**, the command starts a task with a goal instead, like the
+`/goal` example a new ferrobot starts with. A `/word` that is no command goes
+out as you typed it.
+
+Agents with the Operator tools offer to turn a request you repeat into a
+command, and add one with `add_command` when you agree. You always get a card
+with the full prompt first, Auto mode or not, since the command speaks in your
+name; Settings → Commands shows which agent added it.
+
 ### Pins
 
 Keep important things one click away. Hover a reply or a shared file and
