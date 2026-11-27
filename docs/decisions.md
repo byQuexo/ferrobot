@@ -1619,3 +1619,30 @@ slop, so polish mode: palette, accent, logo, layout and features stay.
   daemon's data dir hash (`clis-<owner>-<hash>`) and the sweep only removes its own; images from
   before are no longer swept.
 
+
+## Security review before 0.1.11 (2026-11-27)
+
+A review of the release before it shipped changed these decisions:
+
+- **Proposed CLIs carry no sign-in commands.** They run in the container where the real token is
+  made and were not on the card, so an agent could have chosen commands that send the token out.
+  An agent proposes the install, programs, hosts and variables (asking first by default); the
+  operator adds sign-in commands in Edit, and the sign-in dialog shows them before it starts.
+- **A late CLI card adds nothing.** Approving re-reads the CLIs and refuses (409) when a CLI of that
+  name exists by then, so it can never take over the operator's CLI and its token.
+- **The token is swapped only in credential headers** (`authorization` including Basic,
+  `x-api-key`, `private-token`, `x-auth-token`). Any header was a way to get it back from a service
+  that repeats a header such as `User-Agent` in its answer. Response headers are still scrubbed
+  everywhere; a response body that echoes a credential header stays the known remaining risk.
+- **No CLI account for Codex agents.** Codex runs its shell itself, so its commands never reach
+  `tool_check`; with a token behind the proxy that would let critical steps run without a card.
+  Same mechanism as the Desktop refusal, checked both when lending an account and when switching
+  an agent's provider.
+- **Home programs last on `PATH`.** Prepending `~/.local/bin` let a program an agent once planted
+  stand in for the runner's `node` after its Shell was taken away, or for the screen's `x11vnc`.
+  The daemon also calls the desktop's programs by full path, and the desktop script sets a
+  system-only `PATH` (the dock starts the Chromium wrapper by its full path).
+- **The knowledge base shows authors and one line per entry.** Agents' entries now reach every
+  memory agent's instructions, so each says who wrote it, control characters fold to spaces (an
+  entry cannot open a section of its own), keys must be one line, and all of the operator's
+  entries come first, outside the limit of 50 agent entries.
