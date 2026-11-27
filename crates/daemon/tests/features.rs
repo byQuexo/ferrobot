@@ -9760,6 +9760,10 @@ async fn a_task_continues_until_finished_reported_and_checked() {
         body.starts_with("make the tests pass\n\n[ferrobot]") && body.contains("finish_task"),
         "{body}"
     );
+    assert!(
+        body.contains("Don't start the work yet") && body.contains("Approve the plan"),
+        "it asks, then plans with cards: {body}"
+    );
     assert_eq!(
         goal_events(&d, &id).await[0]["note_id"],
         message,
@@ -9770,7 +9774,8 @@ async fn a_task_continues_until_finished_reported_and_checked() {
     finish(&mut ws, turn, Some("Looking into it.")).await;
     let (turn, message, body) = next_turn(&mut ws).await;
     assert!(
-        body.starts_with("[ferrobot] Not done yet: make the tests pass"),
+        body.starts_with("[ferrobot] Not done yet: make the tests pass")
+            && body.contains("next step of your plan"),
         "{body}"
     );
     let continued = goal_events(&d, &id).await;
@@ -10241,15 +10246,17 @@ async fn the_lead_decides_only_its_teammates_risky_steps() {
         !why.is_empty() && !why.contains("git push"),
         "only the reason: {why}"
     );
+    assert!(note.contains("how risky"), "it rates first: {note}");
     finish(&mut ws, turn, Some("Checking.")).await;
 
-    let refused = |card: i64| {
-        let args = json!({"card": card, "approve": true});
+    let rated = |card: i64, risk: &str, reason: &str| {
+        let args = json!({"card": card, "risk": risk, "reason": reason, "approve": true});
         let params = rmcp::model::CallToolRequestParams::new("decide_approval")
             .with_arguments(args.as_object().cloned().unwrap());
         let call = client.call_tool(params);
         async { format!("{:?}", call.await.unwrap_err()) }
     };
+    let refused = |card: i64| rated(card, "low", "the task needs it");
     let not_on_the_task = "no agent working on your task";
     check("dex", "git push --force origin main");
     let critical = approval_card(&d, &dex, qid).await;
@@ -10266,11 +10273,23 @@ async fn the_lead_decides_only_its_teammates_risky_steps() {
         .as_i64()
         .unwrap();
     assert!(refused(question).await.contains("only your operator"));
+    // A step it rates high stays with the operator, and every rating needs a reason.
+    assert!(
+        rated(qid, "high", "pushes to main")
+            .await
+            .contains("high risk")
+    );
+    assert!(rated(qid, "low", "  ").await.contains("give a reason"));
 
     let decided = call(
         &client,
         "decide_approval",
-        json!({"card": qid, "approve": true}),
+        json!({
+            "card": qid,
+            "risk": "medium",
+            "reason": "pushes the reviewed site to main, as the task asks",
+            "approve": true,
+        }),
     )
     .await;
     assert_eq!(decided["note"], "Approved.");
@@ -10281,6 +10300,10 @@ async fn the_lead_decides_only_its_teammates_risky_steps() {
         .find(|e| e["kind"] == "question_answered" && e["payload"]["question"] == qid)
         .unwrap();
     assert_eq!(answered["payload"]["answered_by"], lead.as_str());
+    assert_eq!(
+        answered["payload"]["assessment"],
+        json!({"risk": "medium", "reason": "pushes the reviewed site to main, as the task asks"})
+    );
     assert!(refused(qid).await.contains("already answered"));
     assert_eq!(decide(&d, &dex, qid, "decline").await.0, 409);
 }

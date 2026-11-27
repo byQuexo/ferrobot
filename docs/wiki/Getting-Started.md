@@ -61,7 +61,7 @@ stopped.
 ### Tasks with a goal
 
 Type `/task` and a goal in an agent's message box, for example `/task make the
-tests pass`, and the agent keeps working until the goal is reached. Whenever a
+tests pass`, and the agent keeps working until the goal is reached. It does not start right away: first it asks you what it needs to know and sends you a plan of numbered steps on a card to approve or change, then works through the plan one step at a time, saying which step it finished and which comes next. (An agent without the Operator tools, which cannot send cards, writes its plan into its reply.) Whenever a
 turn ends without the agent saying it is done (its `finish_task` tool), it is
 sent back to work. Once it says so and has reported to you, a quick check reads
 its last turn and either ends the task or sends it back with the reason:

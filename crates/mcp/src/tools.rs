@@ -1,6 +1,8 @@
 use std::borrow::Cow;
 
-use ferrobot_core::question::{QUESTION_CARD_VERSION, QuestionCard, QuestionEvent};
+use ferrobot_core::question::{
+    QUESTION_CARD_VERSION, QuestionCard, QuestionEvent, Risk, RiskAssessment,
+};
 use ferrobot_core::{
     Account, Agent, AgentId, AgentName, AvatarCharacter, Cli, ConnectorAuth, Install, MailMessage,
     Sender, ToolGroup, mention,
@@ -424,6 +426,13 @@ pub struct Decided {
 pub struct DecideApprovalArgs {
     /// The card number from the note.
     pub card: i64,
+    /// How risky the step is for the task, judged before deciding: `low` (reads or changes only
+    /// what the task is about), `medium` (could cause harm or cost, but the task needs it and it
+    /// can be undone) or `high` (could cause lasting harm, leak data or spend money). A `high`
+    /// step can only be declined; your operator approves those.
+    pub risk: Risk,
+    /// Why you rated it so, in one sentence; your operator sees it on the card.
+    pub reason: String,
     /// `true` lets the step run, `false` refuses it.
     pub approve: bool,
 }
@@ -1336,9 +1345,10 @@ impl FerrobotTools {
     }
 
     #[tool(
-        description = "During a task from your operator: approve or decline a risky step of a \
-        teammate working on it, by the card number in the note you got. Approve only what the \
-        task needs. Very risky steps and other cards stay with your operator."
+        description = "During a task from your operator: rate how risky a teammate's step is \
+        for the task (low, medium or high, with a one-sentence reason), then approve or decline \
+        it, by the card number in the note you got. Approve only a low or medium step the task \
+        needs; high-risk and very risky steps and other cards stay with your operator."
     )]
     async fn decide_approval(
         &self,
@@ -1349,7 +1359,15 @@ impl FerrobotTools {
         let note = self
             .state
             .notifier
-            .decide_for_task(me, args.card, args.approve)
+            .decide_for_task(
+                me,
+                args.card,
+                args.approve,
+                RiskAssessment {
+                    risk: args.risk,
+                    reason: args.reason,
+                },
+            )
             .await
             .map_err(invalid)?;
         Ok(Json(Decided { note }))

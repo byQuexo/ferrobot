@@ -645,10 +645,11 @@ impl ferrobot_mcp::MailboxNotifier for AppState {
         lead: AgentId,
         card: i64,
         approve: bool,
+        assessment: ferrobot_core::question::RiskAssessment,
     ) -> ferrobot_mcp::BoxFuture<Result<String, String>> {
         let state = self.clone();
         Box::pin(async move {
-            crate::goal::decide(&state, lead, card, approve)
+            crate::goal::decide(&state, lead, card, approve, assessment)
                 .await
                 .map(str::to_owned)
         })

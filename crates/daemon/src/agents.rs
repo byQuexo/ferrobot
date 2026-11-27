@@ -6,7 +6,8 @@ use std::time::Duration;
 
 use ferrobot_core::protocol::DaemonFrame;
 use ferrobot_core::question::{
-    APPROVE, Approval, DECLINE, QuestionAnswer, QuestionAnswered, QuestionEvent, approves,
+    APPROVE, Approval, DECLINE, QuestionAnswer, QuestionAnswered, QuestionEvent, RiskAssessment,
+    approves,
 };
 use ferrobot_core::{
     Agent, AgentId, AgentName, AvatarCharacter, Connector, MailMessage, Provider, ProviderKind,
@@ -294,6 +295,7 @@ pub(crate) async fn answer_tools_card(
         message_id,
         timed_out: false,
         answered_by: None,
+        assessment: None,
     };
     record_answer(state, chat, answered).await
 }
@@ -343,20 +345,23 @@ pub(crate) async fn post_card(
     Ok(qid)
 }
 
-/// Decides a waiting approval card in `chat`; `by`: the agent deciding it for the operator.
-/// Call it holding `state.answers`, after checking the card is unanswered.
+/// Decides a waiting approval card in `chat`; `by`: the agent deciding it for the operator,
+/// with its rating of the step. Call it holding `state.answers`, after checking the card is
+/// unanswered.
 pub(crate) async fn answer_approval(
     state: &AppState,
     (chat, qid): (AgentId, i64),
     answers: Vec<QuestionAnswer>,
-    by: Option<AgentId>,
+    by: Option<(AgentId, RiskAssessment)>,
 ) -> Result<QuestionAnswered, ApiError> {
+    let (answered_by, assessment) = by.unzip();
     let answered = QuestionAnswered {
         question: qid,
         answers,
         message_id: None,
         timed_out: false,
-        answered_by: by,
+        answered_by,
+        assessment,
     };
     let waiting = decide(state, qid, &answered.answers);
     let answered = record_answer(state, chat, answered).await?;
@@ -805,6 +810,7 @@ pub(crate) async fn wait_card(
         message_id: None,
         timed_out: true,
         answered_by: None,
+        assessment: None,
     };
     record_answer(state, chat, answered).await?;
     Ok(None)

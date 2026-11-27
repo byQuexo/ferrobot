@@ -148,8 +148,12 @@ function goalText(p: Payload): string {
       return `Task stopped${why}`;
     case "gave_up":
       return `Task gave up${why}`;
-    case "approval":
-      return `@${str(p["by"])} asks this task to decide a risky step${why}`;
+    case "approval": {
+      // Older lines carry the card's whole prompt, "Reason: the command": only the reason.
+      const reason = note.split(": ")[0]?.trim() ?? "";
+      const because = reason ? `: ${reason.charAt(0).toLowerCase()}${reason.slice(1)}` : "";
+      return `@${str(p["by"])} asks this task to decide a risky step${because}`;
+    }
     default:
       return "";
   }

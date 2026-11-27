@@ -8,6 +8,7 @@ use std::future::Future;
 use std::pin::Pin;
 use std::sync::Arc;
 
+use ferrobot_core::question::RiskAssessment;
 use ferrobot_core::{AgentId, AvatarCharacter, MailMessage};
 use ferrobot_store::{Store, StoredEvent};
 
@@ -282,15 +283,16 @@ pub trait MailboxNotifier: Send + Sync + 'static {
         let _ = (agent, summary);
         Box::pin(async { Err("there are no tasks here".to_owned()) })
     }
-    /// `lead` decides card `card`, a risky step of an agent working on its task. `Ok` and `Err`
-    /// carry a message for the lead.
+    /// `lead` decides card `card`, a risky step of an agent working on its task, after rating
+    /// it. `Ok` and `Err` carry a message for the lead.
     fn decide_for_task(
         &self,
         lead: AgentId,
         card: i64,
         approve: bool,
+        assessment: RiskAssessment,
     ) -> BoxFuture<Result<String, String>> {
-        let _ = (lead, card, approve);
+        let _ = (lead, card, approve, assessment);
         Box::pin(async { Err("there are no tasks here".to_owned()) })
     }
     /// Posts `text` from `agent` to its bridged Discord channel (`channel`: which one, when it

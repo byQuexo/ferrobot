@@ -306,6 +306,7 @@ pub(crate) async fn answer_question(
                 message_id: Some(msg.id),
                 timed_out: false,
                 answered_by: None,
+                assessment: None,
             };
             let answered = crate::agents::record_answer(&state, id, answered).await?;
             state.message_arrived(id);

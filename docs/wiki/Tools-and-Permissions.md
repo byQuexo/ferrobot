@@ -26,7 +26,9 @@ switch some off.
   `finish_task` is the exception: every agent has it while it works on a task
   you gave it (see [[Getting Started|Getting-Started]]), and only then. Its
   Team tool `decide_approval`, which answers its teammates' risky steps for that
-  task, is listed only then too.
+  task, is listed only then too. It rates each step low, medium or high with a
+  reason before deciding (the answered card shows it), and leaves high-risk
+  steps to you.
 - **Desktop** is never on by default, not even for agents that have every
   other group. It needs the desktop in Settings → Computers (see [[CLIs]]), and an
   agent with a CLI account cannot have it: commands typed into its desktop's

@@ -255,6 +255,33 @@ pub struct QuestionAnswered {
     /// of the agents working for it. Absent: the operator (or the timeout).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub answered_by: Option<AgentId>,
+    /// How risky that agent judged the step before deciding it. Absent when the operator
+    /// answered.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub assessment: Option<RiskAssessment>,
+}
+
+/// How risky a step is for the task at hand, in the judgment of the agent deciding it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+#[cfg_attr(feature = "schema", derive(utoipa::ToSchema))]
+#[cfg_attr(feature = "mcp", derive(schemars::JsonSchema))]
+pub enum Risk {
+    /// Reads or changes nothing that matters, or only what the task is about.
+    Low,
+    /// Could cause harm or cost, but the task needs it and it can be undone.
+    Medium,
+    /// Could cause lasting harm, leak data or cost money: only the operator approves it.
+    High,
+}
+
+/// An agent's rating of a teammate's risky step, given before it decides the card.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(utoipa::ToSchema))]
+pub struct RiskAssessment {
+    pub risk: Risk,
+    /// Why, in a sentence.
+    pub reason: String,
 }
 
 fn check_text(what: &str, s: &str, max: usize) -> Result<(), String> {
@@ -428,6 +455,31 @@ pub const MAX_ANSWER: usize = 4000;
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn an_answer_keeps_the_deciding_agents_rating() {
+        // Answers recorded before ratings existed still read.
+        let old: QuestionAnswered = serde_json::from_value(serde_json::json!({
+            "question": 3, "answers": [], "message_id": null
+        }))
+        .unwrap();
+        assert_eq!(old.assessment, None);
+        let rated = QuestionAnswered {
+            assessment: Some(RiskAssessment {
+                risk: Risk::Medium,
+                reason: "the task needs it".into(),
+            }),
+            ..old.clone()
+        };
+        let json = serde_json::to_value(&rated).unwrap();
+        assert_eq!(json["assessment"]["risk"], "medium");
+        assert!(
+            serde_json::to_value(&old)
+                .unwrap()
+                .get("assessment")
+                .is_none()
+        );
+    }
 
     fn card() -> QuestionCard {
         serde_json::from_value(serde_json::json!({

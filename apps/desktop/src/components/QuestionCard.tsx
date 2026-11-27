@@ -15,6 +15,12 @@ interface Draft {
   custom: string;
 }
 const EMPTY: Draft = { values: [], custom: "" };
+/** How the agent that decided a teammate's step rated it. */
+const RISK_LABEL: Record<NonNullable<QuestionAnswered["assessment"]>["risk"], string> = {
+  low: "Rated low risk",
+  medium: "Rated medium risk",
+  high: "Rated high risk",
+};
 
 function isAnswered(q: Question, a: Draft | undefined): boolean {
   const custom = (a?.custom ?? "").trim() !== "";
@@ -89,6 +95,12 @@ export function QuestionCardView(props: {
                 </dd>
               </div>
             ))}
+            {answered.assessment && (
+              <div>
+                <dt>{RISK_LABEL[answered.assessment.risk]}</dt>
+                <dd>{answered.assessment.reason}</dd>
+              </div>
+            )}
             {secret && answered.answers[0]?.values?.includes("approve") && (
               <div>
                 <dt>{secret.prompt}</dt>

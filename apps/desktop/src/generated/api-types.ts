@@ -3040,6 +3040,7 @@ export interface components {
             /** @description No answer came in time: the daemon declined the approval card. */
             timed_out?: boolean;
             answered_by?: components["schemas"]["AgentId"] | null;
+            assessment?: components["schemas"]["RiskAssessment"] | null;
         };
         /** @description A card with one or more questions, answered together. */
         QuestionCard: {
@@ -3068,6 +3069,17 @@ export interface components {
         ReactionRequest: {
             /** @description One emoji, e.g. 👍. A new reaction replaces your earlier one on that message. */
             emoji: string;
+        };
+        /**
+         * @description How risky a step is for the task at hand, in the judgment of the agent deciding it.
+         * @enum {string}
+         */
+        Risk: "low" | "medium" | "high";
+        /** @description An agent's rating of a teammate's risky step, given before it decides the card. */
+        RiskAssessment: {
+            risk: components["schemas"]["Risk"];
+            /** @description Why, in a sentence. */
+            reason: string;
         };
         /**
          * @description A voice call with two or more agents, kept as history once the call ended; or, with a name,

@@ -1727,6 +1727,12 @@ A review of the release before it shipped changed these decisions:
   This is narrower than Auto mode, which skips those cards entirely, but not by much: it can hand
   its own step to a teammate and approve it there, and a teammate's command text reaches it. The
   notes are kept on the task (`notes`) and dropped when the card is decided or the task ends.
+- **The task's agent rates a step before deciding it (2026-11-27).** Tim wanted it to judge a
+  teammate's step, not approve by reflex. `decide_approval` requires `risk` (low, medium, high)
+  and a one-sentence `reason`, its note explains the levels, and the daemon refuses to let it
+  approve a step it rated high: that stays with the operator. The rating is the agent's own
+  judgment, not a check; it shows on the answered card (`assessment`) so the operator can see
+  how it reasoned.
 - **A check that cannot run counts as not met** and uses up a continuation, so a broken check ends
   in "gave up" rather than a false "achieved".
 - **State in the `goals` setting**, one entry per agent, so a task survives a restart without a

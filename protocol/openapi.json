@@ -10770,6 +10770,17 @@
                 "type": "null"
               }
             ]
+          },
+          "assessment": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/RiskAssessment",
+                "description": "How risky that agent judged the step before deciding it. Absent when the operator\nanswered."
+              },
+              {
+                "type": "null"
+              }
+            ]
           }
         }
       },
@@ -10852,6 +10863,32 @@
           "emoji": {
             "type": "string",
             "description": "One emoji, e.g. 👍. A new reaction replaces your earlier one on that message."
+          }
+        }
+      },
+      "Risk": {
+        "type": "string",
+        "description": "How risky a step is for the task at hand, in the judgment of the agent deciding it.",
+        "enum": [
+          "low",
+          "medium",
+          "high"
+        ]
+      },
+      "RiskAssessment": {
+        "type": "object",
+        "description": "An agent's rating of a teammate's risky step, given before it decides the card.",
+        "required": [
+          "risk",
+          "reason"
+        ],
+        "properties": {
+          "risk": {
+            "$ref": "#/components/schemas/Risk"
+          },
+          "reason": {
+            "type": "string",
+            "description": "Why, in a sentence."
           }
         }
       },

@@ -5,7 +5,9 @@ use std::collections::BTreeMap;
 use std::time::Duration;
 
 use ferrobot_core::protocol::TurnOutcome;
-use ferrobot_core::question::{APPROVE, Approval, DECLINE, QuestionAnswer, QuestionEvent};
+use ferrobot_core::question::{
+    APPROVE, Approval, DECLINE, QuestionAnswer, QuestionEvent, Risk, RiskAssessment,
+};
 use ferrobot_core::{Agent, AgentId, MailMessage, Provider, ProviderKind, Sender, ToolGroup};
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
@@ -61,8 +63,24 @@ const HOW_TO_FINISH: &str = "When it is done, call finish_task with a one-line s
 const TEAMWORK: &str = " If teammates help, give each their part with assign_task: the task \
     waits while they work and each answer wakes you. Tell those with a shell to look for a \
     ready-made skill when a part needs one. You decide their risky steps while the task runs: \
-    each comes to you as a note with a card number; answer it with decide_approval and approve \
-    only what the task needs.";
+    each comes to you as a note with a card number; rate how risky it is, then answer it with \
+    decide_approval and approve only what the task needs.";
+/// How a task starts for an agent that can ask its operator with cards: questions, an approved
+/// plan, then one step at a time. A turn that ends with a card waits for the answer.
+const PLAN_WITH_CARDS: &str = "Don't start the work yet. First ask your operator what you need \
+    to know to do it well, with ask_user: one card, up to five questions (skip it only when \
+    nothing is unclear). With their answers, make a plan: numbered steps, each saying what it \
+    does and what it produces. Send it with ask_user for your operator to approve or change (a \
+    single choice: \"Approve the plan\" or \"Change it\", with room for their own words). Only \
+    once they approved it, work through it one step at a time: say which step you finished and \
+    which comes next, and ask again with ask_user if the plan stops fitting.";
+/// The same for an agent without cards: its plan goes into its reply.
+const PLAN_IN_REPLY: &str = "Before you start, write your plan as numbered steps, each saying \
+    what it does and what it produces, then work through it one step at a time and say which \
+    step you finished and which comes next.";
+/// Reminds the agent of its plan when it is sent back.
+const NEXT_STEP: &str = "Go on with the next step of your plan (if your operator has not \
+    approved a plan yet, ask them first).";
 
 /// Gives `agent` the task: it goes out as the operator's message. Replaces an earlier task.
 pub(crate) async fn set(
@@ -76,16 +94,20 @@ pub(crate) async fn set(
     if let Some(old) = goals.remove(&agent) {
         drop_pending(state, &old).await;
     }
-    let team = state
-        .store
-        .get_agent(agent)
-        .await?
-        .tools
-        .contains(&ToolGroup::Team);
-    let teamwork = if team { TEAMWORK } else { "" };
+    let tools = state.store.get_agent(agent).await?.tools;
+    let teamwork = if tools.contains(&ToolGroup::Team) {
+        TEAMWORK
+    } else {
+        ""
+    };
+    let plan = if tools.contains(&ToolGroup::Operator) {
+        PLAN_WITH_CARDS
+    } else {
+        PLAN_IN_REPLY
+    };
     let body = format!(
         "{goal}\n\n[ferrobot] This is a task with a goal: keep working until it is done; you are \
-         sent back to it whenever a turn ends before. {HOW_TO_FINISH}{teamwork}"
+         sent back to it whenever a turn ends before. {plan} {HOW_TO_FINISH}{teamwork}"
     );
     let message = state
         .store
@@ -325,9 +347,7 @@ async fn continue_with(state: &AppState, agent: AgentId, text: &str, reason: Opt
     }
     goal.continuations += 1;
     let because = reason.map_or_else(String::new, |r| format!(" ({r})"));
-    let body = format!(
-        "[ferrobot] Not done yet{because}: {text}\n\nContinue working on it. {HOW_TO_FINISH}"
-    );
+    let body = format!("[ferrobot] Not done yet{because}: {text}\n\n{NEXT_STEP} {HOW_TO_FINISH}");
     let message = match state
         .store
         .enqueue_message(Sender::User, agent, body, None)
@@ -373,7 +393,7 @@ pub(crate) async fn ask_lead(
     }
     let body = format!(
         "[ferrobot] {name}, working on your task, wants to run a risky step (card {qid}): \
-         {step}\n\nDecide it with decide_approval; your operator may answer first."
+         {step}\n\n{HOW_TO_DECIDE}"
     );
     let message = match state
         .store
@@ -413,14 +433,35 @@ pub(crate) async fn drop_note(state: &AppState, note: i64) {
     drop_messages(state, vec![note], "the card was answered").await;
 }
 
+/// How the lead rates and decides a teammate's step, in its note about the card.
+const HOW_TO_DECIDE: &str = "First judge how risky this step is for the task: low (it reads or \
+    changes only what the task is about), medium (it could cause harm or cost, but the task \
+    needs it and it can be undone) or high (it could cause lasting harm, leak data or spend \
+    money). Then call decide_approval with your rating and a one-sentence reason. Approve only \
+    a low or medium step the task needs; a high one stays with your operator, so decline it or \
+    leave it. Your operator may answer first.";
+const MAX_REASON_CHARS: usize = 500;
+
 /// The lead's `decide_approval` on card `qid`: only a risky, not a very risky, step of an agent
-/// working on its task. `Err` carries a message for the lead.
+/// working on its task, after the lead rated it; one it rates high it may only decline. `Err`
+/// carries a message for the lead.
 pub(crate) async fn decide(
     state: &AppState,
     lead: AgentId,
     qid: i64,
     approve: bool,
+    assessment: RiskAssessment,
 ) -> Result<&'static str, String> {
+    let reason = assessment.reason.trim();
+    if reason.is_empty() || reason.chars().count() > MAX_REASON_CHARS {
+        return Err(format!(
+            "give a reason for your rating, 1-{MAX_REASON_CHARS} characters"
+        ));
+    }
+    let assessment = RiskAssessment {
+        risk: assessment.risk,
+        reason: reason.to_owned(),
+    };
     if get(state, lead).await.is_none() {
         return Err(
             "you decide your teammates' steps only during a task from your operator".into(),
@@ -455,6 +496,13 @@ pub(crate) async fn decide(
         }
         _ => return Err("only your operator answers that card".into()),
     }
+    if approve && assessment.risk == Risk::High {
+        return Err(
+            "you rated that step high risk: only your operator approves it. Decline it, \
+             or leave it for your operator"
+                .into(),
+        );
+    }
     let _guard = state.answers.lock().await;
     if state
         .store
@@ -470,7 +518,7 @@ pub(crate) async fn decide(
         values: vec![value.into()],
         custom: None,
     }];
-    crate::agents::answer_approval(state, (member, qid), answers, Some(lead))
+    crate::agents::answer_approval(state, (member, qid), answers, Some((lead, assessment)))
         .await
         .map_err(|e| e.to_string())?;
     Ok(if approve { "Approved." } else { "Declined." })

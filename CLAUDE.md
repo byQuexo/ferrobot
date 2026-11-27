@@ -375,6 +375,8 @@ daemon, `docker ps -a` must be empty of ferrobot containers.
   agents working in its chain (`goal::decide`, `decide_approval`): never its own steps (though it
   can hand one to a teammate), never critical ones, never any other kind of card, and the
   operator's card stays open alongside; its notes go when the card is decided or the task ends.
+  It rates each step first (`risk` low/medium/high and a `reason`, kept as `assessment` on
+  `question_answered`), and a step it rates high it can only decline.
 - **`FERROBOT_MAX_AGENTS`** (default 10) applies to `POST /v1/agents` and to
   `create_agent` (both through `daemon::agents::create`).
 - Question cards are answered at most once (`409` after).
