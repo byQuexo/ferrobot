@@ -80,7 +80,8 @@ pub(crate) async fn set(
         continuations: 0,
         max_continuations,
         summary: None,
-        pending: None,
+        // A turn already running ends before this message's turn: no continuation ahead of it.
+        pending: Some(message.id),
     };
     goals.insert(agent, task.clone());
     save_json(state, SETTING, &goals).await?;
@@ -209,6 +210,10 @@ async fn check(
     };
     let reply = reply.unwrap_or_default();
     let Some(summary) = summary else {
+        // The operator's answer to its card starts the next turn.
+        if waits_for_operator(state, (agent, turn)).await {
+            return;
+        }
         return continue_with(state, agent, &goal, None).await;
     };
     if reply.trim().is_empty() {
@@ -219,6 +224,21 @@ async fn check(
         None | Some(Verdict::Met) => end(state, agent, End::Achieved, &summary).await,
         Some(Verdict::NotMet(reason)) => continue_with(state, agent, &goal, Some(&reason)).await,
     }
+}
+
+/// Whether the turn left a card the operator has not answered yet.
+async fn waits_for_operator(state: &AppState, (agent, turn): (AgentId, &str)) -> bool {
+    let Ok(events) = state.store.turn_events(agent, turn.to_owned()).await else {
+        return false;
+    };
+    let Some(first) = events.first() else {
+        return false;
+    };
+    state
+        .store
+        .turn_cards(turn.to_owned(), first.id)
+        .await
+        .is_ok_and(|cards| cards.iter().any(|(_, answer)| answer.is_none()))
 }
 
 /// Sends the agent back to work, or gives up at the limit.

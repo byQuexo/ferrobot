@@ -10092,3 +10092,34 @@ async fn agents_offer_commands_on_a_card_even_in_auto_mode() {
         "the card stays open"
     );
 }
+
+#[tokio::test]
+async fn a_task_waits_while_the_operator_has_a_card_to_answer() {
+    let backend = Arc::new(StatefulBackend::default());
+    let d = start(backend.clone(), None, "127.0.0.1:0").await;
+    let id = create_id(&d, json!({"name": "cleo"})).await;
+    let mut ws = connect_runner(&d.agents, &backend.token("cleo")).await;
+    let client = mcp_as(&d, backend.token("cleo")).await;
+    let goal = json!({"goal": "book the trip"});
+    let path = format!("/v1/agents/{id}/goal");
+    assert_eq!(http(&d.ui, "PUT", &path, Some(goal)).await.0, 200);
+    let (turn, _, _) = next_turn(&mut ws).await;
+    let card = json!({"questions": [{"prompt": "Window seat?", "kind": "text"}]});
+    let qid = call(&client, "ask_user", card).await["question_id"]
+        .as_i64()
+        .unwrap();
+    finish(&mut ws, turn, Some("I asked you about the seat.")).await;
+    quiet(&mut ws).await;
+    assert_eq!(http(&d.ui, "GET", &path, None).await.1["continuations"], 0);
+
+    let answer = json!({"answers": [{"question_id": "q1", "custom": "yes"}]});
+    let answer_path = format!("/v1/agents/{id}/questions/{qid}/answer");
+    assert_eq!(http(&d.ui, "POST", &answer_path, Some(answer)).await.0, 202);
+    let (turn, _, _) = next_turn(&mut ws).await;
+    finish(&mut ws, turn, Some("Noted, booking now.")).await;
+    let (_, _, body) = next_turn(&mut ws).await;
+    assert!(
+        body.starts_with("[ferrobot] Not done yet: book the trip"),
+        "{body}"
+    );
+}
