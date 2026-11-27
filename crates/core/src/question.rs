@@ -251,6 +251,10 @@ pub struct QuestionAnswered {
     /// No answer came in time: the daemon declined the approval card.
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub timed_out: bool,
+    /// The agent that answered: during the operator's task, its agent decides the risky steps
+    /// of the agents working for it. Absent: the operator (or the timeout).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub answered_by: Option<AgentId>,
 }
 
 fn check_text(what: &str, s: &str, max: usize) -> Result<(), String> {

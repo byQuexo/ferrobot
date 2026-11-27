@@ -3036,6 +3036,7 @@ export interface components {
             message_id?: number | null;
             /** @description No answer came in time: the daemon declined the approval card. */
             timed_out?: boolean;
+            answered_by?: components["schemas"]["AgentId"] | null;
         };
         /** @description A card with one or more questions, answered together. */
         QuestionCard: {

@@ -171,7 +171,9 @@ Principles:
 - `crates/daemon/src/goal.rs` — tasks with a goal (`/task`, the `goals` setting): the turn-end hook in
   `runner_ws::settle` sends the agent back to work until `finish_task` and a report, then a check (Claude
   Code: host `claude -p` with Haiku; Anthropic: Messages; OpenAI-compatible kinds: chat completions; none
-  for Codex, Gemini CLI, Bedrock, Vertex); `api/goal.rs` — `/v1/agents/{id}/goal`.
+  for Codex, Gemini CLI, Bedrock, Vertex); a turn waiting on its card or on a task it gave is not sent
+  back; the task's agent decides its chain's risky steps (`ask_lead`, `decide`); `api/goal.rs` —
+  `/v1/agents/{id}/goal`.
   `api/commands.rs` — the operator's slash commands (`commands` setting) and the
   `add_command` card; the app expands them (`apps/desktop/src/lib/commands.ts`).
 - `crates/daemon/src/stop.rs` — the operator's Stop (`interrupt?chain=true`): the agent's turn,
@@ -369,6 +371,9 @@ daemon, `docker ps -a` must be empty of ferrobot containers.
   classifier reads the command line and is best effort, not a sandbox: a script the agent
   wrote is not read. Agents can't write the harnesses' own settings folders in their
   workspace (`.claude`, `.codex`, `.gemini`), which could start processes.
+  The one agent that answers a risky step's card is the agent of the operator's `/task`, and only for
+  agents working in its chain (`goal::decide`, `decide_approval`): never its own steps, never
+  critical ones, never any other kind of card, and the operator's card stays open alongside.
 - **`FERROBOT_MAX_AGENTS`** (default 10) applies to `POST /v1/agents` and to
   `create_agent` (both through `daemon::agents::create`).
 - Question cards are answered at most once (`409` after).

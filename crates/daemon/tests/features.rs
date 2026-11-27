@@ -10107,3 +10107,124 @@ async fn a_task_waits_while_the_operator_has_a_card_to_answer() {
         "{body}"
     );
 }
+
+#[tokio::test]
+async fn a_task_waits_for_its_teammates_and_moves_on_with_their_answers() {
+    let backend = Arc::new(StatefulBackend::default());
+    let d = start(backend.clone(), None, "127.0.0.1:0").await;
+    let lead = create_id(&d, json!({"name": "lead"})).await;
+    create(&d, json!({"name": "dex"})).await;
+    let mut ws = connect_runner(&d.agents, &backend.token("lead")).await;
+    let mut dex = connect_runner(&d.agents, &backend.token("dex")).await;
+    let client = mcp_as(&d, backend.token("lead")).await;
+    let path = format!("/v1/agents/{lead}/goal");
+    let goal = json!({"goal": "ship the site"});
+    assert_eq!(http(&d.ui, "PUT", &path, Some(goal)).await.0, 200);
+    let (turn, _, body) = next_turn(&mut ws).await;
+    assert!(
+        body.contains("assign_task") && body.contains("decide_approval"),
+        "{body}"
+    );
+    call(
+        &client,
+        "assign_task",
+        json!({"to": "dex", "task": "build the page"}),
+    )
+    .await;
+    finish(&mut ws, turn, Some("dex builds the page.")).await;
+    let (dex_turn, _, _) = next_turn(&mut dex).await;
+    quiet(&mut ws).await;
+    assert_eq!(
+        http(&d.ui, "GET", &path, None).await.1["continuations"],
+        0,
+        "no nudge while dex works"
+    );
+
+    finish(&mut dex, dex_turn, Some("The page is built.")).await;
+    let (turn, _, body) = next_turn(&mut ws).await;
+    assert!(body.contains("The page is built."), "{body}");
+    finish(&mut ws, turn, Some("Looks good so far.")).await;
+    let (_, _, body) = next_turn(&mut ws).await;
+    assert!(
+        body.starts_with("[ferrobot] Not done yet: ship the site"),
+        "the answer's turn moves the task on: {body}"
+    );
+}
+
+#[tokio::test]
+async fn the_lead_decides_only_its_teammates_risky_steps() {
+    let backend = Arc::new(StatefulBackend::default());
+    let d = start(backend.clone(), None, "127.0.0.1:0").await;
+    let lead = create_id(&d, json!({"name": "lead"})).await;
+    let dex = create_id(&d, json!({"name": "dex"})).await;
+    let eve = create_id(&d, json!({"name": "eve"})).await;
+    let mut ws = connect_runner(&d.agents, &backend.token("lead")).await;
+    let mut dex_ws = connect_runner(&d.agents, &backend.token("dex")).await;
+    let client = mcp_as(&d, backend.token("lead")).await;
+    let path = format!("/v1/agents/{lead}/goal");
+    let goal = json!({"goal": "ship the site"});
+    assert_eq!(http(&d.ui, "PUT", &path, Some(goal)).await.0, 200);
+    let (turn, _, _) = next_turn(&mut ws).await;
+    call(
+        &client,
+        "assign_task",
+        json!({"to": "dex", "task": "deploy it"}),
+    )
+    .await;
+    finish(&mut ws, turn, Some("dex deploys.")).await;
+    next_turn(&mut dex_ws).await;
+
+    let check = |name: &str, command: &'static str| {
+        let (agents, token) = (d.agents.clone(), backend.token(name));
+        tokio::spawn(async move { tool_check(&agents, &token, command).await })
+    };
+    let pushing = check("dex", "git push origin main");
+    let qid = approval_card(&d, &dex, 0).await;
+    let (turn, _, note) = next_turn(&mut ws).await;
+    assert!(
+        note.contains("dex") && note.contains(&format!("card {qid}")),
+        "{note}"
+    );
+    finish(&mut ws, turn, Some("Checking.")).await;
+
+    let refused = |card: i64| {
+        let args = json!({"card": card, "approve": true});
+        let params = rmcp::model::CallToolRequestParams::new("decide_approval")
+            .with_arguments(args.as_object().cloned().unwrap());
+        let call = client.call_tool(params);
+        async { format!("{:?}", call.await.unwrap_err()) }
+    };
+    let not_on_the_task = "no agent working on your task";
+    check("dex", "git push --force origin main");
+    let critical = approval_card(&d, &dex, qid).await;
+    assert!(refused(critical).await.contains("very risky"));
+    check("eve", "git push origin main");
+    let eve_card = approval_card(&d, &eve, 0).await;
+    assert!(refused(eve_card).await.contains(not_on_the_task));
+    check("lead", "git push origin main");
+    let own = approval_card(&d, &lead, 0).await;
+    assert!(refused(own).await.contains(not_on_the_task), "not its own");
+    let dex_client = mcp_as(&d, backend.token("dex")).await;
+    let card = json!({"questions": [{"prompt": "Which region?", "kind": "text"}]});
+    let question = call(&dex_client, "ask_user", card).await["question_id"]
+        .as_i64()
+        .unwrap();
+    assert!(refused(question).await.contains("only your operator"));
+
+    let decided = call(
+        &client,
+        "decide_approval",
+        json!({"card": qid, "approve": true}),
+    )
+    .await;
+    assert_eq!(decided["note"], "Approved.");
+    assert_eq!(pushing.await.unwrap()["allow"], true);
+    let answered = events(&d, &dex)
+        .await
+        .into_iter()
+        .find(|e| e["kind"] == "question_answered" && e["payload"]["question"] == qid)
+        .unwrap();
+    assert_eq!(answered["payload"]["answered_by"], lead.as_str());
+    assert!(refused(qid).await.contains("already answered"));
+    assert_eq!(decide(&d, &dex, qid, "decline").await.0, 409);
+}

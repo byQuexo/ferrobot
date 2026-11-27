@@ -41,7 +41,7 @@ fn from_agent(m: &MailMessage) -> Option<AgentId> {
 }
 
 /// `agent`, then every agent working on a message from one already in the chain.
-fn chain(agent: AgentId, open: &[MailMessage]) -> Vec<AgentId> {
+pub(crate) fn chain(agent: AgentId, open: &[MailMessage]) -> Vec<AgentId> {
     let mut chain = vec![agent];
     let mut grew = true;
     while grew {

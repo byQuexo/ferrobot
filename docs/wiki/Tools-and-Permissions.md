@@ -24,7 +24,9 @@ switch some off.
 - Shell, Files and Web aside, these are ferrobot's own tools. The daemon hides
   the ones outside the profile and refuses them if an agent calls them anyway.
   `finish_task` is the exception: every agent has it while it works on a task
-  you gave it (see [[Getting Started|Getting-Started]]), and only then.
+  you gave it (see [[Getting Started|Getting-Started]]), and only then. Its
+  Team tool `decide_approval`, which answers its teammates' risky steps for that
+  task, is listed only then too.
 - **Desktop** is never on by default, not even for agents that have every
   other group. It needs the desktop in Settings → Computers (see [[CLIs]]), and an
   agent with a CLI account cannot have it: commands typed into its desktop's

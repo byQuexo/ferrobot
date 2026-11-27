@@ -77,8 +77,16 @@ The check runs in the daemon with the provider's key; API checks show up in
 **Usage**, Claude Code's do not. It needs a model: the agent's, the provider's
 default or the daemon's `--model`; without one there is no check. A check that
 cannot run counts as not done. A turn that ends with a card for you is not sent
-back: your answer starts the next one. One that waits for a teammate's reply is,
-so give tasks work the agent can do itself. The header shows **Task · step N**
+back: your answer starts the next one.
+
+The agent can share the work: it hands teammates their parts with `assign_task`,
+the task waits while they work, and each answer wakes the agent again. It tells
+teammates with a shell to look for a ready-made skill when a part needs one.
+While the task runs, the agent also decides its teammates' risky steps: each
+card still shows in the teammate's chat, where you can answer first, and goes to
+the agent as a note too; a card it decided says **Answered by @agent**. Very
+risky steps, its own steps and cards that are not about a step (new agents,
+connectors, CLIs, commands, questions) stay with you. The header shows **Task · step N**
 while a task runs; its cross clears the task. **Stop**, a failed or interrupted
 turn and 20 trips back to work end it too. The chat shows each step: sent back,
 achieved, stopped or gave up.

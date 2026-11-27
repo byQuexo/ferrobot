@@ -415,6 +415,19 @@ pub struct TaskFinished {
     pub note: String,
 }
 
+#[derive(Debug, Serialize, JsonSchema)]
+pub struct Decided {
+    pub note: String,
+}
+
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct DecideApprovalArgs {
+    /// The card number from the note.
+    pub card: i64,
+    /// `true` lets the step run, `false` refuses it.
+    pub approve: bool,
+}
+
 #[derive(Debug, Deserialize, JsonSchema)]
 pub struct InviteToCallArgs {
     /// The teammate to bring in: its id or `@name`.
@@ -1323,6 +1336,26 @@ impl FerrobotTools {
     }
 
     #[tool(
+        description = "During a task from your operator: approve or decline a risky step of a \
+        teammate working on it, by the card number in the note you got. Approve only what the \
+        task needs. Very risky steps and other cards stay with your operator."
+    )]
+    async fn decide_approval(
+        &self,
+        Extension(parts): Extension<http::request::Parts>,
+        Parameters(args): Parameters<DecideApprovalArgs>,
+    ) -> ToolResult<Decided> {
+        let me = caller(&parts)?.0.id;
+        let note = self
+            .state
+            .notifier
+            .decide_for_task(me, args.card, args.approve)
+            .await
+            .map_err(invalid)?;
+        Ok(Json(Decided { note }))
+    }
+
+    #[tool(
         description = "React to a message your operator sent you with one emoji; it shows on \
         their message in your chat. Use it to acknowledge without words instead of replying \
         \"ok\". A new reaction replaces your earlier one on that message."
@@ -1608,7 +1641,7 @@ fn context_caller(context: &RequestContext<RoleServer>) -> Option<&Agent> {
 pub(crate) fn group_of(tool: &str) -> Option<ToolGroup> {
     Some(match tool {
         "list_agents" | "send_message" | "read_mailbox" | "assign_task" | "list_tasks"
-        | "call_agents" => ToolGroup::Team,
+        | "call_agents" | "decide_approval" => ToolGroup::Team,
         "remember" | "recall" | "forget" => ToolGroup::Memory,
         "ask_user" | "share_file" | "invite_to_call" | "hang_up" | "list_guides" | "read_guide"
         | "react" | "send_to_discord" | "finish_task" | "add_command" => ToolGroup::Operator,
@@ -1648,7 +1681,7 @@ impl ServerHandler for FerrobotTools {
             tools.retain(|t| t.name != "send_to_discord");
         }
         if !self.state.notifier.has_goal(me.id).await {
-            tools.retain(|t| t.name != "finish_task");
+            tools.retain(|t| t.name != "finish_task" && t.name != "decide_approval");
         }
         if !self.state.notifier.has_voice().await {
             tools.retain(|t| t.name != "call_agents");

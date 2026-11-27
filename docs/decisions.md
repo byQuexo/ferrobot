@@ -1708,10 +1708,18 @@ A review of the release before it shipped changed these decisions:
   turn's trace; the Claude Code check records none. Codex, Gemini CLI, Bedrock and Vertex get no check (their APIs need code the
   daemon only has as a proxy), and neither does an agent without a model: `finish_task` with a
   report ends the task there. A per-provider `judge_model` was skipped: it would need a migration.
-- **A card holds the task, a teammate does not.** A turn that ends without `finish_task` but with
-  an unanswered card of its own is not sent back: the operator's answer arrives as their message
-  and starts the next turn. A turn that waits for a teammate's reply is sent back, since that reply
-  (`Sender::Agent`) never runs the hook; a known limit.
+- **A card or a teammate holds the task.** A turn that ends without `finish_task` is not sent back
+  while it left an unanswered card of its own or a task it gave (`assign_task`) is still queued or
+  worked on: the operator's answer or the teammate's report starts the next turn, and turns on
+  agents' messages run the hook too. Work handed out with `send_message` holds nothing, so the task
+  note asks for `assign_task`.
+- **The task's agent decides its teammates' risky steps (2026-11-27).** Tim wanted a task to run
+  without him answering every teammate's card. A risky (never a critical) tool-call card of an
+  agent in the task agent's chain (`stop::chain`) also goes to the task agent as a note, and it
+  answers with `decide_approval` through the operator's answer path, recorded as `answered_by`.
+  The operator's card stays open, so the first answer wins (`409` after). The task agent never
+  decides its own steps, which would be Auto mode nobody switched on, nor any other kind of card.
+  This is narrower than Auto mode, which skips those cards entirely.
 - **A check that cannot run counts as not met** and uses up a continuation, so a broken check ends
   in "gave up" rather than a false "achieved".
 - **State in the `goals` setting**, one entry per agent, so a task survives a restart without a

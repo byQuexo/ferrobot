@@ -148,6 +148,8 @@ function goalText(p: Payload): string {
       return `Task stopped${why}`;
     case "gave_up":
       return `Task gave up${why}`;
+    case "approval":
+      return `@${str(p["by"])} asks this task to decide a risky step${why}`;
     default:
       return "";
   }

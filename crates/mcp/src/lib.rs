@@ -282,6 +282,17 @@ pub trait MailboxNotifier: Send + Sync + 'static {
         let _ = (agent, summary);
         Box::pin(async { Err("there are no tasks here".to_owned()) })
     }
+    /// `lead` decides card `card`, a risky step of an agent working on its task. `Ok` and `Err`
+    /// carry a message for the lead.
+    fn decide_for_task(
+        &self,
+        lead: AgentId,
+        card: i64,
+        approve: bool,
+    ) -> BoxFuture<Result<String, String>> {
+        let _ = (lead, card, approve);
+        Box::pin(async { Err("there are no tasks here".to_owned()) })
+    }
     /// Posts `text` from `agent` to its bridged Discord channel (`channel`: which one, when it
     /// has several). `Ok` carries the channel id; `Err` a message for the agent.
     fn send_to_discord(

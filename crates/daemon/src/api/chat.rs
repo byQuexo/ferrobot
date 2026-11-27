@@ -293,22 +293,7 @@ pub(crate) async fn answer_question(
         Some(approval @ Approval::UseWithoutTools { .. }) => {
             crate::no_tools::answer_card(&state, id, qid, approval, req.answers).await?
         }
-        Some(_) => {
-            let answered = QuestionAnswered {
-                question: qid,
-                answers: req.answers,
-                message_id: None,
-                timed_out: false,
-            };
-            let waiting = crate::agents::decide(&state, qid, &answered.answers);
-            let answered = crate::agents::record_answer(&state, id, answered).await?;
-            if !waiting {
-                return Err(ApiError::Conflict(format!(
-                    "approval request {qid} is no longer pending"
-                )));
-            }
-            answered
-        }
+        Some(_) => crate::agents::answer_approval(&state, (id, qid), req.answers, None).await?,
         None => {
             let body = question.card.answer_text(&req.answers);
             let msg = state
@@ -320,6 +305,7 @@ pub(crate) async fn answer_question(
                 answers: req.answers,
                 message_id: Some(msg.id),
                 timed_out: false,
+                answered_by: None,
             };
             let answered = crate::agents::record_answer(&state, id, answered).await?;
             state.message_arrived(id);

@@ -5,7 +5,8 @@ use std::collections::BTreeMap;
 use std::time::Duration;
 
 use ferrobot_core::protocol::TurnOutcome;
-use ferrobot_core::{Agent, AgentId, MailMessage, Provider, ProviderKind, Sender};
+use ferrobot_core::question::{APPROVE, Approval, DECLINE, QuestionAnswer, QuestionEvent};
+use ferrobot_core::{Agent, AgentId, MailMessage, Provider, ProviderKind, Sender, ToolGroup};
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 use utoipa::ToSchema;
@@ -54,6 +55,11 @@ pub(crate) async fn get(state: &AppState, agent: AgentId) -> Option<TaskGoal> {
 
 const HOW_TO_FINISH: &str = "When it is done, call finish_task with a one-line summary, then end \
     your turn with your report to your operator.";
+const TEAMWORK: &str = " If teammates help, give each their part with assign_task: the task \
+    waits while they work and each answer wakes you. Tell those with a shell to look for a \
+    ready-made skill when a part needs one. You decide their risky steps while the task runs: \
+    each comes to you as a note with a card number; answer it with decide_approval and approve \
+    only what the task needs.";
 
 /// Gives `agent` the task: it goes out as the operator's message. Replaces an earlier task.
 pub(crate) async fn set(
@@ -67,9 +73,16 @@ pub(crate) async fn set(
     if let Some(old) = goals.remove(&agent) {
         drop_pending(state, &old).await;
     }
+    let team = state
+        .store
+        .get_agent(agent)
+        .await?
+        .tools
+        .contains(&ToolGroup::Team);
+    let teamwork = if team { TEAMWORK } else { "" };
     let body = format!(
         "{goal}\n\n[ferrobot] This is a task with a goal: keep working until it is done; you are \
-         sent back to it whenever a turn ends before. {HOW_TO_FINISH}"
+         sent back to it whenever a turn ends before. {HOW_TO_FINISH}{teamwork}"
     );
     let message = state
         .store
@@ -163,7 +176,8 @@ pub(crate) async fn finish(
         .map_err(|e| e.to_string())
 }
 
-/// After a turn on one of the operator's messages: ends, continues or checks the agent's task.
+/// After a turn on the operator's or a teammate's message: ends, continues or checks the agent's
+/// task.
 pub(crate) fn turn_ended(
     state: &AppState,
     (agent, turn): (AgentId, &str),
@@ -171,7 +185,7 @@ pub(crate) fn turn_ended(
     outcome: TurnOutcome,
     reply: Option<String>,
 ) {
-    if msg.sender != Sender::User || msg.room_id.is_some() {
+    if msg.room_id.is_some() || !matches!(msg.sender, Sender::User | Sender::Agent(_)) {
         return;
     }
     let (state, turn) = (state.clone(), turn.to_owned());
@@ -210,8 +224,7 @@ async fn check(
     };
     let reply = reply.unwrap_or_default();
     let Some(summary) = summary else {
-        // The operator's answer to its card starts the next turn.
-        if waits_for_operator(state, (agent, turn)).await {
+        if waits(state, (agent, turn)).await {
             return;
         }
         return continue_with(state, agent, &goal, None).await;
@@ -226,8 +239,18 @@ async fn check(
     }
 }
 
-/// Whether the turn left a card the operator has not answered yet.
-async fn waits_for_operator(state: &AppState, (agent, turn): (AgentId, &str)) -> bool {
+/// Whether something else starts the agent's next turn: the answer to a task it gave that is
+/// still queued or worked on, or the operator's answer to a card the turn left.
+async fn waits(state: &AppState, (agent, turn): (AgentId, &str)) -> bool {
+    // shortcut: looks at the newest 100 tasks only; a longer backlog would need a store query.
+    let delegated = state.store.tasks(agent, 100).await.is_ok_and(|tasks| {
+        tasks
+            .iter()
+            .any(|t| t.assigner() == Some(agent) && matches!(t.status(), "queued" | "working"))
+    });
+    if delegated {
+        return true;
+    }
     let Ok(events) = state.store.turn_events(agent, turn.to_owned()).await else {
         return false;
     };
@@ -293,6 +316,108 @@ async fn continue_with(state: &AppState, agent: AgentId, text: &str, reason: Opt
     state.message_arrived(agent);
     state.publish(UiEvent::Message { message });
     state.publish(UiEvent::GoalChanged { agent_id: agent });
+}
+
+/// The agent whose task `agent` works for: it has a task and `agent` is in its chain.
+async fn lead_of(state: &AppState, agent: AgentId) -> Option<AgentId> {
+    let goals = load(state).await.ok()?;
+    let open = state.store.open_messages().await.ok()?;
+    goals
+        .into_keys()
+        .find(|&lead| lead != agent && crate::stop::chain(lead, &open).contains(&agent))
+}
+
+/// Lets the lead of the task `agent` works for decide its risky step on card `qid` as well;
+/// the operator's card stays open.
+pub(crate) async fn ask_lead(
+    state: &AppState,
+    (agent, name): (AgentId, &str),
+    qid: i64,
+    step: &str,
+) {
+    let Some(lead) = lead_of(state, agent).await else {
+        return;
+    };
+    let body = format!(
+        "[ferrobot] {name}, working on your task, wants to run a risky step (card {qid}): \
+         {step}\n\nDecide it with decide_approval; your operator may answer first."
+    );
+    let message = match state
+        .store
+        .enqueue_message_with_priority(Sender::User, lead, body, None, Some(true))
+        .await
+    {
+        Ok(m) => m,
+        Err(e) => return tracing::warn!(error = %e, %lead, "cannot pass the card on"),
+    };
+    let event = json!({ "state": "approval", "by": name, "note": step, "note_id": message.id });
+    // Before the message is published, so the chat hides it from the start.
+    state.record(lead, None, "goal", event).await;
+    state.message_arrived(lead);
+    state.publish(UiEvent::Message { message });
+}
+
+/// The lead's `decide_approval` on card `qid`: only a risky, not a very risky, step of an agent
+/// working on its task. `Err` carries a message for the lead.
+pub(crate) async fn decide(
+    state: &AppState,
+    lead: AgentId,
+    qid: i64,
+    approve: bool,
+) -> Result<&'static str, String> {
+    if get(state, lead).await.is_none() {
+        return Err(
+            "you decide your teammates' steps only during a task from your operator".into(),
+        );
+    }
+    let open = state
+        .store
+        .open_messages()
+        .await
+        .map_err(|e| e.to_string())?;
+    let mut found = None;
+    for member in crate::stop::chain(lead, &open).into_iter().skip(1) {
+        if let Ok(event) = state.store.get_event(member, qid).await {
+            found = Some((member, event));
+            break;
+        }
+    }
+    let (member, event) =
+        found.ok_or("no agent working on your task has a card with that number")?;
+    let card = (event.kind == "question")
+        .then(|| serde_json::from_value::<QuestionEvent>(event.payload).ok())
+        .flatten()
+        .ok_or("that is not a card")?;
+    match card.approval {
+        Some(Approval::ToolCall {
+            agent,
+            critical: false,
+            ..
+        }) if agent == member => {}
+        Some(Approval::ToolCall { critical: true, .. }) => {
+            return Err("that step is very risky: only your operator decides it".into());
+        }
+        _ => return Err("only your operator answers that card".into()),
+    }
+    let _guard = state.answers.lock().await;
+    if state
+        .store
+        .question_answered(member, qid)
+        .await
+        .map_err(|e| e.to_string())?
+    {
+        return Err("that card is already answered".into());
+    }
+    let value = if approve { APPROVE } else { DECLINE };
+    let answers = vec![QuestionAnswer {
+        question_id: "q1".into(),
+        values: vec![value.into()],
+        custom: None,
+    }];
+    crate::agents::answer_approval(state, (member, qid), answers, Some(lead))
+        .await
+        .map_err(|e| e.to_string())?;
+    Ok(if approve { "Approved." } else { "Declined." })
 }
 
 #[derive(Debug, PartialEq, Eq)]

@@ -10759,6 +10759,17 @@
           "timed_out": {
             "type": "boolean",
             "description": "No answer came in time: the daemon declined the approval card."
+          },
+          "answered_by": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/AgentId",
+                "description": "The agent that answered: during the operator's task, its agent decides the risky steps\nof the agents working for it. Absent: the operator (or the timeout)."
+              },
+              {
+                "type": "null"
+              }
+            ]
           }
         }
       },

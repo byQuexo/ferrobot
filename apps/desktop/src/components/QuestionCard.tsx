@@ -42,7 +42,7 @@ export function QuestionCardView(props: {
   answered: QuestionAnswered | null;
 }): JSX.Element {
   const { card, answered, agent } = props;
-  const { client, run } = useApp();
+  const { client, run, agents } = useApp();
   const [step, setStep] = useState(0);
   const [draft, setDraft] = useState<Map<number, Draft>>(new Map());
   const [sending, setSending] = useState(false);
@@ -60,6 +60,7 @@ export function QuestionCardView(props: {
       {answered ? (
         <span class="qcard-done">
           <Check size={16} /> Answered
+          {answered.answered_by && ` by @${agents.get(answered.answered_by)?.name ?? "an agent"}`}
         </span>
       ) : (
         total > 1 && (

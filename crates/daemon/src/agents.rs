@@ -293,6 +293,7 @@ pub(crate) async fn answer_tools_card(
         answers,
         message_id,
         timed_out: false,
+        answered_by: None,
     };
     record_answer(state, chat, answered).await
 }
@@ -340,6 +341,31 @@ pub(crate) async fn post_card(
     let qid = event.id;
     state.publish(UiEvent::Event { event });
     Ok(qid)
+}
+
+/// Decides a waiting approval card in `chat`; `by`: the agent deciding it for the operator.
+/// Call it holding `state.answers`, after checking the card is unanswered.
+pub(crate) async fn answer_approval(
+    state: &AppState,
+    (chat, qid): (AgentId, i64),
+    answers: Vec<QuestionAnswer>,
+    by: Option<AgentId>,
+) -> Result<QuestionAnswered, ApiError> {
+    let answered = QuestionAnswered {
+        question: qid,
+        answers,
+        message_id: None,
+        timed_out: false,
+        answered_by: by,
+    };
+    let waiting = decide(state, qid, &answered.answers);
+    let answered = record_answer(state, chat, answered).await?;
+    if !waiting {
+        return Err(ApiError::Conflict(format!(
+            "approval request {qid} is no longer pending"
+        )));
+    }
+    Ok(answered)
 }
 
 /// Records the operator's answer to a card in `chat`.
@@ -731,16 +757,36 @@ pub(crate) async fn await_card(
     chat: AgentId,
     card: &QuestionEvent,
 ) -> Result<Option<bool>, ApiError> {
+    let (qid, rx) = open_card(state, chat, card).await?;
+    wait_card(state, chat, qid, rx).await
+}
+
+/// [`await_card`]'s first half: the card's id and where its decision arrives.
+pub(crate) async fn open_card(
+    state: &AppState,
+    chat: AgentId,
+    card: &QuestionEvent,
+) -> Result<(i64, tokio::sync::oneshot::Receiver<bool>), ApiError> {
     let payload = serde_json::to_value(card).map_err(|e| ApiError::Internal(e.to_string()))?;
     let event = state
         .store
         .append_event(chat, None, "question".into(), payload)
         .await?;
     let qid = event.id;
-    let (tx, mut rx) = tokio::sync::oneshot::channel();
+    let (tx, rx) = tokio::sync::oneshot::channel();
     state.approvals_lock().insert(qid, tx);
     state.publish(UiEvent::Event { event });
     state.publish_agent(chat).await;
+    Ok((qid, rx))
+}
+
+/// [`await_card`]'s second half.
+pub(crate) async fn wait_card(
+    state: &AppState,
+    chat: AgentId,
+    qid: i64,
+    mut rx: tokio::sync::oneshot::Receiver<bool>,
+) -> Result<Option<bool>, ApiError> {
     if let Ok(r) = tokio::time::timeout(state.settings.approval_timeout, &mut rx).await {
         return Ok(Some(r.unwrap_or(false)));
     }
@@ -758,6 +804,7 @@ pub(crate) async fn await_card(
         }],
         message_id: None,
         timed_out: true,
+        answered_by: None,
     };
     record_answer(state, chat, answered).await?;
     Ok(None)

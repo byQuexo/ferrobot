@@ -482,9 +482,21 @@ pub async fn gate(state: &AppState, agent: AgentId, call: Call<'_>) -> Result<()
         },
     )
     .in_turn(state.hub.current_turn(agent));
-    match crate::agents::await_card(state, agent, &card).await {
+    let (qid, rx) = crate::agents::open_card(state, agent, &card)
+        .await
+        .map_err(|e| e.to_string())?;
+    if !critical {
+        crate::goal::ask_lead(
+            state,
+            (agent, name.as_str()),
+            qid,
+            &card.card.questions[0].prompt,
+        )
+        .await;
+    }
+    match crate::agents::wait_card(state, agent, qid, rx).await {
         Ok(Some(true)) => Ok(()),
-        Ok(Some(false)) => Err(format!("the operator declined: {reason}")),
+        Ok(Some(false)) => Err(format!("declined: {reason}")),
         Ok(None) => Err(format!("the operator did not answer in time: {reason}")),
         Err(e) => Err(e.to_string()),
     }

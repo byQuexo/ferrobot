@@ -556,6 +556,17 @@
     "QuestionAnswered": {
       "description": "Payload of a `question_answered` event. A card is answered at most once.",
       "properties": {
+        "answered_by": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/AgentId",
+              "description": "The agent that answered: during the operator's task, its agent decides the risky steps\nof the agents working for it. Absent: the operator (or the timeout)."
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
         "answers": {
           "items": {
             "$ref": "#/$defs/QuestionAnswer"

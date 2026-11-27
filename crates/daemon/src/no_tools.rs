@@ -145,6 +145,7 @@ pub(crate) async fn answer_card(
         answers,
         message_id: None,
         timed_out: false,
+        answered_by: None,
     };
     crate::agents::record_answer(state, chat, answered).await
 }

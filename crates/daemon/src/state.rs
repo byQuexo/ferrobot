@@ -640,6 +640,20 @@ impl ferrobot_mcp::MailboxNotifier for AppState {
         Box::pin(async move { crate::goal::finish(&state, agent, summary).await })
     }
 
+    fn decide_for_task(
+        &self,
+        lead: AgentId,
+        card: i64,
+        approve: bool,
+    ) -> ferrobot_mcp::BoxFuture<Result<String, String>> {
+        let state = self.clone();
+        Box::pin(async move {
+            crate::goal::decide(&state, lead, card, approve)
+                .await
+                .map(str::to_owned)
+        })
+    }
+
     fn has_discord(&self, agent: AgentId) -> ferrobot_mcp::BoxFuture<bool> {
         let state = self.clone();
         Box::pin(async move { !crate::discord::channels_of(&state, agent).await.is_empty() })
