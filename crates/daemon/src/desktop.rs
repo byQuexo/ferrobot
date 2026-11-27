@@ -171,7 +171,7 @@ pub(crate) async fn start(state: &AppState, agent: AgentId) -> Result<SandboxHan
     let handle = crate::lifecycle::sandbox_handle(&state.store.get_agent(agent).await?)?;
     let out = state
         .backend
-        .exec(&handle, &ExecRequest::new(["sh", "-c", START]))
+        .exec(&handle, &ExecRequest::new(["/bin/sh", "-c", START]))
         .await?;
     match out.exit_code {
         0 => Ok(handle),
@@ -195,13 +195,13 @@ pub(crate) fn vnc_command(control: bool) -> Vec<String> {
     let view_only = if control { "" } else { " -viewonly" };
     let script = format!(
         "log=/tmp/x11vnc-$$.log\n\
-         socat STDIO \"EXEC:x11vnc -inetd -nopw -shared -quiet -o $log{view_only}\"\n\
+         /usr/bin/socat STDIO \"EXEC:/usr/bin/x11vnc -inetd -nopw -shared -quiet -o $log{view_only}\"\n\
          pkill -KILL -f \"$log\"; rm -f \"$log\""
     );
     vec![
-        "env".into(),
+        "/usr/bin/env".into(),
         format!("DISPLAY={DISPLAY}"),
-        "sh".into(),
+        "/bin/sh".into(),
         "-c".into(),
         script,
     ]
@@ -266,7 +266,7 @@ fn xdotool(action: &DesktopAction) -> Result<Vec<String>, String> {
             args
         }
     };
-    args.insert(0, "xdotool".into());
+    args.insert(0, "/usr/bin/xdotool".into());
     Ok(args)
 }
 
@@ -290,7 +290,7 @@ pub(crate) async fn act(
             .backend
             .exec(
                 &handle,
-                &display(vec!["scrot".into(), "-o".into(), SHOT.into()]),
+                &display(vec!["/usr/bin/scrot".into(), "-o".into(), SHOT.into()]),
             )
             .await
             .map_err(failed)?;
@@ -336,7 +336,7 @@ mod tests {
         };
         assert_eq!(
             xdotool(&click).unwrap(),
-            ["xdotool", "mousemove", "--sync", "10", "20", "click", "3"]
+            ["/usr/bin/xdotool", "mousemove", "--sync", "10", "20", "click", "3"]
         );
         let typed = DesktopAction::Type {
             text: "-rf ~".into(),

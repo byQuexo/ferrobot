@@ -9270,7 +9270,7 @@ async fn clis_install_per_agent_sign_in_in_a_throwaway_computer_and_can_be_propo
     );
     assert!(installed("bob").await.is_none(), "bob was not picked");
     let env = backend.envs.lock().unwrap()["ann"].clone();
-    assert!(env["PATH"].starts_with("/home/node/.local/bin:"), "{env:?}");
+    assert!(env["PATH"].ends_with(":/home/node/.local/bin"), "home programs come last: {env:?}");
 
     // The CLI's own device sign-in runs in a computer of its own; the token goes to the vault.
     backend.replies.lock().unwrap().extend([
