@@ -825,7 +825,7 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** The operator's slash commands; a daemon that never saved any lists the example `/goal`. */
+        /** The operator's slash commands. */
         get: operations["get_commands"];
         /** Replaces the slash commands: adding, editing and deleting all send the whole list. */
         put: operations["put_commands"];

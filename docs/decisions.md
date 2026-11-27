@@ -1718,9 +1718,9 @@ A review of the release before it shipped changed these decisions:
   migration. The continuation is the operator's message (it starts a turn on every driver) and is
   hidden in the chat behind a `goal` event, like reaction notes. Stop and Clear drop a waiting
   continuation; Stop also ends the task while the agent is idle.
-- **Slash commands live in the app.** The daemon keeps the list (`commands` setting, seeded with
-  `/goal` only while the setting does not exist, so a deletion sticks) and the app expands it, so
-  the daemon has no second message path. `task` is reserved.
+- **Slash commands live in the app.** The daemon keeps the list (`commands` setting, empty at
+  first: `/task` is the only built-in) and the app expands it, so the daemon has no second message
+  path. `task` is reserved.
 - **Agent-made commands always need a card.** A command's prompt is later sent in the operator's
   name, so `add_command` shows the full prompt and Auto mode never skips it; the card stays out of
   Discord. A name taken while the card waits blocks Approve with `409` and leaves the card open.

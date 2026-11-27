@@ -172,7 +172,7 @@ Principles:
   `runner_ws::settle` sends the agent back to work until `finish_task` and a report, then a check (Claude
   Code: host `claude -p` with Haiku; Anthropic: Messages; OpenAI-compatible kinds: chat completions; none
   for Codex, Gemini CLI, Bedrock, Vertex); `api/goal.rs` — `/v1/agents/{id}/goal`.
-  `api/commands.rs` — the operator's slash commands (`commands` setting, `/goal` seed) and the
+  `api/commands.rs` — the operator's slash commands (`commands` setting) and the
   `add_command` card; the app expands them (`apps/desktop/src/lib/commands.ts`).
 - `crates/daemon/src/stop.rs` — the operator's Stop (`interrupt?chain=true`): the agent's turn,
   the turns of agents working on messages from that chain, and agent messages queued among them.

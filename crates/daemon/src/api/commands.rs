@@ -45,17 +45,6 @@ pub(crate) struct Command {
     pub added_by: Option<AgentId>,
 }
 
-/// What a new daemon starts with: an example the operator can change or delete.
-fn seed() -> Vec<Command> {
-    vec![Command {
-        name: "goal".into(),
-        description: "A task with house rules: small steps, checked results, a report on what was checked".into(),
-        prompt: "$ARGUMENTS\n\nWork in small steps. Before you call finish_task, check the result yourself (run it, test it), and say in your report what you checked.".into(),
-        as_task: true,
-        added_by: None,
-    }]
-}
-
 fn valid_name(name: &str) -> bool {
     name.len() <= MAX_NAME
         && name.starts_with(|c: char| c.is_ascii_lowercase())
@@ -93,11 +82,11 @@ async fn load(state: &AppState) -> Result<Vec<Command>, ApiError> {
         Some(raw) => {
             serde_json::from_str(&raw).map_err(|e| ApiError::Internal(format!("commands: {e}")))
         }
-        None => Ok(seed()),
+        None => Ok(Vec::new()),
     }
 }
 
-/// The operator's slash commands; a daemon that never saved any lists the example `/goal`.
+/// The operator's slash commands.
 #[utoipa::path(get, path = "/v1/commands", tag = "settings",
     responses((status = 200, body = [Command])))]
 pub(crate) async fn get_commands(State(state): State<AppState>) -> ApiResult<Vec<Command>> {
