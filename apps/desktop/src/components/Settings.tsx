@@ -13,6 +13,7 @@ import {
   Palette,
   Plug,
   RefreshCw,
+  SquareSlash,
   Stethoscope,
   Monitor,
   Waypoints,
@@ -27,6 +28,7 @@ import { isMac, keyLabel, SHORTCUTS } from "../lib/shortcuts.ts";
 import { AppearanceSettings, PrefRow } from "./AppearanceSettings.tsx";
 import { ClaudeCodeSettings } from "./ClaudeCodeSettings.tsx";
 import { ClisSettings } from "./ClisSettings.tsx";
+import { CommandsSettings } from "./CommandsSettings.tsx";
 import { ConnectorsSettings } from "./ConnectorsSettings.tsx";
 import { DiagnosticsSettings } from "./DiagnosticsSettings.tsx";
 import { DiscordSettings } from "./DiscordSettings.tsx";
@@ -45,6 +47,7 @@ export type SettingsSection =
   | "providers"
   | "vault"
   | "agents"
+  | "commands"
   | "claude-code"
   | "connectors"
   | "webhooks"
@@ -71,6 +74,12 @@ export const SECTIONS: [SettingsSection, string, string, typeof KeyRound, string
   ],
   ["providers", "Model providers", "The models your agents run on. Their keys live in Vault.", Cpu],
   ["agents", "Agents", "What agents may do without asking you.", Bot],
+  [
+    "commands",
+    "Commands",
+    "Reusable prompts for the message box. Agents can offer new ones; you approve each on a card.",
+    SquareSlash,
+  ],
   [
     "claude-code",
     "Claude Code",
@@ -138,7 +147,7 @@ export const SECTIONS: [SettingsSection, string, string, typeof KeyRound, string
 /** The sidebar's categories, in order; together they hold every section once. */
 const GROUPS: [string, SettingsSection[]][] = [
   ["General", ["appearance", "keyboard", "voice"]],
-  ["Agents", ["providers", "agents", "claude-code", "memory", "traces"]],
+  ["Agents", ["providers", "agents", "commands", "claude-code", "memory", "traces"]],
   ["Tools & keys", ["connectors", "webhooks", "discord", "clis", "vault"]],
   ["App", ["updates", "diagnostics", "guides"]],
 ];
@@ -303,6 +312,7 @@ export function Settings(props: {
         {props.section === "providers" && <ProvidersSettings onVault={vault} />}
         {props.section === "vault" && <VaultSettings focus={vaultFocus} />}
         {props.section === "agents" && <AgentSettings />}
+        {props.section === "commands" && <CommandsSettings />}
         {props.section === "claude-code" && <ClaudeCodeSettings />}
         {props.section === "connectors" && (
           <ConnectorsSettings

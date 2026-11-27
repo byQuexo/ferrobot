@@ -1128,6 +1128,9 @@ kbd { padding: 2px 8px; border: 1px solid var(--border-strong); border-radius: 6
 }
 .mention-pick li { display: flex; align-items: center; gap: 8px; padding: 6px 8px; border-radius: 8px; cursor: pointer; font-size: 14px; }
 .mention-pick li[aria-selected="true"], .mention-pick li:hover { background: var(--surface-2); }
+.mention-pick .command-name { flex: none; font-family: var(--mono); font-size: 13px; }
+.mention-pick .command-name + .muted { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 13px; }
+.task-chip { gap: 4px; color: var(--accent); cursor: default; }
 
 /* Your reaction on an agent's message: the emoji, and the picker behind the smiley */
 .bubble-agent > .meta.msg-foot { display: flex; align-items: center; gap: 6px; }
