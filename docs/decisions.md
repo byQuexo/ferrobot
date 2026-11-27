@@ -1308,6 +1308,11 @@ slop, so polish mode: palette, accent, logo, layout and features stay.
   stale when the image its name points to has another id; it is recreated on
   its next wake with its home volume kept. Snapshot and archive containers
   still never count as stale.
+- Any tag of the base image's repository counts as the base (2026-11-27): the app pins the runner
+  to its own version (`ghcr.io/byquexo/ferrobot-runner:<version>`), so after an update the old
+  computers ran a tag that was neither the base nor a CLI image and were never recreated; they kept
+  the old runner and never got the desktop. Other repositories (snapshots, archives, an
+  operator's own image) are still left alone.
 - `(pass)` is also recognised without brackets or with a full stop ("pass",
   "Pass."), in the daemon and the UI.
 

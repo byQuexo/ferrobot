@@ -17,6 +17,7 @@ All notable changes are listed here. The format follows
 ### Fixed
 
 - Model calls of agents on Claude Code (your own login) showed 0.0 s in traces: they now last from the request to the answer.
+- Computers created by an older version of the app kept its runner after an update, so they never got the desktop and "Restart to get the desktop" came back after every restart. They now move to the current runner on their next wake, files kept.
 
 ## [0.1.11] - 2026-11-27
 
