@@ -73,11 +73,15 @@ its last turn and either ends the task or sends it back with the reason:
 | OpenAI, Gemini, OpenRouter, Ollama, OpenAI-compatible | The agent's model, through chat completions |
 | Codex, Gemini CLI, Bedrock, Vertex | No check: the agent's word and its report end the task |
 
-The check runs in the daemon with the provider's key and shows up in
-**Usage**; a check that cannot run counts as not done. The header shows
-**Task · step N** while a task runs; its cross clears the task. **Stop**, a
-failed turn and 20 trips back to work end it too. The chat shows each step:
-sent back, achieved, stopped or gave up.
+The check runs in the daemon with the provider's key; API checks show up in
+**Usage**, Claude Code's do not. It needs a model: the agent's, the provider's
+default or the daemon's `--model`; without one there is no check. A check that
+cannot run counts as not done. A turn that ends with a card for you is not sent
+back: your answer starts the next one. One that waits for a teammate's reply is,
+so give tasks work the agent can do itself. The header shows **Task · step N**
+while a task runs; its cross clears the task. **Stop**, a failed or interrupted
+turn and 20 trips back to work end it too. The chat shows each step: sent back,
+achieved, stopped or gave up.
 
 ### Commands
 

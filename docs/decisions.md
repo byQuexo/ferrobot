@@ -1704,10 +1704,14 @@ A review of the release before it shipped changed these decisions:
   `claude -p` (no tools, settings, MCP servers or session; the prompt on stdin). Anthropic and the
   daemon's own key: the Messages API. OpenAI-compatible kinds (OpenAI, Gemini, OpenRouter, Ollama,
   any other): chat completions. The agent's model, else the provider's default; the key stays in
-  the daemon. The call is a Usage row under the turn `task-check:<turn>`, so it stays out of the
-  turn's trace. Codex, Gemini CLI, Bedrock and Vertex get no check (their APIs need code the
+  the daemon. An API check is a Usage row under the turn `task-check:<turn>`, so it stays out of the
+  turn's trace; the Claude Code check records none. Codex, Gemini CLI, Bedrock and Vertex get no check (their APIs need code the
   daemon only has as a proxy), and neither does an agent without a model: `finish_task` with a
   report ends the task there. A per-provider `judge_model` was skipped: it would need a migration.
+- **A card holds the task, a teammate does not.** A turn that ends without `finish_task` but with
+  an unanswered card of its own is not sent back: the operator's answer arrives as their message
+  and starts the next turn. A turn that waits for a teammate's reply is sent back, since that reply
+  (`Sender::Agent`) never runs the hook; a known limit.
 - **A check that cannot run counts as not met** and uses up a continuation, so a broken check ends
   in "gave up" rather than a false "achieved".
 - **State in the `goals` setting**, one entry per agent, so a task survives a restart without a
