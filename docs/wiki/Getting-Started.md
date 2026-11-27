@@ -86,7 +86,9 @@ While the task runs, the agent also decides its teammates' risky steps: each
 card still shows in the teammate's chat, where you can answer first, and goes to
 the agent as a note too; a card it decided says **Answered by @agent**. Very
 risky steps, its own steps and cards that are not about a step (new agents,
-connectors, CLIs, commands, questions) stay with you. The header shows **Task · step N**
+connectors, CLIs, commands, questions) stay with you. It can still hand a step
+to a teammate and approve it there, so while a task runs, treat the agent as the
+approver of its team's risky steps. The header shows **Task · step N**
 while a task runs; its cross clears the task. **Stop**, a failed or interrupted
 turn and 20 trips back to work end it too. The chat shows each step: sent back,
 achieved, stopped or gave up.

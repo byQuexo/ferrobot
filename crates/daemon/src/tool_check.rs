@@ -485,16 +485,17 @@ pub async fn gate(state: &AppState, agent: AgentId, call: Call<'_>) -> Result<()
     let (qid, rx) = crate::agents::open_card(state, agent, &card)
         .await
         .map_err(|e| e.to_string())?;
-    if !critical {
-        crate::goal::ask_lead(
-            state,
-            (agent, name.as_str()),
-            qid,
-            &card.card.questions[0].prompt,
-        )
-        .await;
+    let note = if critical {
+        None
+    } else {
+        let step = &card.card.questions[0].prompt;
+        crate::goal::ask_lead(state, (agent, name.as_str()), qid, step).await
+    };
+    let decision = crate::agents::wait_card(state, agent, qid, rx).await;
+    if let Some(note) = note {
+        crate::goal::drop_note(state, note).await;
     }
-    match crate::agents::wait_card(state, agent, qid, rx).await {
+    match decision {
         Ok(Some(true)) => Ok(()),
         Ok(Some(false)) => Err(format!("declined: {reason}")),
         Ok(None) => Err(format!("the operator did not answer in time: {reason}")),

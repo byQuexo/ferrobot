@@ -11737,6 +11737,14 @@
             ],
             "format": "int64",
             "description": "The continuation waiting in the mailbox, if any."
+          },
+          "notes": {
+            "type": "array",
+            "items": {
+              "type": "integer",
+              "format": "int64"
+            },
+            "description": "Notes about teammates' cards waiting in the mailbox; they go with the task."
           }
         }
       },

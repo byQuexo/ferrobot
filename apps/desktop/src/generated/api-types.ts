@@ -3381,6 +3381,8 @@ export interface components {
              * @description The continuation waiting in the mailbox, if any.
              */
             pending?: number | null;
+            /** @description Notes about teammates' cards waiting in the mailbox; they go with the task. */
+            notes?: number[];
         };
         /**
          * @description A group of tools an agent can have on or off. Shell, Files and Web are the model's built-in

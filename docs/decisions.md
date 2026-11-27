@@ -1719,7 +1719,9 @@ A review of the release before it shipped changed these decisions:
   answers with `decide_approval` through the operator's answer path, recorded as `answered_by`.
   The operator's card stays open, so the first answer wins (`409` after). The task agent never
   decides its own steps, which would be Auto mode nobody switched on, nor any other kind of card.
-  This is narrower than Auto mode, which skips those cards entirely.
+  This is narrower than Auto mode, which skips those cards entirely, but not by much: it can hand
+  its own step to a teammate and approve it there, and a teammate's command text reaches it. The
+  notes are kept on the task (`notes`) and dropped when the card is decided or the task ends.
 - **A check that cannot run counts as not met** and uses up a continuation, so a broken check ends
   in "gave up" rather than a false "achieved".
 - **State in the `goals` setting**, one entry per agent, so a task survives a restart without a

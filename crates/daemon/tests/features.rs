@@ -10228,3 +10228,75 @@ async fn the_lead_decides_only_its_teammates_risky_steps() {
     assert!(refused(qid).await.contains("already answered"));
     assert_eq!(decide(&d, &dex, qid, "decline").await.0, 409);
 }
+
+#[tokio::test]
+async fn a_note_to_the_lead_goes_with_its_card_and_its_task() {
+    let backend = Arc::new(StatefulBackend::default());
+    let d = start(backend.clone(), None, "127.0.0.1:0").await;
+    let lead = create_id(&d, json!({"name": "lead"})).await;
+    let dex = create_id(&d, json!({"name": "dex"})).await;
+    let mut ws = connect_runner(&d.agents, &backend.token("lead")).await;
+    let mut dex_ws = connect_runner(&d.agents, &backend.token("dex")).await;
+    let client = mcp_as(&d, backend.token("lead")).await;
+    let path = format!("/v1/agents/{lead}/goal");
+    let goal = json!({"goal": "ship the site"});
+    assert_eq!(http(&d.ui, "PUT", &path, Some(goal)).await.0, 200);
+    let (turn, _, _) = next_turn(&mut ws).await;
+    call(
+        &client,
+        "assign_task",
+        json!({"to": "dex", "task": "deploy it"}),
+    )
+    .await;
+    next_turn(&mut dex_ws).await;
+    let check = |command: &'static str| {
+        let (agents, token) = (d.agents.clone(), backend.token("dex"));
+        tokio::spawn(async move { tool_check(&agents, &token, command).await })
+    };
+
+    // The operator answers first: the note queued for the busy lead goes.
+    let pushing = check("git push origin main");
+    let qid = approval_card(&d, &dex, 0).await;
+    assert_eq!(decide(&d, &dex, qid, "approve").await.0, 202);
+    assert_eq!(pushing.await.unwrap()["allow"], true);
+    finish(&mut ws, turn, Some("dex deploys.")).await;
+    quiet(&mut ws).await;
+
+    // Stop ends the task, and the note queued meanwhile goes with it.
+    let message = json!({"body": "how is it going?"});
+    let messages = format!("/v1/agents/{lead}/messages");
+    assert_eq!(http(&d.ui, "POST", &messages, Some(message)).await.0, 202);
+    let (turn, _, _) = next_turn(&mut ws).await;
+    check("git push origin dev");
+    approval_card(&d, &dex, qid).await;
+    let goal = eventually("the note", Duration::from_secs(5), || async {
+        let goal = http(&d.ui, "GET", &path, None).await.1;
+        (goal["notes"].as_array()?.len() == 1).then_some(goal)
+    })
+    .await;
+    let stop = format!("/v1/agents/{lead}/interrupt?chain=true");
+    assert_eq!(http(&d.ui, "POST", &stop, None).await.0, 200);
+    assert!(matches!(
+        next_frame(&mut ws).await,
+        DaemonFrame::Interrupt { .. }
+    ));
+    let done = RunnerFrame::TurnDone {
+        turn_id: turn,
+        outcome: ferrobot_core::protocol::TurnOutcome::Interrupted,
+        session_id: None,
+        result: None,
+        error: None,
+        steered: vec![],
+    };
+    send(&mut ws, &done).await;
+    quiet(&mut ws).await;
+    let note = goal["notes"][0].as_i64().unwrap();
+    let messages = http(&d.ui, "GET", &messages, None).await.1;
+    let note = messages
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|m| m["id"] == note)
+        .unwrap();
+    assert_eq!(note["status"], "delivered", "dropped: {note}");
+}

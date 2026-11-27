@@ -41,6 +41,9 @@ pub(crate) struct TaskGoal {
     /// The continuation waiting in the mailbox, if any.
     #[serde(default)]
     pub pending: Option<i64>,
+    /// Notes about teammates' cards waiting in the mailbox; they go with the task.
+    #[serde(default)]
+    pub notes: Vec<i64>,
 }
 
 type Goals = BTreeMap<AgentId, TaskGoal>;
@@ -95,6 +98,7 @@ pub(crate) async fn set(
         summary: None,
         // A turn already running ends before this message's turn: no continuation ahead of it.
         pending: Some(message.id),
+        notes: Vec::new(),
     };
     goals.insert(agent, task.clone());
     save_json(state, SETTING, &goals).await?;
@@ -147,12 +151,12 @@ async fn end_locked(state: &AppState, agent: AgentId, how: End, note: &str) {
 }
 
 async fn drop_pending(state: &AppState, goal: &TaskGoal) {
-    let Some(id) = goal.pending else { return };
-    if let Ok(dropped) = state
-        .store
-        .drop_messages(vec![id], "the task ended".into())
-        .await
-    {
+    let ids = goal.pending.into_iter().chain(goal.notes.iter().copied());
+    drop_messages(state, ids.collect(), "the task ended").await;
+}
+
+async fn drop_messages(state: &AppState, ids: Vec<i64>, why: &str) {
+    if let Ok(dropped) = state.store.drop_messages(ids, why.into()).await {
         for id in dropped {
             state.publish_message(id).await;
         }
@@ -318,26 +322,24 @@ async fn continue_with(state: &AppState, agent: AgentId, text: &str, reason: Opt
     state.publish(UiEvent::GoalChanged { agent_id: agent });
 }
 
-/// The agent whose task `agent` works for: it has a task and `agent` is in its chain.
-async fn lead_of(state: &AppState, agent: AgentId) -> Option<AgentId> {
-    let goals = load(state).await.ok()?;
-    let open = state.store.open_messages().await.ok()?;
-    goals
-        .into_keys()
-        .find(|&lead| lead != agent && crate::stop::chain(lead, &open).contains(&agent))
-}
-
 /// Lets the lead of the task `agent` works for decide its risky step on card `qid` as well;
-/// the operator's card stays open.
+/// the operator's card stays open. Returns the note, for [`drop_note`].
 pub(crate) async fn ask_lead(
     state: &AppState,
     (agent, name): (AgentId, &str),
     qid: i64,
     step: &str,
-) {
-    let Some(lead) = lead_of(state, agent).await else {
-        return;
-    };
+) -> Option<i64> {
+    let _lock = LOCK.lock().await;
+    let mut goals = load(state).await.ok()?;
+    let open = state.store.open_messages().await.ok()?;
+    let lead = *goals
+        .keys()
+        .find(|&&lead| lead != agent && crate::stop::chain(lead, &open).contains(&agent))?;
+    let lead_agent = state.store.get_agent(lead).await.ok()?;
+    if !lead_agent.tools.contains(&ToolGroup::Team) {
+        return None;
+    }
     let body = format!(
         "[ferrobot] {name}, working on your task, wants to run a risky step (card {qid}): \
          {step}\n\nDecide it with decide_approval; your operator may answer first."
@@ -348,13 +350,36 @@ pub(crate) async fn ask_lead(
         .await
     {
         Ok(m) => m,
-        Err(e) => return tracing::warn!(error = %e, %lead, "cannot pass the card on"),
+        Err(e) => {
+            tracing::warn!(error = %e, %lead, "cannot pass the card on");
+            return None;
+        }
     };
-    let event = json!({ "state": "approval", "by": name, "note": step, "note_id": message.id });
+    let id = message.id;
+    goals.get_mut(&lead)?.notes.push(id);
+    if let Err(e) = save_json(state, SETTING, &goals).await {
+        tracing::error!(error = %e, %lead, "cannot save the task");
+    }
+    let event = json!({ "state": "approval", "by": name, "note": step, "note_id": id });
     // Before the message is published, so the chat hides it from the start.
     state.record(lead, None, "goal", event).await;
     state.message_arrived(lead);
     state.publish(UiEvent::Message { message });
+    Some(id)
+}
+
+/// Drops the note about a card once the card is decided, unless the lead already has it.
+pub(crate) async fn drop_note(state: &AppState, note: i64) {
+    let _lock = LOCK.lock().await;
+    if let Ok(mut goals) = load(state).await
+        && let Some(goal) = goals.values_mut().find(|g| g.notes.contains(&note))
+    {
+        goal.notes.retain(|&n| n != note);
+        if let Err(e) = save_json(state, SETTING, &goals).await {
+            tracing::error!(error = %e, "cannot save the task");
+        }
+    }
+    drop_messages(state, vec![note], "the card was answered").await;
 }
 
 /// The lead's `decide_approval` on card `qid`: only a risky, not a very risky, step of an agent
