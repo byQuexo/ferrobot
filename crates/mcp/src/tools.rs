@@ -1419,9 +1419,9 @@ impl FerrobotTools {
     ) -> ToolResult<Ack> {
         let me = caller(&parts)?.0.id;
         let key = args.key.trim();
-        if key.is_empty() || key.len() > MAX_MEMORY_KEY_BYTES {
+        if key.is_empty() || key.len() > MAX_MEMORY_KEY_BYTES || key.chars().any(char::is_control) {
             return Err(invalid(format!(
-                "key must be 1-{MAX_MEMORY_KEY_BYTES} bytes"
+                "key must be 1-{MAX_MEMORY_KEY_BYTES} bytes on one line"
             )));
         }
         if args.content.len() > MAX_MESSAGE_BYTES {
