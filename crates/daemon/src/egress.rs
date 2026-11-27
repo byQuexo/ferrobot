@@ -437,7 +437,7 @@ async fn forward(
         headers.remove(name);
     }
     headers.remove(axum::http::header::HOST);
-    replace_in(&mut headers, &swap.stand_in, &swap.real);
+    swap_credentials(&mut headers, &swap.stand_in, &swap.real);
     let sent = swap
         .http
         .request(parts.method, url)
@@ -467,6 +467,23 @@ async fn forward(
     *response.status_mut() = status;
     *response.headers_mut() = headers;
     Ok(response)
+}
+
+/// Request headers that carry the real token. Only these: a service that repeats some other
+/// header the agent sets (an error quoting `User-Agent`) would hand the token back.
+const CREDENTIAL_HEADERS: [&str; 4] = ["authorization", "x-api-key", "private-token", "x-auth-token"];
+
+/// [`replace_in`] for the credential headers only.
+fn swap_credentials(headers: &mut HeaderMap, from: &str, to: &str) {
+    for name in CREDENTIAL_HEADERS {
+        if let axum::http::header::Entry::Occupied(mut entry) = headers.entry(name) {
+            for value in entry.iter_mut() {
+                if let Some(replaced) = replace(value, from, to) {
+                    *value = replaced;
+                }
+            }
+        }
+    }
 }
 
 /// Replaces `from` with `to` in every header value that carries it, also inside `Basic`
@@ -558,6 +575,25 @@ mod tests {
                 .unwrap()
                 .is_sensitive()
         );
+    }
+
+    #[test]
+    fn the_token_goes_only_into_credential_headers() {
+        let stand_in = "ferrobot-stand-in-example";
+        let mut headers = HeaderMap::new();
+        for (name, value) in [
+            ("authorization", format!("Bearer {stand_in}")),
+            ("x-api-key", stand_in.to_owned()),
+            ("user-agent", stand_in.to_owned()),
+            ("accept", format!("{stand_in}/json")),
+        ] {
+            headers.insert(name, HeaderValue::from_str(&value).unwrap());
+        }
+        swap_credentials(&mut headers, stand_in, "real");
+        assert_eq!(headers["authorization"], "Bearer real");
+        assert_eq!(headers["x-api-key"], "real");
+        assert_eq!(headers["user-agent"], stand_in, "a header a service may echo back");
+        assert_eq!(headers["accept"], format!("{stand_in}/json").as_str());
     }
 
     #[test]
