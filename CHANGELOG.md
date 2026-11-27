@@ -6,6 +6,10 @@ All notable changes are listed here. The format follows
 
 ## [Unreleased]
 
+### Fixed
+
+- Model calls of agents on Claude Code (your own login) showed 0.0 s in traces: they now last from the request to the answer.
+
 ## [0.1.11] - 2026-11-27
 
 ### Added

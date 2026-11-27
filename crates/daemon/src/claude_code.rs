@@ -603,6 +603,8 @@ struct Run {
     provider_id: Option<Uuid>,
     turn: Option<String>,
     last_line: time::OffsetDateTime,
+    /// When the line before the next call's `message_start` came: the request went out then.
+    call_start: Option<time::OffsetDateTime>,
     call: Option<ModelCall>,
 }
 
@@ -620,11 +622,14 @@ impl Run {
             return;
         }
         self.flush_call().await;
+        if line["type"] == "stream_event" && line["event"]["type"] == "message_start" {
+            self.call_start.get_or_insert(self.last_line);
+        }
         if let Some(id) = id {
             self.call = Some(ModelCall {
                 id: id.to_owned(),
                 model: line["message"]["model"].as_str().map(str::to_owned),
-                started: self.last_line,
+                started: self.call_start.take().unwrap_or(self.last_line),
                 ended: now,
                 usage: line["message"]["usage"].clone(),
             });
@@ -789,6 +794,7 @@ async fn start(
         provider_id: agent.provider_id,
         turn: state.hub.current_turn(agent.id),
         last_line: time::OffsetDateTime::now_utc(),
+        call_start: None,
         call: None,
     })
 }
@@ -877,13 +883,14 @@ async fn next(mut run: Run) -> Option<(Result<Bytes, std::io::Error>, Run)> {
     }
     while let Ok(Some(line)) = run.lines.next_line().await {
         let now = time::OffsetDateTime::now_utc();
-        run.last_line = now;
         let Ok(v) = serde_json::from_str::<Value>(&line) else {
+            run.last_line = now;
             continue;
         };
         run.saw_result |= v["type"] == "result";
         Context::read(&mut run.context, &v);
         run.track_call(&v, now).await;
+        run.last_line = now;
         // Only the turn goes back: the init line and hook output describe the host.
         if matches!(
             v["type"].as_str(),

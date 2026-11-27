@@ -7097,6 +7097,8 @@ env > "$here/env.log"
 for a in "$@"; do case "$a" in --mcp-config=*) cat "${a#--mcp-config=}" > "$here/mcp.log" ;; esac; done
 cat > "$here/prompt.log"
 echo '{"type":"system","subtype":"init","session_id":"s1","tools":[]}'
+sleep 0.3
+echo '{"type":"stream_event","event":{"type":"message_start"},"session_id":"s1"}'
 echo '{"type":"assistant","message":{"id":"msg_1","model":"claude-sonnet-4-5","content":[{"type":"text","text":"hello"}],"usage":{"input_tokens":1200,"cache_read_input_tokens":3000,"cache_creation_input_tokens":800,"output_tokens":50}},"parent_tool_use_id":null,"session_id":"s1"}'
 echo '{"type":"result","subtype":"success","is_error":false,"result":"hello","session_id":"s1","modelUsage":{"claude-sonnet-4-5":{"contextWindow":200000}}}'
 "#;
@@ -9585,5 +9587,50 @@ async fn the_desktop_is_opt_in_paused_for_the_operator_and_never_with_a_cli_acco
     assert_eq!(
         (&v["desktop"], &v["packages"]),
         (&json!(false), &json!(["jq"]))
+    );
+}
+
+#[tokio::test]
+async fn a_claude_code_call_lasts_from_its_request_to_its_answer() {
+    use std::os::unix::fs::PermissionsExt;
+    let dir = tempfile::tempdir().unwrap();
+    let bin = dir.path().join("claude");
+    std::fs::write(&bin, FAKE_CLAUDE).unwrap();
+    std::fs::set_permissions(&bin, std::fs::Permissions::from_mode(0o755)).unwrap();
+    let backend = Arc::new(StatefulBackend::default());
+    let data_dir = dir.path().join("data");
+    let d = start_with(backend.clone(), None, "127.0.0.1:0", |s| {
+        s.driver = "claude".into();
+        s.claude_bin = bin.display().to_string();
+        s.data_dir = data_dir;
+    })
+    .await;
+    let cc = json!({"name": "cc", "kind": "claude_code", "default_model": "sonnet"});
+    let (_, provider) = http(&d.ui, "POST", "/v1/providers", Some(cc)).await;
+    let id = create_id(&d, json!({"name": "clio", "provider_id": provider["id"]})).await;
+    let token = backend.envs.lock().unwrap()["clio"]["FERROBOT_AGENT_TOKEN"].clone();
+    let mut ws = connect_runner(&d.agents, &token).await;
+    let path = format!("/v1/agents/{id}/messages");
+    assert_eq!(
+        http(&d.ui, "POST", &path, Some(json!({"body": "hi"})))
+            .await
+            .0,
+        202
+    );
+    let (turn, _, _) = next_turn(&mut ws).await;
+
+    // The fake `claude` waits 0.3 s between its init line and the model's answer.
+    let (status, out) = claude_code_turn(&d.agents, &token, "hi there", true).await;
+    assert_eq!(status, 200, "{out}");
+    let calls = d
+        .state
+        .store
+        .turn_calls(id.parse().unwrap(), turn)
+        .await
+        .unwrap();
+    assert!(
+        calls.len() == 1 && calls[0].latency_ms >= 250,
+        "{:?}",
+        calls.iter().map(|c| c.latency_ms).collect::<Vec<_>>()
     );
 }
