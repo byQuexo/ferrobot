@@ -1623,3 +1623,27 @@ slop, so polish mode: palette, accent, logo, layout and features stay.
   daemon's data dir hash (`clis-<owner>-<hash>`) and the sweep only removes its own; images from
   before are no longer swept.
 
+
+## Security review fixes (0.1.11, 2026-11-27)
+
+- **The tool check reads words, not spellings.** Connector tool names split at separators and
+  where lower case turns upper (`CREATE_REFUND`, `createRefund`), and plurals match their stem.
+  Tools that run arbitrary input (SQL, HTTP, GraphQL) are Risky. git and gh skip option values
+  (`-C dir`, `-R o/r`) to find the subcommand; `gh api` takes its method from every spelling and
+  POST from fields. Still best effort: it reads the command line, never a script the agent wrote.
+- **Cards show everything they approve or refuse to exist.** A shell command over 4,000
+  characters gets no card at all (refused) rather than a cut one; card text with line breaks,
+  bidi or invisible characters in a connector's command, URL or reason is refused.
+- **Agents reach the host's localhost on Docker Desktop.** Checked: a container reached
+  `host.docker.internal:7878` (`/v1/health` 200, `/v1/agents` 401). Every UI route but health,
+  the OAuth callback and signed artifacts needs the operator token, so the risk is other local
+  services without auth (model servers, dev databases, debug ports) and the LAN. Not fixed now:
+  a real fix is an internal network whose only route out is the agent listener; the wiki tells
+  operators not to run unauthenticated services on this computer while agents run.
+- **Harness settings folders are off limits.** Gemini trusts the workspace
+  (`GEMINI_CLI_TRUST_WORKSPACE`) and Claude and Codex read project settings, all of which can start
+  processes; the runner refuses writes under `.claude`, `.codex` and `.gemini` for every driver
+  instead of dropping the trust flag, which was not verified to keep Gemini working.
+- **Vault notes follow the agent, not its name.** A deleted agent's folder moves to
+  `ferrobot/.archived/<name>-<id>` (Obsidian hides dot folders); creating a name archives any
+  folder left under it, and a rename archives the target first instead of merging.

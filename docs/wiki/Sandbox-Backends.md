@@ -21,6 +21,13 @@ returns "not implemented", and `--backend` does not offer it.
 - Containers reach the daemon's agent API at `host.docker.internal`, so start
   the daemon with `--agent-listen 0.0.0.0:7879`. Every request there needs
   the agent's own token.
+- **Agents can reach your computer's own services.** On Docker Desktop
+  (macOS and Windows) `host.docker.internal` leads to this computer's
+  `localhost`, so every agent can connect to anything listening there:
+  ferrobot's own UI listener (every route but `/v1/health` still needs your
+  token), a local model server, development databases or debug ports. They
+  can also reach your local network. Don't run services without a password
+  on this computer while agents run, or bind them to another address.
 - Crashed containers are restarted by the supervisor.
 - Snapshots (root filesystem image plus a home archive) can be taken,
   restored and deleted.

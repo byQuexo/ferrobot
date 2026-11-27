@@ -26,6 +26,21 @@ All notable changes are listed here. The format follows
 - In Add a custom connector, the choice between a remote and a local server showed each radio button far from its text.
 - The agent list showed mentions in a reply preview as an id instead of the agent's name.
 
+### Security
+
+From a security review of the whole repository:
+
+- **Risky steps are harder to slip past.** Connector tools in any spelling (`CREATE_REFUNDS`, `createRefund`) are judged by their words, plurals included; tools that run whatever their arguments say (SQL, HTTP, GraphQL) ask first. `git -C dir push -uf`, `gh -R o/r …`, `gh api --method=DELETE` and implicit POSTs are read correctly; deleting anything with `gh` and deleting remote branches always ask; `bash -c`, `eval` and `python -c` ask.
+- **Cards show what they approve.** Shell cards show the whole command and every reason (a command over 4,000 characters is refused, never cut); connector cards show the call's arguments; routine cards show the whole message. An `add_connector` card refuses line breaks and invisible or bidi characters in its command, URL or reason, and URLs with a user name (`https://good.example@evil.example`); it names the host.
+- **Every shell tool is checked.** Claude's `Monitor` and `PowerShell` go through the same checks as `Bash`. Agents cannot write their harnesses' settings folders (`.claude`, `.codex`, `.gemini`) in the workspace, which could start processes with Shell off. The Codex provider says it runs most commands without asking.
+- **Claude Code (your own login):** its `read_file`/`write_file` only reach the agent's home; a prompt starting with an invisible character before `/` or `!` is refused, and `@` paths hidden behind U+0085 are defused; the host's own init and hook lines no longer reach the sandbox.
+- **OAuth without an own app:** the authorize, token and registration endpoints must be on the issuer's address, and a remote connector's metadata cannot point at this computer.
+- **Discord and Slack:** an agent's reaction is one emoji and stays one URL segment; Slack webhooks escape `<!channel>` and links in agents' text.
+- **Privacy between agents:** `list_agents` shows only one's own instructions; aliases are no longer learned from tool results; a deleted agent's vault notes are archived, so an agent given its name later starts empty.
+- **App window:** the operator token goes only into the app's own top window, and a frame's navigation never opens the browser by itself.
+- **Release workflow:** actions pinned to commits, and the checkout does not keep the git token on disk.
+- **Known limit, documented:** on Docker Desktop, agents can reach services on this computer's `localhost` (see Sandbox backends).
+
 ## [0.1.10] - 2026-11-26
 
 ### Added
