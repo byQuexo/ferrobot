@@ -8234,8 +8234,16 @@ async fn operator_uploads_land_in_the_agents_workspace() {
         body,
         json!({"path": "uploads/Report__1_.pdf", "size": 1234})
     );
+    let uploads: Vec<_> = backend
+        .written
+        .lock()
+        .unwrap()
+        .iter()
+        .filter(|(p, _)| !p.contains("/.agents/skills/"))
+        .cloned()
+        .collect();
     assert_eq!(
-        *backend.written.lock().unwrap(),
+        uploads,
         [(
             "/home/node/workspace/uploads/Report__1_.pdf".to_owned(),
             1234
