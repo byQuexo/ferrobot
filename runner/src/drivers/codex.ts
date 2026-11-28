@@ -245,7 +245,7 @@ export class CodexDriver implements ModelDriver {
       { name: "codex", process: "codex app-server", log: "codex", jsonrpc: false },
     );
     try {
-      await server.request("initialize", { clientInfo: { name: "ferrobot", version: "0.1.11" } });
+      await server.request("initialize", { clientInfo: { name: "ferrobot", version: "0.1.12" } });
       server.notify("initialized");
     } catch (err) {
       server.kill();

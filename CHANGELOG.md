@@ -6,6 +6,8 @@ All notable changes are listed here. The format follows
 
 ## [Unreleased]
 
+## [0.1.12] - 2026-11-28
+
 ### Added
 
 - **What fills an agent's context.** The context ring's popover now splits the context into its parts, like Claude Code's own `/context`: system prompt, system tools, MCP tools (with the largest ones by name), messages and free space, as a stacked bar and a row per part. Claude Code agents get Claude Code's own numbers (memory files, skills, deferred tools and the autocompact buffer included): after each turn the daemon runs `claude`'s `/context` on the agent's session, a local command with no model call that leaves the session as it was. For agents behind the model proxy the parts are estimated from the size of the newest request, split by the input tokens the API reported; only sizes and tool names are kept, in memory. **Measure now** fills in a Claude Code agent whose newest turn has no breakdown yet (for example one that ran before this version), without its MCP tools, which only a turn can reach. `GET /v1/agents/{id}/context` has new `parts`, `tools`, `source` and `left_out` fields; `POST /v1/agents/{id}/context/measure` is new.
@@ -503,7 +505,8 @@ First public release.
   allowlist per API family, no redirects, header allowlists both ways, agent
   tokens blanked in committed images.
 
-[Unreleased]: https://github.com/byQuexo/ferrobot/compare/v0.1.11...HEAD
+[Unreleased]: https://github.com/byQuexo/ferrobot/compare/v0.1.12...HEAD
+[0.1.12]: https://github.com/byQuexo/ferrobot/compare/v0.1.11...v0.1.12
 [0.1.11]: https://github.com/byQuexo/ferrobot/compare/v0.1.10...v0.1.11
 [0.1.10]: https://github.com/byQuexo/ferrobot/compare/v0.1.9...v0.1.10
 [0.1.9]: https://github.com/byQuexo/ferrobot/compare/v0.1.8...v0.1.9
