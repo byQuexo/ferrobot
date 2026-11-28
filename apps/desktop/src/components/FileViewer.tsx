@@ -1,6 +1,6 @@
 import type { JSX } from "preact";
 import { useEffect, useState } from "preact/hooks";
-import { Download } from "lucide-preact";
+import { Download, ExternalLink } from "lucide-preact";
 
 import type { SharedFile } from "../api.ts";
 import { useApp } from "../context.ts";
@@ -15,8 +15,8 @@ export function fileSize(bytes: number): string {
 }
 
 /**
- * A file an agent shared: a page opens in the system browser, a PDF fills the window,
- * Markdown and text show inline. Downloads go through the browser; the app window cannot save.
+ * A file an agent shared: a page or a PDF fills the window (a page can also open in the
+ * browser), Markdown and text show inline. Downloads go through the browser; the app window cannot save.
  */
 export function FileViewer(props: {
   agent: string;
@@ -32,12 +32,7 @@ export function FileViewer(props: {
   useEffect(() => {
     client.sharedFile(props.agent, props.file).then(
       (f) => {
-        if (f.page_url) {
-          open(f.page_url);
-          props.onClose();
-        } else {
-          setFile(f);
-        }
+        setFile(f);
       },
       (err: unknown) => {
         toast(errorText(err));
@@ -65,6 +60,31 @@ export function FileViewer(props: {
       <Button onClick={props.onClose}>Close</Button>
     </>
   );
+  const page = file.page_url;
+  if (page) {
+    const pageFooter = (
+      <>
+        <Button
+          onClick={() => {
+            open(page);
+          }}
+        >
+          <ExternalLink size={16} /> Open in browser
+        </Button>
+        {footer}
+      </>
+    );
+    return (
+      <Dialog title={file.name} onClose={props.onClose} footer={pageFooter} full>
+        <iframe
+          class="file-pdf"
+          title={file.name}
+          sandbox="allow-scripts"
+          src={`${client.base}${page}`}
+        />
+      </Dialog>
+    );
+  }
   if (/\.pdf$/i.test(file.name) && file.content == null) {
     return (
       <Dialog title={file.name} onClose={props.onClose} footer={footer} full>

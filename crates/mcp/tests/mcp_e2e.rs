@@ -108,6 +108,7 @@ async fn tools_act_as_the_authenticated_agent() {
     assert_eq!(
         names,
         [
+            "add_command",
             "add_connector",
             "ask_user",
             "assign_task",

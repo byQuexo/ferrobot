@@ -162,6 +162,9 @@ fn segment(words: &[&str], next: Option<&Vec<&str>>) -> Verdict {
         "npm" | "pnpm" | "yarn" | "cargo" | "twine" | "gem" if args.contains(&"publish") => {
             Verdict::Critical("publishes a package")
         }
+        "npx" | "bunx" | "skills" if installs_skill(cmd, args) => {
+            Verdict::Risky("installs a skill from the internet")
+        }
         "ssh" | "scp" | "sftp" => Verdict::Risky("reaches another machine"),
         "rsync" if args.iter().any(|a| a.contains(':')) => {
             Verdict::Risky("reaches another machine")
@@ -175,6 +178,24 @@ fn segment(words: &[&str], next: Option<&Vec<&str>>) -> Verdict {
         Verdict::Safe if root => Verdict::Risky("runs as root"),
         v => v,
     }
+}
+
+/// `skills add` or `update`, run directly or through `npx skills@…`.
+fn installs_skill(cmd: &str, args: &[&str]) -> bool {
+    let mut words = args.iter().filter(|a| !a.starts_with('-'));
+    if cmd != "skills"
+        && !words
+            .next()
+            .is_some_and(|w| *w == "skills" || w.starts_with("skills@"))
+    {
+        return false;
+    }
+    words.next().is_some_and(|sub| {
+        matches!(
+            *sub,
+            "add" | "update" | "experimental_install" | "experimental_sync"
+        )
+    })
 }
 
 fn sends_data(args: &[&str]) -> bool {
@@ -461,9 +482,22 @@ pub async fn gate(state: &AppState, agent: AgentId, call: Call<'_>) -> Result<()
         },
     )
     .in_turn(state.hub.current_turn(agent));
-    match crate::agents::await_card(state, agent, &card).await {
+    let (qid, rx) = crate::agents::open_card(state, agent, &card)
+        .await
+        .map_err(|e| e.to_string())?;
+    let note = if critical {
+        None
+    } else {
+        let step = &card.card.questions[0].prompt;
+        crate::goal::ask_lead(state, (agent, name.as_str()), qid, (step, &reason)).await
+    };
+    let decision = crate::agents::wait_card(state, agent, qid, rx).await;
+    if let Some(note) = note {
+        crate::goal::drop_note(state, note).await;
+    }
+    match decision {
         Ok(Some(true)) => Ok(()),
-        Ok(Some(false)) => Err(format!("the operator declined: {reason}")),
+        Ok(Some(false)) => Err(format!("declined: {reason}")),
         Ok(None) => Err(format!("the operator did not answer in time: {reason}")),
         Err(e) => Err(e.to_string()),
     }
@@ -521,6 +555,27 @@ mod tests {
 
     fn tool(name: &str) -> Verdict {
         classify(Call::Connector { name, args: None })
+    }
+
+    #[test]
+    fn installing_a_skill_asks_first_and_looking_does_not() {
+        for c in [
+            "npx -y skills@1.9.1 add anthropics/skills@pdf -g -y",
+            "npx skills add owner/repo --skill x",
+            "cd ~ && npx -y skills@1.9.1 update",
+            "skills add owner/repo@x -g",
+        ] {
+            assert!(matches!(sh(c), Verdict::Risky(_)), "{c}");
+        }
+        for c in [
+            "npx -y skills@1.9.1 find pdf",
+            "npx -y skills@1.9.1 list -g",
+            "npx -y skills@1.9.1 use owner/repo@x",
+            "npx create-vite@latest app",
+            "npx prettier --write add.ts",
+        ] {
+            assert_eq!(sh(c), Verdict::Safe, "{c}");
+        }
     }
 
     #[test]

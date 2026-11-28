@@ -251,7 +251,7 @@ describe("OpenAIDriver", () => {
       const { command } = JSON.parse(init.body as string) as { command: string };
       asked.push(command);
       const allow = !command.startsWith("git push");
-      const reason = allow ? null : "the operator declined: pushes code";
+      const reason = allow ? null : "declined: pushes code";
       return Promise.resolve(Response.json({ allow, reason }));
     }) as unknown as typeof fetch;
     const gate = new ToolGate(new URL("http://daemon:7879"), "agent-token", daemon);
@@ -270,7 +270,7 @@ describe("OpenAIDriver", () => {
     assert.deepEqual(asked, ["git push origin main"], "only shell commands are checked");
     assert.equal(events.find((e) => e.kind === "tool_denied")?.kind, "tool_denied");
     const tools = at(sent, 1).body.messages.filter((m) => m.role === "tool");
-    assert.equal(at(tools, 0).content, "the operator declined: pushes code");
+    assert.equal(at(tools, 0).content, "declined: pushes code");
   });
 
   it("refuses calls the policy blocks and tells the model why", async () => {

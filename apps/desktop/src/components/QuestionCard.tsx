@@ -15,6 +15,12 @@ interface Draft {
   custom: string;
 }
 const EMPTY: Draft = { values: [], custom: "" };
+/** How the agent that decided a teammate's step rated it. */
+const RISK_LABEL: Record<NonNullable<QuestionAnswered["assessment"]>["risk"], string> = {
+  low: "Rated low risk",
+  medium: "Rated medium risk",
+  high: "Rated high risk",
+};
 
 function isAnswered(q: Question, a: Draft | undefined): boolean {
   const custom = (a?.custom ?? "").trim() !== "";
@@ -42,7 +48,7 @@ export function QuestionCardView(props: {
   answered: QuestionAnswered | null;
 }): JSX.Element {
   const { card, answered, agent } = props;
-  const { client, run } = useApp();
+  const { client, run, agents } = useApp();
   const [step, setStep] = useState(0);
   const [draft, setDraft] = useState<Map<number, Draft>>(new Map());
   const [sending, setSending] = useState(false);
@@ -60,6 +66,7 @@ export function QuestionCardView(props: {
       {answered ? (
         <span class="qcard-done">
           <Check size={16} /> Answered
+          {answered.answered_by && ` by @${agents.get(answered.answered_by)?.name ?? "an agent"}`}
         </span>
       ) : (
         total > 1 && (
@@ -88,6 +95,12 @@ export function QuestionCardView(props: {
                 </dd>
               </div>
             ))}
+            {answered.assessment && (
+              <div>
+                <dt>{RISK_LABEL[answered.assessment.risk]}</dt>
+                <dd>{answered.assessment.reason}</dd>
+              </div>
+            )}
             {secret && answered.answers[0]?.values?.includes("approve") && (
               <div>
                 <dt>{secret.prompt}</dt>
