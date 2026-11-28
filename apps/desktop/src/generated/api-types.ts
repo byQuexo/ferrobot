@@ -179,10 +179,39 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** How full the agent's context is. */
+        /**
+         * How full the agent's context is and what fills it.
+         * @description The parts (system prompt, tools, messages, free space) come from `claude`'s own `/context`
+         *     after each turn for Claude Code agents, and are estimated from the newest request for agents
+         *     behind the model proxy.
+         */
         get: operations["get_context"];
         put?: never;
         post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/agents/{id}/context/measure": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Measures a Claude Code agent's context now, with `claude`'s own `/context` (no model call),
+         *     and returns it as `GET /v1/agents/{id}/context` does.
+         * @description For agents whose newest turn has no breakdown yet, e.g. one that ran on an older daemon.
+         *     Outside a turn `claude` cannot reach the agent's MCP tools, so they are left out
+         *     (`left_out`); every turn's own measurement counts them again. Agents behind the model proxy
+         *     are measured at every model call and need no request.
+         */
+        post: operations["measure_context"];
         delete?: never;
         options?: never;
         head?: never;
@@ -1937,6 +1966,19 @@ export interface components {
             at?: string | null;
             /** @description Whether `POST /v1/agents/{id}/compact` works for this agent (Claude Code agents). */
             compact: boolean;
+            /**
+             * @description What fills the context, in the order measured; empty when not measured (see `source`).
+             *     Parts are estimates; `tokens` is exact.
+             */
+            parts: components["schemas"]["ContextPart"][];
+            /** @description The MCP tools (ferrobot's and connectors') in `parts`, largest first. */
+            tools: components["schemas"]["ContextTool"][];
+            source?: components["schemas"]["ContextSource"] | null;
+            /**
+             * @description What the measurement could not count, e.g. the MCP tools of a Claude Code breakdown
+             *     measured on request (`POST /v1/agents/{id}/context/measure`).
+             */
+            left_out: components["schemas"]["ContextLeftOut"][];
         };
         /**
          * Format: uuid
@@ -2296,6 +2338,38 @@ export interface components {
             /** @description Register this redirect URI with the provider for an own OAuth app. */
             redirect_uri: string;
             check?: components["schemas"]["ConnectorCheck"] | null;
+        };
+        /**
+         * @description What a measurement could not count.
+         * @enum {string}
+         */
+        ContextLeftOut: "mcp_tools" | "instructions";
+        /** @description One part of the context. */
+        ContextPart: {
+            kind: components["schemas"]["ContextPartKind"];
+            /** @description The part's name as measured, e.g. `MCP tools (deferred)`. */
+            label: string;
+            /** Format: int64 */
+            tokens: number;
+            /** @description Tools the model sees only by name until it looks one up: listed, but not in the window. */
+            deferred: boolean;
+        };
+        /**
+         * @description What a part of the context holds.
+         * @enum {string}
+         */
+        ContextPartKind: "system_prompt" | "system_tools" | "mcp_tools" | "custom_agents" | "memory_files" | "skills" | "messages" | "autocompact_buffer" | "free_space" | "other";
+        /**
+         * @description How the parts were measured. Both are estimates; the total beside them is exact.
+         * @enum {string}
+         */
+        ContextSource: "claude_code" | "request_size";
+        /** @description One MCP tool's definition and its size. */
+        ContextTool: {
+            /** @description Tool name without the `mcp__ferrobot__` prefix. */
+            name: string;
+            /** Format: int64 */
+            tokens: number;
         };
         /** @description Messages two agents exchanged. */
         Conversation: {
@@ -4560,6 +4634,73 @@ export interface operations {
             };
             /** @description Unknown agent */
             404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+        };
+    };
+    measure_context: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Agent id (UUID) */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AgentContext"];
+                };
+            };
+            /** @description Not a Claude Code agent */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Missing or wrong API token */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Unknown agent */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description No turn to measure yet, or the agent is in a turn */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Claude Code gave no report */
+            502: {
                 headers: {
                     [name: string]: unknown;
                 };

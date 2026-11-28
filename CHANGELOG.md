@@ -6,8 +6,11 @@ All notable changes are listed here. The format follows
 
 ## [Unreleased]
 
+## [0.1.12] - 2026-11-28
+
 ### Added
 
+- **What fills an agent's context.** The context ring's popover now splits the context into its parts, like Claude Code's own `/context`: system prompt, system tools, MCP tools (with the largest ones by name), messages and free space, as a stacked bar and a row per part. Claude Code agents get Claude Code's own numbers (memory files, skills, deferred tools and the autocompact buffer included): after each turn the daemon runs `claude`'s `/context` on the agent's session, a local command with no model call that leaves the session as it was. For agents behind the model proxy the parts are estimated from the size of the newest request, split by the input tokens the API reported; only sizes and tool names are kept, in memory. **Measure now** fills in a Claude Code agent whose newest turn has no breakdown yet (for example one that ran before this version), without its MCP tools, which only a turn can reach. `GET /v1/agents/{id}/context` has new `parts`, `tools`, `source` and `left_out` fields; `POST /v1/agents/{id}/context/measure` is new.
 - **Tasks with a goal.** Type `/task <goal>` in an agent's message box and it keeps working until the goal is reached. First it asks you what it needs to know and sends a plan of numbered steps on a card for you to approve or change; then it works through the plan step by step: after each turn that ends without the new `finish_task` tool, the daemon sends it back to work. When it calls `finish_task` and has reported to you, a quick check of its last turn decides: Claude Code agents ask Haiku through your own `claude`, Anthropic agents (and agents without a provider) the Messages API, and OpenAI, Gemini, OpenRouter, Ollama and other OpenAI-compatible providers chat completions, with the agent's own model and key, from the daemon (no model known, no check). Codex, Gemini CLI, Bedrock and Vertex agents have no check: `finish_task` with a report ends the task. A turn that ends with a card for you waits for your answer. The chat header shows **Task · step N** with a button to clear it; Stop ends it too, and so do a failed turn and 20 continuations (`max_continuations`, 1-100). The chat shows how it went: sent back, achieved, stopped or gave up. `GET/PUT/DELETE /v1/agents/{id}/goal`, the `goal_changed` event.
 - **Tasks with teammates.** An agent on a `/task` can hand teammates their parts with `assign_task`: the task waits while they work instead of sending it back, and each answer moves it on. The task note asks it to tell teammates with a shell to look for a skill when a part needs one. While the task runs, it decides its teammates' risky steps with the new `decide_approval` tool: each card still shows in the teammate's chat for you to answer first, and one it decided says **Answered by @agent** (`answered_by` on `question_answered`). Very risky steps, its own steps and every other kind of card stay with you; it can still hand a step to a teammate and approve it there. Before deciding, it rates the step low, medium or high with a one-sentence reason (`risk` and `reason`, kept as `assessment` on `question_answered`), shown on the answered card; a step it rates high it can only decline.
 - **Slash commands.** Settings → Commands keeps reusable prompts: `/name more text` sends a command's prompt with your text in place of `$ARGUMENTS`, as your message or, with **Run as a task**, as a task with a goal. Type `/` at the start of a message for the menu. `GET/PUT /v1/commands`.
@@ -502,7 +505,8 @@ First public release.
   allowlist per API family, no redirects, header allowlists both ways, agent
   tokens blanked in committed images.
 
-[Unreleased]: https://github.com/byQuexo/ferrobot/compare/v0.1.11...HEAD
+[Unreleased]: https://github.com/byQuexo/ferrobot/compare/v0.1.12...HEAD
+[0.1.12]: https://github.com/byQuexo/ferrobot/compare/v0.1.11...v0.1.12
 [0.1.11]: https://github.com/byQuexo/ferrobot/compare/v0.1.10...v0.1.11
 [0.1.10]: https://github.com/byQuexo/ferrobot/compare/v0.1.9...v0.1.10
 [0.1.9]: https://github.com/byQuexo/ferrobot/compare/v0.1.8...v0.1.9

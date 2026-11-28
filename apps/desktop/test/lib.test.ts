@@ -83,7 +83,7 @@ import { commandQuery, expandCommand, fillPrompt, matchCommands } from "../src/l
 import { diagnosticsReport } from "../src/lib/diagnostics.ts";
 import { parseBlocks, parseInline } from "../src/lib/markdown.ts";
 import { modelLabel, modelOptions, withSaved } from "../src/lib/models.ts";
-import { addTag, contextMeter } from "../src/lib/agent-meta.ts";
+import { addTag, contextBreakdown, contextMeter } from "../src/lib/agent-meta.ts";
 import { moveId, orderAgents, pickSelection } from "../src/lib/order.ts";
 import { authValue, backendOf, OTEL_ENDPOINTS } from "../src/lib/otel.ts";
 import { isPinned, movePin, pinKey, pinLabel, togglePin } from "../src/lib/pins.ts";
@@ -2390,7 +2390,16 @@ describe("agent meta", () => {
   });
 
   it("fills the context meter and clamps it", () => {
-    const ctx = { tracked: true, tokens: 50_000, window: 200_000, model: "m", compact: false };
+    const ctx = {
+      tracked: true,
+      tokens: 50_000,
+      window: 200_000,
+      model: "m",
+      compact: false,
+      parts: [],
+      tools: [],
+      left_out: [],
+    };
     assert.deepEqual(contextMeter(ctx), {
       percent: 25,
       title: "Context 25% full",
@@ -2399,7 +2408,83 @@ describe("agent meta", () => {
     assert.equal(contextMeter({ ...ctx, tokens: 250_000 }).percent, 100);
     assert.equal(contextMeter({ ...ctx, tokens: null }).percent, 0);
     assert.equal(contextMeter({ ...ctx, window: null }).percent, null);
-    assert.equal(contextMeter({ tracked: false, compact: false }).title, "Context not tracked");
+    assert.equal(
+      contextMeter({ tracked: false, compact: false, parts: [], tools: [], left_out: [] }).title,
+      "Context not tracked",
+    );
+  });
+
+  it("splits the context into parts and free space", () => {
+    const part = (kind: "system_prompt" | "mcp_tools" | "messages", tokens: number) => ({
+      kind,
+      label: kind,
+      tokens,
+      deferred: false,
+    });
+    const ctx = {
+      tracked: true,
+      tokens: 100_000,
+      window: 1_000_000,
+      compact: false,
+      parts: [part("system_prompt", 20_000), part("mcp_tools", 5_000), part("messages", 75_000)],
+      tools: [{ name: "send_message", tokens: 5_000 }],
+      left_out: [],
+      source: "request_size" as const,
+    };
+    const b = contextBreakdown(ctx);
+    assert.ok(b);
+    assert.deepEqual(
+      b.rows.map((r) => [r.slot, r.tokens, r.percent]),
+      [
+        ["c-system", 20_000, 2],
+        ["c-mcp", 5_000, 0.5],
+        ["c-messages", 75_000, 7.5],
+        ["c-free", 900_000, 90],
+      ],
+    );
+    assert.equal(b.tools[0]?.name, "send_message");
+    assert.match(b.note, /estimated/);
+
+    // Claude Code names its own free space and buffer; deferred tools take no room.
+    const claude = contextBreakdown({
+      ...ctx,
+      compact: true,
+      source: "claude_code",
+      parts: [
+        { kind: "free_space", label: "Free space", tokens: 960_000, deferred: false },
+        {
+          kind: "autocompact_buffer",
+          label: "Autocompact buffer",
+          tokens: 33_000,
+          deferred: false,
+        },
+        { kind: "mcp_tools", label: "MCP tools (deferred)", tokens: 1_100, deferred: true },
+      ],
+    });
+    assert.ok(claude);
+    assert.deepEqual(
+      claude.rows.map((r) => [r.slot, r.percent]),
+      [
+        ["c-free", 96],
+        ["c-buffer", 3.3],
+        ["c-mcp", null],
+      ],
+    );
+    assert.match(claude.note, /Claude Code/);
+    assert.equal(claude.measurable, false);
+
+    // Measured on request: say what it left out.
+    const partial = contextBreakdown({ ...ctx, source: "claude_code", left_out: ["mcp_tools"] });
+    assert.match(partial?.note ?? "", /without MCP tools; the next turn counts them/);
+
+    // No parts yet: say where they come from; Claude Code can measure now.
+    const none = contextBreakdown({ ...ctx, compact: true, parts: [], source: null });
+    assert.match(none?.note ?? "", /after each turn/);
+    assert.equal(none?.measurable, true);
+    const proxied = contextBreakdown({ ...ctx, parts: [], source: null });
+    assert.deepEqual([proxied?.rows, proxied?.measurable], [[], false]);
+    assert.equal(contextBreakdown({ ...ctx, tokens: null }), null);
+    assert.equal(contextBreakdown(null), null);
   });
 
   it("shows a new chat in the timeline", () => {

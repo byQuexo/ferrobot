@@ -41,6 +41,8 @@ pub(crate) struct Call {
     pub model: String,
     /// The agent's turn when the call began, for its trace.
     pub turn_id: Option<String>,
+    /// The request's parts by size, for the context breakdown.
+    sizes: Option<crate::context::Sizes>,
 }
 
 /// The model named in a request path (Bedrock `model/<id>/`, Vertex and Gemini `models/<m>:`).
@@ -93,7 +95,14 @@ impl Call {
             provider_kind: provider_kind.into(),
             model,
             turn_id: state.hub.current_turn(agent.id),
+            sizes: None,
         }
+    }
+
+    /// Measures a model run's request parts, so a successful call can show what fills the
+    /// context; other calls (`family` is `None`) have none.
+    pub fn measure(&mut self, family: Option<Family>, body: &[u8]) {
+        self.sizes = family.and_then(|f| crate::context::measure(f, body));
     }
 
     /// Takes the request body's `model`, which beats the path and the agent's setting.
@@ -123,6 +132,15 @@ impl Call {
 
     /// Writes the row off the request path.
     pub fn record(self, status: UsageStatus, tokens: Tokens, cost_usd: Option<f64>) {
+        if let (UsageStatus::Ok, Some(input), Some(sizes)) = (status, tokens.input, self.sizes) {
+            let context = input + tokens.cache_read.unwrap_or(0) + tokens.cache_write.unwrap_or(0);
+            crate::context::remember(
+                self.agent_id,
+                &stored_model(&self.model, status),
+                context,
+                sizes,
+            );
+        }
         let row = UsageRecord {
             at: time::OffsetDateTime::now_utc(),
             agent_id: self.agent_id,
@@ -551,6 +569,7 @@ mod tests {
             provider_kind: "anthropic".into(),
             model: "m".into(),
             turn_id: None,
+            sizes: None,
         };
         let mut m = Meter::new(call, family, true, content_type);
         m.call = None;

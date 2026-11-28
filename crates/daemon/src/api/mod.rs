@@ -76,22 +76,10 @@ pub fn router() -> Router<AppState> {
         )
         .route("/v1/agents/{id}/context", get(usage::get_context))
         .route(
-            "/v1/agents/{id}/memory",
-            get(memory::list_memory).post(memory::put_memory),
+            "/v1/agents/{id}/context/measure",
+            post(usage::measure_context),
         )
-        .route(
-            "/v1/agents/{id}/memory/{key}",
-            delete(memory::delete_memory),
-        )
-        .route(
-            "/v1/memory",
-            get(memory::list_global_memory).post(memory::put_global_memory),
-        )
-        .route(
-            "/v1/memory-vault",
-            get(memory::get_memory_vault).put(memory::put_memory_vault),
-        )
-        .route("/v1/memory/{key}", delete(memory::delete_global_memory))
+        .merge(memory_routes())
         .route(
             "/v1/agents/{id}/routines",
             get(routines::list_routines).post(routines::create_routine),
@@ -142,6 +130,28 @@ pub fn router() -> Router<AppState> {
             "/v1/agents/{id}/snapshots/{sid}/restore",
             post(sandbox::restore_snapshot),
         )
+}
+
+/// An agent's memory, the global memory and the Obsidian vault.
+fn memory_routes() -> Router<AppState> {
+    Router::new()
+        .route(
+            "/v1/agents/{id}/memory",
+            get(memory::list_memory).post(memory::put_memory),
+        )
+        .route(
+            "/v1/agents/{id}/memory/{key}",
+            delete(memory::delete_memory),
+        )
+        .route(
+            "/v1/memory",
+            get(memory::list_global_memory).post(memory::put_global_memory),
+        )
+        .route(
+            "/v1/memory-vault",
+            get(memory::get_memory_vault).put(memory::put_memory_vault),
+        )
+        .route("/v1/memory/{key}", delete(memory::delete_global_memory))
 }
 
 /// Pins, dashboards, trace export, webhooks and the Discord bridge.

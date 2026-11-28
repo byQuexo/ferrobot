@@ -1,10 +1,11 @@
 import type { JSX } from "preact";
 import { useEffect, useRef, useState } from "preact/hooks";
-import { ChevronDown, MessageSquarePlus, Minimize2 } from "lucide-preact";
+import { ChevronDown, Gauge, MessageSquarePlus, Minimize2, Wrench } from "lucide-preact";
 
 import type { Agent, AgentContext, Provider } from "../api.ts";
 import { useApp } from "../context.ts";
-import { contextMeter } from "../lib/agent-meta.ts";
+import { contextBreakdown, contextMeter, type ContextBreakdown } from "../lib/agent-meta.ts";
+import { count } from "../lib/usage.ts";
 import { modelLabel } from "../lib/models.ts";
 import { ModelPicker } from "./ModelPicker.tsx";
 import { Button } from "./ui.tsx";
@@ -132,6 +133,7 @@ export function ContextMeter(props: { agent: Agent }): JSX.Element {
   const pop = usePopover();
   const [ctx, setCtx] = useState<AgentContext | null>(null);
   const [compacting, setCompacting] = useState(false);
+  const [measuring, setMeasuring] = useState(false);
   useEffect(() => {
     let live = true;
     const load = (): void => {
@@ -144,6 +146,7 @@ export function ContextMeter(props: { agent: Agent }): JSX.Element {
     };
     setCtx(null);
     load();
+    const timers = new Set<number>();
     const off = listen((e) => {
       if (
         e.type === "event" &&
@@ -153,14 +156,40 @@ export function ContextMeter(props: { agent: Agent }): JSX.Element {
           e.event.kind === "compacted")
       ) {
         load();
+        // Claude Code reports the breakdown a moment after the turn.
+        if (e.event.kind === "turn_done") {
+          const t = window.setTimeout(() => {
+            timers.delete(t);
+            load();
+          }, 4000);
+          timers.add(t);
+        }
       }
     });
     return () => {
       live = false;
       off();
+      timers.forEach((t) => {
+        window.clearTimeout(t);
+      });
     };
   }, [id]);
+  // Fresh numbers whenever the breakdown opens.
+  useEffect(() => {
+    if (!pop.open) return;
+    let live = true;
+    client.agentContext(id).then(
+      (c) => {
+        if (live) setCtx(c);
+      },
+      () => undefined,
+    );
+    return () => {
+      live = false;
+    };
+  }, [pop.open, id]);
   const meter = contextMeter(ctx);
+  const breakdown = contextBreakdown(ctx);
   const fill = meter.percent ?? 0;
 
   return (
@@ -180,12 +209,34 @@ export function ContextMeter(props: { agent: Agent }): JSX.Element {
       {pop.open && (
         <div class="meta-pop ctx-pop" role="dialog" aria-label="Context" onKeyDown={pop.onKeyDown}>
           <strong>{meter.title}</strong>
-          {meter.percent !== null && (
-            <span class="ctx-bar">
-              <span style={{ width: `${String(meter.percent)}%` }} />
-            </span>
+          {breakdown && breakdown.rows.length > 0 ? (
+            <ContextParts breakdown={breakdown} />
+          ) : (
+            meter.percent !== null && (
+              <span class="ctx-bar">
+                <span style={{ width: `${String(meter.percent)}%` }} />
+              </span>
+            )
           )}
           <span class="muted small">{meter.detail}</span>
+          {breakdown && <span class="hint">{breakdown.note}</span>}
+          {breakdown?.measurable && (
+            <Button
+              small
+              disabled={measuring}
+              onClick={() =>
+                void (async () => {
+                  setMeasuring(true);
+                  await run(async () => {
+                    setCtx(await client.measureContext(id));
+                  });
+                  setMeasuring(false);
+                })()
+              }
+            >
+              <Gauge size={16} /> {measuring ? "Measuring…" : "Measure now"}
+            </Button>
+          )}
           {ctx?.compact && (
             <>
               <Button
@@ -223,5 +274,59 @@ export function ContextMeter(props: { agent: Agent }): JSX.Element {
         </div>
       )}
     </span>
+  );
+}
+
+/** Most MCP tools listed by name in the breakdown. */
+const MAX_TOOLS = 8;
+
+/** The context's parts: a stacked bar, a row per part and the largest MCP tools. */
+function ContextParts(props: { breakdown: ContextBreakdown }): JSX.Element {
+  const { rows, tools } = props.breakdown;
+  const shown = tools.slice(0, MAX_TOOLS);
+  return (
+    <>
+      <span class="ctx-bar ctx-stack" aria-hidden="true">
+        {rows
+          .filter((r) => !r.deferred && r.percent !== null && r.slot !== "c-free")
+          .map((r) => (
+            <span
+              key={r.label}
+              class={r.slot}
+              style={{ width: `${String(Math.max(r.percent ?? 0, 0.5))}%` }}
+            />
+          ))}
+      </span>
+      <ul class="ctx-rows">
+        {rows.map((r) => (
+          <li key={r.label} class={r.deferred ? "muted" : undefined}>
+            <i class={r.slot} />
+            <span class="ctx-label">{r.label}</span>
+            <span class="ctx-num">
+              {count(r.tokens)}
+              {r.percent !== null && <span class="muted"> · {String(r.percent)}%</span>}
+            </span>
+          </li>
+        ))}
+      </ul>
+      {shown.length > 0 && (
+        <details class="ctx-tools">
+          <summary>
+            <Wrench size={14} /> MCP tools ({String(tools.length)})
+          </summary>
+          <ul class="ctx-rows">
+            {shown.map((t) => (
+              <li key={t.name}>
+                <span class="ctx-label mono">{t.name}</span>
+                <span class="ctx-num">{count(t.tokens)}</span>
+              </li>
+            ))}
+          </ul>
+          {tools.length > shown.length && (
+            <span class="hint">{String(tools.length - shown.length)} more</span>
+          )}
+        </details>
+      )}
+    </>
   );
 }

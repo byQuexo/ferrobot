@@ -10,7 +10,7 @@
       "name": "MIT OR Apache-2.0",
       "identifier": "MIT OR Apache-2.0"
     },
-    "version": "0.1.11"
+    "version": "0.1.12"
   },
   "servers": [
     {
@@ -977,7 +977,8 @@
         "tags": [
           "usage"
         ],
-        "summary": "How full the agent's context is.",
+        "summary": "How full the agent's context is and what fills it.",
+        "description": "The parts (system prompt, tools, messages, free space) come from `claude`'s own `/context`\nafter each turn for Claude Code agents, and are estimated from the newest request for agents\nbehind the model proxy.",
         "operationId": "get_context",
         "parameters": [
           {
@@ -1012,6 +1013,88 @@
           },
           "404": {
             "description": "Unknown agent",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/agents/{id}/context/measure": {
+      "post": {
+        "tags": [
+          "usage"
+        ],
+        "summary": "Measures a Claude Code agent's context now, with `claude`'s own `/context` (no model call),\nand returns it as `GET /v1/agents/{id}/context` does.",
+        "description": "For agents whose newest turn has no breakdown yet, e.g. one that ran on an older daemon.\nOutside a turn `claude` cannot reach the agent's MCP tools, so they are left out\n(`left_out`); every turn's own measurement counts them again. Agents behind the model proxy\nare measured at every model call and need no request.",
+        "operationId": "measure_context",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "Agent id (UUID)",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AgentContext"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Not a Claude Code agent",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or wrong API token",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Unknown agent",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "No turn to measure yet, or the agent is in a turn",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "Claude Code gave no report",
             "content": {
               "application/json": {
                 "schema": {
@@ -7786,7 +7869,10 @@
         "description": "How full an agent's context is, read from its newest model call.",
         "required": [
           "tracked",
-          "compact"
+          "compact",
+          "parts",
+          "tools",
+          "left_out"
         ],
         "properties": {
           "tracked": {
@@ -7827,6 +7913,38 @@
           "compact": {
             "type": "boolean",
             "description": "Whether `POST /v1/agents/{id}/compact` works for this agent (Claude Code agents)."
+          },
+          "parts": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ContextPart"
+            },
+            "description": "What fills the context, in the order measured; empty when not measured (see `source`).\nParts are estimates; `tokens` is exact."
+          },
+          "tools": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ContextTool"
+            },
+            "description": "The MCP tools (ferrobot's and connectors') in `parts`, largest first."
+          },
+          "source": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/ContextSource",
+                "description": "How `parts` were measured; `null` when there are none: before the first turn, right after\na Claude Code turn until `claude` has reported, after a daemon restart for agents behind\nthe proxy, and for calls whose API reports no tokens (Bedrock streaming)."
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "left_out": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ContextLeftOut"
+            },
+            "description": "What the measurement could not count, e.g. the MCP tools of a Claude Code breakdown\nmeasured on request (`POST /v1/agents/{id}/context/measure`)."
           }
         }
       },
@@ -8832,6 +8950,83 @@
             }
           }
         ]
+      },
+      "ContextLeftOut": {
+        "type": "string",
+        "description": "What a measurement could not count.",
+        "enum": [
+          "mcp_tools",
+          "instructions"
+        ]
+      },
+      "ContextPart": {
+        "type": "object",
+        "description": "One part of the context.",
+        "required": [
+          "kind",
+          "label",
+          "tokens",
+          "deferred"
+        ],
+        "properties": {
+          "kind": {
+            "$ref": "#/components/schemas/ContextPartKind"
+          },
+          "label": {
+            "type": "string",
+            "description": "The part's name as measured, e.g. `MCP tools (deferred)`."
+          },
+          "tokens": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "deferred": {
+            "type": "boolean",
+            "description": "Tools the model sees only by name until it looks one up: listed, but not in the window."
+          }
+        }
+      },
+      "ContextPartKind": {
+        "type": "string",
+        "description": "What a part of the context holds.",
+        "enum": [
+          "system_prompt",
+          "system_tools",
+          "mcp_tools",
+          "custom_agents",
+          "memory_files",
+          "skills",
+          "messages",
+          "autocompact_buffer",
+          "free_space",
+          "other"
+        ]
+      },
+      "ContextSource": {
+        "type": "string",
+        "description": "How the parts were measured. Both are estimates; the total beside them is exact.",
+        "enum": [
+          "claude_code",
+          "request_size"
+        ]
+      },
+      "ContextTool": {
+        "type": "object",
+        "description": "One MCP tool's definition and its size.",
+        "required": [
+          "name",
+          "tokens"
+        ],
+        "properties": {
+          "name": {
+            "type": "string",
+            "description": "Tool name without the `mcp__ferrobot__` prefix."
+          },
+          "tokens": {
+            "type": "integer",
+            "format": "int64"
+          }
+        }
       },
       "Conversation": {
         "type": "object",

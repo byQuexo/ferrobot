@@ -167,6 +167,7 @@ pub const QUESTION_CARD_FILE: &str = "question-card.v1.schema.json";
         api::usage::put_prices,
         api::usage::get_limits,
         api::usage::get_context,
+        api::usage::measure_context,
         api::update::get_update,
         api::update::start_update,
         api::diagnostics::get_diagnostics,

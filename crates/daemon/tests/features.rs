@@ -6090,6 +6090,80 @@ async fn the_proxy_records_usage_per_call() {
 }
 
 #[tokio::test]
+async fn a_proxied_calls_context_splits_by_the_requests_parts() {
+    let upstream = usage_upstream().await;
+    let backend = Arc::new(StatefulBackend::default());
+    let d = start_with(backend.clone(), None, "127.0.0.1:0", |s| {
+        s.driver = "claude".into();
+        s.anthropic_api_key = Some("sk-real-secret".into());
+        s.anthropic_upstream.clone_from(&upstream);
+    })
+    .await;
+    let ann = create(&d, json!({"name": "ann"})).await;
+    let path = format!("/v1/agents/{}/context", ann["id"].as_str().unwrap());
+    let (_, ctx) = http(&d.ui, "GET", &path, None).await;
+    assert_eq!(
+        (&ctx["parts"], &ctx["source"]),
+        (&json!([]), &Value::Null),
+        "nothing measured before a call: {ctx}"
+    );
+
+    let secret = "a sentence only the model may read";
+    let body = json!({
+        "model": "claude-sonnet-4-5-20250929",
+        "stream": true,
+        "system": [{"type": "text", "text": "s".repeat(2000)}],
+        "tools": [
+            {"name": "Bash", "description": "b".repeat(1000), "input_schema": {"type": "object"}},
+            {"name": "mcp__ferrobot__send_message", "description": "m".repeat(500), "input_schema": {"type": "object"}},
+        ],
+        "messages": [{"role": "user", "content": format!("{secret} {}", "u".repeat(4000))}],
+    });
+    let (status, _, _) = http_raw(
+        &d.agents,
+        "POST",
+        "/model/v1/messages",
+        &[("x-api-key", &backend.token("ann"))],
+        body.to_string().as_bytes(),
+    )
+    .await;
+    assert_eq!(status, 200);
+    // The usage row is written off the request path.
+    let mut ctx = Value::Null;
+    for _ in 0..50 {
+        ctx = http(&d.ui, "GET", &path, None).await.1;
+        if ctx["source"] == "request_size" {
+            break;
+        }
+        tokio::time::sleep(Duration::from_millis(20)).await;
+    }
+    assert_eq!(ctx["source"], "request_size", "{ctx}");
+    assert_eq!(ctx["tokens"], 1212, "the total stays the API's own count");
+    let kinds: Vec<&str> = ctx["parts"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|p| p["kind"].as_str().unwrap())
+        .collect();
+    assert_eq!(
+        kinds,
+        ["system_prompt", "system_tools", "mcp_tools", "messages"]
+    );
+    let sum: i64 = ctx["parts"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|p| p["tokens"].as_i64().unwrap())
+        .sum();
+    assert_eq!(sum, 1212, "the parts add up to the total: {ctx}");
+    assert_eq!(ctx["tools"][0]["name"], "send_message");
+    assert!(!ctx.to_string().contains(secret), "sizes only, never text");
+    assert_eq!(ctx["left_out"], json!([]));
+    let (status, _) = http(&d.ui, "POST", &format!("{path}/measure"), None).await;
+    assert_eq!(status, 400, "measured at every call, no request needed");
+}
+
+#[tokio::test]
 async fn usage_of_a_broken_stream_is_an_error() {
     use tokio::io::{AsyncReadExt, AsyncWriteExt};
     let upstream = usage_upstream().await;
@@ -7084,7 +7158,7 @@ async fn agents_name_new_agents_by_the_operators_convention() {
 }
 
 /// Stands in for the host's `claude`: logs what it got and answers like `claude -p` stream-json.
-const FAKE_CLAUDE: &str = r#"#!/bin/sh
+const FAKE_CLAUDE: &str = r###"#!/bin/sh
 here="$(dirname "$0")"
 case "$1" in
   --version) echo "9.9.9 (Claude Code)"; exit 0 ;;
@@ -7094,6 +7168,12 @@ case "$*" in *" /compact")
   echo "$*" >> "$here/compact-args.log"
   session="$(printf '%s\n' "$@" | sed -n 's/^--resume=//p')"
   printf '%s\n' "{\"type\":\"result\",\"subtype\":\"success\",\"is_error\":false,\"result\":\"Compacted\",\"session_id\":\"$session\"}"
+  exit 0 ;;
+esac
+case "$*" in *" /context")
+  echo "$*" >> "$here/context-args.log"
+  for a in "$@"; do case "$a" in --mcp-config=*) cat "${a#--mcp-config=}" > "$here/context-mcp.log" ;; esac; done
+  printf '%s\n' '{"type":"result","subtype":"success","is_error":false,"local_command":"context","result":"## Context Usage\n\n**Tokens:** 5k / 200k (3%)\n\n### Estimated usage by category\n\n| Category | Tokens | Percentage |\n|---|---|---|\n| System prompt | 3.1k | 1.6% |\n| MCP tools | 400 | 0.2% |\n| Messages | 1.5k | 0.8% |\n| Free space | 162k | 81.0% |\n| Autocompact buffer | 33k | 16.5% |\n\n### MCP Tools\n\n| Tool | Server | Tokens |\n|---|---|---|\n| mcp__ferrobot__read_file | ferrobot | 100 |\n| mcp__ferrobot__bash | ferrobot | 300 |"}'
   exit 0 ;;
 esac
 case "$*" in *" /usage")
@@ -7111,7 +7191,7 @@ sleep 0.3
 echo '{"type":"stream_event","event":{"type":"message_start"},"session_id":"s1"}'
 echo '{"type":"assistant","message":{"id":"msg_1","model":"claude-sonnet-4-5","content":[{"type":"text","text":"hello"}],"usage":{"input_tokens":1200,"cache_read_input_tokens":3000,"cache_creation_input_tokens":800,"output_tokens":50}},"parent_tool_use_id":null,"session_id":"s1"}'
 echo '{"type":"result","subtype":"success","is_error":false,"result":"hello","session_id":"s1","modelUsage":{"claude-sonnet-4-5":{"contextWindow":200000}}}'
-"#;
+"###;
 
 async fn claude_code_turn(
     agents: &str,
@@ -7174,6 +7254,13 @@ async fn claude_code_agents_use_the_hosts_own_cli_and_nothing_enters_the_sandbox
         (&ctx["tracked"], &ctx["tokens"], &ctx["model"]),
         (&json!(true), &Value::Null, &json!("sonnet")),
         "no turn yet: {ctx}"
+    );
+    assert_eq!(
+        http(&d.ui, "POST", &format!("{context}/measure"), None)
+            .await
+            .0,
+        409,
+        "nothing to measure yet"
     );
     let compact = format!("/v1/agents/{}/compact", clio["id"].as_str().unwrap());
     assert_eq!(
@@ -7250,6 +7337,76 @@ async fn claude_code_agents_use_the_hosts_own_cli_and_nothing_enters_the_sandbox
         log("mcp.log").contains(&format!("Bearer {token}")),
         "the agent's own token for /mcp"
     );
+    // After the turn, claude's own /context splits the context; the total stays the stream's.
+    let mut ctx = Value::Null;
+    for _ in 0..100 {
+        ctx = http(&d.ui, "GET", &context, None).await.1;
+        if ctx["source"] == "claude_code" {
+            break;
+        }
+        tokio::time::sleep(Duration::from_millis(50)).await;
+    }
+    assert_eq!(ctx["source"], "claude_code", "{ctx}");
+    assert_eq!(ctx["tokens"], 5000);
+    assert_eq!(
+        (&ctx["parts"][0]["kind"], &ctx["parts"][0]["tokens"]),
+        (&json!("system_prompt"), &json!(3100))
+    );
+    assert_eq!(ctx["parts"][4]["kind"], "autocompact_buffer");
+    assert_eq!(ctx["tools"][0], json!({"name": "bash", "tokens": 300}));
+    let measured = log("context-args.log");
+    for want in [
+        format!("--resume={session}"),
+        "--no-session-persistence".into(),
+        "--output-format=json".into(),
+        "--strict-mcp-config".into(),
+        "--model=sonnet".into(),
+    ] {
+        assert!(measured.contains(&want), "{want} missing: {measured}");
+    }
+    assert!(
+        !measured.contains("stream-json") && !measured.contains("settings.json"),
+        "no stream and no hooks: {measured}"
+    );
+    assert!(
+        log("context-mcp.log").contains(&format!("Bearer {token}")),
+        "the turn's own MCP config, so its tools are counted"
+    );
+    assert_eq!(ctx["left_out"], json!([]));
+    // On request, a full breakdown from the turn stays: claude does not run again.
+    let measure = format!("{context}/measure");
+    let runs = log("context-args.log").lines().count();
+    let (status, ctx) = http(&d.ui, "POST", &measure, None).await;
+    assert_eq!((status, &ctx["left_out"]), (200, &json!([])), "{ctx}");
+    assert_eq!(log("context-args.log").lines().count(), runs);
+    // A turn without one (e.g. on an older daemon): measured outside the turn, with no MCP
+    // server (no token) and the turn's instructions kept.
+    let clio_dir = data.join("claude-code").join(clio["id"].as_str().unwrap());
+    std::fs::remove_file(clio_dir.join("context-parts.json")).unwrap();
+    let (status, ctx) = http(&d.ui, "POST", &measure, None).await;
+    assert_eq!(status, 200, "{ctx}");
+    assert_eq!(
+        (&ctx["source"], &ctx["left_out"]),
+        (&json!("claude_code"), &json!(["mcp_tools"]))
+    );
+    assert_eq!(ctx["tokens"], 5000);
+    assert!(
+        !log("context-mcp.log").contains("Bearer"),
+        "no agent token outside a turn: {}",
+        log("context-mcp.log")
+    );
+    let measured = log("context-args.log");
+    let last = measured.lines().last().unwrap();
+    assert!(
+        last.contains(&format!("--resume={session}")) && last.contains("--no-session-persistence"),
+        "{last}"
+    );
+    let (_, ctx) = http(&d.ui, "GET", &context, None).await;
+    assert_eq!(
+        ctx["left_out"],
+        json!(["mcp_tools"]),
+        "kept until the next turn"
+    );
     // Compacting runs claude's own /compact on that session, with no tools, on the daemon's word.
     assert_eq!(http(&d.ui, "POST", &compact, None).await.0, 204);
     let compacted = log("compact-args.log");
@@ -7261,8 +7418,8 @@ async fn claude_code_agents_use_the_hosts_own_cli_and_nothing_enters_the_sandbox
     );
     let (_, ctx) = http(&d.ui, "GET", &context, None).await;
     assert_eq!(
-        ctx["tokens"],
-        Value::Null,
+        (&ctx["tokens"], &ctx["parts"]),
+        (&Value::Null, &json!([])),
         "the old size is gone until the next turn"
     );
     let kinds: Vec<_> = events(&d, clio["id"].as_str().unwrap())

@@ -15,6 +15,7 @@ use utoipa::{IntoParams, ToSchema};
 
 use super::{ApiResult, parse_id};
 use crate::AppState;
+use crate::context::{Breakdown, ContextLeftOut, ContextPart, ContextSource, ContextTool};
 use crate::error::{ApiError, ErrorBody};
 use crate::limits::ProviderLimits;
 use crate::pricing::{self, Price, PriceEntry, Prices};
@@ -389,9 +390,35 @@ pub(crate) struct AgentContext {
     at: Option<OffsetDateTime>,
     /// Whether `POST /v1/agents/{id}/compact` works for this agent (Claude Code agents).
     compact: bool,
+    /// What fills the context, in the order measured; empty when not measured (see `source`).
+    /// Parts are estimates; `tokens` is exact.
+    parts: Vec<ContextPart>,
+    /// The MCP tools (ferrobot's and connectors') in `parts`, largest first.
+    tools: Vec<ContextTool>,
+    /// How `parts` were measured; `null` when there are none: before the first turn, right after
+    /// a Claude Code turn until `claude` has reported, after a daemon restart for agents behind
+    /// the proxy, and for calls whose API reports no tokens (Bedrock streaming).
+    source: Option<ContextSource>,
+    /// What the measurement could not count, e.g. the MCP tools of a Claude Code breakdown
+    /// measured on request (`POST /v1/agents/{id}/context/measure`).
+    left_out: Vec<ContextLeftOut>,
 }
 
-/// How full the agent's context is.
+impl AgentContext {
+    fn with(mut self, breakdown: Option<Breakdown>) -> Self {
+        if let Some(b) = breakdown {
+            (self.parts, self.tools, self.source, self.left_out) =
+                (b.parts, b.tools, Some(b.source), b.left_out);
+        }
+        self
+    }
+}
+
+/// How full the agent's context is and what fills it.
+///
+/// The parts (system prompt, tools, messages, free space) come from `claude`'s own `/context`
+/// after each turn for Claude Code agents, and are estimated from the newest request for agents
+/// behind the model proxy.
 #[utoipa::path(get, path = "/v1/agents/{id}/context", tag = "usage",
     params(("id" = String, Path, description = "Agent id (UUID)")),
     responses((status = 200, body = AgentContext),
@@ -413,33 +440,87 @@ pub(crate) async fn get_context(
         let saved = crate::claude_code::context(&state, agent.id)
             .await
             .filter(|_| fresh);
+        let breakdown = match &saved {
+            Some(c) => crate::claude_code::breakdown(&state, agent.id, c).await,
+            None => None,
+        };
         let model = saved.as_ref().and_then(|c| c.model.clone()).or(configured);
-        return Ok(Json(AgentContext {
-            tracked: true,
-            tokens: saved.as_ref().map(|c| c.tokens),
-            window: saved
-                .as_ref()
-                .and_then(|c| c.window)
-                .or_else(|| model.as_deref().and_then(context_window)),
-            model,
-            at: saved.map(|c| c.at),
-            compact: true,
-        }));
+        return Ok(Json(
+            AgentContext {
+                tracked: true,
+                tokens: saved.as_ref().map(|c| c.tokens),
+                window: saved
+                    .as_ref()
+                    .and_then(|c| c.window)
+                    .or_else(|| model.as_deref().and_then(context_window)),
+                model,
+                at: saved.map(|c| c.at),
+                compact: true,
+                parts: Vec::new(),
+                tools: Vec::new(),
+                source: None,
+                left_out: Vec::new(),
+            }
+            .with(breakdown),
+        ));
     }
     // shortcut: an agent on its provider's default can show a side call on a smaller model; name the driver's main model here if that misleads.
     let usage = state
         .store
         .context_usage(agent.id, configured.clone())
         .await?;
+    let breakdown = usage
+        .as_ref()
+        .and_then(|u| crate::context::of_call(agent.id, &u.model, u.tokens));
     let model = usage.as_ref().map(|u| u.model.clone()).or(configured);
-    Ok(Json(AgentContext {
-        tracked: true,
-        tokens: usage.as_ref().map(|u| u.tokens),
-        window: model.as_deref().and_then(context_window),
-        model,
-        at: usage.map(|u| u.at),
-        compact: false,
-    }))
+    Ok(Json(
+        AgentContext {
+            tracked: true,
+            tokens: usage.as_ref().map(|u| u.tokens),
+            window: model.as_deref().and_then(context_window),
+            model,
+            at: usage.map(|u| u.at),
+            compact: false,
+            parts: Vec::new(),
+            tools: Vec::new(),
+            source: None,
+            left_out: Vec::new(),
+        }
+        .with(breakdown),
+    ))
+}
+
+/// Measures a Claude Code agent's context now, with `claude`'s own `/context` (no model call),
+/// and returns it as `GET /v1/agents/{id}/context` does.
+///
+/// For agents whose newest turn has no breakdown yet, e.g. one that ran on an older daemon.
+/// Outside a turn `claude` cannot reach the agent's MCP tools, so they are left out
+/// (`left_out`); every turn's own measurement counts them again. Agents behind the model proxy
+/// are measured at every model call and need no request.
+#[utoipa::path(post, path = "/v1/agents/{id}/context/measure", tag = "usage",
+    params(("id" = String, Path, description = "Agent id (UUID)")),
+    responses((status = 200, body = AgentContext),
+        (status = 400, description = "Not a Claude Code agent", body = ErrorBody),
+        (status = 404, description = "Unknown agent", body = ErrorBody),
+        (status = 409, description = "No turn to measure yet, or the agent is in a turn", body = ErrorBody),
+        (status = 502, description = "Claude Code gave no report", body = ErrorBody)))]
+pub(crate) async fn measure_context(
+    State(state): State<AppState>,
+    Path(id): Path<String>,
+) -> ApiResult<AgentContext> {
+    let agent = state.store.get_agent(parse_id(&id)?).await?;
+    let provider = crate::agents::provider_of(&state, &agent).await;
+    let Some(provider) = provider.filter(|p| p.kind == ProviderKind::ClaudeCode) else {
+        return Err(bad(
+            "measuring on request is for Claude Code agents; the others are measured at every model call",
+        ));
+    };
+    let model = agent.model.clone().or(provider.default_model);
+    match crate::claude_code::measure_now(&state, &agent, model.as_deref()).await {
+        Ok(_) => get_context(State(state), Path(id)).await,
+        Err(crate::claude_code::CompactError::NotNow(why)) => Err(ApiError::Conflict(why.into())),
+        Err(crate::claude_code::CompactError::Failed(why)) => Err(ApiError::Upstream(why)),
+    }
 }
 
 /// Context window in tokens of a model id as providers write it (with `anthropic.`, `models/` or

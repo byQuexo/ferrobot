@@ -1092,7 +1092,7 @@ checksum = "da7c62ceae207dd37ea5b845da6a0696c799f85e97da1ab5b7910be3c1c80223"
 
 [[package]]
 name = "ferrobot-core"
-version = "0.1.11"
+version = "0.1.12"
 dependencies = [
  "schemars",
  "serde",
@@ -1105,7 +1105,7 @@ dependencies = [
 
 [[package]]
 name = "ferrobot-daemon"
-version = "0.1.11"
+version = "0.1.12"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -1154,7 +1154,7 @@ dependencies = [
 
 [[package]]
 name = "ferrobot-mcp"
-version = "0.1.11"
+version = "0.1.12"
 dependencies = [
  "axum",
  "ferrobot-core",
@@ -1170,7 +1170,7 @@ dependencies = [
 
 [[package]]
 name = "ferrobot-sandbox"
-version = "0.1.11"
+version = "0.1.12"
 dependencies = [
  "async-trait",
  "base64 0.22.1",
@@ -1196,7 +1196,7 @@ dependencies = [
 
 [[package]]
 name = "ferrobot-store"
-version = "0.1.11"
+version = "0.1.12"
 dependencies = [
  "ferrobot-core",
  "hex",
